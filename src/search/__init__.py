@@ -18,6 +18,14 @@ __all__ = [
     "RerankerConfig",
     "RetrievalRerankConfig",
     "create_base_app",
+    "Vocabulary",
+    "SOS_token",
+    "EOS_token",
+    "MAX_LENGTH",
+    "normalize_text",
+    "tokenize_text",
+    "build_vocabulary_from_sequences",
+    "extract_keywords",
 ]
 
 
@@ -45,5 +53,17 @@ def __getattr__(name: str) -> Any:
         return getattr(module, name)
     if name == "create_base_app":
         module = import_module(".search_app", __name__)
+        return getattr(module, name)
+    if name in {
+        "Vocabulary",
+        "SOS_token",
+        "EOS_token",
+        "MAX_LENGTH",
+        "normalize_text",
+        "tokenize_text",
+        "build_vocabulary_from_sequences",
+        "extract_keywords",
+    }:
+        module = import_module(".vocabulary", __name__)
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

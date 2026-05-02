@@ -30,6 +30,18 @@ src/
     retrieval_rerank_server.py
     retrieval_server.py
     serp_search_server.py
+    vocabulary.py
+tests/
+  conftest.py
+  unit/
+    test_vocabulary.py
+    test_index_builder.py
+    test_rerank.py
+    test_search_app.py
+  regression/
+    test_regression.py
+  load/
+    test_load.py
 ```
 
 ## Requirements
@@ -323,9 +335,56 @@ For each query, the service:
 - Some result pages may block scraping or return little usable paragraph text.
 - Empty or fully invalid queries return empty result lists.
 
-## Development Check
+## Testing
 
-Syntax can be checked with:
+Install test dependencies:
+
+```bash
+pip install pytest httpx
+```
+
+### Run all tests
+
+```bash
+python3 -m pytest
+```
+
+### Unit tests
+
+Pure-logic tests that require no running server or ML models:
+
+```bash
+python3 -m pytest tests/unit/ -v
+```
+
+Coverage:
+
+| File | What is tested |
+|------|---------------|
+| `test_vocabulary.py` | `Vocabulary`, `normalize_text`, `tokenize_text`, `build_vocabulary_from_sequences`, `extract_keywords` |
+| `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` (skipped when torch unavailable) |
+| `test_rerank.py` | `passage_to_string`, `string_to_document`, `RerankerConfig.validate`, `SentenceTransformerReranker.rerank` |
+| `test_search_app.py` | `format_document`, `/health` endpoint, `/retrieve` endpoint |
+
+### Regression tests
+
+Snapshot tests that pin exact outputs for known inputs, catching unintended behaviour changes:
+
+```bash
+python3 -m pytest tests/regression/ -v
+```
+
+### Load tests
+
+Concurrent-request tests that verify the FastAPI endpoints handle parallelism correctly and meet basic latency/throughput bounds:
+
+```bash
+python3 -m pytest tests/load/ -v -s -m load
+```
+
+The `-s` flag lets latency percentiles (p50/p95/p99) print to stdout.
+
+### Development syntax check
 
 ```bash
 python3 -m py_compile \
@@ -339,5 +398,6 @@ python3 -m py_compile \
   src/search/retrieval.py \
   src/search/retrieval_rerank_server.py \
   src/search/retrieval_server.py \
-  src/search/serp_search_server.py
+  src/search/serp_search_server.py \
+  src/search/vocabulary.py
 ```

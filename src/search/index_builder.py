@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -13,6 +14,13 @@ from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
+
+from .vocabulary import (
+    MAX_LENGTH as DEFAULT_VOCAB_MAX_LENGTH,
+    build_vocabulary_from_sequences,
+    extract_keywords,
+    tokenize_text,
+)
 
 if TYPE_CHECKING:
     import datasets
@@ -123,6 +131,9 @@ class IndexBuilderConfig:
     embedding_path: str | None = None
     save_embedding: bool = False
     faiss_gpu: bool = False
+    save_vocabulary: bool = True
+    keyword_limit: int = 10
+    vocab_max_length: int = DEFAULT_VOCAB_MAX_LENGTH
 
     def validate(self) -> None:
         retrieval_method = self.retrieval_method.strip().lower()
@@ -136,6 +147,10 @@ class IndexBuilderConfig:
             raise ValueError("batch_size must be at least 1.")
         if self.max_length < 1:
             raise ValueError("max_length must be at least 1.")
+        if self.keyword_limit < 1:
+            raise ValueError("keyword_limit must be at least 1.")
+        if self.vocab_max_length < 1:
+            raise ValueError("vocab_max_length must be at least 1.")
 
 
 class IndexBuilder:
@@ -156,6 +171,9 @@ class IndexBuilder:
         self.embedding_path = config.embedding_path
         self.save_embedding = config.save_embedding
         self.faiss_gpu = config.faiss_gpu
+        self.save_vocabulary = config.save_vocabulary
+        self.keyword_limit = config.keyword_limit
+        self.vocab_max_length = config.vocab_max_length
 
         torch = _require_torch()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -164,6 +182,7 @@ class IndexBuilder:
         self._prepare_save_dir()
         self.index_save_path = self.save_dir / f"{self.retrieval_method}_{self.faiss_type}.index"
         self.embedding_save_path = self.save_dir / f"emb_{self.retrieval_method}.memmap"
+        self.vocab_save_path = self.save_dir / "vocabulary_corpus.json"
         self.corpus = load_corpus(self.corpus_path)
 
     def _prepare_save_dir(self) -> None:
@@ -177,10 +196,58 @@ class IndexBuilder:
             self.save_dir.mkdir(parents=True, exist_ok=True)
 
     def build_index(self) -> None:
+        if self.save_vocabulary:
+            self.save_vocabulary_metadata()
         if self.retrieval_method == "bm25":
             self.build_bm25_index()
         else:
             self.build_dense_index()
+
+    def save_vocabulary_metadata(self) -> None:
+        contents = [str(text) for text in self.corpus["contents"]]
+        vocabulary = build_vocabulary_from_sequences(
+            contents,
+            max_length=self.vocab_max_length,
+        )
+        corpus_entries: list[dict[str, Any]] = []
+        for index, text in enumerate(contents):
+            item = self.corpus[index]
+            tokens = tokenize_text(text, max_length=self.vocab_max_length)
+            corpus_entries.append(
+                {
+                    "doc_id": index,
+                    "id": item.get("id"),
+                    "title": item.get("title"),
+                    "contents": text,
+                    "tokens": tokens,
+                    "keywords": extract_keywords(
+                        text,
+                        limit=self.keyword_limit,
+                        max_length=self.vocab_max_length,
+                    ),
+                    "token_count": len(tokens),
+                }
+            )
+
+        with self.vocab_save_path.open("w", encoding="utf-8") as vocab_file:
+            json.dump(
+                {
+                    "corpus_path": self.corpus_path,
+                    "retrieval_method": self.retrieval_method,
+                    "keyword_limit": self.keyword_limit,
+                    "vocab_max_length": self.vocab_max_length,
+                    "vocabulary": {
+                        "num_token": vocabulary.num_token,
+                        "token2idx": vocabulary.token2idx,
+                        "token2cnt": vocabulary.token2cnt,
+                        "idx2token": {str(key): value for key, value in vocabulary.idx2token.items()},
+                    },
+                    "corpus": corpus_entries,
+                },
+                vocab_file,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     def build_bm25_index(self) -> None:
         bm25_dir = self.save_dir / "bm25"
@@ -346,6 +413,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--embedding_path", type=str, default=None)
     parser.add_argument("--save_embedding", action="store_true", default=False)
     parser.add_argument("--faiss_gpu", default=False, action="store_true")
+    parser.add_argument("--save_vocabulary", dest="save_vocabulary", action="store_true", default=True)
+    parser.add_argument("--no_save_vocabulary", dest="save_vocabulary", action="store_false")
+    parser.add_argument("--keyword_limit", type=int, default=10)
+    parser.add_argument("--vocab_max_length", type=int, default=DEFAULT_VOCAB_MAX_LENGTH)
     return parser.parse_args()
 
 
@@ -364,6 +435,9 @@ def main() -> None:
         embedding_path=args.embedding_path,
         save_embedding=args.save_embedding,
         faiss_gpu=args.faiss_gpu,
+        save_vocabulary=args.save_vocabulary,
+        keyword_limit=args.keyword_limit,
+        vocab_max_length=args.vocab_max_length,
     )
     IndexBuilder(config).build_index()
 
