@@ -26,11 +26,9 @@ src/
     google_search_server.py
     index_builder.py
     rerank.py
-    rerank_server.py
     retrieval.py
     retrieval_rerank_server.py
     retrieval_server.py
-    retriever.py
     serp_search_server.py
 ```
 
@@ -208,7 +206,7 @@ curl -X POST http://localhost:8000/retrieve \
 The rerank server listens on port **6980** by default.
 
 ```bash
-python3 -m src.search.rerank_server \
+python3 -m src.search.rerank \
   --rerank_model_name_or_path cross-encoder/ms-marco-MiniLM-L12-v2 \
   --rerank_topk 3
 ```
@@ -341,6 +339,5 @@ python3 -m py_compile \
   src/search/retrieval.py \
   src/search/retrieval_rerank_server.py \
   src/search/retrieval_server.py \
-  src/search/retriever.py \
   src/search/serp_search_server.py
 ```

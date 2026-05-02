@@ -7,10 +7,11 @@ import os
 from dataclasses import dataclass
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from .retrieval import DenseRetriever, DenseRetrieverConfig
+from .search_app import create_base_app
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
@@ -46,13 +47,9 @@ class QueryRequest(BaseModel):
     return_scores: bool = False
 
 
-def create_app(config: RetrievalServerConfig) -> FastAPI:
+def create_app(config: RetrievalServerConfig):
     retriever = DenseRetriever(config.to_retriever_config())
-    app = FastAPI(title="Dense Retrieval Server")
-
-    @app.get("/health")
-    def healthcheck() -> dict[str, str]:
-        return {"status": "ok"}
+    app = create_base_app("Dense Retrieval Server")
 
     @app.post("/retrieve")
     def retrieve_endpoint(request: QueryRequest) -> dict[str, list]:

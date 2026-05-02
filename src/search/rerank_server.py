@@ -6,10 +6,11 @@ import argparse
 import os
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from .rerank import RerankerConfig, get_reranker, passage_to_string
+from .search_app import create_base_app
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 6980
@@ -22,13 +23,9 @@ class RerankRequest(BaseModel):
     return_scores: bool = False
 
 
-def create_app(config: RerankerConfig) -> FastAPI:
+def create_app(config: RerankerConfig):
     reranker = get_reranker(config)
-    app = FastAPI(title="Rerank Server")
-
-    @app.get("/health")
-    def healthcheck() -> dict[str, str]:
-        return {"status": "ok"}
+    app = create_base_app("Rerank Server")
 
     @app.post("/rerank")
     def rerank_endpoint(request: RerankRequest) -> dict[str, list]:

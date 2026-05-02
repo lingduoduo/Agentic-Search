@@ -20,12 +20,18 @@ def format_document(title: str | None, content: str | None) -> dict[str, dict[st
     return {"document": {"contents": f"\"{normalized_title}\"\n{normalized_content}"}}
 
 
-def create_search_app(title: str, engine: T) -> FastAPI:
+def create_base_app(title: str) -> FastAPI:
     app = FastAPI(title=title)
 
     @app.get("/health")
     def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
+
+    return app
+
+
+def create_search_app(title: str, engine: T) -> FastAPI:
+    app = create_base_app(title)
 
     @app.post("/retrieve")
     def search_endpoint(request: SearchRequest) -> dict[str, list]:

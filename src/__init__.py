@@ -17,6 +17,7 @@ __all__ = [
     "RetrievalServerConfig",
     "RerankerConfig",
     "RetrievalRerankConfig",
+    "create_base_app",
 ]
 
 

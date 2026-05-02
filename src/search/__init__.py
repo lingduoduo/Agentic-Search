@@ -17,6 +17,7 @@ __all__ = [
     "RetrievalServerConfig",
     "RerankerConfig",
     "RetrievalRerankConfig",
+    "create_base_app",
 ]
 
 
@@ -41,5 +42,8 @@ def __getattr__(name: str) -> Any:
         return getattr(module, name)
     if name == "RetrievalRerankConfig":
         module = import_module(".retrieval_rerank_server", __name__)
+        return getattr(module, name)
+    if name == "create_base_app":
+        module = import_module(".search_app", __name__)
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
