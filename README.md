@@ -45,6 +45,10 @@ tests/
 - API keys (only needed for the corresponding server): `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`, `SERP_API_KEY`
 - Java 11+ (arm64 on Apple Silicon) for BM25 indexing via pyserini
 
+Notes:
+- `uvicorn` is only needed for the FastAPI search servers under `src/search/*_server.py`. It is not involved in `python3 -m src.run_agentic_search --local`.
+- On macOS Apple Silicon, local Hugging Face causal-LM inference is safest on `cpu` in this repo. The `mps` backend can segfault for some model / torch / transformers combinations.
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -77,8 +81,11 @@ python3 -m src.run_agentic_search \
 
 # Single-turn (no search), local model
 python3 -m src.run_agentic_search \
-    --mode single --question "What is FAISS?" \
-    --model meta-llama/Llama-3.1-8B-Instruct --local
+  --mode single \
+  --question "What is FAISS?" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --local \
+  --device cpu
 
 # Tool-calling loop
 python3 -m src.run_agentic_search \
@@ -93,12 +100,16 @@ Key flags:
 |------|---------|---------|
 | `--mode` | `search` | `single` / `search` / `tool` |
 | `--local` | off | Load model in-process (no vLLM) |
+| `--device` | `auto` | Local device: `auto`, `cpu`, `cuda`, or `mps` |
+| `--allow_unsafe_mps` | off | Allow Apple `mps` local generation even though it may segfault |
 | `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
 | `--require_search` | off | Force search even when model has internal knowledge |
 | `--max_search_limit` | 0 (= max_turns) | Cap on search rounds |
 | `--intent_examples` | none | Train a lightweight intent classifier and route search policy from it |
 | `--intent_min_confidence` | `0.6` | Minimum confidence required before intent routing overrides defaults |
 | `--tool_format` | `hermes` | Tool-call parser for `tool` mode |
+
+For macOS Apple Silicon, prefer `--device cpu` unless you explicitly want to experiment with MPS. The CLI now blocks `--device mps` by default and requires `--allow_unsafe_mps` to opt in.
 
 If `--intent_examples` is provided, the CLI trains a small intent classifier on startup and can automatically bias search behavior. High-confidence `purchase`, `navigate`, and `recommendation` intents force evidence gathering and disable direct internal-knowledge answers; `qa` leaves the current settings unchanged.
 

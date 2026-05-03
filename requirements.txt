@@ -1,20 +1,33 @@
+# Server/runtime dependencies for FastAPI search services.
 fastapi==0.110.1
-uvicorn==0.29.0
+uvicorn>=0.31.1
+
+# Core client / utility dependencies.
 requests==2.32.3
 urllib3>=2.0
 chardet>=3.0
 aiohttp==3.9.3
 beautifulsoup4==4.13.4
 numpy==1.26.4
+
+# Local model inference stack used by `python -m src.run_agentic_search --local`.
 torch==2.2.2
 transformers==4.39.3
+accelerate
+
+# Training / data / retrieval dependencies.
 datasets==2.18.0
 tqdm==4.66.4
 sentence-transformers==2.7.0
 python-dotenv
 pyserini
 google-api-python-client
-chardet
+
+# Notes:
+# - `uvicorn` is only needed for FastAPI server entry points under `src/search/*_server.py`.
+#   It is not used by the local single-turn / search / tool CLI path in `src/run_agentic_search.py`.
+# - On macOS Apple Silicon, local Hugging Face causal-LM inference is safest on CPU in this repo.
+#   The MPS backend can segfault for some models / torch / transformers combinations.
 # faiss-cpu: install via conda to avoid OpenMP conflict with PyTorch on macOS:
 #   conda install -c conda-forge faiss-cpu
 # pip install faiss-cpu works on Linux but segfaults on macOS Apple Silicon.

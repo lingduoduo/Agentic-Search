@@ -5,7 +5,15 @@ from types import SimpleNamespace
 import pytest
 
 from src.agent_loop.agent_loop import AgentLoopBase
-from src.run_agentic_search import _validate_local_generation_config
+from src.run_agentic_search import (
+    _has_accelerate,
+    _friendly_model_load_error,
+    _parse_major_minor,
+    _resolve_local_device,
+    _validate_local_runtime_device,
+    _validate_local_runtime_stack,
+    _validate_local_generation_config,
+)
 
 
 class _DummyLoop(AgentLoopBase):
@@ -21,6 +29,11 @@ class _TokenizerWithoutChatTemplate:
 
     def encode(self, text: str) -> list[int]:
         return [len(text)]
+
+
+class _TokenizerWithIds:
+    pad_token_id = None
+    eos_token_id = 99
 
 
 def test_build_prompt_ids_falls_back_to_encode_without_chat_template():
@@ -51,3 +64,106 @@ def test_validate_local_generation_config_allows_causal_lm():
     )
 
     _validate_local_generation_config("meta-llama/Llama-3.1-8B-Instruct", config)
+
+
+def test_friendly_model_load_error_formats_gated_repo_failure():
+    exc = OSError("You are trying to access a gated repo. 401 Client Error. Cannot access gated repo")
+    message = _friendly_model_load_error("meta-llama/Llama-3.1-8B-Instruct", exc)
+    assert message is not None
+    assert "gated on Hugging Face" in message
+    assert "huggingface-cli login" in message
+
+
+def test_friendly_model_load_error_formats_missing_repo_failure():
+    exc = OSError("404 Client Error. Repository Not Found for url")
+    message = _friendly_model_load_error("missing/model", exc)
+    assert message is not None
+    assert "could not find that repo" in message
+
+
+def test_friendly_model_load_error_formats_cache_only_miss():
+    exc = OSError("Couldn't connect to the Hub and cannot find the requested files in the disk cache")
+    message = _friendly_model_load_error("Qwen/Qwen2.5-1.5B-Instruct", exc)
+    assert message is not None
+    assert "local Hugging Face cache" in message
+    assert "--allow_remote_model_downloads" in message
+
+
+def test_resolve_local_device_returns_explicit_choice():
+    assert _resolve_local_device("cpu") == "cpu"
+
+
+def test_has_accelerate_returns_boolean():
+    assert isinstance(_has_accelerate(), bool)
+
+
+def test_parse_major_minor_handles_build_suffix():
+    assert _parse_major_minor("2.2.2+cpu") == (2, 2)
+
+
+def test_validate_local_runtime_device_rejects_mps_without_override():
+    with pytest.raises(ValueError, match="Apple MPS is disabled by default"):
+        _validate_local_runtime_device("mps", allow_unsafe_mps=False)
+
+
+def test_validate_local_runtime_device_allows_mps_with_override():
+    _validate_local_runtime_device("mps", allow_unsafe_mps=True)
+
+
+def test_validate_local_runtime_stack_rejects_old_macos_stack():
+    with pytest.raises(ValueError, match="older runtime stack"):
+        _validate_local_runtime_stack(
+            platform_system="Darwin",
+            torch_version="2.2.2",
+            transformers_version="4.39.3",
+        )
+
+
+def test_validate_local_runtime_stack_allows_newer_macos_stack():
+    _validate_local_runtime_stack(
+        platform_system="Darwin",
+        torch_version="2.5.1",
+        transformers_version="4.46.0",
+    )
+
+
+def test_local_generate_sync_adds_attention_mask_for_greedy_decode():
+    torch = pytest.importorskip("torch")
+    from src.run_agentic_search import LocalServerManager
+
+    captured: dict[str, object] = {}
+
+    class _Model:
+        generation_config = SimpleNamespace(
+            pad_token_id=None,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+            top_k=20,
+        )
+
+        def generate(self, inputs, **kwargs):
+            captured["inputs"] = inputs
+            captured["kwargs"] = kwargs
+            return torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+
+    manager = LocalServerManager(
+        model_path="dummy",
+        device="cpu",
+        generation_timeout_seconds=5.0,
+        generation_heartbeat_seconds=999.0,
+    )
+    manager._tokenizer = _TokenizerWithIds()
+    manager._model = _Model()
+
+    result = manager._generate_sync([1, 2], {"max_tokens": 2, "temperature": 0})
+    assert result == [3, 4]
+    kwargs = captured["kwargs"]
+    generation_config = kwargs["generation_config"]
+    assert generation_config.do_sample is False
+    assert generation_config.temperature == 1.0
+    assert generation_config.top_p == 1.0
+    assert generation_config.top_k == 50
+    assert generation_config.pad_token_id == 99
+    assert kwargs["max_time"] == 5.0
+    assert kwargs["attention_mask"].tolist() == [[1, 1]]

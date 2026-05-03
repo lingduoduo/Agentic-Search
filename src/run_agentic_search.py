@@ -45,6 +45,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import platform
+import threading
 import time
 from typing import Any
 
@@ -115,6 +117,111 @@ def _validate_local_generation_config(model_path: str, config: Any) -> None:
     )
 
 
+def _friendly_model_load_error(model: str, exc: Exception) -> str | None:
+    """Return a concise user-facing message for common HF model-load failures."""
+
+    message = str(exc)
+    lowered = message.lower()
+
+    if "gated repo" in lowered or "cannot access gated repo" in lowered or "401 client error" in lowered:
+        return (
+            f"Cannot load model '{model}' because it is gated on Hugging Face.\n"
+            "You need access to that repo and a logged-in Hugging Face token on this machine.\n"
+            "Try `huggingface-cli login` after requesting access, or use an open model such as "
+            "`google/gemma-2-2b-it`, `Qwen/Qwen2.5-1.5B-Instruct`, or another ungated instruct model."
+        )
+
+    if "repository not found" in lowered or "404 client error" in lowered:
+        return (
+            f"Cannot load model '{model}' because Hugging Face could not find that repo.\n"
+            "Check the model id spelling, or point `--model` to a local path that already contains the files."
+        )
+
+    if "couldn't connect" in lowered or "cannot find the requested files in the disk cache" in lowered:
+        return (
+            f"Cannot load model '{model}' from the local Hugging Face cache.\n"
+            "In `--local` mode this CLI now prefers cached files to avoid slow or hanging network metadata lookups.\n"
+            "If the model is not cached yet, rerun with `--allow_remote_model_downloads`, or download it first."
+        )
+
+    return None
+
+
+def _resolve_local_device(requested_device: str) -> str:
+    """Resolve a local inference device, preferring accelerators when asked."""
+
+    if requested_device != "auto":
+        return requested_device
+
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if (
+        platform.system() != "Darwin"
+        and getattr(torch.backends, "mps", None) is not None
+        and torch.backends.mps.is_available()
+    ):
+        return "mps"
+    return "cpu"
+
+
+def _has_accelerate() -> bool:
+    try:
+        import accelerate  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _parse_major_minor(version_text: str) -> tuple[int, int]:
+    core = version_text.split("+", 1)[0]
+    parts = core.split(".")
+    major = int(parts[0]) if parts and parts[0].isdigit() else 0
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return major, minor
+
+
+def _validate_local_runtime_device(device: str, *, allow_unsafe_mps: bool = False) -> None:
+    """Block known-unstable local runtime choices before native crashes happen."""
+
+    if device == "mps" and not allow_unsafe_mps:
+        raise ValueError(
+            "Local generation on Apple MPS is disabled by default in this CLI because it can segfault with "
+            "some Hugging Face causal LMs on macOS. Use `--device cpu` for the stable path, or pass "
+            "`--allow_unsafe_mps` if you want to try MPS anyway."
+        )
+
+
+def _validate_local_runtime_stack(
+    *,
+    platform_system: str | None = None,
+    torch_version: str | None = None,
+    transformers_version: str | None = None,
+) -> None:
+    """Fail fast on known-unstable local-generation stacks before native crashes occur."""
+
+    if platform_system is None or torch_version is None or transformers_version is None:
+        import torch
+        import transformers
+
+        platform_system = platform.system()
+        torch_version = torch.__version__
+        transformers_version = transformers.__version__
+
+    if platform_system != "Darwin":
+        return
+
+    torch_mm = _parse_major_minor(torch_version)
+    transformers_mm = _parse_major_minor(transformers_version)
+    if torch_mm <= (2, 2) and transformers_mm <= (4, 39):
+        raise ValueError(
+            "Local causal-LM inference on macOS is blocked for the older runtime stack "
+            f"(torch {torch_version}, transformers {transformers_version}) because it can segfault during model load. "
+            "Use a newer stack, or run through a server backend instead of `--local`."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Server managers
 # ---------------------------------------------------------------------------
@@ -177,12 +284,20 @@ class LocalServerManager:
     def __init__(
         self,
         model_path: str,
-        device: str = "cpu",
+        device: str = "auto",
         use_fp16: bool = False,
+        allow_unsafe_mps: bool = False,
+        local_files_only: bool = True,
+        generation_timeout_seconds: float | None = 120.0,
+        generation_heartbeat_seconds: float = 10.0,
     ) -> None:
         self.model_path = model_path
-        self.device = device
+        self.device = _resolve_local_device(device)
         self.use_fp16 = use_fp16
+        self.allow_unsafe_mps = allow_unsafe_mps
+        self.local_files_only = local_files_only
+        self.generation_timeout_seconds = generation_timeout_seconds
+        self.generation_heartbeat_seconds = generation_heartbeat_seconds
         self._model: Any = None
         self._tokenizer: Any = None
 
@@ -192,19 +307,38 @@ class LocalServerManager:
         from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
         import torch
 
+        _validate_local_runtime_device(self.device, allow_unsafe_mps=self.allow_unsafe_mps)
+        _validate_local_runtime_stack()
+        print(f"Status  : loading local model on {self.device}")
         logger.info("Loading model %s onto %s …", self.model_path, self.device)
-        config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
+        config = AutoConfig.from_pretrained(
+            self.model_path,
+            trust_remote_code=True,
+            local_files_only=self.local_files_only,
+        )
         _validate_local_generation_config(self.model_path, config)
         self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path, trust_remote_code=True
+            self.model_path,
+            trust_remote_code=True,
+            local_files_only=self.local_files_only,
         )
+        model_kwargs: dict[str, Any] = {
+            "trust_remote_code": True,
+            "local_files_only": self.local_files_only,
+        }
+        if _has_accelerate():
+            model_kwargs["low_cpu_mem_usage"] = True
+        else:
+            print("Status  : accelerate not installed; using standard model loading")
         self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_path, trust_remote_code=True
+            self.model_path,
+            **model_kwargs,
         )
         self._model.eval()
         self._model.to(self.device)
         if self.use_fp16 and self.device.startswith("cuda"):
             self._model = self._model.half()
+        print("Status  : local model ready")
 
     async def generate(
         self,
@@ -222,20 +356,60 @@ class LocalServerManager:
     def _generate_sync(
         self, prompt_ids: list[int], sampling_params: dict[str, Any]
     ) -> list[int]:
+        import copy
         import torch
 
         self._ensure_loaded()
         max_new = sampling_params.get("max_tokens", 512)
         temp = float(sampling_params.get("temperature", 0.7))
+        top_p = float(sampling_params.get("top_p", 1.0))
+        do_sample = temp > 0
+        print(f"Status  : generating up to {max_new} new tokens on {self.device}")
         inputs = torch.tensor([prompt_ids], dtype=torch.long).to(self.device)
-        with torch.no_grad():
-            out = self._model.generate(
-                inputs,
-                max_new_tokens=max_new,
-                do_sample=temp > 0,
-                temperature=temp if temp > 0 else 1.0,
-                pad_token_id=self._tokenizer.eos_token_id,
-            )
+        attention_mask = torch.ones_like(inputs, dtype=torch.long)
+        pad_token_id = self._tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = self._tokenizer.eos_token_id
+        generation_config = copy.deepcopy(self._model.generation_config)
+        generation_config.pad_token_id = pad_token_id
+        generation_config.do_sample = do_sample
+
+        generate_kwargs: dict[str, Any] = {
+            "max_new_tokens": max_new,
+            "generation_config": generation_config,
+            "attention_mask": attention_mask,
+        }
+        if self.generation_timeout_seconds is not None and self.generation_timeout_seconds > 0:
+            generate_kwargs["max_time"] = float(self.generation_timeout_seconds)
+        if do_sample:
+            generation_config.temperature = temp
+            generation_config.top_p = top_p
+        else:
+            # Reset sampling-only knobs to neutral defaults so newer
+            # Transformers versions do not warn about ignored flags.
+            generation_config.temperature = 1.0
+            generation_config.top_p = 1.0
+            generation_config.top_k = 50
+        start = time.perf_counter()
+        stop_event = threading.Event()
+
+        def _heartbeat() -> None:
+            while not stop_event.wait(self.generation_heartbeat_seconds):
+                elapsed = time.perf_counter() - start
+                print(f"Status  : still generating on {self.device} ({elapsed:.1f}s elapsed)")
+
+        heartbeat_thread = threading.Thread(target=_heartbeat, daemon=True)
+        heartbeat_thread.start()
+        try:
+            with torch.no_grad():
+                out = self._model.generate(
+                    inputs,
+                    **generate_kwargs,
+                )
+        finally:
+            stop_event.set()
+            heartbeat_thread.join(timeout=0.1)
+        print("Status  : generation complete")
         return out[0][len(prompt_ids):].tolist()
 
 
@@ -504,7 +678,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", type=str, required=True, help="HuggingFace model name or path")
     parser.add_argument("--local", action="store_true", help="Run model locally (no vLLM server)")
     parser.add_argument("--vllm_url", type=str, default="http://localhost:8080", help="vLLM base URL")
-    parser.add_argument("--device", type=str, default="cpu", help="Device for local model")
+    parser.add_argument("--device", type=str, default="auto", help="Device for local model: auto, cpu, cuda, or mps")
+    parser.add_argument("--allow_unsafe_mps", action="store_true", help="Allow local MPS generation on macOS even though it may segfault")
+    parser.add_argument("--allow_remote_model_downloads", action="store_true", help="Allow `--local` model loading to query/download from Hugging Face instead of cache-only loading")
+    parser.add_argument("--generation_timeout_seconds", type=float, default=120.0, help="Best-effort local generation timeout in seconds")
+    parser.add_argument("--generation_heartbeat_seconds", type=float, default=10.0, help="How often local generation prints a still-running heartbeat")
     parser.add_argument("--fp16", action="store_true", help="Use fp16 for local model")
 
     # Search
@@ -540,10 +718,27 @@ async def main() -> None:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
+    print(f"\nMode    : {args.mode}")
+    print(f"Model   : {args.model}")
+    print(f"Question: {args.question}\n")
+
     # Load tokenizer
     from transformers import AutoTokenizer
     logger.info("Loading tokenizer %s …", args.model)
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    if args.local:
+        print("Status  : loading tokenizer from local cache")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model,
+            trust_remote_code=True,
+            local_files_only=args.local and not args.allow_remote_model_downloads,
+        )
+    except Exception as exc:
+        friendly = _friendly_model_load_error(args.model, exc)
+        if friendly is not None:
+            print(f"Error   : {friendly}")
+            return
+        raise
 
     # Build server manager
     if args.local:
@@ -551,6 +746,10 @@ async def main() -> None:
             model_path=args.model,
             device=args.device,
             use_fp16=args.fp16,
+            allow_unsafe_mps=args.allow_unsafe_mps,
+            local_files_only=not args.allow_remote_model_downloads,
+            generation_timeout_seconds=args.generation_timeout_seconds,
+            generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
     else:
         server_manager = VLLMServerManager(
@@ -573,10 +772,6 @@ async def main() -> None:
         if training_data:
             intent_pipeline = IntentPipeline()
             intent_pipeline.train(training_data, epochs=10)
-
-    print(f"\nMode    : {args.mode}")
-    print(f"Model   : {args.model}")
-    print(f"Question: {args.question}\n")
 
     try:
         if args.mode == "single":
@@ -605,10 +800,20 @@ async def main() -> None:
                 tool_format=args.tool_format,
             )
     except ValueError as exc:
-        if args.local and "Local generation mode requires a generative language model" in str(exc):
-            print(f"Error   : {exc}")
-            print("Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only.")
-            return
+        if args.local:
+            message = str(exc)
+            if "Local generation mode requires a generative language model" in message:
+                print(f"Error   : {message}")
+                print("Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only.")
+                return
+            if "Local generation on Apple MPS is disabled by default" in message:
+                print(f"Error   : {message}")
+                print("Hint    : Retry with `--device cpu` for the stable path.")
+                return
+            if "Local causal-LM inference on macOS is blocked for the older runtime stack" in message:
+                print(f"Error   : {message}")
+                print("Hint    : Upgrade the local stack, or avoid `--local` and use a server-backed path instead.")
+                return
         raise
 
 
