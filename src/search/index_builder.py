@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import warnings
+from multiprocessing import cpu_count
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -206,6 +207,8 @@ class IndexBuilderConfig:
     save_vocabulary: bool = True
     keyword_limit: int = 10
     vocab_max_length: int = DEFAULT_VOCAB_MAX_LENGTH
+    # 0 = auto-detect (uses all available CPUs)
+    bm25_threads: int = 0
 
     def validate(self) -> None:
         retrieval_method = self.retrieval_method.strip().lower()
@@ -246,6 +249,7 @@ class IndexBuilder:
         self.save_vocabulary = config.save_vocabulary
         self.keyword_limit = config.keyword_limit
         self.vocab_max_length = config.vocab_max_length
+        self.bm25_threads = config.bm25_threads or cpu_count()
 
         torch = _require_torch()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -340,7 +344,7 @@ class IndexBuilder:
                 "--generator",
                 "DefaultLuceneDocumentGenerator",
                 "--threads",
-                "1",
+                str(self.bm25_threads),
             ]
             subprocess.run(
                 [sys.executable, "-m", "pyserini.index.lucene", *pyserini_args],
@@ -469,6 +473,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no_save_vocabulary", dest="save_vocabulary", action="store_false")
     parser.add_argument("--keyword_limit", type=int, default=10)
     parser.add_argument("--vocab_max_length", type=int, default=DEFAULT_VOCAB_MAX_LENGTH)
+    parser.add_argument("--bm25_threads", type=int, default=0, help="BM25 indexing threads (0 = auto-detect CPUs)")
     return parser.parse_args()
 
 
@@ -492,6 +497,7 @@ def main() -> None:
         save_vocabulary=args.save_vocabulary,
         keyword_limit=args.keyword_limit,
         vocab_max_length=args.vocab_max_length,
+        bm25_threads=args.bm25_threads,
     )
     IndexBuilder(config).build_index()
 

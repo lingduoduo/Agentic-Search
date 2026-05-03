@@ -103,7 +103,7 @@ async def fetch_all(urls: list[str], timeout_seconds: int, limit: int) -> list[s
 
     semaphore = asyncio.Semaphore(limit)
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-    connector = aiohttp.TCPConnector(limit_per_host=limit, force_close=True)
+    connector = aiohttp.TCPConnector(limit_per_host=limit)
 
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         tasks = [fetch(session, url, semaphore) for url in urls]

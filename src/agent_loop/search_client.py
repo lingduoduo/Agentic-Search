@@ -14,10 +14,10 @@ SearchResult.from_api_item handles all three shapes.
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass, field
+import asyncio
+from dataclasses import dataclass
 
-import requests
+import aiohttp
 
 from .context import SearchResult
 
@@ -31,12 +31,12 @@ class SearchClientConfig:
 
 
 class SearchClient:
-    """Thin synchronous client for any POST /retrieve endpoint."""
+    """Async client for any POST /retrieve endpoint."""
 
     def __init__(self, config: SearchClientConfig) -> None:
         self.config = config
 
-    def retrieve(
+    async def retrieve(
         self,
         queries: list[str],
         topk: int | None = None,
@@ -44,19 +44,19 @@ class SearchClient:
         """Return one list of SearchResult per query.
 
         Raises RuntimeError after max_retries exhausted.
+        Uses exponential backoff between retries.
         """
         payload = {"queries": queries, "topk": topk or self.config.topk}
+        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
         last_exc: Exception | None = None
 
         for attempt in range(self.config.max_retries):
             try:
-                resp = requests.post(
-                    self.config.url,
-                    json=payload,
-                    timeout=self.config.timeout_seconds,
-                )
-                resp.raise_for_status()
-                rows = resp.json().get("result", [])
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(self.config.url, json=payload) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                rows = data.get("result", [])
                 return [
                     [SearchResult.from_api_item(item) for item in row]
                     for row in rows
@@ -64,18 +64,18 @@ class SearchClient:
             except Exception as exc:
                 last_exc = exc
                 if attempt < self.config.max_retries - 1:
-                    time.sleep(0.5)
+                    await asyncio.sleep(0.5 * (2**attempt))
 
         raise RuntimeError(
             f"SearchClient.retrieve failed after {self.config.max_retries} retries "
             f"against {self.config.url}"
         ) from last_exc
 
-    def retrieve_one(
+    async def retrieve_one(
         self,
         query: str,
         topk: int | None = None,
     ) -> list[SearchResult]:
         """Convenience wrapper for a single query."""
-        results = self.retrieve([query], topk=topk)
+        results = await self.retrieve([query], topk=topk)
         return results[0] if results else []

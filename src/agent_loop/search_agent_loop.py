@@ -97,17 +97,12 @@ class SearchAgentLoop(AgentLoopBase):
             return m.group(1), m.group(2).strip()
         return None, ""
 
-    def _retrieve_sync(self, query: str) -> list[SearchResult]:
+    async def _retrieve(self, query: str) -> list[SearchResult]:
         try:
-            return self._search_client.retrieve_one(query)
+            return await self._search_client.retrieve_one(query)
         except Exception as exc:
             logger.warning("Search failed for query %r: %s", query, exc)
             return []
-
-    async def _retrieve(self, query: str) -> list[SearchResult]:
-        """Run the blocking HTTP call off the event loop."""
-        loop = await self.get_loop()
-        return await loop.run_in_executor(None, self._retrieve_sync, query)
 
     async def run(
         self,

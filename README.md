@@ -26,8 +26,11 @@ src/
     agent_loop.py          # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
     context.py             # SearchResult, SearchContext, AgentContext
     search_agent_loop.py   # SearchAgentLoop (multi-turn, registered as "search_agent")
-    search_client.py       # SearchClient — HTTP client for /retrieve endpoints
+    search_client.py       # SearchClient — async aiohttp client for /retrieve endpoints
     single_turn_agent_loop.py
+    tool.py                # Tool, FunctionTool — tool abstraction and JSON schema
+    tool_agent_loop.py     # ToolAgentLoop (multi-turn tool use, registered as "tool_agent")
+    tool_parser.py         # ToolParser — Hermes / Llama3 / JSON tool-call parsers
   llm_agent/
     __init__.py
     generation.py
@@ -189,6 +192,7 @@ Notes:
 - GPU is used automatically when available for embedding generation
 - `--faiss_gpu` requires GPU-enabled FAISS support
 - both commands write `indexes/vocabulary_corpus.json` alongside the index by default
+- `--bm25_threads N` controls how many Lucene indexing threads are used (default: all available CPUs)
 
 ### Vocabulary Metadata
 
@@ -320,6 +324,7 @@ The `src.agent_loop` package provides a multi-turn agent loop that issues `<sear
 |------|-------|-------------|
 | `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
 | `"search_agent"` | `SearchAgentLoop` | Multi-turn with `<search>`/`<answer>` protocol |
+| `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
 
 ### Usage
 
@@ -342,6 +347,44 @@ output = await loop.run(
 # output.context.turns      — list of SearchContext (query + results per turn)
 # output.context.num_searches  — total searches issued
 ```
+
+### Tool agent usage
+
+```python
+from src.agent_loop import ToolAgentLoop, ToolAgentLoopConfig
+from src.agent_loop.tool import FunctionTool
+
+@FunctionTool.from_fn(
+    description="Search the web",
+    parameters={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+)
+async def web_search(query: str) -> str:
+    ...
+
+loop = ToolAgentLoop(
+    tokenizer=tokenizer,
+    server_manager=server_manager,
+    tools=[web_search],
+    config=ToolAgentLoopConfig(
+        tool_parser_format="hermes",  # or "llama3" / "json"
+        max_assistant_turns=10,
+        max_parallel_calls=4,
+    ),
+)
+output = await loop.run(
+    messages=[{"role": "user", "content": "What is FAISS?"}],
+    sampling_params={"temperature": 0.7},
+)
+# output.response_mask — 1 for model tokens, 0 for injected tool-response tokens
+```
+
+Supported `tool_parser_format` values:
+
+| Format | Model family |
+|--------|-------------|
+| `"hermes"` | NousResearch Hermes 2.5 / 3 |
+| `"llama3"` | Meta Llama 3.1 / 3.2 |
+| `"json"` | Generic fallback (best-effort) |
 
 ### Context objects
 
