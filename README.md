@@ -21,6 +21,13 @@ The Google server also supports optional page fetching to extract paragraph cont
 ```text
 src/
   __init__.py
+  agent_loop/
+    __init__.py
+    agent_loop.py          # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
+    context.py             # SearchResult, SearchContext, AgentContext
+    search_agent_loop.py   # SearchAgentLoop (multi-turn, registered as "search_agent")
+    search_client.py       # SearchClient — HTTP client for /retrieve endpoints
+    single_turn_agent_loop.py
   llm_agent/
     __init__.py
     generation.py
@@ -39,6 +46,7 @@ src/
 tests/
   conftest.py
   unit/
+    test_agent_loop.py
     test_index_builder.py
     test_llm_agent_generation.py
     test_llm_agent_tensor_helper.py
@@ -302,26 +310,84 @@ python3 -m src.search.retrieval_rerank_server \
   --rerank_topk 3
 ```
 
+## Agentic Search Loop
+
+The `src.agent_loop` package provides a multi-turn agent loop that issues `<search>` queries, calls a retrieval server, and injects results back into the conversation as `<information>` blocks.
+
+### Registered loops
+
+| Name | Class | Description |
+|------|-------|-------------|
+| `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
+| `"search_agent"` | `SearchAgentLoop` | Multi-turn with `<search>`/`<answer>` protocol |
+
+### Usage
+
+```python
+from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig
+
+loop = SearchAgentLoop(
+    tokenizer=tokenizer,
+    server_manager=server_manager,
+    search_config=SearchAgentLoopConfig(
+        search_url="http://localhost:8000/retrieve",
+        topk=5,
+        max_turns=5,
+    ),
+)
+output = await loop.run(
+    messages=[{"role": "user", "content": "What is FAISS?"}],
+    sampling_params={"temperature": 0.7},
+)
+# output.context.turns      — list of SearchContext (query + results per turn)
+# output.context.num_searches  — total searches issued
+```
+
+### Context objects
+
+- `SearchResult(contents, score)` — one passage from the server
+- `SearchContext(query, results)` — one search round; `.to_information_block()` formats results for injection
+- `AgentContext(turns)` — full run history; attached to `AgentLoopOutput.context`
+
+### Lookup by name
+
+```python
+from src.agent_loop import get_registered_agent_loop, list_registered_agent_loops
+
+print(list_registered_agent_loops())          # ["search_agent", "single_turn_agent"]
+cls = get_registered_agent_loop("search_agent")
+```
+
 ## LLM Agent Utilities
 
 The `src.llm_agent` package provides reusable helpers for multi-turn LLM generation loops that interleave model responses with search observations.
 
 Main modules:
 
-- `src.llm_agent.generation`: multi-turn search manager, action parsing, batched search dispatch, and search simulation helpers
-- `src.llm_agent.tensor_helper`: padding, trimming, attention-mask, and position-id utilities
+- `src.llm_agent.generation`: `LLMGenerationManager` — multi-turn loop with action parsing, batched search dispatch, and search simulation helpers. Supported `search_mode` values: `google`, `wiki`, `local`, `simulate_sft`, `simulate_prompt`
+- `src.llm_agent.tensor_helper`: padding, trimming, attention-mask, and position-id utilities for batched tensor handling
 
 Import example:
 
 ```python
-from src.llm_agent import GenerationConfig, LLMGenerationManager, TensorConfig, TensorHelper
+from src.llm_agent.generation import GenerationConfig, LLMGenerationManager
+from src.llm_agent.tensor_helper import TensorConfig, TensorHelper
+```
+
+The `local` search mode calls the repo's own `retrieval_server` — set `retrieval_url` in `GenerationConfig`:
+
+```python
+config = GenerationConfig(
+    ...,
+    search_mode="local",
+    retrieval_url="http://localhost:8000/retrieve",
+)
 ```
 
 Notes:
 
-- the canonical import path is `src.llm_agent`
-- optional runtime dependencies such as `openai` and `serpapi` are loaded lazily inside the generation code
-- the older `src/llm-agent/` folder is legacy layout and should not be used for new imports
+- optional runtime dependencies (`openai`, `serpapi`) are loaded lazily
+- `SERP_API_KEY` is read from the environment for the `google` search mode
 
 ## Shared API
 
@@ -462,6 +528,12 @@ The `-s` flag lets latency percentiles (p50/p95/p99) print to stdout.
 ```bash
 python3 -m py_compile \
   src/__init__.py \
+  src/agent_loop/__init__.py \
+  src/agent_loop/agent_loop.py \
+  src/agent_loop/context.py \
+  src/agent_loop/search_agent_loop.py \
+  src/agent_loop/search_client.py \
+  src/agent_loop/single_turn_agent_loop.py \
   src/llm_agent/__init__.py \
   src/llm_agent/generation.py \
   src/llm_agent/tensor_helper.py \

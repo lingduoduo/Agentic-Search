@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import dataclass
 
 import uvicorn
 from fastapi import HTTPException
@@ -17,38 +16,14 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
 
 
-@dataclass(frozen=True)
-class RetrievalServerConfig:
-    model_path: str
-    index_path: str
-    corpus_path: str
-    retrieval_method: str
-    topk: int = 5
-    max_length: int = 180
-    use_fp16: bool = False
-    pooling_method: str | None = None
-
-    def to_retriever_config(self) -> DenseRetrieverConfig:
-        return DenseRetrieverConfig(
-            model_path=self.model_path,
-            index_path=self.index_path,
-            corpus_path=self.corpus_path,
-            retrieval_method=self.retrieval_method,
-            topk=self.topk,
-            max_length=self.max_length,
-            use_fp16=self.use_fp16,
-            pooling_method=self.pooling_method,
-        )
-
-
 class QueryRequest(BaseModel):
     queries: list[str] = Field(..., min_length=1)
     topk: int | None = None
     return_scores: bool = False
 
 
-def create_app(config: RetrievalServerConfig):
-    retriever = DenseRetriever(config.to_retriever_config())
+def create_app(config: DenseRetrieverConfig):
+    retriever = DenseRetriever(config)
     app = create_base_app("Dense Retrieval Server")
 
     @app.post("/retrieve")
@@ -85,9 +60,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
     args = parse_args()
     app = create_app(
-        RetrievalServerConfig(
+        DenseRetrieverConfig(
             model_path=args.model_path,
             index_path=args.index_path,
             corpus_path=args.corpus_path,

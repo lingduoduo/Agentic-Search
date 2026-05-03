@@ -31,6 +31,8 @@ class SearchBatch:
 
 ACTION_PATTERN = re.compile(r"<(search|answer)>(.*?)</\1>", re.DOTALL)
 
+_NO_INFO = "No information available"
+
 
 @dataclass(frozen=True)
 class GenerationConfig:
@@ -42,6 +44,7 @@ class GenerationConfig:
     num_gpus: int
     llm_ip: str | None = None
     retriever_ip: str | None = None
+    retrieval_url: str | None = None  # full URL for the local retrieval_server endpoint
     temperature: float = 0.8
     topk: int = 5
     search_mode: str = "google"
@@ -631,7 +634,7 @@ class LLMGenerationManager:
         if not search_payload:
             return []
 
-        all_search_result = ["No information available"] * len(search_payload)
+        all_search_result = [_NO_INFO] * len(search_payload)
         max_workers = min(self.config.search_max_workers, len(search_payload))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
@@ -654,28 +657,39 @@ class LLMGenerationManager:
                     continue
         return all_search_result
 
-    def retrieve_from_wiki(self, ip: str | None, query: str, topk: int = 5) -> str:
-        if not ip:
-            return "No information available"
-
+    def _retrieve_from_endpoint(self, url: str, query: str, topk: int, retry_attempts: int) -> str:
         import requests
 
-        for _ in range(self.config.wiki_retry_attempts):
+        for _ in range(retry_attempts):
             try:
-                payload = {"query": query, "top_k": topk}
-                response = requests.post(f"http://{ip}:6002/retrieve", json=payload, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-                return "\n".join([f"Doc {index + 1}: {doc['text']}" for index, doc in enumerate(data)])
+                resp = requests.post(url, json={"queries": [query], "topk": topk}, timeout=10)
+                resp.raise_for_status()
+                rows = resp.json().get("result", [[]])[0]
+                return self._passages2string(rows) or _NO_INFO
             except Exception:  # pragma: no cover - network/runtime dependent
                 time.sleep(1)
-        return "No information available"
+        return _NO_INFO
+
+    def retrieve_from_wiki(self, ip: str | None, query: str, topk: int = 5) -> str:
+        if not ip:
+            return _NO_INFO
+        return self._retrieve_from_endpoint(
+            f"http://{ip}:6002/retrieve", query, topk, self.config.wiki_retry_attempts
+        )
+
+    def retrieve_from_local(self, query: str, topk: int = 5) -> str:
+        """Call the repo's retrieval_server (POST /retrieve) directly."""
+        if not self.config.retrieval_url:
+            return _NO_INFO
+        return self._retrieve_from_endpoint(
+            self.config.retrieval_url, query, topk, self.config.wiki_retry_attempts
+        )
 
     def retrieve_from_google(self, query: str, topk: int, retry_attempt: int | None = None) -> str:
         retry_attempt = retry_attempt or self.config.google_retry_attempts
-        api_key = os.environ.get("SER_API_KEY")
+        api_key = os.environ.get("SERP_API_KEY")
         if not api_key:
-            return "No information available"
+            return _NO_INFO
 
         params = {"engine": "google", "q": query, "api_key": api_key, "num": topk}
         for attempt in range(retry_attempt):
@@ -690,12 +704,12 @@ class LLMGenerationManager:
                     if text_data:
                         search_texts.append(text_data)
                 if not search_texts:
-                    return "No information available"
+                    return _NO_INFO
                 return "\n".join([f"Doc {index + 1}: {doc}" for index, doc in enumerate(search_texts)])
             except Exception:  # pragma: no cover - network/runtime dependent
                 if attempt < retry_attempt - 1:
                     time.sleep(2)
-        return "No information available"
+        return _NO_INFO
 
     def _search(
         self,
@@ -732,6 +746,8 @@ class LLMGenerationManager:
                 gt_threshold,
                 llm_max_retries=self.config.llm_max_retries,
             )
+        elif search_mode == "local":
+            doc_texts = self.retrieve_from_local(query, self.config.topk)
         else:
             doc_texts = "No information available"
         return doc_texts, index

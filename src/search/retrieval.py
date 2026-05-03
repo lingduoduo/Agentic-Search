@@ -15,9 +15,9 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import numpy as np
 
 from .index_builder import (
+    _encode_batch,
     load_corpus,
     load_model,
-    pooling,
     prepare_texts,
     resolve_pooling_method,
     _require_faiss,
@@ -73,51 +73,21 @@ class DenseRetriever:
 
     def encode_queries(self, queries: list[str]) -> np.ndarray:
         torch = _require_torch()
-        clean_queries = [query.strip() for query in queries]
-        non_empty_queries = [query for query in clean_queries if query]
-        if not non_empty_queries:
+        non_empty = [q.strip() for q in queries if q.strip()]
+        if not non_empty:
             return np.empty((0, 0), dtype=np.float32)
 
-        non_empty_queries = prepare_texts(
-            non_empty_queries,
-            self.config.retrieval_method,
-            is_query=True,
-        )
-
-        inputs = self.tokenizer(
-            non_empty_queries,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-            max_length=self.config.max_length,
-        )
-        inputs = {key: value.to(self.device) for key, value in inputs.items()}
-
+        texts = prepare_texts(non_empty, self.config.retrieval_method, is_query=True)
         with torch.no_grad():
-            if "T5" in type(self.model).__name__:
-                decoder_input_ids = torch.zeros(
-                    (inputs["input_ids"].shape[0], 1),
-                    dtype=torch.long,
-                    device=inputs["input_ids"].device,
-                )
-                output = self.model(
-                    **inputs,
-                    decoder_input_ids=decoder_input_ids,
-                    return_dict=True,
-                )
-                embeddings = output.last_hidden_state[:, 0, :]
-            else:
-                output = self.model(**inputs, return_dict=True)
-                embeddings = pooling(
-                    output.pooler_output,
-                    output.last_hidden_state,
-                    inputs["attention_mask"],
-                    self.pooling_method,
-                )
-                if "dpr" not in self.config.retrieval_method.lower():
-                    embeddings = torch.nn.functional.normalize(embeddings, dim=-1)
-
-        return embeddings.detach().cpu().numpy().astype(np.float32)
+            return _encode_batch(
+                self.model,
+                self.tokenizer,
+                texts,
+                self.config.retrieval_method.lower(),
+                self.config.max_length,
+                self.pooling_method,
+                self.device,
+            )
 
     def retrieve(self, queries: list[str], topk: int | None = None) -> list[list[dict[str, Any]]]:
         clean_queries = [query.strip() for query in queries]

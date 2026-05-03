@@ -108,11 +108,3 @@ class TensorHelper:
 
         return padded_responses, padded_responses_str
 
-    # Backward-compatible alias for older call sites.
-    def _example_level_pad(
-        self,
-        responses: torch.Tensor,
-        responses_str: list[str],
-        active_mask: torch.Tensor,
-    ) -> tuple[torch.Tensor, list[str]]:
-        return self.example_level_pad(responses, responses_str, active_mask)

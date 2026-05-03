@@ -52,6 +52,7 @@ class AgentLoopOutput:
     num_turns: int
     metrics: dict[str, float] = field(default_factory=dict)
     request_id: str | None = None
+    context: Any | None = None  # AgentContext when produced by SearchAgentLoop
 
 
 @contextmanager

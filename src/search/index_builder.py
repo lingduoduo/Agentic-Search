@@ -12,7 +12,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 # Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -118,6 +118,50 @@ def pooling(
     if pooling_method == "pooler":
         return pooler_output
     raise NotImplementedError("Pooling method not implemented!")
+
+
+def _encode_batch(
+    encoder: Any,
+    tokenizer: Any,
+    texts: list[str],
+    retrieval_method: str,
+    max_length: int,
+    pooling_method: str,
+    device: str,
+) -> "np.ndarray":
+    """Tokenize *texts*, run the encoder, and return a float32 numpy array.
+
+    Shared by IndexBuilder.encode_all and DenseRetriever.encode_queries — the
+    two callers are responsible for wrapping in torch.no_grad() if needed.
+    """
+    torch = _require_torch()
+    inputs = tokenizer(
+        texts,
+        padding=True,
+        truncation=True,
+        return_tensors="pt",
+        max_length=max_length,
+    )
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+    if "T5" in type(encoder).__name__:
+        decoder_input_ids = torch.zeros(
+            (inputs["input_ids"].shape[0], 1),
+            dtype=torch.long,
+            device=inputs["input_ids"].device,
+        )
+        output = encoder(**inputs, decoder_input_ids=decoder_input_ids, return_dict=True)
+        embeddings = output.last_hidden_state[:, 0, :]
+    else:
+        output = encoder(**inputs, return_dict=True)
+        embeddings = pooling(
+            output.pooler_output,
+            output.last_hidden_state,
+            inputs["attention_mask"],
+            pooling_method,
+        )
+        if "dpr" not in retrieval_method:
+            embeddings = torch.nn.functional.normalize(embeddings, dim=-1)
+    return embeddings.detach().cpu().numpy().astype(np.float32)
 
 
 class _Corpus:
@@ -333,42 +377,22 @@ class IndexBuilder:
             encoder = torch.nn.DataParallel(encoder)
             batch_size *= self.gpu_num
 
-        all_embeddings = []
-        for start_idx in tqdm(range(0, len(self.corpus), batch_size), desc="Inference embeddings"):
-            batch_data = self.corpus[start_idx : start_idx + batch_size]["contents"]
-            batch_data = prepare_texts(batch_data, self.retrieval_method, is_query=False)
-
-            inputs = tokenizer(
-                batch_data,
-                padding=True,
-                truncation=True,
-                return_tensors="pt",
-                max_length=self.max_length,
+        all_embeddings = [
+            _encode_batch(
+                encoder,
+                tokenizer,
+                prepare_texts(
+                    self.corpus[start_idx : start_idx + batch_size]["contents"],
+                    self.retrieval_method,
+                    is_query=False,
+                ),
+                self.retrieval_method,
+                self.max_length,
+                self.pooling_method,
+                self.device,
             )
-            inputs = {key: value.to(self.device) for key, value in inputs.items()}
-
-            if "T5" in type(encoder).__name__:
-                decoder_input_ids = torch.zeros(
-                    (inputs["input_ids"].shape[0], 1),
-                    dtype=torch.long,
-                    device=inputs["input_ids"].device,
-                )
-                output = encoder(**inputs, decoder_input_ids=decoder_input_ids, return_dict=True)
-                embeddings = output.last_hidden_state[:, 0, :]
-            else:
-                output = encoder(**inputs, return_dict=True)
-                embeddings = pooling(
-                    output.pooler_output,
-                    output.last_hidden_state,
-                    inputs["attention_mask"],
-                    self.pooling_method,
-                )
-                if "dpr" not in self.retrieval_method:
-                    embeddings = torch.nn.functional.normalize(embeddings, dim=-1)
-
-            embeddings = cast(Any, embeddings).detach().cpu().numpy().astype(np.float32)
-            all_embeddings.append(embeddings)
-
+            for start_idx in tqdm(range(0, len(self.corpus), batch_size), desc="Inference embeddings")
+        ]
         return np.concatenate(all_embeddings, axis=0)
 
     def build_dense_index(self) -> None:
