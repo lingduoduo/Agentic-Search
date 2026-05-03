@@ -162,6 +162,65 @@ class IntentPipeline:
         from src.search.vocabulary import tokenize_text
         return self.predict(tokenize_text(text))
 
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save the trained pipeline to *path* (.pt file).
+
+        Stores the vocabulary mappings, model weights, and the hyperparameters
+        needed to reconstruct the architecture on load.
+        """
+        import torch
+        if not self.is_trained:
+            raise RuntimeError("Pipeline must be trained before saving.")
+        checkpoint = {
+            "version": 1,
+            "intent_labels": INTENT_LABELS,
+            "vocab": {
+                "token2idx": self._vocab.token2idx,
+                "token2cnt": self._vocab.token2cnt,
+                "idx2token": self._vocab.idx2token,
+            },
+            "model_state": self._model._net.state_dict(),
+            "config": {
+                "vocab_size": self._model._net.embedding.num_embeddings,
+                "embedding_dim": self._model._net.embedding.embedding_dim,
+                "hidden_dim": self._model._net.fc1.out_features,
+                "num_classes": len(INTENT_LABELS),
+            },
+        }
+        torch.save(checkpoint, path)
+
+    @classmethod
+    def load(cls, path: str) -> "IntentPipeline":
+        """Load a previously saved pipeline from *path*."""
+        import torch
+        from src.search.vocabulary import Vocabulary
+
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        if checkpoint.get("version") != 1:
+            raise ValueError(f"Unsupported checkpoint version: {checkpoint.get('version')}")
+
+        cfg = checkpoint["config"]
+        pipeline = cls(
+            vocab_size=cfg["vocab_size"],
+            embedding_dim=cfg["embedding_dim"],
+            hidden_dim=cfg["hidden_dim"],
+        )
+        # Restore vocabulary
+        vocab = Vocabulary()
+        vocab.token2idx = checkpoint["vocab"]["token2idx"]
+        vocab.token2cnt = checkpoint["vocab"]["token2cnt"]
+        vocab.idx2token = checkpoint["vocab"]["idx2token"]
+        pipeline._vocab = vocab
+        # Restore model weights
+        pipeline._model._net.load_state_dict(checkpoint["model_state"])
+        pipeline._model._net.eval()
+        pipeline.is_trained = True
+        return pipeline
+
     def resolve_search_settings(
         self,
         question: str,

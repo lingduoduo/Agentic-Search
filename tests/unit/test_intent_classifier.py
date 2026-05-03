@@ -1,5 +1,7 @@
 """Unit tests for src.agent_loop.intent_classifier and intent routing helpers."""
 
+import pytest
+
 from src.agent_loop.intent_classifier import (
     INTENT_LABELS,
     IntentPipeline,
@@ -99,3 +101,38 @@ def test_resolve_search_settings_recommendation_boosts_results():
 
 def test_intent_labels_snapshot():
     assert INTENT_LABELS == ["purchase", "navigate", "qa", "recommendation"]
+
+
+def test_intent_pipeline_save_and_load_round_trip(tmp_path):
+    """A trained pipeline saved and reloaded produces the same prediction."""
+    pytest.importorskip("torch")
+
+    data = [
+        (["buy", "phone"], "purchase"),
+        (["buy", "laptop"], "purchase"),
+        (["what", "is", "faiss"], "qa"),
+        (["how", "does", "search", "work"], "qa"),
+    ]
+    pipeline = IntentPipeline()
+    pipeline.train(data, epochs=3, min_freq=1)
+    original_pred = pipeline.predict(["buy", "laptop"])
+
+    save_path = str(tmp_path / "intent.pt")
+    pipeline.save(save_path)
+
+    loaded = IntentPipeline.load(save_path)
+    loaded_pred = loaded.predict(["buy", "laptop"])
+
+    assert loaded.is_trained is True
+    assert loaded_pred.intent == original_pred.intent
+    assert abs(loaded_pred.confidence - original_pred.confidence) < 1e-4
+
+
+def test_intent_pipeline_save_requires_training(tmp_path):
+    pipeline = IntentPipeline()
+    try:
+        pipeline.save(str(tmp_path / "intent.pt"))
+    except RuntimeError as exc:
+        assert "trained" in str(exc).lower()
+    else:
+        raise AssertionError("save() should require training first")

@@ -11,11 +11,14 @@ A FastAPI codebase for search-backed retrieval services and multi-turn agentic r
 
 ```text
 src/
-  run_agentic_search.py  # CLI + importable entry point for all agent loop flows
+  run_agentic_search.py       # CLI + importable entry point for all agent loop flows
+  train_intent_classifier.py  # Offline: train and save the intent classifier (.pt)
+  generate_intent_examples.py # Offline: generate intent training examples from corpus
   agent_loop/
     agent_loop.py          # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
     context.py             # SearchResult, SearchContext, AgentContext
     evaluation.py          # SearchResultEvaluator, SearchEvaluationConfig
+    intent_classifier.py    # IntentPipeline: train / save / load + resolve_search_settings
     search_agent_loop.py   # SearchAgentLoop (registered as "search_agent")
     search_client.py       # async aiohttp client for /retrieve and /fetch endpoints
     single_turn_agent_loop.py
@@ -44,10 +47,6 @@ tests/
 - Python 3.10+
 - API keys (only needed for the corresponding server): `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`, `SERP_API_KEY`
 - Java 11+ (arm64 on Apple Silicon) for BM25 indexing via pyserini
-
-Notes:
-- `uvicorn` is only needed for the FastAPI search servers under `src/search/*_server.py`. It is not involved in `python3 -m src.run_agentic_search --local`.
-- On macOS Apple Silicon, local Hugging Face causal-LM inference is safest on `cpu` in this repo. The `mps` backend can segfault for some model / torch / transformers combinations.
 
 ```bash
 pip install -r requirements.txt
@@ -84,8 +83,16 @@ python3 -m src.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
+  --local
+
+python3 -m src.run_agentic_search \
+  --mode single \
+  --question "What is FAISS?" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
   --local \
-  --device cpu
+  --device mps \
+  --max_tokens 16 \
+  --temperature 0
 
 # Tool-calling loop
 python3 -m src.run_agentic_search \
@@ -100,24 +107,46 @@ Key flags:
 |------|---------|---------|
 | `--mode` | `search` | `single` / `search` / `tool` |
 | `--local` | off | Load model in-process (no vLLM) |
-| `--device` | `auto` | Local device: `auto`, `cpu`, `cuda`, or `mps` |
-| `--allow_unsafe_mps` | off | Allow Apple `mps` local generation even though it may segfault |
+| `--device` | `auto` | `cpu` / `cuda` / `mps` (local mode only) |
+| `--dtype` | auto | Override model dtype (`bfloat16` / `float16` / `float32`); auto selects bfloat16 on Apple Silicon |
+| `--max_tokens` | `256` | Maximum new tokens to generate |
+| `--generation_timeout_seconds` | `60` | Wall-clock deadline for local generation; stops at the first token after the limit |
 | `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
 | `--require_search` | off | Force search even when model has internal knowledge |
 | `--max_search_limit` | 0 (= max_turns) | Cap on search rounds |
-| `--intent_examples` | none | Train a lightweight intent classifier and route search policy from it |
+| `--intent_model` | none | Load a pre-trained intent classifier (`.pt`); preferred for production |
+| `--intent_examples` | none | Train an intent classifier from a JSON examples file at startup (slow path, for development) |
 | `--intent_min_confidence` | `0.6` | Minimum confidence required before intent routing overrides defaults |
 | `--tool_format` | `hermes` | Tool-call parser for `tool` mode |
 
-For macOS Apple Silicon, prefer `--device cpu` unless you explicitly want to experiment with MPS. The CLI now blocks `--device mps` by default and requires `--allow_unsafe_mps` to opt in.
+When intent routing is active (via `--intent_model` or `--intent_examples`), high-confidence `purchase`, `navigate`, and `recommendation` intents automatically force evidence gathering and disable direct internal-knowledge answers; `qa` leaves the current settings unchanged.
 
-If `--intent_examples` is provided, the CLI trains a small intent classifier on startup and can automatically bias search behavior. High-confidence `purchase`, `navigate`, and `recommendation` intents force evidence gathering and disable direct internal-knowledge answers; `qa` leaves the current settings unchanged.
+### Intent classifier: training and inference
 
-A ready-to-use sample file can be generated from the local corpus and vocabulary with:
+Train once offline, then reuse across all agent runs:
 
 ```bash
-python3 -m src.generate_intent_examples --output data/intent_examples.sample.json
+# Step 1 — generate labelled examples from a local corpus (optional; edit the JSON directly if preferred)
+python3 -m src.generate_intent_examples \
+    --corpus data/corpus.jsonl \
+    --vocabulary data/vocabulary_corpus.json \
+    --output data/intent_examples.json
+
+# Step 2 — train and save
+python3 -m src.train_intent_classifier \
+    --examples data/intent_examples.json \
+    --output models/intent_classifier.pt
+
+# Step 3 — load at runtime (no retraining overhead)
+python3 -m src.run_agentic_search \
+    --intent_model models/intent_classifier.pt \
+    --mode search --question "Buy me a noise-cancelling headphone" \
+    --model Qwen/Qwen2.5-1.5B-Instruct \
+    --vllm_url http://localhost:8080 \
+    --search_url http://localhost:8000/retrieve
 ```
+
+`--intent_examples` trains the same classifier on startup and is convenient for quick iteration, but adds startup latency on every run. Use `--intent_model` once the classifier is stable.
 
 ### Programmatic use
 
@@ -465,6 +494,8 @@ Unit test coverage:
 | File | What is tested |
 |------|---------------|
 | `test_agent_loop.py` | `AgentLoopBase`; `SingleTurnAgentLoop`; `SearchAgentLoop` — plan, parallel search, multi-round refinement, subquestions, `<fetch>`, search+fetch in one turn, evaluation feedback, answer gating, adaptive search-decision, direct internal-knowledge answer, repeated-query dedup, search-round limit, cache and metrics; `SearchResultEvaluator`; `SearchClientConfig.get_fetch_url` |
+| `test_intent_classifier.py` | `Vocabulary` sequence training; `IntentPipeline` untrained guard; `resolve_search_settings` purchase / low-confidence / qa / recommendation policies; `INTENT_LABELS` snapshot; save/load round-trip; save-before-train guard |
+| `test_run_agentic_search.py` | `_build_prompt_ids_sync` chat-template fallback; `_validate_local_generation_config` encoder-only rejection; `_friendly_model_load_error` gated/missing/cache-miss messages; `_resolve_local_device`; `_has_accelerate`; `_parse_major_minor`; `_validate_local_runtime_device` MPS guard; `_validate_local_runtime_stack` old-stack rejection and CPU/new-stack allowance; `LocalServerManager._generate_sync` greedy-decode attention mask and wall-clock stopping criteria |
 | `test_vocabulary.py` | `Vocabulary`, tokenization, keyword extraction |
 | `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` |
 | `test_llm_agent_generation.py` | action parsing, search payload, inactive examples, unknown search mode |

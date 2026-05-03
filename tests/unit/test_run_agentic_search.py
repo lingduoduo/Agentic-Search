@@ -110,17 +110,29 @@ def test_validate_local_runtime_device_allows_mps_with_override():
     _validate_local_runtime_device("mps", allow_unsafe_mps=True)
 
 
-def test_validate_local_runtime_stack_rejects_old_macos_stack():
+def test_validate_local_runtime_stack_rejects_old_macos_mps_stack():
     with pytest.raises(ValueError, match="older runtime stack"):
         _validate_local_runtime_stack(
+            "mps",
             platform_system="Darwin",
             torch_version="2.2.2",
             transformers_version="4.39.3",
         )
 
 
-def test_validate_local_runtime_stack_allows_newer_macos_stack():
+def test_validate_local_runtime_stack_allows_cpu_on_old_macos_stack():
+    # CPU is safe even on old torch — only MPS can segfault.
     _validate_local_runtime_stack(
+        "cpu",
+        platform_system="Darwin",
+        torch_version="2.2.2",
+        transformers_version="4.39.3",
+    )
+
+
+def test_validate_local_runtime_stack_allows_newer_macos_mps_stack():
+    _validate_local_runtime_stack(
+        "mps",
         platform_system="Darwin",
         torch_version="2.5.1",
         transformers_version="4.46.0",
@@ -165,5 +177,6 @@ def test_local_generate_sync_adds_attention_mask_for_greedy_decode():
     assert generation_config.top_p == 1.0
     assert generation_config.top_k == 50
     assert generation_config.pad_token_id == 99
-    assert kwargs["max_time"] == 5.0
+    # max_time replaced by a wall-clock StoppingCriteria; verify it is present
+    assert "stopping_criteria" in kwargs
     assert kwargs["attention_mask"].tolist() == [[1, 1]]

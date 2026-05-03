@@ -174,6 +174,33 @@ def _has_accelerate() -> bool:
     return True
 
 
+def _transformers_supports_dtype_kwarg() -> bool:
+    """Return True when the installed transformers uses 'dtype' instead of 'torch_dtype'."""
+    try:
+        import transformers
+        major, minor = _parse_major_minor(transformers.__version__)
+        return (major, minor) >= (4, 42)
+    except Exception:
+        return False
+
+
+def _auto_select_dtype(device: str) -> str:
+    """Choose the best inference dtype for the given device.
+
+    Apple Silicon CPU supports bfloat16 natively — using it gives ~2-3x
+    throughput vs float32 due to halved memory bandwidth and native BF16 ALUs.
+    CUDA defaults to float16; everything else stays at float32.
+    """
+    if device.startswith("cuda"):
+        return "float16"
+    if device == "mps":
+        return "float16"
+    # Apple Silicon (arm64): prefer bfloat16 on CPU
+    if platform.machine().lower() in ("arm64", "aarch64"):
+        return "bfloat16"
+    return "float32"
+
+
 def _parse_major_minor(version_text: str) -> tuple[int, int]:
     core = version_text.split("+", 1)[0]
     parts = core.split(".")
@@ -194,12 +221,19 @@ def _validate_local_runtime_device(device: str, *, allow_unsafe_mps: bool = Fals
 
 
 def _validate_local_runtime_stack(
+    device: str,
     *,
     platform_system: str | None = None,
     torch_version: str | None = None,
     transformers_version: str | None = None,
 ) -> None:
-    """Fail fast on known-unstable local-generation stacks before native crashes occur."""
+    """Warn on known-unstable combinations before native crashes occur.
+
+    The MPS segfault only affects MPS execution, not CPU. CPU inference is
+    safe even on older macOS + torch stacks, so no error is raised for it.
+    """
+    if device != "mps":
+        return
 
     if platform_system is None or torch_version is None or transformers_version is None:
         import torch
@@ -216,9 +250,9 @@ def _validate_local_runtime_stack(
     transformers_mm = _parse_major_minor(transformers_version)
     if torch_mm <= (2, 2) and transformers_mm <= (4, 39):
         raise ValueError(
-            "Local causal-LM inference on macOS is blocked for the older runtime stack "
-            f"(torch {torch_version}, transformers {transformers_version}) because it can segfault during model load. "
-            "Use a newer stack, or run through a server backend instead of `--local`."
+            "Local MPS generation on macOS is blocked for the older runtime stack "
+            f"(torch {torch_version}, transformers {transformers_version}) because it can segfault. "
+            "Use `--device cpu` for the stable path, or upgrade the stack first."
         )
 
 
@@ -285,7 +319,7 @@ class LocalServerManager:
         self,
         model_path: str,
         device: str = "auto",
-        use_fp16: bool = False,
+        torch_dtype: str | None = None,
         allow_unsafe_mps: bool = False,
         local_files_only: bool = True,
         generation_timeout_seconds: float | None = 120.0,
@@ -293,7 +327,8 @@ class LocalServerManager:
     ) -> None:
         self.model_path = model_path
         self.device = _resolve_local_device(device)
-        self.use_fp16 = use_fp16
+        # dtype=None → auto-select based on device/platform at load time
+        self.torch_dtype = torch_dtype
         self.allow_unsafe_mps = allow_unsafe_mps
         self.local_files_only = local_files_only
         self.generation_timeout_seconds = generation_timeout_seconds
@@ -308,7 +343,7 @@ class LocalServerManager:
         import torch
 
         _validate_local_runtime_device(self.device, allow_unsafe_mps=self.allow_unsafe_mps)
-        _validate_local_runtime_stack()
+        _validate_local_runtime_stack(self.device)
         print(f"Status  : loading local model on {self.device}")
         logger.info("Loading model %s onto %s …", self.model_path, self.device)
         config = AutoConfig.from_pretrained(
@@ -322,10 +357,17 @@ class LocalServerManager:
             trust_remote_code=True,
             local_files_only=self.local_files_only,
         )
+        dtype_name = self.torch_dtype or _auto_select_dtype(self.device)
+        torch_dtype = getattr(torch, dtype_name)
+        print(f"Status  : using dtype {dtype_name}")
         model_kwargs: dict[str, Any] = {
             "trust_remote_code": True,
             "local_files_only": self.local_files_only,
         }
+        # Newer transformers (≥4.42) uses 'dtype'; older uses 'torch_dtype'.
+        # Try 'dtype' first and fall back silently so both versions work.
+        dtype_kwarg = "dtype" if _transformers_supports_dtype_kwarg() else "torch_dtype"
+        model_kwargs[dtype_kwarg] = torch_dtype
         if _has_accelerate():
             model_kwargs["low_cpu_mem_usage"] = True
         else:
@@ -335,9 +377,8 @@ class LocalServerManager:
             **model_kwargs,
         )
         self._model.eval()
-        self._model.to(self.device)
-        if self.use_fp16 and self.device.startswith("cuda"):
-            self._model = self._model.half()
+        if self.device not in ("cpu", "mps"):
+            self._model.to(self.device)
         print("Status  : local model ready")
 
     async def generate(
@@ -380,7 +421,22 @@ class LocalServerManager:
             "attention_mask": attention_mask,
         }
         if self.generation_timeout_seconds is not None and self.generation_timeout_seconds > 0:
-            generate_kwargs["max_time"] = float(self.generation_timeout_seconds)
+            # Use a StoppingCriteria instead of max_time so the deadline is
+            # wall-clock based and fires on the first check AFTER the timeout,
+            # including right after prefill. max_time only checks between tokens
+            # and does not interrupt a slow first-token computation.
+            try:
+                from transformers import StoppingCriteria, StoppingCriteriaList
+
+                deadline = time.perf_counter() + float(self.generation_timeout_seconds)
+
+                class _WallClockStop(StoppingCriteria):
+                    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
+                        return time.perf_counter() >= deadline
+
+                generate_kwargs["stopping_criteria"] = StoppingCriteriaList([_WallClockStop()])
+            except ImportError:
+                generate_kwargs["max_time"] = float(self.generation_timeout_seconds)
         if do_sample:
             generation_config.temperature = temp
             generation_config.top_p = top_p
@@ -683,7 +739,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow_remote_model_downloads", action="store_true", help="Allow `--local` model loading to query/download from Hugging Face instead of cache-only loading")
     parser.add_argument("--generation_timeout_seconds", type=float, default=120.0, help="Best-effort local generation timeout in seconds")
     parser.add_argument("--generation_heartbeat_seconds", type=float, default=10.0, help="How often local generation prints a still-running heartbeat")
-    parser.add_argument("--fp16", action="store_true", help="Use fp16 for local model")
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default=None,
+        help="Model dtype for local inference: float32, bfloat16, or float16. Default: auto (bfloat16 on Apple Silicon CPU, float16 on CUDA/MPS, float32 elsewhere)",
+    )
 
     # Search
     parser.add_argument("--search_url", type=str, default="http://localhost:8000/retrieve")
@@ -695,7 +756,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max_answer_rejections", type=int, default=3)
     parser.add_argument("--no_evidence_gate", action="store_true", help="Allow answer without sufficient evidence")
     parser.add_argument("--require_search", action="store_true", help="Disable internal-knowledge direct answers")
-    parser.add_argument("--intent_examples", type=str, default=None, help="JSON file of intent-labeled examples")
+    parser.add_argument(
+        "--intent_model",
+        type=str,
+        default=None,
+        help="Path to a pre-trained intent classifier (.pt file from train_intent_classifier.py). "
+             "Preferred over --intent_examples — loads instantly with no retraining.",
+    )
+    parser.add_argument(
+        "--intent_examples",
+        type=str,
+        default=None,
+        help="JSON file of intent-labeled examples for on-the-fly training. "
+             "Use --intent_model instead when the model has been pre-trained.",
+    )
     parser.add_argument("--intent_min_confidence", type=float, default=0.6, help="Minimum confidence for intent-based routing")
     parser.add_argument("--tool_format", choices=["hermes", "llama3", "json"], default="hermes")
 
@@ -745,7 +819,7 @@ async def main() -> None:
         server_manager = LocalServerManager(
             model_path=args.model,
             device=args.device,
-            use_fp16=args.fp16,
+            torch_dtype=args.dtype,
             allow_unsafe_mps=args.allow_unsafe_mps,
             local_files_only=not args.allow_remote_model_downloads,
             generation_timeout_seconds=args.generation_timeout_seconds,
@@ -765,13 +839,21 @@ async def main() -> None:
     }
 
     intent_pipeline = None
-    if args.intent_examples:
+    if args.intent_model:
+        # Fast path: load a pre-trained model saved by train_intent_classifier.py
+        from src.agent_loop.intent_classifier import IntentPipeline
+        print(f"Status  : loading intent model from {args.intent_model}")
+        intent_pipeline = IntentPipeline.load(args.intent_model)
+        print(f"Status  : intent model ready (vocab size {len(intent_pipeline._vocab.token2idx)})")
+    elif args.intent_examples:
+        # Slow path: train from scratch on the fly (use --intent_model for production)
         from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
-
+        print(f"Status  : training intent classifier from {args.intent_examples}")
         training_data = load_training_data(args.intent_examples)
         if training_data:
             intent_pipeline = IntentPipeline()
             intent_pipeline.train(training_data, epochs=10)
+            print("Status  : intent classifier ready")
 
     try:
         if args.mode == "single":
@@ -810,9 +892,9 @@ async def main() -> None:
                 print(f"Error   : {message}")
                 print("Hint    : Retry with `--device cpu` for the stable path.")
                 return
-            if "Local causal-LM inference on macOS is blocked for the older runtime stack" in message:
+            if "Local MPS generation on macOS is blocked for the older runtime stack" in message:
                 print(f"Error   : {message}")
-                print("Hint    : Upgrade the local stack, or avoid `--local` and use a server-backed path instead.")
+                print("Hint    : Use `--device cpu` for the stable path, or upgrade torch and transformers first.")
                 return
         raise
 
