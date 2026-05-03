@@ -67,6 +67,17 @@ JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 on
 
 `src/run_agentic_search.py` is the unified entry point. It works as both a CLI script and an importable module.
 
+**Full pipeline (first-time setup)**
+
+```
+1. Build an index        →  src.search.index_builder        (one-time, offline)
+2. Start retrieval server→  src.search.retrieval_server     (or retrieval_rerank_server)
+3. Train intent model    →  src.train_intent_classifier     (one-time, offline, optional)
+4. Run the agent         →  src.run_agentic_search          (every query)
+```
+
+For quick experiments without a corpus, skip steps 1–3 and use `--mode single --local`.
+
 ### CLI
 
 ```bash
@@ -78,21 +89,29 @@ python3 -m src.run_agentic_search \
     --vllm_url http://localhost:8080 \
     --search_url http://localhost:8000/retrieve
 
-# Single-turn (no search), local model
+# Single-turn (no search), local model on CPU — complete answer
 python3 -m src.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
-  --local
+  --local \
+  --device cpu \
+  --max_tokens 256 \
+  --temperature 0 \
+  --generation_timeout_seconds 120 \
+  --generation_heartbeat_seconds 5
 
+# Same on MPS (Apple Silicon GPU)
 python3 -m src.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --local \
   --device mps \
-  --max_tokens 16 \
-  --temperature 0
+  --max_tokens 256 \
+  --temperature 0 \
+  --generation_timeout_seconds 120 \
+  --generation_heartbeat_seconds 5
 
 # Tool-calling loop
 python3 -m src.run_agentic_search \
@@ -109,7 +128,7 @@ Key flags:
 | `--local` | off | Load model in-process (no vLLM) |
 | `--device` | `auto` | `cpu` / `cuda` / `mps` (local mode only) |
 | `--dtype` | auto | Override model dtype (`bfloat16` / `float16` / `float32`); auto selects bfloat16 on Apple Silicon |
-| `--max_tokens` | `256` | Maximum new tokens to generate |
+| `--max_tokens` | `256` | Maximum new tokens to generate; set too low (e.g. `4`) and answers will be truncated mid-sentence |
 | `--generation_timeout_seconds` | `60` | Wall-clock deadline for local generation; stops at the first token after the limit |
 | `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
 | `--require_search` | off | Force search even when model has internal knowledge |
@@ -147,6 +166,50 @@ python3 -m src.run_agentic_search \
 ```
 
 `--intent_examples` trains the same classifier on startup and is convenient for quick iteration, but adds startup latency on every run. Use `--intent_model` once the classifier is stable.
+
+### Local model inference
+
+Use `--local` to load a HuggingFace model in-process instead of connecting to a vLLM server. Useful for offline development or when a server is not available.
+
+```bash
+python3 -m src.run_agentic_search \
+    --mode single \
+    --question "What is FAISS?" \
+    --model Qwen/Qwen2.5-1.5B-Instruct \
+    --local \
+    --device cpu \
+    --max_tokens 256 \
+    --temperature 0 \
+    --generation_timeout_seconds 120 \
+    --generation_heartbeat_seconds 5
+```
+
+**Device and dtype selection**
+
+| `--device` | `--dtype` auto-selected | Notes |
+|-----------|------------------------|-------|
+| `cpu` on Apple Silicon (arm64) | `bfloat16` | 2-3x faster than float32; requires PyTorch ≥2.0 |
+| `cuda` | `float16` | Standard GPU half-precision |
+| `mps` | `float16` | Requires PyTorch ≥2.5 + transformers ≥4.46 on macOS |
+| `cpu` on x86 | `float32` | Safe default; slowest |
+
+Override with `--dtype bfloat16` / `float16` / `float32`. Do not use `mps` with old toolchain versions — the runtime validates the stack and raises an error before loading the model.
+
+**Generation timeout**
+
+`--generation_timeout_seconds` (default `60`) sets a wall-clock deadline enforced by a `StoppingCriteria` that fires at the first token check after the deadline. Unlike `max_time=`, it interrupts generation even during long prefill phases. `--generation_heartbeat_seconds` controls how often the criteria is polled.
+
+Set the timeout to comfortably cover prefill + generation: on Apple Silicon CPU with bfloat16, `--max_tokens 256` typically completes in under 60s, but `120` gives safe headroom. A timeout that fires mid-generation will truncate the answer just as `--max_tokens` does.
+
+**Gated or private models**
+
+Models gated on Hugging Face require authentication:
+
+```bash
+huggingface-cli login
+```
+
+Pass `--allow_remote_model_downloads` to permit downloading weights at runtime (disabled by default).
 
 ### Programmatic use
 
