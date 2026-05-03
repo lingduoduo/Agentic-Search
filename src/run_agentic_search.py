@@ -36,7 +36,7 @@ python3 -m src.run_agentic_search \\
 python3 -m src.run_agentic_search \\
     --mode single \\
     --question "What is FAISS?" \\
-    --model BAAI/bge-base-en-v1.5 \\
+    --model meta-llama/Llama-3.1-8B-Instruct \\
     --local
 """
 
@@ -49,6 +49,70 @@ import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_GENERATIVE_MODEL_TYPES = {
+    "aria_text",
+    "bamba",
+    "bart",
+    "bert_generation",
+    "big_bird_pegasus",
+    "blenderbot",
+    "blenderbot_small",
+    "bloom",
+    "code_llama",
+    "cohere",
+    "cohere2",
+    "falcon",
+    "gemma",
+    "gemma2",
+    "gpt2",
+    "gpt_bigcode",
+    "gpt_neo",
+    "gpt_neox",
+    "gptj",
+    "granite",
+    "granitemoe",
+    "jamba",
+    "jetmoe",
+    "llama",
+    "mamba",
+    "mistral",
+    "mixtral",
+    "mllama",
+    "mpt",
+    "olmo",
+    "olmo2",
+    "opt",
+    "persimmon",
+    "phi",
+    "phi3",
+    "qwen2",
+    "qwen2_moe",
+    "recurrent_gemma",
+    "smolvlm",
+    "stablelm",
+    "starcoder2",
+    "xglm",
+}
+
+
+def _validate_local_generation_config(model_path: str, config: Any) -> None:
+    """Raise a clear error when a local model cannot be used for generation."""
+
+    model_type = str(getattr(config, "model_type", "") or "").lower()
+    is_encoder_decoder = bool(getattr(config, "is_encoder_decoder", False))
+    if model_type in _GENERATIVE_MODEL_TYPES or is_encoder_decoder:
+        return
+
+    architectures = getattr(config, "architectures", None) or []
+    architecture_text = ", ".join(architectures) if architectures else "unknown architecture"
+    raise ValueError(
+        "Local generation mode requires a generative language model. "
+        f"'{model_path}' looks like a non-generative encoder model "
+        f"(model_type='{model_type}', architectures={architecture_text}). "
+        "Use a chat or instruct causal LM such as Llama, Qwen, Mistral, or Gemma for "
+        "`--mode single`, `--mode search`, or `--mode tool`."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +189,12 @@ class LocalServerManager:
     def _ensure_loaded(self) -> None:
         if self._model is not None:
             return
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
         import torch
 
         logger.info("Loading model %s onto %s …", self.model_path, self.device)
+        config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
+        _validate_local_generation_config(self.model_path, config)
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
         )
@@ -512,31 +578,38 @@ async def main() -> None:
     print(f"Model   : {args.model}")
     print(f"Question: {args.question}\n")
 
-    if args.mode == "single":
-        await run_single_turn(
-            tokenizer, server_manager, args.question, sampling_params, args.max_tokens
-        )
-    elif args.mode == "search":
-        await run_search_agent(
-            tokenizer, server_manager, args.question, sampling_params,
-            search_url=args.search_url,
-            topk=args.topk,
-            max_turns=args.max_turns,
-            max_search_limit=args.max_search_limit,
-            require_evidence=not args.no_evidence_gate,
-            max_answer_rejections=args.max_answer_rejections,
-            allow_internal_knowledge=not args.require_search,
-            intent_pipeline=intent_pipeline,
-            intent_min_confidence=args.intent_min_confidence,
-        )
-    elif args.mode == "tool":
-        await run_tool_agent(
-            tokenizer, server_manager, args.question, sampling_params,
-            search_url=args.search_url,
-            topk=args.topk,
-            max_turns=args.max_turns,
-            tool_format=args.tool_format,
-        )
+    try:
+        if args.mode == "single":
+            await run_single_turn(
+                tokenizer, server_manager, args.question, sampling_params, args.max_tokens
+            )
+        elif args.mode == "search":
+            await run_search_agent(
+                tokenizer, server_manager, args.question, sampling_params,
+                search_url=args.search_url,
+                topk=args.topk,
+                max_turns=args.max_turns,
+                max_search_limit=args.max_search_limit,
+                require_evidence=not args.no_evidence_gate,
+                max_answer_rejections=args.max_answer_rejections,
+                allow_internal_knowledge=not args.require_search,
+                intent_pipeline=intent_pipeline,
+                intent_min_confidence=args.intent_min_confidence,
+            )
+        elif args.mode == "tool":
+            await run_tool_agent(
+                tokenizer, server_manager, args.question, sampling_params,
+                search_url=args.search_url,
+                topk=args.topk,
+                max_turns=args.max_turns,
+                tool_format=args.tool_format,
+            )
+    except ValueError as exc:
+        if args.local and "Local generation mode requires a generative language model" in str(exc):
+            print(f"Error   : {exc}")
+            print("Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only.")
+            return
+        raise
 
 
 if __name__ == "__main__":

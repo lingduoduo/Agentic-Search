@@ -95,7 +95,8 @@ class AgentLoopBase:
         return await event_loop.run_in_executor(None, lambda: self._build_prompt_ids_sync(messages))
 
     def _build_prompt_ids_sync(self, messages: list[dict[str, Any]]) -> list[int]:
-        if hasattr(self.tokenizer, "apply_chat_template"):
+        chat_template = getattr(self.tokenizer, "chat_template", "__missing__")
+        if hasattr(self.tokenizer, "apply_chat_template") and chat_template is not None:
             prompt_ids = self.tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
