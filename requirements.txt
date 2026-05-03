@@ -15,4 +15,6 @@ python-dotenv
 pyserini
 google-api-python-client
 chardet
-faiss-cpu
+# faiss-cpu: install via conda to avoid OpenMP conflict with PyTorch on macOS:
+#   conda install -c conda-forge faiss-cpu
+# pip install faiss-cpu works on Linux but segfaults on macOS Apple Silicon.

@@ -70,7 +70,6 @@ class SentenceTransformerReranker:
         self.model = model
         self.batch_size = batch_size
         self.device = device
-        self.model.to(device)
 
     def _predict(self, pairs: list[tuple[str, str]]) -> list[float]:
         torch = _require_torch()
@@ -124,7 +123,7 @@ class SentenceTransformerReranker:
         device: str = "cpu",
     ) -> "SentenceTransformerReranker":
         cross_encoder = _require_cross_encoder()
-        model = cross_encoder(model_name_or_path)
+        model = cross_encoder(model_name_or_path, device=device)
         return cls(model=model, batch_size=batch_size, device=device)
 
 

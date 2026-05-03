@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from typing import Any
+
+# Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS
+# when both libraries bundle their own libomp.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import numpy as np
 

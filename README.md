@@ -221,7 +221,7 @@ curl -X POST http://localhost:8000/retrieve \
 The rerank server listens on port **6980** by default.
 
 ```bash
-python3 -m src.search.rerank \
+python3 -m src.search.rerank_server \
   --rerank_model_name_or_path cross-encoder/ms-marco-MiniLM-L12-v2 \
   --rerank_topk 3
 ```

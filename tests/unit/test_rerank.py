@@ -31,7 +31,6 @@ def _make_mock_torch() -> MagicMock:
 def _make_reranker(scores: list[float]) -> SentenceTransformerReranker:
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array(scores, dtype=np.float32)
-    mock_model.to = MagicMock()
     return SentenceTransformerReranker(model=mock_model, batch_size=32, device="cpu")
 
 
@@ -189,7 +188,6 @@ class TestSentenceTransformerRerankerRerank:
     def test_model_predict_called_once(self):
         mock_model = MagicMock()
         mock_model.predict.return_value = np.array([0.5, 0.5])
-        mock_model.to = MagicMock()
         reranker = SentenceTransformerReranker(model=mock_model, batch_size=8, device="cpu")
         reranker.rerank(["q"], [[_doc("a"), _doc("b")]])
         mock_model.predict.assert_called_once()

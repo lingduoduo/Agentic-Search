@@ -14,6 +14,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, cast
 
+# Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import numpy as np
 
 from .vocabulary import (
@@ -42,11 +45,6 @@ def _require_torch():
 
     return torch
 
-
-def _require_datasets():
-    import datasets
-
-    return datasets
 
 
 def _require_faiss():
@@ -122,9 +120,29 @@ def pooling(
     raise NotImplementedError("Pooling method not implemented!")
 
 
-def load_corpus(corpus_path: str):
-    datasets = _require_datasets()
-    return datasets.load_dataset("json", data_files=corpus_path, split="train", num_proc=4)
+class _Corpus:
+    """Minimal JSONL corpus reader — avoids HuggingFace Hub network calls."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._rows[key]
+        if isinstance(key, slice):
+            return _Corpus(self._rows[key])
+        if isinstance(key, str):
+            return [row.get(key) for row in self._rows]
+        raise TypeError(f"Unsupported corpus key type: {type(key)}")
+
+
+def load_corpus(corpus_path: str) -> _Corpus:
+    with open(corpus_path, encoding="utf-8") as fh:
+        rows = [json.loads(line) for line in fh if line.strip()]
+    return _Corpus(rows)
 
 
 @dataclass(frozen=True)
