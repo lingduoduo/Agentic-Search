@@ -627,6 +627,116 @@ def test_search_agent_loop_enforces_search_limit():
     assert output.metrics["search_limit_hits"] == 1.0
 
 
+def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search_decision>answer</search_decision><answer>Paris</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=3,
+            allow_internal_knowledge_answer=True,
+        ),
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "What is the capital of France?"}], {"temperature": 0.0}))
+
+    assert output.num_turns == 1
+    assert output.context.num_rounds == 0
+    assert output.metrics["direct_answers"] == 1.0
+
+
+def test_search_agent_loop_requests_search_after_search_decision():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search_decision>search</search_decision>"),
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body')],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    assert "<decision_feedback>" in second_prompt
+    assert "Issue a <search> or <searches> action next" in second_prompt
+
+
+def test_search_agent_loop_blocks_direct_answer_when_internal_knowledge_disabled():
+    """allow_internal_knowledge_answer=False prevents bypassing the search gate."""
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search_decision>answer</search_decision><answer>Paris</answer>"),
+        tokenizer.encode("<searches>\nalpha\n</searches>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            allow_internal_knowledge_answer=False,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {("alpha",): [[SearchResult(contents='"Doc A"\nAlpha body')]]}
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "q"}], {"temperature": 0.0}))
+
+    assert output.metrics["direct_answers"] == 0.0
+    assert output.context.num_rounds == 1
+
+
+def test_search_agent_loop_search_decision_with_searches_fires_search_not_decision_feedback():
+    """<search_decision>search</search_decision> alongside <searches> should execute
+    the search without injecting a decision_feedback observation."""
+    tokenizer = DummyTokenizerWithEncode()
+    combined = "<search_decision>search</search_decision><searches>\nalpha\n</searches>"
+    responses = [
+        tokenizer.encode(combined),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {("alpha",): [[SearchResult(contents='"Doc A"\nAlpha body')]]}
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0}))
+
+    second_prompt = "".join(chr(t) for t in loop.server_manager.calls[1]["prompt_ids"])
+    assert "<decision_feedback>" not in second_prompt
+    assert "<information>" in second_prompt
+    assert output.context.num_rounds == 1
+    assert output.num_turns == 2
+
+
 def test_search_client_config_derives_fetch_url_from_retrieve_url():
     from src.agent_loop.search_client import SearchClientConfig
 

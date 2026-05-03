@@ -38,6 +38,7 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
         "You are a reasoning assistant with the ability to perform web searches and fetch webpage content.\n\n"
         "Tools:\n"
         "- To write a brief research plan: use <plan>...</plan>.\n"
+        "- Before searching, decide whether internal knowledge is sufficient using <search_decision>answer</search_decision> or <search_decision>search</search_decision>.\n"
         "- To split a complex question into focused research tracks: use <subquestions>...</subquestions>.\n"
         "- To perform a search: use <search>single query</search> or <searches>one query per line</searches>.\n"
         "  For multi-track research, prefix a query with a task id like [T1] query text.\n"
@@ -51,12 +52,13 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
         f"You may fetch up to {max_url_fetch} URLs in one fetch request.\n\n"
         "Workflow:\n"
         "1. Plan.\n"
-        "2. If the question has multiple parts, declare subquestions.\n"
-        "3. Search, preferably with parallel queries when useful.\n"
-        "4. Track evidence for each subquestion.\n"
-        "5. If the evidence is weak, search again with refined keywords.\n"
-        "6. If snippets are not enough, fetch the most promising URLs.\n"
-        "7. Answer only after the evidence is sufficient for the overall question and each active subquestion.\n\n"
+        "2. Decide whether you can answer from internal knowledge or need external evidence.\n"
+        "3. If the question has multiple parts, declare subquestions.\n"
+        "4. Search, preferably with parallel queries when useful.\n"
+        "5. Track evidence for each subquestion.\n"
+        "6. If the evidence is weak, search again with refined keywords.\n"
+        "7. If snippets are not enough, fetch the most promising URLs.\n"
+        "8. Answer directly without search only when internal knowledge is sufficient; otherwise answer after evidence is sufficient for the overall question and each active subquestion.\n\n"
         "Cite the evidence labels from the information blocks when you answer."
     )
 
@@ -74,6 +76,7 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     search_timeout_seconds: int = 10
     search_max_retries: int = 3
     plan_tag: str = "plan"
+    decision_tag: str = "search_decision"
     subquestions_tag: str = "subquestions"
     search_tag: str = "search"
     searches_tag: str = "searches"
@@ -90,6 +93,7 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     evaluation_obs_template: str = "\n\n<search_evaluation>\n{content}\n</search_evaluation>\n\n"
     full_page_obs_template: str = "\n\n<full_page>\n{content}\n</full_page>\n\n"
     subquestions_obs_template: str = "\n\n<subquestions_feedback>\n{content}\n</subquestions_feedback>\n\n"
+    decision_obs_template: str = "\n\n<decision_feedback>\n{content}\n</decision_feedback>\n\n"
     answer_rejection_template: str = (
         "\n\n<answer_feedback>\n"
         "{content}\n"
@@ -114,6 +118,7 @@ class SearchAgentLoopConfig(AgentLoopConfig):
         "Refer to the earlier results instead of searching them again.\n"
         "</search_feedback>\n\n"
     )
+    allow_internal_knowledge_answer: bool = True
 
 
 @register("search_agent")
@@ -170,6 +175,7 @@ class SearchAgentLoop(AgentLoopBase):
 
         action_tags = [
             cfg.plan_tag,
+            cfg.decision_tag,
             cfg.subquestions_tag,
             cfg.search_tag,
             cfg.searches_tag,
@@ -247,6 +253,14 @@ class SearchAgentLoop(AgentLoopBase):
             if desc:
                 parsed[task_id] = desc
         return parsed
+
+    def _parse_search_decision(self, content: str) -> str | None:
+        normalized = content.strip().lower()
+        if normalized in {"answer", "internal", "internal_knowledge", "direct_answer"}:
+            return "answer"
+        if normalized in {"search", "retrieve", "external", "need_search"}:
+            return "search"
+        return None
 
     def _collect_requested_queries_and_urls(
         self,
@@ -399,6 +413,17 @@ class SearchAgentLoop(AgentLoopBase):
             base += " The following subquestions still need stronger evidence: " + "; ".join(missing)
         return base
 
+    def _build_decision_feedback(self, decision: str | None) -> str:
+        if decision == "answer":
+            return "Internal knowledge may be sufficient. Provide the answer directly if you are confident."
+        if decision == "search":
+            return "External knowledge is needed. Issue a <search> or <searches> action next."
+        return (
+            "Decide whether internal knowledge is sufficient. "
+            "Use <search_decision>answer</search_decision> to answer directly or "
+            "<search_decision>search</search_decision> before retrieving evidence."
+        )
+
     def _evaluate_tasks(
         self,
         search_contexts: list[SearchContext],
@@ -441,6 +466,8 @@ class SearchAgentLoop(AgentLoopBase):
             "repeated_search_queries": 0.0,
             "search_cache_hits": 0.0,
             "page_cache_hits": 0.0,
+            "decision_prompts": 0.0,
+            "direct_answers": 0.0,
         }
         request_id = uuid4().hex
         agent_ctx = AgentContext()
@@ -462,6 +489,7 @@ class SearchAgentLoop(AgentLoopBase):
         latest_evaluation: SearchRoundEvaluation | None = None
         active_tasks: dict[str, str] = {}
         task_statuses: dict[str, bool] = {}
+        latest_search_decision: str | None = None
         consecutive_rejections = 0
         rounds_used = 0
         executed_queries: set[str] = set()
@@ -469,7 +497,7 @@ class SearchAgentLoop(AgentLoopBase):
         page_cache: dict[str, SearchResult] = {}
 
         cfg = self.search_config
-        plan_tag = cfg.plan_tag
+        decision_tag = cfg.decision_tag
         subquestions_tag = cfg.subquestions_tag
         search_tags = {cfg.search_tag, cfg.searches_tag}
         fetch_tag = cfg.fetch_tag
@@ -496,7 +524,7 @@ class SearchAgentLoop(AgentLoopBase):
 
             working_messages.append({"role": "assistant", "content": response_text})
 
-            # No recognised tag: re-prompt if evidence still insufficient, else stop.
+            # No recognised tag: re-prompt depending on where we are in the workflow.
             if not actions:
                 needs_more = (
                     cfg.require_sufficient_evidence_before_answer
@@ -506,14 +534,18 @@ class SearchAgentLoop(AgentLoopBase):
                 if needs_more:
                     consecutive_rejections += 1
                     metrics["answer_rejections"] += 1
+                    if rounds_used == 0:
+                        # No search has happened yet — ask the model to decide whether it needs one.
+                        metrics["decision_prompts"] += 1
+                        feedback = self._build_decision_feedback(None)
+                    else:
+                        feedback = (
+                            "No action detected. Evidence is still insufficient. "
+                            "Issue a <searches> block to gather more evidence before answering."
+                        )
                     working_messages.append({
                         "role": "user",
-                        "content": cfg.answer_rejection_template.format(
-                            content=(
-                                "No action detected. Evidence is still insufficient. "
-                                "Issue a <searches> block to gather more evidence before answering."
-                            )
-                        ),
+                        "content": cfg.answer_rejection_template.format(content=feedback),
                     })
                     continue
                 break
@@ -521,6 +553,8 @@ class SearchAgentLoop(AgentLoopBase):
             # Process <subquestions> declarations.
             declared_subquestions: dict[str, str] = {}
             for tag, content in actions:
+                if tag == decision_tag:
+                    latest_search_decision = self._parse_search_decision(content)
                 if tag == subquestions_tag:
                     declared_subquestions.update(
                         self._parse_subquestions(content, active_tasks | declared_subquestions)
@@ -542,6 +576,14 @@ class SearchAgentLoop(AgentLoopBase):
 
             # Answer gating: block early answers if evidence is insufficient.
             if any(tag == answer_tag for tag, _ in actions) and not all_queries and not fetch_urls:
+                if (
+                    cfg.allow_internal_knowledge_answer
+                    and rounds_used == 0
+                    and latest_search_decision == "answer"
+                    and not active_tasks
+                ):
+                    metrics["direct_answers"] += 1.0
+                    break
                 if (
                     not cfg.require_sufficient_evidence_before_answer
                     or self._has_sufficient_evidence(latest_evaluation, task_statuses, active_tasks)
@@ -581,6 +623,13 @@ class SearchAgentLoop(AgentLoopBase):
                         cfg.subquestions_obs_template.format(
                             content="Registered subquestions:\n"
                             + "\n".join(f"- {tid}: {desc}" for tid, desc in declared_subquestions.items())
+                        )
+                    )
+                elif any(tag == decision_tag for tag, _ in actions):
+                    metrics["decision_prompts"] += 1
+                    turn_observations.append(
+                        cfg.decision_obs_template.format(
+                            content=self._build_decision_feedback(latest_search_decision)
                         )
                     )
                 else:

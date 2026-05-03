@@ -338,49 +338,136 @@ The `src.agent_loop` package provides multi-turn agent loops backed by XML-tagge
 
 ### Deep research workflow
 
-`SearchAgentLoop` follows a four-step protocol driven entirely by XML tags the model emits:
+`SearchAgentLoop` is driven entirely by XML tags the model emits. All tags are optional but follow a natural order:
 
-```
-1.  <plan>   — model writes a research plan (optional but encouraged)
-2.  <searches>  — model issues N queries on separate lines; all run in parallel
-3.  <information>  — server injects one cited evidence block per round
-    (model may issue another <searches> to refine; loops until max_turns)
-4.  <answer>  — model synthesizes a final cited answer; loop stops
-```
+| Tag | Direction | Purpose |
+|-----|-----------|---------|
+| `<plan>` | model → loop | Write a research plan; loop acknowledges and continues |
+| `<search_decision>answer\|search</search_decision>` | model → loop | Declare whether internal knowledge is sufficient; if `answer` and no prior search, loop allows a direct `<answer>` |
+| `<subquestions>` | model → loop | Register named research tracks (`T1`, `T2`, …); each track is evaluated independently |
+| `<search>query</search>` | model → loop | Single query |
+| `<searches>` | model → loop | One query per line — all fired in parallel as one search round |
+| `<fetch>url1, url2</fetch>` | model → loop | Fetch full-page content for specific URLs from a prior search result |
+| `<information>` | loop → model | Cited evidence block injected after each search round |
+| `<search_evaluation>` | loop → model | Quality verdict (`SUFFICIENT` / `INSUFFICIENT`) injected alongside `<information>` |
+| `<full_page>` | loop → model | Page content injected after a `<fetch>` request |
+| `<answer>` | model → loop | Final cited answer; loop stops (gated by evidence sufficiency) |
 
-A single query still works with the legacy `<search>single query</search>` tag.
+**Key behaviours**
 
-If the model emits `<plan>` and `<searches>` in the **same** response, both are handled in that turn — no extra round-trip for the plan acknowledgement.
+- Multiple tags in the same response are processed in one turn — e.g. `<plan>` + `<searches>` fires the searches without a wasted round-trip.
+- `<search_decision>answer</search_decision>` + `<answer>` in the same response terminates immediately with no search (requires `allow_internal_knowledge_answer=True`).
+- Evidence blocks use structured citation labels (`R{round}Q{query}D{doc}`) for inline citation.
+- Repeated queries are deduplicated; overflow past `max_search_limit` rounds gets a `<search_feedback>` nudge instead of silently dropped.
 
-Each evidence block uses structured citation labels (`R{round}Q{query}D{doc}`) so the model can reference specific documents in the answer.
+**Example model turns**
 
-**Example model output per turn**
-
-Turn 1 (plan + parallel searches in one shot):
+Turn 1 — plan + adaptive decision + parallel searches:
 ```xml
-<plan>I need to compare dense and sparse retrieval.</plan>
+<plan>Compare dense and sparse retrieval approaches.</plan>
+<search_decision>search</search_decision>
+<subquestions>
+T1: dense retrieval with FAISS
+T2: sparse retrieval with BM25
+</subquestions>
 <searches>
-dense retrieval FAISS overview
-BM25 sparse retrieval Lucene
+[T1] dense retrieval FAISS overview
+[T2] BM25 sparse retrieval Lucene
 </searches>
 ```
 
-Turn 2 (refine after seeing evidence):
+Turn 2 — refine a weak track:
 ```xml
 <searches>
-FAISS vs BM25 benchmark 2024
+[T1] FAISS vs BM25 benchmark 2024
 </searches>
 ```
 
-Turn 3 (synthesize):
+Turn 3 — fetch a promising page:
+```xml
+<fetch>https://example.com/faiss-benchmark</fetch>
+```
+
+Turn 4 — synthesize:
 ```xml
 <answer>
 Dense retrieval [R1Q1D1] outperforms BM25 [R1Q2D1] on semantic queries,
-but BM25 remains competitive for keyword-heavy tasks [R2Q1D1].
+but BM25 remains competitive for keyword-heavy tasks [R2Q1D1][R3P1].
 </answer>
 ```
 
 ### Usage
+
+```python
+from src.agent_loop import (
+    SearchAgentLoop,
+    SearchAgentLoopConfig,
+    SearchEvaluationConfig,
+)
+
+loop = SearchAgentLoop(
+    tokenizer=tokenizer,
+    server_manager=server_manager,
+    search_config=SearchAgentLoopConfig(
+        # Retrieval endpoint
+        search_url="http://localhost:8000/retrieve",
+        topk=5,
+
+        # Turn budget
+        max_turns=8,           # hard cap on generation steps
+        max_search_limit=6,    # max search rounds (not queries); defaults to max_turns
+
+        # Evidence quality gates
+        require_sufficient_evidence_before_answer=True,
+        max_answer_rejections=3,
+        evaluation_config=SearchEvaluationConfig(
+            min_results_per_query=1,
+            min_total_results=2,
+            min_top_score=0.0,
+            min_content_length=10,
+        ),
+
+        # Adaptive search decision: model may skip search when it already knows the answer
+        allow_internal_knowledge_answer=True,
+
+        # Optional: explicit /fetch endpoint for full-page retrieval.
+        # When omitted, derived automatically from search_url (/retrieve → /fetch).
+        # fetch_url="http://localhost:8000/fetch",
+    ),
+)
+
+output = await loop.run(
+    messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
+    sampling_params={"temperature": 0.7},
+)
+
+# ── result ────────────────────────────────────────────────────────────────
+ctx = output.context
+
+ctx.rounds          # list[list[SearchContext]] — one list per search round
+ctx.turns           # flat list[SearchContext]  — every query in issue order
+ctx.queries         # list[str]                 — query strings in issue order
+ctx.num_rounds      # int — search rounds fired
+ctx.num_searches    # int — individual queries issued
+ctx.tasks           # dict[str, str] — subquestion id → description (if declared)
+
+# ── per-run metrics ───────────────────────────────────────────────────────
+m = output.metrics
+
+m["search_rounds"]            # rounds that hit the retrieval server
+m["search_queries"]           # individual queries sent (after dedup)
+m["search_cache_hits"]        # queries served from the per-run cache
+m["fetched_pages"]            # pages retrieved via <fetch>
+m["page_cache_hits"]          # fetch requests served from cache
+m["answer_rejections"]        # times <answer> was blocked (evidence gate)
+m["direct_answers"]           # times model answered from internal knowledge
+m["decision_prompts"]         # times a <search_decision> turn was injected
+m["repeated_search_queries"]  # queries skipped as duplicates
+m["search_limit_hits"]        # turns where the round cap was enforced
+m["active_subquestions"]      # number of registered subquestion tasks
+```
+
+#### Minimal snippet
 
 ```python
 from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig
@@ -398,10 +485,8 @@ output = await loop.run(
     messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
     sampling_params={"temperature": 0.7},
 )
-# output.context.rounds       — list of rounds, each a list of SearchContext
-# output.context.num_rounds   — how many search rounds were issued
-# output.context.num_searches — total individual queries issued
-# output.context.queries      — flat list of all queries in order
+print(output.context.queries)   # all queries issued during the run
+print(output.metrics)           # timing and search-quality counters
 ```
 
 ### Tool agent usage
@@ -444,11 +529,12 @@ Supported `tool_parser_format` values:
 
 ### Context objects
 
-- `SearchResult(contents, score)` — one passage returned by the server
-- `SearchContext(query, results)` — one query and its results; `.to_information_block(citation_prefix=...)` formats them for injection
+- `SearchResult(contents, score, title, url)` — one passage returned by the server
+- `SearchContext(query, results, task_id, task_description)` — one query and its results; `.to_information_block(citation_prefix=...)` formats them for injection
 - `AgentContext` — full run history attached to `AgentLoopOutput.context`:
   - `.turns` — flat list of every `SearchContext` across all rounds
   - `.rounds` — list of rounds; each round is the group of `SearchContext` objects from one `<searches>` block
+  - `.tasks` — `dict[str, str]` of subquestion task id → description (populated by `<subquestions>`)
   - `.num_searches` — total queries issued
   - `.num_rounds` — total search rounds (one per `<search>`/`<searches>` turn)
   - `.queries` — flat list of query strings in issue order
@@ -602,6 +688,7 @@ Coverage:
 
 | File | What is tested |
 |------|---------------|
+| `test_agent_loop.py` | `AgentLoopBase` prompt building and generation; `SingleTurnAgentLoop`; `SearchAgentLoop` — plan, parallel search, multi-round refinement, subquestions with task tracking, `<fetch>` full-page retrieval, search + fetch in one turn, evaluation feedback injection, answer gating (pre-search, insufficient evidence, unresolved subquestion), adaptive search-decision (`<search_decision>`), direct internal-knowledge answer, `allow_internal_knowledge_answer=False` enforcement, repeated-query deduplication, search-round limit, cache and metric counters, `SearchClientConfig.get_fetch_url` derivation; `SearchResultEvaluator` sufficient/insufficient round classification |
 | `test_vocabulary.py` | `Vocabulary`, `normalize_text`, `tokenize_text`, `build_vocabulary_from_sequences`, `extract_keywords` |
 | `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` (skipped when torch unavailable) |
 | `test_llm_agent_generation.py` | action parsing, search payload alignment, inactive-example handling, unknown search-mode fallback |
