@@ -7,8 +7,10 @@ import pytest
 from src.agent_loop import (
     AgentLoopBase,
     AgentLoopConfig,
+    SearchEvaluationConfig,
     SearchAgentLoop,
     SearchAgentLoopConfig,
+    SearchResultEvaluator,
     SearchContext,
     SearchResult,
     SingleTurnAgentLoop,
@@ -160,6 +162,50 @@ def test_search_result_information_block_supports_citation_prefix():
     assert ctx.to_information_block(citation_prefix="R1Q1D") == "[R1Q1D1] (Title: Alpha) Beta"
 
 
+def test_search_result_evaluator_marks_weak_results_as_insufficient():
+    evaluator = SearchResultEvaluator(
+        SearchEvaluationConfig(
+            min_results_per_query=2,
+            min_total_results=3,
+            min_top_score=0.8,
+            min_avg_score=0.7,
+        )
+    )
+    evaluation = evaluator.evaluate_round([
+        SearchContext(
+            query="alpha",
+            results=[SearchResult(contents='"Alpha"\nbody', score=0.4)],
+        )
+    ])
+
+    assert evaluation.is_sufficient is False
+    assert evaluation.total_results == 1
+    assert "below minimum" in evaluation.to_feedback_block()
+
+
+def test_search_result_evaluator_marks_strong_results_as_sufficient():
+    evaluator = SearchResultEvaluator(
+        SearchEvaluationConfig(
+            min_results_per_query=1,
+            min_total_results=2,
+            min_top_score=0.8,
+            min_avg_score=0.7,
+        )
+    )
+    evaluation = evaluator.evaluate_round([
+        SearchContext(
+            query="alpha",
+            results=[
+                SearchResult(contents='"Alpha"\nbody', score=0.9),
+                SearchResult(contents='"Alpha 2"\nbody', score=0.8),
+            ],
+        )
+    ])
+
+    assert evaluation.is_sufficient is True
+    assert "Verdict: SUFFICIENT" in evaluation.to_feedback_block()
+
+
 class FakeSearchClient:
     def __init__(self, responses):
         self.responses = responses
@@ -182,7 +228,10 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
     loop = SearchAgentLoop(
         tokenizer=tokenizer,
         server_manager=DummyServerManager(responses),
-        search_config=SearchAgentLoopConfig(max_turns=6),
+        search_config=SearchAgentLoopConfig(
+            max_turns=6,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
     )
     loop._search_client = FakeSearchClient(
         {
@@ -207,6 +256,116 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
     assert output.context.num_searches == 3
     assert output.context.queries == ["first query", "second query", "refined query"]
     assert output.num_turns == 4
+
+
+def test_search_agent_loop_injects_search_evaluation_feedback():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nfirst query\n</searches>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=2,
+                min_total_results=2,
+                min_top_score=0.8,
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', score=0.5)],
+            ],
+        }
+    )
+
+    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    assert "<search_evaluation>" in second_prompt
+    assert "Verdict: INSUFFICIENT" in second_prompt
+    assert "keep searching" in second_prompt
+
+
+def test_search_agent_loop_rejects_answer_before_any_search():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<answer>Done too early</answer>"),
+        tokenizer.encode("<searches>\nfirst query\n</searches>"),
+        tokenizer.encode("<answer>Done after search</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body')],
+            ],
+        }
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    assert "<answer_feedback>" in second_prompt
+    assert "Search first" in second_prompt
+    assert output.num_turns == 3
+    assert output.context.num_rounds == 1
+
+
+def test_search_agent_loop_rejects_answer_when_latest_evidence_is_insufficient():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nfirst query\n</searches>"),
+        tokenizer.encode("<answer>Done too early</answer>"),
+        tokenizer.encode("<searches>\nrefined query\n</searches>"),
+        tokenizer.encode("<answer>Done after refinement</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=6,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=2,
+                min_total_results=2,
+                min_top_score=0.8,
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', score=0.5)],
+            ],
+            ("refined query",): [
+                [
+                    SearchResult(contents='"Doc B"\nBeta body', score=0.95),
+                    SearchResult(contents='"Doc C"\nGamma body', score=0.85),
+                ],
+            ],
+        }
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    assert "<answer_feedback>" in third_prompt
+    assert "latest search evaluation was insufficient" in third_prompt
+    assert output.num_turns == 4
+    assert output.context.num_rounds == 2
 
 
 def test_search_agent_loop_handles_plan_and_searches_in_same_response():

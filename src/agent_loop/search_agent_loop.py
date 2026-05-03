@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from .agent_loop import AgentLoopBase, AgentLoopConfig, AgentLoopOutput, register, simple_timer
 from .context import AgentContext, SearchContext, SearchResult
+from .evaluation import SearchEvaluationConfig, SearchResultEvaluator
 from .search_client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,16 @@ class SearchAgentLoopConfig(AgentLoopConfig):
         "Plan recorded. Continue by issuing one or more search queries.\n"
         "</plan_feedback>\n\n"
     )
+    evaluation_obs_template: str = "\n\n<search_evaluation>\n{content}\n</search_evaluation>\n\n"
+    answer_rejection_template: str = (
+        "\n\n<answer_feedback>\n"
+        "{content}\n"
+        "</answer_feedback>\n\n"
+    )
+    require_sufficient_evidence_before_answer: bool = True
+    # Stop rejecting <answer> after this many consecutive rejections (avoids infinite loops).
+    max_answer_rejections: int = 3
+    evaluation_config: SearchEvaluationConfig = SearchEvaluationConfig()
     # Template for the observation injected after each search.
     # {content} is replaced by the formatted batch-search information block.
     obs_template: str = "\n\n<information>\n{content}\n</information>\n\n"
@@ -88,6 +99,7 @@ class SearchAgentLoop(AgentLoopBase):
             loop=loop,
         )
         self.search_config = cfg
+        self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)
         action_tags = [
             cfg.plan_tag,
             cfg.search_tag,
@@ -177,6 +189,8 @@ class SearchAgentLoop(AgentLoopBase):
         plan_tag = self.search_config.plan_tag
         search_tags = {self.search_config.search_tag, self.search_config.searches_tag}
         answer_tag = self.search_config.answer_tag
+        latest_evaluation = None
+        consecutive_rejections = 0
 
         for turn in range(self.search_config.max_turns):
             with simple_timer(f"build_prompt_turn_{turn}", metrics):
@@ -198,12 +212,33 @@ class SearchAgentLoop(AgentLoopBase):
 
             logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
 
-            # Stop on answer or when no recognised tag is found
-            if not actions or any(tag == answer_tag for tag, _ in actions):
-                break
-
             working_messages.append({"role": "assistant", "content": response_text})
 
+            # When the model generates nothing useful, check whether we still need evidence.
+            # If evidence is already sufficient (or no gating), stop cleanly.
+            # If insufficient, re-prompt for searches rather than silently exiting.
+            if not actions:
+                needs_more = (
+                    self.search_config.require_sufficient_evidence_before_answer
+                    and (latest_evaluation is None or not latest_evaluation.is_sufficient)
+                    and consecutive_rejections < self.search_config.max_answer_rejections
+                )
+                if needs_more:
+                    consecutive_rejections += 1
+                    feedback = (
+                        "No action detected. Evidence is still insufficient. "
+                        "Issue a <searches> block to gather more evidence before answering."
+                    )
+                    working_messages.append({
+                        "role": "user",
+                        "content": self.search_config.answer_rejection_template.format(
+                            content=feedback
+                        ),
+                    })
+                    continue
+                break
+
+            answer_requested = any(tag == answer_tag for tag, _ in actions)
             # Collect every query from every <search>/<searches> block in this response.
             # This handles models that emit <plan>…</plan><searches>…</searches> in one shot.
             all_queries: list[str] = []
@@ -211,12 +246,45 @@ class SearchAgentLoop(AgentLoopBase):
                 if tag in search_tags:
                     all_queries.extend(self._parse_queries(content, tag))
 
+            if answer_requested and not all_queries:
+                evidence_is_sufficient = (
+                    latest_evaluation is not None and latest_evaluation.is_sufficient
+                )
+                if (
+                    not self.search_config.require_sufficient_evidence_before_answer
+                    or evidence_is_sufficient
+                    or consecutive_rejections >= self.search_config.max_answer_rejections
+                ):
+                    break
+
+                if latest_evaluation is None:
+                    feedback = (
+                        "Do not answer yet. You have not completed a search round. "
+                        "Search first, then answer once the evidence is sufficient."
+                    )
+                else:
+                    feedback = (
+                        "Do not answer yet. The latest search evaluation was insufficient. "
+                        "Refine the keywords, search again, and only answer after the evidence is sufficient."
+                    )
+                consecutive_rejections += 1
+                working_messages.append({
+                    "role": "user",
+                    "content": self.search_config.answer_rejection_template.format(
+                        content=feedback
+                    ),
+                })
+                continue
+
             if not all_queries:
                 # Only a <plan> (no searches yet) — acknowledge and let the model continue.
                 working_messages.append(
                     {"role": "user", "content": self.search_config.plan_obs_template}
                 )
                 continue
+
+            # A search was issued — reset the rejection counter.
+            consecutive_rejections = 0
 
             # --- parallel search round ---
             t0 = time.perf_counter()
@@ -243,8 +311,14 @@ class SearchAgentLoop(AgentLoopBase):
                 queries=all_queries, results_by_query=results_by_query
             )
             round_index = agent_ctx.num_rounds
-            obs = self.search_config.obs_template.format(
-                content=self._format_round_information(round_index, search_contexts)
+            latest_evaluation = self._result_evaluator.evaluate_round(search_contexts)
+            obs = (
+                self.search_config.evaluation_obs_template.format(
+                    content=latest_evaluation.to_feedback_block()
+                )
+                + self.search_config.obs_template.format(
+                    content=self._format_round_information(round_index, search_contexts)
+                )
             )
             working_messages.append({"role": "user", "content": obs})
 

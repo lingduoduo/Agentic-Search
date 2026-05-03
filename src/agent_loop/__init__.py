@@ -10,6 +10,12 @@ from .agent_loop import (
     simple_timer,
 )
 from .context import AgentContext, SearchContext, SearchResult
+from .evaluation import (
+    QueryEvaluation,
+    SearchEvaluationConfig,
+    SearchResultEvaluator,
+    SearchRoundEvaluation,
+)
 from .search_agent_loop import SearchAgentLoop, SearchAgentLoopConfig
 from .search_client import SearchClient, SearchClientConfig
 from .single_turn_agent_loop import SingleTurnAgentLoop
@@ -27,12 +33,16 @@ __all__ = [
     "HermesToolParser",
     "JSONToolParser",
     "Llama3ToolParser",
+    "QueryEvaluation",
     "SearchAgentLoop",
     "SearchAgentLoopConfig",
     "SearchClient",
     "SearchClientConfig",
     "SearchContext",
+    "SearchEvaluationConfig",
     "SearchResult",
+    "SearchResultEvaluator",
+    "SearchRoundEvaluation",
     "SingleTurnAgentLoop",
     "Tool",
     "ToolAgentLoop",
