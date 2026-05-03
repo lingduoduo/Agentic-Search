@@ -572,7 +572,6 @@ def test_search_agent_loop_skips_repeated_queries_with_feedback():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=5,
-            require_sufficient_evidence_before_answer=False,
             evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
         ),
     )
@@ -678,6 +677,38 @@ def test_search_agent_loop_requests_search_after_search_decision():
     second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
     assert "<decision_feedback>" in second_prompt
     assert "Issue a <search> or <searches> action next" in second_prompt
+
+
+def test_search_agent_loop_prompts_for_decision_when_no_action_before_search():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("I am thinking but have not decided yet."),
+        tokenizer.encode("<search_decision>search</search_decision>"),
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body')],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    assert "<answer_feedback>" in second_prompt
+    assert "Use <search_decision>answer</search_decision>" in second_prompt
 
 
 def test_search_agent_loop_blocks_direct_answer_when_internal_knowledge_disabled():

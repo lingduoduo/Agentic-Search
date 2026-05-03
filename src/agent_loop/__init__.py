@@ -16,7 +16,17 @@ from .evaluation import (
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from .search_agent_loop import SearchAgentLoop, SearchAgentLoopConfig
+from .intent_classifier import (
+    INTENT_LABELS,
+    IntentPrediction,
+    IntentionClassificationPipeline,
+    IntentionClassifier,
+)
+from .search_agent_loop import (
+    SearchAgentLoop,
+    SearchAgentLoopConfig,
+    build_search_agent_instruction,
+)
 from .search_client import SearchClient, SearchClientConfig
 from .single_turn_agent_loop import SingleTurnAgentLoop
 from .tool import FunctionTool, Tool, ToolSchema
@@ -28,9 +38,14 @@ __all__ = [
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
+    "build_search_agent_instruction",
     "FunctionCall",
     "FunctionTool",
     "HermesToolParser",
+    "INTENT_LABELS",
+    "IntentPrediction",
+    "IntentionClassificationPipeline",
+    "IntentionClassifier",
     "JSONToolParser",
     "Llama3ToolParser",
     "QueryEvaluation",

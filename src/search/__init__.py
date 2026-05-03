@@ -23,9 +23,12 @@ __all__ = [
     "EOS_token",
     "MAX_LENGTH",
     "normalize_text",
+    "normalize_document",
     "tokenize_text",
+    "tokenize_document",
     "build_vocabulary_from_sequences",
     "extract_keywords",
+    "TextProcessor",
 ]
 
 
@@ -54,13 +57,18 @@ def __getattr__(name: str) -> Any:
     if name == "create_base_app":
         module = import_module(".search_app", __name__)
         return getattr(module, name)
+    if name == "TextProcessor":
+        module = import_module(".text_processor", __name__)
+        return getattr(module, name)
     if name in {
         "Vocabulary",
         "SOS_token",
         "EOS_token",
         "MAX_LENGTH",
         "normalize_text",
+        "normalize_document",
         "tokenize_text",
+        "tokenize_document",
         "build_vocabulary_from_sequences",
         "extract_keywords",
     }:

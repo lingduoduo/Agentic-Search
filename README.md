@@ -1,52 +1,28 @@
 # Agentic-Search
 
-`Agentic-Search` is a small FastAPI codebase for search-backed retrieval services. It currently includes:
+A FastAPI codebase for search-backed retrieval services and multi-turn agentic research loops.
 
-- a Google Custom Search server
-- a SerpAPI-backed search server
-- an index builder for dense and BM25 retrieval
-- a dense retriever for querying FAISS indexes
-- rerank and retrieval+rerank servers for local ranking pipelines
-- an `llm_agent` package for multi-turn generation and agentic search workflows
-
-Both services support:
-
-- batched search requests
-- a simple healthcheck endpoint for local development
-
-The repo's `SearchAgentLoop` can also be configured as a lightweight research
-workflow:
-
-1. generate a short research plan with `<plan>...</plan>`
-2. issue parallel web searches with `<searches>...</searches>`
-3. review the returned evidence and search evaluation
-4. optionally fetch full page content with `<fetch>url1, url2</fetch>`
-5. search again with refined keywords when the evidence is still weak
-6. synthesize the findings into a cited final answer with `<answer>...</answer>`
-
-The Google server also supports optional page fetching to extract paragraph context from result links.
+- Google Custom Search and SerpAPI search servers
+- Dense (FAISS) and sparse (BM25) retrieval with optional reranking
+- `SearchAgentLoop`: plan → adaptive search decision → parallel queries → evidence evaluation → fetch → cited answer
+- Config-driven text preprocessing for structured documents and `rec_texts` payloads
 
 ## Project Structure
 
 ```text
 src/
-  __init__.py
+  run_agentic_search.py  # CLI + importable entry point for all agent loop flows
   agent_loop/
-    __init__.py
     agent_loop.py          # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
     context.py             # SearchResult, SearchContext, AgentContext
-    search_agent_loop.py   # SearchAgentLoop (multi-turn, registered as "search_agent")
-    search_client.py       # SearchClient — async aiohttp client for /retrieve endpoints
+    evaluation.py          # SearchResultEvaluator, SearchEvaluationConfig
+    search_agent_loop.py   # SearchAgentLoop (registered as "search_agent")
+    search_client.py       # async aiohttp client for /retrieve and /fetch endpoints
     single_turn_agent_loop.py
     tool.py                # Tool, FunctionTool — tool abstraction and JSON schema
-    tool_agent_loop.py     # ToolAgentLoop (multi-turn tool use, registered as "tool_agent")
-    tool_parser.py         # ToolParser — Hermes / Llama3 / JSON tool-call parsers
-  llm_agent/
-    __init__.py
-    generation.py
-    tensor_helper.py
+    tool_agent_loop.py     # ToolAgentLoop (registered as "tool_agent")
+    tool_parser.py         # Hermes / Llama3 / JSON tool-call parsers
   search/
-    __init__.py
     search_app.py
     google_search_server.py
     index_builder.py
@@ -55,129 +31,138 @@ src/
     retrieval_rerank_server.py
     retrieval_server.py
     serp_search_server.py
+    text_processor.py     # config-driven cleanup / segmentation for structured text
     vocabulary.py
 tests/
-  conftest.py
   unit/
-    test_agent_loop.py
-    test_index_builder.py
-    test_llm_agent_generation.py
-    test_llm_agent_tensor_helper.py
-    test_rerank.py
-    test_search_app.py
-    test_vocabulary.py
   regression/
-    test_regression.py
   load/
-    test_load.py
 ```
 
 ## Requirements
 
 - Python 3.10+
-
-API keys (required only for the corresponding server):
-
-- Google Custom Search: a JSON API key and a Programmable Search Engine ID (`cx`)
-- SerpAPI: a SerpAPI key
-
-Install all dependencies:
+- API keys (only needed for the corresponding server): `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`, `SERP_API_KEY`
+- Java 11+ (arm64 on Apple Silicon) for BM25 indexing via pyserini
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Or manually:
-
-```bash
-pip install fastapi uvicorn google-api-python-client requests aiohttp beautifulsoup4 chardet numpy torch transformers datasets tqdm faiss-cpu sentence-transformers python-dotenv pyserini
-```
-
 ## Environment Variables
 
-Both search servers load a `.env` file automatically at startup via `python-dotenv`. Copy `.env.example` to `.env` and fill in your keys — no `export` commands needed.
+Copy `.env.example` to `.env` — servers load it automatically at startup.
+
+```
+GOOGLE_API_KEY=...
+GOOGLE_CSE_ID=...
+SERP_API_KEY=...
+JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 only
+```
+
+## Running the Agent
+
+`src/run_agentic_search.py` is the unified entry point. It works as both a CLI script and an importable module.
+
+### CLI
 
 ```bash
-cp .env.example .env
+# Deep-research loop (vLLM server + retrieval server)
+python3 -m src.run_agentic_search \
+    --mode search \
+    --question "Compare dense vs sparse retrieval" \
+    --model meta-llama/Llama-3.1-8B-Instruct \
+    --vllm_url http://localhost:8080 \
+    --search_url http://localhost:8000/retrieve
+
+# Single-turn (no search), local model
+python3 -m src.run_agentic_search \
+    --mode single --question "What is FAISS?" \
+    --model BAAI/bge-base-en-v1.5 --local
+
+# Tool-calling loop
+python3 -m src.run_agentic_search \
+    --mode tool --question "What is the capital of France?" \
+    --model meta-llama/Llama-3.1-8B-Instruct \
+    --vllm_url http://localhost:8080 --tool_format hermes
 ```
 
-`.env` (never commit this file — it is already in `.gitignore`):
+Key flags:
 
-```
-GOOGLE_API_KEY=your_google_api_key
-GOOGLE_CSE_ID=your_custom_search_engine_id
-SERP_API_KEY=your_serpapi_key
-```
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--mode` | `search` | `single` / `search` / `tool` |
+| `--local` | off | Load model in-process (no vLLM) |
+| `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
+| `--require_search` | off | Force search even when model has internal knowledge |
+| `--max_search_limit` | 0 (= max_turns) | Cap on search rounds |
+| `--intent_examples` | none | Train a lightweight intent classifier and route search policy from it |
+| `--intent_min_confidence` | `0.6` | Minimum confidence required before intent routing overrides defaults |
+| `--tool_format` | `hermes` | Tool-call parser for `tool` mode |
 
-All variables can also be passed as CLI flags or set as shell environment variables — whichever takes precedence in your workflow.
+If `--intent_examples` is provided, the CLI trains a small intent classifier on startup and can automatically bias search behavior. High-confidence `purchase`, `navigate`, and `recommendation` intents force evidence gathering and disable direct internal-knowledge answers; `qa` leaves the current settings unchanged.
 
-Full list of supported variables (with defaults) is in [`.env.example`](.env.example).
-
-### Java (BM25 only)
-
-BM25 indexing uses [pyserini](https://github.com/castorini/pyserini), which wraps Apache Lucene and requires a **Java 11+ JDK**. On Apple Silicon the JDK must be the **arm64** build — the x86_64 Corretto build will not work.
-
-Install an arm64 JDK via Homebrew:
+A ready-to-use sample file can be generated from the local corpus and vocabulary with:
 
 ```bash
-brew install openjdk
+python3 -m src.generate_intent_examples --output data/intent_examples.sample.json
 ```
 
-Then add `JAVA_HOME` to your `.env`:
+### Programmatic use
 
+```python
+import asyncio
+from transformers import AutoTokenizer
+from src.run_agentic_search import VLLMServerManager, run_search_agent
+
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
+server_manager = VLLMServerManager(
+    tokenizer=tokenizer,
+    base_url="http://localhost:8080",
+    model="meta-llama/Llama-3.1-8B-Instruct",
+)
+
+asyncio.run(run_search_agent(
+    tokenizer=tokenizer,
+    server_manager=server_manager,
+    question="Compare dense vs sparse retrieval.",
+    sampling_params={"temperature": 0.7},
+    search_url="http://localhost:8000/retrieve",
+    topk=5,
+    max_turns=8,
+))
 ```
-JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home
-```
 
-The index builder loads `.env` automatically at startup, so no shell `export` is needed. Dense indexing and retrieval do not require Java.
+`run_search_agent` prints `output.context.queries` and `output.metrics`, then the formatted answer and search trace.
 
-## Google Search Configuration
+| Class | When to use |
+|-------|-------------|
+| `VLLMServerManager` | Any OpenAI-compatible server (vLLM, Ollama, LiteLLM) |
+| `LocalServerManager` | Offline — loads HuggingFace model in-process |
 
-With keys in `.env`, no flags are needed:
+## Search Servers
+
+### Google Custom Search
 
 ```bash
 python3 -m src.search.google_search_server
 ```
 
-Optional flags:
+Optional flags: `--topk N`, `--snippet_only`, `--host`, `--port`.
 
-- `--topk N`: maximum number of documents returned per query (default: 3)
-- `--snippet_only`: return Google snippets only, without fetching result pages
-- `--host` / `--port`: bind address (defaults: `0.0.0.0:8000`)
+> Pass API keys via `.env`, not via shell variable expansion (`"$GOOGLE_API_KEY"` expands to empty if not exported).
 
-> **Note:** do not pass `--api_key "$GOOGLE_API_KEY"` from the shell — if the variable is not already exported the shell expands it to an empty string before Python starts, which overrides the `.env` value. Let the server read the key from `.env` directly.
-
-If you need to override a key at the command line, pass the literal value:
-
-```bash
-python3 -m src.search.google_search_server --api_key "AIza..." --cse_id "305b..."
-```
-
-## SerpAPI Configuration
-
-With keys in `.env`, no flags are needed:
+### SerpAPI
 
 ```bash
 python3 -m src.search.serp_search_server
 ```
 
-Optional flags mirror the Google server (`--topk`, `--host`, `--port`) plus `--serp_engine` and `--search_url`.
-
-If you need to override a key at the command line, pass the literal value:
-
-```bash
-python3 -m src.search.serp_search_server --serp_api_key "your_key_here"
-```
-
-## Running a Server
-
-Once running, either server listens on `http://localhost:8000` by default.
+Same flags as Google plus `--serp_engine` and `--search_url`. Both servers listen on `http://localhost:8000` by default.
 
 ## Building an Index
 
-Build the dense FAISS index first — the retrieval command requires a pre-built index and will not build one on the fly.
-
-Dense index (downloads the encoder model on first run, then uses the local cache):
+Dense index:
 
 ```bash
 python3 -m src.search.index_builder \
@@ -187,7 +172,7 @@ python3 -m src.search.index_builder \
   --save_dir indexes/
 ```
 
-BM25 index (requires Java — see [Java (BM25 only)](#java-bm25-only) above):
+BM25 index (requires Java):
 
 ```bash
 python3 -m src.search.index_builder \
@@ -196,123 +181,34 @@ python3 -m src.search.index_builder \
   --save_dir indexes/
 ```
 
-Notes:
+Notes: GPU is used automatically when available; `--bm25_threads N` sets Lucene thread count (default: all CPUs); `--no_save_vocabulary` skips the `vocabulary_corpus.json` sidecar.
 
-- dense indexing needs `model_path` unless you supply `--embedding_path`
-- GPU is used automatically when available for embedding generation
-- `--faiss_gpu` requires GPU-enabled FAISS support
-- both commands write `indexes/vocabulary_corpus.json` alongside the index by default
-- `--bm25_threads N` controls how many Lucene indexing threads are used (default: all available CPUs)
-
-### Vocabulary Metadata
-
-The index builder writes a combined `vocabulary_corpus.json` artifact that stores both corpus-level vocabulary statistics and per-document token metadata in one file.
-
-Top-level fields include:
-
-- `corpus_path`
-- `retrieval_method`
-- `keyword_limit`
-- `vocab_max_length`
-- `vocabulary`
-- `corpus`
-
-The `vocabulary` section contains:
-
-- `num_token`
-- `token2idx`
-- `token2cnt`
-- `idx2token`
-
-Each item in `corpus` contains:
-
-- `doc_id`
-- `id`
-- `title`
-- `contents`
-- `tokens`
-- `keywords`
-- `token_count`
-
-Disable this sidecar artifact with:
-
-```bash
-python3 -m src.search.index_builder \
-  --retrieval_method bm25 \
-  --corpus_path data/corpus.jsonl \
-  --save_dir indexes/ \
-  --no_save_vocabulary
-```
-
-## Querying a Dense Index
-
-```bash
-python3 -m src.search.retrieval \
-  --model_path BAAI/bge-base-en-v1.5 \
-  --index_path indexes/bge_Flat.index \
-  --corpus_path data/corpus.jsonl \
-  --retrieval_method bge \
-  --queries "What is agentic search?" "How does FAISS work?" \
-  --topk 5
-```
-
-The command prints JSON results containing the matched corpus entries and similarity scores.
-
-> **Model loading:** the encoder is loaded from the local HuggingFace cache on every run. The first run downloads the model (~438 MB for `bge-base-en-v1.5`); subsequent runs start in a few seconds with no network traffic.
-
-## Running a Dense Retrieval Server
-
-Example:
+## Dense Retrieval Server
 
 ```bash
 python3 -m src.search.retrieval_server \
   --model_path BAAI/bge-base-en-v1.5 \
   --index_path indexes/bge_Flat.index \
   --corpus_path data/corpus.jsonl \
-  --retrieval_method bge \
-  --topk 5
+  --retrieval_method bge
 ```
-
-Then query it with:
 
 ```bash
 curl -X POST http://localhost:8000/retrieve \
   -H "Content-Type: application/json" \
-  -d '{
-    "queries": ["What is agentic search?"],
-    "topk": 3,
-    "return_scores": true
-  }'
+  -d '{"queries": ["What is agentic search?"], "topk": 3}'
 ```
 
-## Running a Rerank Server
-
-The rerank server listens on port **6980** by default.
+## Rerank Server
 
 ```bash
 python3 -m src.search.rerank_server \
   --rerank_model_name_or_path cross-encoder/ms-marco-MiniLM-L12-v2 \
   --rerank_topk 3
+# listens on port 6980 by default
 ```
 
-Query it with:
-
-```bash
-curl -X POST http://localhost:6980/rerank \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queries": ["What is agentic search?"],
-    "documents": [[{"document": {"contents": "\"Example\"\nSome text."}}]],
-    "rerank_topk": 3,
-    "return_scores": true
-  }'
-```
-
-When `return_scores` is `false` (the default), each document is returned as a plain string instead of a scored object.
-
-## Running a Retrieval + Rerank Server
-
-Example:
+## Retrieval + Rerank Server
 
 ```bash
 python3 -m src.search.retrieval_rerank_server \
@@ -320,51 +216,43 @@ python3 -m src.search.retrieval_rerank_server \
   --index_path indexes/bge_Flat.index \
   --corpus_path data/corpus.jsonl \
   --retrieval_method bge \
-  --retrieval_topk 10 \
-  --rerank_topk 3
+  --retrieval_topk 10 --rerank_topk 3
 ```
 
 ## Agentic Search Loop
-
-The `src.agent_loop` package provides multi-turn agent loops backed by XML-tagged protocols.
 
 ### Registered loops
 
 | Name | Class | Description |
 |------|-------|-------------|
 | `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
-| `"search_agent"` | `SearchAgentLoop` | Deep research loop: plan → parallel search → synthesize |
+| `"search_agent"` | `SearchAgentLoop` | Deep research: plan → search → evaluate → answer |
 | `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
 
-### Deep research workflow
+### XML protocol
 
-`SearchAgentLoop` is driven entirely by XML tags the model emits. All tags are optional but follow a natural order:
+`SearchAgentLoop` is driven by XML tags the model emits:
 
 | Tag | Direction | Purpose |
 |-----|-----------|---------|
-| `<plan>` | model → loop | Write a research plan; loop acknowledges and continues |
-| `<search_decision>answer\|search</search_decision>` | model → loop | Declare whether internal knowledge is sufficient; if `answer` and no prior search, loop allows a direct `<answer>` |
-| `<subquestions>` | model → loop | Register named research tracks (`T1`, `T2`, …); each track is evaluated independently |
+| `<plan>` | model → loop | Research plan; loop acknowledges and continues |
+| `<search_decision>answer\|search</search_decision>` | model → loop | Skip search if internal knowledge is sufficient |
+| `<subquestions>` | model → loop | Register named research tracks (`T1`, `T2`, …) |
 | `<search>query</search>` | model → loop | Single query |
-| `<searches>` | model → loop | One query per line — all fired in parallel as one search round |
-| `<fetch>url1, url2</fetch>` | model → loop | Fetch full-page content for specific URLs from a prior search result |
-| `<information>` | loop → model | Cited evidence block injected after each search round |
-| `<search_evaluation>` | loop → model | Quality verdict (`SUFFICIENT` / `INSUFFICIENT`) injected alongside `<information>` |
-| `<full_page>` | loop → model | Page content injected after a `<fetch>` request |
-| `<answer>` | model → loop | Final cited answer; loop stops (gated by evidence sufficiency) |
+| `<searches>` | model → loop | One query per line — all fired in parallel |
+| `<fetch>url1, url2</fetch>` | model → loop | Fetch full-page content for specific URLs |
+| `<information>` | loop → model | Cited evidence injected after each search round |
+| `<search_evaluation>` | loop → model | `SUFFICIENT` / `INSUFFICIENT` verdict alongside evidence |
+| `<full_page>` | loop → model | Page content injected after `<fetch>` |
+| `<answer>` | model → loop | Final cited answer; loop stops |
 
-**Key behaviours**
+Multiple tags in the same response are processed in one turn. Evidence labels follow `R{round}Q{query}D{doc}`. Repeated queries are deduplicated; rounds past `max_search_limit` get a nudge instead of silently dropping.
 
-- Multiple tags in the same response are processed in one turn — e.g. `<plan>` + `<searches>` fires the searches without a wasted round-trip.
-- `<search_decision>answer</search_decision>` + `<answer>` in the same response terminates immediately with no search (requires `allow_internal_knowledge_answer=True`).
-- Evidence blocks use structured citation labels (`R{round}Q{query}D{doc}`) for inline citation.
-- Repeated queries are deduplicated; overflow past `max_search_limit` rounds gets a `<search_feedback>` nudge instead of silently dropped.
+**Example turns**
 
-**Example model turns**
-
-Turn 1 — plan + adaptive decision + parallel searches:
 ```xml
-<plan>Compare dense and sparse retrieval approaches.</plan>
+<!-- Turn 1: plan + decision + subquestions + parallel searches in one shot -->
+<plan>Compare dense and sparse retrieval.</plan>
 <search_decision>search</search_decision>
 <subquestions>
 T1: dense retrieval with FAISS
@@ -374,103 +262,26 @@ T2: sparse retrieval with BM25
 [T1] dense retrieval FAISS overview
 [T2] BM25 sparse retrieval Lucene
 </searches>
-```
 
-Turn 2 — refine a weak track:
-```xml
+<!-- Turn 2: refine a weak track -->
 <searches>
 [T1] FAISS vs BM25 benchmark 2024
 </searches>
-```
 
-Turn 3 — fetch a promising page:
-```xml
+<!-- Turn 3: fetch a promising page -->
 <fetch>https://example.com/faiss-benchmark</fetch>
-```
 
-Turn 4 — synthesize:
-```xml
+<!-- Turn 4: answer with citations -->
 <answer>
 Dense retrieval [R1Q1D1] outperforms BM25 [R1Q2D1] on semantic queries,
 but BM25 remains competitive for keyword-heavy tasks [R2Q1D1][R3P1].
 </answer>
 ```
 
-### Usage
+### Direct use (without `run_agentic_search.py`)
 
 ```python
-from src.agent_loop import (
-    SearchAgentLoop,
-    SearchAgentLoopConfig,
-    SearchEvaluationConfig,
-)
-
-loop = SearchAgentLoop(
-    tokenizer=tokenizer,
-    server_manager=server_manager,
-    search_config=SearchAgentLoopConfig(
-        # Retrieval endpoint
-        search_url="http://localhost:8000/retrieve",
-        topk=5,
-
-        # Turn budget
-        max_turns=8,           # hard cap on generation steps
-        max_search_limit=6,    # max search rounds (not queries); defaults to max_turns
-
-        # Evidence quality gates
-        require_sufficient_evidence_before_answer=True,
-        max_answer_rejections=3,
-        evaluation_config=SearchEvaluationConfig(
-            min_results_per_query=1,
-            min_total_results=2,
-            min_top_score=0.0,
-            min_content_length=10,
-        ),
-
-        # Adaptive search decision: model may skip search when it already knows the answer
-        allow_internal_knowledge_answer=True,
-
-        # Optional: explicit /fetch endpoint for full-page retrieval.
-        # When omitted, derived automatically from search_url (/retrieve → /fetch).
-        # fetch_url="http://localhost:8000/fetch",
-    ),
-)
-
-output = await loop.run(
-    messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
-    sampling_params={"temperature": 0.7},
-)
-
-# ── result ────────────────────────────────────────────────────────────────
-ctx = output.context
-
-ctx.rounds          # list[list[SearchContext]] — one list per search round
-ctx.turns           # flat list[SearchContext]  — every query in issue order
-ctx.queries         # list[str]                 — query strings in issue order
-ctx.num_rounds      # int — search rounds fired
-ctx.num_searches    # int — individual queries issued
-ctx.tasks           # dict[str, str] — subquestion id → description (if declared)
-
-# ── per-run metrics ───────────────────────────────────────────────────────
-m = output.metrics
-
-m["search_rounds"]            # rounds that hit the retrieval server
-m["search_queries"]           # individual queries sent (after dedup)
-m["search_cache_hits"]        # queries served from the per-run cache
-m["fetched_pages"]            # pages retrieved via <fetch>
-m["page_cache_hits"]          # fetch requests served from cache
-m["answer_rejections"]        # times <answer> was blocked (evidence gate)
-m["direct_answers"]           # times model answered from internal knowledge
-m["decision_prompts"]         # times a <search_decision> turn was injected
-m["repeated_search_queries"]  # queries skipped as duplicates
-m["search_limit_hits"]        # turns where the round cap was enforced
-m["active_subquestions"]      # number of registered subquestion tasks
-```
-
-#### Minimal snippet
-
-```python
-from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig
+from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig, SearchEvaluationConfig
 
 loop = SearchAgentLoop(
     tokenizer=tokenizer,
@@ -479,6 +290,13 @@ loop = SearchAgentLoop(
         search_url="http://localhost:8000/retrieve",
         topk=5,
         max_turns=8,
+        max_search_limit=6,
+        allow_internal_knowledge_answer=True,
+        evaluation_config=SearchEvaluationConfig(
+            min_results_per_query=1,
+            min_total_results=2,
+            min_content_length=10,
+        ),
     ),
 )
 output = await loop.run(
@@ -489,34 +307,19 @@ print(output.context.queries)   # all queries issued during the run
 print(output.metrics)           # timing and search-quality counters
 ```
 
-### Tool agent usage
+### Tool agent
+
+Use `--mode tool` from the CLI, or:
 
 ```python
-from src.agent_loop import ToolAgentLoop, ToolAgentLoopConfig
-from src.agent_loop.tool import FunctionTool
+from src.agent_loop import ToolAgentLoop, ToolAgentLoopConfig, FunctionTool
 
-@FunctionTool.from_fn(
-    description="Search the web",
-    parameters={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
-)
-async def web_search(query: str) -> str:
-    ...
+@FunctionTool.from_fn(description="Search", parameters={...})
+async def search(query: str) -> str: ...
 
-loop = ToolAgentLoop(
-    tokenizer=tokenizer,
-    server_manager=server_manager,
-    tools=[web_search],
-    config=ToolAgentLoopConfig(
-        tool_parser_format="hermes",  # or "llama3" / "json"
-        max_assistant_turns=10,
-        max_parallel_calls=4,
-    ),
-)
-output = await loop.run(
-    messages=[{"role": "user", "content": "What is FAISS?"}],
-    sampling_params={"temperature": 0.7},
-)
-# output.response_mask — 1 for model tokens, 0 for injected tool-response tokens
+loop = ToolAgentLoop(tokenizer=tokenizer, server_manager=server_manager,
+                    tools=[search],
+                    config=ToolAgentLoopConfig(tool_parser_format="hermes"))
 ```
 
 Supported `tool_parser_format` values:
@@ -529,214 +332,86 @@ Supported `tool_parser_format` values:
 
 ### Context objects
 
-- `SearchResult(contents, score, title, url)` — one passage returned by the server
-- `SearchContext(query, results, task_id, task_description)` — one query and its results; `.to_information_block(citation_prefix=...)` formats them for injection
-- `AgentContext` — full run history attached to `AgentLoopOutput.context`:
-  - `.turns` — flat list of every `SearchContext` across all rounds
-  - `.rounds` — list of rounds; each round is the group of `SearchContext` objects from one `<searches>` block
-  - `.tasks` — `dict[str, str]` of subquestion task id → description (populated by `<subquestions>`)
-  - `.num_searches` — total queries issued
-  - `.num_rounds` — total search rounds (one per `<search>`/`<searches>` turn)
+- `SearchResult(contents, score, title, url)`
+- `SearchContext(query, results, task_id, task_description)` — `.to_information_block(citation_prefix=...)` formats for injection
+- `AgentContext` — attached to `AgentLoopOutput.context`:
+  - `.rounds` — `list[list[SearchContext]]`, one list per search round
+  - `.turns` — flat list of every `SearchContext`
+  - `.tasks` — `dict[str, str]` of task id → description (from `<subquestions>`)
   - `.queries` — flat list of query strings in issue order
+  - `.num_rounds`, `.num_searches`
 
-### Lookup by name
+### Metrics (`output.metrics`)
 
-```python
-from src.agent_loop import get_registered_agent_loop, list_registered_agent_loops
+| Key | Meaning |
+|-----|---------|
+| `search_rounds` | Rounds that hit the retrieval server |
+| `search_queries` | Individual queries sent (after dedup) |
+| `search_cache_hits` | Queries served from the per-run cache |
+| `fetched_pages` | Pages retrieved via `<fetch>` |
+| `answer_rejections` | Times `<answer>` was blocked by the evidence gate |
+| `direct_answers` | Times model answered from internal knowledge |
+| `decision_prompts` | Times a `<search_decision>` turn was injected |
+| `repeated_search_queries` | Queries skipped as duplicates |
+| `search_limit_hits` | Turns where the round cap was enforced |
+| `active_subquestions` | Number of registered subquestion tasks |
 
-print(list_registered_agent_loops())          # ["search_agent", "single_turn_agent"]
-cls = get_registered_agent_loop("search_agent")
-```
-
-## LLM Agent Utilities
-
-The `src.llm_agent` package provides reusable helpers for multi-turn LLM generation loops that interleave model responses with search observations.
-
-Main modules:
-
-- `src.llm_agent.generation`: `LLMGenerationManager` — multi-turn loop with action parsing, batched search dispatch, and search simulation helpers. Supported `search_mode` values: `google`, `wiki`, `local`, `simulate_sft`, `simulate_prompt`
-- `src.llm_agent.tensor_helper`: padding, trimming, attention-mask, and position-id utilities for batched tensor handling
-
-Import example:
-
-```python
-from src.llm_agent.generation import GenerationConfig, LLMGenerationManager
-from src.llm_agent.tensor_helper import TensorConfig, TensorHelper
-```
-
-The `local` search mode calls the repo's own `retrieval_server` — set `retrieval_url` in `GenerationConfig`:
-
-```python
-config = GenerationConfig(
-    ...,
-    search_mode="local",
-    retrieval_url="http://localhost:8000/retrieve",
-)
-```
-
-Notes:
-
-- optional runtime dependencies (`openai`, `serpapi`) are loaded lazily
-- `SERP_API_KEY` is read from the environment for the `google` search mode
-
-## Shared API
+## API Reference
 
 ### `GET /health`
 
-Healthcheck endpoint:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Example response:
-
 ```json
-{"status":"ok"}
+{"status": "ok"}
 ```
 
 ### `POST /retrieve`
 
-Submit one or more queries to either service:
-
-```bash
-curl -X POST http://localhost:8000/retrieve \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queries": [
-      "OpenAI latest API docs",
-      "FastAPI tutorial"
-    ]
-  }'
+```json
+{"queries": ["query 1", "query 2"], "topk": 3}
 ```
 
-Example response shape:
+Response:
 
 ```json
 {
   "result": [
-    [
-      {
-        "document": {
-          "contents": "\"Example title\"\nRelevant snippet or extracted paragraph."
-        }
-      }
-    ],
-    [
-      {
-        "document": {
-          "contents": "\"Another title\"\nRelevant snippet or extracted paragraph."
-        }
-      }
-    ]
+    [{"document": {"contents": "\"Title\"\nBody text."}}],
+    [{"document": {"contents": "\"Title 2\"\nBody text."}}]
   ]
 }
 ```
 
-## How Google Search Works
+### `POST /fetch` (Google server only)
 
-For each query, the service:
+```json
+{"urls": ["https://example.com/page"]}
+```
 
-1. sanitizes the search string
-2. calls Google Custom Search
-3. collects top result links
-4. optionally fetches HTML pages concurrently
-5. extracts paragraph text and returns short retrieval contexts
-
-If `--snippet_only` is enabled, the service skips page fetching and returns cleaned snippets directly.
-
-## How SerpAPI Search Works
-
-For each query, the service:
-
-1. calls SerpAPI
-2. extracts the answer box when present
-3. adds organic results
-4. fills remaining slots with related questions
-5. returns up to `topk` formatted documents
-
-## Notes
-
-- Google Custom Search usage is subject to Google API quotas and billing rules.
-- SerpAPI usage is subject to SerpAPI quotas and billing rules.
-- Some result pages may block scraping or return little usable paragraph text.
-- Empty or fully invalid queries return empty result lists.
+Response shape mirrors `/retrieve`.
 
 ## Testing
 
-Install test dependencies:
-
 ```bash
 pip install pytest httpx
+python3 -m pytest              # all tests
+python3 -m pytest tests/unit/  # unit tests only (no server or model required)
+python3 -m pytest tests/load/ -v -s -m load  # latency/throughput tests
 ```
 
-### Run all tests
-
-```bash
-python3 -m pytest
-```
-
-### Unit tests
-
-Pure-logic tests that require no running server or ML models:
-
-```bash
-python3 -m pytest tests/unit/ -v
-```
-
-Coverage:
+Unit test coverage:
 
 | File | What is tested |
 |------|---------------|
-| `test_agent_loop.py` | `AgentLoopBase` prompt building and generation; `SingleTurnAgentLoop`; `SearchAgentLoop` — plan, parallel search, multi-round refinement, subquestions with task tracking, `<fetch>` full-page retrieval, search + fetch in one turn, evaluation feedback injection, answer gating (pre-search, insufficient evidence, unresolved subquestion), adaptive search-decision (`<search_decision>`), direct internal-knowledge answer, `allow_internal_knowledge_answer=False` enforcement, repeated-query deduplication, search-round limit, cache and metric counters, `SearchClientConfig.get_fetch_url` derivation; `SearchResultEvaluator` sufficient/insufficient round classification |
-| `test_vocabulary.py` | `Vocabulary`, `normalize_text`, `tokenize_text`, `build_vocabulary_from_sequences`, `extract_keywords` |
-| `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` (skipped when torch unavailable) |
-| `test_llm_agent_generation.py` | action parsing, search payload alignment, inactive-example handling, unknown search-mode fallback |
-| `test_llm_agent_tensor_helper.py` | padding conversion and example-level batch re-expansion |
-| `test_rerank.py` | `passage_to_string`, `string_to_document`, `RerankerConfig.validate`, `SentenceTransformerReranker.rerank` |
-| `test_search_app.py` | `format_document`, `/health` endpoint, `/retrieve` endpoint |
+| `test_agent_loop.py` | `AgentLoopBase`; `SingleTurnAgentLoop`; `SearchAgentLoop` — plan, parallel search, multi-round refinement, subquestions, `<fetch>`, search+fetch in one turn, evaluation feedback, answer gating, adaptive search-decision, direct internal-knowledge answer, repeated-query dedup, search-round limit, cache and metrics; `SearchResultEvaluator`; `SearchClientConfig.get_fetch_url` |
+| `test_vocabulary.py` | `Vocabulary`, tokenization, keyword extraction |
+| `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` |
+| `test_llm_agent_generation.py` | action parsing, search payload, inactive examples, unknown search mode |
+| `test_llm_agent_tensor_helper.py` | padding conversion, batch re-expansion |
+| `test_rerank.py` | passage formatting, `RerankerConfig.validate`, `SentenceTransformerReranker.rerank` |
+| `test_search_app.py` | `format_document`, `/health`, `/retrieve` endpoints |
 
-### Regression tests
+## Notes
 
-Snapshot tests that pin exact outputs for known inputs, catching unintended behaviour changes:
-
-```bash
-python3 -m pytest tests/regression/ -v
-```
-
-### Load tests
-
-Concurrent-request tests that verify the FastAPI endpoints handle parallelism correctly and meet basic latency/throughput bounds:
-
-```bash
-python3 -m pytest tests/load/ -v -s -m load
-```
-
-The `-s` flag lets latency percentiles (p50/p95/p99) print to stdout.
-
-### Development syntax check
-
-```bash
-python3 -m py_compile \
-  src/__init__.py \
-  src/agent_loop/__init__.py \
-  src/agent_loop/agent_loop.py \
-  src/agent_loop/context.py \
-  src/agent_loop/search_agent_loop.py \
-  src/agent_loop/search_client.py \
-  src/agent_loop/single_turn_agent_loop.py \
-  src/llm_agent/__init__.py \
-  src/llm_agent/generation.py \
-  src/llm_agent/tensor_helper.py \
-  src/search/__init__.py \
-  src/search/search_app.py \
-  src/search/google_search_server.py \
-  src/search/index_builder.py \
-  src/search/rerank.py \
-  src/search/rerank_server.py \
-  src/search/retrieval.py \
-  src/search/retrieval_rerank_server.py \
-  src/search/retrieval_server.py \
-  src/search/serp_search_server.py \
-  src/search/vocabulary.py
-```
+- Google Custom Search and SerpAPI usage are subject to their respective quota and billing rules.
+- Some result pages may block scraping or return little usable text.
+- Empty or invalid queries return empty result lists.

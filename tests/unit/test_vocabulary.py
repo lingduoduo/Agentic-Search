@@ -8,9 +8,12 @@ from src.search.vocabulary import (
     Vocabulary,
     build_vocabulary_from_sequences,
     extract_keywords,
+    normalize_document,
     normalize_text,
+    tokenize_document,
     tokenize_text,
 )
+from src.search.text_processor import TextProcessor
 
 
 class TestVocabulary:
@@ -137,6 +140,32 @@ class TestTokenizeText:
         assert tokens == ["hello", "world"]
 
 
+class TestStructuredDocumentHelpers:
+    def test_normalize_document_from_dict_uses_text_fields(self):
+        document = {
+            "title": "Tower of London",
+            "contents": "Historic landmark. Contact info@example.com",
+            "id": 1,
+        }
+        normalized = normalize_document(document, text_fields=("title", "contents"))
+        assert "tower of london" in normalized
+        assert "historic landmark" in normalized
+        assert "info example com" not in normalized
+
+    def test_tokenize_document_uses_rec_texts_when_present(self):
+        document = {
+            "rec_texts": [
+                "Visit https://example.com for details.",
+                "Email me at test@example.com please.",
+            ]
+        }
+        tokens = tokenize_document(document)
+        assert "visit" in tokens
+        assert "details" in tokens
+        assert "https" not in tokens
+        assert "example" not in tokens
+
+
 class TestBuildVocabularyFromSequences:
     def test_basic(self):
         vocab = build_vocabulary_from_sequences(["hello world", "hello foo"])
@@ -189,3 +218,30 @@ class TestExtractKeywords:
     def test_single_token_text(self):
         keywords = extract_keywords("word", limit=5)
         assert keywords == ["word"]
+
+    def test_structured_document_keywords(self):
+        document = {
+            "title": "British Museum",
+            "description": "Museum museum artefacts in London",
+        }
+        keywords = extract_keywords(document, text_fields=("title", "description"), limit=3)
+        assert keywords[0] == "museum"
+
+
+class TestTextProcessor:
+    def test_process_segments_text(self):
+        processor = TextProcessor()
+        segments = processor.process("This is a test. Another sentence!")
+        assert segments == ["This is a test.", "Another sentence!"]
+
+    def test_process_json_rec_texts(self):
+        processor = TextProcessor()
+        result = processor.preprocess_json(
+            {
+                "rec_texts": [
+                    "Email test@example.com now",
+                    "Visit https://example.com today",
+                ]
+            }
+        )
+        assert result == ["Email now", "Visit today"]

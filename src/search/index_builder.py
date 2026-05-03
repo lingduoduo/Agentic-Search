@@ -24,7 +24,9 @@ from .vocabulary import (
     MAX_LENGTH as DEFAULT_VOCAB_MAX_LENGTH,
     build_vocabulary_from_sequences,
     extract_keywords,
+    normalize_document,
     tokenize_text,
+    tokenize_document,
 )
 
 if TYPE_CHECKING:
@@ -280,7 +282,13 @@ class IndexBuilder:
             self.build_dense_index()
 
     def save_vocabulary_metadata(self) -> None:
-        contents = [str(text) for text in self.corpus["contents"]]
+        contents = [
+            normalize_document(
+                self.corpus[index],
+                text_fields=("title", "contents"),
+            )
+            for index in range(len(self.corpus))
+        ]
         vocabulary = build_vocabulary_from_sequences(
             contents,
             max_length=self.vocab_max_length,
@@ -288,7 +296,11 @@ class IndexBuilder:
         corpus_entries: list[dict[str, Any]] = []
         for index, text in enumerate(contents):
             item = self.corpus[index]
-            tokens = tokenize_text(text, max_length=self.vocab_max_length)
+            tokens = tokenize_document(
+                item,
+                text_fields=("title", "contents"),
+                max_length=self.vocab_max_length,
+            )
             corpus_entries.append(
                 {
                     "doc_id": index,
@@ -297,8 +309,9 @@ class IndexBuilder:
                     "contents": text,
                     "tokens": tokens,
                     "keywords": extract_keywords(
-                        text,
+                        item,
                         limit=self.keyword_limit,
+                        text_fields=("title", "contents"),
                         max_length=self.vocab_max_length,
                     ),
                     "token_count": len(tokens),
