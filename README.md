@@ -101,13 +101,14 @@ python3 -m src.run_agentic_search \
   --generation_timeout_seconds 120 \
   --generation_heartbeat_seconds 5
 
-# Same on MPS (Apple Silicon GPU)
+# MPS (Apple Silicon GPU) — requires --allow_unsafe_mps and PyTorch ≥2.5 + transformers ≥4.46
 python3 -m src.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --local \
   --device mps \
+  --allow_unsafe_mps \
   --max_tokens 256 \
   --temperature 0 \
   --generation_timeout_seconds 120 \
@@ -126,7 +127,8 @@ Key flags:
 |------|---------|---------|
 | `--mode` | `search` | `single` / `search` / `tool` |
 | `--local` | off | Load model in-process (no vLLM) |
-| `--device` | `auto` | `cpu` / `cuda` / `mps` (local mode only) |
+| `--device` | `auto` | `cpu` / `cuda` / `mps` (local mode only); MPS requires `--allow_unsafe_mps` |
+| `--allow_unsafe_mps` | off | Unlock MPS device; disabled by default due to segfault risk with some causal LMs |
 | `--dtype` | auto | Override model dtype (`bfloat16` / `float16` / `float32`); auto selects bfloat16 on Apple Silicon |
 | `--max_tokens` | `256` | Maximum new tokens to generate; set too low (e.g. `4`) and answers will be truncated mid-sentence |
 | `--generation_timeout_seconds` | `60` | Wall-clock deadline for local generation; stops at the first token after the limit |
@@ -190,7 +192,7 @@ python3 -m src.run_agentic_search \
 |-----------|------------------------|-------|
 | `cpu` on Apple Silicon (arm64) | `bfloat16` | 2-3x faster than float32; requires PyTorch ≥2.0 |
 | `cuda` | `float16` | Standard GPU half-precision |
-| `mps` | `float16` | Requires PyTorch ≥2.5 + transformers ≥4.46 on macOS |
+| `mps` | `float16` | Requires `--allow_unsafe_mps`, PyTorch ≥2.5, transformers ≥4.46 |
 | `cpu` on x86 | `float32` | Safe default; slowest |
 
 Override with `--dtype bfloat16` / `float16` / `float32`. Do not use `mps` with old toolchain versions — the runtime validates the stack and raises an error before loading the model.

@@ -377,7 +377,7 @@ class LocalServerManager:
             **model_kwargs,
         )
         self._model.eval()
-        if self.device not in ("cpu", "mps"):
+        if self.device != "cpu":
             self._model.to(self.device)
         print("Status  : local model ready")
 
