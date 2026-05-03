@@ -241,7 +241,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
     args = parse_args()
     config = OnlineSearchConfig(
         api_key=args.api_key,

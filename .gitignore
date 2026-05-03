@@ -1,3 +1,7 @@
+# Project data and indexes
+data/
+indexes/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

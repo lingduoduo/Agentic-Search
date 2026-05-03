@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -271,7 +272,7 @@ class IndexBuilder:
                 "1",
             ]
             subprocess.run(
-                ["python", "-m", "pyserini.index.lucene", *pyserini_args],
+                [sys.executable, "-m", "pyserini.index.lucene", *pyserini_args],
                 check=True,
             )
 
@@ -421,6 +422,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
     args = parse_args()
     config = IndexBuilderConfig(
         retrieval_method=args.retrieval_method,

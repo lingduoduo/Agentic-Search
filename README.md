@@ -87,46 +87,40 @@ Full list of supported variables (with defaults) is in [`.env.example`](.env.exa
 
 ## Google Search Configuration
 
-CLI flags (all optional when the corresponding env var is set):
-
-```bash
-python3 -m src.search.google_search_server \
-  --api_key "$GOOGLE_API_KEY" \
-  --cse_id "$GOOGLE_CSE_ID" \
-  --topk 3 \
-  --host 0.0.0.0 \
-  --port 8000
-```
-
-Optional flags:
-
-- `--snippet_only`: return Google snippets only, without fetching result pages
-- `--topk`: maximum number of documents returned per query
-
-Start with keys from `.env`:
+With keys in `.env`, no flags are needed:
 
 ```bash
 python3 -m src.search.google_search_server
 ```
 
-## SerpAPI Configuration
+Optional flags:
 
-CLI flags:
+- `--topk N`: maximum number of documents returned per query (default: 3)
+- `--snippet_only`: return Google snippets only, without fetching result pages
+- `--host` / `--port`: bind address (defaults: `0.0.0.0:8000`)
+
+> **Note:** do not pass `--api_key "$GOOGLE_API_KEY"` from the shell — if the variable is not already exported the shell expands it to an empty string before Python starts, which overrides the `.env` value. Let the server read the key from `.env` directly.
+
+If you need to override a key at the command line, pass the literal value:
 
 ```bash
-python3 -m src.search.serp_search_server \
-  --serp_api_key "$SERP_API_KEY" \
-  --serp_engine google \
-  --search_url https://serpapi.com/search \
-  --topk 3 \
-  --host 0.0.0.0 \
-  --port 8000
+python3 -m src.search.google_search_server --api_key "AIza..." --cse_id "305b..."
 ```
 
-Start with keys from `.env`:
+## SerpAPI Configuration
+
+With keys in `.env`, no flags are needed:
 
 ```bash
 python3 -m src.search.serp_search_server
+```
+
+Optional flags mirror the Google server (`--topk`, `--host`, `--port`) plus `--serp_engine` and `--search_url`.
+
+If you need to override a key at the command line, pass the literal value:
+
+```bash
+python3 -m src.search.serp_search_server --serp_api_key "your_key_here"
 ```
 
 ## Running a Server
