@@ -86,12 +86,21 @@ def prepare_texts(texts: list[str], retrieval_method: str, *, is_query: bool) ->
 
 def load_model(model_path: str, use_fp16: bool = False, device: str = "cpu") -> tuple[Any, Any]:
     _, auto_model, auto_tokenizer = _require_transformers()
-    model = auto_model.from_pretrained(model_path, trust_remote_code=True)
+
+    # Try local cache first to skip the network version-check that can hang.
+    # Falls back to a full download when the model is not cached yet.
+    def _load(cls, **extra):
+        try:
+            return cls.from_pretrained(model_path, local_files_only=True, trust_remote_code=True, **extra)
+        except OSError:
+            return cls.from_pretrained(model_path, trust_remote_code=True, **extra)
+
+    model = _load(auto_model)
     model.eval()
     model.to(device)
     if use_fp16 and device.startswith("cuda"):
         model = model.half()
-    tokenizer = auto_tokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
+    tokenizer = _load(auto_tokenizer, use_fast=True)
     return model, tokenizer
 
 

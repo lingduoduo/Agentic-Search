@@ -62,7 +62,7 @@ pip install -r requirements.txt
 Or manually:
 
 ```bash
-pip install fastapi uvicorn google-api-python-client requests aiohttp beautifulsoup4 chardet numpy torch transformers datasets tqdm faiss-cpu sentence-transformers python-dotenv
+pip install fastapi uvicorn google-api-python-client requests aiohttp beautifulsoup4 chardet numpy torch transformers datasets tqdm faiss-cpu sentence-transformers python-dotenv pyserini
 ```
 
 ## Environment Variables
@@ -84,6 +84,24 @@ SERP_API_KEY=your_serpapi_key
 All variables can also be passed as CLI flags or set as shell environment variables — whichever takes precedence in your workflow.
 
 Full list of supported variables (with defaults) is in [`.env.example`](.env.example).
+
+### Java (BM25 only)
+
+BM25 indexing uses [pyserini](https://github.com/castorini/pyserini), which wraps Apache Lucene and requires a **Java 11+ JDK**. On Apple Silicon the JDK must be the **arm64** build — the x86_64 Corretto build will not work.
+
+Install an arm64 JDK via Homebrew:
+
+```bash
+brew install openjdk
+```
+
+Then add `JAVA_HOME` to your `.env`:
+
+```
+JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home
+```
+
+The index builder loads `.env` automatically at startup, so no shell `export` is needed. Dense indexing and retrieval do not require Java.
 
 ## Google Search Configuration
 
@@ -129,7 +147,9 @@ Once running, either server listens on `http://localhost:8000` by default.
 
 ## Building an Index
 
-Dense index example:
+Build the dense FAISS index first — the retrieval command requires a pre-built index and will not build one on the fly.
+
+Dense index (downloads the encoder model on first run, then uses the local cache):
 
 ```bash
 python3 -m src.search.index_builder \
@@ -139,7 +159,7 @@ python3 -m src.search.index_builder \
   --save_dir indexes/
 ```
 
-BM25 example:
+BM25 index (requires Java — see [Java (BM25 only)](#java-bm25-only) above):
 
 ```bash
 python3 -m src.search.index_builder \
@@ -153,10 +173,9 @@ Notes:
 - dense indexing needs `model_path` unless you supply `--embedding_path`
 - GPU is used automatically when available for embedding generation
 - `--faiss_gpu` requires GPU-enabled FAISS support
+- both commands write `indexes/vocabulary_corpus.json` alongside the index
 
 ## Querying a Dense Index
-
-Example:
 
 ```bash
 python3 -m src.search.retrieval \
@@ -169,6 +188,8 @@ python3 -m src.search.retrieval \
 ```
 
 The command prints JSON results containing the matched corpus entries and similarity scores.
+
+> **Model loading:** the encoder is loaded from the local HuggingFace cache on every run. The first run downloads the model (~438 MB for `bge-base-en-v1.5`); subsequent runs start in a few seconds with no network traffic.
 
 ## Running a Dense Retrieval Server
 
