@@ -51,6 +51,8 @@ class SearchContext:
 
     query: str
     results: list[SearchResult] = field(default_factory=list)
+    task_id: str | None = None
+    task_description: str | None = None
 
     def to_information_block(self, citation_prefix: str | None = None) -> str:
         """Format results as a plain-text block injected back into the conversation.
@@ -63,6 +65,11 @@ class SearchContext:
             return "No information available"
 
         lines: list[str] = []
+        if self.task_id:
+            task_line = f"Task {self.task_id}"
+            if self.task_description:
+                task_line += f": {self.task_description}"
+            lines.append(task_line)
         for i, result in enumerate(self.results, 1):
             content = result.contents
             first_line, _, rest = content.partition("\n")
@@ -89,6 +96,10 @@ class AgentContext:
 
     turns: list[SearchContext] = field(default_factory=list)
     rounds: list[list[SearchContext]] = field(default_factory=list)
+    tasks: dict[str, str] = field(default_factory=dict)
+
+    def register_tasks(self, tasks: dict[str, str]) -> None:
+        self.tasks.update(tasks)
 
     def add_turn(self, query: str, results: list[SearchResult]) -> SearchContext:
         return self.add_round([query], [results])[0]
@@ -97,12 +108,21 @@ class AgentContext:
         self,
         queries: list[str],
         results_by_query: list[list[SearchResult]],
+        task_ids: list[str | None] | None = None,
     ) -> list[SearchContext]:
         if len(queries) != len(results_by_query):
             raise ValueError("queries and results_by_query must have the same length.")
+        task_ids = task_ids or [None] * len(queries)
+        if len(task_ids) != len(queries):
+            raise ValueError("task_ids and queries must have the same length.")
         round_contexts = [
-            SearchContext(query=query, results=results)
-            for query, results in zip(queries, results_by_query)
+            SearchContext(
+                query=query,
+                results=results,
+                task_id=task_id,
+                task_description=self.tasks.get(task_id) if task_id else None,
+            )
+            for query, results, task_id in zip(queries, results_by_query, task_ids)
         ]
         self.turns.extend(round_contexts)
         self.rounds.append(round_contexts)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from urllib.parse import urlparse, urlunparse
 
 import aiohttp
 
@@ -28,6 +29,18 @@ class SearchClientConfig:
     topk: int = 5
     timeout_seconds: int = 10
     max_retries: int = 3
+    # Explicit /fetch endpoint. When None, derived from url by replacing /retrieve with /fetch.
+    fetch_url: str | None = None
+
+    def get_fetch_url(self) -> str:
+        if self.fetch_url:
+            return self.fetch_url
+        parsed = urlparse(self.url)
+        path = parsed.path.rstrip("/")
+        if path.endswith("/retrieve"):
+            path = path[: -len("/retrieve")]
+        path = path.rstrip("/") + "/fetch"
+        return urlunparse(parsed._replace(path=path, query="", fragment=""))
 
 
 class SearchClient:
@@ -88,7 +101,7 @@ class SearchClient:
         payload = {"urls": urls}
         timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
         last_exc: Exception | None = None
-        fetch_url = self.config.url.removesuffix("/retrieve") + "/fetch"
+        fetch_url = self.config.get_fetch_url()
 
         for attempt in range(self.config.max_retries):
             try:

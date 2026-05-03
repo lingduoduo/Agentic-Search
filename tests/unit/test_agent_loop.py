@@ -481,3 +481,132 @@ def test_search_agent_loop_deduplicates_queries_and_urls_and_tracks_metrics():
     assert output.metrics["search_rounds"] == 1.0
     assert output.metrics["search_queries"] == 1.0
     assert output.metrics["fetched_pages"] == 1.0
+
+
+def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: identify the voice actor\nT2: identify the developer\n</subquestions>"
+            "<searches>\n[T1] Alice David Lara Croft voice\n[T2] Lara Croft game developer\n</searches>"
+        ),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R1Q2D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=2),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("Alice David Lara Croft voice", "Lara Croft game developer"): [
+                [SearchResult(contents='"Voice"\nAlice David', url="https://example.com/voice")],
+                [SearchResult(contents='"Developer"\nCrystal Dynamics', url="https://example.com/dev")],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    assert output.context.tasks == {
+        "T1": "identify the voice actor",
+        "T2": "identify the developer",
+    }
+    assert output.context.turns[0].task_id == "T1"
+    assert output.context.turns[1].task_id == "T2"
+    assert output.metrics["active_subquestions"] == 2.0
+
+
+def test_search_agent_loop_rejects_answer_when_a_subquestion_is_unresolved():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: identify the voice actor\nT2: identify the developer\n</subquestions>"
+            "<searches>\n[T1] Alice David Lara Croft voice\n</searches>"
+        ),
+        tokenizer.encode("<answer>Done too early</answer>"),
+        tokenizer.encode("<searches>\n[T2] Lara Croft game developer\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R2Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=6,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("Alice David Lara Croft voice",): [
+                [SearchResult(contents='"Voice"\nAlice David', url="https://example.com/voice")],
+            ],
+            ("Lara Croft game developer",): [
+                [SearchResult(contents='"Developer"\nCrystal Dynamics', url="https://example.com/dev")],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    assert "T2: identify the developer" in third_prompt
+    assert "<answer_feedback>" in third_prompt
+    assert output.context.num_rounds == 2
+
+
+def test_search_client_config_derives_fetch_url_from_retrieve_url():
+    from src.agent_loop.search_client import SearchClientConfig
+
+    cases = [
+        ("http://localhost:8000/retrieve", "http://localhost:8000/fetch"),
+        ("http://localhost:8000/retrieve/", "http://localhost:8000/fetch"),
+        ("http://host:9000/api/retrieve", "http://host:9000/api/fetch"),
+        ("http://host/other", "http://host/other/fetch"),
+    ]
+    for url, expected in cases:
+        assert SearchClientConfig(url=url).get_fetch_url() == expected, f"Failed for {url!r}"
+
+
+def test_search_agent_loop_processes_search_and_fetch_in_same_turn():
+    """When the model emits <searches> and <fetch> in the same turn, both are
+    executed and their results appear in a single observation message."""
+    tokenizer = DummyTokenizerWithEncode()
+    combined = "<searches>\nalpha query\n</searches><fetch>https://example.com/a</fetch>"
+    responses = [
+        tokenizer.encode(combined),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {("alpha query",): [[SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")]]}
+    )
+    fake_client.fetch_responses = {
+        ("https://example.com/a",): [
+            SearchResult(contents="Full page body", title="Doc A", url="https://example.com/a")
+        ]
+    }
+    loop._search_client = fake_client
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0}))
+
+    # Both search and fetch fired in turn 0.
+    assert fake_client.calls == [["alpha query"]]
+    assert fake_client.fetch_calls == [["https://example.com/a"]]
+    # Both observations are in the same injected user message (turn 1 prompt).
+    second_prompt = "".join(chr(t) for t in loop.server_manager.calls[1]["prompt_ids"])
+    assert "<information>" in second_prompt
+    assert "<full_page>" in second_prompt
+    assert output.num_turns == 2
