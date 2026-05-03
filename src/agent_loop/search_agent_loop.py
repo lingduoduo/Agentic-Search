@@ -33,7 +33,7 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
         "- Search results are returned inside <information>...</information>.\n"
         "- Search-quality judgments are returned inside <search_evaluation>...</search_evaluation>.\n"
         "- Full webpage content is returned inside <full_page>...</full_page>.\n\n"
-        f"You may use at most {max_search_limit} loop turns.\n"
+        f"You may execute at most {max_search_limit} search rounds.\n"
         f"You may fetch up to {max_url_fetch} URLs in one fetch request.\n\n"
         "Workflow:\n"
         "1. Plan.\n"
@@ -89,6 +89,18 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     # {content} is replaced by the formatted batch-search information block.
     obs_template: str = "\n\n<information>\n{content}\n</information>\n\n"
     system_prompt: str | None = None
+    max_search_limit: int | None = None
+    search_limit_template: str = (
+        "\n\n<search_feedback>\n"
+        "Search limit reached. Do not issue more searches; use the evidence already collected or refine with fetched pages.\n"
+        "</search_feedback>\n\n"
+    )
+    repeated_query_template: str = (
+        "\n\n<search_feedback>\n"
+        "Repeated search skipped for these queries:\n{content}\n"
+        "Refer to the earlier results instead of searching them again.\n"
+        "</search_feedback>\n\n"
+    )
 
 
 @register("search_agent")
@@ -128,12 +140,16 @@ class SearchAgentLoop(AgentLoopBase):
             cfg = replace(
                 cfg,
                 system_prompt=build_search_agent_instruction(
-                    max_search_limit=cfg.max_turns,
+                    max_search_limit=cfg.max_search_limit or cfg.max_turns,
                     max_url_fetch=cfg.max_url_fetch,
                 ),
             )
+        if cfg.max_search_limit is None:
+            cfg = replace(cfg, max_search_limit=cfg.max_turns)
         self.search_config = cfg
         self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)
+        self._search_cache: dict[str, list[SearchResult]] = {}
+        self._page_cache: dict[str, SearchResult] = {}
         action_tags = [
             cfg.plan_tag,
             cfg.subquestions_tag,
@@ -266,6 +282,65 @@ class SearchAgentLoop(AgentLoopBase):
                 deduped_query_specs.append(query_spec)
         return deduped_query_specs, self._dedupe_preserve_order(urls)
 
+    def _partition_search_requests(
+        self,
+        query_specs: list[tuple[str | None, str]],
+        executed_search_queries: set[str],
+        searches_used: int,
+    ) -> tuple[list[tuple[str | None, str]], list[str], list[str]]:
+        allowed_specs: list[tuple[str | None, str]] = []
+        repeated_queries: list[str] = []
+        overflow_queries: list[str] = []
+        remaining_searches = max((self.search_config.max_search_limit or 0) - searches_used, 0)
+
+        for task_id, query in query_specs:
+            if query in executed_search_queries:
+                repeated_queries.append(query)
+                continue
+            if remaining_searches <= 0:
+                overflow_queries.append(query)
+                continue
+            allowed_specs.append((task_id, query))
+            remaining_searches -= 1
+
+        return allowed_specs, repeated_queries, overflow_queries
+
+    async def _retrieve_many_with_cache(
+        self,
+        queries: list[str],
+    ) -> list[list[SearchResult]]:
+        if not queries:
+            return []
+
+        uncached_queries = [query for query in queries if query not in self._search_cache]
+        if uncached_queries:
+            fetched_rows = await self._retrieve_many(uncached_queries)
+            for query, results in zip(uncached_queries, fetched_rows):
+                self._search_cache[query] = results
+
+        return [list(self._search_cache.get(query, [])) for query in queries]
+
+    async def _fetch_pages_with_cache(
+        self,
+        urls: list[str],
+    ) -> list[SearchResult]:
+        if not urls:
+            return []
+
+        uncached_urls = [url for url in urls if url not in self._page_cache]
+        if uncached_urls:
+            fetched_pages = await self._fetch_pages(uncached_urls)
+            fetched_by_url = {
+                page.url: page
+                for page in fetched_pages
+                if page.url
+            }
+            for url in uncached_urls:
+                if url in fetched_by_url:
+                    self._page_cache[url] = fetched_by_url[url]
+
+        return [self._page_cache[url] for url in urls if url in self._page_cache]
+
     def _format_round_information(
         self,
         round_index: int,
@@ -351,6 +426,11 @@ class SearchAgentLoop(AgentLoopBase):
             content=self._format_full_page_information(pages)
         )
 
+    def _build_repeated_query_feedback(self, queries: list[str]) -> str:
+        return self.search_config.repeated_query_template.format(
+            content="\n".join(f"- {query}" for query in queries)
+        )
+
     def _evaluate_tasks(
         self,
         search_contexts: list[SearchContext],
@@ -431,11 +511,17 @@ class SearchAgentLoop(AgentLoopBase):
         active_tasks: dict[str, str] = {}
         task_statuses: dict[str, bool] = {}
         consecutive_rejections = 0
+        searches_used = 0
+        executed_search_queries: set[str] = set()
         metrics["search_rounds"] = 0.0
         metrics["fetched_pages"] = 0.0
         metrics["answer_rejections"] = 0.0
         metrics["search_queries"] = 0.0
         metrics["active_subquestions"] = 0.0
+        metrics["search_limit_hits"] = 0.0
+        metrics["repeated_search_queries"] = 0.0
+        metrics["search_cache_hits"] = 0.0
+        metrics["page_cache_hits"] = 0.0
 
         for turn in range(self.search_config.max_turns):
             with simple_timer(f"build_prompt_turn_{turn}", metrics):
@@ -500,8 +586,13 @@ class SearchAgentLoop(AgentLoopBase):
                 search_tags=search_tags,
                 fetch_tag=fetch_tag,
             )
-            all_queries = [query for _, query in query_specs]
-            query_task_ids = [task_id for task_id, _ in query_specs]
+            allowed_query_specs, repeated_queries, overflow_queries = self._partition_search_requests(
+                query_specs=query_specs,
+                executed_search_queries=executed_search_queries,
+                searches_used=searches_used,
+            )
+            all_queries = [query for _, query in allowed_query_specs]
+            query_task_ids = [task_id for task_id, _ in allowed_query_specs]
 
             if answer_requested and not all_queries and not fetch_urls:
                 evidence_is_sufficient = self._has_sufficient_evidence_for_answer(
@@ -532,6 +623,12 @@ class SearchAgentLoop(AgentLoopBase):
 
             # Accumulate all observations for this turn into a single user message.
             turn_observations: list[str] = []
+            if repeated_queries:
+                metrics["repeated_search_queries"] += float(len(repeated_queries))
+                turn_observations.append(self._build_repeated_query_feedback(repeated_queries))
+            if overflow_queries:
+                metrics["search_limit_hits"] += 1.0
+                turn_observations.append(self.search_config.search_limit_template)
 
             # --- plan / subquestions only (no search, no fetch) ---
             if not all_queries and not fetch_urls:
@@ -550,9 +647,14 @@ class SearchAgentLoop(AgentLoopBase):
             if all_queries:
                 consecutive_rejections = 0
                 metrics["search_queries"] += len(all_queries)
+                metrics["search_cache_hits"] += float(
+                    sum(1 for query in all_queries if query in self._search_cache)
+                )
+                searches_used += len(all_queries)
+                executed_search_queries.update(all_queries)
 
                 t0 = time.perf_counter()
-                results_by_query = await self._retrieve_many(all_queries)
+                results_by_query = await self._retrieve_many_with_cache(all_queries)
                 elapsed = time.perf_counter() - t0
                 metrics["search_rounds"] += 1
                 total_results = sum(len(r) for r in results_by_query)
@@ -591,7 +693,10 @@ class SearchAgentLoop(AgentLoopBase):
             # --- page fetch (runs after search so snippets and full pages are in the same message) ---
             if fetch_urls:
                 limited_urls = fetch_urls[: self.search_config.max_url_fetch]
-                pages = await self._fetch_pages(limited_urls)
+                metrics["page_cache_hits"] += float(
+                    sum(1 for url in limited_urls if url in self._page_cache)
+                )
+                pages = await self._fetch_pages_with_cache(limited_urls)
                 metrics["fetched_pages"] += len(pages)
                 turn_observations.append(self._build_full_page_observation(pages))
 

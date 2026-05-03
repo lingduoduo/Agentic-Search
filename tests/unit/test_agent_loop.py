@@ -560,6 +560,73 @@ def test_search_agent_loop_rejects_answer_when_a_subquestion_is_unresolved():
     assert output.context.num_rounds == 2
 
 
+def test_search_agent_loop_skips_repeated_queries_with_feedback():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    assert fake_client.calls == [["alpha query"]]
+    assert "Repeated search skipped" in third_prompt
+    assert output.metrics["repeated_search_queries"] == 1.0
+
+
+def test_search_agent_loop_enforces_search_limit():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<search>beta query</search>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_search_limit=1,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    assert fake_client.calls == [["alpha query"]]
+    assert "Search limit reached" in third_prompt
+    assert output.metrics["search_limit_hits"] == 1.0
+
+
 def test_search_client_config_derives_fetch_url_from_retrieve_url():
     from src.agent_loop.search_client import SearchClientConfig
 
