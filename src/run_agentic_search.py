@@ -44,70 +44,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
-import os
-import sys
 import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-
-def _load_intent_training_data(path: str) -> list[tuple[list[str], str]]:
-    from src.search.vocabulary import tokenize_text
-
-    with open(path, encoding="utf-8") as handle:
-        raw = json.load(handle)
-
-    examples: list[tuple[list[str], str]] = []
-    for item in raw:
-        text = item.get("text") or item.get("question") or ""
-        label = item.get("label") or item.get("intent")
-        if not text or not label:
-            continue
-        examples.append((tokenize_text(text), str(label)))
-    return examples
-
-
-def _resolve_intent_routed_search_settings(
-    *,
-    question: str,
-    topk: int,
-    max_search_limit: int,
-    require_evidence: bool,
-    allow_internal_knowledge: bool,
-    intent_pipeline: Any | None,
-    intent_min_confidence: float,
-) -> tuple[int, int, bool, bool, dict[str, Any]]:
-    """Optionally adjust search settings using a trained intent classifier."""
-
-    metadata: dict[str, Any] = {"intent_routing_used": False}
-    if intent_pipeline is None:
-        return topk, max_search_limit, require_evidence, allow_internal_knowledge, metadata
-
-    prediction = intent_pipeline.predict_text(question)
-    metadata.update(
-        {
-            "intent_routing_used": True,
-            "predicted_intent": prediction.intent,
-            "intent_confidence": prediction.confidence,
-        }
-    )
-    if prediction.confidence < intent_min_confidence:
-        metadata["intent_policy_applied"] = False
-        return topk, max_search_limit, require_evidence, allow_internal_knowledge, metadata
-
-    metadata["intent_policy_applied"] = True
-    if prediction.intent == "qa":
-        return topk, max_search_limit, require_evidence, allow_internal_knowledge, metadata
-    if prediction.intent == "navigate":
-        return max(topk, 5), max(max_search_limit, 2), True, False, metadata
-    if prediction.intent == "purchase":
-        return max(topk, 8), max(max_search_limit, 2), True, False, metadata
-    if prediction.intent == "recommendation":
-        return max(topk, 8), max(max_search_limit, 3), True, False, metadata
-    return topk, max_search_limit, require_evidence, allow_internal_knowledge, metadata
 
 
 # ---------------------------------------------------------------------------
@@ -301,17 +242,22 @@ async def run_search_agent(
     )
 
     sampling_params = sampling_params or {"temperature": 0.7, "max_tokens": 512}
-    resolved_topk, resolved_search_limit, resolved_require_evidence, resolved_allow_internal, intent_metadata = (
-        _resolve_intent_routed_search_settings(
-            question=question,
-            topk=topk,
-            max_search_limit=max_search_limit or max_turns,
-            require_evidence=require_evidence,
-            allow_internal_knowledge=allow_internal_knowledge,
-            intent_pipeline=intent_pipeline,
-            intent_min_confidence=intent_min_confidence,
+    effective_search_limit = max_search_limit or max_turns
+    if intent_pipeline is not None:
+        resolved_topk, effective_search_limit, require_evidence, allow_internal_knowledge, intent_metadata = (
+            intent_pipeline.resolve_search_settings(
+                question,
+                topk=topk,
+                max_search_limit=effective_search_limit,
+                require_evidence=require_evidence,
+                allow_internal_knowledge=allow_internal_knowledge,
+                min_confidence=intent_min_confidence,
+            )
         )
-    )
+        resolved_topk = resolved_topk
+    else:
+        resolved_topk = topk
+        intent_metadata: dict[str, Any] = {"intent_routing_used": False}
     loop = SearchAgentLoop(
         tokenizer=tokenizer,
         server_manager=server_manager,
@@ -319,10 +265,10 @@ async def run_search_agent(
             search_url=search_url,
             topk=resolved_topk,
             max_turns=max_turns,
-            max_search_limit=resolved_search_limit,
-            require_sufficient_evidence_before_answer=resolved_require_evidence,
+            max_search_limit=effective_search_limit,
+            require_sufficient_evidence_before_answer=require_evidence,
             max_answer_rejections=max_answer_rejections,
-            allow_internal_knowledge_answer=resolved_allow_internal,
+            allow_internal_knowledge_answer=allow_internal_knowledge,
             evaluation_config=SearchEvaluationConfig(
                 min_results_per_query=1,
                 min_total_results=2,
@@ -338,11 +284,13 @@ async def run_search_agent(
     elapsed = time.perf_counter() - t0
 
     answer = tokenizer.decode(output.response_ids, skip_special_tokens=True)
-    print(output.context.queries)   # all queries issued during the run
-    print(output.metrics)           # timing and search-quality counters
-    if intent_metadata.get("intent_routing_used"):
-        print(intent_metadata)
-    _print_result(answer=answer, output=output, rounds=output.context, elapsed=elapsed)
+    _print_result(
+        answer=answer,
+        output=output,
+        rounds=output.context,
+        elapsed=elapsed,
+        intent_metadata=intent_metadata if intent_metadata.get("intent_routing_used") else None,
+    )
 
 
 async def run_tool_agent(
@@ -430,6 +378,7 @@ def _print_result(
     output: Any,
     rounds: Any = None,
     elapsed: float | None = None,
+    intent_metadata: dict[str, Any] | None = None,
 ) -> None:
     sep = "─" * 60
     print(f"\n{sep}")
@@ -457,6 +406,12 @@ def _print_result(
             print(f"  {key:<30} {val}")
     if elapsed is not None:
         print(f"  {'wall_time_seconds':<30} {elapsed:.2f}")
+    if intent_metadata:
+        print(f"\n{sep}")
+        print("INTENT ROUTING")
+        print(sep)
+        for key, val in intent_metadata.items():
+            print(f"  {key:<30} {val}")
     print(sep)
 
 
@@ -546,12 +501,12 @@ async def main() -> None:
 
     intent_pipeline = None
     if args.intent_examples:
-        from src.agent_loop.intent_classifier import IntentionClassificationPipeline
+        from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
 
-        training_data = _load_intent_training_data(args.intent_examples)
+        training_data = load_training_data(args.intent_examples)
         if training_data:
-            intent_pipeline = IntentionClassificationPipeline()
-            intent_pipeline.train_model(training_data, epochs=10)
+            intent_pipeline = IntentPipeline()
+            intent_pipeline.train(training_data, epochs=10)
 
     print(f"\nMode    : {args.mode}")
     print(f"Model   : {args.model}")

@@ -18,9 +18,11 @@ from .evaluation import (
 )
 from .intent_classifier import (
     INTENT_LABELS,
+    IntentPipeline,
     IntentPrediction,
     IntentionClassificationPipeline,
-    IntentionClassifier,
+    load_training_data as load_intent_training_data,
+    resolve_search_settings,
 )
 from .search_agent_loop import (
     SearchAgentLoop,
@@ -43,9 +45,11 @@ __all__ = [
     "FunctionTool",
     "HermesToolParser",
     "INTENT_LABELS",
+    "IntentPipeline",
     "IntentPrediction",
     "IntentionClassificationPipeline",
-    "IntentionClassifier",
+    "load_intent_training_data",
+    "resolve_search_settings",
     "JSONToolParser",
     "Llama3ToolParser",
     "QueryEvaluation",

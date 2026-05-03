@@ -2,20 +2,12 @@
 
 from src.agent_loop.intent_classifier import (
     INTENT_LABELS,
+    IntentPipeline,
     IntentPrediction,
     IntentionClassificationPipeline,
+    resolve_search_settings,
 )
-from src.run_agentic_search import _resolve_intent_routed_search_settings
 from src.search.vocabulary import Vocabulary
-
-
-class DummyIntentPipeline:
-    def __init__(self, intent: str, confidence: float):
-        self.prediction = IntentPrediction(intent=intent, confidence=confidence)
-
-    def predict_text(self, text: str) -> IntentPrediction:
-        assert text
-        return self.prediction
 
 
 def test_vocabulary_build_and_encode_support_sequence_training():
@@ -29,55 +21,80 @@ def test_vocabulary_build_and_encode_support_sequence_training():
     assert encoded[1] == 0
 
 
-def test_intention_pipeline_predict_requires_training():
-    pipeline = IntentionClassificationPipeline()
-
+def test_pipeline_predict_requires_training():
+    pipeline = IntentPipeline()
     try:
         pipeline.predict(["buy", "phone"])
     except RuntimeError as exc:
-        assert "Model not trained" in str(exc)
-    else:  # pragma: no cover - defensive
+        assert "not trained" in str(exc).lower()
+    else:  # pragma: no cover
         raise AssertionError("predict() should require training first")
 
 
-def test_intent_routing_purchase_forces_search_bias():
-    topk, max_search_limit, require_evidence, allow_internal, metadata = (
-        _resolve_intent_routed_search_settings(
-            question="buy a new phone online",
-            topk=3,
-            max_search_limit=1,
-            require_evidence=False,
-            allow_internal_knowledge=True,
-            intent_pipeline=DummyIntentPipeline("purchase", 0.95),
-            intent_min_confidence=0.6,
-        )
+def test_intention_pipeline_alias_matches_intent_pipeline():
+    assert IntentionClassificationPipeline is IntentPipeline
+
+
+def test_resolve_search_settings_purchase_forces_search_bias():
+    topk, max_sl, req_ev, allow_int, meta = resolve_search_settings(
+        IntentPrediction(intent="purchase", confidence=0.95),
+        topk=3,
+        max_search_limit=1,
+        require_evidence=False,
+        allow_internal_knowledge=True,
+        min_confidence=0.6,
     )
 
     assert topk == 8
-    assert max_search_limit == 2
-    assert require_evidence is True
-    assert allow_internal is False
-    assert metadata["predicted_intent"] == "purchase"
+    assert max_sl == 2
+    assert req_ev is True
+    assert allow_int is False
+    assert meta["predicted_intent"] == "purchase"
+    assert meta["intent_policy_applied"] is True
 
 
-def test_intent_routing_low_confidence_keeps_user_settings():
-    topk, max_search_limit, require_evidence, allow_internal, metadata = (
-        _resolve_intent_routed_search_settings(
-            question="what is faiss",
-            topk=5,
-            max_search_limit=4,
-            require_evidence=True,
-            allow_internal_knowledge=True,
-            intent_pipeline=DummyIntentPipeline("qa", 0.2),
-            intent_min_confidence=0.6,
-        )
+def test_resolve_search_settings_low_confidence_keeps_defaults():
+    topk, max_sl, req_ev, allow_int, meta = resolve_search_settings(
+        IntentPrediction(intent="qa", confidence=0.2),
+        topk=5,
+        max_search_limit=4,
+        require_evidence=True,
+        allow_internal_knowledge=True,
+        min_confidence=0.6,
     )
 
     assert topk == 5
-    assert max_search_limit == 4
-    assert require_evidence is True
-    assert allow_internal is True
-    assert metadata["intent_policy_applied"] is False
+    assert max_sl == 4
+    assert req_ev is True
+    assert allow_int is True
+    assert meta["intent_policy_applied"] is False
+
+
+def test_resolve_search_settings_qa_keeps_defaults():
+    topk, max_sl, req_ev, allow_int, meta = resolve_search_settings(
+        IntentPrediction(intent="qa", confidence=0.9),
+        topk=5,
+        max_search_limit=4,
+        require_evidence=True,
+        allow_internal_knowledge=True,
+    )
+
+    assert topk == 5
+    assert max_sl == 4
+    assert meta["intent_policy_applied"] is True
+
+
+def test_resolve_search_settings_recommendation_boosts_results():
+    topk, max_sl, *_ = resolve_search_settings(
+        IntentPrediction(intent="recommendation", confidence=0.85),
+        topk=3,
+        max_search_limit=1,
+        require_evidence=False,
+        allow_internal_knowledge=True,
+    )
+
+    assert topk == 8
+    assert max_sl == 3
 
 
 def test_intent_labels_snapshot():

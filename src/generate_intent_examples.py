@@ -7,35 +7,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.agent_loop.intent_classifier import INTENT_LABELS
 from src.search.vocabulary import extract_keywords, tokenize_text
 
-INTENTS = ("purchase", "navigate", "qa", "recommendation")
-STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "how",
-    "in",
-    "into",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "to",
-    "used",
-    "using",
-    "with",
-}
+INTENTS = tuple(INTENT_LABELS)  # ordering used for sort key
+_STOPWORDS = frozenset(
+    "a an and are as at be by for from how in into is it of on or that the to used using with".split()
+)
 
 
 def _load_corpus(path: Path) -> list[dict[str, Any]]:
@@ -67,12 +45,13 @@ def _build_domain_terms(document: dict[str, Any], vocabulary_tokens: list[str]) 
     )
     title_tokens = tokenize_text(document.get("title", ""), max_length=6)
 
+    seen: set[str] = set()
     domain_terms: list[str] = []
     for token in title_tokens + keywords + vocabulary_tokens:
-        if len(token) < 3 or token in STOPWORDS:
+        if len(token) < 3 or token in _STOPWORDS or token in seen:
             continue
-        if token and token not in domain_terms:
-            domain_terms.append(token)
+        seen.add(token)
+        domain_terms.append(token)
         if len(domain_terms) >= 6:
             break
     return domain_terms
