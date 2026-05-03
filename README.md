@@ -78,7 +78,7 @@ python3 -m src.run_agentic_search \
 # Single-turn (no search), local model
 python3 -m src.run_agentic_search \
     --mode single --question "What is FAISS?" \
-    --model BAAI/bge-base-en-v1.5 --local
+    --model meta-llama/Llama-3.1-8B-Instruct --local
 
 # Tool-calling loop
 python3 -m src.run_agentic_search \
@@ -226,32 +226,59 @@ python3 -m src.search.retrieval_rerank_server \
 | Name | Class | Description |
 |------|-------|-------------|
 | `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
-| `"search_agent"` | `SearchAgentLoop` | Deep research: plan → search → evaluate → answer |
+| `"search_agent"` | `SearchAgentLoop` | Multi-turn research with planning, adaptive search, fetch, and evidence gating |
 | `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
+
+### What `SearchAgentLoop` actually does
+
+The current loop is not a simple "search once, then answer" flow. It behaves more like a small research controller:
+
+1. The model can write a `<plan>`.
+2. The model must decide whether to answer from internal knowledge or search using `<search_decision>`.
+3. For multi-hop questions, it can register named tracks with `<subquestions>`.
+4. It can issue one query with `<search>` or many in parallel with `<searches>`.
+5. The loop evaluates each search round and injects both evidence and a search-quality verdict.
+6. If snippets are weak, the model can refine queries or fetch full pages with `<fetch>`.
+7. `<answer>` is accepted only when the loop allows it:
+   - immediately, if internal knowledge answers are allowed and the model chose `<search_decision>answer</search_decision>`
+   - after search, only when the latest evidence is sufficient overall and for every active subquestion
+
+Important runtime behavior:
+
+- Search rounds are capped by `max_search_limit`.
+- Repeated queries are skipped and called out explicitly.
+- Search and page fetches are cached for the duration of one run.
+- Multiple actions in one model response are supported and processed in order.
 
 ### XML protocol
 
-`SearchAgentLoop` is driven by XML tags the model emits:
+`SearchAgentLoop` is driven by XML tags the model emits and loop-generated feedback tags:
 
 | Tag | Direction | Purpose |
 |-----|-----------|---------|
-| `<plan>` | model → loop | Research plan; loop acknowledges and continues |
-| `<search_decision>answer\|search</search_decision>` | model → loop | Skip search if internal knowledge is sufficient |
-| `<subquestions>` | model → loop | Register named research tracks (`T1`, `T2`, …) |
-| `<search>query</search>` | model → loop | Single query |
-| `<searches>` | model → loop | One query per line — all fired in parallel |
-| `<fetch>url1, url2</fetch>` | model → loop | Fetch full-page content for specific URLs |
-| `<information>` | loop → model | Cited evidence injected after each search round |
-| `<search_evaluation>` | loop → model | `SUFFICIENT` / `INSUFFICIENT` verdict alongside evidence |
-| `<full_page>` | loop → model | Page content injected after `<fetch>` |
-| `<answer>` | model → loop | Final cited answer; loop stops |
+| `<plan>` | model → loop | Record a short research plan |
+| `<search_decision>answer\|search</search_decision>` | model → loop | Declare whether to answer directly or retrieve evidence |
+| `<subquestions>` | model → loop | Register named research tracks such as `T1`, `T2` |
+| `<search>query</search>` | model → loop | Send one query |
+| `<searches>` | model → loop | Send multiple queries in parallel, one per line |
+| `<fetch>url1, url2</fetch>` | model → loop | Fetch full-page content for URLs returned by search |
+| `<answer>` | model → loop | Final answer candidate |
+| `<plan_feedback>` | loop → model | Acknowledges the plan and tells the model to continue |
+| `<decision_feedback>` | loop → model | Prompts for or acknowledges the current search decision |
+| `<subquestions_feedback>` | loop → model | Confirms registered subquestions |
+| `<information>` | loop → model | Search results with citation labels such as `[R1Q2D1]` |
+| `<search_evaluation>` | loop → model | Sufficiency verdict and per-query feedback for the latest round |
+| `<full_page>` | loop → model | Full fetched page content |
+| `<search_feedback>` | loop → model | Explains repeated-query skips or search-limit enforcement |
+| `<answer_feedback>` | loop → model | Rejects premature answers and explains what is still missing |
 
-Multiple tags in the same response are processed in one turn. Evidence labels follow `R{round}Q{query}D{doc}`. Repeated queries are deduplicated; rounds past `max_search_limit` get a nudge instead of silently dropping.
+Inside `<searches>`, queries can optionally be task-scoped with prefixes like `[T1] FAISS benchmark` so the loop can track evidence per subquestion.
 
-**Example turns**
+Multiple tags in the same response are processed in one turn. Evidence labels follow `R{round}Q{query}D{doc}`. Full-page fetches are surfaced separately from search rounds.
+
+### Typical flow
 
 ```xml
-<!-- Turn 1: plan + decision + subquestions + parallel searches in one shot -->
 <plan>Compare dense and sparse retrieval.</plan>
 <search_decision>search</search_decision>
 <subquestions>
@@ -262,16 +289,38 @@ T2: sparse retrieval with BM25
 [T1] dense retrieval FAISS overview
 [T2] BM25 sparse retrieval Lucene
 </searches>
+```
 
-<!-- Turn 2: refine a weak track -->
+The loop then injects:
+
+```xml
+<search_evaluation>
+INSUFFICIENT
+...
+</search_evaluation>
+<information>
+Round 1
+...
+</information>
+```
+
+If one track is still weak, the model can refine just that track:
+
+```xml
 <searches>
 [T1] FAISS vs BM25 benchmark 2024
 </searches>
+```
 
-<!-- Turn 3: fetch a promising page -->
+If snippets are not enough, it can fetch pages:
+
+```xml
 <fetch>https://example.com/faiss-benchmark</fetch>
+```
 
-<!-- Turn 4: answer with citations -->
+And only then produce a cited answer:
+
+```xml
 <answer>
 Dense retrieval [R1Q1D1] outperforms BM25 [R1Q2D1] on semantic queries,
 but BM25 remains competitive for keyword-heavy tasks [R2Q1D1][R3P1].
@@ -303,8 +352,9 @@ output = await loop.run(
     messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
     sampling_params={"temperature": 0.7},
 )
-print(output.context.queries)   # all queries issued during the run
-print(output.metrics)           # timing and search-quality counters
+print(output.context.queries)   # flat list of issued queries
+print(output.context.tasks)     # registered subquestions, if any
+print(output.metrics)           # timing, cache, gating, and search counters
 ```
 
 ### Tool agent
@@ -348,6 +398,7 @@ Supported `tool_parser_format` values:
 | `search_rounds` | Rounds that hit the retrieval server |
 | `search_queries` | Individual queries sent (after dedup) |
 | `search_cache_hits` | Queries served from the per-run cache |
+| `page_cache_hits` | Fetched pages served from the per-run cache |
 | `fetched_pages` | Pages retrieved via `<fetch>` |
 | `answer_rejections` | Times `<answer>` was blocked by the evidence gate |
 | `direct_answers` | Times model answered from internal knowledge |
