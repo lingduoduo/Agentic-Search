@@ -12,6 +12,8 @@ class SearchResult:
 
     contents: str
     score: float = 0.0
+    title: str | None = None
+    url: str | None = None
 
     @classmethod
     def from_api_item(cls, item: dict[str, Any]) -> "SearchResult":
@@ -33,10 +35,14 @@ class SearchResult:
 
         if isinstance(doc, dict):
             contents = doc.get("contents", str(doc))
+            title = doc.get("title")
+            url = doc.get("url")
         else:
             contents = str(doc)
+            title = None
+            url = None
 
-        return cls(contents=contents, score=score)
+        return cls(contents=contents, score=score, title=title, url=url)
 
 
 @dataclass
@@ -60,19 +66,20 @@ class SearchContext:
         for i, result in enumerate(self.results, 1):
             content = result.contents
             first_line, _, rest = content.partition("\n")
-            title = first_line.strip('"').strip()
+            title = result.title or first_line.strip('"').strip()
             body = rest.strip() if rest.strip() else content
             label = f"[{citation_prefix}{i}] " if citation_prefix else ""
+            suffix = f" URL: {result.url}" if result.url else ""
             if title:
                 if citation_prefix:
-                    lines.append(f"{label}(Title: {title}) {body}")
+                    lines.append(f"{label}(Title: {title}) {body}{suffix}")
                 else:
-                    lines.append(f"Doc {i}(Title: {title}) {body}")
+                    lines.append(f"Doc {i}(Title: {title}) {body}{suffix}")
             else:
                 if citation_prefix:
-                    lines.append(f"{label}{content}")
+                    lines.append(f"{label}{content}{suffix}")
                 else:
-                    lines.append(f"Doc {i}: {content}")
+                    lines.append(f"Doc {i}: {content}{suffix}")
         return "\n".join(lines)
 
 

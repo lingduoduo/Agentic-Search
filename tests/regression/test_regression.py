@@ -166,19 +166,19 @@ def test_string_to_document_plain_text_fallback():
 
 def test_format_document_full_output_snapshot():
     result = format_document("My Title", "My Content")
-    assert result == {"document": {"contents": '"My Title"\nMy Content'}}
+    assert result == {"document": {"title": "My Title", "contents": '"My Title"\nMy Content'}}
 
 
 def test_format_document_none_title_snapshot():
     result = format_document(None, "content")
-    assert result == {"document": {"contents": '"No title."\ncontent'}}
+    assert result == {"document": {"title": "No title.", "contents": '"No title."\ncontent'}}
 
 
 def test_format_document_none_content_snapshot():
     result = format_document("title", None)
-    assert result == {"document": {"contents": '"title"\nNo snippet available.'}}
+    assert result == {"document": {"title": "title", "contents": '"title"\nNo snippet available.'}}
 
 
 def test_format_document_both_none_snapshot():
     result = format_document(None, None)
-    assert result == {"document": {"contents": '"No title."\nNo snippet available.'}}
+    assert result == {"document": {"title": "No title.", "contents": '"No title."\nNo snippet available.'}}

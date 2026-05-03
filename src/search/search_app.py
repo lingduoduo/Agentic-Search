@@ -14,10 +14,24 @@ class SearchRequest(BaseModel):
     queries: list[str] = Field(..., min_length=1)
 
 
-def format_document(title: str | None, content: str | None) -> dict[str, dict[str, str]]:
+class FetchRequest(BaseModel):
+    urls: list[str] = Field(..., min_length=1)
+
+
+def format_document(
+    title: str | None,
+    content: str | None,
+    url: str | None = None,
+) -> dict[str, dict[str, str]]:
     normalized_title = title or "No title."
     normalized_content = content or "No snippet available."
-    return {"document": {"contents": f"\"{normalized_title}\"\n{normalized_content}"}}
+    document = {
+        "title": normalized_title,
+        "contents": f"\"{normalized_title}\"\n{normalized_content}",
+    }
+    if url:
+        document["url"] = url
+    return {"document": document}
 
 
 def create_base_app(title: str) -> FastAPI:
@@ -40,5 +54,14 @@ def create_search_app(title: str, engine: T) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return {"result": results}
+
+    if hasattr(engine, "fetch_urls"):
+        @app.post("/fetch")
+        def fetch_endpoint(request: FetchRequest) -> dict[str, list]:
+            try:
+                results = engine.fetch_urls(request.urls)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            return {"result": results}
 
     return app

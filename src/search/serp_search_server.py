@@ -73,14 +73,14 @@ class SerpSearchEngine:
         answer_box = search_result.get("answer_box", {})
         snippet = answer_box.get("snippet") or answer_box.get("answer")
         if answer_box and snippet:
-            documents.append(format_document(answer_box.get("title"), snippet))
+            documents.append(format_document(answer_box.get("title"), snippet, url=answer_box.get("link")))
 
         for result in search_result.get("organic_results", [])[: self.config.topk]:
-            documents.append(format_document(result.get("title"), result.get("snippet")))
+            documents.append(format_document(result.get("title"), result.get("snippet"), url=result.get("link")))
 
         remaining = max(self.config.topk - len(documents), 0)
         for result in search_result.get("related_questions", [])[:remaining]:
-            documents.append(format_document(result.get("question"), result.get("snippet")))
+            documents.append(format_document(result.get("question"), result.get("snippet"), url=result.get("link")))
 
         return documents[: self.config.topk]
 

@@ -79,3 +79,30 @@ class SearchClient:
         """Convenience wrapper for a single query."""
         results = await self.retrieve([query], topk=topk)
         return results[0] if results else []
+
+    async def fetch_urls(
+        self,
+        urls: list[str],
+    ) -> list[SearchResult]:
+        """Fetch full-page content for specific URLs from a compatible server."""
+        payload = {"urls": urls}
+        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+        last_exc: Exception | None = None
+        fetch_url = self.config.url.removesuffix("/retrieve") + "/fetch"
+
+        for attempt in range(self.config.max_retries):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(fetch_url, json=payload) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                return [SearchResult.from_api_item(item) for item in data.get("result", [])]
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self.config.max_retries - 1:
+                    await asyncio.sleep(0.5 * (2**attempt))
+
+        raise RuntimeError(
+            f"SearchClient.fetch_urls failed after {self.config.max_retries} retries "
+            f"against {fetch_url}"
+        ) from last_exc

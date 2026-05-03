@@ -19,8 +19,10 @@ workflow:
 
 1. generate a short research plan with `<plan>...</plan>`
 2. issue parallel web searches with `<searches>...</searches>`
-3. review the returned evidence and optionally search again with refined keywords
-4. synthesize the findings into a cited final answer with `<answer>...</answer>`
+3. review the returned evidence and search evaluation
+4. optionally fetch full page content with `<fetch>url1, url2</fetch>`
+5. search again with refined keywords when the evidence is still weak
+6. synthesize the findings into a cited final answer with `<answer>...</answer>`
 
 The Google server also supports optional page fetching to extract paragraph context from result links.
 

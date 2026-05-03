@@ -7,28 +7,44 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import uuid4
 
 from .agent_loop import AgentLoopBase, AgentLoopConfig, AgentLoopOutput, register, simple_timer
 from .context import AgentContext, SearchContext, SearchResult
-from .evaluation import SearchEvaluationConfig, SearchResultEvaluator
+from .evaluation import SearchEvaluationConfig, SearchResultEvaluator, SearchRoundEvaluation
 from .search_client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful research assistant that answers questions by searching for information.\n"
-    "First write a concise research plan using <plan>...</plan>.\n"
-    "Then search using either <search>single query</search> or "
-    "<searches>one query per line</searches>.\n"
-    "Queries inside <searches> are executed in parallel.\n"
-    "After reviewing the evidence, either refine the keywords and search again "
-    "or finish with <answer>...</answer>.\n"
-    "When you answer, cite the evidence labels provided in the information block."
-)
+def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) -> str:
+    return (
+        "You are a reasoning assistant with the ability to perform web searches and fetch webpage content.\n\n"
+        "Tools:\n"
+        "- To write a brief research plan: use <plan>...</plan>.\n"
+        "- To perform a search: use <search>single query</search> or <searches>one query per line</searches>.\n"
+        "- To fetch detailed content from specific URLs returned by search: use <fetch>url1, url2</fetch>.\n"
+        "- To provide the final response: use <answer>...</answer>.\n\n"
+        "System feedback:\n"
+        "- Search results are returned inside <information>...</information>.\n"
+        "- Search-quality judgments are returned inside <search_evaluation>...</search_evaluation>.\n"
+        "- Full webpage content is returned inside <full_page>...</full_page>.\n\n"
+        f"You may use at most {max_search_limit} loop turns.\n"
+        f"You may fetch up to {max_url_fetch} URLs in one fetch request.\n\n"
+        "Workflow:\n"
+        "1. Plan.\n"
+        "2. Search, preferably with parallel queries when useful.\n"
+        "3. Review the returned evidence.\n"
+        "4. If the evidence is weak, search again with refined keywords.\n"
+        "5. If snippets are not enough, fetch the most promising URLs.\n"
+        "6. Answer only after the evidence is sufficient.\n\n"
+        "Cite the evidence labels from the information blocks when you answer."
+    )
+
+
+DEFAULT_SYSTEM_PROMPT = build_search_agent_instruction(max_search_limit=5, max_url_fetch=3)
 
 
 @dataclass(frozen=True)
@@ -43,13 +59,16 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     plan_tag: str = "plan"
     search_tag: str = "search"
     searches_tag: str = "searches"
+    fetch_tag: str = "fetch"
     answer_tag: str = "answer"
+    max_url_fetch: int = 3
     plan_obs_template: str = (
         "\n\n<plan_feedback>\n"
         "Plan recorded. Continue by issuing one or more search queries.\n"
         "</plan_feedback>\n\n"
     )
     evaluation_obs_template: str = "\n\n<search_evaluation>\n{content}\n</search_evaluation>\n\n"
+    full_page_obs_template: str = "\n\n<full_page>\n{content}\n</full_page>\n\n"
     answer_rejection_template: str = (
         "\n\n<answer_feedback>\n"
         "{content}\n"
@@ -62,7 +81,7 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     # Template for the observation injected after each search.
     # {content} is replaced by the formatted batch-search information block.
     obs_template: str = "\n\n<information>\n{content}\n</information>\n\n"
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    system_prompt: str | None = None
 
 
 @register("search_agent")
@@ -98,12 +117,21 @@ class SearchAgentLoop(AgentLoopBase):
             ),
             loop=loop,
         )
+        if cfg.system_prompt is None:
+            cfg = replace(
+                cfg,
+                system_prompt=build_search_agent_instruction(
+                    max_search_limit=cfg.max_turns,
+                    max_url_fetch=cfg.max_url_fetch,
+                ),
+            )
         self.search_config = cfg
         self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)
         action_tags = [
             cfg.plan_tag,
             cfg.search_tag,
             cfg.searches_tag,
+            cfg.fetch_tag,
             cfg.answer_tag,
         ]
         self._action_re = re.compile(
@@ -124,12 +152,28 @@ class SearchAgentLoop(AgentLoopBase):
         """Return all (tag, content) pairs found in *text*, in document order."""
         return [(m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)]
 
+    def _dedupe_preserve_order(self, items: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for item in items:
+            if item not in seen:
+                seen.add(item)
+                deduped.append(item)
+        return deduped
+
     async def _retrieve_many(self, queries: list[str]) -> list[list[SearchResult]]:
         try:
             return await self._search_client.retrieve(queries)
         except Exception as exc:
             logger.warning("Search failed for queries %r: %s", queries, exc)
             return [[] for _ in queries]
+
+    async def _fetch_pages(self, urls: list[str]) -> list[SearchResult]:
+        try:
+            return await self._search_client.fetch_urls(urls)
+        except Exception as exc:
+            logger.warning("Page fetch failed for urls %r: %s", urls, exc)
+            return []
 
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
@@ -145,6 +189,24 @@ class SearchAgentLoop(AgentLoopBase):
             if cleaned:
                 queries.append(cleaned)
         return queries
+
+    def _parse_urls(self, content: str) -> list[str]:
+        return [part.strip() for part in re.split(r"[\n,]+", content) if part.strip()]
+
+    def _collect_requested_queries_and_urls(
+        self,
+        actions: list[tuple[str, str]],
+        search_tags: set[str],
+        fetch_tag: str,
+    ) -> tuple[list[str], list[str]]:
+        queries: list[str] = []
+        urls: list[str] = []
+        for tag, content in actions:
+            if tag in search_tags:
+                queries.extend(self._parse_queries(content, tag))
+            elif tag == fetch_tag:
+                urls.extend(self._parse_urls(content))
+        return self._dedupe_preserve_order(queries), self._dedupe_preserve_order(urls)
 
     def _format_round_information(
         self,
@@ -162,6 +224,66 @@ class SearchAgentLoop(AgentLoopBase):
                 search_ctx.to_information_block(citation_prefix=citation_prefix)
             )
         return "\n".join(sections)
+
+    def _format_full_page_information(self, pages: list[SearchResult]) -> str:
+        if not pages:
+            return "No page content available."
+
+        sections: list[str] = []
+        for index, page in enumerate(pages, 1):
+            title = page.title or page.url or "No title"
+            sections.append(f"Page {index}(Title: {title})")
+            if page.url:
+                sections.append(f"URL: {page.url}")
+            sections.append(page.contents)
+        return "\n".join(sections)
+
+    def _append_user_observation(
+        self,
+        working_messages: list[dict[str, str]],
+        content: str,
+    ) -> None:
+        working_messages.append({"role": "user", "content": content})
+
+    def _build_answer_rejection_feedback(
+        self,
+        latest_evaluation: SearchRoundEvaluation | None,
+    ) -> str:
+        if latest_evaluation is None:
+            return (
+                "Do not answer yet. You have not completed a search round. "
+                "Search first, then answer once the evidence is sufficient."
+            )
+        return (
+            "Do not answer yet. The latest search evaluation was insufficient. "
+            "Refine the keywords, search again, and only answer after the evidence is sufficient."
+        )
+
+    def _build_missing_action_feedback(self) -> str:
+        return (
+            "No action detected. Evidence is still insufficient. "
+            "Issue a <searches> block to gather more evidence before answering."
+        )
+
+    def _build_search_observation(
+        self,
+        round_index: int,
+        search_contexts: list[SearchContext],
+        evaluation: SearchRoundEvaluation,
+    ) -> str:
+        return (
+            self.search_config.evaluation_obs_template.format(
+                content=evaluation.to_feedback_block()
+            )
+            + self.search_config.obs_template.format(
+                content=self._format_round_information(round_index, search_contexts)
+            )
+        )
+
+    def _build_full_page_observation(self, pages: list[SearchResult]) -> str:
+        return self.search_config.full_page_obs_template.format(
+            content=self._format_full_page_information(pages)
+        )
 
     async def run(
         self,
@@ -188,9 +310,14 @@ class SearchAgentLoop(AgentLoopBase):
 
         plan_tag = self.search_config.plan_tag
         search_tags = {self.search_config.search_tag, self.search_config.searches_tag}
+        fetch_tag = self.search_config.fetch_tag
         answer_tag = self.search_config.answer_tag
         latest_evaluation = None
         consecutive_rejections = 0
+        metrics["search_rounds"] = 0.0
+        metrics["fetched_pages"] = 0.0
+        metrics["answer_rejections"] = 0.0
+        metrics["search_queries"] = 0.0
 
         for turn in range(self.search_config.max_turns):
             with simple_timer(f"build_prompt_turn_{turn}", metrics):
@@ -225,28 +352,26 @@ class SearchAgentLoop(AgentLoopBase):
                 )
                 if needs_more:
                     consecutive_rejections += 1
-                    feedback = (
-                        "No action detected. Evidence is still insufficient. "
-                        "Issue a <searches> block to gather more evidence before answering."
-                    )
-                    working_messages.append({
-                        "role": "user",
-                        "content": self.search_config.answer_rejection_template.format(
-                            content=feedback
+                    metrics["answer_rejections"] += 1
+                    self._append_user_observation(
+                        working_messages,
+                        self.search_config.answer_rejection_template.format(
+                            content=self._build_missing_action_feedback()
                         ),
-                    })
+                    )
                     continue
                 break
 
             answer_requested = any(tag == answer_tag for tag, _ in actions)
             # Collect every query from every <search>/<searches> block in this response.
             # This handles models that emit <plan>…</plan><searches>…</searches> in one shot.
-            all_queries: list[str] = []
-            for tag, content in actions:
-                if tag in search_tags:
-                    all_queries.extend(self._parse_queries(content, tag))
+            all_queries, fetch_urls = self._collect_requested_queries_and_urls(
+                actions,
+                search_tags=search_tags,
+                fetch_tag=fetch_tag,
+            )
 
-            if answer_requested and not all_queries:
+            if answer_requested and not all_queries and not fetch_urls:
                 evidence_is_sufficient = (
                     latest_evaluation is not None and latest_evaluation.is_sufficient
                 )
@@ -257,39 +382,43 @@ class SearchAgentLoop(AgentLoopBase):
                 ):
                     break
 
-                if latest_evaluation is None:
-                    feedback = (
-                        "Do not answer yet. You have not completed a search round. "
-                        "Search first, then answer once the evidence is sufficient."
-                    )
-                else:
-                    feedback = (
-                        "Do not answer yet. The latest search evaluation was insufficient. "
-                        "Refine the keywords, search again, and only answer after the evidence is sufficient."
-                    )
                 consecutive_rejections += 1
-                working_messages.append({
-                    "role": "user",
-                    "content": self.search_config.answer_rejection_template.format(
-                        content=feedback
+                metrics["answer_rejections"] += 1
+                self._append_user_observation(
+                    working_messages,
+                    self.search_config.answer_rejection_template.format(
+                        content=self._build_answer_rejection_feedback(latest_evaluation)
                     ),
-                })
+                )
+                continue
+
+            if fetch_urls:
+                limited_urls = fetch_urls[: self.search_config.max_url_fetch]
+                pages = await self._fetch_pages(limited_urls)
+                metrics["fetched_pages"] += len(pages)
+                self._append_user_observation(
+                    working_messages,
+                    self._build_full_page_observation(pages),
+                )
                 continue
 
             if not all_queries:
                 # Only a <plan> (no searches yet) — acknowledge and let the model continue.
-                working_messages.append(
-                    {"role": "user", "content": self.search_config.plan_obs_template}
+                self._append_user_observation(
+                    working_messages,
+                    self.search_config.plan_obs_template,
                 )
                 continue
 
             # A search was issued — reset the rejection counter.
             consecutive_rejections = 0
+            metrics["search_queries"] += len(all_queries)
 
             # --- parallel search round ---
             t0 = time.perf_counter()
             results_by_query = await self._retrieve_many(all_queries)
             elapsed = time.perf_counter() - t0
+            metrics["search_rounds"] += 1
             total_results = sum(len(r) for r in results_by_query)
             logger.debug(
                 "search returned %d total results across %d queries in %.2fs",
@@ -299,12 +428,12 @@ class SearchAgentLoop(AgentLoopBase):
             )
 
             if not any(results_by_query):
-                working_messages.append({
-                    "role": "user",
-                    "content": self.search_config.obs_template.format(
+                self._append_user_observation(
+                    working_messages,
+                    self.search_config.obs_template.format(
                         content="No valid queries were provided. Try again with at least one search query."
                     ),
-                })
+                )
                 continue
 
             search_contexts = agent_ctx.add_round(
@@ -312,15 +441,14 @@ class SearchAgentLoop(AgentLoopBase):
             )
             round_index = agent_ctx.num_rounds
             latest_evaluation = self._result_evaluator.evaluate_round(search_contexts)
-            obs = (
-                self.search_config.evaluation_obs_template.format(
-                    content=latest_evaluation.to_feedback_block()
-                )
-                + self.search_config.obs_template.format(
-                    content=self._format_round_information(round_index, search_contexts)
-                )
+            self._append_user_observation(
+                working_messages,
+                self._build_search_observation(
+                    round_index=round_index,
+                    search_contexts=search_contexts,
+                    evaluation=latest_evaluation,
+                ),
             )
-            working_messages.append({"role": "user", "content": obs})
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,

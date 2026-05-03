@@ -155,6 +155,32 @@ class OnlineSearchEngine:
 
         return content_by_link
 
+    def fetch_urls(self, urls: list[str]) -> list[dict[str, dict[str, str]]]:
+        clean_urls = [url.strip() for url in urls if url.strip()]
+        if not clean_urls:
+            return []
+
+        html_documents = asyncio.run(
+            fetch_all(
+                urls=clean_urls,
+                timeout_seconds=self.config.request_timeout_seconds,
+                limit=self.config.fetch_concurrency,
+            )
+        )
+
+        documents: list[dict[str, dict[str, str]]] = []
+        for url, html in zip(clean_urls, html_documents):
+            if not html:
+                continue
+            soup = bs4.BeautifulSoup(html, "html.parser")
+            title = soup.title.get_text(" ", strip=True) if soup.title else url
+            paragraphs = [paragraph.get_text(" ", strip=True) for paragraph in soup.find_all("p")]
+            text = "\n".join(paragraph for paragraph in paragraphs if paragraph)
+            if text:
+                documents.append(format_document(title, text, url=url))
+
+        return documents
+
     def search(self, search_term: str, num_pages: int = 1) -> list[dict[str, Any]]:
         query = sanitize_search_query(search_term)
         if not query:
@@ -213,7 +239,7 @@ class OnlineSearchEngine:
                 if title == "No title." and context == "No snippet available.":
                     continue
 
-                contexts.append(format_document(title, context))
+                contexts.append(format_document(title, context, url=item.get("link")))
                 if len(contexts) >= self.config.topk:
                     return contexts
 

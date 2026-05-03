@@ -18,7 +18,9 @@ from src.search.search_app import (
 class TestFormatDocument:
     def test_with_title_and_content(self):
         result = format_document("My Title", "Some content")
-        assert result == {"document": {"contents": '"My Title"\nSome content'}}
+        assert result == {
+            "document": {"title": "My Title", "contents": "\"My Title\"\nSome content"}
+        }
 
     def test_none_title_uses_default(self):
         result = format_document(None, "content")
@@ -39,11 +41,16 @@ class TestFormatDocument:
         result = format_document("T", "C")
         assert "document" in result
         assert "contents" in result["document"]
+        assert "title" in result["document"]
 
     def test_empty_string_title_uses_default(self):
         # Empty string is falsy → triggers default
         result = format_document("", "content")
         assert "No title." in result["document"]["contents"]
+
+    def test_url_is_included_when_provided(self):
+        result = format_document("T", "C", url="https://example.com")
+        assert result["document"]["url"] == "https://example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -113,3 +120,15 @@ class TestCreateSearchApp:
     def test_health_endpoint_still_works(self):
         client, _ = self._make_client(return_value=[[]])
         assert client.get("/health").json() == {"status": "ok"}
+
+    def test_fetch_endpoint_is_available_when_engine_supports_fetch(self):
+        engine = MagicMock()
+        engine.batch_search.return_value = [[]]
+        engine.fetch_urls.return_value = ["page1"]
+        client = TestClient(create_search_app("Search App", engine))
+
+        response = client.post("/fetch", json={"urls": ["https://example.com"]})
+
+        assert response.status_code == 200
+        assert response.json()["result"] == ["page1"]
+        engine.fetch_urls.assert_called_once_with(["https://example.com"])

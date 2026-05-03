@@ -157,9 +157,12 @@ def test_generate_response_ids_supports_sync_server_manager():
 def test_search_result_information_block_supports_citation_prefix():
     ctx = SearchContext(
         query="alpha",
-        results=[SearchResult(contents='"Alpha"\nBeta')],
+        results=[SearchResult(contents='"Alpha"\nBeta', url="https://example.com")],
     )
-    assert ctx.to_information_block(citation_prefix="R1Q1D") == "[R1Q1D1] (Title: Alpha) Beta"
+    assert (
+        ctx.to_information_block(citation_prefix="R1Q1D")
+        == "[R1Q1D1] (Title: Alpha) Beta URL: https://example.com"
+    )
 
 
 def test_search_result_evaluator_marks_weak_results_as_insufficient():
@@ -210,11 +213,17 @@ class FakeSearchClient:
     def __init__(self, responses):
         self.responses = responses
         self.calls = []
+        self.fetch_calls = []
+        self.fetch_responses = {}
 
     async def retrieve(self, queries, topk=None):
         del topk
         self.calls.append(list(queries))
         return self.responses[tuple(queries)]
+
+    async def fetch_urls(self, urls):
+        self.fetch_calls.append(list(urls))
+        return self.fetch_responses[tuple(urls)]
 
 
 def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
@@ -397,3 +406,78 @@ def test_search_agent_loop_handles_plan_and_searches_in_same_response():
     assert output.context.num_rounds == 1
     assert output.context.num_searches == 2
     assert output.num_turns == 2
+
+
+def test_search_agent_loop_can_fetch_full_page_content():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<fetch>https://example.com/a</fetch>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+            ],
+        }
+    )
+    fake_client.fetch_responses = {
+        ("https://example.com/a",): [
+            SearchResult(contents="Full page body", title="Doc A", url="https://example.com/a"),
+        ],
+    }
+    loop._search_client = fake_client
+
+    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    assert fake_client.fetch_calls == [["https://example.com/a"]]
+    assert "<full_page>" in third_prompt
+    assert "Full page body" in third_prompt
+
+
+def test_search_agent_loop_deduplicates_queries_and_urls_and_tracks_metrics():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nalpha\nalpha\n</searches>"),
+        tokenizer.encode("<fetch>https://example.com/a, https://example.com/a</fetch>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+            ],
+        }
+    )
+    fake_client.fetch_responses = {
+        ("https://example.com/a",): [
+            SearchResult(contents="Full page body", title="Doc A", url="https://example.com/a"),
+        ],
+    }
+    loop._search_client = fake_client
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    assert fake_client.calls == [["alpha"]]
+    assert fake_client.fetch_calls == [["https://example.com/a"]]
+    assert output.metrics["search_rounds"] == 1.0
+    assert output.metrics["search_queries"] == 1.0
+    assert output.metrics["fetched_pages"] == 1.0
