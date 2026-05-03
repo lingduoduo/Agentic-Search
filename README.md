@@ -7,6 +7,7 @@
 - an index builder for dense and BM25 retrieval
 - a dense retriever for querying FAISS indexes
 - rerank and retrieval+rerank servers for local ranking pipelines
+- an `llm_agent` package for multi-turn generation and agentic search workflows
 
 Both services support:
 
@@ -20,6 +21,10 @@ The Google server also supports optional page fetching to extract paragraph cont
 ```text
 src/
   __init__.py
+  llm_agent/
+    __init__.py
+    generation.py
+    tensor_helper.py
   search/
     __init__.py
     search_app.py
@@ -34,10 +39,12 @@ src/
 tests/
   conftest.py
   unit/
-    test_vocabulary.py
     test_index_builder.py
+    test_llm_agent_generation.py
+    test_llm_agent_tensor_helper.py
     test_rerank.py
     test_search_app.py
+    test_vocabulary.py
   regression/
     test_regression.py
   load/
@@ -173,7 +180,47 @@ Notes:
 - dense indexing needs `model_path` unless you supply `--embedding_path`
 - GPU is used automatically when available for embedding generation
 - `--faiss_gpu` requires GPU-enabled FAISS support
-- both commands write `indexes/vocabulary_corpus.json` alongside the index
+- both commands write `indexes/vocabulary_corpus.json` alongside the index by default
+
+### Vocabulary Metadata
+
+The index builder writes a combined `vocabulary_corpus.json` artifact that stores both corpus-level vocabulary statistics and per-document token metadata in one file.
+
+Top-level fields include:
+
+- `corpus_path`
+- `retrieval_method`
+- `keyword_limit`
+- `vocab_max_length`
+- `vocabulary`
+- `corpus`
+
+The `vocabulary` section contains:
+
+- `num_token`
+- `token2idx`
+- `token2cnt`
+- `idx2token`
+
+Each item in `corpus` contains:
+
+- `doc_id`
+- `id`
+- `title`
+- `contents`
+- `tokens`
+- `keywords`
+- `token_count`
+
+Disable this sidecar artifact with:
+
+```bash
+python3 -m src.search.index_builder \
+  --retrieval_method bm25 \
+  --corpus_path data/corpus.jsonl \
+  --save_dir indexes/ \
+  --no_save_vocabulary
+```
 
 ## Querying a Dense Index
 
@@ -254,6 +301,27 @@ python3 -m src.search.retrieval_rerank_server \
   --retrieval_topk 10 \
   --rerank_topk 3
 ```
+
+## LLM Agent Utilities
+
+The `src.llm_agent` package provides reusable helpers for multi-turn LLM generation loops that interleave model responses with search observations.
+
+Main modules:
+
+- `src.llm_agent.generation`: multi-turn search manager, action parsing, batched search dispatch, and search simulation helpers
+- `src.llm_agent.tensor_helper`: padding, trimming, attention-mask, and position-id utilities
+
+Import example:
+
+```python
+from src.llm_agent import GenerationConfig, LLMGenerationManager, TensorConfig, TensorHelper
+```
+
+Notes:
+
+- the canonical import path is `src.llm_agent`
+- optional runtime dependencies such as `openai` and `serpapi` are loaded lazily inside the generation code
+- the older `src/llm-agent/` folder is legacy layout and should not be used for new imports
 
 ## Shared API
 
@@ -366,6 +434,8 @@ Coverage:
 |------|---------------|
 | `test_vocabulary.py` | `Vocabulary`, `normalize_text`, `tokenize_text`, `build_vocabulary_from_sequences`, `extract_keywords` |
 | `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` (skipped when torch unavailable) |
+| `test_llm_agent_generation.py` | action parsing, search payload alignment, inactive-example handling, unknown search-mode fallback |
+| `test_llm_agent_tensor_helper.py` | padding conversion and example-level batch re-expansion |
 | `test_rerank.py` | `passage_to_string`, `string_to_document`, `RerankerConfig.validate`, `SentenceTransformerReranker.rerank` |
 | `test_search_app.py` | `format_document`, `/health` endpoint, `/retrieve` endpoint |
 
@@ -392,6 +462,9 @@ The `-s` flag lets latency percentiles (p50/p95/p99) print to stdout.
 ```bash
 python3 -m py_compile \
   src/__init__.py \
+  src/llm_agent/__init__.py \
+  src/llm_agent/generation.py \
+  src/llm_agent/tensor_helper.py \
   src/search/__init__.py \
   src/search/search_app.py \
   src/search/google_search_server.py \

@@ -1,4 +1,4 @@
-"""Generation manager for tool-using LLM rollouts."""
+"""Generation manager for search-oriented, tool-using LLM loops."""
 
 from __future__ import annotations
 
@@ -8,30 +8,25 @@ import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
 
 from .tensor_helper import TensorConfig, TensorHelper
 
-try:
-    from verl import DataProto
-except ImportError:  # pragma: no cover - keeps module importable in lean envs
-    class DataProto:  # type: ignore[override]
-        def __init__(
-            self,
-            batch: dict[str, torch.Tensor] | None = None,
-            non_tensor_batch: dict[str, Any] | None = None,
-            meta_info: dict[str, Any] | None = None,
-        ) -> None:
-            self.batch = batch or {}
-            self.non_tensor_batch = non_tensor_batch or {}
-            self.meta_info = meta_info or {}
 
-        @classmethod
-        def from_dict(cls, batch: dict[str, torch.Tensor]) -> "DataProto":
-            return cls(batch=batch, non_tensor_batch={}, meta_info={})
+@dataclass
+class SearchBatch:
+    """Lightweight batch container for multi-turn search generation."""
+
+    batch: dict[str, torch.Tensor] = field(default_factory=dict)
+    non_tensor_batch: dict[str, Any] = field(default_factory=dict)
+    meta_info: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, batch: dict[str, torch.Tensor]) -> "SearchBatch":
+        return cls(batch=batch, non_tensor_batch={}, meta_info={})
 
 
 ACTION_PATTERN = re.compile(r"<(search|answer)>(.*?)</\1>", re.DOTALL)
@@ -45,7 +40,6 @@ class GenerationConfig:
     max_response_length: int
     max_obs_length: int
     num_gpus: int
-    no_think_rl: bool = False
     llm_ip: str | None = None
     retriever_ip: str | None = None
     temperature: float = 0.8
@@ -201,12 +195,15 @@ class LLMGenerationManager:
     def __init__(
         self,
         tokenizer: Any,
-        actor_rollout_wg: Any,
         config: GenerationConfig,
         is_validation: bool = False,
+        generation_backend: Any | None = None,
+        actor_rollout_wg: Any | None = None,
     ) -> None:
         self.tokenizer = tokenizer
-        self.actor_rollout_wg = actor_rollout_wg
+        self.generation_backend = generation_backend or actor_rollout_wg
+        if self.generation_backend is None:
+            raise ValueError("generation_backend is required.")
         self.config = config
         self.is_validation = is_validation
         self.tensor_fn = TensorHelper(
@@ -237,9 +234,6 @@ class LLMGenerationManager:
             for response in responses_str
         ]
 
-        if self.config.no_think_rl:
-            raise NotImplementedError("no_think_rl mode is not implemented in this codebase.")
-
         return self._batch_tokenize(responses_str), responses_str
 
     def _process_next_obs(self, next_obs: list[str]) -> torch.Tensor:
@@ -255,10 +249,10 @@ class LLMGenerationManager:
 
     def _update_rolling_state(
         self,
-        rollings: DataProto,
+        rollings: SearchBatch,
         cur_responses: torch.Tensor,
         next_obs_ids: torch.Tensor,
-    ) -> DataProto:
+    ) -> SearchBatch:
         new_input_ids = self.tensor_fn.concatenate_with_padding(
             [rollings.batch["input_ids"], cur_responses, next_obs_ids]
         )
@@ -267,7 +261,7 @@ class LLMGenerationManager:
         effective_len = int(new_attention_mask.sum(dim=1).max().item())
         max_len = min(self.config.max_prompt_length, effective_len)
 
-        new_rollings = DataProto.from_dict(
+        new_rollings = SearchBatch.from_dict(
             {
                 "input_ids": new_input_ids[:, -max_len:],
                 "position_ids": new_position_ids[:, -max_len:],
@@ -334,10 +328,10 @@ class LLMGenerationManager:
             "responses_with_info_mask": responses_with_info_mask[:, :max_len],
         }
 
-    def _generate_with_gpu_padding(self, active_batch: DataProto) -> DataProto:
+    def _generate_with_gpu_padding(self, active_batch: SearchBatch) -> SearchBatch:
         num_gpus = self.config.num_gpus
         if num_gpus <= 1:
-            return self.actor_rollout_wg.generate_sequences(active_batch)
+            return self.generation_backend.generate_sequences(active_batch)
 
         batch_size = active_batch.batch["input_ids"].shape[0]
         remainder = batch_size % num_gpus
@@ -345,7 +339,7 @@ class LLMGenerationManager:
         for key in active_batch.batch:
             active_batch.batch[key] = active_batch.batch[key].long()
         if remainder == 0:
-            return self.actor_rollout_wg.generate_sequences(active_batch)
+            return self.generation_backend.generate_sequences(active_batch)
 
         padding_size = num_gpus - remainder
         padded_batch = {}
@@ -353,11 +347,11 @@ class LLMGenerationManager:
             pad_sequence = value[0:1].repeat(padding_size, *[1] * (value.dim() - 1))
             padded_batch[key] = torch.cat([value, pad_sequence], dim=0)
 
-        padded_active_batch = DataProto.from_dict(padded_batch)
+        padded_active_batch = SearchBatch.from_dict(padded_batch)
         for key in padded_active_batch.batch:
             padded_active_batch.batch[key] = padded_active_batch.batch[key].long()
 
-        padded_output = self.actor_rollout_wg.generate_sequences(padded_active_batch)
+        padded_output = self.generation_backend.generate_sequences(padded_active_batch)
         trimmed_batch = {key: value[:-padding_size] for key, value in padded_output.batch.items()}
         trimmed_meta = {}
         for key, value in getattr(padded_output, "meta_info", {}).items():
@@ -369,12 +363,12 @@ class LLMGenerationManager:
 
     def run_llm_loop(
         self,
-        gen_batch: DataProto,
+        gen_batch: SearchBatch,
         search_mode: str,
         current_step: int,
         total_steps: int,
         initial_input_ids: torch.Tensor,
-    ) -> tuple[DataProto, list[int]]:
+    ) -> tuple[SearchBatch, list[int]]:
         original_left_side = {"input_ids": initial_input_ids[:, -self.config.max_start_length :]}
         original_right_side = {
             "responses": initial_input_ids[:, []],
@@ -404,7 +398,9 @@ class LLMGenerationManager:
                 rollings.batch,
                 keys=["input_ids", "attention_mask", "position_ids"],
             )
-            rollings_active = DataProto.from_dict({key: value[active_mask] for key, value in rollings.batch.items()})
+            rollings_active = SearchBatch.from_dict(
+                {key: value[active_mask] for key, value in rollings.batch.items()}
+            )
             gen_output = self._generate_with_gpu_padding(rollings_active)
 
             meta_info = getattr(gen_output, "meta_info", {}) or {}
@@ -450,7 +446,9 @@ class LLMGenerationManager:
                 rollings.batch,
                 keys=["input_ids", "attention_mask", "position_ids"],
             )
-            rollings_active = DataProto.from_dict({key: value[active_mask] for key, value in rollings.batch.items()})
+            rollings_active = SearchBatch.from_dict(
+                {key: value[active_mask] for key, value in rollings.batch.items()}
+            )
             gen_output = self._generate_with_gpu_padding(rollings_active)
 
             meta_info = getattr(gen_output, "meta_info", {}) or {}
@@ -497,7 +495,7 @@ class LLMGenerationManager:
         left_side: dict[str, torch.Tensor],
         right_side: dict[str, torch.Tensor],
         meta_info: dict[str, Any],
-    ) -> DataProto:
+    ) -> SearchBatch:
         final_output = right_side.copy()
         final_output["prompts"] = left_side["input_ids"]
         final_output["input_ids"] = torch.cat([left_side["input_ids"], right_side["responses"]], dim=1)
@@ -517,9 +515,9 @@ class LLMGenerationManager:
         )
         final_output["position_ids"] = self.tensor_fn.create_position_ids(final_output["attention_mask"])
 
-        data_proto = DataProto.from_dict(final_output)
-        data_proto.meta_info.update(meta_info)
-        return data_proto
+        search_batch = SearchBatch.from_dict(final_output)
+        search_batch.meta_info.update(meta_info)
+        return search_batch
 
     def execute_predictions(
         self,

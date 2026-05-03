@@ -32,7 +32,6 @@ class DummyActorRollout:
 def _manager() -> LLMGenerationManager:
     return LLMGenerationManager(
         tokenizer=DummyTokenizer(),
-        actor_rollout_wg=DummyActorRollout(),
         config=GenerationConfig(
             max_turns=2,
             max_start_length=8,
@@ -41,6 +40,7 @@ def _manager() -> LLMGenerationManager:
             max_obs_length=16,
             num_gpus=1,
         ),
+        generation_backend=DummyActorRollout(),
     )
 
 
