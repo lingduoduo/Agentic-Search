@@ -1,4 +1,4 @@
-"""Multi-turn agentic search loop using <search>/<answer> XML tags."""
+"""Multi-turn research loop using XML tags for planning, search, and synthesis."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .agent_loop import AgentLoopBase, AgentLoopConfig, AgentLoopOutput, register, simple_timer
-from .context import AgentContext, SearchResult
+from .context import AgentContext, SearchContext, SearchResult
 from .search_client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,13 @@ logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful research assistant that answers questions by searching for information.\n"
-    "To search, write: <search>your query here</search>\n"
-    "To give your final answer, write: <answer>your answer here</answer>\n"
-    "Always search before answering if you need external knowledge."
+    "First write a concise research plan using <plan>...</plan>.\n"
+    "Then search using either <search>single query</search> or "
+    "<searches>one query per line</searches>.\n"
+    "Queries inside <searches> are executed in parallel.\n"
+    "After reviewing the evidence, either refine the keywords and search again "
+    "or finish with <answer>...</answer>.\n"
+    "When you answer, cite the evidence labels provided in the information block."
 )
 
 
@@ -35,24 +39,32 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     topk: int = 5
     search_timeout_seconds: int = 10
     search_max_retries: int = 3
+    plan_tag: str = "plan"
     search_tag: str = "search"
+    searches_tag: str = "searches"
     answer_tag: str = "answer"
+    plan_obs_template: str = (
+        "\n\n<plan_feedback>\n"
+        "Plan recorded. Continue by issuing one or more search queries.\n"
+        "</plan_feedback>\n\n"
+    )
     # Template for the observation injected after each search.
-    # {content} is replaced by SearchContext.to_information_block().
+    # {content} is replaced by the formatted batch-search information block.
     obs_template: str = "\n\n<information>\n{content}\n</information>\n\n"
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
 
 
 @register("search_agent")
 class SearchAgentLoop(AgentLoopBase):
-    """Multi-turn agent loop that issues `<search>` queries and accumulates context.
+    """Multi-turn agent loop for research planning, search, and synthesis.
 
     Each turn:
       1. Generates a response.
-      2. Parses the first <search>...</search> or <answer>...</answer> tag.
-      3. If <search>: calls the configured retrieval endpoint, injects
-         <information>...</information> into the conversation, and continues.
-      4. If <answer> (or no tag): stops and returns.
+      2. Parses the first action tag: <plan>, <search>, <searches>, or <answer>.
+      3. If <plan>: injects a lightweight acknowledgement and continues.
+      4. If <search> or <searches>: executes one or more retrieval requests,
+         injects <information>...</information> into the conversation, and continues.
+      5. If <answer> (or no recognised tag): stops and returns.
 
     The returned AgentLoopOutput.context is an AgentContext holding all search
     turns for downstream inspection or reward computation.
@@ -76,8 +88,14 @@ class SearchAgentLoop(AgentLoopBase):
             loop=loop,
         )
         self.search_config = cfg
+        action_tags = [
+            cfg.plan_tag,
+            cfg.search_tag,
+            cfg.searches_tag,
+            cfg.answer_tag,
+        ]
         self._action_re = re.compile(
-            rf"<({re.escape(cfg.search_tag)}|{re.escape(cfg.answer_tag)})>"
+            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})>"
             rf"(.*?)</\1>",
             re.DOTALL,
         )
@@ -90,19 +108,48 @@ class SearchAgentLoop(AgentLoopBase):
             )
         )
 
-    def _parse_action(self, text: str) -> tuple[str | None, str]:
-        """Return (tag_name, inner_content) or (None, '') if no tag matched."""
-        m = self._action_re.search(text)
-        if m:
-            return m.group(1), m.group(2).strip()
-        return None, ""
+    def _parse_actions(self, text: str) -> list[tuple[str, str]]:
+        """Return all (tag, content) pairs found in *text*, in document order."""
+        return [(m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)]
 
-    async def _retrieve(self, query: str) -> list[SearchResult]:
+    async def _retrieve_many(self, queries: list[str]) -> list[list[SearchResult]]:
         try:
-            return await self._search_client.retrieve_one(query)
+            return await self._search_client.retrieve(queries)
         except Exception as exc:
-            logger.warning("Search failed for query %r: %s", query, exc)
-            return []
+            logger.warning("Search failed for queries %r: %s", queries, exc)
+            return [[] for _ in queries]
+
+    def _parse_queries(self, content: str, action: str | None) -> list[str]:
+        if action == self.search_config.search_tag:
+            return [content] if content else []
+
+        query_tags = re.findall(r"<query>(.*?)</query>", content, re.DOTALL)
+        if query_tags:
+            return [query.strip() for query in query_tags if query.strip()]
+
+        queries: list[str] = []
+        for line in content.splitlines():
+            cleaned = re.sub(r"^\s*(?:[-*•]+|\d+[.)])\s*", "", line).strip()
+            if cleaned:
+                queries.append(cleaned)
+        return queries
+
+    def _format_round_information(
+        self,
+        round_index: int,
+        search_contexts: list[SearchContext],
+    ) -> str:
+        if not search_contexts:
+            return f"Round {round_index}\nNo information available"
+
+        sections = [f"Round {round_index}"]
+        for query_index, search_ctx in enumerate(search_contexts, 1):
+            citation_prefix = f"R{round_index}Q{query_index}D"
+            sections.append(f"Query {query_index}: {search_ctx.query}")
+            sections.append(
+                search_ctx.to_information_block(citation_prefix=citation_prefix)
+            )
+        return "\n".join(sections)
 
     async def run(
         self,
@@ -127,6 +174,10 @@ class SearchAgentLoop(AgentLoopBase):
         final_prompt_ids: list[int] = []
         num_turns = 0
 
+        plan_tag = self.search_config.plan_tag
+        search_tags = {self.search_config.search_tag, self.search_config.searches_tag}
+        answer_tag = self.search_config.answer_tag
+
         for turn in range(self.search_config.max_turns):
             with simple_timer(f"build_prompt_turn_{turn}", metrics):
                 prompt_ids = await self.build_prompt_ids(working_messages)
@@ -143,26 +194,58 @@ class SearchAgentLoop(AgentLoopBase):
             num_turns += 1
 
             response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
-            action, content = self._parse_action(response_text)
+            actions = self._parse_actions(response_text)
 
-            logger.debug("turn=%d action=%s content=%r", turn, action, content[:80] if content else "")
+            logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
 
-            # Any non-search action (answer or unrecognised) ends the loop
-            if action != self.search_config.search_tag:
+            # Stop on answer or when no recognised tag is found
+            if not actions or any(tag == answer_tag for tag, _ in actions):
                 break
 
-            # --- search turn ---
-            t0 = time.perf_counter()
-            results = await self._retrieve(content)
-            elapsed = time.perf_counter() - t0
-            logger.debug("search returned %d results in %.2fs", len(results), elapsed)
+            working_messages.append({"role": "assistant", "content": response_text})
 
-            search_ctx = agent_ctx.add_turn(query=content, results=results)
-            obs = self.search_config.obs_template.format(
-                content=search_ctx.to_information_block()
+            # Collect every query from every <search>/<searches> block in this response.
+            # This handles models that emit <plan>…</plan><searches>…</searches> in one shot.
+            all_queries: list[str] = []
+            for tag, content in actions:
+                if tag in search_tags:
+                    all_queries.extend(self._parse_queries(content, tag))
+
+            if not all_queries:
+                # Only a <plan> (no searches yet) — acknowledge and let the model continue.
+                working_messages.append(
+                    {"role": "user", "content": self.search_config.plan_obs_template}
+                )
+                continue
+
+            # --- parallel search round ---
+            t0 = time.perf_counter()
+            results_by_query = await self._retrieve_many(all_queries)
+            elapsed = time.perf_counter() - t0
+            total_results = sum(len(r) for r in results_by_query)
+            logger.debug(
+                "search returned %d total results across %d queries in %.2fs",
+                total_results,
+                len(all_queries),
+                elapsed,
             )
 
-            working_messages.append({"role": "assistant", "content": response_text})
+            if not any(results_by_query):
+                working_messages.append({
+                    "role": "user",
+                    "content": self.search_config.obs_template.format(
+                        content="No valid queries were provided. Try again with at least one search query."
+                    ),
+                })
+                continue
+
+            search_contexts = agent_ctx.add_round(
+                queries=all_queries, results_by_query=results_by_query
+            )
+            round_index = agent_ctx.num_rounds
+            obs = self.search_config.obs_template.format(
+                content=self._format_round_information(round_index, search_contexts)
+            )
             working_messages.append({"role": "user", "content": obs})
 
         return AgentLoopOutput(

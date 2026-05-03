@@ -14,6 +14,14 @@ Both services support:
 - batched search requests
 - a simple healthcheck endpoint for local development
 
+The repo's `SearchAgentLoop` can also be configured as a lightweight research
+workflow:
+
+1. generate a short research plan with `<plan>...</plan>`
+2. issue parallel web searches with `<searches>...</searches>`
+3. review the returned evidence and optionally search again with refined keywords
+4. synthesize the findings into a cited final answer with `<answer>...</answer>`
+
 The Google server also supports optional page fetching to extract paragraph context from result links.
 
 ## Project Structure
@@ -316,15 +324,59 @@ python3 -m src.search.retrieval_rerank_server \
 
 ## Agentic Search Loop
 
-The `src.agent_loop` package provides a multi-turn agent loop that issues `<search>` queries, calls a retrieval server, and injects results back into the conversation as `<information>` blocks.
+The `src.agent_loop` package provides multi-turn agent loops backed by XML-tagged protocols.
 
 ### Registered loops
 
 | Name | Class | Description |
 |------|-------|-------------|
 | `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
-| `"search_agent"` | `SearchAgentLoop` | Multi-turn with `<search>`/`<answer>` protocol |
+| `"search_agent"` | `SearchAgentLoop` | Deep research loop: plan → parallel search → synthesize |
 | `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
+
+### Deep research workflow
+
+`SearchAgentLoop` follows a four-step protocol driven entirely by XML tags the model emits:
+
+```
+1.  <plan>   — model writes a research plan (optional but encouraged)
+2.  <searches>  — model issues N queries on separate lines; all run in parallel
+3.  <information>  — server injects one cited evidence block per round
+    (model may issue another <searches> to refine; loops until max_turns)
+4.  <answer>  — model synthesizes a final cited answer; loop stops
+```
+
+A single query still works with the legacy `<search>single query</search>` tag.
+
+If the model emits `<plan>` and `<searches>` in the **same** response, both are handled in that turn — no extra round-trip for the plan acknowledgement.
+
+Each evidence block uses structured citation labels (`R{round}Q{query}D{doc}`) so the model can reference specific documents in the answer.
+
+**Example model output per turn**
+
+Turn 1 (plan + parallel searches in one shot):
+```xml
+<plan>I need to compare dense and sparse retrieval.</plan>
+<searches>
+dense retrieval FAISS overview
+BM25 sparse retrieval Lucene
+</searches>
+```
+
+Turn 2 (refine after seeing evidence):
+```xml
+<searches>
+FAISS vs BM25 benchmark 2024
+</searches>
+```
+
+Turn 3 (synthesize):
+```xml
+<answer>
+Dense retrieval [R1Q1D1] outperforms BM25 [R1Q2D1] on semantic queries,
+but BM25 remains competitive for keyword-heavy tasks [R2Q1D1].
+</answer>
+```
 
 ### Usage
 
@@ -337,15 +389,17 @@ loop = SearchAgentLoop(
     search_config=SearchAgentLoopConfig(
         search_url="http://localhost:8000/retrieve",
         topk=5,
-        max_turns=5,
+        max_turns=8,
     ),
 )
 output = await loop.run(
-    messages=[{"role": "user", "content": "What is FAISS?"}],
+    messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
     sampling_params={"temperature": 0.7},
 )
-# output.context.turns      — list of SearchContext (query + results per turn)
-# output.context.num_searches  — total searches issued
+# output.context.rounds       — list of rounds, each a list of SearchContext
+# output.context.num_rounds   — how many search rounds were issued
+# output.context.num_searches — total individual queries issued
+# output.context.queries      — flat list of all queries in order
 ```
 
 ### Tool agent usage
@@ -388,9 +442,14 @@ Supported `tool_parser_format` values:
 
 ### Context objects
 
-- `SearchResult(contents, score)` — one passage from the server
-- `SearchContext(query, results)` — one search round; `.to_information_block()` formats results for injection
-- `AgentContext(turns)` — full run history; attached to `AgentLoopOutput.context`
+- `SearchResult(contents, score)` — one passage returned by the server
+- `SearchContext(query, results)` — one query and its results; `.to_information_block(citation_prefix=...)` formats them for injection
+- `AgentContext` — full run history attached to `AgentLoopOutput.context`:
+  - `.turns` — flat list of every `SearchContext` across all rounds
+  - `.rounds` — list of rounds; each round is the group of `SearchContext` objects from one `<searches>` block
+  - `.num_searches` — total queries issued
+  - `.num_rounds` — total search rounds (one per `<search>`/`<searches>` turn)
+  - `.queries` — flat list of query strings in issue order
 
 ### Lookup by name
 

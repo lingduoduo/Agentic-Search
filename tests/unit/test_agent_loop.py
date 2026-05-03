@@ -7,6 +7,10 @@ import pytest
 from src.agent_loop import (
     AgentLoopBase,
     AgentLoopConfig,
+    SearchAgentLoop,
+    SearchAgentLoopConfig,
+    SearchContext,
+    SearchResult,
     SingleTurnAgentLoop,
     get_registered_agent_loop,
     list_registered_agent_loops,
@@ -25,11 +29,16 @@ class DummyTokenizerWithEncode:
     def encode(self, text):
         return [ord(char) for char in text]
 
+    def decode(self, token_ids, skip_special_tokens=True):
+        del skip_special_tokens
+        return "".join(chr(token_id) for token_id in token_ids)
+
 
 class DummyServerManager:
     def __init__(self, response_ids):
         self.response_ids = response_ids
         self.calls = []
+        self.index = 0
 
     async def generate(self, request_id, prompt_ids, sampling_params):
         self.calls.append(
@@ -39,6 +48,10 @@ class DummyServerManager:
                 "sampling_params": sampling_params,
             }
         )
+        if self.response_ids and isinstance(self.response_ids[0], list):
+            response = self.response_ids[self.index]
+            self.index += 1
+            return list(response)
         return list(self.response_ids)
 
 
@@ -137,3 +150,91 @@ def test_generate_response_ids_supports_sync_server_manager():
     )
     response_ids = asyncio.run(loop.generate_response_ids([1, 2], {"temperature": 0.3}, request_id="req-sync"))
     assert response_ids == [7, 8]
+
+
+def test_search_result_information_block_supports_citation_prefix():
+    ctx = SearchContext(
+        query="alpha",
+        results=[SearchResult(contents='"Alpha"\nBeta')],
+    )
+    assert ctx.to_information_block(citation_prefix="R1Q1D") == "[R1Q1D1] (Title: Alpha) Beta"
+
+
+class FakeSearchClient:
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = []
+
+    async def retrieve(self, queries, topk=None):
+        del topk
+        self.calls.append(list(queries))
+        return self.responses[tuple(queries)]
+
+
+def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<plan>Compare two sources and validate with a follow-up search.</plan>"),
+        tokenizer.encode("<searches>\n- first query\n- second query\n</searches>"),
+        tokenizer.encode("<searches><query>refined query</query></searches>"),
+        tokenizer.encode("<answer>Final report [R1Q1D1] [R2Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(max_turns=6),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query", "second query"): [
+                [SearchResult(contents='"Doc A"\nAlpha body')],
+                [SearchResult(contents='"Doc B"\nBeta body')],
+            ],
+            ("refined query",): [
+                [SearchResult(contents='"Doc C"\nGamma body')],
+            ],
+        }
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+
+    assert loop._search_client.calls == [
+        ["first query", "second query"],
+        ["refined query"],
+    ]
+    assert output.context is not None
+    assert output.context.num_rounds == 2
+    assert output.context.num_searches == 3
+    assert output.context.queries == ["first query", "second query", "refined query"]
+    assert output.num_turns == 4
+
+
+def test_search_agent_loop_handles_plan_and_searches_in_same_response():
+    """When a model emits <plan> and <searches> in a single response, both are
+    processed in one turn — no wasted round-trip for the plan acknowledgement."""
+    tokenizer = DummyTokenizerWithEncode()
+    combined = "<plan>Quick plan.</plan><searches>\nalpha\nbeta\n</searches>"
+    responses = [
+        tokenizer.encode(combined),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(max_turns=4),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("alpha", "beta"): [
+                [SearchResult(contents='"A"\nbody a')],
+                [SearchResult(contents='"B"\nbody b')],
+            ],
+        }
+    )
+
+    output = asyncio.run(loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0}))
+
+    assert loop._search_client.calls == [["alpha", "beta"]]
+    assert output.context.num_rounds == 1
+    assert output.context.num_searches == 2
+    assert output.num_turns == 2

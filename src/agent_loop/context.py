@@ -41,12 +41,12 @@ class SearchResult:
 
 @dataclass
 class SearchContext:
-    """One round of search: the query the model issued and the results returned."""
+    """One query issued during a research round and the results returned."""
 
     query: str
     results: list[SearchResult] = field(default_factory=list)
 
-    def to_information_block(self) -> str:
+    def to_information_block(self, citation_prefix: str | None = None) -> str:
         """Format results as a plain-text block injected back into the conversation.
 
         Produces lines like:
@@ -62,10 +62,17 @@ class SearchContext:
             first_line, _, rest = content.partition("\n")
             title = first_line.strip('"').strip()
             body = rest.strip() if rest.strip() else content
+            label = f"[{citation_prefix}{i}] " if citation_prefix else ""
             if title:
-                lines.append(f"Doc {i}(Title: {title}) {body}")
+                if citation_prefix:
+                    lines.append(f"{label}(Title: {title}) {body}")
+                else:
+                    lines.append(f"Doc {i}(Title: {title}) {body}")
             else:
-                lines.append(f"Doc {i}: {content}")
+                if citation_prefix:
+                    lines.append(f"{label}{content}")
+                else:
+                    lines.append(f"Doc {i}: {content}")
         return "\n".join(lines)
 
 
@@ -74,15 +81,33 @@ class AgentContext:
     """Accumulates all search turns performed during one agent run."""
 
     turns: list[SearchContext] = field(default_factory=list)
+    rounds: list[list[SearchContext]] = field(default_factory=list)
 
     def add_turn(self, query: str, results: list[SearchResult]) -> SearchContext:
-        ctx = SearchContext(query=query, results=results)
-        self.turns.append(ctx)
-        return ctx
+        return self.add_round([query], [results])[0]
+
+    def add_round(
+        self,
+        queries: list[str],
+        results_by_query: list[list[SearchResult]],
+    ) -> list[SearchContext]:
+        if len(queries) != len(results_by_query):
+            raise ValueError("queries and results_by_query must have the same length.")
+        round_contexts = [
+            SearchContext(query=query, results=results)
+            for query, results in zip(queries, results_by_query)
+        ]
+        self.turns.extend(round_contexts)
+        self.rounds.append(round_contexts)
+        return round_contexts
 
     @property
     def num_searches(self) -> int:
         return len(self.turns)
+
+    @property
+    def num_rounds(self) -> int:
+        return len(self.rounds)
 
     @property
     def queries(self) -> list[str]:
