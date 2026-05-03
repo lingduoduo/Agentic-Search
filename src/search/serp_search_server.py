@@ -101,6 +101,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+    load_dotenv()
     args = parse_args()
     config = SerpSearchConfig(
         search_url=args.search_url,

@@ -53,43 +53,41 @@ API keys (required only for the corresponding server):
 - Google Custom Search: a JSON API key and a Programmable Search Engine ID (`cx`)
 - SerpAPI: a SerpAPI key
 
-Python dependencies used by the server:
-
-- `fastapi`
-- `uvicorn`
-- `google-api-python-client`
-- `requests`
-- `aiohttp`
-- `beautifulsoup4`
-- `chardet`
-- `numpy`
-- `torch`
-- `transformers`
-- `datasets`
-- `tqdm`
-- `faiss-cpu` or `faiss-gpu`
-- `sentence-transformers`
-
-Example install:
+Install all dependencies:
 
 ```bash
-pip install fastapi uvicorn google-api-python-client requests aiohttp beautifulsoup4 chardet numpy torch transformers datasets tqdm faiss-cpu sentence-transformers
+pip install -r requirements.txt
 ```
+
+Or manually:
+
+```bash
+pip install fastapi uvicorn google-api-python-client requests aiohttp beautifulsoup4 chardet numpy torch transformers datasets tqdm faiss-cpu sentence-transformers python-dotenv
+```
+
+## Environment Variables
+
+Both search servers load a `.env` file automatically at startup via `python-dotenv`. Copy `.env.example` to `.env` and fill in your keys — no `export` commands needed.
+
+```bash
+cp .env.example .env
+```
+
+`.env` (never commit this file — it is already in `.gitignore`):
+
+```
+GOOGLE_API_KEY=your_google_api_key
+GOOGLE_CSE_ID=your_custom_search_engine_id
+SERP_API_KEY=your_serpapi_key
+```
+
+All variables can also be passed as CLI flags or set as shell environment variables — whichever takes precedence in your workflow.
+
+Full list of supported variables (with defaults) is in [`.env.example`](.env.example).
 
 ## Google Search Configuration
 
-The Google server accepts configuration either from CLI flags or environment variables.
-
-Environment variables:
-
-```bash
-export GOOGLE_API_KEY="your_google_api_key"
-export GOOGLE_CSE_ID="your_custom_search_engine_id"
-export GOOGLE_SEARCH_HOST="0.0.0.0"
-export GOOGLE_SEARCH_PORT="8000"
-```
-
-CLI flags:
+CLI flags (all optional when the corresponding env var is set):
 
 ```bash
 python3 -m src.search.google_search_server \
@@ -105,23 +103,13 @@ Optional flags:
 - `--snippet_only`: return Google snippets only, without fetching result pages
 - `--topk`: maximum number of documents returned per query
 
-Start the Google API:
+Start with keys from `.env`:
 
 ```bash
 python3 -m src.search.google_search_server
 ```
 
 ## SerpAPI Configuration
-
-Environment variables:
-
-```bash
-export SERP_API_KEY="your_serpapi_key"
-export SERP_ENGINE="google"
-export SERP_SEARCH_URL="https://serpapi.com/search"
-export SERP_SEARCH_HOST="0.0.0.0"
-export SERP_SEARCH_PORT="8000"
-```
 
 CLI flags:
 
@@ -135,7 +123,7 @@ python3 -m src.search.serp_search_server \
   --port 8000
 ```
 
-Start the SerpAPI service:
+Start with keys from `.env`:
 
 ```bash
 python3 -m src.search.serp_search_server

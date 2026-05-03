@@ -1,0 +1,15 @@
+fastapi==0.110.1
+uvicorn==0.29.0
+requests==2.32.3
+aiohttp==3.9.3
+beautifulsoup4==4.13.4
+numpy==1.26.4
+torch==2.2.2
+transformers==4.39.3
+datasets==2.18.0
+tqdm==4.66.4
+sentence-transformers==2.7.0
+python-dotenv
+google-api-python-client
+chardet
+faiss-cpu
