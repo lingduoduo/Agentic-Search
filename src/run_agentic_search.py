@@ -799,20 +799,37 @@ async def main() -> None:
     # Load tokenizer
     from transformers import AutoTokenizer
     logger.info("Loading tokenizer %s …", args.model)
-    if args.local:
+    force_local = args.local and not args.allow_remote_model_downloads
+    if force_local:
         print("Status  : loading tokenizer from local cache")
     try:
         tokenizer = AutoTokenizer.from_pretrained(
             args.model,
             trust_remote_code=True,
-            local_files_only=args.local and not args.allow_remote_model_downloads,
+            local_files_only=force_local,
         )
     except Exception as exc:
-        friendly = _friendly_model_load_error(args.model, exc)
-        if friendly is not None:
-            print(f"Error   : {friendly}")
-            return
-        raise
+        # If the Hub fetch failed due to gating/auth and we haven't already
+        # tried local-only, retry from the local cache (the model may be
+        # cached by vLLM or a prior download even though we have no token).
+        if not force_local and _friendly_model_load_error(args.model, exc) is not None:
+            try:
+                print("Status  : loading tokenizer from local cache (Hub gated)")
+                tokenizer = AutoTokenizer.from_pretrained(
+                    args.model,
+                    trust_remote_code=True,
+                    local_files_only=True,
+                )
+            except Exception:
+                friendly = _friendly_model_load_error(args.model, exc)
+                print(f"Error   : {friendly}")
+                return
+        else:
+            friendly = _friendly_model_load_error(args.model, exc)
+            if friendly is not None:
+                print(f"Error   : {friendly}")
+                return
+            raise
 
     # Build server manager
     if args.local:
