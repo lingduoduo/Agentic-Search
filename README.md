@@ -114,11 +114,14 @@ python3 -m src.run_agentic_search \
   --generation_timeout_seconds 120 \
   --generation_heartbeat_seconds 5
 
-# Tool-calling loop (use an ungated model, or any model already served by vLLM)
+# Tool-calling loop
 python3 -m src.run_agentic_search \
-    --mode tool --question "What is the capital of France?" \
-    --model Qwen/Qwen2.5-1.5B-Instruct \
-    --vllm_url http://localhost:8080 --tool_format hermes
+  --mode tool \
+  --question "What is the capital of France?" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --local \
+  --device cpu \
+  --tool_format hermes
 ```
 
 Key flags:
@@ -207,10 +210,14 @@ Set the timeout to comfortably cover prefill + generation: on Apple Silicon CPU 
 
 When using `--vllm_url`, the CLI still loads the tokenizer locally to build prompt IDs. If the tokenizer Hub fetch fails because the model is gated (e.g. `meta-llama/Llama-3.1-8B-Instruct`), it automatically retries from the local cache — so if vLLM already downloaded the model, no login is required.
 
-If the tokenizer is not cached at all, authenticate first:
+If the tokenizer is not cached at all, authenticate first and retry with the Hub model ID:
 
 ```bash
-huggingface-cli login
+hf auth login   # or: huggingface-cli login
+python3 -m src.run_agentic_search \
+    --mode tool --question "What is the capital of France?" \
+    --model meta-llama/Llama-3.1-8B-Instruct \
+    --vllm_url http://localhost:8080 --tool_format hermes
 ```
 
 For `--local` mode, pass `--allow_remote_model_downloads` to permit downloading weights at runtime (disabled by default).

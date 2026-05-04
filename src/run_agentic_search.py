@@ -298,12 +298,18 @@ class VLLMServerManager:
             "stop": sampling_params.get("stop", None),
         }
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.base_url}/v1/completions", json=payload
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    f"{self.base_url}/v1/completions", json=payload
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+        except aiohttp.ClientConnectorError:
+            raise RuntimeError(
+                f"Cannot connect to vLLM server at {self.base_url}. "
+                f"Start it first with: vllm serve {self.model} --port 8080"
+            )
 
         completion_text = data["choices"][0]["text"]
         return list(self.tokenizer.encode(completion_text))
@@ -821,8 +827,13 @@ async def main() -> None:
                     local_files_only=True,
                 )
             except Exception:
-                friendly = _friendly_model_load_error(args.model, exc)
-                print(f"Error   : {friendly}")
+                print(
+                    f"Error   : Tokenizer for '{args.model}' is not in the local cache "
+                    f"and the Hub is inaccessible (model is gated).\n"
+                    f"  • Run `huggingface-cli login` after requesting access, or\n"
+                    f"  • Pass --model with a local directory path, or\n"
+                    f"  • Use an ungated model such as Qwen/Qwen2.5-1.5B-Instruct."
+                )
                 return
         else:
             friendly = _friendly_model_load_error(args.model, exc)

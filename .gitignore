@@ -1,6 +1,7 @@
 # Project data and indexes
 data/
 indexes/
+models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
