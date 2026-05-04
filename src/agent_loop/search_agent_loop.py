@@ -22,6 +22,8 @@ logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
 _TASK_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 _TASK_PREFIX_RE = re.compile(r"^\[(?P<task>[^\]]+)\]\s*(?P<query>.+)$")
 _LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
+_QUERY_TAG_RE = re.compile(r"<query>(.*?)</query>", re.DOTALL)
+_URL_SPLIT_RE = re.compile(r"[\n,]+")
 
 
 def _normalize_task_id(raw: str) -> str:
@@ -207,13 +209,13 @@ class SearchAgentLoop(AgentLoopBase):
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
             return [content] if content else []
-        query_tags = re.findall(r"<query>(.*?)</query>", content, re.DOTALL)
+        query_tags = _QUERY_TAG_RE.findall(content)
         if query_tags:
             return [q.strip() for q in query_tags if q.strip()]
         return [
-            _LIST_PREFIX_RE.sub("", line).strip()
+            cleaned
             for line in content.splitlines()
-            if _LIST_PREFIX_RE.sub("", line).strip()
+            if (cleaned := _LIST_PREFIX_RE.sub("", line).strip())
         ]
 
     def _parse_query_specifications(
@@ -231,7 +233,7 @@ class SearchAgentLoop(AgentLoopBase):
         return specs
 
     def _parse_urls(self, content: str) -> list[str]:
-        return [p.strip() for p in re.split(r"[\n,]+", content) if p.strip()]
+        return [p.strip() for p in _URL_SPLIT_RE.split(content) if p.strip()]
 
     def _parse_subquestions(
         self,

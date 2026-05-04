@@ -658,7 +658,7 @@ class LLMGenerationManager:
         return all_search_result
 
     def _retrieve_from_endpoint(self, url: str, query: str, topk: int, retry_attempts: int) -> str:
-        import requests
+        import requests  # optional dep; imported here so the class loads without it
 
         for _ in range(retry_attempts):
             try:
@@ -691,11 +691,11 @@ class LLMGenerationManager:
         if not api_key:
             return _NO_INFO
 
+        import serpapi  # optional dep; imported here so the class loads without it
+
         params = {"engine": "google", "q": query, "api_key": api_key, "num": topk}
         for attempt in range(retry_attempt):
             try:
-                import serpapi
-
                 search = serpapi.search(params)
                 search_result = search.get("organic_results", [])
                 search_texts = []
@@ -753,10 +753,9 @@ class LLMGenerationManager:
         return doc_texts, index
 
     def _passages2string(self, retrieval_result: list[dict[str, Any]]) -> str:
-        formatted_reference = ""
+        parts = []
         for index, doc_item in enumerate(retrieval_result):
             content = doc_item["document"]["contents"]
-            title = content.split("\n")[0]
-            text = "\n".join(content.split("\n")[1:])
-            formatted_reference += f"Doc {index + 1}(Title: {title}) {text}\n"
-        return formatted_reference
+            title, _, text = content.partition("\n")
+            parts.append(f"Doc {index + 1}(Title: {title}) {text}")
+        return "\n".join(parts)

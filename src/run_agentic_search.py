@@ -36,8 +36,8 @@ python3 -m src.run_agentic_search \\
 python3 -m src.run_agentic_search \\
     --mode single \\
     --question "What is FAISS?" \\
-    --model meta-llama/Llama-3.1-8B-Instruct \\
-    --local
+    --model Qwen/Qwen2.5-1.5B-Instruct \\
+    --local --device cpu --max_tokens 256
 """
 
 from __future__ import annotations
@@ -385,14 +385,16 @@ class VLLMServerManager:
         import aiohttp
 
         prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "prompt": prompt_text,
             "max_tokens": sampling_params.get("max_tokens", 512),
             "temperature": sampling_params.get("temperature", 0.7),
             "top_p": sampling_params.get("top_p", 1.0),
-            "stop": sampling_params.get("stop", None),
         }
+        stop = sampling_params.get("stop")
+        if stop is not None:
+            payload["stop"] = stop
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -401,7 +403,7 @@ class VLLMServerManager:
                 ) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
-        except aiohttp.ClientConnectorError:
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
             raise RuntimeError(
                 f"Cannot connect to vLLM server at {self.base_url}. "
                 f"Start it first with: vllm serve {self.model} --port 8080"
@@ -684,7 +686,6 @@ async def run_search_agent(
                 min_confidence=intent_min_confidence,
             )
         )
-        resolved_topk = resolved_topk
     else:
         resolved_topk = topk
         intent_metadata: dict[str, Any] = {"intent_routing_used": False}
