@@ -54,6 +54,8 @@ class GenerationConfig:
     search_max_workers: int = 10
     wiki_retry_attempts: int = 10
     google_retry_attempts: int = 3
+    wiki_retry_sleep_seconds: float = 1.0
+    google_retry_sleep_seconds: float = 2.0
 
 
 def _normalize_ip_list(ip_list_raw: str | None) -> list[str]:
@@ -657,7 +659,9 @@ class LLMGenerationManager:
                     continue
         return all_search_result
 
-    def _retrieve_from_endpoint(self, url: str, query: str, topk: int, retry_attempts: int) -> str:
+    def _retrieve_from_endpoint(
+        self, url: str, query: str, topk: int, retry_attempts: int, sleep_seconds: float = 1.0
+    ) -> str:
         import requests  # optional dep; imported here so the class loads without it
 
         for _ in range(retry_attempts):
@@ -667,14 +671,15 @@ class LLMGenerationManager:
                 rows = resp.json().get("result", [[]])[0]
                 return self._passages2string(rows) or _NO_INFO
             except Exception:  # pragma: no cover - network/runtime dependent
-                time.sleep(1)
+                time.sleep(sleep_seconds)
         return _NO_INFO
 
     def retrieve_from_wiki(self, ip: str | None, query: str, topk: int = 5) -> str:
         if not ip:
             return _NO_INFO
         return self._retrieve_from_endpoint(
-            f"http://{ip}:6002/retrieve", query, topk, self.config.wiki_retry_attempts
+            f"http://{ip}:6002/retrieve", query, topk,
+            self.config.wiki_retry_attempts, self.config.wiki_retry_sleep_seconds,
         )
 
     def retrieve_from_local(self, query: str, topk: int = 5) -> str:
@@ -682,7 +687,8 @@ class LLMGenerationManager:
         if not self.config.retrieval_url:
             return _NO_INFO
         return self._retrieve_from_endpoint(
-            self.config.retrieval_url, query, topk, self.config.wiki_retry_attempts
+            self.config.retrieval_url, query, topk,
+            self.config.wiki_retry_attempts, self.config.wiki_retry_sleep_seconds,
         )
 
     def retrieve_from_google(self, query: str, topk: int, retry_attempt: int | None = None) -> str:
@@ -708,7 +714,7 @@ class LLMGenerationManager:
                 return "\n".join([f"Doc {index + 1}: {doc}" for index, doc in enumerate(search_texts)])
             except Exception:  # pragma: no cover - network/runtime dependent
                 if attempt < retry_attempt - 1:
-                    time.sleep(2)
+                    time.sleep(self.config.google_retry_sleep_seconds)
         return _NO_INFO
 
     def _search(

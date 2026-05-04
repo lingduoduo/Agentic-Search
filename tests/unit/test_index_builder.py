@@ -3,7 +3,9 @@
 import pytest
 
 from src.search.index_builder import (
+    IndexBuilder,
     IndexBuilderConfig,
+    _Corpus,
     prepare_texts,
     resolve_pooling_method,
 )
@@ -214,3 +216,67 @@ class TestPooling:
         from src.search.index_builder import pooling
         with pytest.raises(NotImplementedError):
             pooling(None, None, pooling_method="unknown")
+
+
+class TestIndexBuilderInternals:
+    def test_build_vocabulary_metadata_uses_single_normalized_pass(self):
+        builder = IndexBuilder.__new__(IndexBuilder)
+        builder.corpus = _Corpus(
+            [
+                {"id": "d1", "title": "Alpha", "contents": "Alpha beta beta"},
+                {"id": "d2", "title": "Gamma", "contents": "Gamma delta"},
+            ]
+        )
+        builder.keyword_limit = 2
+        builder.vocab_max_length = 4
+
+        vocabulary, corpus_entries = builder._build_vocabulary_metadata()
+
+        assert [entry["doc_id"] for entry in corpus_entries] == [0, 1]
+        assert corpus_entries[0]["tokens"] == ["alpha", "alpha", "beta", "beta"]
+        assert corpus_entries[0]["keywords"] == ["alpha", "beta"]
+        assert corpus_entries[0]["token_count"] == 4
+        assert vocabulary.token2cnt["alpha"] == 2
+        assert vocabulary.token2cnt["beta"] == 2
+        assert vocabulary.token2cnt["gamma"] == 2
+
+    def test_encode_all_preallocates_and_fills_in_order(self, monkeypatch):
+        builder = IndexBuilder.__new__(IndexBuilder)
+        builder.batch_size = 2
+        builder.gpu_num = 0
+        builder.device = "cpu"
+        builder.max_length = 32
+        builder.pooling_method = "mean"
+        builder.retrieval_method = "contriever"
+        builder.corpus = _Corpus(
+            [
+                {"contents": "doc one"},
+                {"contents": "doc two"},
+                {"contents": "doc three"},
+            ]
+        )
+
+        monkeypatch.setattr("src.search.index_builder._require_torch", lambda: object())
+        monkeypatch.setattr("src.search.index_builder._require_tqdm", lambda: (lambda seq, **_: seq))
+
+        calls: list[list[str]] = []
+
+        def fake_encode_batch(*args, **kwargs):
+            texts = args[2]
+            calls.append(list(texts))
+            base = len(calls) * 10
+            return pytest.importorskip("numpy").array(
+                [[base + index, base + index + 0.5] for index in range(len(texts))],
+                dtype="float32",
+            )
+
+        monkeypatch.setattr("src.search.index_builder._encode_batch", fake_encode_batch)
+
+        embeddings = builder.encode_all(encoder=object(), tokenizer=object())
+
+        assert calls == [["doc one", "doc two"], ["doc three"]]
+        assert embeddings.tolist() == [
+            [10.0, 10.5],
+            [11.0, 11.5],
+            [20.0, 20.5],
+        ]

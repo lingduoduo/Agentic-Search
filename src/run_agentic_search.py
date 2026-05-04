@@ -375,6 +375,20 @@ class VLLMServerManager:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self._session: Any = None
+
+    def _get_session(self) -> Any:
+        import aiohttp
+
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+            self._session = aiohttp.ClientSession(timeout=timeout)
+        return self._session
+
+    async def aclose(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     async def generate(
         self,
@@ -395,14 +409,13 @@ class VLLMServerManager:
         stop = sampling_params.get("stop")
         if stop is not None:
             payload["stop"] = stop
-        timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    f"{self.base_url}/v1/completions", json=payload
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = self._get_session()
+            async with session.post(
+                f"{self.base_url}/v1/completions", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
             raise RuntimeError(
                 f"Cannot connect to vLLM server at {self.base_url}. "
@@ -994,6 +1007,9 @@ async def main() -> None:
         if args.local and _handle_local_cli_value_error(exc):
             return
         raise
+    finally:
+        if hasattr(server_manager, "aclose"):
+            await server_manager.aclose()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections import Counter
+
+try:
+    import orjson as _orjson
+    _json_loads = _orjson.loads
+except ImportError:
+    _json_loads = json.loads
 import shutil
 import subprocess
 import sys
@@ -22,11 +29,9 @@ import numpy as np
 
 from .vocabulary import (
     MAX_LENGTH as DEFAULT_VOCAB_MAX_LENGTH,
-    build_vocabulary_from_sequences,
-    extract_keywords,
+    Vocabulary,
     normalize_document,
     tokenize_text,
-    tokenize_document,
 )
 
 if TYPE_CHECKING:
@@ -187,8 +192,8 @@ class _Corpus:
 
 
 def load_corpus(corpus_path: str) -> _Corpus:
-    with open(corpus_path, encoding="utf-8") as fh:
-        rows = [json.loads(line) for line in fh if line.strip()]
+    with open(corpus_path, "rb") as fh:
+        rows = [_json_loads(line) for line in fh if line.strip()]
     return _Corpus(rows)
 
 
@@ -282,41 +287,7 @@ class IndexBuilder:
             self.build_dense_index()
 
     def save_vocabulary_metadata(self) -> None:
-        contents = [
-            normalize_document(
-                self.corpus[index],
-                text_fields=("title", "contents"),
-            )
-            for index in range(len(self.corpus))
-        ]
-        vocabulary = build_vocabulary_from_sequences(
-            contents,
-            max_length=self.vocab_max_length,
-        )
-        corpus_entries: list[dict[str, Any]] = []
-        for index, text in enumerate(contents):
-            item = self.corpus[index]
-            tokens = tokenize_document(
-                item,
-                text_fields=("title", "contents"),
-                max_length=self.vocab_max_length,
-            )
-            corpus_entries.append(
-                {
-                    "doc_id": index,
-                    "id": item.get("id"),
-                    "title": item.get("title"),
-                    "contents": text,
-                    "tokens": tokens,
-                    "keywords": extract_keywords(
-                        item,
-                        limit=self.keyword_limit,
-                        text_fields=("title", "contents"),
-                        max_length=self.vocab_max_length,
-                    ),
-                    "token_count": len(tokens),
-                }
-            )
+        vocabulary, corpus_entries = self._build_vocabulary_metadata()
 
         with self.vocab_save_path.open("w", encoding="utf-8") as vocab_file:
             json.dump(
@@ -337,6 +308,37 @@ class IndexBuilder:
                 ensure_ascii=False,
                 indent=2,
             )
+
+    def _build_vocabulary_metadata(self) -> tuple["Vocabulary", list[dict[str, Any]]]:
+        vocabulary = Vocabulary()
+        corpus_entries: list[dict[str, Any]] = []
+
+        for index in range(len(self.corpus)):
+            item = self.corpus[index]
+            text = normalize_document(
+                item,
+                text_fields=("title", "contents"),
+            )
+            tokens = tokenize_text(
+                text,
+                max_length=self.vocab_max_length,
+            )
+            if tokens:
+                vocabulary.add_tokens(" ".join(tokens))
+            token_counts = Counter(tokens)
+            corpus_entries.append(
+                {
+                    "doc_id": index,
+                    "id": item.get("id"),
+                    "title": item.get("title"),
+                    "contents": text,
+                    "tokens": tokens,
+                    "keywords": [token for token, _ in token_counts.most_common(self.keyword_limit)],
+                    "token_count": len(tokens),
+                }
+            )
+
+        return vocabulary, corpus_entries
 
     def build_bm25_index(self) -> None:
         bm25_dir = self.save_dir / "bm25"
@@ -394,8 +396,10 @@ class IndexBuilder:
             encoder = torch.nn.DataParallel(encoder)
             batch_size *= self.gpu_num
 
-        all_embeddings = [
-            _encode_batch(
+        all_embeddings: np.ndarray | None = None
+        write_index = 0
+        for start_idx in tqdm(range(0, len(self.corpus), batch_size), desc="Inference embeddings"):
+            batch_embeddings = _encode_batch(
                 encoder,
                 tokenizer,
                 prepare_texts(
@@ -408,9 +412,18 @@ class IndexBuilder:
                 self.pooling_method,
                 self.device,
             )
-            for start_idx in tqdm(range(0, len(self.corpus), batch_size), desc="Inference embeddings")
-        ]
-        return np.concatenate(all_embeddings, axis=0)
+            if all_embeddings is None:
+                all_embeddings = np.empty(
+                    (len(self.corpus), batch_embeddings.shape[1]),
+                    dtype=batch_embeddings.dtype,
+                )
+            stop_index = write_index + batch_embeddings.shape[0]
+            all_embeddings[write_index:stop_index] = batch_embeddings
+            write_index = stop_index
+
+        if all_embeddings is None:
+            return np.empty((0, 0), dtype=np.float32)
+        return all_embeddings
 
     def build_dense_index(self) -> None:
         faiss = _require_faiss()
