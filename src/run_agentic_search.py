@@ -147,6 +147,102 @@ def _friendly_model_load_error(model: str, exc: Exception) -> str | None:
     return None
 
 
+def _load_tokenizer_for_cli(
+    model: str,
+    *,
+    local: bool,
+    allow_remote_model_downloads: bool,
+) -> Any:
+    """Load a tokenizer with the CLI's local-cache / gated-repo fallback policy."""
+
+    from transformers import AutoTokenizer
+
+    force_local = local and not allow_remote_model_downloads
+    if force_local:
+        print("Status  : loading tokenizer from local cache")
+    try:
+        return AutoTokenizer.from_pretrained(
+            model,
+            trust_remote_code=True,
+            local_files_only=force_local,
+        )
+    except Exception as exc:
+        # If the Hub fetch failed due to gating/auth and we haven't already
+        # tried local-only, retry from the local cache (the model may already
+        # be cached by vLLM or a prior download even though we have no token).
+        if not force_local and _friendly_model_load_error(model, exc) is not None:
+            try:
+                print("Status  : loading tokenizer from local cache (Hub gated)")
+                return AutoTokenizer.from_pretrained(
+                    model,
+                    trust_remote_code=True,
+                    local_files_only=True,
+                )
+            except Exception as local_exc:
+                friendly = _friendly_model_load_error(model, local_exc)
+                if friendly is not None:
+                    raise RuntimeError(friendly) from local_exc
+                raise RuntimeError(
+                    f"Tokenizer for '{model}' is not in the local cache and the Hub is inaccessible "
+                    "(model is gated). Use `huggingface-cli login`, pass a local model directory, "
+                    "or switch to an ungated model."
+                ) from local_exc
+
+        friendly = _friendly_model_load_error(model, exc)
+        if friendly is not None:
+            raise RuntimeError(friendly) from exc
+        raise
+
+
+def _build_sampling_params(args: argparse.Namespace) -> dict[str, Any]:
+    """Normalize generation-related CLI flags into one sampling-params dict."""
+
+    return {
+        "temperature": args.temperature,
+        "max_tokens": args.max_tokens,
+        "top_p": args.top_p,
+    }
+
+
+def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
+    """Create the appropriate generation backend for the current CLI mode."""
+
+    if args.local:
+        return LocalServerManager(
+            model_path=args.model,
+            device=args.device,
+            torch_dtype=args.dtype,
+            allow_unsafe_mps=args.allow_unsafe_mps,
+            local_files_only=not args.allow_remote_model_downloads,
+            generation_timeout_seconds=args.generation_timeout_seconds,
+            generation_heartbeat_seconds=args.generation_heartbeat_seconds,
+        )
+    return VLLMServerManager(
+        tokenizer=tokenizer,
+        base_url=args.vllm_url,
+        model=args.model,
+    )
+
+
+def _handle_local_cli_value_error(exc: ValueError) -> bool:
+    """Print friendly local-runtime errors. Returns True when handled."""
+
+    message = str(exc)
+    if "Local generation mode requires a generative language model" in message:
+        print(f"Error   : {message}")
+        print("Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only.")
+        return True
+    if "Local generation on Apple MPS is disabled by default" in message:
+        print(f"Error   : {message}")
+        print("Hint    : Retry with `--device cpu` for the stable path.")
+        return True
+    if "Local MPS generation on macOS is blocked for the older runtime stack" in message:
+        print(f"Error   : {message}")
+        print("Hint    : Use `--device cpu` for the stable path, or upgrade torch and transformers first.")
+        return True
+    return False
+
+
 def _resolve_local_device(requested_device: str) -> str:
     """Resolve a local inference device, preferring accelerators when asked."""
 
@@ -342,78 +438,35 @@ class LocalServerManager:
         self._model: Any = None
         self._tokenizer: Any = None
 
-    def _ensure_loaded(self) -> None:
-        if self._model is not None:
-            return
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-        import torch
+    def _build_model_load_kwargs(self, torch_dtype: Any) -> dict[str, Any]:
+        """Assemble kwargs for AutoModelForCausalLM.from_pretrained()."""
 
-        _validate_local_runtime_device(self.device, allow_unsafe_mps=self.allow_unsafe_mps)
-        _validate_local_runtime_stack(self.device)
-        print(f"Status  : loading local model on {self.device}")
-        logger.info("Loading model %s onto %s …", self.model_path, self.device)
-        config = AutoConfig.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-            local_files_only=self.local_files_only,
-        )
-        _validate_local_generation_config(self.model_path, config)
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-            local_files_only=self.local_files_only,
-        )
-        dtype_name = self.torch_dtype or _auto_select_dtype(self.device)
-        torch_dtype = getattr(torch, dtype_name)
-        print(f"Status  : using dtype {dtype_name}")
         model_kwargs: dict[str, Any] = {
             "trust_remote_code": True,
             "local_files_only": self.local_files_only,
         }
-        # Newer transformers (≥4.42) uses 'dtype'; older uses 'torch_dtype'.
-        # Try 'dtype' first and fall back silently so both versions work.
         dtype_kwarg = "dtype" if _transformers_supports_dtype_kwarg() else "torch_dtype"
         model_kwargs[dtype_kwarg] = torch_dtype
         if _has_accelerate():
             model_kwargs["low_cpu_mem_usage"] = True
         else:
             print("Status  : accelerate not installed; using standard model loading")
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            **model_kwargs,
-        )
-        self._model.eval()
-        if self.device != "cpu":
-            self._model.to(self.device)
-        print("Status  : local model ready")
+        return model_kwargs
 
-    async def generate(
+    def _build_generate_kwargs(
         self,
-        request_id: str,
-        prompt_ids: list[int],
-        sampling_params: dict[str, Any],
-    ) -> list[int]:
-        import torch
+        *,
+        inputs: Any,
+        max_new: int,
+        do_sample: bool,
+        temperature: float,
+        top_p: float,
+    ) -> dict[str, Any]:
+        """Build generation kwargs for one local inference call."""
 
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, self._generate_sync, prompt_ids, sampling_params
-        )
-
-    def _generate_sync(
-        self, prompt_ids: list[int], sampling_params: dict[str, Any]
-    ) -> list[int]:
         import copy
-        import torch
 
-        self._ensure_loaded()
-        max_new = sampling_params.get("max_tokens", 512)
-        temp = float(sampling_params.get("temperature", 0.7))
-        top_p = float(sampling_params.get("top_p", 1.0))
-        do_sample = temp > 0
-        print(f"Status  : generating up to {max_new} new tokens on {self.device}")
-        inputs = torch.tensor([prompt_ids], dtype=torch.long).to(self.device)
-        attention_mask = torch.ones_like(inputs, dtype=torch.long)
+        attention_mask = inputs.new_ones(inputs.shape, dtype=inputs.dtype)
         pad_token_id = self._tokenizer.pad_token_id
         if pad_token_id is None:
             pad_token_id = self._tokenizer.eos_token_id
@@ -444,7 +497,7 @@ class LocalServerManager:
             except ImportError:
                 generate_kwargs["max_time"] = float(self.generation_timeout_seconds)
         if do_sample:
-            generation_config.temperature = temp
+            generation_config.temperature = temperature
             generation_config.top_p = top_p
         else:
             # Reset sampling-only knobs to neutral defaults so newer
@@ -452,6 +505,13 @@ class LocalServerManager:
             generation_config.temperature = 1.0
             generation_config.top_p = 1.0
             generation_config.top_k = 50
+        return generate_kwargs
+
+    def _run_generate_with_heartbeat(self, inputs: Any, generate_kwargs: dict[str, Any]) -> Any:
+        """Run model.generate() with a periodic heartbeat for slow local inference."""
+
+        import torch
+
         start = time.perf_counter()
         stop_event = threading.Event()
 
@@ -460,17 +520,85 @@ class LocalServerManager:
                 elapsed = time.perf_counter() - start
                 print(f"Status  : still generating on {self.device} ({elapsed:.1f}s elapsed)")
 
-        heartbeat_thread = threading.Thread(target=_heartbeat, daemon=True)
-        heartbeat_thread.start()
+        heartbeat_thread: threading.Thread | None = None
+        if self.generation_heartbeat_seconds > 0:
+            heartbeat_thread = threading.Thread(target=_heartbeat, daemon=True)
+            heartbeat_thread.start()
         try:
             with torch.no_grad():
-                out = self._model.generate(
-                    inputs,
-                    **generate_kwargs,
-                )
+                return self._model.generate(inputs, **generate_kwargs)
         finally:
             stop_event.set()
-            heartbeat_thread.join(timeout=0.1)
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=0.1)
+
+    def _ensure_loaded(self) -> None:
+        if self._model is not None:
+            return
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+        import torch
+
+        _validate_local_runtime_device(self.device, allow_unsafe_mps=self.allow_unsafe_mps)
+        _validate_local_runtime_stack(self.device)
+        print(f"Status  : loading local model on {self.device}")
+        logger.info("Loading model %s onto %s …", self.model_path, self.device)
+        config = AutoConfig.from_pretrained(
+            self.model_path,
+            trust_remote_code=True,
+            local_files_only=self.local_files_only,
+        )
+        _validate_local_generation_config(self.model_path, config)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model_path,
+            trust_remote_code=True,
+            local_files_only=self.local_files_only,
+        )
+        dtype_name = self.torch_dtype or _auto_select_dtype(self.device)
+        torch_dtype = getattr(torch, dtype_name)
+        print(f"Status  : using dtype {dtype_name}")
+        model_kwargs = self._build_model_load_kwargs(torch_dtype)
+        self._model = AutoModelForCausalLM.from_pretrained(
+            self.model_path,
+            **model_kwargs,
+        )
+        self._model.eval()
+        if self.device != "cpu":
+            self._model.to(self.device)
+        print("Status  : local model ready")
+
+    async def generate(
+        self,
+        request_id: str,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+    ) -> list[int]:
+        import torch
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._generate_sync, prompt_ids, sampling_params
+        )
+
+    def _generate_sync(
+        self, prompt_ids: list[int], sampling_params: dict[str, Any]
+    ) -> list[int]:
+        import torch
+
+        self._ensure_loaded()
+        max_new = sampling_params.get("max_tokens", 512)
+        temp = float(sampling_params.get("temperature", 0.7))
+        top_p = float(sampling_params.get("top_p", 1.0))
+        do_sample = temp > 0
+        print(f"Status  : generating up to {max_new} new tokens on {self.device}")
+        inputs = torch.tensor([prompt_ids], dtype=torch.long).to(self.device)
+        generate_kwargs = self._build_generate_kwargs(
+            inputs=inputs,
+            max_new=max_new,
+            do_sample=do_sample,
+            temperature=temp,
+            top_p=top_p,
+        )
+        out = self._run_generate_with_heartbeat(inputs, generate_kwargs)
         print("Status  : generation complete")
         return out[0][len(prompt_ids):].tolist()
 
@@ -803,68 +931,20 @@ async def main() -> None:
     print(f"Question: {args.question}\n")
 
     # Load tokenizer
-    from transformers import AutoTokenizer
     logger.info("Loading tokenizer %s …", args.model)
-    force_local = args.local and not args.allow_remote_model_downloads
-    if force_local:
-        print("Status  : loading tokenizer from local cache")
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = _load_tokenizer_for_cli(
             args.model,
-            trust_remote_code=True,
-            local_files_only=force_local,
+            local=args.local,
+            allow_remote_model_downloads=args.allow_remote_model_downloads,
         )
-    except Exception as exc:
-        # If the Hub fetch failed due to gating/auth and we haven't already
-        # tried local-only, retry from the local cache (the model may be
-        # cached by vLLM or a prior download even though we have no token).
-        if not force_local and _friendly_model_load_error(args.model, exc) is not None:
-            try:
-                print("Status  : loading tokenizer from local cache (Hub gated)")
-                tokenizer = AutoTokenizer.from_pretrained(
-                    args.model,
-                    trust_remote_code=True,
-                    local_files_only=True,
-                )
-            except Exception:
-                print(
-                    f"Error   : Tokenizer for '{args.model}' is not in the local cache "
-                    f"and the Hub is inaccessible (model is gated).\n"
-                    f"  • Run `huggingface-cli login` after requesting access, or\n"
-                    f"  • Pass --model with a local directory path, or\n"
-                    f"  • Use an ungated model such as Qwen/Qwen2.5-1.5B-Instruct."
-                )
-                return
-        else:
-            friendly = _friendly_model_load_error(args.model, exc)
-            if friendly is not None:
-                print(f"Error   : {friendly}")
-                return
-            raise
+    except RuntimeError as exc:
+        print(f"Error   : {exc}")
+        return
 
-    # Build server manager
-    if args.local:
-        server_manager = LocalServerManager(
-            model_path=args.model,
-            device=args.device,
-            torch_dtype=args.dtype,
-            allow_unsafe_mps=args.allow_unsafe_mps,
-            local_files_only=not args.allow_remote_model_downloads,
-            generation_timeout_seconds=args.generation_timeout_seconds,
-            generation_heartbeat_seconds=args.generation_heartbeat_seconds,
-        )
-    else:
-        server_manager = VLLMServerManager(
-            tokenizer=tokenizer,
-            base_url=args.vllm_url,
-            model=args.model,
-        )
+    server_manager = _build_server_manager(args, tokenizer)
 
-    sampling_params = {
-        "temperature": args.temperature,
-        "max_tokens": args.max_tokens,
-        "top_p": args.top_p,
-    }
+    sampling_params = _build_sampling_params(args)
 
     intent_pipeline = None
     if args.intent_model:
@@ -910,20 +990,8 @@ async def main() -> None:
                 tool_format=args.tool_format,
             )
     except ValueError as exc:
-        if args.local:
-            message = str(exc)
-            if "Local generation mode requires a generative language model" in message:
-                print(f"Error   : {message}")
-                print("Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only.")
-                return
-            if "Local generation on Apple MPS is disabled by default" in message:
-                print(f"Error   : {message}")
-                print("Hint    : Retry with `--device cpu` for the stable path.")
-                return
-            if "Local MPS generation on macOS is blocked for the older runtime stack" in message:
-                print(f"Error   : {message}")
-                print("Hint    : Use `--device cpu` for the stable path, or upgrade torch and transformers first.")
-                return
+        if args.local and _handle_local_cli_value_error(exc):
+            return
         raise
 
 

@@ -6,8 +6,10 @@ import pytest
 
 from src.agent_loop.agent_loop import AgentLoopBase
 from src.run_agentic_search import (
+    _build_sampling_params,
     _has_accelerate,
     _friendly_model_load_error,
+    _handle_local_cli_value_error,
     _parse_major_minor,
     _resolve_local_device,
     _validate_local_runtime_device,
@@ -89,6 +91,15 @@ def test_friendly_model_load_error_formats_cache_only_miss():
     assert "--allow_remote_model_downloads" in message
 
 
+def test_build_sampling_params_uses_cli_namespace():
+    args = SimpleNamespace(temperature=0.2, max_tokens=64, top_p=0.9)
+    assert _build_sampling_params(args) == {
+        "temperature": 0.2,
+        "max_tokens": 64,
+        "top_p": 0.9,
+    }
+
+
 def test_resolve_local_device_returns_explicit_choice():
     assert _resolve_local_device("cpu") == "cpu"
 
@@ -137,6 +148,15 @@ def test_validate_local_runtime_stack_allows_newer_macos_mps_stack():
         torch_version="2.5.1",
         transformers_version="4.46.0",
     )
+
+
+def test_handle_local_cli_value_error_returns_true_for_known_error(capsys):
+    handled = _handle_local_cli_value_error(
+        ValueError("Local generation on Apple MPS is disabled by default in this CLI because it can segfault")
+    )
+    captured = capsys.readouterr()
+    assert handled is True
+    assert "Retry with `--device cpu`" in captured.out
 
 
 def test_local_generate_sync_adds_attention_mask_for_greedy_decode():
