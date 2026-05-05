@@ -293,7 +293,7 @@ def _transformers_supports_dtype_kwarg() -> bool:
 
         major, minor = _parse_major_minor(transformers.__version__)
         return (major, minor) >= (4, 42)
-    except Exception:
+    except (ImportError, ValueError, IndexError):
         return False
 
 

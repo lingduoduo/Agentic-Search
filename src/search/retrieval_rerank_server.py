@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from dataclasses import dataclass
 
@@ -13,6 +14,8 @@ from pydantic import BaseModel, Field
 from .rerank import RerankerConfig, get_reranker
 from .retrieval import DenseRetriever, DenseRetrieverConfig
 from .search_app import create_base_app
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
@@ -49,7 +52,10 @@ def create_app(config: RetrievalRerankConfig):
                 topk=request.topk_rerank or config.reranker.rerank_topk,
             )
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.exception("Retrieval+rerank request failed: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="Retrieval+rerank request failed"
+            ) from exc
 
         if request.return_scores:
             return {"result": reranked}

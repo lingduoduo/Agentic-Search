@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 
 import uvicorn
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from .retrieval import DenseRetriever, DenseRetrieverConfig
 from .search_app import create_base_app
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
@@ -43,7 +46,10 @@ def create_app(config: DenseRetrieverConfig):
             )
             return {"result": documents}
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.exception("Retrieval request failed: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="Retrieval request failed"
+            ) from exc
 
     return app
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TypeVar
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -52,7 +55,10 @@ def create_search_app(title: str, engine: T) -> FastAPI:
         try:
             results = engine.batch_search(request.queries)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.exception("Search request failed: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="Search request failed"
+            ) from exc
         return {"result": results}
 
     if hasattr(engine, "fetch_urls"):
@@ -62,7 +68,10 @@ def create_search_app(title: str, engine: T) -> FastAPI:
             try:
                 results = engine.fetch_urls(request.urls)
             except Exception as exc:
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+                logger.exception("Fetch request failed: %s", exc)
+                raise HTTPException(
+                    status_code=500, detail="Fetch request failed"
+                ) from exc
             return {"result": results}
 
     return app
