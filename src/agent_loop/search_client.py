@@ -48,6 +48,39 @@ class SearchClient:
 
     def __init__(self, config: SearchClientConfig) -> None:
         self.config = config
+        self._timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+        self._session: aiohttp.ClientSession | None = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(timeout=self._timeout)
+        return self._session
+
+    async def aclose(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+        self._session = None
+
+    async def _post_json(self, url: str, payload: dict, action: str) -> dict:
+        last_exc: Exception | None = None
+
+        for attempt in range(self.config.max_retries):
+            session = await self._get_session()
+            try:
+                async with session.post(url, json=payload) as resp:
+                    resp.raise_for_status()
+                    return await resp.json()
+            except Exception as exc:
+                last_exc = exc
+                if self._session is session:
+                    await self.aclose()
+                if attempt < self.config.max_retries - 1:
+                    await asyncio.sleep(0.5 * (2**attempt))
+
+        raise RuntimeError(
+            f"SearchClient.{action} failed after {self.config.max_retries} retries "
+            f"against {url}"
+        ) from last_exc
 
     async def retrieve(
         self,
@@ -60,29 +93,9 @@ class SearchClient:
         Uses exponential backoff between retries.
         """
         payload = {"queries": queries, "topk": topk or self.config.topk}
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
-        last_exc: Exception | None = None
-
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            for attempt in range(self.config.max_retries):
-                try:
-                    async with session.post(self.config.url, json=payload) as resp:
-                        resp.raise_for_status()
-                        data = await resp.json()
-                    rows = data.get("result", [])
-                    return [
-                        [SearchResult.from_api_item(item) for item in row]
-                        for row in rows
-                    ]
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt < self.config.max_retries - 1:
-                        await asyncio.sleep(0.5 * (2**attempt))
-
-        raise RuntimeError(
-            f"SearchClient.retrieve failed after {self.config.max_retries} retries "
-            f"against {self.config.url}"
-        ) from last_exc
+        data = await self._post_json(self.config.url, payload, "retrieve")
+        rows = data.get("result", [])
+        return [[SearchResult.from_api_item(item) for item in row] for row in rows]
 
     async def retrieve_one(
         self,
@@ -99,26 +112,6 @@ class SearchClient:
     ) -> list[SearchResult]:
         """Fetch full-page content for specific URLs from a compatible server."""
         payload = {"urls": urls}
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
-        last_exc: Exception | None = None
         fetch_url = self.config.get_fetch_url()
-
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            for attempt in range(self.config.max_retries):
-                try:
-                    async with session.post(fetch_url, json=payload) as resp:
-                        resp.raise_for_status()
-                        data = await resp.json()
-                    return [
-                        SearchResult.from_api_item(item)
-                        for item in data.get("result", [])
-                    ]
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt < self.config.max_retries - 1:
-                        await asyncio.sleep(0.5 * (2**attempt))
-
-        raise RuntimeError(
-            f"SearchClient.fetch_urls failed after {self.config.max_retries} retries "
-            f"against {fetch_url}"
-        ) from last_exc
+        data = await self._post_json(fetch_url, payload, "fetch_urls")
+        return [SearchResult.from_api_item(item) for item in data.get("result", [])]

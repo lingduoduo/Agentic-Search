@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import re
@@ -527,226 +528,239 @@ class SearchAgentLoop(AgentLoopBase):
         fetch_tag = cfg.fetch_tag
         answer_tag = cfg.answer_tag
 
-        for turn in range(cfg.max_turns):
-            with simple_timer(f"build_prompt_turn_{turn}", metrics):
-                prompt_ids = await self.build_prompt_ids(working_messages)
-            final_prompt_ids = prompt_ids
+        try:
+            for turn in range(cfg.max_turns):
+                with simple_timer(f"build_prompt_turn_{turn}", metrics):
+                    prompt_ids = await self.build_prompt_ids(working_messages)
+                final_prompt_ids = prompt_ids
 
-            with simple_timer(f"generate_turn_{turn}", metrics):
-                response_ids = await self.generate_response_ids(
-                    prompt_ids=prompt_ids,
-                    sampling_params=sampling_params,
-                    request_id=f"{request_id}_t{turn}",
-                )
-
-            all_response_ids.extend(response_ids)
-            num_turns += 1
-
-            response_text = self.tokenizer.decode(
-                response_ids, skip_special_tokens=True
-            )
-            actions = self._parse_actions(response_text)
-            logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
-
-            working_messages.append({"role": "assistant", "content": response_text})
-
-            # No recognised tag: re-prompt depending on where we are in the workflow.
-            if not actions:
-                needs_more = (
-                    cfg.require_sufficient_evidence_before_answer
-                    and not self._has_sufficient_evidence(
-                        latest_evaluation, task_statuses, active_tasks
+                with simple_timer(f"generate_turn_{turn}", metrics):
+                    response_ids = await self.generate_response_ids(
+                        prompt_ids=prompt_ids,
+                        sampling_params=sampling_params,
+                        request_id=f"{request_id}_t{turn}",
                     )
-                    and consecutive_rejections < cfg.max_answer_rejections
+
+                all_response_ids.extend(response_ids)
+                num_turns += 1
+
+                response_text = self.tokenizer.decode(
+                    response_ids, skip_special_tokens=True
                 )
-                if needs_more:
+                actions = self._parse_actions(response_text)
+                logger.debug(
+                    "turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions]
+                )
+
+                working_messages.append({"role": "assistant", "content": response_text})
+
+                # No recognised tag: re-prompt depending on where we are in the workflow.
+                if not actions:
+                    needs_more = (
+                        cfg.require_sufficient_evidence_before_answer
+                        and not self._has_sufficient_evidence(
+                            latest_evaluation, task_statuses, active_tasks
+                        )
+                        and consecutive_rejections < cfg.max_answer_rejections
+                    )
+                    if needs_more:
+                        consecutive_rejections += 1
+                        metrics["answer_rejections"] += 1
+                        if rounds_used == 0:
+                            # No search has happened yet — ask the model to decide whether it needs one.
+                            metrics["decision_prompts"] += 1
+                            feedback = self._build_decision_feedback(None)
+                        else:
+                            feedback = (
+                                "No action detected. Evidence is still insufficient. "
+                                "Issue a <searches> block to gather more evidence before answering."
+                            )
+                        working_messages.append(
+                            {
+                                "role": "user",
+                                "content": cfg.answer_rejection_template.format(
+                                    content=feedback
+                                ),
+                            }
+                        )
+                        continue
+                    break
+
+                # Process <subquestions> declarations.
+                declared_subquestions: dict[str, str] = {}
+                for tag, content in actions:
+                    if tag == decision_tag:
+                        latest_search_decision = self._parse_search_decision(content)
+                    if tag == subquestions_tag:
+                        declared_subquestions.update(
+                            self._parse_subquestions(
+                                content, active_tasks | declared_subquestions
+                            )
+                        )
+                if declared_subquestions:
+                    active_tasks.update(declared_subquestions)
+                    task_statuses.update({tid: False for tid in declared_subquestions})
+                    agent_ctx.register_tasks(declared_subquestions)
+                    metrics["active_subquestions"] = float(len(active_tasks))
+
+                query_specs, fetch_urls = self._collect_requested_queries_and_urls(
+                    actions, search_tags=search_tags, fetch_tag=fetch_tag
+                )
+                allowed_specs, repeated, overflow = self._partition_search_requests(
+                    query_specs,
+                    executed_queries=executed_queries,
+                    rounds_used=rounds_used,
+                )
+                all_queries = [q for _, q in allowed_specs]
+                query_task_ids = [tid for tid, _ in allowed_specs]
+
+                # Answer gating: block early answers if evidence is insufficient.
+                if (
+                    any(tag == answer_tag for tag, _ in actions)
+                    and not all_queries
+                    and not fetch_urls
+                ):
+                    if (
+                        cfg.allow_internal_knowledge_answer
+                        and rounds_used == 0
+                        and latest_search_decision == "answer"
+                        and not active_tasks
+                    ):
+                        metrics["direct_answers"] += 1.0
+                        break
+                    if (
+                        not cfg.require_sufficient_evidence_before_answer
+                        or self._has_sufficient_evidence(
+                            latest_evaluation, task_statuses, active_tasks
+                        )
+                        or consecutive_rejections >= cfg.max_answer_rejections
+                    ):
+                        break
                     consecutive_rejections += 1
                     metrics["answer_rejections"] += 1
-                    if rounds_used == 0:
-                        # No search has happened yet — ask the model to decide whether it needs one.
-                        metrics["decision_prompts"] += 1
-                        feedback = self._build_decision_feedback(None)
-                    else:
-                        feedback = (
-                            "No action detected. Evidence is still insufficient. "
-                            "Issue a <searches> block to gather more evidence before answering."
-                        )
                     working_messages.append(
                         {
                             "role": "user",
                             "content": cfg.answer_rejection_template.format(
-                                content=feedback
+                                content=self._build_answer_rejection_feedback(
+                                    latest_evaluation, task_statuses, active_tasks
+                                )
                             ),
                         }
                     )
                     continue
-                break
 
-            # Process <subquestions> declarations.
-            declared_subquestions: dict[str, str] = {}
-            for tag, content in actions:
-                if tag == decision_tag:
-                    latest_search_decision = self._parse_search_decision(content)
-                if tag == subquestions_tag:
-                    declared_subquestions.update(
-                        self._parse_subquestions(
-                            content, active_tasks | declared_subquestions
-                        )
-                    )
-            if declared_subquestions:
-                active_tasks.update(declared_subquestions)
-                task_statuses.update({tid: False for tid in declared_subquestions})
-                agent_ctx.register_tasks(declared_subquestions)
-                metrics["active_subquestions"] = float(len(active_tasks))
+                # Build observation for this turn (search + fetch combined into one message).
+                turn_observations: list[str] = []
 
-            query_specs, fetch_urls = self._collect_requested_queries_and_urls(
-                actions, search_tags=search_tags, fetch_tag=fetch_tag
-            )
-            allowed_specs, repeated, overflow = self._partition_search_requests(
-                query_specs, executed_queries=executed_queries, rounds_used=rounds_used
-            )
-            all_queries = [q for _, q in allowed_specs]
-            query_task_ids = [tid for tid, _ in allowed_specs]
-
-            # Answer gating: block early answers if evidence is insufficient.
-            if (
-                any(tag == answer_tag for tag, _ in actions)
-                and not all_queries
-                and not fetch_urls
-            ):
-                if (
-                    cfg.allow_internal_knowledge_answer
-                    and rounds_used == 0
-                    and latest_search_decision == "answer"
-                    and not active_tasks
-                ):
-                    metrics["direct_answers"] += 1.0
-                    break
-                if (
-                    not cfg.require_sufficient_evidence_before_answer
-                    or self._has_sufficient_evidence(
-                        latest_evaluation, task_statuses, active_tasks
-                    )
-                    or consecutive_rejections >= cfg.max_answer_rejections
-                ):
-                    break
-                consecutive_rejections += 1
-                metrics["answer_rejections"] += 1
-                working_messages.append(
-                    {
-                        "role": "user",
-                        "content": cfg.answer_rejection_template.format(
-                            content=self._build_answer_rejection_feedback(
-                                latest_evaluation, task_statuses, active_tasks
-                            )
-                        ),
-                    }
-                )
-                continue
-
-            # Build observation for this turn (search + fetch combined into one message).
-            turn_observations: list[str] = []
-
-            if repeated:
-                metrics["repeated_search_queries"] += len(repeated)
-                turn_observations.append(
-                    cfg.repeated_query_template.format(
-                        content="\n".join(f"- {q}" for q in repeated)
-                    )
-                )
-            if overflow:
-                metrics["search_limit_hits"] += 1.0
-                turn_observations.append(cfg.search_limit_template)
-
-            # Plan / subquestions only — no search or fetch.
-            if not all_queries and not fetch_urls:
-                if declared_subquestions:
+                if repeated:
+                    metrics["repeated_search_queries"] += len(repeated)
                     turn_observations.append(
-                        cfg.subquestions_obs_template.format(
-                            content="Registered subquestions:\n"
-                            + "\n".join(
-                                f"- {tid}: {desc}"
-                                for tid, desc in declared_subquestions.items()
-                            )
+                        cfg.repeated_query_template.format(
+                            content="\n".join(f"- {q}" for q in repeated)
                         )
                     )
-                elif any(tag == decision_tag for tag, _ in actions):
-                    metrics["decision_prompts"] += 1
+                if overflow:
+                    metrics["search_limit_hits"] += 1.0
+                    turn_observations.append(cfg.search_limit_template)
+
+                # Plan / subquestions only — no search or fetch.
+                if not all_queries and not fetch_urls:
+                    if declared_subquestions:
+                        turn_observations.append(
+                            cfg.subquestions_obs_template.format(
+                                content="Registered subquestions:\n"
+                                + "\n".join(
+                                    f"- {tid}: {desc}"
+                                    for tid, desc in declared_subquestions.items()
+                                )
+                            )
+                        )
+                    elif any(tag == decision_tag for tag, _ in actions):
+                        metrics["decision_prompts"] += 1
+                        turn_observations.append(
+                            cfg.decision_obs_template.format(
+                                content=self._build_decision_feedback(
+                                    latest_search_decision
+                                )
+                            )
+                        )
+                    else:
+                        turn_observations.append(cfg.plan_obs_template)
+                    working_messages.append(
+                        {"role": "user", "content": "".join(turn_observations)}
+                    )
+                    continue
+
+                # Parallel search round (before fetch so evidence appears first).
+                if all_queries:
+                    consecutive_rejections = 0
+                    metrics["search_queries"] += len(all_queries)
+                    metrics["search_cache_hits"] += sum(
+                        1 for q in all_queries if q in search_cache
+                    )
+                    rounds_used += 1  # count rounds, not individual queries
+                    executed_queries.update(all_queries)
+
+                    t0 = time.perf_counter()
+                    results_by_query = await self._retrieve_with_cache(
+                        all_queries, search_cache
+                    )
+                    elapsed = time.perf_counter() - t0
+                    metrics["search_rounds"] += 1
+                    logger.debug(
+                        "search returned %d total results across %d queries in %.2fs",
+                        sum(len(r) for r in results_by_query),
+                        len(all_queries),
+                        elapsed,
+                    )
+
+                    if any(results_by_query):
+                        search_contexts = agent_ctx.add_round(
+                            queries=all_queries,
+                            results_by_query=results_by_query,
+                            task_ids=query_task_ids,
+                        )
+                        latest_evaluation = self._result_evaluator.evaluate_round(
+                            search_contexts
+                        )
+                        for tid, ev in self._evaluate_tasks(search_contexts).items():
+                            task_statuses[tid] = ev.is_sufficient
+                        turn_observations.append(
+                            self._build_search_observation(
+                                agent_ctx.num_rounds, search_contexts, latest_evaluation
+                            )
+                        )
+                    else:
+                        turn_observations.append(
+                            cfg.obs_template.format(
+                                content="No results returned. Try rephrasing the search query."
+                            )
+                        )
+
+                # Page fetch (appended after search results in the same message).
+                if fetch_urls:
+                    limited = fetch_urls[: cfg.max_url_fetch]
+                    metrics["page_cache_hits"] += sum(
+                        1 for u in limited if u in page_cache
+                    )
+                    pages = await self._fetch_with_cache(limited, page_cache)
+                    metrics["fetched_pages"] += len(pages)
                     turn_observations.append(
-                        cfg.decision_obs_template.format(
-                            content=self._build_decision_feedback(
-                                latest_search_decision
-                            )
+                        cfg.full_page_obs_template.format(
+                            content=self._format_full_page_information(pages)
                         )
                     )
-                else:
-                    turn_observations.append(cfg.plan_obs_template)
+
                 working_messages.append(
                     {"role": "user", "content": "".join(turn_observations)}
                 )
-                continue
-
-            # Parallel search round (before fetch so evidence appears first).
-            if all_queries:
-                consecutive_rejections = 0
-                metrics["search_queries"] += len(all_queries)
-                metrics["search_cache_hits"] += sum(
-                    1 for q in all_queries if q in search_cache
-                )
-                rounds_used += 1  # count rounds, not individual queries
-                executed_queries.update(all_queries)
-
-                t0 = time.perf_counter()
-                results_by_query = await self._retrieve_with_cache(
-                    all_queries, search_cache
-                )
-                elapsed = time.perf_counter() - t0
-                metrics["search_rounds"] += 1
-                logger.debug(
-                    "search returned %d total results across %d queries in %.2fs",
-                    sum(len(r) for r in results_by_query),
-                    len(all_queries),
-                    elapsed,
-                )
-
-                if any(results_by_query):
-                    search_contexts = agent_ctx.add_round(
-                        queries=all_queries,
-                        results_by_query=results_by_query,
-                        task_ids=query_task_ids,
-                    )
-                    latest_evaluation = self._result_evaluator.evaluate_round(
-                        search_contexts
-                    )
-                    for tid, ev in self._evaluate_tasks(search_contexts).items():
-                        task_statuses[tid] = ev.is_sufficient
-                    turn_observations.append(
-                        self._build_search_observation(
-                            agent_ctx.num_rounds, search_contexts, latest_evaluation
-                        )
-                    )
-                else:
-                    turn_observations.append(
-                        cfg.obs_template.format(
-                            content="No results returned. Try rephrasing the search query."
-                        )
-                    )
-
-            # Page fetch (appended after search results in the same message).
-            if fetch_urls:
-                limited = fetch_urls[: cfg.max_url_fetch]
-                metrics["page_cache_hits"] += sum(1 for u in limited if u in page_cache)
-                pages = await self._fetch_with_cache(limited, page_cache)
-                metrics["fetched_pages"] += len(pages)
-                turn_observations.append(
-                    cfg.full_page_obs_template.format(
-                        content=self._format_full_page_information(pages)
-                    )
-                )
-
-            working_messages.append(
-                {"role": "user", "content": "".join(turn_observations)}
-            )
+        finally:
+            close_client = getattr(self._search_client, "aclose", None)
+            if close_client is not None:
+                close_result = close_client()
+                if inspect.isawaitable(close_result):
+                    await close_result
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
