@@ -229,6 +229,7 @@ class FakeSearchClient:
         self.calls = []
         self.fetch_calls = []
         self.fetch_responses = {}
+        self.closed = False
 
     async def retrieve(self, queries, topk=None):
         del topk
@@ -238,6 +239,9 @@ class FakeSearchClient:
     async def fetch_urls(self, urls):
         self.fetch_calls.append(list(urls))
         return self.fetch_responses[tuple(urls)]
+
+    async def aclose(self):
+        self.closed = True
 
 
 def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
@@ -324,6 +328,26 @@ def test_search_agent_loop_injects_search_evaluation_feedback():
     assert "<search_evaluation>" in second_prompt
     assert "Verdict: INSUFFICIENT" in second_prompt
     assert "keep searching" in second_prompt
+
+
+def test_search_agent_loop_closes_search_client_after_run():
+    tokenizer = DummyTokenizerWithEncode()
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager([tokenizer.encode("<answer>Done</answer>")]),
+        search_config=SearchAgentLoopConfig(
+            max_turns=2,
+            require_sufficient_evidence_before_answer=False,
+        ),
+    )
+    fake_client = FakeSearchClient({})
+    loop._search_client = fake_client
+
+    asyncio.run(
+        loop.run([{"role": "user", "content": "answer directly"}], {"temperature": 0.0})
+    )
+
+    assert fake_client.closed is True
 
 
 def test_search_agent_loop_rejects_answer_before_any_search():

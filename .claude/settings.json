@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('file_path',''))\"); if [[ \"$file\" == *.py ]]; then ruff check --fix \"$file\" && ruff format \"$file\"; fi"
+          },
+          {
+            "type": "command",
+            "command": "file=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('file_path',''))\"); if [[ \"$file\" == *.py ]]; then cd /Users/linghuang/Git/Agentic-Search && pytest tests/ -x -q --tb=short 2>&1 | tail -20; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
