@@ -24,6 +24,7 @@ from .intent_classifier import (
     load_training_data as load_intent_training_data,
     resolve_search_settings,
 )
+from .reward import SearchRewardConfig, SearchRewardFunction
 from .search_agent_loop import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
@@ -43,6 +44,8 @@ from .tool_parser import (
 
 __all__ = [
     "AgentContext",
+    "SearchRewardConfig",
+    "SearchRewardFunction",
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+_CITATION_RE = re.compile(r"\[R(\d+)Q(\d+)D(\d+)\]")
 
 
 @dataclass(frozen=True)
@@ -127,6 +130,34 @@ class AgentContext:
         self.turns.extend(round_contexts)
         self.rounds.append(round_contexts)
         return round_contexts
+
+    def cited_result_ids(self, answer_text: str) -> frozenset[str]:
+        """Return the set of citation keys referenced in *answer_text*.
+
+        Citation keys are formatted as ``R{round}Q{query}D{doc}`` (e.g. ``R1Q2D3``)
+        by :meth:`SearchAgentLoop._format_round_information`.  Only keys that
+        correspond to an actual retrieved result are included in the return value.
+        """
+        referenced = {
+            f"R{r}Q{q}D{d}"
+            for r, q, d in (
+                (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                for m in _CITATION_RE.finditer(answer_text)
+            )
+        }
+        valid: set[str] = set()
+        for round_idx, round_ctxs in enumerate(self.rounds, 1):
+            for query_idx, ctx in enumerate(round_ctxs, 1):
+                for doc_idx in range(1, len(ctx.results) + 1):
+                    key = f"R{round_idx}Q{query_idx}D{doc_idx}"
+                    if key in referenced:
+                        valid.add(key)
+        return frozenset(valid)
+
+    @property
+    def num_results(self) -> int:
+        """Total number of retrieved search results across all rounds."""
+        return sum(len(ctx.results) for ctx in self.turns)
 
     @property
     def num_searches(self) -> int:

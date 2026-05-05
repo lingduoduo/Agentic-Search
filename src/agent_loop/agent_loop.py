@@ -53,6 +53,7 @@ class AgentLoopOutput:
     metrics: dict[str, float] = field(default_factory=dict)
     request_id: str | None = None
     context: Any | None = None  # AgentContext when produced by SearchAgentLoop
+    final_answer: str | None = None  # Content of the last <answer> tag, if any
 
 
 @contextmanager
