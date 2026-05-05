@@ -318,8 +318,13 @@ def load_training_data(path: str) -> list[tuple[list[str], str]]:
     """
     from src.search.vocabulary import tokenize_text
 
-    with open(path, encoding="utf-8") as fh:
-        raw = json.load(fh)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Training data file not found: {path!r}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Training data file is not valid JSON: {path!r}") from exc
 
     examples: list[tuple[list[str], str]] = []
     for item in raw:

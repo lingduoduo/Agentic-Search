@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import random
@@ -14,6 +15,8 @@ from typing import Any
 import torch
 
 from .tensor_helper import TensorConfig, TensorHelper
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -705,7 +708,8 @@ class LLMGenerationManager:
                 try:
                     result, index = future.result()
                     all_search_result[index] = result
-                except Exception:
+                except Exception as exc:
+                    logger.warning("Search future failed: %s", exc)
                     continue
         return all_search_result
 

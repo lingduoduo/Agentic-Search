@@ -144,13 +144,17 @@ class OnlineSearchEngine:
         links = filter_links(search_results)
         if not links:
             return {}
-        html_documents = asyncio.run(
-            fetch_all(
-                urls=links,
-                timeout_seconds=self.config.request_timeout_seconds,
-                limit=self.config.fetch_concurrency,
+        loop = asyncio.new_event_loop()
+        try:
+            html_documents = loop.run_until_complete(
+                fetch_all(
+                    urls=links,
+                    timeout_seconds=self.config.request_timeout_seconds,
+                    limit=self.config.fetch_concurrency,
+                )
             )
-        )
+        finally:
+            loop.close()
 
         content_by_link: dict[str, str] = {}
         for html, link in zip(html_documents, links):
@@ -171,13 +175,17 @@ class OnlineSearchEngine:
         if not clean_urls:
             return []
 
-        html_documents = asyncio.run(
-            fetch_all(
-                urls=clean_urls,
-                timeout_seconds=self.config.request_timeout_seconds,
-                limit=self.config.fetch_concurrency,
+        loop = asyncio.new_event_loop()
+        try:
+            html_documents = loop.run_until_complete(
+                fetch_all(
+                    urls=clean_urls,
+                    timeout_seconds=self.config.request_timeout_seconds,
+                    limit=self.config.fetch_concurrency,
+                )
             )
-        )
+        finally:
+            loop.close()
 
         documents: list[dict[str, dict[str, str]]] = []
         for url, html in zip(clean_urls, html_documents):

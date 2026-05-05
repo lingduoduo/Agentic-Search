@@ -45,17 +45,26 @@ class SerpSearchEngine:
         self.config = config
 
     def _search_query(self, query: str) -> dict[str, Any]:
-        response = requests.get(
-            self.config.search_url,
-            params={
-                "engine": self.config.serp_engine,
-                "q": query,
-                "api_key": self.config.serp_api_key,
-            },
-            timeout=self.config.request_timeout_seconds,
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(
+                self.config.search_url,
+                params={
+                    "engine": self.config.serp_engine,
+                    "q": query,
+                    "api_key": self.config.serp_api_key,
+                },
+                timeout=self.config.request_timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.HTTPError as exc:
+            raise RuntimeError(
+                f"SerpAPI returned HTTP {exc.response.status_code} for query {query!r}"
+            ) from exc
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"SerpAPI request failed for query {query!r}: {type(exc).__name__}"
+            ) from exc
 
     def batch_search(self, queries: list[str]) -> list[list[dict[str, dict[str, str]]]]:
         max_workers = min(max(len(queries), 1), self.config.batch_workers)

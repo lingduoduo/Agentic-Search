@@ -188,7 +188,7 @@ class _Corpus:
     def __len__(self) -> int:
         return len(self._rows)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | slice | str) -> Any:
         if isinstance(key, int):
             return self._rows[key]
         if isinstance(key, slice):

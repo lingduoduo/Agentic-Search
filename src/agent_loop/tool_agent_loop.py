@@ -124,7 +124,8 @@ class ToolAgentLoop(AgentLoopBase):
                 tokenize=True,
             )
             return len(ids)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not measure template prefix length: %s", exc)
             return 0
 
     def _build_prompt_ids_with_tools_sync(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 
 import uvicorn
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from .rerank import RerankerConfig, get_reranker, passage_to_string
 from .search_app import create_base_app
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 6980
@@ -36,7 +39,10 @@ def create_app(config: RerankerConfig):
                 topk=request.rerank_topk or config.rerank_topk,
             )
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.exception("Rerank request failed: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="Rerank request failed"
+            ) from exc
 
         if request.return_scores:
             return {"result": reranked}
