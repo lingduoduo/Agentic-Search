@@ -4,13 +4,15 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.llm_agent.generation import GenerationConfig, LLMGenerationManager
+from src.llm_agent.generation import GenerationConfig, LLMGenerationManager  # noqa: E402
 
 
 class DummyTokenizer:
     pad_token_id = 0
 
-    def __call__(self, texts, add_special_tokens=False, return_tensors="pt", padding="longest"):
+    def __call__(
+        self, texts, add_special_tokens=False, return_tensors="pt", padding="longest"
+    ):
         del add_special_tokens, padding
         max_len = max((len(text.split()) for text in texts), default=0)
         rows = []

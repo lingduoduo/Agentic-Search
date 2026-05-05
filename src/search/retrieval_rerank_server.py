@@ -64,9 +64,15 @@ def create_app(config: RetrievalRerankConfig):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Launch the local retrieval+rerank server.")
-    parser.add_argument("--index_path", type=str, required=True, help="Corpus index file.")
-    parser.add_argument("--corpus_path", type=str, required=True, help="Local corpus file.")
+    parser = argparse.ArgumentParser(
+        description="Launch the local retrieval+rerank server."
+    )
+    parser.add_argument(
+        "--index_path", type=str, required=True, help="Corpus index file."
+    )
+    parser.add_argument(
+        "--corpus_path", type=str, required=True, help="Local corpus file."
+    )
     parser.add_argument("--retrieval_topk", type=int, default=10)
     parser.add_argument("--retrieval_method", type=str, required=True)
     parser.add_argument("--retriever_model", type=str, required=True)
@@ -80,8 +86,14 @@ def parse_args() -> argparse.Namespace:
         default="cross-encoder/ms-marco-MiniLM-L12-v2",
     )
     parser.add_argument("--reranker_batch_size", type=int, default=32)
-    parser.add_argument("--host", type=str, default=os.getenv("RETRIEVAL_RERANK_HOST", DEFAULT_HOST))
-    parser.add_argument("--port", type=int, default=int(os.getenv("RETRIEVAL_RERANK_PORT", str(DEFAULT_PORT))))
+    parser.add_argument(
+        "--host", type=str, default=os.getenv("RETRIEVAL_RERANK_HOST", DEFAULT_HOST)
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("RETRIEVAL_RERANK_PORT", str(DEFAULT_PORT))),
+    )
     return parser.parse_args()
 
 

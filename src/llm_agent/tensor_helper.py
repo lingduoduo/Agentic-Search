@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import torch
 
@@ -46,14 +45,22 @@ class TensorHelper:
         """Move padding to the desired side while preserving token order."""
 
         if pad_to_left:
-            sorted_indices = (tensor != self.config.pad_token_id).to(torch.int64).argsort(
-                dim=1,
-                stable=True,
+            sorted_indices = (
+                (tensor != self.config.pad_token_id)
+                .to(torch.int64)
+                .argsort(
+                    dim=1,
+                    stable=True,
+                )
             )
         else:
-            sorted_indices = (tensor == self.config.pad_token_id).to(torch.int64).argsort(
-                dim=1,
-                stable=True,
+            sorted_indices = (
+                (tensor == self.config.pad_token_id)
+                .to(torch.int64)
+                .argsort(
+                    dim=1,
+                    stable=True,
+                )
             )
         return tensor.gather(1, sorted_indices), sorted_indices
 
@@ -75,7 +82,9 @@ class TensorHelper:
         """Concatenate tensors then normalize the padding layout."""
 
         concatenated = torch.cat(tensors, dim=1)
-        padded_tensor, _ = self.convert_pad_structure(concatenated, pad_to_left=pad_to_left)
+        padded_tensor, _ = self.convert_pad_structure(
+            concatenated, pad_to_left=pad_to_left
+        )
         return padded_tensor
 
     def example_level_pad(
@@ -107,4 +116,3 @@ class TensorHelper:
                 active_index += 1
 
         return padded_responses, padded_responses_str
-

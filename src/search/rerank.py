@@ -33,7 +33,7 @@ def passage_to_string(doc_item: dict[str, Any]) -> str:
         content = doc_item.get("contents", "")
 
     title, _, body = content.partition("\n")
-    clean_title = title.strip().strip("\"")
+    clean_title = title.strip().strip('"')
     if clean_title:
         return f"(Title: {clean_title}) {body}".strip()
     return content
@@ -43,7 +43,7 @@ def string_to_document(text: str) -> dict[str, dict[str, str]]:
     match = re.match(r"\(Title:\s*([^)]+)\)\s*(.+)", text, re.DOTALL)
     if match:
         title, content = match.groups()
-        return {"document": {"contents": f"\"{title}\"\n{content}"}}
+        return {"document": {"contents": f'"{title}"\n{content}'}}
     return {"document": {"contents": text}}
 
 

@@ -51,7 +51,9 @@ def main() -> None:
     )
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--min_freq", type=int, default=2, help="Minimum token frequency for vocabulary")
+    parser.add_argument(
+        "--min_freq", type=int, default=2, help="Minimum token frequency for vocabulary"
+    )
     parser.add_argument("--vocab_size", type=int, default=5000)
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=256)
@@ -97,7 +99,9 @@ def main() -> None:
     for text, expected in samples:
         pred = pipeline.predict_text(text)
         match = "✓" if pred.intent == expected else "✗"
-        print(f"  {match}  {text!r:45s}  → {pred.intent} ({pred.confidence:.2f})  [expected: {expected}]")
+        print(
+            f"  {match}  {text!r:45s}  → {pred.intent} ({pred.confidence:.2f})  [expected: {expected}]"
+        )
 
 
 if __name__ == "__main__":

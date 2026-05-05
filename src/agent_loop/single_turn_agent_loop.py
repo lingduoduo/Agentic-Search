@@ -10,14 +10,18 @@ from uuid import uuid4
 from .agent_loop import AgentLoopBase, AgentLoopOutput, register, simple_timer
 
 logger = logging.getLogger(__file__)
-logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", os.getenv("VERL_LOGGING_LEVEL", "WARN")))
+logger.setLevel(
+    os.getenv("AGENTIC_SEARCH_LOG_LEVEL", os.getenv("VERL_LOGGING_LEVEL", "WARN"))
+)
 
 
 @register("single_turn_agent")
 class SingleTurnAgentLoop(AgentLoopBase):
     """Naive agent loop that performs a single generation step."""
 
-    async def run(self, messages: list[dict[str, Any]], sampling_params: dict[str, Any]) -> AgentLoopOutput:
+    async def run(
+        self, messages: list[dict[str, Any]], sampling_params: dict[str, Any]
+    ) -> AgentLoopOutput:
         metrics = {}
         request_id = uuid4().hex
         prompt_ids = await self.build_prompt_ids(messages)

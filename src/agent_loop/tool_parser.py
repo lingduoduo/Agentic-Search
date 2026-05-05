@@ -82,8 +82,7 @@ class ToolParser(ABC):
         """Instantiate the parser registered under *name*."""
         if name not in cls._registry:
             raise ValueError(
-                f"Unknown tool parser {name!r}. "
-                f"Registered: {sorted(cls._registry)}"
+                f"Unknown tool parser {name!r}. Registered: {sorted(cls._registry)}"
             )
         return cls._registry[name](tokenizer)
 
@@ -100,7 +99,9 @@ class ToolParser(ABC):
         args = data.get("arguments", data.get("parameters", {}))
         return FunctionCall(
             name=name,
-            arguments=json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args),
+            arguments=json.dumps(args, ensure_ascii=False)
+            if isinstance(args, dict)
+            else str(args),
         )
 
 
@@ -179,8 +180,19 @@ class Llama3ToolParser(ToolParser):
         for m in self._JSON_ARRAY_RE.finditer(text):
             try:
                 items = json.loads(m.group(0))
-                if isinstance(items, list) and items and isinstance(items[0], dict) and "name" in items[0]:
-                    calls = [c for c in (self._normalise(i) for i in items if isinstance(i, dict)) if c]
+                if (
+                    isinstance(items, list)
+                    and items
+                    and isinstance(items[0], dict)
+                    and "name" in items[0]
+                ):
+                    calls = [
+                        c
+                        for c in (
+                            self._normalise(i) for i in items if isinstance(i, dict)
+                        )
+                        if c
+                    ]
                     content = text[: m.start()] + text[m.end() :]
                     return content.strip(), calls
             except (json.JSONDecodeError, TypeError):
@@ -194,7 +206,11 @@ class Llama3ToolParser(ToolParser):
         except json.JSONDecodeError:
             return []
         if isinstance(data, list):
-            return [c for c in (self._normalise(i) for i in data if isinstance(i, dict)) if c]
+            return [
+                c
+                for c in (self._normalise(i) for i in data if isinstance(i, dict))
+                if c
+            ]
         if isinstance(data, dict):
             call = self._normalise(data)
             return [call] if call else []

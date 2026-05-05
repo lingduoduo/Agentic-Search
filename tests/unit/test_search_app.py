@@ -1,6 +1,5 @@
 """Unit tests for src/search/search_app.py."""
 
-import pytest
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
@@ -15,11 +14,12 @@ from src.search.search_app import (
 # format_document
 # ---------------------------------------------------------------------------
 
+
 class TestFormatDocument:
     def test_with_title_and_content(self):
         result = format_document("My Title", "Some content")
         assert result == {
-            "document": {"title": "My Title", "contents": "\"My Title\"\nSome content"}
+            "document": {"title": "My Title", "contents": '"My Title"\nSome content'}
         }
 
     def test_none_title_uses_default(self):
@@ -57,6 +57,7 @@ class TestFormatDocument:
 # create_base_app  — /health endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestCreateBaseApp:
     def setup_method(self):
         self.client = TestClient(create_base_app("Test App"))
@@ -79,6 +80,7 @@ class TestCreateBaseApp:
 # ---------------------------------------------------------------------------
 # create_search_app  — /retrieve endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestCreateSearchApp:
     def _make_client(self, return_value=None, side_effect=None):

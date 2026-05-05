@@ -11,9 +11,19 @@ from dataclasses import dataclass, replace
 from typing import Any
 from uuid import uuid4
 
-from .agent_loop import AgentLoopBase, AgentLoopConfig, AgentLoopOutput, register, simple_timer
+from .agent_loop import (
+    AgentLoopBase,
+    AgentLoopConfig,
+    AgentLoopOutput,
+    register,
+    simple_timer,
+)
 from .context import AgentContext, SearchContext, SearchResult
-from .evaluation import SearchEvaluationConfig, SearchResultEvaluator, SearchRoundEvaluation
+from .evaluation import (
+    SearchEvaluationConfig,
+    SearchResultEvaluator,
+    SearchRoundEvaluation,
+)
 from .search_client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
@@ -65,7 +75,9 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
     )
 
 
-DEFAULT_SYSTEM_PROMPT = build_search_agent_instruction(max_search_limit=5, max_url_fetch=3)
+DEFAULT_SYSTEM_PROMPT = build_search_agent_instruction(
+    max_search_limit=5, max_url_fetch=3
+)
 
 
 @dataclass(frozen=True)
@@ -92,14 +104,18 @@ class SearchAgentLoopConfig(AgentLoopConfig):
         "Plan recorded. Continue by issuing one or more search queries.\n"
         "</plan_feedback>\n\n"
     )
-    evaluation_obs_template: str = "\n\n<search_evaluation>\n{content}\n</search_evaluation>\n\n"
+    evaluation_obs_template: str = (
+        "\n\n<search_evaluation>\n{content}\n</search_evaluation>\n\n"
+    )
     full_page_obs_template: str = "\n\n<full_page>\n{content}\n</full_page>\n\n"
-    subquestions_obs_template: str = "\n\n<subquestions_feedback>\n{content}\n</subquestions_feedback>\n\n"
-    decision_obs_template: str = "\n\n<decision_feedback>\n{content}\n</decision_feedback>\n\n"
+    subquestions_obs_template: str = (
+        "\n\n<subquestions_feedback>\n{content}\n</subquestions_feedback>\n\n"
+    )
+    decision_obs_template: str = (
+        "\n\n<decision_feedback>\n{content}\n</decision_feedback>\n\n"
+    )
     answer_rejection_template: str = (
-        "\n\n<answer_feedback>\n"
-        "{content}\n"
-        "</answer_feedback>\n\n"
+        "\n\n<answer_feedback>\n{content}\n</answer_feedback>\n\n"
     )
     require_sufficient_evidence_before_answer: bool = True
     # Stop rejecting <answer> after this many consecutive rejections (avoids infinite loops).
@@ -204,7 +220,9 @@ class SearchAgentLoop(AgentLoopBase):
     # ------------------------------------------------------------------
 
     def _parse_actions(self, text: str) -> list[tuple[str, str]]:
-        return [(m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)]
+        return [
+            (m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)
+        ]
 
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
@@ -227,7 +245,9 @@ class SearchAgentLoop(AgentLoopBase):
         for raw in self._parse_queries(content, action):
             m = _TASK_PREFIX_RE.match(raw)
             if m:
-                specs.append((_normalize_task_id(m.group("task")), m.group("query").strip()))
+                specs.append(
+                    (_normalize_task_id(m.group("task")), m.group("query").strip())
+                )
             else:
                 specs.append((None, raw))
         return specs
@@ -361,7 +381,9 @@ class SearchAgentLoop(AgentLoopBase):
         sections = [f"Round {round_index}"]
         for i, ctx in enumerate(search_contexts, 1):
             sections.append(f"Query {i}: {ctx.query}")
-            sections.append(ctx.to_information_block(citation_prefix=f"R{round_index}Q{i}D"))
+            sections.append(
+                ctx.to_information_block(citation_prefix=f"R{round_index}Q{i}D")
+            )
         return "\n".join(sections)
 
     def _format_full_page_information(self, pages: list[SearchResult]) -> str:
@@ -382,13 +404,10 @@ class SearchAgentLoop(AgentLoopBase):
         search_contexts: list[SearchContext],
         evaluation: SearchRoundEvaluation,
     ) -> str:
-        return (
-            self.search_config.evaluation_obs_template.format(
-                content=evaluation.to_feedback_block()
-            )
-            + self.search_config.obs_template.format(
-                content=self._format_round_information(round_index, search_contexts)
-            )
+        return self.search_config.evaluation_obs_template.format(
+            content=evaluation.to_feedback_block()
+        ) + self.search_config.obs_template.format(
+            content=self._format_round_information(round_index, search_contexts)
         )
 
     def _build_answer_rejection_feedback(
@@ -412,7 +431,10 @@ class SearchAgentLoop(AgentLoopBase):
             if not task_statuses.get(tid, False)
         ]
         if missing:
-            base += " The following subquestions still need stronger evidence: " + "; ".join(missing)
+            base += (
+                " The following subquestions still need stronger evidence: "
+                + "; ".join(missing)
+            )
         return base
 
     def _build_decision_feedback(self, decision: str | None) -> str:
@@ -520,7 +542,9 @@ class SearchAgentLoop(AgentLoopBase):
             all_response_ids.extend(response_ids)
             num_turns += 1
 
-            response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+            response_text = self.tokenizer.decode(
+                response_ids, skip_special_tokens=True
+            )
             actions = self._parse_actions(response_text)
             logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
 
@@ -530,7 +554,9 @@ class SearchAgentLoop(AgentLoopBase):
             if not actions:
                 needs_more = (
                     cfg.require_sufficient_evidence_before_answer
-                    and not self._has_sufficient_evidence(latest_evaluation, task_statuses, active_tasks)
+                    and not self._has_sufficient_evidence(
+                        latest_evaluation, task_statuses, active_tasks
+                    )
                     and consecutive_rejections < cfg.max_answer_rejections
                 )
                 if needs_more:
@@ -545,10 +571,14 @@ class SearchAgentLoop(AgentLoopBase):
                             "No action detected. Evidence is still insufficient. "
                             "Issue a <searches> block to gather more evidence before answering."
                         )
-                    working_messages.append({
-                        "role": "user",
-                        "content": cfg.answer_rejection_template.format(content=feedback),
-                    })
+                    working_messages.append(
+                        {
+                            "role": "user",
+                            "content": cfg.answer_rejection_template.format(
+                                content=feedback
+                            ),
+                        }
+                    )
                     continue
                 break
 
@@ -559,7 +589,9 @@ class SearchAgentLoop(AgentLoopBase):
                     latest_search_decision = self._parse_search_decision(content)
                 if tag == subquestions_tag:
                     declared_subquestions.update(
-                        self._parse_subquestions(content, active_tasks | declared_subquestions)
+                        self._parse_subquestions(
+                            content, active_tasks | declared_subquestions
+                        )
                     )
             if declared_subquestions:
                 active_tasks.update(declared_subquestions)
@@ -577,7 +609,11 @@ class SearchAgentLoop(AgentLoopBase):
             query_task_ids = [tid for tid, _ in allowed_specs]
 
             # Answer gating: block early answers if evidence is insufficient.
-            if any(tag == answer_tag for tag, _ in actions) and not all_queries and not fetch_urls:
+            if (
+                any(tag == answer_tag for tag, _ in actions)
+                and not all_queries
+                and not fetch_urls
+            ):
                 if (
                     cfg.allow_internal_knowledge_answer
                     and rounds_used == 0
@@ -588,20 +624,24 @@ class SearchAgentLoop(AgentLoopBase):
                     break
                 if (
                     not cfg.require_sufficient_evidence_before_answer
-                    or self._has_sufficient_evidence(latest_evaluation, task_statuses, active_tasks)
+                    or self._has_sufficient_evidence(
+                        latest_evaluation, task_statuses, active_tasks
+                    )
                     or consecutive_rejections >= cfg.max_answer_rejections
                 ):
                     break
                 consecutive_rejections += 1
                 metrics["answer_rejections"] += 1
-                working_messages.append({
-                    "role": "user",
-                    "content": cfg.answer_rejection_template.format(
-                        content=self._build_answer_rejection_feedback(
-                            latest_evaluation, task_statuses, active_tasks
-                        )
-                    ),
-                })
+                working_messages.append(
+                    {
+                        "role": "user",
+                        "content": cfg.answer_rejection_template.format(
+                            content=self._build_answer_rejection_feedback(
+                                latest_evaluation, task_statuses, active_tasks
+                            )
+                        ),
+                    }
+                )
                 continue
 
             # Build observation for this turn (search + fetch combined into one message).
@@ -624,31 +664,42 @@ class SearchAgentLoop(AgentLoopBase):
                     turn_observations.append(
                         cfg.subquestions_obs_template.format(
                             content="Registered subquestions:\n"
-                            + "\n".join(f"- {tid}: {desc}" for tid, desc in declared_subquestions.items())
+                            + "\n".join(
+                                f"- {tid}: {desc}"
+                                for tid, desc in declared_subquestions.items()
+                            )
                         )
                     )
                 elif any(tag == decision_tag for tag, _ in actions):
                     metrics["decision_prompts"] += 1
                     turn_observations.append(
                         cfg.decision_obs_template.format(
-                            content=self._build_decision_feedback(latest_search_decision)
+                            content=self._build_decision_feedback(
+                                latest_search_decision
+                            )
                         )
                     )
                 else:
                     turn_observations.append(cfg.plan_obs_template)
-                working_messages.append({"role": "user", "content": "".join(turn_observations)})
+                working_messages.append(
+                    {"role": "user", "content": "".join(turn_observations)}
+                )
                 continue
 
             # Parallel search round (before fetch so evidence appears first).
             if all_queries:
                 consecutive_rejections = 0
                 metrics["search_queries"] += len(all_queries)
-                metrics["search_cache_hits"] += sum(1 for q in all_queries if q in search_cache)
-                rounds_used += 1   # count rounds, not individual queries
+                metrics["search_cache_hits"] += sum(
+                    1 for q in all_queries if q in search_cache
+                )
+                rounds_used += 1  # count rounds, not individual queries
                 executed_queries.update(all_queries)
 
                 t0 = time.perf_counter()
-                results_by_query = await self._retrieve_with_cache(all_queries, search_cache)
+                results_by_query = await self._retrieve_with_cache(
+                    all_queries, search_cache
+                )
                 elapsed = time.perf_counter() - t0
                 metrics["search_rounds"] += 1
                 logger.debug(
@@ -664,7 +715,9 @@ class SearchAgentLoop(AgentLoopBase):
                         results_by_query=results_by_query,
                         task_ids=query_task_ids,
                     )
-                    latest_evaluation = self._result_evaluator.evaluate_round(search_contexts)
+                    latest_evaluation = self._result_evaluator.evaluate_round(
+                        search_contexts
+                    )
                     for tid, ev in self._evaluate_tasks(search_contexts).items():
                         task_statuses[tid] = ev.is_sufficient
                     turn_observations.append(
@@ -691,7 +744,9 @@ class SearchAgentLoop(AgentLoopBase):
                     )
                 )
 
-            working_messages.append({"role": "user", "content": "".join(turn_observations)})
+            working_messages.append(
+                {"role": "user", "content": "".join(turn_observations)}
+            )
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,

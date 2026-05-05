@@ -1,7 +1,5 @@
 """Unit tests for src/search/vocabulary.py."""
 
-import pytest
-
 from src.search.vocabulary import (
     EOS_token,
     SOS_token,
@@ -224,7 +222,9 @@ class TestExtractKeywords:
             "title": "British Museum",
             "description": "Museum museum artefacts in London",
         }
-        keywords = extract_keywords(document, text_fields=("title", "description"), limit=3)
+        keywords = extract_keywords(
+            document, text_fields=("title", "description"), limit=3
+        )
         assert keywords[0] == "museum"
 
 

@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.search.rerank import (
     RerankerConfig,
@@ -15,6 +15,7 @@ from src.search.rerank import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _doc(contents: str) -> dict:
     return {"document": {"contents": contents}}
@@ -44,6 +45,7 @@ def _patch_rerank_torch(monkeypatch):
 # ---------------------------------------------------------------------------
 # passage_to_string
 # ---------------------------------------------------------------------------
+
 
 class TestPassageToString:
     def test_nested_document_title_and_body(self):
@@ -87,6 +89,7 @@ class TestPassageToString:
 # string_to_document
 # ---------------------------------------------------------------------------
 
+
 class TestStringToDocument:
     def test_with_title_format_returns_nested_document(self):
         result = string_to_document("(Title: My Title) Body content here")
@@ -114,6 +117,7 @@ class TestStringToDocument:
 # ---------------------------------------------------------------------------
 # RerankerConfig.validate
 # ---------------------------------------------------------------------------
+
 
 class TestRerankerConfigValidate:
     def test_default_config_is_valid(self):
@@ -143,6 +147,7 @@ class TestRerankerConfigValidate:
 # ---------------------------------------------------------------------------
 # SentenceTransformerReranker.rerank
 # ---------------------------------------------------------------------------
+
 
 class TestSentenceTransformerRerankerRerank:
     def test_basic_rerank_sorts_by_score_descending(self):
@@ -188,6 +193,8 @@ class TestSentenceTransformerRerankerRerank:
     def test_model_predict_called_once(self):
         mock_model = MagicMock()
         mock_model.predict.return_value = np.array([0.5, 0.5])
-        reranker = SentenceTransformerReranker(model=mock_model, batch_size=8, device="cpu")
+        reranker = SentenceTransformerReranker(
+            model=mock_model, batch_size=8, device="cpu"
+        )
         reranker.rerank(["q"], [[_doc("a"), _doc("b")]])
         mock_model.predict.assert_called_once()

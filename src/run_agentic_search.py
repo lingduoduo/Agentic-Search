@@ -107,7 +107,9 @@ def _validate_local_generation_config(model_path: str, config: Any) -> None:
         return
 
     architectures = getattr(config, "architectures", None) or []
-    architecture_text = ", ".join(architectures) if architectures else "unknown architecture"
+    architecture_text = (
+        ", ".join(architectures) if architectures else "unknown architecture"
+    )
     raise ValueError(
         "Local generation mode requires a generative language model. "
         f"'{model_path}' looks like a non-generative encoder model "
@@ -123,7 +125,11 @@ def _friendly_model_load_error(model: str, exc: Exception) -> str | None:
     message = str(exc)
     lowered = message.lower()
 
-    if "gated repo" in lowered or "cannot access gated repo" in lowered or "401 client error" in lowered:
+    if (
+        "gated repo" in lowered
+        or "cannot access gated repo" in lowered
+        or "401 client error" in lowered
+    ):
         return (
             f"Cannot load model '{model}' because it is gated on Hugging Face.\n"
             "You need access to that repo and a logged-in Hugging Face token on this machine.\n"
@@ -137,7 +143,10 @@ def _friendly_model_load_error(model: str, exc: Exception) -> str | None:
             "Check the model id spelling, or point `--model` to a local path that already contains the files."
         )
 
-    if "couldn't connect" in lowered or "cannot find the requested files in the disk cache" in lowered:
+    if (
+        "couldn't connect" in lowered
+        or "cannot find the requested files in the disk cache" in lowered
+    ):
         return (
             f"Cannot load model '{model}' from the local Hugging Face cache.\n"
             "In `--local` mode this CLI now prefers cached files to avoid slow or hanging network metadata lookups.\n"
@@ -230,15 +239,22 @@ def _handle_local_cli_value_error(exc: ValueError) -> bool:
     message = str(exc)
     if "Local generation mode requires a generative language model" in message:
         print(f"Error   : {message}")
-        print("Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only.")
+        print(
+            "Hint    : Use a generative instruct model for local agent runs, or keep encoder models for retrieval and indexing only."
+        )
         return True
     if "Local generation on Apple MPS is disabled by default" in message:
         print(f"Error   : {message}")
         print("Hint    : Retry with `--device cpu` for the stable path.")
         return True
-    if "Local MPS generation on macOS is blocked for the older runtime stack" in message:
+    if (
+        "Local MPS generation on macOS is blocked for the older runtime stack"
+        in message
+    ):
         print(f"Error   : {message}")
-        print("Hint    : Use `--device cpu` for the stable path, or upgrade torch and transformers first.")
+        print(
+            "Hint    : Use `--device cpu` for the stable path, or upgrade torch and transformers first."
+        )
         return True
     return False
 
@@ -274,6 +290,7 @@ def _transformers_supports_dtype_kwarg() -> bool:
     """Return True when the installed transformers uses 'dtype' instead of 'torch_dtype'."""
     try:
         import transformers
+
         major, minor = _parse_major_minor(transformers.__version__)
         return (major, minor) >= (4, 42)
     except Exception:
@@ -305,7 +322,9 @@ def _parse_major_minor(version_text: str) -> tuple[int, int]:
     return major, minor
 
 
-def _validate_local_runtime_device(device: str, *, allow_unsafe_mps: bool = False) -> None:
+def _validate_local_runtime_device(
+    device: str, *, allow_unsafe_mps: bool = False
+) -> None:
     """Block known-unstable local runtime choices before native crashes happen."""
 
     if device == "mps" and not allow_unsafe_mps:
@@ -355,6 +374,7 @@ def _validate_local_runtime_stack(
 # ---------------------------------------------------------------------------
 # Server managers
 # ---------------------------------------------------------------------------
+
 
 class VLLMServerManager:
     """Calls an OpenAI-compatible /v1/completions endpoint.
@@ -494,7 +514,10 @@ class LocalServerManager:
             "generation_config": generation_config,
             "attention_mask": attention_mask,
         }
-        if self.generation_timeout_seconds is not None and self.generation_timeout_seconds > 0:
+        if (
+            self.generation_timeout_seconds is not None
+            and self.generation_timeout_seconds > 0
+        ):
             # Use a StoppingCriteria instead of max_time so the deadline is
             # wall-clock based and fires on the first check AFTER the timeout,
             # including right after prefill. max_time only checks between tokens
@@ -505,10 +528,14 @@ class LocalServerManager:
                 deadline = time.perf_counter() + float(self.generation_timeout_seconds)
 
                 class _WallClockStop(StoppingCriteria):
-                    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
+                    def __call__(
+                        self, input_ids: Any, scores: Any, **kwargs: Any
+                    ) -> bool:
                         return time.perf_counter() >= deadline
 
-                generate_kwargs["stopping_criteria"] = StoppingCriteriaList([_WallClockStop()])
+                generate_kwargs["stopping_criteria"] = StoppingCriteriaList(
+                    [_WallClockStop()]
+                )
             except ImportError:
                 generate_kwargs["max_time"] = float(self.generation_timeout_seconds)
         if do_sample:
@@ -522,7 +549,9 @@ class LocalServerManager:
             generation_config.top_k = 50
         return generate_kwargs
 
-    def _run_generate_with_heartbeat(self, inputs: Any, generate_kwargs: dict[str, Any]) -> Any:
+    def _run_generate_with_heartbeat(
+        self, inputs: Any, generate_kwargs: dict[str, Any]
+    ) -> Any:
         """Run model.generate() with a periodic heartbeat for slow local inference."""
 
         import torch
@@ -533,7 +562,9 @@ class LocalServerManager:
         def _heartbeat() -> None:
             while not stop_event.wait(self.generation_heartbeat_seconds):
                 elapsed = time.perf_counter() - start
-                print(f"Status  : still generating on {self.device} ({elapsed:.1f}s elapsed)")
+                print(
+                    f"Status  : still generating on {self.device} ({elapsed:.1f}s elapsed)"
+                )
 
         heartbeat_thread: threading.Thread | None = None
         if self.generation_heartbeat_seconds > 0:
@@ -553,7 +584,9 @@ class LocalServerManager:
         from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
         import torch
 
-        _validate_local_runtime_device(self.device, allow_unsafe_mps=self.allow_unsafe_mps)
+        _validate_local_runtime_device(
+            self.device, allow_unsafe_mps=self.allow_unsafe_mps
+        )
         _validate_local_runtime_stack(self.device)
         print(f"Status  : loading local model on {self.device}")
         logger.info("Loading model %s onto %s …", self.model_path, self.device)
@@ -587,8 +620,6 @@ class LocalServerManager:
         prompt_ids: list[int],
         sampling_params: dict[str, Any],
     ) -> list[int]:
-        import torch
-
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, self._generate_sync, prompt_ids, sampling_params
@@ -615,12 +646,13 @@ class LocalServerManager:
         )
         out = self._run_generate_with_heartbeat(inputs, generate_kwargs)
         print("Status  : generation complete")
-        return out[0][len(prompt_ids):].tolist()
+        return out[0][len(prompt_ids) :].tolist()
 
 
 # ---------------------------------------------------------------------------
 # Flow runners
 # ---------------------------------------------------------------------------
+
 
 async def run_single_turn(
     tokenizer: Any,
@@ -689,15 +721,19 @@ async def run_search_agent(
     sampling_params = sampling_params or {"temperature": 0.7, "max_tokens": 512}
     effective_search_limit = max_search_limit or max_turns
     if intent_pipeline is not None:
-        resolved_topk, effective_search_limit, require_evidence, allow_internal_knowledge, intent_metadata = (
-            intent_pipeline.resolve_search_settings(
-                question,
-                topk=topk,
-                max_search_limit=effective_search_limit,
-                require_evidence=require_evidence,
-                allow_internal_knowledge=allow_internal_knowledge,
-                min_confidence=intent_min_confidence,
-            )
+        (
+            resolved_topk,
+            effective_search_limit,
+            require_evidence,
+            allow_internal_knowledge,
+            intent_metadata,
+        ) = intent_pipeline.resolve_search_settings(
+            question,
+            topk=topk,
+            max_search_limit=effective_search_limit,
+            require_evidence=require_evidence,
+            allow_internal_knowledge=allow_internal_knowledge,
+            min_confidence=intent_min_confidence,
         )
     else:
         resolved_topk = topk
@@ -733,7 +769,9 @@ async def run_search_agent(
         output=output,
         rounds=output.context,
         elapsed=elapsed,
-        intent_metadata=intent_metadata if intent_metadata.get("intent_routing_used") else None,
+        intent_metadata=intent_metadata
+        if intent_metadata.get("intent_routing_used")
+        else None,
     )
 
 
@@ -817,6 +855,7 @@ async def run_tool_agent(
 # Output formatting
 # ---------------------------------------------------------------------------
 
+
 def _print_result(
     answer: str,
     output: Any,
@@ -863,6 +902,7 @@ def _print_result(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run an agentic search flow.",
@@ -879,14 +919,43 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # Model
-    parser.add_argument("--model", type=str, required=True, help="HuggingFace model name or path")
-    parser.add_argument("--local", action="store_true", help="Run model locally (no vLLM server)")
-    parser.add_argument("--vllm_url", type=str, default="http://localhost:8080", help="vLLM base URL")
-    parser.add_argument("--device", type=str, default="auto", help="Device for local model: auto, cpu, cuda, or mps")
-    parser.add_argument("--allow_unsafe_mps", action="store_true", help="Allow local MPS generation on macOS even though it may segfault")
-    parser.add_argument("--allow_remote_model_downloads", action="store_true", help="Allow `--local` model loading to query/download from Hugging Face instead of cache-only loading")
-    parser.add_argument("--generation_timeout_seconds", type=float, default=120.0, help="Best-effort local generation timeout in seconds")
-    parser.add_argument("--generation_heartbeat_seconds", type=float, default=10.0, help="How often local generation prints a still-running heartbeat")
+    parser.add_argument(
+        "--model", type=str, required=True, help="HuggingFace model name or path"
+    )
+    parser.add_argument(
+        "--local", action="store_true", help="Run model locally (no vLLM server)"
+    )
+    parser.add_argument(
+        "--vllm_url", type=str, default="http://localhost:8080", help="vLLM base URL"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Device for local model: auto, cpu, cuda, or mps",
+    )
+    parser.add_argument(
+        "--allow_unsafe_mps",
+        action="store_true",
+        help="Allow local MPS generation on macOS even though it may segfault",
+    )
+    parser.add_argument(
+        "--allow_remote_model_downloads",
+        action="store_true",
+        help="Allow `--local` model loading to query/download from Hugging Face instead of cache-only loading",
+    )
+    parser.add_argument(
+        "--generation_timeout_seconds",
+        type=float,
+        default=120.0,
+        help="Best-effort local generation timeout in seconds",
+    )
+    parser.add_argument(
+        "--generation_heartbeat_seconds",
+        type=float,
+        default=10.0,
+        help="How often local generation prints a still-running heartbeat",
+    )
     parser.add_argument(
         "--dtype",
         type=str,
@@ -895,31 +964,50 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # Search
-    parser.add_argument("--search_url", type=str, default="http://localhost:8000/retrieve")
+    parser.add_argument(
+        "--search_url", type=str, default="http://localhost:8000/retrieve"
+    )
     parser.add_argument("--topk", type=int, default=5)
 
     # Loop tuning
     parser.add_argument("--max_turns", type=int, default=8)
-    parser.add_argument("--max_search_limit", type=int, default=0, help="0 = same as max_turns")
+    parser.add_argument(
+        "--max_search_limit", type=int, default=0, help="0 = same as max_turns"
+    )
     parser.add_argument("--max_answer_rejections", type=int, default=3)
-    parser.add_argument("--no_evidence_gate", action="store_true", help="Allow answer without sufficient evidence")
-    parser.add_argument("--require_search", action="store_true", help="Disable internal-knowledge direct answers")
+    parser.add_argument(
+        "--no_evidence_gate",
+        action="store_true",
+        help="Allow answer without sufficient evidence",
+    )
+    parser.add_argument(
+        "--require_search",
+        action="store_true",
+        help="Disable internal-knowledge direct answers",
+    )
     parser.add_argument(
         "--intent_model",
         type=str,
         default=None,
         help="Path to a pre-trained intent classifier (.pt file from train_intent_classifier.py). "
-             "Preferred over --intent_examples — loads instantly with no retraining.",
+        "Preferred over --intent_examples — loads instantly with no retraining.",
     )
     parser.add_argument(
         "--intent_examples",
         type=str,
         default=None,
         help="JSON file of intent-labeled examples for on-the-fly training. "
-             "Use --intent_model instead when the model has been pre-trained.",
+        "Use --intent_model instead when the model has been pre-trained.",
     )
-    parser.add_argument("--intent_min_confidence", type=float, default=0.6, help="Minimum confidence for intent-based routing")
-    parser.add_argument("--tool_format", choices=["hermes", "llama3", "json"], default="hermes")
+    parser.add_argument(
+        "--intent_min_confidence",
+        type=float,
+        default=0.6,
+        help="Minimum confidence for intent-based routing",
+    )
+    parser.add_argument(
+        "--tool_format", choices=["hermes", "llama3", "json"], default="hermes"
+    )
 
     # Sampling
     parser.add_argument("--temperature", type=float, default=0.7)
@@ -964,12 +1052,16 @@ async def main() -> None:
     if args.intent_model:
         # Fast path: load a pre-trained model saved by train_intent_classifier.py
         from src.agent_loop.intent_classifier import IntentPipeline
+
         print(f"Status  : loading intent model from {args.intent_model}")
         intent_pipeline = IntentPipeline.load(args.intent_model)
-        print(f"Status  : intent model ready (vocab size {len(intent_pipeline._vocab.token2idx)})")
+        print(
+            f"Status  : intent model ready (vocab size {len(intent_pipeline._vocab.token2idx)})"
+        )
     elif args.intent_examples:
         # Slow path: train from scratch on the fly (use --intent_model for production)
         from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
+
         print(f"Status  : training intent classifier from {args.intent_examples}")
         training_data = load_training_data(args.intent_examples)
         if training_data:
@@ -980,11 +1072,18 @@ async def main() -> None:
     try:
         if args.mode == "single":
             await run_single_turn(
-                tokenizer, server_manager, args.question, sampling_params, args.max_tokens
+                tokenizer,
+                server_manager,
+                args.question,
+                sampling_params,
+                args.max_tokens,
             )
         elif args.mode == "search":
             await run_search_agent(
-                tokenizer, server_manager, args.question, sampling_params,
+                tokenizer,
+                server_manager,
+                args.question,
+                sampling_params,
                 search_url=args.search_url,
                 topk=args.topk,
                 max_turns=args.max_turns,
@@ -997,7 +1096,10 @@ async def main() -> None:
             )
         elif args.mode == "tool":
             await run_tool_agent(
-                tokenizer, server_manager, args.question, sampling_params,
+                tokenizer,
+                server_manager,
+                args.question,
+                sampling_params,
                 search_url=args.search_url,
                 topk=args.topk,
                 max_turns=args.max_turns,
