@@ -509,6 +509,7 @@ class SearchAgentLoop(AgentLoopBase):
         all_response_ids: list[int] = []
         final_prompt_ids: list[int] = []
         num_turns = 0
+        final_answer: str | None = None
 
         # Per-run state
         latest_evaluation: SearchRoundEvaluation | None = None
@@ -614,6 +615,14 @@ class SearchAgentLoop(AgentLoopBase):
                 all_queries = [q for _, q in allowed_specs]
                 query_task_ids = [tid for tid, _ in allowed_specs]
 
+                # Tentatively record the answer from this turn.  Doing this
+                # before the gating block ensures that a turn mixing <answer>
+                # with <search> or <fetch> still contributes a candidate answer
+                # if the loop exits without a later answer-only turn.
+                answer_tag_contents = [c for t, c in actions if t == answer_tag]
+                if answer_tag_contents:
+                    final_answer = answer_tag_contents[0].strip()
+
                 # Answer gating: block early answers if evidence is insufficient.
                 if (
                     any(tag == answer_tag for tag, _ in actions)
@@ -636,6 +645,9 @@ class SearchAgentLoop(AgentLoopBase):
                         or consecutive_rejections >= cfg.max_answer_rejections
                     ):
                         break
+                    # Answer rejected — clear the tentative candidate so a
+                    # discarded answer is not returned as the final answer.
+                    final_answer = None
                     consecutive_rejections += 1
                     metrics["answer_rejections"] += 1
                     working_messages.append(
@@ -762,6 +774,21 @@ class SearchAgentLoop(AgentLoopBase):
                 if inspect.isawaitable(close_result):
                     await close_result
 
+        # Derived metrics used by the reward function — computed once here so
+        # callers don't have to re-derive them from the raw counts.
+        # Use total *attempted* queries (executed + duplicates) as denominator
+        # so the ratio stays in [0, 1] even when duplicates exceed new queries.
+        total_attempted = metrics["search_queries"] + metrics["repeated_search_queries"]
+        metrics["repeated_query_ratio"] = (
+            metrics["repeated_search_queries"] / total_attempted
+            if total_attempted
+            else 0.0
+        )
+        metrics["subquestion_coverage_ratio"] = (
+            sum(task_statuses.values()) / len(task_statuses) if task_statuses else 1.0
+        )
+        metrics["rounds_used"] = float(rounds_used)
+
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
             response_ids=all_response_ids,
@@ -770,4 +797,5 @@ class SearchAgentLoop(AgentLoopBase):
             metrics=metrics,
             request_id=request_id,
             context=agent_ctx,
+            final_answer=final_answer,
         )
