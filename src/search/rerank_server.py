@@ -60,8 +60,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--rerank_topk", type=int, default=3)
-    parser.add_argument("--host", type=str, default=os.getenv("RERANK_SERVER_HOST", DEFAULT_HOST))
-    parser.add_argument("--port", type=int, default=int(os.getenv("RERANK_SERVER_PORT", str(DEFAULT_PORT))))
+    parser.add_argument(
+        "--host", type=str, default=os.getenv("RERANK_SERVER_HOST", DEFAULT_HOST)
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("RERANK_SERVER_PORT", str(DEFAULT_PORT))),
+    )
     return parser.parse_args()
 
 

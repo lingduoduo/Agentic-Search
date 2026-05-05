@@ -36,7 +36,9 @@ def _load_vocabulary_tokens(path: Path, *, limit: int = 64) -> list[str]:
     return [token for token, _ in ranked[:limit]]
 
 
-def _build_domain_terms(document: dict[str, Any], vocabulary_tokens: list[str]) -> list[str]:
+def _build_domain_terms(
+    document: dict[str, Any], vocabulary_tokens: list[str]
+) -> list[str]:
     keywords = extract_keywords(
         document,
         limit=6,
@@ -129,13 +131,23 @@ def generate_examples(
     for document in documents:
         examples.extend(_build_examples_for_document(document, vocabulary_tokens))
 
-    examples.sort(key=lambda item: (INTENTS.index(item["label"]), item["source_doc_id"], item["text"]))
+    examples.sort(
+        key=lambda item: (
+            INTENTS.index(item["label"]),
+            item["source_doc_id"],
+            item["text"],
+        )
+    )
     return examples
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate sample intent-training data.")
-    parser.add_argument("--corpus", default="data/corpus.jsonl", help="Path to corpus JSONL")
+    parser = argparse.ArgumentParser(
+        description="Generate sample intent-training data."
+    )
+    parser.add_argument(
+        "--corpus", default="data/corpus.jsonl", help="Path to corpus JSONL"
+    )
     parser.add_argument(
         "--vocabulary",
         default="data/vocabulary_corpus.json",
@@ -154,7 +166,9 @@ def main() -> None:
     )
 
     output_path = Path(args.output)
-    output_path.write_text(json.dumps(examples, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(examples, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     print(f"Wrote {len(examples)} examples to {output_path}")
 
 

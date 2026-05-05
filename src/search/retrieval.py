@@ -89,7 +89,9 @@ class DenseRetriever:
                 self.device,
             )
 
-    def retrieve(self, queries: list[str], topk: int | None = None) -> list[list[dict[str, Any]]]:
+    def retrieve(
+        self, queries: list[str], topk: int | None = None
+    ) -> list[list[dict[str, Any]]]:
         clean_queries = [query.strip() for query in queries]
         query_embeddings = self.encode_queries(clean_queries)
         if query_embeddings.size == 0:
@@ -119,7 +121,10 @@ class DenseRetriever:
         query_list: list[str],
         num: int | None = None,
         return_score: bool = False,
-    ) -> list[list[dict[str, Any]]] | tuple[list[list[dict[str, Any]]], list[list[float]]]:
+    ) -> (
+        list[list[dict[str, Any]]]
+        | tuple[list[list[dict[str, Any]]], list[list[float]]]
+    ):
         results = self.retrieve(query_list, topk=num)
         if not return_score:
             return [[item["document"] for item in row] for row in results]

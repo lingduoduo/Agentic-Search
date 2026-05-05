@@ -92,7 +92,9 @@ class AgentLoopBase:
         """Tokenize a chat message list using the best tokenizer API available."""
 
         event_loop = await self.get_loop()
-        return await event_loop.run_in_executor(None, lambda: self._build_prompt_ids_sync(messages))
+        return await event_loop.run_in_executor(
+            None, lambda: self._build_prompt_ids_sync(messages)
+        )
 
     def _build_prompt_ids_sync(self, messages: list[dict[str, Any]]) -> list[int]:
         chat_template = getattr(self.tokenizer, "chat_template", "__missing__")
@@ -107,7 +109,9 @@ class AgentLoopBase:
         joined = "\n".join(message.get("content", "") for message in messages)
         if hasattr(self.tokenizer, "encode"):
             return list(self.tokenizer.encode(joined))[-self.prompt_length :]
-        raise TypeError("tokenizer must implement apply_chat_template(...) or encode(...).")
+        raise TypeError(
+            "tokenizer must implement apply_chat_template(...) or encode(...)."
+        )
 
     async def generate_response_ids(
         self,
@@ -121,7 +125,11 @@ class AgentLoopBase:
             prompt_ids=prompt_ids,
             sampling_params=sampling_params,
         )
-        response_ids = await generate_result if inspect.isawaitable(generate_result) else generate_result
+        response_ids = (
+            await generate_result
+            if inspect.isawaitable(generate_result)
+            else generate_result
+        )
         return list(response_ids)[: self.response_length]
 
     def build_response_mask(self, response_ids: list[int]) -> list[int]:

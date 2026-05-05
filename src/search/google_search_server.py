@@ -53,8 +53,13 @@ class OnlineSearchConfig:
         if self.topk < 1:
             raise ValueError("topk must be at least 1.")
 
+
 def parse_snippet(snippet: str) -> list[str]:
-    return [segment.strip() for segment in snippet.split("...") if len(segment.strip().split()) > 5]
+    return [
+        segment.strip()
+        for segment in snippet.split("...")
+        if len(segment.strip().split()) > 5
+    ]
 
 
 def sanitize_search_query(query: str) -> str:
@@ -118,7 +123,11 @@ class OnlineSearchEngine:
 
     def collect_context(self, snippet: str, document: str) -> str:
         normalized_document = document.replace("\r", "")
-        paragraphs = [paragraph.strip() for paragraph in normalized_document.split("\n") if paragraph.strip()]
+        paragraphs = [
+            paragraph.strip()
+            for paragraph in normalized_document.split("\n")
+            if paragraph.strip()
+        ]
         lowered_paragraphs = [paragraph.lower() for paragraph in paragraphs]
 
         contexts: list[str] = []
@@ -148,7 +157,9 @@ class OnlineSearchEngine:
             if not html:
                 continue
             soup = bs4.BeautifulSoup(html, "html.parser")
-            paragraphs = [paragraph.get_text(" ", strip=True) for paragraph in soup.find_all("p")]
+            paragraphs = [
+                paragraph.get_text(" ", strip=True) for paragraph in soup.find_all("p")
+            ]
             text = "\n".join(paragraph for paragraph in paragraphs if paragraph)
             if text:
                 content_by_link[link] = text
@@ -174,7 +185,9 @@ class OnlineSearchEngine:
                 continue
             soup = bs4.BeautifulSoup(html, "html.parser")
             title = soup.title.get_text(" ", strip=True) if soup.title else url
-            paragraphs = [paragraph.get_text(" ", strip=True) for paragraph in soup.find_all("p")]
+            paragraphs = [
+                paragraph.get_text(" ", strip=True) for paragraph in soup.find_all("p")
+            ]
             text = "\n".join(paragraph for paragraph in paragraphs if paragraph)
             if text:
                 documents.append(format_document(title, text, url=url))
@@ -187,11 +200,15 @@ class OnlineSearchEngine:
             return []
 
         results: list[dict[str, Any]] = []
-        response = self._service.cse().list(
-            q=query,
-            cx=self.config.cse_id,
-            num=min(self.config.topk, MAX_GOOGLE_RESULTS_PER_PAGE),
-        ).execute()
+        response = (
+            self._service.cse()
+            .list(
+                q=query,
+                cx=self.config.cse_id,
+                num=min(self.config.topk, MAX_GOOGLE_RESULTS_PER_PAGE),
+            )
+            .execute()
+        )
         results.append(response)
 
         for _ in range(max(num_pages - 1, 0)):
@@ -201,12 +218,16 @@ class OnlineSearchEngine:
             start_index = next_pages[0].get("startIndex")
             if not start_index:
                 break
-            response = self._service.cse().list(
-                q=query,
-                cx=self.config.cse_id,
-                start=start_index,
-                num=min(self.config.topk, MAX_GOOGLE_RESULTS_PER_PAGE),
-            ).execute()
+            response = (
+                self._service.cse()
+                .list(
+                    q=query,
+                    cx=self.config.cse_id,
+                    start=start_index,
+                    num=min(self.config.topk, MAX_GOOGLE_RESULTS_PER_PAGE),
+                )
+                .execute()
+            )
             results.append(response)
 
         return results
@@ -222,7 +243,9 @@ class OnlineSearchEngine:
             return []
 
         contexts: list[dict[str, dict[str, str]]] = []
-        content_dict = {} if self.config.snippet_only else self.fetch_web_content(search_results)
+        content_dict = (
+            {} if self.config.snippet_only else self.fetch_web_content(search_results)
+        )
 
         for result in search_results:
             for item in result.get("items", []):
@@ -230,11 +253,16 @@ class OnlineSearchEngine:
                 snippet = item.get("snippet", "")
 
                 if self.config.snippet_only:
-                    context = " ".join(parse_snippet(snippet)) or "No snippet available."
+                    context = (
+                        " ".join(parse_snippet(snippet)) or "No snippet available."
+                    )
                 else:
                     link = item.get("link", "")
                     document = content_dict.get(link, "")
-                    context = self.collect_context(snippet, document) or "No snippet available."
+                    context = (
+                        self.collect_context(snippet, document)
+                        or "No snippet available."
+                    )
 
                 if title == "No title." and context == "No snippet available.":
                     continue
@@ -252,21 +280,43 @@ def create_app(config: OnlineSearchConfig):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch online search server.")
-    parser.add_argument("--api_key", type=str, default=os.getenv("GOOGLE_API_KEY"), help="API key for Google search")
-    parser.add_argument("--cse_id", type=str, default=os.getenv("GOOGLE_CSE_ID"), help="CSE ID for Google search")
-    parser.add_argument("--topk", type=int, default=DEFAULT_TOPK, help="Number of results to return per query")
+    parser.add_argument(
+        "--api_key",
+        type=str,
+        default=os.getenv("GOOGLE_API_KEY"),
+        help="API key for Google search",
+    )
+    parser.add_argument(
+        "--cse_id",
+        type=str,
+        default=os.getenv("GOOGLE_CSE_ID"),
+        help="CSE ID for Google search",
+    )
+    parser.add_argument(
+        "--topk",
+        type=int,
+        default=DEFAULT_TOPK,
+        help="Number of results to return per query",
+    )
     parser.add_argument(
         "--snippet_only",
         action="store_true",
         help="If set, only return snippets; otherwise, return fetched page context.",
     )
-    parser.add_argument("--host", type=str, default=os.getenv("GOOGLE_SEARCH_HOST", DEFAULT_HOST))
-    parser.add_argument("--port", type=int, default=int(os.getenv("GOOGLE_SEARCH_PORT", str(DEFAULT_PORT))))
+    parser.add_argument(
+        "--host", type=str, default=os.getenv("GOOGLE_SEARCH_HOST", DEFAULT_HOST)
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("GOOGLE_SEARCH_PORT", str(DEFAULT_PORT))),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
     args = parse_args()
     config = OnlineSearchConfig(

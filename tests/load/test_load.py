@@ -26,6 +26,7 @@ pytestmark = pytest.mark.load
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _percentile(data: list[float], pct: float) -> float:
     """Return the p-th percentile of *data* (0–100)."""
     if not data:
@@ -77,12 +78,15 @@ def _print_stats(label: str, latencies: list[float]) -> None:
     p95 = _percentile(latencies, 95) * 1_000
     p99 = _percentile(latencies, 99) * 1_000
     mean = statistics.mean(latencies) * 1_000
-    print(f"\n[{label}] n={len(latencies)}  mean={mean:.1f}ms  p50={p50:.1f}ms  p95={p95:.1f}ms  p99={p99:.1f}ms")
+    print(
+        f"\n[{label}] n={len(latencies)}  mean={mean:.1f}ms  p50={p50:.1f}ms  p95={p95:.1f}ms  p99={p99:.1f}ms"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def health_client():
@@ -99,6 +103,7 @@ def search_client():
 # ---------------------------------------------------------------------------
 # /health load
 # ---------------------------------------------------------------------------
+
 
 class TestHealthEndpointLoad:
     WORKERS = 20
@@ -135,6 +140,7 @@ class TestHealthEndpointLoad:
 # /retrieve load
 # ---------------------------------------------------------------------------
 
+
 class TestSearchEndpointLoad:
     WORKERS = 10
     TOTAL = 100
@@ -142,22 +148,34 @@ class TestSearchEndpointLoad:
 
     def test_zero_errors_under_concurrent_load(self, search_client):
         _, errors = _run_concurrent(
-            search_client, "POST", "/retrieve",
-            workers=self.WORKERS, total=self.TOTAL, json=self.PAYLOAD,
+            search_client,
+            "POST",
+            "/retrieve",
+            workers=self.WORKERS,
+            total=self.TOTAL,
+            json=self.PAYLOAD,
         )
         assert errors == [], f"Unexpected HTTP errors: {errors}"
 
     def test_all_requests_complete(self, search_client):
         latencies, _ = _run_concurrent(
-            search_client, "POST", "/retrieve",
-            workers=self.WORKERS, total=self.TOTAL, json=self.PAYLOAD,
+            search_client,
+            "POST",
+            "/retrieve",
+            workers=self.WORKERS,
+            total=self.TOTAL,
+            json=self.PAYLOAD,
         )
         assert len(latencies) == self.TOTAL
 
     def test_p95_under_1s(self, search_client):
         latencies, _ = _run_concurrent(
-            search_client, "POST", "/retrieve",
-            workers=self.WORKERS, total=self.TOTAL, json=self.PAYLOAD,
+            search_client,
+            "POST",
+            "/retrieve",
+            workers=self.WORKERS,
+            total=self.TOTAL,
+            json=self.PAYLOAD,
         )
         _print_stats("search p95", latencies)
         assert _percentile(latencies, 95) < 1.0
@@ -165,8 +183,12 @@ class TestSearchEndpointLoad:
     def test_throughput_exceeds_10_rps(self, search_client):
         t0 = time.perf_counter()
         _, errors = _run_concurrent(
-            search_client, "POST", "/retrieve",
-            workers=self.WORKERS, total=self.TOTAL, json=self.PAYLOAD,
+            search_client,
+            "POST",
+            "/retrieve",
+            workers=self.WORKERS,
+            total=self.TOTAL,
+            json=self.PAYLOAD,
         )
         rps = self.TOTAL / (time.perf_counter() - t0)
         print(f"\n[search throughput] {rps:.1f} req/s")
@@ -177,6 +199,7 @@ class TestSearchEndpointLoad:
 # ---------------------------------------------------------------------------
 # Batch-size scaling
 # ---------------------------------------------------------------------------
+
 
 class TestBatchSizeScaling:
     """Verify the endpoint handles varying query-batch sizes without errors."""
@@ -192,8 +215,12 @@ class TestBatchSizeScaling:
 
         payload = {"queries": [f"query_{i}" for i in range(batch_size)]}
         _, errors = _run_concurrent(
-            client, "POST", "/retrieve",
-            workers=self.WORKERS, total=self.TOTAL, json=payload,
+            client,
+            "POST",
+            "/retrieve",
+            workers=self.WORKERS,
+            total=self.TOTAL,
+            json=payload,
         )
         assert errors == [], f"Errors with batch_size={batch_size}: {errors}"
 
@@ -201,6 +228,7 @@ class TestBatchSizeScaling:
 # ---------------------------------------------------------------------------
 # Mixed-endpoint concurrency
 # ---------------------------------------------------------------------------
+
 
 class TestMixedEndpointLoad:
     """Fire both /health and /retrieve concurrently to check for interference."""
@@ -217,10 +245,9 @@ class TestMixedEndpointLoad:
             return status, time.perf_counter() - t0
 
         with ThreadPoolExecutor(max_workers=10) as pool:
-            futs = (
-                [pool.submit(_health) for _ in range(50)]
-                + [pool.submit(_search) for _ in range(50)]
-            )
+            futs = [pool.submit(_health) for _ in range(50)] + [
+                pool.submit(_search) for _ in range(50)
+            ]
             statuses = [f.result()[0] for f in as_completed(futs)]
 
         errors = [s for s in statuses if s >= 400]

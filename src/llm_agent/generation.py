@@ -70,7 +70,9 @@ def _resolve_ground_truth_text(ground_truth: Any) -> str:
     return str(ground_truth)
 
 
-def ask_llm(ip_list_raw: str | None, prompt: str, temperature: float, max_retries: int = 5) -> str:
+def ask_llm(
+    ip_list_raw: str | None, prompt: str, temperature: float, max_retries: int = 5
+) -> str:
     """Call one of the configured LLM endpoints with bounded retries."""
 
     ip_list = _normalize_ip_list(ip_list_raw)
@@ -137,7 +139,9 @@ Noisy Output:
 """
 
     results = ask_llm(ip, prompt, temperature, max_retries=llm_max_retries)
-    return "\n".join(results.replace("\n\n", "\n").split("\n")).split(f"Doc {topk + 1}")[0]
+    return "\n".join(results.replace("\n\n", "\n").split("\n")).split(
+        f"Doc {topk + 1}"
+    )[0]
 
 
 def search_simulate_prompt(
@@ -193,7 +197,9 @@ Noisy Output:
 """
 
     results = ask_llm(ip, prompt, temperature, max_retries=llm_max_retries)
-    return "\n".join(results.replace("\n\n", "\n").split("\n")).split(f"Doc {topk + 1}")[0]
+    return "\n".join(results.replace("\n\n", "\n").split("\n")).split(
+        f"Doc {topk + 1}"
+    )[0]
 
 
 class LLMGenerationManager:
@@ -228,7 +234,9 @@ class LLMGenerationManager:
             padding="longest",
         )["input_ids"]
 
-    def _postprocess_responses(self, responses: torch.Tensor) -> tuple[torch.Tensor, list[str]]:
+    def _postprocess_responses(
+        self, responses: torch.Tensor
+    ) -> tuple[torch.Tensor, list[str]]:
         responses_str = self.tokenizer.batch_decode(responses, skip_special_tokens=True)
         responses_str = [
             response.split("</search>")[0] + "</search>"
@@ -289,7 +297,9 @@ class LLMGenerationManager:
         tensors_with_mask = [prompt_with_mask, response]
         if info is not None:
             tensors.append(info)
-            info_mask = torch.full(info.size(), pad_id, dtype=info.dtype, device=info.device)
+            info_mask = torch.full(
+                info.size(), pad_id, dtype=info.dtype, device=info.device
+            )
             tensors_with_mask.append(info_mask)
 
         concatenated = torch.cat(tensors, dim=1)
@@ -311,22 +321,28 @@ class LLMGenerationManager:
         next_obs_ids: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         if next_obs_ids is not None:
-            responses, responses_with_info_mask = self._info_masked_concatenate_with_padding(
-                right_side["responses"],
-                right_side["responses_with_info_mask"],
-                cur_responses,
-                next_obs_ids,
-                pad_to_left=False,
+            responses, responses_with_info_mask = (
+                self._info_masked_concatenate_with_padding(
+                    right_side["responses"],
+                    right_side["responses_with_info_mask"],
+                    cur_responses,
+                    next_obs_ids,
+                    pad_to_left=False,
+                )
             )
         else:
-            responses, responses_with_info_mask = self._info_masked_concatenate_with_padding(
-                right_side["responses"],
-                right_side["responses_with_info_mask"],
-                cur_responses,
-                pad_to_left=False,
+            responses, responses_with_info_mask = (
+                self._info_masked_concatenate_with_padding(
+                    right_side["responses"],
+                    right_side["responses_with_info_mask"],
+                    cur_responses,
+                    pad_to_left=False,
+                )
             )
 
-        effective_len = int(self.tensor_fn.create_attention_mask(responses).sum(dim=1).max().item())
+        effective_len = int(
+            self.tensor_fn.create_attention_mask(responses).sum(dim=1).max().item()
+        )
         max_len = min(self.config.max_prompt_length, effective_len)
         return {
             "responses": responses[:, :max_len],
@@ -357,10 +373,14 @@ class LLMGenerationManager:
             padded_active_batch.batch[key] = padded_active_batch.batch[key].long()
 
         padded_output = self.generation_backend.generate_sequences(padded_active_batch)
-        trimmed_batch = {key: value[:-padding_size] for key, value in padded_output.batch.items()}
+        trimmed_batch = {
+            key: value[:-padding_size] for key, value in padded_output.batch.items()
+        }
         trimmed_meta = {}
         for key, value in getattr(padded_output, "meta_info", {}).items():
-            trimmed_meta[key] = value[:-padding_size] if isinstance(value, torch.Tensor) else value
+            trimmed_meta[key] = (
+                value[:-padding_size] if isinstance(value, torch.Tensor) else value
+            )
 
         padded_output.batch = trimmed_batch
         padded_output.meta_info = trimmed_meta
@@ -374,7 +394,9 @@ class LLMGenerationManager:
         total_steps: int,
         initial_input_ids: torch.Tensor,
     ) -> tuple[SearchBatch, list[int]]:
-        original_left_side = {"input_ids": initial_input_ids[:, -self.config.max_start_length :]}
+        original_left_side = {
+            "input_ids": initial_input_ids[:, -self.config.max_start_length :]
+        }
         original_right_side = {
             "responses": initial_input_ids[:, []],
             "responses_with_info_mask": initial_input_ids[:, []],
@@ -409,7 +431,9 @@ class LLMGenerationManager:
             gen_output = self._generate_with_gpu_padding(rollings_active)
 
             meta_info = getattr(gen_output, "meta_info", {}) or {}
-            responses_ids, responses_str = self._postprocess_responses(gen_output.batch["responses"])
+            responses_ids, responses_str = self._postprocess_responses(
+                gen_output.batch["responses"]
+            )
             responses_ids, responses_str = self.tensor_fn.example_level_pad(
                 responses_ids,
                 responses_str,
@@ -425,7 +449,9 @@ class LLMGenerationManager:
                 active_mask,
             )
 
-            curr_active_mask = torch.tensor([not done for done in dones], dtype=torch.bool)
+            curr_active_mask = torch.tensor(
+                [not done for done in dones], dtype=torch.bool
+            )
             active_mask = active_mask & curr_active_mask
             active_num_list.append(int(active_mask.sum().item()))
             turns_stats[curr_active_mask] += 1
@@ -434,7 +460,9 @@ class LLMGenerationManager:
 
             next_obs_ids = self._process_next_obs(next_obs)
             rollings = self._update_rolling_state(rollings, responses_ids, next_obs_ids)
-            original_right_side = self._update_right_side(original_right_side, responses_ids, next_obs_ids)
+            original_right_side = self._update_right_side(
+                original_right_side, responses_ids, next_obs_ids
+            )
 
             for batch_index, done in enumerate(dones):
                 if trajectory_turns[batch_index] == 0 and done == 1:
@@ -457,7 +485,9 @@ class LLMGenerationManager:
             gen_output = self._generate_with_gpu_padding(rollings_active)
 
             meta_info = getattr(gen_output, "meta_info", {}) or {}
-            responses_ids, responses_str = self._postprocess_responses(gen_output.batch["responses"])
+            responses_ids, responses_str = self._postprocess_responses(
+                gen_output.batch["responses"]
+            )
             responses_ids, responses_str = self.tensor_fn.example_level_pad(
                 responses_ids,
                 responses_str,
@@ -472,12 +502,16 @@ class LLMGenerationManager:
                 active_mask,
             )
 
-            curr_active_mask = torch.tensor([not done for done in dones], dtype=torch.bool)
+            curr_active_mask = torch.tensor(
+                [not done for done in dones], dtype=torch.bool
+            )
             active_mask = active_mask & curr_active_mask
             active_num_list.append(int(active_mask.sum().item()))
             valid_action_stats += torch.tensor(valid_action, dtype=torch.int)
             valid_search_stats += torch.tensor(is_search, dtype=torch.int)
-            original_right_side = self._update_right_side(original_right_side, responses_ids)
+            original_right_side = self._update_right_side(
+                original_right_side, responses_ids
+            )
 
             meta_info["turns_stats"] = turns_stats.tolist()
             meta_info["active_mask"] = active_mask.tolist()
@@ -493,7 +527,9 @@ class LLMGenerationManager:
             count = (torch.tensor(trajectory_turns) == turns).sum().item()
             print(f"Finish at the {turns}-th turn: {count}")
 
-        return self._compose_final_output(original_left_side, original_right_side, meta_info), trajectory_turns
+        return self._compose_final_output(
+            original_left_side, original_right_side, meta_info
+        ), trajectory_turns
 
     def _compose_final_output(
         self,
@@ -503,7 +539,9 @@ class LLMGenerationManager:
     ) -> SearchBatch:
         final_output = right_side.copy()
         final_output["prompts"] = left_side["input_ids"]
-        final_output["input_ids"] = torch.cat([left_side["input_ids"], right_side["responses"]], dim=1)
+        final_output["input_ids"] = torch.cat(
+            [left_side["input_ids"], right_side["responses"]], dim=1
+        )
         final_output["attention_mask"] = torch.cat(
             [
                 self.tensor_fn.create_attention_mask(left_side["input_ids"]),
@@ -514,11 +552,15 @@ class LLMGenerationManager:
         final_output["info_mask"] = torch.cat(
             [
                 self.tensor_fn.create_attention_mask(left_side["input_ids"]),
-                self.tensor_fn.create_attention_mask(final_output["responses_with_info_mask"]),
+                self.tensor_fn.create_attention_mask(
+                    final_output["responses_with_info_mask"]
+                ),
             ],
             dim=1,
         )
-        final_output["position_ids"] = self.tensor_fn.create_position_ids(final_output["attention_mask"])
+        final_output["position_ids"] = self.tensor_fn.create_position_ids(
+            final_output["attention_mask"]
+        )
 
         search_batch = SearchBatch.from_dict(final_output)
         search_batch.meta_info.update(meta_info)
@@ -545,12 +587,16 @@ class LLMGenerationManager:
                 problem[index],
                 _resolve_ground_truth_text(ground_truth[index]),
             )
-            for index, (action, content, active) in enumerate(zip(cur_actions, contents, active_mask.tolist()))
+            for index, (action, content, active) in enumerate(
+                zip(cur_actions, contents, active_mask.tolist())
+            )
             if active and action == "search"
         ]
 
         if do_search and search_payload:
-            search_results = self.batch_search(search_payload, search_mode, gt_threshold)
+            search_results = self.batch_search(
+                search_payload, search_mode, gt_threshold
+            )
         else:
             search_results = [""] * len(search_payload)
 
@@ -576,7 +622,9 @@ class LLMGenerationManager:
                 continue
 
             if action == "search":
-                next_obs.append(f"\n\n<information>{search_results[search_result_index].strip()}</information>\n\n")
+                next_obs.append(
+                    f"\n\n<information>{search_results[search_result_index].strip()}</information>\n\n"
+                )
                 search_result_index += 1
                 dones.append(0)
                 valid_action.append(1)
@@ -612,7 +660,9 @@ class LLMGenerationManager:
             self.config.end_threshold - self.config.start_threshold
         )
 
-    def postprocess_predictions(self, predictions: list[Any]) -> tuple[list[str | None], list[str]]:
+    def postprocess_predictions(
+        self, predictions: list[Any]
+    ) -> tuple[list[str | None], list[str]]:
         actions: list[str | None] = []
         contents: list[str] = []
         for prediction in predictions:
@@ -660,13 +710,20 @@ class LLMGenerationManager:
         return all_search_result
 
     def _retrieve_from_endpoint(
-        self, url: str, query: str, topk: int, retry_attempts: int, sleep_seconds: float = 1.0
+        self,
+        url: str,
+        query: str,
+        topk: int,
+        retry_attempts: int,
+        sleep_seconds: float = 1.0,
     ) -> str:
         import requests  # optional dep; imported here so the class loads without it
 
         for _ in range(retry_attempts):
             try:
-                resp = requests.post(url, json={"queries": [query], "topk": topk}, timeout=10)
+                resp = requests.post(
+                    url, json={"queries": [query], "topk": topk}, timeout=10
+                )
                 resp.raise_for_status()
                 rows = resp.json().get("result", [[]])[0]
                 return self._passages2string(rows) or _NO_INFO
@@ -678,8 +735,11 @@ class LLMGenerationManager:
         if not ip:
             return _NO_INFO
         return self._retrieve_from_endpoint(
-            f"http://{ip}:6002/retrieve", query, topk,
-            self.config.wiki_retry_attempts, self.config.wiki_retry_sleep_seconds,
+            f"http://{ip}:6002/retrieve",
+            query,
+            topk,
+            self.config.wiki_retry_attempts,
+            self.config.wiki_retry_sleep_seconds,
         )
 
     def retrieve_from_local(self, query: str, topk: int = 5) -> str:
@@ -687,11 +747,16 @@ class LLMGenerationManager:
         if not self.config.retrieval_url:
             return _NO_INFO
         return self._retrieve_from_endpoint(
-            self.config.retrieval_url, query, topk,
-            self.config.wiki_retry_attempts, self.config.wiki_retry_sleep_seconds,
+            self.config.retrieval_url,
+            query,
+            topk,
+            self.config.wiki_retry_attempts,
+            self.config.wiki_retry_sleep_seconds,
         )
 
-    def retrieve_from_google(self, query: str, topk: int, retry_attempt: int | None = None) -> str:
+    def retrieve_from_google(
+        self, query: str, topk: int, retry_attempt: int | None = None
+    ) -> str:
         retry_attempt = retry_attempt or self.config.google_retry_attempts
         api_key = os.environ.get("SERP_API_KEY")
         if not api_key:
@@ -706,12 +771,19 @@ class LLMGenerationManager:
                 search_result = search.get("organic_results", [])
                 search_texts = []
                 for item in search_result:
-                    text_data = f"{item.get('title', '')}{item.get('snippet', '')}".strip()
+                    text_data = (
+                        f"{item.get('title', '')}{item.get('snippet', '')}".strip()
+                    )
                     if text_data:
                         search_texts.append(text_data)
                 if not search_texts:
                     return _NO_INFO
-                return "\n".join([f"Doc {index + 1}: {doc}" for index, doc in enumerate(search_texts)])
+                return "\n".join(
+                    [
+                        f"Doc {index + 1}: {doc}"
+                        for index, doc in enumerate(search_texts)
+                    ]
+                )
             except Exception:  # pragma: no cover - network/runtime dependent
                 if attempt < retry_attempt - 1:
                     time.sleep(self.config.google_retry_sleep_seconds)
@@ -729,7 +801,9 @@ class LLMGenerationManager:
         if search_mode == "google":
             doc_texts = self.retrieve_from_google(query, self.config.topk)
         elif search_mode == "wiki":
-            doc_texts = self.retrieve_from_wiki(self.config.retriever_ip, query, self.config.topk)
+            doc_texts = self.retrieve_from_wiki(
+                self.config.retriever_ip, query, self.config.topk
+            )
         elif search_mode == "simulate_sft":
             doc_texts = search_simulate_sft(
                 self.config.llm_ip,

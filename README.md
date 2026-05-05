@@ -67,7 +67,12 @@ JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 on
 
 `src/run_agentic_search.py` is the unified entry point. It works as both a CLI script and an importable module.
 
-**Full pipeline (first-time setup)**
+Choose one inference backend:
+
+- `vLLM / OpenAI-compatible server`: fastest path for repeated runs and larger models
+- `local Hugging Face model`: simplest offline path, no separate inference server
+
+**Full retrieval-backed pipeline (first-time setup)**
 
 ```
 1. Build an index        →  src.search.index_builder        (one-time, offline)
@@ -76,9 +81,11 @@ JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 on
 4. Run the agent         →  src.run_agentic_search          (every query)
 ```
 
-For quick experiments without a corpus, skip steps 1–3 and use `--mode single --local`.
+For quick experiments without a corpus, skip steps 1–3 and start with `--mode single`.
 
-### CLI
+### vLLM / server-backed inference
+
+Use this when you already have a serving stack running at `--vllm_url`. This is the recommended path for faster interactive runs.
 
 ```bash
 # Deep-research loop (vLLM server + retrieval server)
@@ -89,7 +96,36 @@ python3 -m src.run_agentic_search \
     --vllm_url http://localhost:8080 \
     --search_url http://localhost:8000/retrieve
 
-# Single-turn (no search), local model on CPU — complete answer
+# Single-turn answer through the same server (no retrieval)
+python3 -m src.run_agentic_search \
+    --mode single \
+    --question "What is FAISS?" \
+    --model meta-llama/Llama-3.1-8B-Instruct \
+    --vllm_url http://localhost:8080 \
+    --max_tokens 256 \
+    --temperature 0
+
+# Tool-calling loop through vLLM
+python3 -m src.run_agentic_search \
+    --mode tool \
+    --question "What is the capital of France?" \
+    --model meta-llama/Llama-3.1-8B-Instruct \
+    --vllm_url http://localhost:8080 \
+    --tool_format hermes
+```
+
+Typical setup:
+
+1. Start `vllm serve ... --port 8080`
+2. Start a search backend at `http://localhost:8000/retrieve` if using `--mode search`
+3. Run `python3 -m src.run_agentic_search ...` without `--local`
+
+### Local inference
+
+Use this when you want an all-in-one offline workflow and are okay with slower generation than a dedicated serving stack.
+
+```bash
+# Single-turn (no search), local model on CPU
 python3 -m src.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
@@ -100,6 +136,15 @@ python3 -m src.run_agentic_search \
   --temperature 0 \
   --generation_timeout_seconds 120 \
   --generation_heartbeat_seconds 5
+
+# Search loop with local generation + local retrieval server
+python3 -m src.run_agentic_search \
+  --mode search \
+  --question "Compare dense vs sparse retrieval" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --local \
+  --device cpu \
+  --search_url http://localhost:8000/retrieve
 
 # MPS (Apple Silicon GPU) — requires --allow_unsafe_mps and PyTorch ≥2.5 + transformers ≥4.46
 python3 -m src.run_agentic_search \
@@ -113,18 +158,15 @@ python3 -m src.run_agentic_search \
   --temperature 0 \
   --generation_timeout_seconds 120 \
   --generation_heartbeat_seconds 5
-
-# Tool-calling loop
-python3 -m src.run_agentic_search \
-  --mode tool \
-  --question "What is the capital of France?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct \
-  --local \
-  --device cpu \
-  --tool_format hermes
 ```
 
-Key flags:
+Typical setup:
+
+1. Skip `--vllm_url` and add `--local`
+2. Pick `--device cpu`, `--device cuda`, or `--device mps --allow_unsafe_mps`
+3. Start a retrieval server separately if using `--mode search`
+
+### Key flags
 
 | Flag | Default | Purpose |
 |------|---------|---------|
@@ -133,8 +175,10 @@ Key flags:
 | `--device` | `auto` | `cpu` / `cuda` / `mps` (local mode only); MPS requires `--allow_unsafe_mps` |
 | `--allow_unsafe_mps` | off | Unlock MPS device; disabled by default due to segfault risk with some causal LMs |
 | `--dtype` | auto | Override model dtype (`bfloat16` / `float16` / `float32`); auto selects bfloat16 on Apple Silicon |
-| `--max_tokens` | `256` | Maximum new tokens to generate; set too low (e.g. `4`) and answers will be truncated mid-sentence |
-| `--generation_timeout_seconds` | `60` | Wall-clock deadline for local generation; stops at the first token after the limit |
+| `--vllm_url` | `http://localhost:8080` | Base URL for the OpenAI-compatible server when not using `--local` |
+| `--search_url` | `http://localhost:8000/retrieve` | Retrieval endpoint used by `search` mode |
+| `--max_tokens` | `512` | Maximum new tokens to generate; set too low and answers will be truncated |
+| `--generation_timeout_seconds` | `120` | Wall-clock deadline for local generation; local mode only |
 | `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
 | `--require_search` | off | Force search even when model has internal knowledge |
 | `--max_search_limit` | 0 (= max_turns) | Cap on search rounds |
@@ -172,7 +216,7 @@ python3 -m src.run_agentic_search \
 
 `--intent_examples` trains the same classifier on startup and is convenient for quick iteration, but adds startup latency on every run. Use `--intent_model` once the classifier is stable.
 
-### Local model inference
+### Local model notes
 
 Use `--local` to load a HuggingFace model in-process instead of connecting to a vLLM server. Useful for offline development or when a server is not available.
 
@@ -202,11 +246,11 @@ Override with `--dtype bfloat16` / `float16` / `float32`. Do not use `mps` with 
 
 **Generation timeout**
 
-`--generation_timeout_seconds` (default `60`) sets a wall-clock deadline enforced by a `StoppingCriteria` that fires at the first token check after the deadline. Unlike `max_time=`, it interrupts generation even during long prefill phases. `--generation_heartbeat_seconds` controls how often the criteria is polled.
+`--generation_timeout_seconds` (default `120`) sets a wall-clock deadline enforced by a `StoppingCriteria` that fires at the first token check after the deadline. Unlike `max_time=`, it interrupts generation even during long prefill phases. `--generation_heartbeat_seconds` controls how often the criteria is polled.
 
 Set the timeout to comfortably cover prefill + generation: on Apple Silicon CPU with bfloat16, `--max_tokens 256` typically completes in under 60s, but `120` gives safe headroom. A timeout that fires mid-generation will truncate the answer just as `--max_tokens` does.
 
-**Gated or private models**
+### vLLM tokenizer and gated models
 
 When using `--vllm_url`, the CLI still loads the tokenizer locally to build prompt IDs. If the tokenizer Hub fetch fails because the model is gated (e.g. `meta-llama/Llama-3.1-8B-Instruct`), it automatically retries from the local cache — so if vLLM already downloaded the model, no login is required.
 

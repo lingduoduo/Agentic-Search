@@ -67,20 +67,36 @@ class SerpSearchEngine:
             return []
         return self._process_result(self._search_query(query))
 
-    def _process_result(self, search_result: dict[str, Any]) -> list[dict[str, dict[str, str]]]:
+    def _process_result(
+        self, search_result: dict[str, Any]
+    ) -> list[dict[str, dict[str, str]]]:
         documents: list[dict[str, dict[str, str]]] = []
 
         answer_box = search_result.get("answer_box", {})
         snippet = answer_box.get("snippet") or answer_box.get("answer")
         if answer_box and snippet:
-            documents.append(format_document(answer_box.get("title"), snippet, url=answer_box.get("link")))
+            documents.append(
+                format_document(
+                    answer_box.get("title"), snippet, url=answer_box.get("link")
+                )
+            )
 
         for result in search_result.get("organic_results", [])[: self.config.topk]:
-            documents.append(format_document(result.get("title"), result.get("snippet"), url=result.get("link")))
+            documents.append(
+                format_document(
+                    result.get("title"), result.get("snippet"), url=result.get("link")
+                )
+            )
 
         remaining = max(self.config.topk - len(documents), 0)
         for result in search_result.get("related_questions", [])[:remaining]:
-            documents.append(format_document(result.get("question"), result.get("snippet"), url=result.get("link")))
+            documents.append(
+                format_document(
+                    result.get("question"),
+                    result.get("snippet"),
+                    url=result.get("link"),
+                )
+            )
 
         return documents[: self.config.topk]
 
@@ -91,17 +107,28 @@ def create_app(config: SerpSearchConfig):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch SerpAPI search server.")
-    parser.add_argument("--search_url", type=str, default=os.getenv("SERP_SEARCH_URL", DEFAULT_SERP_URL))
+    parser.add_argument(
+        "--search_url", type=str, default=os.getenv("SERP_SEARCH_URL", DEFAULT_SERP_URL)
+    )
     parser.add_argument("--topk", type=int, default=DEFAULT_TOPK)
     parser.add_argument("--serp_api_key", type=str, default=os.getenv("SERP_API_KEY"))
-    parser.add_argument("--serp_engine", type=str, default=os.getenv("SERP_ENGINE", DEFAULT_SERP_ENGINE))
-    parser.add_argument("--host", type=str, default=os.getenv("SERP_SEARCH_HOST", DEFAULT_HOST))
-    parser.add_argument("--port", type=int, default=int(os.getenv("SERP_SEARCH_PORT", str(DEFAULT_PORT))))
+    parser.add_argument(
+        "--serp_engine", type=str, default=os.getenv("SERP_ENGINE", DEFAULT_SERP_ENGINE)
+    )
+    parser.add_argument(
+        "--host", type=str, default=os.getenv("SERP_SEARCH_HOST", DEFAULT_HOST)
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("SERP_SEARCH_PORT", str(DEFAULT_PORT))),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
     args = parse_args()
     config = SerpSearchConfig(

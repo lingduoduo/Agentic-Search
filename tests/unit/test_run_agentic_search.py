@@ -27,7 +27,9 @@ class _TokenizerWithoutChatTemplate:
     chat_template = None
 
     def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=True):
-        raise AssertionError("apply_chat_template should not be used when chat_template is missing")
+        raise AssertionError(
+            "apply_chat_template should not be used when chat_template is missing"
+        )
 
     def encode(self, text: str) -> list[int]:
         return [len(text)]
@@ -43,7 +45,9 @@ def test_build_prompt_ids_falls_back_to_encode_without_chat_template():
         tokenizer=_TokenizerWithoutChatTemplate(),
         server_manager=object(),
     )
-    prompt_ids = loop._build_prompt_ids_sync([{"role": "user", "content": "What is FAISS?"}])
+    prompt_ids = loop._build_prompt_ids_sync(
+        [{"role": "user", "content": "What is FAISS?"}]
+    )
     assert prompt_ids == [14]
 
 
@@ -54,7 +58,9 @@ def test_validate_local_generation_config_rejects_encoder_only_model():
         architectures=["BertModel"],
     )
 
-    with pytest.raises(ValueError, match="Local generation mode requires a generative language model"):
+    with pytest.raises(
+        ValueError, match="Local generation mode requires a generative language model"
+    ):
         _validate_local_generation_config("BAAI/bge-base-en-v1.5", config)
 
 
@@ -69,7 +75,9 @@ def test_validate_local_generation_config_allows_causal_lm():
 
 
 def test_friendly_model_load_error_formats_gated_repo_failure():
-    exc = OSError("You are trying to access a gated repo. 401 Client Error. Cannot access gated repo")
+    exc = OSError(
+        "You are trying to access a gated repo. 401 Client Error. Cannot access gated repo"
+    )
     message = _friendly_model_load_error("meta-llama/Llama-3.1-8B-Instruct", exc)
     assert message is not None
     assert "gated on Hugging Face" in message
@@ -84,7 +92,9 @@ def test_friendly_model_load_error_formats_missing_repo_failure():
 
 
 def test_friendly_model_load_error_formats_cache_only_miss():
-    exc = OSError("Couldn't connect to the Hub and cannot find the requested files in the disk cache")
+    exc = OSError(
+        "Couldn't connect to the Hub and cannot find the requested files in the disk cache"
+    )
     message = _friendly_model_load_error("Qwen/Qwen2.5-1.5B-Instruct", exc)
     assert message is not None
     assert "local Hugging Face cache" in message
@@ -152,7 +162,9 @@ def test_validate_local_runtime_stack_allows_newer_macos_mps_stack():
 
 def test_handle_local_cli_value_error_returns_true_for_known_error(capsys):
     handled = _handle_local_cli_value_error(
-        ValueError("Local generation on Apple MPS is disabled by default in this CLI because it can segfault")
+        ValueError(
+            "Local generation on Apple MPS is disabled by default in this CLI because it can segfault"
+        )
     )
     captured = capsys.readouterr()
     assert handled is True

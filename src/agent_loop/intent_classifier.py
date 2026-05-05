@@ -27,6 +27,7 @@ class IntentPrediction:
 # Neural model (private — users go through IntentPipeline)
 # ---------------------------------------------------------------------------
 
+
 class _IntentClassifier:
     """Small feedforward classifier over averaged token embeddings."""
 
@@ -54,6 +55,7 @@ class _IntentClassifier:
 
             def forward(self, ids: "torch.Tensor") -> "torch.Tensor":
                 import torch.nn.functional as F
+
                 x = self.embedding(ids).mean(dim=1)
                 x = self.drop(F.relu(self.fc1(x)))
                 x = self.drop(F.relu(self.fc2(x)))
@@ -78,7 +80,9 @@ class _IntentClassifier:
 
         # Pad sequences in a single batch tensor for efficiency.
         max_len = max(len(ids) for ids in encoded) or 1
-        ids_tensor = torch.zeros(len(encoded), max_len, dtype=torch.long, device=self._device)
+        ids_tensor = torch.zeros(
+            len(encoded), max_len, dtype=torch.long, device=self._device
+        )
         for i, ids in enumerate(encoded):
             ids_tensor[i, : len(ids)] = torch.tensor(ids, dtype=torch.long)
         labels_tensor = torch.tensor(labels, dtype=torch.long, device=self._device)
@@ -94,7 +98,9 @@ class _IntentClassifier:
 
         self._net.eval()
         max_len = max(len(ids) for ids in encoded) or 1
-        ids_tensor = torch.zeros(len(encoded), max_len, dtype=torch.long, device=self._device)
+        ids_tensor = torch.zeros(
+            len(encoded), max_len, dtype=torch.long, device=self._device
+        )
         for i, ids in enumerate(encoded):
             ids_tensor[i, : len(ids)] = torch.tensor(ids, dtype=torch.long)
 
@@ -112,6 +118,7 @@ class _IntentClassifier:
 # ---------------------------------------------------------------------------
 # Public pipeline
 # ---------------------------------------------------------------------------
+
 
 class IntentPipeline:
     """Trainable intent classification pipeline.
@@ -132,8 +139,11 @@ class IntentPipeline:
         hidden_dim: int = 256,
     ) -> None:
         from src.search.vocabulary import Vocabulary
+
         self._vocab = Vocabulary()
-        self._model = _IntentClassifier(vocab_size, embedding_dim, hidden_dim, len(INTENT_LABELS))
+        self._model = _IntentClassifier(
+            vocab_size, embedding_dim, hidden_dim, len(INTENT_LABELS)
+        )
         self._label_to_id = {label: i for i, label in enumerate(INTENT_LABELS)}
         self.is_trained = False
 
@@ -160,6 +170,7 @@ class IntentPipeline:
 
     def predict_text(self, text: str) -> IntentPrediction:
         from src.search.vocabulary import tokenize_text
+
         return self.predict(tokenize_text(text))
 
     # ------------------------------------------------------------------
@@ -173,6 +184,7 @@ class IntentPipeline:
         needed to reconstruct the architecture on load.
         """
         import torch
+
         if not self.is_trained:
             raise RuntimeError("Pipeline must be trained before saving.")
         checkpoint = {
@@ -201,7 +213,9 @@ class IntentPipeline:
 
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         if checkpoint.get("version") != 1:
-            raise ValueError(f"Unsupported checkpoint version: {checkpoint.get('version')}")
+            raise ValueError(
+                f"Unsupported checkpoint version: {checkpoint.get('version')}"
+            )
 
         cfg = checkpoint["config"]
         pipeline = cls(
@@ -247,6 +261,7 @@ class IntentPipeline:
 # Module-level routing helper (testable without a trained pipeline)
 # ---------------------------------------------------------------------------
 
+
 def resolve_search_settings(
     prediction: IntentPrediction,
     *,
@@ -271,12 +286,15 @@ def resolve_search_settings(
 
     meta["intent_policy_applied"] = True
     policy: dict[str, tuple[int, int, bool, bool]] = {
-        "qa":             (topk,           max_search_limit,           require_evidence, allow_internal_knowledge),
-        "navigate":       (max(topk, 5),   max(max_search_limit, 2),   True,             False),
-        "purchase":       (max(topk, 8),   max(max_search_limit, 2),   True,             False),
-        "recommendation": (max(topk, 8),   max(max_search_limit, 3),   True,             False),
+        "qa": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
+        "navigate": (max(topk, 5), max(max_search_limit, 2), True, False),
+        "purchase": (max(topk, 8), max(max_search_limit, 2), True, False),
+        "recommendation": (max(topk, 8), max(max_search_limit, 3), True, False),
     }
-    t, s, r, a = policy.get(prediction.intent, (topk, max_search_limit, require_evidence, allow_internal_knowledge))
+    t, s, r, a = policy.get(
+        prediction.intent,
+        (topk, max_search_limit, require_evidence, allow_internal_knowledge),
+    )
     return t, s, r, a, meta
 
 
@@ -290,6 +308,7 @@ IntentionClassificationPipeline = IntentPipeline
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+
 
 def load_training_data(path: str) -> list[tuple[list[str], str]]:
     """Load a JSON examples file into (token_list, intent_label) pairs.

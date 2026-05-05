@@ -47,7 +47,9 @@ class TextProcessor:
     }
 
     def __init__(self, config_path: str | None = None) -> None:
-        self.config_path = config_path or os.path.join(os.path.dirname(__file__), "config.yaml")
+        self.config_path = config_path or os.path.join(
+            os.path.dirname(__file__), "config.yaml"
+        )
         self.config = self._load_config()["dify"]["process_rules"]
         self._separator_pattern = re.compile(
             self.config.get("segmentation", {}).get("separator", r"(?<=[.!?])\s+|\n+")
@@ -146,7 +148,9 @@ class TextProcessor:
     ) -> str:
         """Convert supported inputs into one cleaned document string."""
 
-        return " ".join(self._extract_text_values(input_data, text_fields=text_fields)).strip()
+        return " ".join(
+            self._extract_text_values(input_data, text_fields=text_fields)
+        ).strip()
 
     def tokenize(
         self,
@@ -155,7 +159,9 @@ class TextProcessor:
     ) -> list[str]:
         """Normalize and tokenize with one shared retrieval-friendly path."""
 
-        normalized_text = self.normalize_document(input_data, text_fields=text_fields).lower()
+        normalized_text = self.normalize_document(
+            input_data, text_fields=text_fields
+        ).lower()
         return self.tokenize_normalized(normalized_text)
 
     def tokenize_normalized(self, normalized_text: str) -> list[str]:

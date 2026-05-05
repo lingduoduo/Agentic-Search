@@ -9,6 +9,7 @@ from collections import Counter
 
 try:
     import orjson as _orjson
+
     _json_loads = _orjson.loads
 except ImportError:
     _json_loads = json.loads
@@ -35,10 +36,7 @@ from .vocabulary import (
 )
 
 if TYPE_CHECKING:
-    import datasets
-    import faiss
-    import torch
-    from transformers import AutoModel, AutoTokenizer
+    pass
 
 MODEL2POOLING = {
     "e5": "mean",
@@ -52,7 +50,6 @@ def _require_torch():
     import torch
 
     return torch
-
 
 
 def _require_faiss():
@@ -73,7 +70,9 @@ def _require_tqdm():
     return tqdm
 
 
-def prepare_texts(texts: list[str], retrieval_method: str, *, is_query: bool) -> list[str]:
+def prepare_texts(
+    texts: list[str], retrieval_method: str, *, is_query: bool
+) -> list[str]:
     normalized_method = retrieval_method.lower()
     prepared = list(texts)
 
@@ -90,14 +89,18 @@ def prepare_texts(texts: list[str], retrieval_method: str, *, is_query: bool) ->
     return prepared
 
 
-def load_model(model_path: str, use_fp16: bool = False, device: str = "cpu") -> tuple[Any, Any]:
+def load_model(
+    model_path: str, use_fp16: bool = False, device: str = "cpu"
+) -> tuple[Any, Any]:
     _, auto_model, auto_tokenizer = _require_transformers()
 
     # Try local cache first to skip the network version-check that can hang.
     # Falls back to a full download when the model is not cached yet.
     def _load(cls, **extra):
         try:
-            return cls.from_pretrained(model_path, local_files_only=True, trust_remote_code=True, **extra)
+            return cls.from_pretrained(
+                model_path, local_files_only=True, trust_remote_code=True, **extra
+            )
         except OSError:
             return cls.from_pretrained(model_path, trust_remote_code=True, **extra)
 
@@ -119,7 +122,9 @@ def pooling(
     if pooling_method == "mean":
         if attention_mask is None:
             raise ValueError("attention_mask is required for mean pooling.")
-        last_hidden = last_hidden_state.masked_fill(~attention_mask[..., None].bool(), 0.0)
+        last_hidden = last_hidden_state.masked_fill(
+            ~attention_mask[..., None].bool(), 0.0
+        )
         return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
     if pooling_method == "cls":
         return last_hidden_state[:, 0]
@@ -157,7 +162,9 @@ def _encode_batch(
             dtype=torch.long,
             device=inputs["input_ids"].device,
         )
-        output = encoder(**inputs, decoder_input_ids=decoder_input_ids, return_dict=True)
+        output = encoder(
+            **inputs, decoder_input_ids=decoder_input_ids, return_dict=True
+        )
         embeddings = output.last_hidden_state[:, 0, :]
     else:
         output = encoder(**inputs, return_dict=True)
@@ -223,8 +230,14 @@ class IndexBuilderConfig:
             raise ValueError("retrieval_method is required.")
         if not self.corpus_path:
             raise ValueError("corpus_path is required.")
-        if retrieval_method != "bm25" and not self.model_path and not self.embedding_path:
-            raise ValueError("model_path or embedding_path is required for dense indexing.")
+        if (
+            retrieval_method != "bm25"
+            and not self.model_path
+            and not self.embedding_path
+        ):
+            raise ValueError(
+                "model_path or embedding_path is required for dense indexing."
+            )
         if self.batch_size < 1:
             raise ValueError("batch_size must be at least 1.")
         if self.max_length < 1:
@@ -263,7 +276,9 @@ class IndexBuilder:
         self.gpu_num = torch.cuda.device_count() if torch.cuda.is_available() else 0
 
         self._prepare_save_dir()
-        self.index_save_path = self.save_dir / f"{self.retrieval_method}_{self.faiss_type}.index"
+        self.index_save_path = (
+            self.save_dir / f"{self.retrieval_method}_{self.faiss_type}.index"
+        )
         self.embedding_save_path = self.save_dir / f"emb_{self.retrieval_method}.memmap"
         self.vocab_save_path = self.save_dir / "vocabulary_corpus.json"
         self.corpus = load_corpus(self.corpus_path)
@@ -300,7 +315,10 @@ class IndexBuilder:
                         "num_token": vocabulary.num_token,
                         "token2idx": vocabulary.token2idx,
                         "token2cnt": vocabulary.token2cnt,
-                        "idx2token": {str(key): value for key, value in vocabulary.idx2token.items()},
+                        "idx2token": {
+                            str(key): value
+                            for key, value in vocabulary.idx2token.items()
+                        },
                     },
                     "corpus": corpus_entries,
                 },
@@ -333,7 +351,10 @@ class IndexBuilder:
                     "title": item.get("title"),
                     "contents": text,
                     "tokens": tokens,
-                    "keywords": [token for token, _ in token_counts.most_common(self.keyword_limit)],
+                    "keywords": [
+                        token
+                        for token, _ in token_counts.most_common(self.keyword_limit)
+                    ],
                     "token_count": len(tokens),
                 }
             )
@@ -366,8 +387,12 @@ class IndexBuilder:
                 check=True,
             )
 
-    def _load_embedding(self, embedding_path: str, corpus_size: int, hidden_size: int) -> np.memmap:
-        return np.memmap(embedding_path, mode="r", dtype=np.float32).reshape(corpus_size, hidden_size)
+    def _load_embedding(
+        self, embedding_path: str, corpus_size: int, hidden_size: int
+    ) -> np.memmap:
+        return np.memmap(embedding_path, mode="r", dtype=np.float32).reshape(
+            corpus_size, hidden_size
+        )
 
     def _save_embedding(self, all_embeddings: np.ndarray) -> None:
         tqdm = _require_tqdm()
@@ -398,7 +423,9 @@ class IndexBuilder:
 
         all_embeddings: np.ndarray | None = None
         write_index = 0
-        for start_idx in tqdm(range(0, len(self.corpus), batch_size), desc="Inference embeddings"):
+        for start_idx in tqdm(
+            range(0, len(self.corpus), batch_size), desc="Inference embeddings"
+        ):
             batch_embeddings = _encode_batch(
                 encoder,
                 tokenizer,
@@ -430,7 +457,10 @@ class IndexBuilder:
         torch = _require_torch()
 
         if self.index_save_path.exists():
-            warnings.warn(f"{self.index_save_path} already exists and will be overwritten.", UserWarning)
+            warnings.warn(
+                f"{self.index_save_path} already exists and will be overwritten.",
+                UserWarning,
+            )
 
         encoder, tokenizer = load_model(
             model_path=self.model_path or "",
@@ -441,7 +471,9 @@ class IndexBuilder:
         if self.embedding_path is not None:
             hidden_size = encoder.config.hidden_size
             corpus_size = len(self.corpus)
-            all_embeddings = self._load_embedding(self.embedding_path, corpus_size, hidden_size)
+            all_embeddings = self._load_embedding(
+                self.embedding_path, corpus_size, hidden_size
+            )
         else:
             with torch.no_grad():
                 all_embeddings = self.encode_all(encoder, tokenizer)
@@ -450,11 +482,15 @@ class IndexBuilder:
             del self.corpus
 
         dim = all_embeddings.shape[-1]
-        faiss_index = faiss.index_factory(dim, self.faiss_type, faiss.METRIC_INNER_PRODUCT)
+        faiss_index = faiss.index_factory(
+            dim, self.faiss_type, faiss.METRIC_INNER_PRODUCT
+        )
 
         if self.faiss_gpu:
             if not hasattr(faiss, "GpuMultipleClonerOptions") or self.gpu_num == 0:
-                raise RuntimeError("faiss_gpu was requested, but GPU FAISS support is not available.")
+                raise RuntimeError(
+                    "faiss_gpu was requested, but GPU FAISS support is not available."
+                )
             clone_options = faiss.GpuMultipleClonerOptions()
             clone_options.useFloat16 = True
             clone_options.shard = True
@@ -495,16 +531,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--embedding_path", type=str, default=None)
     parser.add_argument("--save_embedding", action="store_true", default=False)
     parser.add_argument("--faiss_gpu", default=False, action="store_true")
-    parser.add_argument("--save_vocabulary", dest="save_vocabulary", action="store_true", default=True)
-    parser.add_argument("--no_save_vocabulary", dest="save_vocabulary", action="store_false")
+    parser.add_argument(
+        "--save_vocabulary", dest="save_vocabulary", action="store_true", default=True
+    )
+    parser.add_argument(
+        "--no_save_vocabulary", dest="save_vocabulary", action="store_false"
+    )
     parser.add_argument("--keyword_limit", type=int, default=10)
-    parser.add_argument("--vocab_max_length", type=int, default=DEFAULT_VOCAB_MAX_LENGTH)
-    parser.add_argument("--bm25_threads", type=int, default=0, help="BM25 indexing threads (0 = auto-detect CPUs)")
+    parser.add_argument(
+        "--vocab_max_length", type=int, default=DEFAULT_VOCAB_MAX_LENGTH
+    )
+    parser.add_argument(
+        "--bm25_threads",
+        type=int,
+        default=0,
+        help="BM25 indexing threads (0 = auto-detect CPUs)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
     args = parse_args()
     config = IndexBuilderConfig(
@@ -515,7 +563,9 @@ def main() -> None:
         max_length=args.max_length,
         batch_size=args.batch_size,
         use_fp16=args.use_fp16,
-        pooling_method=resolve_pooling_method(args.retrieval_method, args.pooling_method),
+        pooling_method=resolve_pooling_method(
+            args.retrieval_method, args.pooling_method
+        ),
         faiss_type=args.faiss_type,
         embedding_path=args.embedding_path,
         save_embedding=args.save_embedding,

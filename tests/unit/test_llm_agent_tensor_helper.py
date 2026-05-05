@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.llm_agent.tensor_helper import TensorConfig, TensorHelper
+from src.llm_agent.tensor_helper import TensorConfig, TensorHelper  # noqa: E402
 
 
 def _helper() -> TensorHelper:
@@ -48,4 +48,6 @@ def test_example_level_pad_restores_batch_shape():
 def test_example_level_pad_validates_active_count():
     helper = _helper()
     with pytest.raises(ValueError, match="active_mask"):
-        helper.example_level_pad(torch.tensor([[1, 2]]), ["one"], torch.tensor([False, True, True]))
+        helper.example_level_pad(
+            torch.tensor([[1, 2]]), ["one"], torch.tensor([False, True, True])
+        )

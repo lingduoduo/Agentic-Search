@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .context import SearchContext
 
@@ -83,7 +83,9 @@ class SearchResultEvaluator:
     def __init__(self, config: SearchEvaluationConfig | None = None) -> None:
         self.config = config or SearchEvaluationConfig()
 
-    def evaluate_round(self, search_contexts: list[SearchContext]) -> SearchRoundEvaluation:
+    def evaluate_round(
+        self, search_contexts: list[SearchContext]
+    ) -> SearchRoundEvaluation:
         query_evals = tuple(self._evaluate_query(ctx) for ctx in search_contexts)
         total_results = sum(qe.result_count for qe in query_evals)
 
@@ -107,7 +109,8 @@ class SearchResultEvaluator:
         results = ctx.results
         result_count = len(results)
         nonempty_count = sum(
-            1 for r in results
+            1
+            for r in results
             if len(r.contents.strip()) >= self.config.min_content_length
         )
         scored = [r.score for r in results if r.score > 0.0]

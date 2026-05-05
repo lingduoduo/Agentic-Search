@@ -30,7 +30,11 @@ def create_app(config: DenseRetrieverConfig):
     def retrieve_endpoint(request: QueryRequest) -> dict[str, list]:
         try:
             if request.return_scores:
-                return {"result": retriever.retrieve(request.queries, topk=request.topk or config.topk)}
+                return {
+                    "result": retriever.retrieve(
+                        request.queries, topk=request.topk or config.topk
+                    )
+                }
 
             documents = retriever.batch_search(
                 request.queries,
@@ -45,22 +49,44 @@ def create_app(config: DenseRetrieverConfig):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Launch the local dense retriever server.")
-    parser.add_argument("--index_path", type=str, required=True, help="Corpus index file.")
-    parser.add_argument("--corpus_path", type=str, required=True, help="Local corpus file.")
-    parser.add_argument("--topk", type=int, default=5, help="Number of retrieved passages per query.")
-    parser.add_argument("--retrieval_method", type=str, required=True, help="Retriever family name.")
-    parser.add_argument("--model_path", type=str, required=True, help="Path or HF id for the retriever model.")
+    parser = argparse.ArgumentParser(
+        description="Launch the local dense retriever server."
+    )
+    parser.add_argument(
+        "--index_path", type=str, required=True, help="Corpus index file."
+    )
+    parser.add_argument(
+        "--corpus_path", type=str, required=True, help="Local corpus file."
+    )
+    parser.add_argument(
+        "--topk", type=int, default=5, help="Number of retrieved passages per query."
+    )
+    parser.add_argument(
+        "--retrieval_method", type=str, required=True, help="Retriever family name."
+    )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        required=True,
+        help="Path or HF id for the retriever model.",
+    )
     parser.add_argument("--max_length", type=int, default=180)
     parser.add_argument("--use_fp16", action="store_true", default=False)
     parser.add_argument("--pooling_method", type=str, default=None)
-    parser.add_argument("--host", type=str, default=os.getenv("RETRIEVAL_SERVER_HOST", DEFAULT_HOST))
-    parser.add_argument("--port", type=int, default=int(os.getenv("RETRIEVAL_SERVER_PORT", str(DEFAULT_PORT))))
+    parser.add_argument(
+        "--host", type=str, default=os.getenv("RETRIEVAL_SERVER_HOST", DEFAULT_HOST)
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("RETRIEVAL_SERVER_PORT", str(DEFAULT_PORT))),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
     args = parse_args()
     app = create_app(

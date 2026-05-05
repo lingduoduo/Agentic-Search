@@ -78,7 +78,9 @@ def test_build_prompt_ids_uses_chat_template_when_available():
         server_manager=DummyServerManager([]),
         config=AgentLoopConfig(prompt_length=3, response_length=5),
     )
-    prompt_ids = asyncio.run(loop.build_prompt_ids([{"role": "user", "content": "hello"}]))
+    prompt_ids = asyncio.run(
+        loop.build_prompt_ids([{"role": "user", "content": "hello"}])
+    )
     assert prompt_ids == [13, 14, 15]
 
 
@@ -89,7 +91,9 @@ def test_build_prompt_ids_falls_back_to_encode():
         config=AgentLoopConfig(prompt_length=4, response_length=5),
     )
     prompt_ids = asyncio.run(
-        loop.build_prompt_ids([{"role": "user", "content": "abc"}, {"role": "assistant", "content": "de"}])
+        loop.build_prompt_ids(
+            [{"role": "user", "content": "abc"}, {"role": "assistant", "content": "de"}]
+        )
     )
     assert len(prompt_ids) == 4
 
@@ -101,7 +105,9 @@ def test_generate_response_ids_truncates_to_response_length():
         server_manager=server_manager,
         config=AgentLoopConfig(prompt_length=10, response_length=3),
     )
-    response_ids = asyncio.run(loop.generate_response_ids([9, 9], {"temperature": 0.1}, request_id="req-1"))
+    response_ids = asyncio.run(
+        loop.generate_response_ids([9, 9], {"temperature": 0.1}, request_id="req-1")
+    )
     assert response_ids == [1, 2, 3]
     assert server_manager.calls[0]["request_id"] == "req-1"
 
@@ -113,7 +119,9 @@ def test_single_turn_agent_loop_returns_expected_output():
         server_manager=server_manager,
         config=AgentLoopConfig(prompt_length=4, response_length=2),
     )
-    output = asyncio.run(loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.7}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.7})
+    )
     assert output.prompt_ids == [12, 13, 14, 15]
     assert output.response_ids == [21, 22]
     assert output.response_mask == [1, 1]
@@ -150,7 +158,9 @@ def test_generate_response_ids_supports_sync_server_manager():
         server_manager=DummySyncServerManager([7, 8, 9, 10]),
         config=AgentLoopConfig(prompt_length=10, response_length=2),
     )
-    response_ids = asyncio.run(loop.generate_response_ids([1, 2], {"temperature": 0.3}, request_id="req-sync"))
+    response_ids = asyncio.run(
+        loop.generate_response_ids([1, 2], {"temperature": 0.3}, request_id="req-sync")
+    )
     assert response_ids == [7, 8]
 
 
@@ -174,12 +184,14 @@ def test_search_result_evaluator_marks_weak_results_as_insufficient():
             min_avg_score=0.7,
         )
     )
-    evaluation = evaluator.evaluate_round([
-        SearchContext(
-            query="alpha",
-            results=[SearchResult(contents='"Alpha"\nbody', score=0.4)],
-        )
-    ])
+    evaluation = evaluator.evaluate_round(
+        [
+            SearchContext(
+                query="alpha",
+                results=[SearchResult(contents='"Alpha"\nbody', score=0.4)],
+            )
+        ]
+    )
 
     assert evaluation.is_sufficient is False
     assert evaluation.total_results == 1
@@ -195,15 +207,17 @@ def test_search_result_evaluator_marks_strong_results_as_sufficient():
             min_avg_score=0.7,
         )
     )
-    evaluation = evaluator.evaluate_round([
-        SearchContext(
-            query="alpha",
-            results=[
-                SearchResult(contents='"Alpha"\nbody', score=0.9),
-                SearchResult(contents='"Alpha 2"\nbody', score=0.8),
-            ],
-        )
-    ])
+    evaluation = evaluator.evaluate_round(
+        [
+            SearchContext(
+                query="alpha",
+                results=[
+                    SearchResult(contents='"Alpha"\nbody', score=0.9),
+                    SearchResult(contents='"Alpha 2"\nbody', score=0.8),
+                ],
+            )
+        ]
+    )
 
     assert evaluation.is_sufficient is True
     assert "Verdict: SUFFICIENT" in evaluation.to_feedback_block()
@@ -229,7 +243,9 @@ class FakeSearchClient:
 def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
     tokenizer = DummyTokenizerWithEncode()
     responses = [
-        tokenizer.encode("<plan>Compare two sources and validate with a follow-up search.</plan>"),
+        tokenizer.encode(
+            "<plan>Compare two sources and validate with a follow-up search.</plan>"
+        ),
         tokenizer.encode("<searches>\n- first query\n- second query\n</searches>"),
         tokenizer.encode("<searches><query>refined query</query></searches>"),
         tokenizer.encode("<answer>Final report [R1Q1D1] [R2Q1D1]</answer>"),
@@ -239,7 +255,9 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=6,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     loop._search_client = FakeSearchClient(
@@ -254,7 +272,9 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
         }
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
     assert loop._search_client.calls == [
         ["first query", "second query"],
@@ -294,9 +314,13 @@ def test_search_agent_loop_injects_search_evaluation_feedback():
         }
     )
 
-    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    second_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
+    )
     assert "<search_evaluation>" in second_prompt
     assert "Verdict: INSUFFICIENT" in second_prompt
     assert "keep searching" in second_prompt
@@ -314,7 +338,9 @@ def test_search_agent_loop_rejects_answer_before_any_search():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=5,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     loop._search_client = FakeSearchClient(
@@ -325,9 +351,13 @@ def test_search_agent_loop_rejects_answer_before_any_search():
         }
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    second_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
+    )
     assert "<answer_feedback>" in second_prompt
     assert "Search first" in second_prompt
     assert output.num_turns == 3
@@ -368,9 +398,13 @@ def test_search_agent_loop_rejects_answer_when_latest_evidence_is_insufficient()
         }
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
     assert "<answer_feedback>" in third_prompt
     assert "latest search evaluation was insufficient" in third_prompt
     assert output.num_turns == 4
@@ -400,7 +434,9 @@ def test_search_agent_loop_handles_plan_and_searches_in_same_response():
         }
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0})
+    )
 
     assert loop._search_client.calls == [["alpha", "beta"]]
     assert output.context.num_rounds == 1
@@ -420,26 +456,38 @@ def test_search_agent_loop_can_fetch_full_page_content():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=5,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
         {
             ("alpha query",): [
-                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ],
             ],
         }
     )
     fake_client.fetch_responses = {
         ("https://example.com/a",): [
-            SearchResult(contents="Full page body", title="Doc A", url="https://example.com/a"),
+            SearchResult(
+                contents="Full page body", title="Doc A", url="https://example.com/a"
+            ),
         ],
     }
     loop._search_client = fake_client
 
-    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
     assert fake_client.fetch_calls == [["https://example.com/a"]]
     assert "<full_page>" in third_prompt
     assert "Full page body" in third_prompt
@@ -457,24 +505,34 @@ def test_search_agent_loop_deduplicates_queries_and_urls_and_tracks_metrics():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=5,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
         {
             ("alpha",): [
-                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ],
             ],
         }
     )
     fake_client.fetch_responses = {
         ("https://example.com/a",): [
-            SearchResult(contents="Full page body", title="Doc A", url="https://example.com/a"),
+            SearchResult(
+                contents="Full page body", title="Doc A", url="https://example.com/a"
+            ),
         ],
     }
     loop._search_client = fake_client
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
     assert fake_client.calls == [["alpha"]]
     assert fake_client.fetch_calls == [["https://example.com/a"]]
@@ -497,20 +555,33 @@ def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=4,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=2),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=2
+            ),
         ),
     )
     fake_client = FakeSearchClient(
         {
             ("Alice David Lara Croft voice", "Lara Croft game developer"): [
-                [SearchResult(contents='"Voice"\nAlice David', url="https://example.com/voice")],
-                [SearchResult(contents='"Developer"\nCrystal Dynamics', url="https://example.com/dev")],
+                [
+                    SearchResult(
+                        contents='"Voice"\nAlice David', url="https://example.com/voice"
+                    )
+                ],
+                [
+                    SearchResult(
+                        contents='"Developer"\nCrystal Dynamics',
+                        url="https://example.com/dev",
+                    )
+                ],
             ],
         }
     )
     loop._search_client = fake_client
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
     assert output.context.tasks == {
         "T1": "identify the voice actor",
@@ -537,24 +608,39 @@ def test_search_agent_loop_rejects_answer_when_a_subquestion_is_unresolved():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=6,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
         {
             ("Alice David Lara Croft voice",): [
-                [SearchResult(contents='"Voice"\nAlice David', url="https://example.com/voice")],
+                [
+                    SearchResult(
+                        contents='"Voice"\nAlice David', url="https://example.com/voice"
+                    )
+                ],
             ],
             ("Lara Croft game developer",): [
-                [SearchResult(contents='"Developer"\nCrystal Dynamics', url="https://example.com/dev")],
+                [
+                    SearchResult(
+                        contents='"Developer"\nCrystal Dynamics',
+                        url="https://example.com/dev",
+                    )
+                ],
             ],
         }
     )
     loop._search_client = fake_client
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
     assert "T2: identify the developer" in third_prompt
     assert "<answer_feedback>" in third_prompt
     assert output.context.num_rounds == 2
@@ -572,21 +658,31 @@ def test_search_agent_loop_skips_repeated_queries_with_feedback():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=5,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
         {
             ("alpha query",): [
-                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ],
             ],
         }
     )
     loop._search_client = fake_client
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
     assert fake_client.calls == [["alpha query"]]
     assert "Repeated search skipped" in third_prompt
     assert output.metrics["repeated_search_queries"] == 1.0
@@ -606,21 +702,31 @@ def test_search_agent_loop_enforces_search_limit():
             max_turns=5,
             max_search_limit=1,
             require_sufficient_evidence_before_answer=False,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
         {
             ("alpha query",): [
-                [SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")],
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ],
             ],
         }
     )
     loop._search_client = fake_client
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    third_prompt = "".join(chr(token) for token in loop.server_manager.calls[2]["prompt_ids"])
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
     assert fake_client.calls == [["alpha query"]]
     assert "Search limit reached" in third_prompt
     assert output.metrics["search_limit_hits"] == 1.0
@@ -629,7 +735,9 @@ def test_search_agent_loop_enforces_search_limit():
 def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():
     tokenizer = DummyTokenizerWithEncode()
     responses = [
-        tokenizer.encode("<search_decision>answer</search_decision><answer>Paris</answer>"),
+        tokenizer.encode(
+            "<search_decision>answer</search_decision><answer>Paris</answer>"
+        ),
     ]
     loop = SearchAgentLoop(
         tokenizer=tokenizer,
@@ -640,7 +748,12 @@ def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():
         ),
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "What is the capital of France?"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            {"temperature": 0.0},
+        )
+    )
 
     assert output.num_turns == 1
     assert output.context.num_rounds == 0
@@ -660,7 +773,9 @@ def test_search_agent_loop_requests_search_after_search_decision():
         search_config=SearchAgentLoopConfig(
             max_turns=4,
             require_sufficient_evidence_before_answer=False,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
@@ -672,9 +787,13 @@ def test_search_agent_loop_requests_search_after_search_decision():
     )
     loop._search_client = fake_client
 
-    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    second_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
+    )
     assert "<decision_feedback>" in second_prompt
     assert "Issue a <search> or <searches> action next" in second_prompt
 
@@ -692,7 +811,9 @@ def test_search_agent_loop_prompts_for_decision_when_no_action_before_search():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=5,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
@@ -704,9 +825,13 @@ def test_search_agent_loop_prompts_for_decision_when_no_action_before_search():
     )
     loop._search_client = fake_client
 
-    asyncio.run(loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0}))
+    asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
 
-    second_prompt = "".join(chr(token) for token in loop.server_manager.calls[1]["prompt_ids"])
+    second_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
+    )
     assert "<answer_feedback>" in second_prompt
     assert "Use <search_decision>answer</search_decision>" in second_prompt
 
@@ -715,7 +840,9 @@ def test_search_agent_loop_blocks_direct_answer_when_internal_knowledge_disabled
     """allow_internal_knowledge_answer=False prevents bypassing the search gate."""
     tokenizer = DummyTokenizerWithEncode()
     responses = [
-        tokenizer.encode("<search_decision>answer</search_decision><answer>Paris</answer>"),
+        tokenizer.encode(
+            "<search_decision>answer</search_decision><answer>Paris</answer>"
+        ),
         tokenizer.encode("<searches>\nalpha\n</searches>"),
         tokenizer.encode("<answer>Done</answer>"),
     ]
@@ -725,14 +852,18 @@ def test_search_agent_loop_blocks_direct_answer_when_internal_knowledge_disabled
         search_config=SearchAgentLoopConfig(
             max_turns=5,
             allow_internal_knowledge_answer=False,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     loop._search_client = FakeSearchClient(
         {("alpha",): [[SearchResult(contents='"Doc A"\nAlpha body')]]}
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "q"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "q"}], {"temperature": 0.0})
+    )
 
     assert output.metrics["direct_answers"] == 0.0
     assert output.context.num_rounds == 1
@@ -752,14 +883,18 @@ def test_search_agent_loop_search_decision_with_searches_fires_search_not_decisi
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=4,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     loop._search_client = FakeSearchClient(
         {("alpha",): [[SearchResult(contents='"Doc A"\nAlpha body')]]}
     )
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0})
+    )
 
     second_prompt = "".join(chr(t) for t in loop.server_manager.calls[1]["prompt_ids"])
     assert "<decision_feedback>" not in second_prompt
@@ -778,14 +913,18 @@ def test_search_client_config_derives_fetch_url_from_retrieve_url():
         ("http://host/other", "http://host/other/fetch"),
     ]
     for url, expected in cases:
-        assert SearchClientConfig(url=url).get_fetch_url() == expected, f"Failed for {url!r}"
+        assert SearchClientConfig(url=url).get_fetch_url() == expected, (
+            f"Failed for {url!r}"
+        )
 
 
 def test_search_agent_loop_processes_search_and_fetch_in_same_turn():
     """When the model emits <searches> and <fetch> in the same turn, both are
     executed and their results appear in a single observation message."""
     tokenizer = DummyTokenizerWithEncode()
-    combined = "<searches>\nalpha query\n</searches><fetch>https://example.com/a</fetch>"
+    combined = (
+        "<searches>\nalpha query\n</searches><fetch>https://example.com/a</fetch>"
+    )
     responses = [
         tokenizer.encode(combined),
         tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
@@ -795,20 +934,34 @@ def test_search_agent_loop_processes_search_and_fetch_in_same_turn():
         server_manager=DummyServerManager(responses),
         search_config=SearchAgentLoopConfig(
             max_turns=4,
-            evaluation_config=SearchEvaluationConfig(min_results_per_query=1, min_total_results=1),
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
         ),
     )
     fake_client = FakeSearchClient(
-        {("alpha query",): [[SearchResult(contents='"Doc A"\nAlpha body', url="https://example.com/a")]]}
+        {
+            ("alpha query",): [
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ]
+            ]
+        }
     )
     fake_client.fetch_responses = {
         ("https://example.com/a",): [
-            SearchResult(contents="Full page body", title="Doc A", url="https://example.com/a")
+            SearchResult(
+                contents="Full page body", title="Doc A", url="https://example.com/a"
+            )
         ]
     }
     loop._search_client = fake_client
 
-    output = asyncio.run(loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0}))
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "go"}], {"temperature": 0.0})
+    )
 
     # Both search and fetch fired in turn 0.
     assert fake_client.calls == [["alpha query"]]

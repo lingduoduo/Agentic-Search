@@ -36,7 +36,13 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from .agent_loop import AgentLoopBase, AgentLoopConfig, AgentLoopOutput, register, simple_timer
+from .agent_loop import (
+    AgentLoopBase,
+    AgentLoopConfig,
+    AgentLoopOutput,
+    register,
+    simple_timer,
+)
 from .tool import Tool
 from .tool_parser import FunctionCall, ToolParser
 
@@ -121,7 +127,9 @@ class ToolAgentLoop(AgentLoopBase):
         except Exception:
             return 0
 
-    def _build_prompt_ids_with_tools_sync(self, messages: list[dict[str, Any]]) -> list[int]:
+    def _build_prompt_ids_with_tools_sync(
+        self, messages: list[dict[str, Any]]
+    ) -> list[int]:
         """Like _build_prompt_ids_sync but injects tool schemas into the template."""
         if hasattr(self.tokenizer, "apply_chat_template"):
             ids = self.tokenizer.apply_chat_template(
@@ -199,9 +207,15 @@ class ToolAgentLoop(AgentLoopBase):
             # ── stopping conditions ───────────────────────────────────────
             if len(response_mask) >= self.response_length:
                 break
-            if self.tool_config.max_assistant_turns and assistant_turns >= self.tool_config.max_assistant_turns:
+            if (
+                self.tool_config.max_assistant_turns
+                and assistant_turns >= self.tool_config.max_assistant_turns
+            ):
                 break
-            if self.tool_config.max_user_turns and user_turns >= self.tool_config.max_user_turns:
+            if (
+                self.tool_config.max_user_turns
+                and user_turns >= self.tool_config.max_user_turns
+            ):
                 break
 
             # ── parse tool calls ──────────────────────────────────────────
@@ -212,7 +226,10 @@ class ToolAgentLoop(AgentLoopBase):
             # ── execute tools in parallel ─────────────────────────────────
             with simple_timer("tool_calls", metrics):
                 tool_responses = await asyncio.gather(
-                    *[self._call_tool(tc) for tc in tool_calls[: self.tool_config.max_parallel_calls]]
+                    *[
+                        self._call_tool(tc)
+                        for tc in tool_calls[: self.tool_config.max_parallel_calls]
+                    ]
                 )
 
             if any(isinstance(r, Exception) for r in tool_responses):
@@ -226,7 +243,7 @@ class ToolAgentLoop(AgentLoopBase):
                 ),
             )
             # Strip the template prefix to avoid re-including the system prompt tokens.
-            tool_response_ids = tool_response_ids[self._template_prefix_len:]
+            tool_response_ids = tool_response_ids[self._template_prefix_len :]
 
             if len(response_mask) + len(tool_response_ids) >= self.response_length:
                 break
@@ -236,7 +253,7 @@ class ToolAgentLoop(AgentLoopBase):
             user_turns += 1
 
         # Split accumulated prompt_ids back into prompt / response portions.
-        final_response_ids = prompt_ids[-len(response_mask):]
+        final_response_ids = prompt_ids[-len(response_mask) :]
         final_prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
 
         return AgentLoopOutput(

@@ -109,7 +109,10 @@ class SearchClient:
                     async with session.post(fetch_url, json=payload) as resp:
                         resp.raise_for_status()
                         data = await resp.json()
-                    return [SearchResult.from_api_item(item) for item in data.get("result", [])]
+                    return [
+                        SearchResult.from_api_item(item)
+                        for item in data.get("result", [])
+                    ]
                 except Exception as exc:
                     last_exc = exc
                     if attempt < self.config.max_retries - 1:

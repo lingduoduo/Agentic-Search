@@ -27,7 +27,7 @@ def format_document(
     normalized_content = content or "No snippet available."
     document = {
         "title": normalized_title,
-        "contents": f"\"{normalized_title}\"\n{normalized_content}",
+        "contents": f'"{normalized_title}"\n{normalized_content}',
     }
     if url:
         document["url"] = url
@@ -56,6 +56,7 @@ def create_search_app(title: str, engine: T) -> FastAPI:
         return {"result": results}
 
     if hasattr(engine, "fetch_urls"):
+
         @app.post("/fetch")
         def fetch_endpoint(request: FetchRequest) -> dict[str, list]:
             try:
