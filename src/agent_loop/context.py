@@ -160,18 +160,19 @@ class AgentContext:
 
     def cited_results(self, answer_text: str) -> list[SearchResult]:
         """Return retrieved results whose citation keys appear in *answer_text*."""
-        cited_ids = self.cited_result_ids(answer_text)
-        if not cited_ids:
+        referenced = {
+            f"R{int(m.group(1))}Q{int(m.group(2))}D{int(m.group(3))}"
+            for m in _CITATION_RE.finditer(answer_text)
+        }
+        if not referenced:
             return []
-
-        cited_results: list[SearchResult] = []
+        results: list[SearchResult] = []
         for round_idx, round_ctxs in enumerate(self.rounds, 1):
             for query_idx, ctx in enumerate(round_ctxs, 1):
                 for doc_idx, result in enumerate(ctx.results, 1):
-                    key = f"R{round_idx}Q{query_idx}D{doc_idx}"
-                    if key in cited_ids:
-                        cited_results.append(result)
-        return cited_results
+                    if f"R{round_idx}Q{query_idx}D{doc_idx}" in referenced:
+                        results.append(result)
+        return results
 
     @property
     def num_results(self) -> int:

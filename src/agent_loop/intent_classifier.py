@@ -63,6 +63,15 @@ class _IntentClassifier:
 
         self._net = _Net().to(self._device)
 
+    def _pad_sequences(self, encoded: list[list[int]]):
+        max_len = max(len(ids) for ids in encoded) or 1
+        ids_tensor = self._torch.zeros(
+            len(encoded), max_len, dtype=self._torch.long, device=self._device
+        )
+        for i, ids in enumerate(encoded):
+            ids_tensor[i, : len(ids)] = self._torch.tensor(ids, dtype=self._torch.long)
+        return ids_tensor
+
     def train_batched(
         self,
         encoded: list[list[int]],
@@ -71,21 +80,16 @@ class _IntentClassifier:
         epochs: int,
         lr: float,
     ) -> None:
-        import torch
         import torch.nn as nn
 
-        optimizer = torch.optim.Adam(self._net.parameters(), lr=lr)
+        optimizer = self._torch.optim.Adam(self._net.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss()
         self._net.train()
 
-        # Pad sequences in a single batch tensor for efficiency.
-        max_len = max(len(ids) for ids in encoded) or 1
-        ids_tensor = torch.zeros(
-            len(encoded), max_len, dtype=torch.long, device=self._device
+        ids_tensor = self._pad_sequences(encoded)
+        labels_tensor = self._torch.tensor(
+            labels, dtype=self._torch.long, device=self._device
         )
-        for i, ids in enumerate(encoded):
-            ids_tensor[i, : len(ids)] = torch.tensor(ids, dtype=torch.long)
-        labels_tensor = torch.tensor(labels, dtype=torch.long, device=self._device)
 
         for _ in range(epochs):
             optimizer.zero_grad()
@@ -94,19 +98,12 @@ class _IntentClassifier:
             optimizer.step()
 
     def predict_batch(self, encoded: list[list[int]]) -> list[IntentPrediction]:
-        import torch
-
         self._net.eval()
-        max_len = max(len(ids) for ids in encoded) or 1
-        ids_tensor = torch.zeros(
-            len(encoded), max_len, dtype=torch.long, device=self._device
-        )
-        for i, ids in enumerate(encoded):
-            ids_tensor[i, : len(ids)] = torch.tensor(ids, dtype=torch.long)
+        ids_tensor = self._pad_sequences(encoded)
 
-        with torch.no_grad():
+        with self._torch.no_grad():
             logits = self._net(ids_tensor)
-            probs = torch.softmax(logits, dim=1)
+            probs = self._torch.softmax(logits, dim=1)
             top_probs, top_idx = probs.max(dim=1)
 
         return [
