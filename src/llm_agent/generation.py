@@ -109,7 +109,7 @@ def ask_llm(
     raise RuntimeError("LLM request failed after retries.") from last_error
 
 
-def search_simulate_sft(
+def search_simulate(
     ip: str | None,
     topk: int,
     temperature: float,
@@ -117,49 +117,13 @@ def search_simulate_sft(
     problem: str,
     ground_truth: str,
     gt_threshold: float,
+    use_examples: bool = False,
     llm_max_retries: int = 5,
 ) -> str:
-    prob = random.random()
-    if prob > gt_threshold:
-        prompt = f"""You are the Google search engine.
-Given a query, you need to generate five useful documents for the query.
-
-The user is trying to answer the question: "{problem}" whose answer is {ground_truth}.
-Each document should contain about 30 words, and these documents should contain useful information.
-
-Query: {query}
-Useful Output:
-"""
-    else:
-        prompt = f"""You are the Google search engine.
-Given a query, you need to generate five noisy documents for the query.
-
-The user is trying to answer the question: "{problem}" whose answer is {ground_truth}.
-Each document should contain about 30 words, and these documents should contain noisy information.
-
-Query: {query}
-Noisy Output:
-"""
-
-    results = ask_llm(ip, prompt, temperature, max_retries=llm_max_retries)
-    return "\n".join(results.replace("\n\n", "\n").split("\n")).split(
-        f"Doc {topk + 1}"
-    )[0]
-
-
-def search_simulate_prompt(
-    ip: str | None,
-    topk: int,
-    temperature: float,
-    query: str,
-    problem: str,
-    ground_truth: str,
-    gt_threshold: float,
-    llm_max_retries: int = 5,
-) -> str:
-    prob = random.random()
-    if prob > gt_threshold:
-        prompt = f"""You are the Google search engine.
+    useful = random.random() > gt_threshold
+    if use_examples:
+        if useful:
+            prompt = f"""You are the Google search engine.
 Given a query, you need to imitate the style of the following demos and generate five useful documents for the query.
 
 Here is an example:
@@ -179,8 +143,8 @@ You must directly output the English documents and not output any other texts.
 Query: {query}
 Useful Output:
 """
-    else:
-        prompt = f"""You are the Google search engine.
+        else:
+            prompt = f"""You are the Google search engine.
 Given a query, you need to imitate the style of the following demos and generate five related but noisy documents for the query.
 
 Here is an example:
@@ -194,6 +158,27 @@ Doc 5: Considerations around the visual and architectural design of the George W
 
 Each document should contain about 30 words, and these documents should contain related but noisy information.
 You must directly output the English documents and not output any other texts.
+
+Query: {query}
+Noisy Output:
+"""
+    else:
+        if useful:
+            prompt = f"""You are the Google search engine.
+Given a query, you need to generate five useful documents for the query.
+
+The user is trying to answer the question: "{problem}" whose answer is {ground_truth}.
+Each document should contain about 30 words, and these documents should contain useful information.
+
+Query: {query}
+Useful Output:
+"""
+        else:
+            prompt = f"""You are the Google search engine.
+Given a query, you need to generate five noisy documents for the query.
+
+The user is trying to answer the question: "{problem}" whose answer is {ground_truth}.
+Each document should contain about 30 words, and these documents should contain noisy information.
 
 Query: {query}
 Noisy Output:
@@ -418,12 +403,7 @@ class LLMGenerationManager:
             if not bool(active_mask.sum()):
                 break
 
-            gt_threshold = self.dynamic_threshold(
-                current_step,
-                total_steps,
-                step + 1,
-                self.config.max_turns + 1,
-            )
+            gt_threshold = self.dynamic_threshold(current_step, total_steps)
             rollings.batch = self.tensor_fn.cut_to_effective_len(
                 rollings.batch,
                 keys=["input_ids", "attention_mask", "position_ids"],
@@ -472,12 +452,7 @@ class LLMGenerationManager:
                     trajectory_turns[batch_index] = step + 1
 
         if bool(active_mask.sum()):
-            gt_threshold = self.dynamic_threshold(
-                current_step,
-                total_steps,
-                self.config.max_turns + 1,
-                self.config.max_turns + 1,
-            )
+            gt_threshold = self.dynamic_threshold(current_step, total_steps)
             rollings.batch = self.tensor_fn.cut_to_effective_len(
                 rollings.batch,
                 keys=["input_ids", "attention_mask", "position_ids"],
@@ -649,10 +624,7 @@ class LLMGenerationManager:
         self,
         current_step: int,
         total_steps: int,
-        current_turn: int = 1,
-        max_turns: int = 5,
     ) -> float:
-        del current_turn, max_turns
         if current_step >= total_steps:
             return self.config.end_threshold
 
@@ -808,8 +780,8 @@ class LLMGenerationManager:
             doc_texts = self.retrieve_from_wiki(
                 self.config.retriever_ip, query, self.config.topk
             )
-        elif search_mode == "simulate_sft":
-            doc_texts = search_simulate_sft(
+        elif search_mode in ("simulate_sft", "simulate_prompt"):
+            doc_texts = search_simulate(
                 self.config.llm_ip,
                 self.config.topk,
                 self.config.temperature,
@@ -817,17 +789,7 @@ class LLMGenerationManager:
                 problem,
                 ground_truth,
                 gt_threshold,
-                llm_max_retries=self.config.llm_max_retries,
-            )
-        elif search_mode == "simulate_prompt":
-            doc_texts = search_simulate_prompt(
-                self.config.llm_ip,
-                self.config.topk,
-                self.config.temperature,
-                query,
-                problem,
-                ground_truth,
-                gt_threshold,
+                use_examples=(search_mode == "simulate_prompt"),
                 llm_max_retries=self.config.llm_max_retries,
             )
         elif search_mode == "local":

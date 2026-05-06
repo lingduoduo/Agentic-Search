@@ -71,16 +71,10 @@ class SearchClient:
                 async with session.post(url, json=payload) as resp:
                     resp.raise_for_status()
                     return await resp.json()
-            except aiohttp.ClientResponseError as exc:
-                if exc.status < 500:
+            except Exception as exc:
+                if isinstance(exc, aiohttp.ClientResponseError) and exc.status < 500:
                     # 4xx errors are client-side mistakes — retrying won't help.
                     raise
-                last_exc = exc
-                if self._session is session:
-                    await self.aclose()
-                if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(0.5 * (2**attempt))
-            except Exception as exc:
                 last_exc = exc
                 if self._session is session:
                     await self.aclose()
