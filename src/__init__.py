@@ -34,9 +34,17 @@ __all__ = [
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
+    "GRPORolloutSample",
+    "PromptGroupSamplingConfig",
+    "ScoredGRPORollout",
+    "SFTExample",
     "SingleTurnAgentLoop",
+    "build_grpo_sampling_params",
+    "build_search_sft_example",
     "get_registered_agent_loop",
     "list_registered_agent_loops",
+    "sample_prompt_group",
+    "score_prompt_group",
 ]
 
 
@@ -54,9 +62,17 @@ def __getattr__(name: str) -> Any:
         "AgentLoopBase",
         "AgentLoopConfig",
         "AgentLoopOutput",
+        "GRPORolloutSample",
+        "PromptGroupSamplingConfig",
+        "ScoredGRPORollout",
+        "SFTExample",
         "SingleTurnAgentLoop",
+        "build_grpo_sampling_params",
+        "build_search_sft_example",
         "get_registered_agent_loop",
         "list_registered_agent_loops",
+        "sample_prompt_group",
+        "score_prompt_group",
     }:
         agent_loop_module = import_module(".agent_loop", __name__)
         return getattr(agent_loop_module, name)

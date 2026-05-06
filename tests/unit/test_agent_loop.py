@@ -563,6 +563,9 @@ def test_search_agent_loop_deduplicates_queries_and_urls_and_tracks_metrics():
     assert output.metrics["search_rounds"] == 1.0
     assert output.metrics["search_queries"] == 1.0
     assert output.metrics["fetched_pages"] == 1.0
+    assert len(output.context.fetched_pages) == 1
+    assert output.metrics["useful_fetched_pages"] == 1.0
+    assert output.metrics["unnecessary_fetch_count"] == 0.0
 
 
 def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
@@ -614,6 +617,8 @@ def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
     assert output.context.turns[0].task_id == "T1"
     assert output.context.turns[1].task_id == "T2"
     assert output.metrics["active_subquestions"] == 2.0
+    assert output.metrics["subquestions_covered"] == 2.0
+    assert output.metrics["subquestion_coverage_ratio"] == 1.0
 
 
 def test_search_agent_loop_rejects_answer_when_a_subquestion_is_unresolved():
@@ -668,6 +673,50 @@ def test_search_agent_loop_rejects_answer_when_a_subquestion_is_unresolved():
     assert "T2: identify the developer" in third_prompt
     assert "<answer_feedback>" in third_prompt
     assert output.context.num_rounds == 2
+
+
+def test_search_agent_loop_reports_subquestion_coverage_feedback():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: find founding year\nT2: find headquarters\n</subquestions>"
+            "<searches>\n[T1] company founding year\n</searches>"
+        ),
+        tokenizer.encode("<answer>Too early</answer>"),
+        tokenizer.encode("<searches>\n[T2] company headquarters\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R2Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=6,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("company founding year",): [
+                [SearchResult(contents='"Founded"\n1999')],
+            ],
+            ("company headquarters",): [
+                [SearchResult(contents='"HQ"\nNew York')],
+            ],
+        }
+    )
+
+    asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    second_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
+    )
+    assert "<subquestions_feedback>" in second_prompt
+    assert "Covered:" in second_prompt
+    assert "Needs more evidence:" in second_prompt
 
 
 def test_search_agent_loop_skips_repeated_queries_with_feedback():
@@ -756,6 +805,41 @@ def test_search_agent_loop_enforces_search_limit():
     assert output.metrics["search_limit_hits"] == 1.0
 
 
+def test_search_agent_loop_tracks_budget_exhausted_without_answer():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<search>beta query</search>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=2,
+            max_search_limit=1,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body')],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.final_answer is None
+    assert output.metrics["search_budget_exhausted_without_answer"] == 1.0
+
+
 def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():
     tokenizer = DummyTokenizerWithEncode()
     responses = [
@@ -782,6 +866,7 @@ def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():
     assert output.num_turns == 1
     assert output.context.num_rounds == 0
     assert output.metrics["direct_answers"] == 1.0
+    assert output.metrics["answer_allowed"] == 1.0
 
 
 def test_search_agent_loop_requests_search_after_search_decision():
@@ -858,6 +943,48 @@ def test_search_agent_loop_prompts_for_decision_when_no_action_before_search():
     )
     assert "<answer_feedback>" in second_prompt
     assert "Use <search_decision>answer</search_decision>" in second_prompt
+
+
+def test_search_agent_loop_emits_search_quality_metrics():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nweak query\nstrong query\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q2D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1,
+                min_total_results=2,
+                min_top_score=0.8,
+                require_scores=True,
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("weak query", "strong query"): [
+                [SearchResult(contents='"Weak"\nbody', score=0.2)],
+                [
+                    SearchResult(contents='"Strong"\nbody', score=0.95),
+                    SearchResult(contents='"Strong 2"\nbody', score=0.9),
+                ],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["search_quality_score"] == pytest.approx(0.5, abs=0.001)
+    assert output.metrics["evidence_insufficient_rounds"] == 1.0
+    assert output.metrics["final_evidence_sufficient"] == 0.0
+    assert output.metrics["answer_when_evidence_insufficient"] == 1.0
 
 
 def test_search_agent_loop_blocks_direct_answer_when_internal_knowledge_disabled():

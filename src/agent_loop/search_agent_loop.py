@@ -48,31 +48,39 @@ def _dedupe(items: list[str]) -> list[str]:
 
 def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) -> str:
     return (
-        "You are a reasoning assistant with the ability to perform web searches and fetch webpage content.\n\n"
-        "Tools:\n"
-        "- To write a brief research plan: use <plan>...</plan>.\n"
-        "- Before searching, decide whether internal knowledge is sufficient using <search_decision>answer</search_decision> or <search_decision>search</search_decision>.\n"
-        "- To split a complex question into focused research tracks: use <subquestions>...</subquestions>.\n"
-        "- To perform a search: use <search>single query</search> or <searches>one query per line</searches>.\n"
-        "  For multi-track research, prefix a query with a task id like [T1] query text.\n"
-        "- To fetch detailed content from specific URLs returned by search: use <fetch>url1, url2</fetch>.\n"
-        "- To provide the final response: use <answer>...</answer>.\n\n"
-        "System feedback:\n"
-        "- Search results are returned inside <information>...</information>.\n"
-        "- Search-quality judgments are returned inside <search_evaluation>...</search_evaluation>.\n"
-        "- Full webpage content is returned inside <full_page>...</full_page>.\n\n"
-        f"You may execute at most {max_search_limit} search rounds.\n"
-        f"You may fetch up to {max_url_fetch} URLs in one fetch request.\n\n"
-        "Workflow:\n"
-        "1. Plan.\n"
-        "2. Decide whether you can answer from internal knowledge or need external evidence.\n"
-        "3. If the question has multiple parts, declare subquestions.\n"
-        "4. Search, preferably with parallel queries when useful.\n"
-        "5. Track evidence for each subquestion.\n"
-        "6. If the evidence is weak, search again with refined keywords.\n"
-        "7. If snippets are not enough, fetch the most promising URLs.\n"
-        "8. Answer directly without search only when internal knowledge is sufficient; otherwise answer after evidence is sufficient for the overall question and each active subquestion.\n\n"
-        "Cite the evidence labels from the information blocks when you answer."
+        "You are a search-capable reasoning assistant operating in a strict agentic workflow.\n\n"
+        "Available actions:\n"
+        "- <plan>brief plan for the investigation</plan>\n"
+        "- <search_decision>answer</search_decision> if internal knowledge is enough, otherwise <search_decision>search</search_decision>\n"
+        "- <subquestions>one research subquestion per line</subquestions>\n"
+        "- <search>single query</search>\n"
+        "- <searches>parallel queries, one per line</searches>\n"
+        "- <fetch>comma or newline separated URLs to inspect in full</fetch>\n"
+        "- <answer>final answer with evidence citations</answer>\n\n"
+        "Important behavior rules:\n"
+        "- Start by thinking about the plan and whether search is actually needed.\n"
+        "- If the task has multiple claims or facets, declare subquestions before broad searching.\n"
+        "- For multi-track research, prefix a query with a task id like [T1] query text.\n"
+        "- Avoid duplicate queries. If a query was already run, refine it instead of repeating it.\n"
+        "- Use parallel searches when they cover different subquestions or hypotheses.\n"
+        "- Fetch only the most promising URLs when snippets are insufficient for a confident answer.\n"
+        "- Answer only when the evidence is sufficient for the overall question and each active subquestion, unless you explicitly decided internal knowledge was sufficient.\n"
+        "- Always cite evidence labels from <information> blocks in the final answer.\n\n"
+        "Environment feedback:\n"
+        "- <information> contains search results and citation labels.\n"
+        "- <search_evaluation> says whether evidence is sufficient or insufficient and highlights weak queries.\n"
+        "- <subquestions_feedback> reports which subquestions are covered or still missing evidence.\n"
+        "- <full_page> contains fetched page content.\n"
+        "- Duplicate queries may be skipped, search rounds are capped, and cached results may be reused.\n\n"
+        f"Budget: at most {max_search_limit} search rounds and at most {max_url_fetch} URLs per fetch request.\n\n"
+        "Preferred rollout:\n"
+        "1. <plan>\n"
+        "2. <search_decision>\n"
+        "3. <subquestions> when needed\n"
+        "4. <search> or <searches>\n"
+        "5. Inspect <search_evaluation> and subquestion coverage\n"
+        "6. Refine search or <fetch> strong candidates\n"
+        "7. <answer> once the answer is allowed by the evidence state"
     )
 
 
@@ -449,6 +457,32 @@ class SearchAgentLoop(AgentLoopBase):
             "<search_decision>search</search_decision> before retrieving evidence."
         )
 
+    def _build_subquestion_status_feedback(
+        self,
+        active_tasks: dict[str, str],
+        task_statuses: dict[str, bool],
+    ) -> str:
+        if not active_tasks:
+            return "No active subquestions."
+
+        covered: list[str] = []
+        missing: list[str] = []
+        for tid, desc in active_tasks.items():
+            line = f"{tid}: {desc}"
+            if task_statuses.get(tid, False):
+                covered.append(line)
+            else:
+                missing.append(line)
+
+        sections: list[str] = []
+        if covered:
+            sections.append("Covered:\n" + "\n".join(f"- {item}" for item in covered))
+        if missing:
+            sections.append(
+                "Needs more evidence:\n" + "\n".join(f"- {item}" for item in missing)
+            )
+        return "\n".join(sections)
+
     def _evaluate_tasks(
         self,
         search_contexts: list[SearchContext],
@@ -493,6 +527,9 @@ class SearchAgentLoop(AgentLoopBase):
             "page_cache_hits": 0.0,
             "decision_prompts": 0.0,
             "direct_answers": 0.0,
+            "evidence_sufficient_rounds": 0.0,
+            "evidence_insufficient_rounds": 0.0,
+            "search_quality_score_sum": 0.0,
         }
         request_id = uuid4().hex
         agent_ctx = AgentContext()
@@ -510,6 +547,7 @@ class SearchAgentLoop(AgentLoopBase):
         final_prompt_ids: list[int] = []
         num_turns = 0
         final_answer: str | None = None
+        action_trace_parts: list[str] = []
 
         # Per-run state
         latest_evaluation: SearchRoundEvaluation | None = None
@@ -554,6 +592,8 @@ class SearchAgentLoop(AgentLoopBase):
                 )
 
                 working_messages.append({"role": "assistant", "content": response_text})
+                if actions:
+                    action_trace_parts.append(response_text)
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
@@ -736,6 +776,17 @@ class SearchAgentLoop(AgentLoopBase):
                         latest_evaluation = self._result_evaluator.evaluate_round(
                             search_contexts
                         )
+                        sufficient_queries = sum(
+                            1 for qe in latest_evaluation.queries if qe.is_sufficient
+                        )
+                        if latest_evaluation.queries:
+                            metrics["search_quality_score_sum"] += (
+                                sufficient_queries / len(latest_evaluation.queries)
+                            )
+                        if latest_evaluation.is_sufficient:
+                            metrics["evidence_sufficient_rounds"] += 1.0
+                        else:
+                            metrics["evidence_insufficient_rounds"] += 1.0
                         for tid, ev in self._evaluate_tasks(search_contexts).items():
                             task_statuses[tid] = ev.is_sufficient
                         turn_observations.append(
@@ -743,7 +794,16 @@ class SearchAgentLoop(AgentLoopBase):
                                 agent_ctx.num_rounds, search_contexts, latest_evaluation
                             )
                         )
+                        if active_tasks:
+                            turn_observations.append(
+                                cfg.subquestions_obs_template.format(
+                                    content=self._build_subquestion_status_feedback(
+                                        active_tasks, task_statuses
+                                    )
+                                )
+                            )
                     else:
+                        metrics["evidence_insufficient_rounds"] += 1.0
                         turn_observations.append(
                             cfg.obs_template.format(
                                 content="No results returned. Try rephrasing the search query."
@@ -758,6 +818,7 @@ class SearchAgentLoop(AgentLoopBase):
                     )
                     pages = await self._fetch_with_cache(limited, page_cache)
                     metrics["fetched_pages"] += len(pages)
+                    agent_ctx.record_fetched_pages(pages)
                     turn_observations.append(
                         cfg.full_page_obs_template.format(
                             content=self._format_full_page_information(pages)
@@ -787,7 +848,60 @@ class SearchAgentLoop(AgentLoopBase):
         metrics["subquestion_coverage_ratio"] = (
             sum(task_statuses.values()) / len(task_statuses) if task_statuses else 1.0
         )
+        metrics["subquestions_covered"] = float(sum(task_statuses.values()))
         metrics["rounds_used"] = float(rounds_used)
+        metrics["budget_used_ratio"] = rounds_used / max(cfg.max_search_limit or 1, 1)
+        metrics["search_quality_score"] = (
+            metrics["search_quality_score_sum"] / metrics["search_rounds"]
+            if metrics["search_rounds"]
+            else 0.0
+        )
+        answer_allowed = False
+        if final_answer:
+            answer_allowed = bool(
+                (
+                    cfg.allow_internal_knowledge_answer
+                    and metrics["direct_answers"] > 0
+                    and rounds_used == 0
+                )
+                or not cfg.require_sufficient_evidence_before_answer
+                or self._has_sufficient_evidence(
+                    latest_evaluation, task_statuses, active_tasks
+                )
+            )
+        metrics["answer_allowed"] = 1.0 if answer_allowed else 0.0
+        final_evidence_sufficient = self._has_sufficient_evidence(
+            latest_evaluation, task_statuses, active_tasks
+        )
+        metrics["final_evidence_sufficient"] = 1.0 if final_evidence_sufficient else 0.0
+        useful_fetched_pages = 0.0
+        if final_answer and agent_ctx.fetched_pages:
+            cited_urls = {
+                result.url
+                for result in agent_ctx.cited_results(final_answer)
+                if result.url
+            }
+            useful_fetched_pages = float(
+                sum(1 for page in agent_ctx.fetched_pages if page.url in cited_urls)
+            )
+        metrics["useful_fetched_pages"] = useful_fetched_pages
+        metrics["unnecessary_fetch_count"] = max(
+            0.0, metrics["fetched_pages"] - useful_fetched_pages
+        )
+        answered_directly = metrics["direct_answers"] > 0.0 and rounds_used == 0
+        metrics["answer_when_evidence_insufficient"] = (
+            1.0
+            if (
+                final_answer and not answered_directly and not final_evidence_sufficient
+            )
+            else 0.0
+        )
+        search_limit = float(cfg.max_search_limit or 0)
+        metrics["search_budget_exhausted_without_answer"] = (
+            1.0
+            if (search_limit > 0 and rounds_used >= search_limit and not final_answer)
+            else 0.0
+        )
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
@@ -797,5 +911,7 @@ class SearchAgentLoop(AgentLoopBase):
             metrics=metrics,
             request_id=request_id,
             context=agent_ctx,
+            trajectory_messages=list(working_messages),
+            action_trace="\n".join(action_trace_parts) if action_trace_parts else None,
             final_answer=final_answer,
         )

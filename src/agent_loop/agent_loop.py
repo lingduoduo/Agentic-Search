@@ -52,7 +52,11 @@ class AgentLoopOutput:
     num_turns: int
     metrics: dict[str, float] = field(default_factory=dict)
     request_id: str | None = None
+    group_id: str | None = None
+    rollout_index: int | None = None
     context: Any | None = None  # AgentContext when produced by SearchAgentLoop
+    trajectory_messages: list[dict[str, Any]] = field(default_factory=list)
+    action_trace: str | None = None
     final_answer: str | None = None  # Content of the last <answer> tag, if any
 
 

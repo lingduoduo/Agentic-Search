@@ -21,15 +21,27 @@ class SearchRewardConfig:
     # Fraction of declared subquestions whose evidence was marked sufficient.
     subquestion_coverage_weight: float = 0.2
 
+    # Reward for good evaluator verdicts and strong per-query search quality.
+    search_quality_weight: float = 0.15
+
     # Applied per search round beyond the first (encourages efficiency).
     unnecessary_search_penalty: float = -0.05
 
     # Applied per repeated query issued across turns.
-    duplicate_query_penalty: float = -0.05
+    duplicate_query_penalty: float = -0.1
 
     # Applied once if rounds_used / max_search_rounds exceeds this threshold.
     budget_penalty_threshold: float = 0.8
     budget_penalty: float = -0.1
+
+    # Applied per fetched page that does not contribute to cited evidence.
+    unnecessary_fetch_penalty: float = -0.1
+
+    # Applied once when the agent answers despite insufficient evidence.
+    answer_when_evidence_insufficient_penalty: float = -0.2
+
+    # Applied once when the search budget is exhausted and no answer is produced.
+    search_budget_exhausted_without_answer_penalty: float = -0.2
 
     # Reward when fetched pages are cited in the final answer.
     fetch_usefulness_reward: float = 0.1
@@ -103,16 +115,20 @@ class SearchRewardFunction:
         # 3. Subquestion coverage: fraction of tasks with sufficient evidence.
         coverage = metrics.get("subquestion_coverage_ratio", 1.0)
 
-        # 4. Unnecessary-search penalty: each round beyond the first costs a little.
+        # 4. Search quality: combines the evaluator's final sufficiency verdict
+        # with the average fraction of strong queries across search rounds.
+        search_quality = self._search_quality(metrics)
+
+        # 5. Unnecessary-search penalty: each round beyond the first costs a little.
         rounds_used = int(metrics.get("rounds_used", 0))
         unnecessary_pen = cfg.unnecessary_search_penalty * max(0, rounds_used - 1)
 
-        # 5. Duplicate-query penalty.
+        # 6. Duplicate-query penalty.
         dup_pen = cfg.duplicate_query_penalty * metrics.get(
             "repeated_search_queries", 0.0
         )
 
-        # 6. Budget penalty: fired once when rounds consumed exceed the threshold.
+        # 7. Budget penalty: fired once when rounds consumed exceed the threshold.
         budget_fraction = rounds_used / max(cfg.max_search_rounds, 1)
         budget_pen = (
             cfg.budget_penalty
@@ -120,30 +136,50 @@ class SearchRewardFunction:
             else 0.0
         )
 
-        # 7. Fetch usefulness reward: pages were fetched AND at least one is cited.
-        # The reward requires an actual citation — a non-empty answer alone is not
-        # sufficient, because that would grant a free bonus for any <fetch> call.
-        fetch_reward = 0.0
-        if metrics.get("fetched_pages", 0.0) > 0 and ctx is not None:
-            if ctx.cited_result_ids(answer):
-                fetch_reward = cfg.fetch_usefulness_reward
+        # 8. Explicit penalties for fetch waste, premature answering, and budget
+        # exhaustion without an answer.
+        unnecessary_fetch_pen = cfg.unnecessary_fetch_penalty * metrics.get(
+            "unnecessary_fetch_count", 0.0
+        )
+        insufficient_answer_pen = (
+            cfg.answer_when_evidence_insufficient_penalty
+            * metrics.get("answer_when_evidence_insufficient", 0.0)
+        )
+        exhausted_without_answer_pen = (
+            cfg.search_budget_exhausted_without_answer_penalty
+            * metrics.get("search_budget_exhausted_without_answer", 0.0)
+        )
+
+        # 9. Fetch usefulness reward: fetched pages help only when the answer cites
+        # search results whose URLs were later fetched for deeper inspection.
+        fetch_reward = self._fetch_usefulness_reward(answer, ctx)
 
         total = (
             cfg.correctness_weight * correctness
             + cfg.citation_support_weight * citation_support
             + cfg.subquestion_coverage_weight * coverage
+            + cfg.search_quality_weight * search_quality
             + unnecessary_pen
             + dup_pen
             + budget_pen
+            + unnecessary_fetch_pen
+            + insufficient_answer_pen
+            + exhausted_without_answer_pen
             + fetch_reward
         )
         return {
             "correctness": cfg.correctness_weight * correctness,
             "citation_support": cfg.citation_support_weight * citation_support,
             "subquestion_coverage": cfg.subquestion_coverage_weight * coverage,
+            "search_quality": cfg.search_quality_weight * search_quality,
             "unnecessary_search_penalty": unnecessary_pen,
             "duplicate_query_penalty": dup_pen,
             "budget_penalty": budget_pen,
+            "unnecessary_fetch_penalty": unnecessary_fetch_pen,
+            "answer_when_evidence_insufficient_penalty": insufficient_answer_pen,
+            "search_budget_exhausted_without_answer_penalty": (
+                exhausted_without_answer_pen
+            ),
             "fetch_usefulness_reward": fetch_reward,
             "total": total,
         }
@@ -207,3 +243,32 @@ class SearchRewardFunction:
             return 0.0
         cited = len(ctx.cited_result_ids(answer))
         return cited / ctx.num_results
+
+    @staticmethod
+    def _search_quality(metrics: dict[str, float]) -> float:
+        """Blend final evidence sufficiency with average per-round query quality."""
+        final_sufficient = metrics.get("final_evidence_sufficient", 0.0)
+        avg_quality = metrics.get("search_quality_score", 0.0)
+        search_rounds = metrics.get("search_rounds", 0.0)
+
+        if search_rounds <= 0:
+            return metrics.get("answer_allowed", 0.0)
+        return (final_sufficient + avg_quality) / 2.0
+
+    def _fetch_usefulness_reward(
+        self,
+        answer: str,
+        ctx: AgentContext | None,
+    ) -> float:
+        """Reward fetches only when fetched URLs are actually used in cited evidence."""
+        if not answer or ctx is None or not ctx.fetched_pages:
+            return 0.0
+
+        fetched_urls = {page.url for page in ctx.fetched_pages if page.url}
+        if not fetched_urls:
+            return 0.0
+
+        cited_urls = {result.url for result in ctx.cited_results(answer) if result.url}
+        if cited_urls & fetched_urls:
+            return self.config.fetch_usefulness_reward
+        return 0.0

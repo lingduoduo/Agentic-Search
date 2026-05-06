@@ -100,9 +100,13 @@ class AgentContext:
     turns: list[SearchContext] = field(default_factory=list)
     rounds: list[list[SearchContext]] = field(default_factory=list)
     tasks: dict[str, str] = field(default_factory=dict)
+    fetched_pages: list[SearchResult] = field(default_factory=list)
 
     def register_tasks(self, tasks: dict[str, str]) -> None:
         self.tasks.update(tasks)
+
+    def record_fetched_pages(self, pages: list[SearchResult]) -> None:
+        self.fetched_pages.extend(pages)
 
     def add_turn(self, query: str, results: list[SearchResult]) -> SearchContext:
         return self.add_round([query], [results])[0]
@@ -153,6 +157,21 @@ class AgentContext:
                     if key in referenced:
                         valid.add(key)
         return frozenset(valid)
+
+    def cited_results(self, answer_text: str) -> list[SearchResult]:
+        """Return retrieved results whose citation keys appear in *answer_text*."""
+        cited_ids = self.cited_result_ids(answer_text)
+        if not cited_ids:
+            return []
+
+        cited_results: list[SearchResult] = []
+        for round_idx, round_ctxs in enumerate(self.rounds, 1):
+            for query_idx, ctx in enumerate(round_ctxs, 1):
+                for doc_idx, result in enumerate(ctx.results, 1):
+                    key = f"R{round_idx}Q{query_idx}D{doc_idx}"
+                    if key in cited_ids:
+                        cited_results.append(result)
+        return cited_results
 
     @property
     def num_results(self) -> int:

@@ -1,11 +1,12 @@
 # Agentic-Search
 
-A FastAPI codebase for search-backed retrieval services, multi-turn agentic research loops, and RL reward computation for GRPO training.
+A FastAPI codebase for search-backed retrieval services, multi-turn agentic research loops, full-trace SFT targets, and RL reward computation for GRPO training.
 
 - Google Custom Search and SerpAPI search servers
 - Dense (FAISS) and sparse (BM25) retrieval with optional reranking
-- `SearchAgentLoop`: plan → adaptive search decision → parallel queries → evidence evaluation → fetch → cited answer
-- `SearchRewardFunction`: seven-component reward signal + GRPO within-group advantage normalisation
+- `SearchAgentLoop`: plan → adaptive search decision → subquestions → parallel queries → evidence evaluation → fetch → cited answer
+- `SearchRewardFunction`: strategy-aware reward signal + GRPO within-group advantage normalisation
+- Full action-trace SFT support: train on `<plan> ... <answer>`, not only the final answer
 - Config-driven text preprocessing for structured documents and `rec_texts` payloads
 
 ## Project Structure
@@ -19,11 +20,13 @@ src/
     agent_loop.py          # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
     context.py             # SearchResult, SearchContext, AgentContext
     evaluation.py          # SearchResultEvaluator, SearchEvaluationConfig
+    grpo.py                # Prompt-group rollout sampling + within-group scoring helpers
     intent_classifier.py    # IntentPipeline: train / save / load + resolve_search_settings
     reward.py              # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
     search_agent_loop.py   # SearchAgentLoop (registered as "search_agent")
     search_client.py       # async aiohttp client with session reuse for /retrieve and /fetch
     single_turn_agent_loop.py
+    sft.py                 # Build supervised examples from full search-agent trajectories
     tool.py                # Tool, FunctionTool — tool abstraction and JSON schema
     tool_agent_loop.py     # ToolAgentLoop (registered as "tool_agent")
     tool_parser.py         # Hermes / Llama3 / JSON tool-call parsers
@@ -409,6 +412,7 @@ Important runtime behavior:
 - Repeated queries are skipped and called out explicitly.
 - Search and page fetches are cached for the duration of one run.
 - Multiple actions in one model response are supported and processed in order.
+- The output keeps the full assistant action trace so you can train on the whole strategy, not only the final answer.
 
 ### XML protocol
 
@@ -513,10 +517,39 @@ output = await loop.run(
     sampling_params={"temperature": 0.7},
 )
 print(output.final_answer)      # content of the last accepted <answer> tag
+print(output.action_trace)      # full assistant trace: <plan> ... <answer>
 print(output.context.queries)   # flat list of issued queries
 print(output.context.tasks)     # registered subquestions, if any
 print(output.metrics)           # timing, cache, gating, search, and RL-ready counters
 ```
+
+### Full-trace SFT
+
+The search loop now exposes the full assistant trajectory, not just `output.final_answer`. This makes it straightforward to supervise the whole search policy:
+
+```xml
+<plan>...</plan>
+<search_decision>search</search_decision>
+<subquestions>...</subquestions>
+<searches>...</searches>
+<fetch>...</fetch>
+<answer>...</answer>
+```
+
+Programmatic helper:
+
+```python
+from src.agent_loop import build_search_sft_example
+
+example = build_search_sft_example(
+    [{"role": "user", "content": "Compare dense vs sparse retrieval."}],
+    output,
+)
+
+print(example.completion)  # full assistant action trace
+```
+
+Set `include_environment_messages=True` if you want to preserve loop-generated feedback such as `<information>` and `<search_evaluation>` in the returned trajectory.
 
 ### Tool agent
 
@@ -553,7 +586,11 @@ Supported `tool_parser_format` values:
 | `num_turns` | `int` | Number of generation steps taken |
 | `final_answer` | `str \| None` | Content of the last accepted `<answer>` tag; `None` if the loop exhausted `max_turns` without a valid answer |
 | `metrics` | `dict[str, float]` | See metrics table below |
+| `group_id` | `str \| None` | Optional prompt-group ID for GRPO-style grouped rollouts |
+| `rollout_index` | `int \| None` | Optional rollout index within a prompt group |
 | `context` | `AgentContext` | Full search state — all rounds, tasks, and results |
+| `trajectory_messages` | `list[dict[str, Any]]` | Full multi-turn conversation including assistant actions and loop feedback |
+| `action_trace` | `str \| None` | Concatenated assistant XML trace across turns, e.g. `<plan>...<answer>...` |
 
 ### Context objects
 
@@ -566,6 +603,7 @@ Supported `tool_parser_format` values:
   - `.queries` — flat list of query strings in issue order
   - `.num_rounds`, `.num_searches`, `.num_results`
   - `.cited_result_ids(answer_text)` — returns a `frozenset[str]` of citation keys (e.g. `"R1Q2D3"`) that appear in `answer_text` and map to an actual retrieved result; used by the reward function
+  - `.cited_results(answer_text)` — returns the retrieved `SearchResult` objects referenced by valid citations
 
 ### Metrics (`output.metrics`)
 
@@ -584,6 +622,8 @@ Raw counters:
 | `repeated_search_queries` | Queries skipped because they were issued in a previous turn |
 | `search_limit_hits` | Turns where the round cap blocked further searches |
 | `active_subquestions` | Number of registered subquestion tasks |
+| `evidence_sufficient_rounds` | Search rounds whose evaluator verdict was sufficient |
+| `evidence_insufficient_rounds` | Search rounds whose evaluator verdict was insufficient |
 
 Derived metrics (computed at end of `run()`, ready for the reward function):
 
@@ -592,6 +632,15 @@ Derived metrics (computed at end of `run()`, ready for the reward function):
 | `rounds_used` | Alias of `search_rounds` as a float, for reward computation |
 | `repeated_query_ratio` | `repeated / (dispatched + repeated)` — always in `[0, 1]` |
 | `subquestion_coverage_ratio` | Fraction of declared subquestions whose evidence was marked sufficient; `1.0` when no subquestions were declared |
+| `subquestions_covered` | Count of subquestions marked sufficient by the evaluator |
+| `budget_used_ratio` | `rounds_used / max_search_limit` |
+| `search_quality_score` | Average per-round fraction of evaluator-approved queries |
+| `answer_allowed` | `1.0` when the final answer was accepted by loop policy |
+| `final_evidence_sufficient` | `1.0` when the final evidence state was sufficient |
+| `useful_fetched_pages` | Count of fetched pages whose URLs overlap with cited evidence |
+| `unnecessary_fetch_count` | Count of fetched pages not used by cited evidence |
+| `answer_when_evidence_insufficient` | `1.0` if the rollout answered despite insufficient evidence |
+| `search_budget_exhausted_without_answer` | `1.0` if the rollout hit the search limit and still produced no answer |
 
 ## Reward Function & RL Training
 
@@ -604,10 +653,14 @@ Derived metrics (computed at end of `run()`, ready for the reward function):
 | Answer correctness | `correctness_weight` | `judge_fn(final_answer, ground_truth)` — inject any scorer (exact-match, F1, LLM judge) |
 | Citation support | `citation_support_weight` | Fraction of retrieved results cited in the final answer via `[R{r}Q{q}D{d}]` labels |
 | Subquestion coverage | `subquestion_coverage_weight` | Fraction of declared subquestions with sufficient evidence at loop exit |
+| Search quality | `search_quality_weight` | Blends final evidence sufficiency with average per-round query quality |
 | Unnecessary-search penalty | `unnecessary_search_penalty` | Per search round beyond the first; encourages efficiency |
 | Duplicate-query penalty | `duplicate_query_penalty` | Per repeated query issued across turns |
 | Budget penalty | `budget_penalty` / `budget_penalty_threshold` | Fired once when `rounds_used / max_search_rounds ≥ threshold` |
-| Fetch usefulness reward | `fetch_usefulness_reward` | Rewarded when at least one fetched page is actually cited in the answer |
+| Unnecessary-fetch penalty | `unnecessary_fetch_penalty` | Per fetched page that does not contribute to cited evidence |
+| Insufficient-evidence answer penalty | `answer_when_evidence_insufficient_penalty` | Fired when the rollout answers while evidence is still insufficient |
+| Budget-exhausted-without-answer penalty | `search_budget_exhausted_without_answer_penalty` | Fired when the rollout hits the search budget and still produces no answer |
+| Fetch usefulness reward | `fetch_usefulness_reward` | Rewarded when cited evidence overlaps with URLs that were actually fetched |
 
 ### Usage
 
@@ -618,10 +671,14 @@ reward_fn = SearchRewardFunction(SearchRewardConfig(
     correctness_weight=1.0,
     citation_support_weight=0.3,
     subquestion_coverage_weight=0.2,
+    search_quality_weight=0.15,
     unnecessary_search_penalty=-0.05,
-    duplicate_query_penalty=-0.05,
+    duplicate_query_penalty=-0.1,
     budget_penalty=-0.1,
     budget_penalty_threshold=0.8,
+    unnecessary_fetch_penalty=-0.1,
+    answer_when_evidence_insufficient_penalty=-0.2,
+    search_budget_exhausted_without_answer_penalty=-0.2,
     fetch_usefulness_reward=0.1,
     max_search_rounds=5,   # match SearchAgentLoopConfig.max_search_limit
 ))
@@ -638,14 +695,46 @@ rewards = [
 # Labelled breakdown for logging / debugging
 components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=exact_match)
 # {"correctness": 1.0, "citation_support": 0.15, "subquestion_coverage": 0.2,
-#  "unnecessary_search_penalty": -0.05, "duplicate_query_penalty": 0.0,
-#  "budget_penalty": 0.0, "fetch_usefulness_reward": 0.0, "total": 1.3}
+#  "search_quality": 0.15, "unnecessary_search_penalty": -0.05,
+#  "duplicate_query_penalty": 0.0, "budget_penalty": 0.0,
+#  "unnecessary_fetch_penalty": 0.0,
+#  "answer_when_evidence_insufficient_penalty": 0.0,
+#  "search_budget_exhausted_without_answer_penalty": 0.0,
+#  "fetch_usefulness_reward": 0.0, "total": 1.45}
 
 # GRPO: normalise rewards within each prompt group
 # group_ids[i] is the prompt that produced outputs[i]
 advantages = reward_fn.compute_batch_advantages(rewards, group_ids=["p1", "p1", "p2", "p2"])
 # advantage_i = (reward_i - group_mean) / (group_std + 1e-8)
 ```
+
+### Grouped rollouts for GRPO
+
+The repo includes helpers for generating and scoring multiple trajectories for the same question. This is useful when you want GRPO to compare strategies such as:
+
+1. answer directly
+2. search once
+3. decompose + parallel search
+4. search + fetch
+
+```python
+from src.agent_loop import sample_prompt_group, score_prompt_group
+
+samples = await sample_prompt_group(
+    loop_factory,
+    question="Compare dense vs sparse retrieval.",
+    sampling_params={"temperature": 0.7, "top_p": 0.9, "max_tokens": 512},
+    num_rollouts=4,
+)
+
+scored = score_prompt_group(
+    samples,
+    ground_truth="...",
+    judge_fn=my_judge_fn,
+)
+```
+
+Each rollout gets a shared `group_id`, its own `rollout_index`, a scalar reward, and a within-group GRPO advantage. Better research strategies end up with positive advantage; wasteful or unsupported trajectories get negative advantage.
 
 ### GRPO advantage normalisation
 
@@ -704,7 +793,9 @@ Unit test coverage:
 | File | What is tested |
 |------|---------------|
 | `test_agent_loop.py` | `AgentLoopBase`; `SingleTurnAgentLoop`; `SearchAgentLoop` — plan, parallel search, multi-round refinement, subquestions, `<fetch>`, search+fetch in one turn, evaluation feedback, answer gating, adaptive search-decision, direct internal-knowledge answer, repeated-query dedup, search-round limit, cache and metrics, search client cleanup; `SearchResultEvaluator`; `SearchClientConfig.get_fetch_url` |
-| `test_reward.py` | `AgentContext.cited_result_ids` — valid citations, out-of-range doc index, empty answer; `AgentContext.num_results`; `SearchRewardFunction.compute` — all seven reward components individually, context=None path, fetch-citation guard (must cite, not just answer); `reward_components` totals match `compute`; GRPO `compute_batch_advantages` — within-group normalisation, cross-group independence, single-sample groups, length mismatch guard; integration tests for `final_answer` capture and derived metric emission |
+| `test_reward.py` | `AgentContext.cited_result_ids` — valid citations, out-of-range doc index, empty answer; `AgentContext.num_results`; `SearchRewardFunction.compute` — reward components, explicit penalties, context=None path, fetch-citation guard; `reward_components` totals match `compute`; GRPO `compute_batch_advantages` — within-group normalisation, cross-group independence, single-sample groups, length mismatch guard; integration tests for `final_answer` capture and derived metric emission |
+| `test_grpo.py` | Prompt-group rollout sampling, shared `group_id`, rollout indices, and within-group scoring helpers |
+| `test_sft.py` | Full assistant action-trace capture and SFT example construction from multi-turn search trajectories |
 | `test_search_client.py` | `SearchClient` session reuse and `aclose()` lifecycle |
 | `test_intent_classifier.py` | `Vocabulary` sequence training; `IntentPipeline` untrained guard; `resolve_search_settings` purchase / low-confidence / qa / recommendation policies; `INTENT_LABELS` snapshot; save/load round-trip; save-before-train guard |
 | `test_run_agentic_search.py` | `_build_prompt_ids_sync` chat-template fallback; `_validate_local_generation_config` encoder-only rejection; `_friendly_model_load_error` gated/missing/cache-miss messages; `_resolve_local_device`; `_has_accelerate`; `_parse_major_minor`; `_validate_local_runtime_device` MPS guard; `_validate_local_runtime_stack` old-stack rejection and CPU/new-stack allowance; `LocalServerManager._generate_sync` greedy-decode attention mask and wall-clock stopping criteria |

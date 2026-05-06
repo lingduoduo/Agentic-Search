@@ -69,18 +69,20 @@ def _exact_match(answer: str, ground_truth: str) -> float:
 def _make_ctx_with_results() -> AgentContext:
     ctx = AgentContext()
     results_r1q1 = [
-        SearchResult(contents="doc A", score=0.9),
-        SearchResult(contents="doc B", score=0.7),
+        SearchResult(contents="doc A", score=0.9, url="https://example.com/a"),
+        SearchResult(contents="doc B", score=0.7, url="https://example.com/b"),
     ]
     results_r1q2 = [
-        SearchResult(contents="doc C", score=0.8),
+        SearchResult(contents="doc C", score=0.8, url="https://example.com/c"),
     ]
     ctx.add_round(
         queries=["query1", "query2"],
         results_by_query=[results_r1q1, results_r1q2],
     )
     # Round 2
-    results_r2q1 = [SearchResult(contents="doc D", score=0.6)]
+    results_r2q1 = [
+        SearchResult(contents="doc D", score=0.6, url="https://example.com/d")
+    ]
     ctx.add_round(queries=["query3"], results_by_query=[results_r2q1])
     return ctx
 
@@ -181,6 +183,60 @@ def test_reward_duplicate_query_penalty():
     output = _output_with_answer("x", repeated_search_queries=3.0)
     reward = rf.compute(output, ground_truth="x", judge_fn=_exact_match)
     assert reward == pytest.approx(-0.3, abs=0.001)
+
+
+def test_reward_unnecessary_fetch_penalty():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=0.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            budget_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+            unnecessary_fetch_penalty=-0.1,
+        )
+    )
+    output = _output_with_answer("x", unnecessary_fetch_count=2.0)
+    reward = rf.compute(output, ground_truth="x", judge_fn=_exact_match)
+    assert reward == pytest.approx(-0.2, abs=0.001)
+
+
+def test_reward_answer_when_evidence_insufficient_penalty():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=0.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            budget_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+            answer_when_evidence_insufficient_penalty=-0.2,
+        )
+    )
+    output = _output_with_answer("x", answer_when_evidence_insufficient=1.0)
+    reward = rf.compute(output, ground_truth="x", judge_fn=_exact_match)
+    assert reward == pytest.approx(-0.2, abs=0.001)
+
+
+def test_reward_search_budget_exhausted_without_answer_penalty():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=0.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            budget_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+            search_budget_exhausted_without_answer_penalty=-0.2,
+        )
+    )
+    output = _output_with_answer(None, search_budget_exhausted_without_answer=1.0)
+    reward = rf.compute(output, ground_truth="x", judge_fn=_exact_match)
+    assert reward == pytest.approx(-0.2, abs=0.001)
 
 
 def test_reward_unnecessary_search_penalty():
@@ -306,17 +362,61 @@ def test_fetch_reward_requires_citation_not_just_nonempty_answer():
     rf = SearchRewardFunction(cfg)
     # Answer is non-empty but cites nothing from the context
     output = _output_with_answer("An answer with no citations.", fetched_pages=2.0)
+    output.context.record_fetched_pages(
+        [SearchResult(contents="full page", url="https://example.com/a")]
+    )
     reward = rf.compute(output, ground_truth="anything", judge_fn=lambda a, g: 0.0)
     assert reward == pytest.approx(0.0, abs=0.001)
 
-    # Answer actually cites a retrieved result
+    # Answer cites a retrieved result whose URL was fetched.
     output_with_cite = _output_with_answer(
         "[R1Q1D1] proves the answer.", fetched_pages=2.0
+    )
+    output_with_cite.context.record_fetched_pages(
+        [SearchResult(contents="full page", url="https://example.com/a")]
     )
     reward_with_cite = rf.compute(
         output_with_cite, ground_truth="anything", judge_fn=lambda a, g: 0.0
     )
     assert reward_with_cite == pytest.approx(0.5, abs=0.001)
+
+
+def test_fetch_reward_requires_overlap_between_fetched_and_cited_urls():
+    cfg = SearchRewardConfig(
+        correctness_weight=0.0,
+        citation_support_weight=0.0,
+        subquestion_coverage_weight=0.0,
+        search_quality_weight=0.0,
+        unnecessary_search_penalty=0.0,
+        fetch_usefulness_reward=0.5,
+    )
+    rf = SearchRewardFunction(cfg)
+    output = _output_with_answer("[R1Q1D1] cited", fetched_pages=1.0)
+    output.context.record_fetched_pages(
+        [SearchResult(contents="other page", url="https://example.com/z")]
+    )
+    reward = rf.compute(output, ground_truth="anything", judge_fn=lambda a, g: 0.0)
+    assert reward == pytest.approx(0.0, abs=0.001)
+
+
+def test_reward_search_quality_uses_evaluator_metrics():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=0.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=1.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    output = _output_with_answer(
+        "x",
+        search_rounds=2.0,
+        search_quality_score=0.5,
+        final_evidence_sufficient=1.0,
+    )
+    reward = rf.compute(output, ground_truth="x", judge_fn=lambda a, g: 0.0)
+    assert reward == pytest.approx(0.75, abs=0.001)
 
 
 # ---------------------------------------------------------------------------
