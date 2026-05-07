@@ -7,6 +7,7 @@ torch = pytest.importorskip("torch", reason="torch not installed", exc_type=Impo
 from src.llm_agent.generation import (  # noqa: E402
     GenerationConfig,
     LLMGenerationManager,
+    PPOPolicyLossConfig,
     RolloutTrajectory,
     SearchBatch,
 )
@@ -370,6 +371,242 @@ def test_per_token_kl_is_zero_when_policies_are_identical():
     batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-1.0, -2.0])
     kl = manager.per_token_kl(batch)
     assert torch.allclose(kl, torch.zeros_like(kl), atol=1e-6)
+
+
+def test_compute_policy_loss_matches_clipped_ppo_objective():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-0.5, -2.3])
+    advantages = torch.tensor([[1.0, -1.0]], dtype=torch.float32)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    ratio = torch.exp(torch.tensor([[0.5, -0.3]], dtype=torch.float32))
+    clipped_ratio = torch.clamp(ratio, 0.8, 1.2)
+    expected_terms = torch.minimum(ratio * advantages, clipped_ratio * advantages)
+    expected_loss = -(expected_terms.sum() / 2.0)
+
+    assert torch.allclose(loss, expected_loss, atol=1e-5)
+    assert "policy_loss" in batch.batch
+    assert "clipped_prob_ratio" in batch.batch
+    assert "clip_fraction" in batch.batch
+
+
+def test_compute_policy_loss_ignores_observation_tokens_via_action_mask():
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.ones(1, 3, dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[1, 0, 1]], dtype=torch.long),
+        }
+    )
+    batch.batch["old_log_probs"] = torch.tensor(
+        [[-1.0, -9.0, -2.0]], dtype=torch.float32
+    )
+    batch.batch["new_log_probs"] = torch.tensor(
+        [[-0.9, 5.0, -1.7]], dtype=torch.float32
+    )
+    advantages = torch.tensor([[1.0, 100.0, 2.0]], dtype=torch.float32)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    ratio = torch.exp(torch.tensor([[0.1, 0.3]], dtype=torch.float32))
+    clipped_ratio = torch.clamp(ratio, 0.8, 1.2)
+    expected_terms = torch.minimum(
+        ratio * torch.tensor([[1.0, 2.0]], dtype=torch.float32),
+        clipped_ratio * torch.tensor([[1.0, 2.0]], dtype=torch.float32),
+    )
+    expected_loss = -(expected_terms.sum() / 2.0)
+    assert torch.allclose(loss, expected_loss, atol=1e-5)
+
+
+def test_compute_policy_loss_adds_kl_penalty_when_requested():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-0.5, -1.5])
+    advantages = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.1),
+    )
+
+    ratio = torch.exp(torch.tensor([[0.5, 0.5]], dtype=torch.float32))
+    clipped_ratio = torch.clamp(ratio, 0.8, 1.2)
+    expected_policy = (
+        torch.minimum(
+            ratio * advantages,
+            clipped_ratio * advantages,
+        ).sum()
+        / 2.0
+    )
+    kl = manager.per_token_kl(batch).sum() / 2.0
+    expected_loss = -expected_policy + 0.1 * kl
+    assert torch.allclose(loss, expected_loss, atol=1e-5)
+
+
+def test_compute_policy_loss_requires_advantages():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0], new=[-0.5])
+    with pytest.raises(ValueError, match="advantages not found"):
+        manager.compute_policy_loss(batch)
+
+
+# ---------------------------------------------------------------------------
+# compute_action_type_masks and policy_loss_breakdown
+# ---------------------------------------------------------------------------
+
+
+class CharTokenizer:
+    """Character-level tokenizer for action-type mask tests.
+
+    Each character maps to its Unicode ordinal; pad_token_id == 0 (null byte).
+    Supports encode/decode so _token_char_offsets can reconstruct spans.
+    """
+
+    pad_token_id = 0
+
+    def encode(self, text: str) -> list[int]:
+        return [ord(c) for c in text]
+
+    def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
+        return "".join(chr(i) for i in ids if i != 0)
+
+
+def _manager_with_char_tokenizer() -> LLMGenerationManager:
+    return LLMGenerationManager(
+        tokenizer=CharTokenizer(),
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=512,
+            max_response_length=256,
+            max_obs_length=64,
+            num_gpus=1,
+        ),
+        generation_backend=DummyActorRolloutWithLogProb(),
+    )
+
+
+def _batch_from_texts(*responses: str) -> SearchBatch:
+    """Encode response strings as character-level token IDs (ord-based)."""
+    encoded = [[ord(c) for c in r] for r in responses]
+    max_len = max(len(e) for e in encoded)
+    padded = [e + [0] * (max_len - len(e)) for e in encoded]
+    t = torch.tensor(padded, dtype=torch.long)
+    return SearchBatch.from_dict(
+        {"responses": t, "responses_with_info_mask": t.clone()}
+    )
+
+
+def test_compute_action_type_masks_identifies_search_and_answer_tokens():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>query</search><answer>result</answer>"
+    batch = _batch_from_texts(text)
+    masks = manager.compute_action_type_masks(batch)
+
+    assert set(masks.keys()) == {"search", "plan", "fetch", "answer"}
+    # Every character token falls in exactly one action block
+    combined = sum(masks[t][0] for t in ("search", "answer", "plan", "fetch"))
+    assert combined.sum().item() == pytest.approx(len(text))
+    # search mask covers exactly the <search>…</search> span
+    search_span_len = len("<search>query</search>")
+    assert masks["search"][0, :search_span_len].sum().item() == pytest.approx(
+        search_span_len
+    )
+    assert masks["search"][0, search_span_len:].sum().item() == pytest.approx(0.0)
+
+
+def test_compute_action_type_masks_handles_plan_fetch_tags():
+    manager = _manager_with_char_tokenizer()
+    text = "<plan>think</plan><fetch>url</fetch>"
+    batch = _batch_from_texts(text)
+    masks = manager.compute_action_type_masks(batch)
+
+    plan_len = len("<plan>think</plan>")
+    assert masks["plan"][0, :plan_len].sum().item() == pytest.approx(plan_len)
+    assert masks["plan"][0, plan_len:].sum().item() == pytest.approx(0.0)
+    fetch_len = len("<fetch>url</fetch>")
+    assert masks["fetch"][
+        0, plan_len : plan_len + fetch_len
+    ].sum().item() == pytest.approx(fetch_len)
+
+
+def test_compute_action_type_masks_multi_batch():
+    manager = _manager_with_char_tokenizer()
+    batch = _batch_from_texts("<search>q</search>", "<answer>a</answer>")
+    masks = manager.compute_action_type_masks(batch)
+
+    assert masks["search"][0].sum().item() > 0
+    assert masks["answer"][0].sum().item() == 0.0
+    assert masks["answer"][1].sum().item() > 0
+    assert masks["search"][1].sum().item() == 0.0
+
+
+def test_policy_loss_breakdown_returns_per_type_scalars():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    breakdown = manager.policy_loss_breakdown(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    assert set(breakdown.keys()) == {"search", "plan", "fetch", "answer"}
+    # ratio = exp(0.1) ≈ 1.105, within clip → positive objective for present types
+    assert breakdown["search"].item() > 0.0
+    assert breakdown["answer"].item() > 0.0
+    # plan and fetch absent from text → their masks are all-zero → 0 contribution
+    assert breakdown["plan"].item() == pytest.approx(0.0, abs=1e-5)
+    assert breakdown["fetch"].item() == pytest.approx(0.0, abs=1e-5)
+
+
+def test_policy_loss_breakdown_requires_advantages():
+    manager = _manager_with_char_tokenizer()
+    batch = _batch_from_texts("<answer>x</answer>")
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.ones(1, n) * -1.0
+    batch.batch["new_log_probs"] = torch.ones(1, n) * -0.9
+    with pytest.raises(ValueError, match="advantages not found"):
+        manager.policy_loss_breakdown(batch)
+
+
+def test_compute_policy_loss_action_type_weights_upweight_answer():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><answer>x</answer>"
+    batch_base = _batch_from_texts(text)
+    batch_weighted = _batch_from_texts(text)
+    n = batch_base.batch["responses"].shape[1]
+    for b in (batch_base, batch_weighted):
+        b.batch["old_log_probs"] = torch.full((1, n), -1.0)
+        b.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    loss_base = manager.compute_policy_loss(
+        batch_base, advantages=advantages, config=PPOPolicyLossConfig(clip_epsilon=0.2)
+    )
+    loss_weighted = manager.compute_policy_loss(
+        batch_weighted,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(
+            clip_epsilon=0.2, action_type_weights={"answer": 2.0}
+        ),
+    )
+    # Upweighting answer tokens increases the objective → negated loss is smaller
+    assert loss_weighted.item() < loss_base.item()
 
 
 def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
