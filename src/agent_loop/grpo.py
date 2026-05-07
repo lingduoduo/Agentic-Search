@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Callable
 from uuid import uuid4
 
 from .agent_loop import AgentLoopBase, AgentLoopOutput
+from .data import PromptBatch
 from .reward import SearchRewardFunction
 
 
@@ -76,15 +78,20 @@ def build_grpo_sampling_params(
 async def sample_prompt_group(
     loop_factory: Callable[[], AgentLoopBase],
     *,
-    question: str,
+    question: str | None = None,
+    messages: list[dict[str, Any]] | None = None,
     sampling_params: dict[str, Any],
     num_rollouts: int = 4,
     sampling_variants: list[dict[str, Any]] | None = None,
     group_id: str | None = None,
 ) -> list[GRPORolloutSample]:
-    """Generate multiple rollouts for the same question under one group id."""
+    """Generate multiple rollouts for the same prompt group under one group id."""
     if num_rollouts <= 0:
         raise ValueError("num_rollouts must be positive.")
+    if question is None and messages is None:
+        raise ValueError("Either `question` or `messages` must be provided.")
+    if question is not None and messages is not None:
+        raise ValueError("Provide only one of `question` or `messages`.")
 
     resolved_group_id = group_id or f"prompt_group_{uuid4().hex}"
     variants = sampling_variants or build_grpo_sampling_params(
@@ -94,24 +101,56 @@ async def sample_prompt_group(
     if len(variants) != num_rollouts:
         raise ValueError("sampling_variants length must equal num_rollouts.")
 
-    samples: list[GRPORolloutSample] = []
-    for rollout_index, rollout_sampling_params in enumerate(variants):
+    resolved_messages = (
+        [{"role": "user", "content": question}] if messages is None else list(messages)
+    )
+
+    async def _run_rollout(
+        rollout_index: int, rollout_sampling_params: dict[str, Any]
+    ) -> GRPORolloutSample:
         loop = loop_factory()
         output = await loop.run(
-            messages=[{"role": "user", "content": question}],
+            messages=resolved_messages,
             sampling_params=rollout_sampling_params,
         )
         output.group_id = resolved_group_id
         output.rollout_index = rollout_index
-        samples.append(
-            GRPORolloutSample(
-                group_id=resolved_group_id,
-                rollout_index=rollout_index,
-                sampling_params=dict(rollout_sampling_params),
-                output=output,
-            )
+        return GRPORolloutSample(
+            group_id=resolved_group_id,
+            rollout_index=rollout_index,
+            sampling_params=dict(rollout_sampling_params),
+            output=output,
         )
-    return samples
+
+    return list(
+        await asyncio.gather(*[_run_rollout(i, p) for i, p in enumerate(variants)])
+    )
+
+
+async def sample_prompt_batch(
+    loop_factory: Callable[[], AgentLoopBase],
+    batch: PromptBatch,
+    *,
+    sampling_params: dict[str, Any],
+    num_rollouts: int = 4,
+    sampling_variants: list[dict[str, Any]] | None = None,
+) -> list[list[GRPORolloutSample]]:
+    """Generate rollout groups for every prompt in a DataLoader batch.
+
+    Each item in the batch becomes one prompt group with `num_rollouts`
+    concurrently sampled rollouts.  All groups are dispatched concurrently.
+    """
+    group_tasks = [
+        sample_prompt_group(
+            loop_factory,
+            messages=messages,
+            sampling_params=sampling_params,
+            num_rollouts=num_rollouts,
+            sampling_variants=sampling_variants,
+        )
+        for messages in batch.messages
+    ]
+    return list(await asyncio.gather(*group_tasks))
 
 
 def score_prompt_group(
@@ -154,4 +193,28 @@ def score_prompt_group(
         for sample, reward, components, advantage in zip(
             samples, rewards, reward_components, advantages
         )
+    ]
+
+
+def score_prompt_batch(
+    grouped_samples: list[list[GRPORolloutSample]],
+    *,
+    ground_truths: list[str],
+    judge_fn: Callable[[str, str], float],
+    reward_fn: SearchRewardFunction | None = None,
+) -> list[list[ScoredGRPORollout]]:
+    """Score all rollout groups from a DataLoader batch.
+
+    Args:
+        grouped_samples: output of `sample_prompt_batch` — one list per prompt.
+        ground_truths: aligned to `batch.ground_truths`.
+    """
+    if len(grouped_samples) != len(ground_truths):
+        raise ValueError("grouped_samples and ground_truths must have the same length.")
+    reward_function = reward_fn or SearchRewardFunction()
+    return [
+        score_prompt_group(
+            samples, ground_truth=gt, judge_fn=judge_fn, reward_fn=reward_function
+        )
+        for samples, gt in zip(grouped_samples, ground_truths)
     ]

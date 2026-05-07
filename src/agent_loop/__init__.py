@@ -10,6 +10,18 @@ from .agent_loop import (
     simple_timer,
 )
 from .context import AgentContext, SearchContext, SearchResult
+from .data import (
+    DEFAULT_TOOL_SYSTEM_PROMPT,
+    PromptBatch,
+    PromptOnlyDataset,
+    PromptSample,
+    PromptTrainingExample,
+    build_prompt_dataloader,
+    build_prompt_ids_from_messages,
+    build_prompt_messages,
+    collate_prompt_batch,
+    normalize_prompt_training_example,
+)
 from .evaluation import (
     QueryEvaluation,
     SearchEvaluationConfig,
@@ -54,12 +66,17 @@ from .tool_parser import (
 __all__ = [
     "AgentContext",
     "build_grpo_sampling_params",
+    "build_prompt_dataloader",
+    "build_prompt_ids_from_messages",
+    "build_prompt_messages",
     "SearchRewardConfig",
     "SearchRewardFunction",
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
     "build_search_agent_instruction",
+    "collate_prompt_batch",
+    "DEFAULT_TOOL_SYSTEM_PROMPT",
     "FunctionCall",
     "FunctionTool",
     "HermesToolParser",
@@ -73,6 +90,11 @@ __all__ = [
     "resolve_search_settings",
     "JSONToolParser",
     "Llama3ToolParser",
+    "normalize_prompt_training_example",
+    "PromptBatch",
+    "PromptOnlyDataset",
+    "PromptSample",
+    "PromptTrainingExample",
     "QueryEvaluation",
     "SearchAgentLoop",
     "SearchAgentLoopConfig",

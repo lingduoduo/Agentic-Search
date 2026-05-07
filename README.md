@@ -7,6 +7,7 @@ A FastAPI codebase for search-backed retrieval services, multi-turn agentic rese
 - `SearchAgentLoop`: plan → adaptive search decision → subquestions → parallel queries → evidence evaluation → fetch → cited answer
 - `SearchRewardFunction`: strategy-aware reward signal + GRPO within-group advantage normalisation
 - Full action-trace SFT support: train on `<plan> ... <answer>`, not only the final answer
+- Prompt-only rollout dataset helpers: train RL from `question / ground_truth / tools` without storing intermediate reasoning
 - Config-driven text preprocessing for structured documents and `rec_texts` payloads
 
 ## Project Structure
@@ -220,6 +221,46 @@ python3 -m src.run_agentic_search \
 ```
 
 `--intent_examples` trains the same classifier on startup and is convenient for quick iteration, but adds startup latency on every run. Use `--intent_model` once the classifier is stable.
+
+### Prompt-only RL data pipeline
+
+For tool-use RL or GRPO, the first training-stage input often contains only the
+prompt-side fields, not the intermediate chain-of-thought:
+
+```python
+examples = [
+    {
+        "question": "Who won the Nobel Prize in Physics in 2024?",
+        "ground_truth": "John Hopfield and Geoffrey Hinton.",
+        "tools": ["search"],
+    }
+]
+```
+
+You can turn these raw records into rollout-ready prompt batches with
+`src.agent_loop.data`:
+
+```python
+from src.agent_loop import build_prompt_dataloader, sample_prompt_group
+
+dataloader = build_prompt_dataloader(
+    examples,
+    tokenizer=tokenizer,
+    batch_size=2,
+)
+
+batch = next(iter(dataloader))
+samples = await sample_prompt_group(
+    loop_factory,
+    messages=batch.messages[0],
+    sampling_params={"temperature": 0.7, "top_p": 0.95},
+    num_rollouts=4,
+)
+```
+
+This keeps the RL dataset prompt-only: the model generates its own action trace
+or tool trajectory during rollout, and `ground_truth` stays outside the prompt
+for reward computation.
 
 ### Local model notes
 
