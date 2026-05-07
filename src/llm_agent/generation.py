@@ -32,6 +32,34 @@ class SearchBatch:
         return cls(batch=batch, non_tensor_batch={}, meta_info={})
 
 
+@dataclass
+class AgentLoopState:
+    """Mutable state for the multi-turn generate -> act -> observe loop."""
+
+    rollings: SearchBatch
+    original_left_side: dict[str, torch.Tensor]
+    original_right_side: dict[str, torch.Tensor]
+    active_mask: torch.Tensor
+    trajectory_turns: list[int]
+    turns_stats: torch.Tensor
+    valid_action_stats: torch.Tensor
+    valid_search_stats: torch.Tensor
+    active_num_list: list[int]
+    meta_info: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AgentLoopStepResult:
+    """Outcome of one orchestration step for the active trajectories."""
+
+    responses_ids: torch.Tensor
+    responses_str: list[str]
+    next_obs: list[str]
+    dones: list[int]
+    valid_action: list[int]
+    is_search: list[int]
+
+
 ACTION_PATTERN = re.compile(r"<(search|answer)>(.*?)</\1>", re.DOTALL)
 
 _NO_INFO = "No information available"
@@ -374,6 +402,171 @@ class LLMGenerationManager:
         padded_output.meta_info = trimmed_meta
         return padded_output
 
+    def _initialize_agent_loop_state(
+        self,
+        gen_batch: SearchBatch,
+        initial_input_ids: torch.Tensor,
+    ) -> AgentLoopState:
+        batch_size = gen_batch.batch["input_ids"].shape[0]
+        return AgentLoopState(
+            rollings=gen_batch,
+            original_left_side={
+                "input_ids": initial_input_ids[:, -self.config.max_start_length :]
+            },
+            original_right_side={
+                "responses": initial_input_ids[:, []],
+                "responses_with_info_mask": initial_input_ids[:, []],
+            },
+            active_mask=torch.ones(batch_size, dtype=torch.bool),
+            trajectory_turns=[0 for _ in range(batch_size)],
+            turns_stats=torch.ones(batch_size, dtype=torch.int),
+            valid_action_stats=torch.zeros(batch_size, dtype=torch.int),
+            valid_search_stats=torch.zeros(batch_size, dtype=torch.int),
+            active_num_list=[batch_size],
+        )
+
+    def _trim_rollings_for_generation(self, rollings: SearchBatch) -> SearchBatch:
+        rollings.batch = self.tensor_fn.cut_to_effective_len(
+            rollings.batch,
+            keys=["input_ids", "attention_mask", "position_ids"],
+        )
+        return rollings
+
+    def _select_active_batch(
+        self,
+        rollings: SearchBatch,
+        active_mask: torch.Tensor,
+    ) -> SearchBatch:
+        return SearchBatch.from_dict(
+            {key: value[active_mask] for key, value in rollings.batch.items()}
+        )
+
+    def _run_active_generation_step(
+        self,
+        gen_batch: SearchBatch,
+        rollings: SearchBatch,
+        *,
+        search_mode: str,
+        gt_threshold: float,
+        active_mask: torch.Tensor,
+        do_search: bool = True,
+    ) -> tuple[AgentLoopStepResult, dict[str, Any]]:
+        gen_output = self._generate_with_gpu_padding(
+            self._select_active_batch(rollings, active_mask)
+        )
+        meta_info = getattr(gen_output, "meta_info", {}) or {}
+        responses_ids, responses_str = self._postprocess_responses(
+            gen_output.batch["responses"]
+        )
+        responses_ids, responses_str = self.tensor_fn.example_level_pad(
+            responses_ids,
+            responses_str,
+            active_mask,
+        )
+        next_obs, dones, valid_action, is_search = self.execute_predictions(
+            responses_str,
+            gen_batch.non_tensor_batch["question"],
+            gen_batch.non_tensor_batch["golden_answers"],
+            search_mode,
+            gt_threshold,
+            active_mask,
+            do_search=do_search,
+        )
+        return (
+            AgentLoopStepResult(
+                responses_ids=responses_ids,
+                responses_str=responses_str,
+                next_obs=next_obs,
+                dones=dones,
+                valid_action=valid_action,
+                is_search=is_search,
+            ),
+            meta_info,
+        )
+
+    def _apply_step_result(
+        self,
+        state: AgentLoopState,
+        step_result: AgentLoopStepResult,
+        *,
+        include_observations: bool,
+    ) -> None:
+        curr_active_mask = torch.tensor(
+            [not done for done in step_result.dones], dtype=torch.bool
+        )
+        state.active_mask = state.active_mask & curr_active_mask
+        state.active_num_list.append(int(state.active_mask.sum().item()))
+
+        if include_observations:
+            state.turns_stats[curr_active_mask] += 1
+            next_obs_ids = self._process_next_obs(step_result.next_obs)
+            state.rollings = self._update_rolling_state(
+                state.rollings,
+                step_result.responses_ids,
+                next_obs_ids,
+            )
+            state.original_right_side = self._update_right_side(
+                state.original_right_side,
+                step_result.responses_ids,
+                next_obs_ids,
+            )
+        else:
+            state.original_right_side = self._update_right_side(
+                state.original_right_side,
+                step_result.responses_ids,
+            )
+
+        state.valid_action_stats += torch.tensor(
+            step_result.valid_action, dtype=torch.int
+        )
+        state.valid_search_stats += torch.tensor(step_result.is_search, dtype=torch.int)
+
+    def _record_finished_trajectories(
+        self,
+        trajectory_turns: list[int],
+        dones: list[int],
+        *,
+        turn_value: int,
+    ) -> None:
+        for batch_index, done in enumerate(dones):
+            if trajectory_turns[batch_index] == 0 and done == 1:
+                trajectory_turns[batch_index] = turn_value
+
+    def _finalize_agent_loop_meta(self, state: AgentLoopState) -> dict[str, Any]:
+        meta_info = dict(state.meta_info)
+        meta_info["turns_stats"] = state.turns_stats.tolist()
+        meta_info["active_mask"] = state.active_mask.tolist()
+        meta_info["valid_action_stats"] = state.valid_action_stats.tolist()
+        meta_info["valid_search_stats"] = state.valid_search_stats.tolist()
+        return meta_info
+
+    def _run_one_turn(
+        self,
+        gen_batch: SearchBatch,
+        state: AgentLoopState,
+        *,
+        search_mode: str,
+        current_step: int,
+        total_steps: int,
+        do_search: bool,
+        include_observations: bool,
+    ) -> AgentLoopStepResult:
+        """One full turn: trim → generate → execute tool → apply observations."""
+        gt_threshold = self.dynamic_threshold(current_step, total_steps)
+        state.rollings = self._trim_rollings_for_generation(state.rollings)
+        step_result, state.meta_info = self._run_active_generation_step(
+            gen_batch,
+            state.rollings,
+            search_mode=search_mode,
+            gt_threshold=gt_threshold,
+            active_mask=state.active_mask,
+            do_search=do_search,
+        )
+        self._apply_step_result(
+            state, step_result, include_observations=include_observations
+        )
+        return step_result
+
     def run_llm_loop(
         self,
         gen_batch: SearchBatch,
@@ -382,132 +575,75 @@ class LLMGenerationManager:
         total_steps: int,
         initial_input_ids: torch.Tensor,
     ) -> tuple[SearchBatch, list[int]]:
-        original_left_side = {
-            "input_ids": initial_input_ids[:, -self.config.max_start_length :]
-        }
-        original_right_side = {
-            "responses": initial_input_ids[:, []],
-            "responses_with_info_mask": initial_input_ids[:, []],
-        }
-        batch_size = gen_batch.batch["input_ids"].shape[0]
-        trajectory_turns = [0 for _ in range(batch_size)]
-        active_mask = torch.ones(batch_size, dtype=torch.bool)
-        turns_stats = torch.ones(batch_size, dtype=torch.int)
-        valid_action_stats = torch.zeros(batch_size, dtype=torch.int)
-        valid_search_stats = torch.zeros(batch_size, dtype=torch.int)
-        active_num_list = [int(active_mask.sum().item())]
-        rollings = gen_batch
-        meta_info: dict[str, Any] = {}
+        """Run the core agent loop: generate → maybe search → append context → repeat."""
+        state = self._initialize_agent_loop_state(gen_batch, initial_input_ids)
 
-        for step in range(self.config.max_turns):
-            if not bool(active_mask.sum()):
+        for turn in range(self.config.max_turns):
+            if not bool(state.active_mask.sum()):
                 break
-
-            gt_threshold = self.dynamic_threshold(current_step, total_steps)
-            rollings.batch = self.tensor_fn.cut_to_effective_len(
-                rollings.batch,
-                keys=["input_ids", "attention_mask", "position_ids"],
+            step_result = self._run_one_turn(
+                gen_batch,
+                state,
+                search_mode=search_mode,
+                current_step=current_step,
+                total_steps=total_steps,
+                do_search=True,
+                include_observations=True,
             )
-            rollings_active = SearchBatch.from_dict(
-                {key: value[active_mask] for key, value in rollings.batch.items()}
-            )
-            gen_output = self._generate_with_gpu_padding(rollings_active)
-
-            meta_info = getattr(gen_output, "meta_info", {}) or {}
-            responses_ids, responses_str = self._postprocess_responses(
-                gen_output.batch["responses"]
-            )
-            responses_ids, responses_str = self.tensor_fn.example_level_pad(
-                responses_ids,
-                responses_str,
-                active_mask,
+            self._record_finished_trajectories(
+                state.trajectory_turns, step_result.dones, turn_value=turn + 1
             )
 
-            next_obs, dones, valid_action, is_search = self.execute_predictions(
-                responses_str,
-                gen_batch.non_tensor_batch["question"],
-                gen_batch.non_tensor_batch["golden_answers"],
-                search_mode,
-                gt_threshold,
-                active_mask,
+        if bool(state.active_mask.sum()):
+            step_result = self._run_one_turn(
+                gen_batch,
+                state,
+                search_mode=search_mode,
+                current_step=current_step,
+                total_steps=total_steps,
+                do_search=False,
+                include_observations=False,
+            )
+            self._record_finished_trajectories(
+                state.trajectory_turns,
+                [1] * len(step_result.dones),
+                turn_value=self.config.max_turns + 1,
             )
 
-            curr_active_mask = torch.tensor(
-                [not done for done in dones], dtype=torch.bool
-            )
-            active_mask = active_mask & curr_active_mask
-            active_num_list.append(int(active_mask.sum().item()))
-            turns_stats[curr_active_mask] += 1
-            valid_action_stats += torch.tensor(valid_action, dtype=torch.int)
-            valid_search_stats += torch.tensor(is_search, dtype=torch.int)
+        state.meta_info = self._finalize_agent_loop_meta(state)
+        logger.info("active_traj_num: %s", state.active_num_list)
+        traj_tensor = torch.tensor(state.trajectory_turns)
+        for turn in range(1, self.config.max_turns + 2):
+            logger.info("finish at turn %d: %d", turn, int((traj_tensor == turn).sum()))
 
-            next_obs_ids = self._process_next_obs(next_obs)
-            rollings = self._update_rolling_state(rollings, responses_ids, next_obs_ids)
-            original_right_side = self._update_right_side(
-                original_right_side, responses_ids, next_obs_ids
-            )
+        return (
+            self._compose_final_output(
+                state.original_left_side, state.original_right_side, state.meta_info
+            ),
+            state.trajectory_turns,
+        )
 
-            for batch_index, done in enumerate(dones):
-                if trajectory_turns[batch_index] == 0 and done == 1:
-                    trajectory_turns[batch_index] = step + 1
+    def run_agent_loop(
+        self,
+        gen_batch: SearchBatch,
+        search_mode: str,
+        current_step: int,
+        total_steps: int,
+        initial_input_ids: torch.Tensor,
+    ) -> tuple[SearchBatch, list[int]]:
+        """Alias for the core agentic orchestration loop.
 
-        if bool(active_mask.sum()):
-            gt_threshold = self.dynamic_threshold(current_step, total_steps)
-            rollings.batch = self.tensor_fn.cut_to_effective_len(
-                rollings.batch,
-                keys=["input_ids", "attention_mask", "position_ids"],
-            )
-            rollings_active = SearchBatch.from_dict(
-                {key: value[active_mask] for key, value in rollings.batch.items()}
-            )
-            gen_output = self._generate_with_gpu_padding(rollings_active)
+        The control flow is explicitly multi-turn:
+        `generate -> maybe_call_tool/search -> append_context -> repeat`.
+        """
 
-            meta_info = getattr(gen_output, "meta_info", {}) or {}
-            responses_ids, responses_str = self._postprocess_responses(
-                gen_output.batch["responses"]
-            )
-            responses_ids, responses_str = self.tensor_fn.example_level_pad(
-                responses_ids,
-                responses_str,
-                active_mask,
-            )
-            _, dones, valid_action, is_search = self.execute_predictions(
-                responses_str,
-                gen_batch.non_tensor_batch["question"],
-                gen_batch.non_tensor_batch["golden_answers"],
-                search_mode,
-                gt_threshold,
-                active_mask,
-            )
-
-            curr_active_mask = torch.tensor(
-                [not done for done in dones], dtype=torch.bool
-            )
-            active_mask = active_mask & curr_active_mask
-            active_num_list.append(int(active_mask.sum().item()))
-            valid_action_stats += torch.tensor(valid_action, dtype=torch.int)
-            valid_search_stats += torch.tensor(is_search, dtype=torch.int)
-            original_right_side = self._update_right_side(
-                original_right_side, responses_ids
-            )
-
-            meta_info["turns_stats"] = turns_stats.tolist()
-            meta_info["active_mask"] = active_mask.tolist()
-            meta_info["valid_action_stats"] = valid_action_stats.tolist()
-            meta_info["valid_search_stats"] = valid_search_stats.tolist()
-
-            for batch_index in range(len(dones)):
-                if trajectory_turns[batch_index] == 0:
-                    trajectory_turns[batch_index] = step + 2
-
-        print("ACTIVE_TRAJ_NUM:", active_num_list)
-        for turns in range(1, self.config.max_turns + 2):
-            count = (torch.tensor(trajectory_turns) == turns).sum().item()
-            print(f"Finish at the {turns}-th turn: {count}")
-
-        return self._compose_final_output(
-            original_left_side, original_right_side, meta_info
-        ), trajectory_turns
+        return self.run_llm_loop(
+            gen_batch=gen_batch,
+            search_mode=search_mode,
+            current_step=current_step,
+            total_steps=total_steps,
+            initial_input_ids=initial_input_ids,
+        )
 
     def _compose_final_output(
         self,
