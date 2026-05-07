@@ -38,10 +38,12 @@ from .intent_classifier import (
     resolve_search_settings,
 )
 from .grpo import (
+    GRPOAdvantageConfig,
     GRPORolloutSample,
     PromptGroupSamplingConfig,
     ScoredGRPORollout,
     build_grpo_sampling_params,
+    compute_grpo_outcome_advantage,
     sample_prompt_group,
     score_prompt_group,
 )
@@ -68,7 +70,9 @@ from .tool_parser import (
 
 __all__ = [
     "AgentContext",
+    "GRPOAdvantageConfig",
     "build_grpo_sampling_params",
+    "compute_grpo_outcome_advantage",
     "build_prompt_dataloader",
     "build_prompt_ids_from_messages",
     "build_prompt_messages",

@@ -46,6 +46,13 @@ class ScoredGRPORollout:
     advantage: float
 
 
+@dataclass(frozen=True)
+class GRPOAdvantageConfig:
+    """How grouped rollout rewards are converted into training advantages."""
+
+    mode: str = "group_std_normalized"
+
+
 def build_grpo_sampling_params(
     base_sampling_params: dict[str, Any],
     *,
@@ -159,12 +166,14 @@ def score_prompt_group(
     ground_truth: str,
     judge_fn: Callable[[str, str], float],
     reward_fn: SearchRewardFunction | None = None,
+    advantage_config: GRPOAdvantageConfig | None = None,
 ) -> list[ScoredGRPORollout]:
     """Score a prompt group and compute GRPO advantages within that group."""
     if not samples:
         return []
 
     reward_function = reward_fn or SearchRewardFunction()
+    resolved_advantage_config = advantage_config or GRPOAdvantageConfig()
     rewards: list[float] = []
     reward_components: list[dict[str, float]] = []
     group_ids: list[str] = []
@@ -179,7 +188,12 @@ def score_prompt_group(
         rewards.append(components["total"])
         group_ids.append(sample.group_id)
 
-    advantages = reward_function.compute_batch_advantages(rewards, group_ids)
+    advantages = _compute_advantages(
+        reward_function,
+        rewards,
+        group_ids,
+        mode=resolved_advantage_config.mode,
+    )
     return [
         ScoredGRPORollout(
             group_id=sample.group_id,
@@ -196,12 +210,49 @@ def score_prompt_group(
     ]
 
 
+def compute_grpo_outcome_advantage(rewards: list[float]) -> list[float]:
+    """Compute outcome-based GRPO advantages for one prompt group.
+
+    This is the critic-free core signal used by GRPO:
+
+        advantage_i = reward_i - mean(group_rewards)
+
+    For a single trajectory there is no relative comparison, so the returned
+    advantage is `0.0`.
+    """
+    if not rewards:
+        return []
+    if len(rewards) == 1:
+        return [0.0]
+    mean = sum(rewards) / len(rewards)
+    return [reward - mean for reward in rewards]
+
+
+def _compute_advantages(
+    reward_function: SearchRewardFunction,
+    rewards: list[float],
+    group_ids: list[str],
+    *,
+    mode: str,
+) -> list[float]:
+    """Resolve which GRPO advantage transform to apply to rollout rewards."""
+    if mode == "group_outcome":
+        return reward_function.compute_grpo_outcome_advantages(rewards, group_ids)
+    if mode == "group_std_normalized":
+        return reward_function.compute_batch_advantages(rewards, group_ids)
+    raise ValueError(
+        f"Unsupported GRPO advantage mode: {mode!r}. "
+        "Expected 'group_outcome' or 'group_std_normalized'."
+    )
+
+
 def score_prompt_batch(
     grouped_samples: list[list[GRPORolloutSample]],
     *,
     ground_truths: list[str],
     judge_fn: Callable[[str, str], float],
     reward_fn: SearchRewardFunction | None = None,
+    advantage_config: GRPOAdvantageConfig | None = None,
 ) -> list[list[ScoredGRPORollout]]:
     """Score all rollout groups from a DataLoader batch.
 
@@ -214,7 +265,11 @@ def score_prompt_batch(
     reward_function = reward_fn or SearchRewardFunction()
     return [
         score_prompt_group(
-            samples, ground_truth=gt, judge_fn=judge_fn, reward_fn=reward_function
+            samples,
+            ground_truth=gt,
+            judge_fn=judge_fn,
+            reward_fn=reward_function,
+            advantage_config=advantage_config,
         )
         for samples, gt in zip(grouped_samples, ground_truths)
     ]
