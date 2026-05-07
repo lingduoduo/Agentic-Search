@@ -687,6 +687,11 @@ Derived metrics (computed at end of `run()`, ready for the reward function):
 
 `SearchRewardFunction` computes a scalar reward for each rollout and GRPO advantages across prompt groups. It consumes `AgentLoopOutput` directly — no post-processing needed.
 
+Two reward styles are supported:
+
+- `reward_mode="shaped"`: default; combines final-answer correctness with search/process shaping terms.
+- `reward_mode="sparse_final_only"`: strict sparse reward for agent RL; only the final answer score contributes to `total`, while search/retrieval metrics stay in the breakdown as diagnostics.
+
 ### Reward components
 
 | Component | Config key | Description |
@@ -709,6 +714,7 @@ Derived metrics (computed at end of `run()`, ready for the reward function):
 from src.agent_loop import SearchRewardConfig, SearchRewardFunction
 
 reward_fn = SearchRewardFunction(SearchRewardConfig(
+    reward_mode="shaped",
     correctness_weight=1.0,
     citation_support_weight=0.3,
     subquestion_coverage_weight=0.2,
@@ -747,6 +753,24 @@ components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=exact
 # group_ids[i] is the prompt that produced outputs[i]
 advantages = reward_fn.compute_batch_advantages(rewards, group_ids=["p1", "p1", "p2", "p2"])
 # advantage_i = (reward_i - group_mean) / (group_std + 1e-8)
+```
+
+### Strict sparse reward
+
+If you want the RL objective to match the common "reward only on the final answer" setup, use the sparse preset:
+
+```python
+from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+
+reward_fn = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
+
+reward = reward_fn.compute(output, ground_truth=gt, judge_fn=exact_match)
+# == exact_match(output.final_answer, gt)
+
+components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=exact_match)
+# components["terminal_reward"] -> optimisation target
+# components["shaping_total"]   -> always 0.0 in sparse mode
+# components["citation_support"], ["search_quality"], ... stay available for logging
 ```
 
 ### Grouped rollouts for GRPO
