@@ -10,7 +10,10 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace as dataclass_replace
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from src.agent_loop.agent_loop import AgentLoopOutput
 
 import torch
 
@@ -1357,12 +1360,15 @@ class LLMGenerationManager:
         self,
         gen_batch: SearchBatch,
         search_mode: str,
-        current_step: int,
-        total_steps: int,
-        initial_input_ids: torch.Tensor,
+        current_step: int = 0,
+        total_steps: int = 1,
+        initial_input_ids: torch.Tensor | None = None,
     ) -> tuple[SearchBatch, list[int]]:
         """Run the core agent loop: generate → maybe search → append context → repeat."""
-        state = self._initialize_agent_loop_state(gen_batch, initial_input_ids)
+        resolved_initial_input_ids = initial_input_ids
+        if resolved_initial_input_ids is None:
+            resolved_initial_input_ids = gen_batch.batch["input_ids"]
+        state = self._initialize_agent_loop_state(gen_batch, resolved_initial_input_ids)
 
         for turn in range(self.config.max_turns):
             if not bool(state.active_mask.sum()):
@@ -1415,9 +1421,9 @@ class LLMGenerationManager:
         self,
         gen_batch: SearchBatch,
         search_mode: str,
-        current_step: int,
-        total_steps: int,
-        initial_input_ids: torch.Tensor,
+        current_step: int = 0,
+        total_steps: int = 1,
+        initial_input_ids: torch.Tensor | None = None,
     ) -> tuple[SearchBatch, list[int]]:
         """Alias for the core agentic orchestration loop.
 
@@ -1432,6 +1438,108 @@ class LLMGenerationManager:
             total_steps=total_steps,
             initial_input_ids=initial_input_ids,
         )
+
+    def run_prompt_rollout_batch(
+        self,
+        prompt_batch: Any,
+        *,
+        search_mode: str,
+        current_step: int = 0,
+        total_steps: int = 1,
+    ) -> tuple[SearchBatch, list[int]]:
+        """Run the agent loop directly from a prompt-only training batch.
+
+        This is the high-level RL entrypoint for prompt-only training data:
+
+            PromptBatch -> SearchBatch(gen_batch) -> run_llm_loop()
+
+        The prompt batch contains only prompt-side supervision such as
+        `question`, `ground_truth`, and available tools. The model then
+        generates its own search / reasoning / stopping / answer trajectory
+        inside the loop.
+        """
+        from src.agent_loop.data import prompt_batch_to_search_batch
+
+        gen_batch = prompt_batch_to_search_batch(prompt_batch)
+        return self.run_llm_loop(
+            gen_batch=gen_batch,
+            search_mode=search_mode,
+            current_step=current_step,
+            total_steps=total_steps,
+        )
+
+    def build_rollout_outputs(self, batch: SearchBatch) -> list[AgentLoopOutput]:
+        """Convert a run_llm_loop SearchBatch to per-trajectory AgentLoopOutputs.
+
+        Bridges the training loop output to the reward-computation interface:
+
+            run_llm_loop() -> SearchBatch -> build_rollout_outputs()
+                                                     |
+                                                     v
+                                              list[AgentLoopOutput]
+                                                     |
+                                                     v
+                                          SearchRewardFunction.compute()
+
+        Per-trajectory metrics are derived from the ``RolloutTrajectory`` steps
+        already embedded in ``batch.non_tensor_batch["trajectories"]``, so no
+        extra state is required.
+
+        Metrics populated per trajectory:
+            rounds_used                           — number of <search> actions
+            repeated_search_queries               — duplicate search queries
+            fetched_pages                         — number of <fetch> actions
+            search_budget_exhausted_without_answer — 1.0 if timed out without answering
+            subquestion_coverage_ratio            — 1.0 (not tracked in training loop)
+        """
+        from src.agent_loop.agent_loop import AgentLoopOutput
+
+        pad_id: int = getattr(self.tokenizer, "pad_token_id", 0) or 0
+        trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(
+            "trajectories", []
+        )
+        valid_search_stats: list[int] = batch.meta_info.get("valid_search_stats", [])
+
+        outputs: list[AgentLoopOutput] = []
+        for i, traj in enumerate(trajectories):
+            response_mask = [
+                1 if tid != pad_id else 0 for tid in traj.response_with_observation_mask
+            ]
+
+            search_queries = [
+                step.action_content
+                for step in traj.steps
+                if step.action_tag == "search"
+            ]
+            repeated = len(search_queries) - len(set(search_queries))
+            fetch_count = sum(1 for step in traj.steps if step.action_tag == "fetch")
+            rounds = (
+                float(valid_search_stats[i]) if i < len(valid_search_stats) else 0.0
+            )
+
+            outputs.append(
+                AgentLoopOutput(
+                    prompt_ids=list(traj.prompt_token_ids),
+                    response_ids=list(traj.response_token_ids),
+                    response_mask=response_mask,
+                    num_turns=traj.trajectory_turns,
+                    metrics={
+                        "rounds_used": rounds,
+                        "search_rounds": rounds,
+                        "repeated_search_queries": float(repeated),
+                        "fetched_pages": float(fetch_count),
+                        "subquestion_coverage_ratio": 1.0,
+                        "repeated_query_ratio": (
+                            repeated / max(len(search_queries), 1)
+                        ),
+                        "search_budget_exhausted_without_answer": float(
+                            traj.finished_without_answer
+                        ),
+                    },
+                    final_answer=traj.final_answer,
+                )
+            )
+        return outputs
 
     def _compose_final_output(
         self,

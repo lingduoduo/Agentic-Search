@@ -4,7 +4,9 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
+from src.agent_loop import build_prompt_dataloader  # noqa: E402
 from src.llm_agent.generation import (  # noqa: E402
+    AgentLoopState,
     GenerationConfig,
     LLMGenerationManager,
     PPOPolicyLossConfig,
@@ -15,6 +17,9 @@ from src.llm_agent.generation import (  # noqa: E402
 
 class DummyTokenizer:
     pad_token_id = 0
+
+    def encode(self, text: str) -> list[int]:
+        return [1] * max(len(text.split()), 1)
 
     def __call__(
         self, texts, add_special_tokens=False, return_tensors="pt", padding="longest"
@@ -457,6 +462,183 @@ def test_compute_policy_loss_requires_advantages():
     batch = _batch_with_old_and_new_log_probs(old=[-1.0], new=[-0.5])
     with pytest.raises(ValueError, match="advantages not found"):
         manager.compute_policy_loss(batch)
+
+
+# ---------------------------------------------------------------------------
+# build_rollout_outputs — SearchBatch -> list[AgentLoopOutput]
+# ---------------------------------------------------------------------------
+
+
+def _make_trajectory(
+    *,
+    prompt_ids: list[int],
+    response_ids: list[int],
+    obs_mask: list[int],
+    turns: int,
+    final_answer: str | None,
+    finished_without_answer: bool,
+    steps=None,
+):
+    from src.llm_agent.generation import RolloutTrajectory
+
+    return RolloutTrajectory(
+        batch_index=0,
+        prompt_token_ids=prompt_ids,
+        response_token_ids=response_ids,
+        response_with_observation_mask=obs_mask,
+        trajectory_turns=turns,
+        steps=steps or [],
+        final_answer=final_answer,
+        finished_without_answer=finished_without_answer,
+    )
+
+
+def test_build_rollout_outputs_maps_trajectory_fields():
+    manager = _manager_with_log_prob()
+    traj = _make_trajectory(
+        prompt_ids=[1, 2, 3],
+        response_ids=[10, 11, 12],
+        obs_mask=[10, 0, 12],  # token 11 is an observation (pad=0)
+        turns=2,
+        final_answer="Paris",
+        finished_without_answer=False,
+    )
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [3]
+
+    outputs = manager.build_rollout_outputs(batch)
+
+    assert len(outputs) == 1
+    out = outputs[0]
+    assert out.prompt_ids == [1, 2, 3]
+    assert out.response_ids == [10, 11, 12]
+    assert out.response_mask == [1, 0, 1]  # pad position → 0
+    assert out.num_turns == 2
+    assert out.final_answer == "Paris"
+    assert out.metrics["rounds_used"] == pytest.approx(3.0)
+    assert out.metrics["search_budget_exhausted_without_answer"] == pytest.approx(0.0)
+
+
+def test_build_rollout_outputs_computes_per_trajectory_search_repetitions():
+    from src.llm_agent.generation import ReActStep
+
+    manager = _manager_with_log_prob()
+    steps = [
+        ReActStep(
+            turn=0,
+            action_tag="search",
+            action_content="cats",
+            observation="...",
+            is_terminal=False,
+        ),
+        ReActStep(
+            turn=1,
+            action_tag="search",
+            action_content="cats",
+            observation="...",
+            is_terminal=False,
+        ),
+        ReActStep(
+            turn=2,
+            action_tag="answer",
+            action_content="result",
+            observation="",
+            is_terminal=True,
+        ),
+    ]
+    traj = _make_trajectory(
+        prompt_ids=[1],
+        response_ids=[2],
+        obs_mask=[2],
+        turns=3,
+        final_answer="result",
+        finished_without_answer=False,
+        steps=steps,
+    )
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [2]
+
+    outputs = manager.build_rollout_outputs(batch)
+
+    assert outputs[0].metrics["repeated_search_queries"] == pytest.approx(
+        1.0
+    )  # "cats" repeated once
+    assert outputs[0].metrics["fetched_pages"] == pytest.approx(0.0)
+
+
+def test_build_rollout_outputs_counts_fetch_steps():
+    from src.llm_agent.generation import ReActStep
+
+    manager = _manager_with_log_prob()
+    steps = [
+        ReActStep(
+            turn=0,
+            action_tag="fetch",
+            action_content="url1",
+            observation="...",
+            is_terminal=False,
+        ),
+        ReActStep(
+            turn=1,
+            action_tag="fetch",
+            action_content="url2",
+            observation="...",
+            is_terminal=False,
+        ),
+        ReActStep(
+            turn=2,
+            action_tag="answer",
+            action_content="done",
+            observation="",
+            is_terminal=True,
+        ),
+    ]
+    traj = _make_trajectory(
+        prompt_ids=[1],
+        response_ids=[2],
+        obs_mask=[2],
+        turns=3,
+        final_answer="done",
+        finished_without_answer=False,
+        steps=steps,
+    )
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [0]
+
+    outputs = manager.build_rollout_outputs(batch)
+    assert outputs[0].metrics["fetched_pages"] == pytest.approx(2.0)
+
+
+def test_build_rollout_outputs_flags_budget_exhausted():
+    manager = _manager_with_log_prob()
+    traj = _make_trajectory(
+        prompt_ids=[1],
+        response_ids=[2, 3],
+        obs_mask=[2, 3],
+        turns=6,
+        final_answer=None,
+        finished_without_answer=True,
+    )
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [5]
+
+    outputs = manager.build_rollout_outputs(batch)
+    assert outputs[0].final_answer is None
+    assert outputs[0].metrics[
+        "search_budget_exhausted_without_answer"
+    ] == pytest.approx(1.0)
+    assert outputs[0].metrics["rounds_used"] == pytest.approx(5.0)
+
+
+def test_build_rollout_outputs_empty_batch():
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = []
+    assert manager.build_rollout_outputs(batch) == []
 
 
 # ---------------------------------------------------------------------------
@@ -975,6 +1157,100 @@ def test_run_agent_loop_alias_delegates_to_run_llm_loop():
     assert output_batch is expected_batch
     assert turns == [1]
     assert captured["gen_batch"] is gen_batch
+
+
+def test_run_llm_loop_uses_gen_batch_input_ids_by_default():
+    manager = _manager()
+    sentinel = torch.tensor([[7, 8, 9]], dtype=torch.long)
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": sentinel,
+            "attention_mask": torch.tensor([[1, 1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1, 2]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["q"],
+        "golden_answers": [["a"]],
+    }
+
+    captured: dict[str, torch.Tensor] = {}
+
+    def fake_initialize(gen_batch_arg, initial_input_ids_arg):
+        captured["initial_input_ids"] = initial_input_ids_arg
+        return AgentLoopState(
+            rollings=gen_batch_arg,
+            original_left_side={"input_ids": initial_input_ids_arg},
+            original_right_side={
+                "responses": initial_input_ids_arg[:, []],
+                "responses_with_info_mask": initial_input_ids_arg[:, []],
+            },
+            active_mask=torch.zeros(1, dtype=torch.bool),
+            trajectory_turns=[0],
+            turns_stats=torch.ones(1, dtype=torch.int),
+            valid_action_stats=torch.zeros(1, dtype=torch.int),
+            valid_search_stats=torch.zeros(1, dtype=torch.int),
+            active_num_list=[0],
+        )
+
+    manager._initialize_agent_loop_state = fake_initialize  # type: ignore[method-assign]
+
+    manager.run_llm_loop(gen_batch=gen_batch, search_mode="google")
+
+    assert torch.equal(captured["initial_input_ids"], sentinel)
+
+
+def test_run_prompt_rollout_batch_converts_prompt_batch_and_calls_agent_loop():
+    manager = _manager()
+    loader = build_prompt_dataloader(
+        [
+            {
+                "question": "Who won the Nobel Prize in Physics in 2024?",
+                "ground_truth": "John Hopfield and Geoffrey Hinton.",
+                "tools": ["search"],
+            }
+        ],
+        tokenizer=DummyTokenizer(),
+        batch_size=1,
+        shuffle=False,
+    )
+    prompt_batch = next(iter(loader))
+
+    captured: dict[str, object] = {}
+    expected_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[1, 1]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+
+    def fake_run_llm_loop(**kwargs):
+        captured.update(kwargs)
+        return expected_batch, [1]
+
+    manager.run_llm_loop = fake_run_llm_loop  # type: ignore[method-assign]
+
+    output_batch, turns = manager.run_prompt_rollout_batch(
+        prompt_batch,
+        search_mode="google",
+        current_step=2,
+        total_steps=10,
+    )
+
+    assert output_batch is expected_batch
+    assert turns == [1]
+    assert captured["search_mode"] == "google"
+    assert captured["current_step"] == 2
+    assert captured["total_steps"] == 10
+    converted = captured["gen_batch"]
+    assert isinstance(converted, SearchBatch)
+    assert converted.non_tensor_batch["question"] == [
+        "Who won the Nobel Prize in Physics in 2024?"
+    ]
+    assert converted.non_tensor_batch["golden_answers"] == [
+        ["John Hopfield and Geoffrey Hinton."]
+    ]
 
 
 def test_run_llm_loop_extracts_final_answer_from_answer_turn():
