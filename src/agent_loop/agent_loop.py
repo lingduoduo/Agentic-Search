@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
+
+# Matches the first recognised action tag in a model response.
+# Covers all tags used by SearchAgentLoop; callers can override via action_re.
+_DEFAULT_ACTION_RE: re.Pattern[str] = re.compile(
+    r"<(plan|search_decision|subquestions|searches|search|fetch|answer)>(.*?)</\1>",
+    re.DOTALL,
+)
+
+_DEFAULT_TERMINAL_ACTIONS: frozenset[str] = frozenset({"answer"})
 
 _REGISTERED_AGENT_LOOPS: dict[str, type["AgentLoopBase"]] = {}
 
@@ -42,6 +52,25 @@ def list_registered_agent_loops() -> list[str]:
 class AgentLoopConfig:
     prompt_length: int = 4096
     response_length: int = 512
+
+
+@dataclass(frozen=True)
+class RolloutStep:
+    """One state → action step in a policy rollout trajectory.
+
+    Maps directly to the RL triple:
+        state (prompt_ids) → policy.generate() → action (response_ids) → terminal/continue
+
+    action_type is the XML tag the model emitted: "search", "answer", "fetch",
+    "plan", etc.  is_terminal=True means the trajectory should stop after this step.
+    """
+
+    prompt_ids: list[int]
+    response_ids: list[int]
+    response_mask: list[int]
+    action_type: str | None
+    action_content: str
+    is_terminal: bool
 
 
 @dataclass
@@ -139,6 +168,42 @@ class AgentLoopBase:
 
     def build_response_mask(self, response_ids: list[int]) -> list[int]:
         return [1] * len(response_ids)
+
+    async def generate_rollout_step(
+        self,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        *,
+        action_re: re.Pattern[str] = _DEFAULT_ACTION_RE,
+        terminal_actions: frozenset[str] = _DEFAULT_TERMINAL_ACTIONS,
+        request_id: str | None = None,
+    ) -> RolloutStep:
+        """Sample one policy action and classify it for the RL loop.
+
+        Analogous to actor_rollout_wg.generate_sequences — the per-step call that
+        drives the trajectory:
+            state (prompt_ids) → generate → classify action → RolloutStep
+
+        The caller decides whether to continue (is_terminal=False) or stop
+        (is_terminal=True) based on the returned action_type.
+        """
+        response_ids = await self.generate_response_ids(
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+            request_id=request_id,
+        )
+        response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+        match = action_re.search(response_text)
+        action_type = match.group(1) if match else None
+        action_content = match.group(2).strip() if match else ""
+        return RolloutStep(
+            prompt_ids=list(prompt_ids),
+            response_ids=list(response_ids),
+            response_mask=self.build_response_mask(response_ids),
+            action_type=action_type,
+            action_content=action_content,
+            is_terminal=action_type in terminal_actions if action_type else True,
+        )
 
     async def run(
         self,
