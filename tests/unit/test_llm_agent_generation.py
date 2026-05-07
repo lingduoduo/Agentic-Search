@@ -99,7 +99,10 @@ def test_execute_predictions_keeps_search_payload_aligned():
         active_mask=torch.tensor([True, True]),
     )
 
-    assert captured["payload"] == [("cats", "second question", "second answer")]
+    assert len(captured["payload"]) == 1
+    assert captured["payload"][0].query == "cats"
+    assert captured["payload"][0].problem == "second question"
+    assert captured["payload"][0].ground_truth == "second answer"
     assert captured["search_mode"] == "google"
     assert captured["gt_threshold"] == 0.8
     assert next_obs[1] == "\n\n<information>doc for second question</information>\n\n"
@@ -165,10 +168,67 @@ def test_execute_predictions_accepts_plan_and_fetch_actions():
 
 
 def test_search_returns_fallback_for_unknown_mode():
+    from src.llm_agent.generation import SearchToolCall
+
     manager = _manager()
-    result, index = manager._search("query", "problem", "answer", "unknown", 0.5, 3)
+    tc = SearchToolCall(
+        query="query", problem="problem", ground_truth="answer", batch_index=3
+    )
+    result, index = manager._search(tc, "unknown", 0.5)
     assert result == "No information available"
     assert index == 3
+
+
+def test_parse_api_item_supports_nested_document_shape():
+    from src.llm_agent.generation import _parse_api_item
+
+    doc = _parse_api_item(
+        {"document": {"title": "T", "contents": '"T"\nBody text', "url": "https://x"}}
+    )
+    assert doc.title == "T"
+    assert doc.snippet == "Body text"
+    assert doc.url == "https://x"
+
+
+def test_parse_api_item_supports_flat_snippet_shape():
+    from src.llm_agent.generation import _parse_api_item
+
+    doc = _parse_api_item(
+        {
+            "title": "Physics Prize",
+            "snippet": "Hopfield and Hinton won.",
+            "link": "https://example.com",
+        }
+    )
+    assert doc.title == "Physics Prize"
+    assert doc.snippet == "Hopfield and Hinton won."
+    assert doc.url == "https://example.com"
+
+
+def test_passages2string_formats_structured_retrieval_results():
+    manager = _manager()
+    rendered = manager._passages2string(
+        [
+            {
+                "document": {
+                    "title": "Physics Prize",
+                    "contents": '"Physics Prize"\nHopfield and Hinton won in 2024.',
+                    "url": "https://example.com/nobel",
+                },
+                "score": 0.9,
+            },
+            {
+                "title": "Background",
+                "snippet": "The Nobel Prize in Physics is awarded annually.",
+            },
+        ]
+    )
+    assert "Doc 1(Title: Physics Prize) Hopfield and Hinton won in 2024." in rendered
+    assert "URL: https://example.com/nobel" in rendered
+    assert (
+        "Doc 2(Title: Background) The Nobel Prize in Physics is awarded annually."
+        in rendered
+    )
 
 
 def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
@@ -274,8 +334,7 @@ def test_run_llm_loop_records_search_reformulations_across_turns():
         ),
     )
     manager.batch_search = lambda payload, search_mode, gt_threshold: [  # type: ignore[method-assign]
-        f"Doc {index + 1}: evidence for {query}"
-        for index, (query, _, _) in enumerate(payload)
+        f"Doc {index + 1}: evidence for {tc.query}" for index, tc in enumerate(payload)
     ]
     gen_batch = SearchBatch.from_dict(
         {

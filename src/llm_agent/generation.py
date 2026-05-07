@@ -10,7 +10,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 
@@ -80,6 +80,16 @@ class SearchToolCall:
     batch_index: int
 
 
+@dataclass(frozen=True)
+class RetrievedDocument:
+    """Normalized retrieval document across BM25, dense, hybrid, web, and RAG backends."""
+
+    title: str
+    snippet: str
+    url: str | None = None
+    score: float | None = None
+
+
 ROLLOUT_ACTION_TAGS = ("plan", "search", "fetch", "answer")
 ACTION_PATTERN = re.compile(
     rf"<(?P<tag>{'|'.join(ROLLOUT_ACTION_TAGS)})>(?P<content>.*?)</(?P=tag)>",
@@ -87,6 +97,174 @@ ACTION_PATTERN = re.compile(
 )
 
 _NO_INFO = "No information available"
+
+
+# ---------------------------------------------------------------------------
+# Retriever protocol and backends
+# ---------------------------------------------------------------------------
+
+
+def _parse_api_item(item: dict[str, Any]) -> RetrievedDocument:
+    """Normalize one API result item from any supported backend shape."""
+    document = item.get("document", item) if isinstance(item, dict) else {}
+    score = item.get("score") if isinstance(item, dict) else None
+
+    title = snippet = ""
+    url = None
+
+    if isinstance(document, dict):
+        title = str(document.get("title") or "").strip()
+        url = document.get("url")
+        raw_contents = document.get("contents")
+        raw_snippet = document.get("snippet")
+        if isinstance(raw_contents, str) and raw_contents.strip():
+            first_line, sep, remainder = raw_contents.partition("\n")
+            normalized_title = first_line.strip().strip('"')
+            if not title and normalized_title:
+                title = normalized_title
+            snippet = remainder.strip() if sep else str(raw_snippet or "").strip()
+        else:
+            snippet = str(raw_snippet or "").strip()
+    else:
+        snippet = str(document).strip()
+
+    if isinstance(item, dict):
+        if not title:
+            title = str(item.get("title") or "").strip()
+        if not snippet:
+            snippet = str(item.get("snippet") or item.get("contents") or "").strip()
+        if url is None:
+            raw_url = item.get("url") or item.get("link")
+            url = str(raw_url).strip() if raw_url else None
+
+    return RetrievedDocument(
+        title=title or "No title.",
+        snippet=snippet or "No snippet available.",
+        url=url,
+        score=float(score)
+        if isinstance(score, (int, float)) and not isinstance(score, bool)
+        else None,
+    )
+
+
+def _format_documents(documents: list[RetrievedDocument]) -> str:
+    if not documents:
+        return _NO_INFO
+    parts = []
+    for i, doc in enumerate(documents, 1):
+        line = f"Doc {i}(Title: {doc.title}) {doc.snippet}".strip()
+        if doc.url:
+            line += f" URL: {doc.url}"
+        parts.append(line)
+    return "\n".join(parts)
+
+
+@runtime_checkable
+class Retriever(Protocol):
+    """Uniform interface for any retrieval backend.
+
+    Implementations: EndpointRetriever (BM25 / dense / hybrid / RAG),
+    GoogleRetriever (SerpAPI), SimulateRetriever (LLM-simulated training).
+    Adding Tavily, Bing, or any other backend only requires implementing
+    this one method — no changes to the dispatch logic.
+    """
+
+    def search(self, query: str, topk: int) -> str:
+        """Return retrieved documents as a formatted string ready for injection."""
+        ...
+
+
+class EndpointRetriever:
+    """POST /retrieve against a local BM25 / dense / hybrid / RAG endpoint."""
+
+    def __init__(self, url: str, retry_attempts: int, sleep_seconds: float) -> None:
+        self._url = url
+        self._retry_attempts = retry_attempts
+        self._sleep_seconds = sleep_seconds
+
+    def search(self, query: str, topk: int) -> str:
+        if not self._url:
+            return _NO_INFO
+        import requests
+
+        for _ in range(self._retry_attempts):
+            try:
+                resp = requests.post(
+                    self._url, json={"queries": [query], "topk": topk}, timeout=10
+                )
+                resp.raise_for_status()
+                rows = resp.json().get("result", [[]])[0]
+                return _format_documents([_parse_api_item(item) for item in rows])
+            except Exception:  # pragma: no cover - network dependent
+                time.sleep(self._sleep_seconds)
+        return _NO_INFO
+
+
+class GoogleRetriever:
+    """SerpAPI Google search backend."""
+
+    def __init__(self, api_key: str, retry_attempts: int, sleep_seconds: float) -> None:
+        self._api_key = api_key
+        self._retry_attempts = retry_attempts
+        self._sleep_seconds = sleep_seconds
+
+    def search(self, query: str, topk: int) -> str:
+        if not self._api_key:
+            return _NO_INFO
+        import serpapi  # optional dep
+
+        params = {"engine": "google", "q": query, "api_key": self._api_key, "num": topk}
+        for attempt in range(self._retry_attempts):
+            try:
+                items = serpapi.search(params).get("organic_results", [])
+                return _format_documents([_parse_api_item(item) for item in items])
+            except Exception:  # pragma: no cover - network dependent
+                if attempt < self._retry_attempts - 1:
+                    time.sleep(self._sleep_seconds)
+        return _NO_INFO
+
+
+class SimulateRetriever:
+    """LLM-simulated search for training (simulate_sft / simulate_prompt).
+
+    Not a real retrieval backend — satisfies Retriever so training code
+    handles all modes uniformly without an if/elif on search_mode.
+    """
+
+    def __init__(
+        self,
+        llm_ip: str | None,
+        temperature: float,
+        llm_max_retries: int,
+        *,
+        problem: str,
+        ground_truth: str,
+        gt_threshold: float,
+        use_examples: bool = False,
+    ) -> None:
+        self._llm_ip = llm_ip
+        self._temperature = temperature
+        self._llm_max_retries = llm_max_retries
+        self._problem = problem
+        self._ground_truth = ground_truth
+        self._gt_threshold = gt_threshold
+        self._use_examples = use_examples
+
+    def search(self, query: str, topk: int) -> str:
+        return (
+            search_simulate(
+                self._llm_ip,
+                topk,
+                self._temperature,
+                query,
+                self._problem,
+                self._ground_truth,
+                self._gt_threshold,
+                use_examples=self._use_examples,
+                llm_max_retries=self._llm_max_retries,
+            )
+            or _NO_INFO
+        )
 
 
 @dataclass(frozen=True)
@@ -791,12 +969,7 @@ class LLMGenerationManager:
 
         if do_search and search_tool_calls:
             search_results = self.batch_search(
-                [
-                    (call.query, call.problem, call.ground_truth)
-                    for call in search_tool_calls
-                ],
-                search_mode,
-                gt_threshold,
+                search_tool_calls, search_mode, gt_threshold
             )
         else:
             search_results = [""] * len(search_tool_calls)
@@ -930,156 +1103,105 @@ class LLMGenerationManager:
             action.content for action in parsed_actions
         ]
 
+    def _make_retriever(
+        self,
+        tool_call: SearchToolCall,
+        search_mode: str,
+        gt_threshold: float,
+    ) -> Retriever:
+        """Return the backend Retriever for this search mode.
+
+        Adding a new backend (Tavily, Bing, …) only requires adding one
+        branch here and implementing the Retriever protocol.
+        """
+        cfg = self.config
+        if search_mode == "google":
+            return GoogleRetriever(
+                os.environ.get("SERP_API_KEY", ""),
+                cfg.google_retry_attempts,
+                cfg.google_retry_sleep_seconds,
+            )
+        if search_mode == "wiki":
+            url = f"http://{cfg.retriever_ip}:6002/retrieve" if cfg.retriever_ip else ""
+            return EndpointRetriever(
+                url, cfg.wiki_retry_attempts, cfg.wiki_retry_sleep_seconds
+            )
+        if search_mode == "local":
+            return EndpointRetriever(
+                cfg.retrieval_url or "",
+                cfg.wiki_retry_attempts,
+                cfg.wiki_retry_sleep_seconds,
+            )
+        if search_mode in ("simulate_sft", "simulate_prompt"):
+            return SimulateRetriever(
+                cfg.llm_ip,
+                cfg.temperature,
+                cfg.llm_max_retries,
+                problem=tool_call.problem,
+                ground_truth=tool_call.ground_truth,
+                gt_threshold=gt_threshold,
+                use_examples=(search_mode == "simulate_prompt"),
+            )
+        return EndpointRetriever("", 0, 0.0)  # unknown mode → no-op
+
     def batch_search(
         self,
-        search_payload: list[tuple[str, str, str]],
+        tool_calls: list[SearchToolCall],
         search_mode: str,
         gt_threshold: float,
     ) -> list[str]:
-        if not search_payload:
+        if not tool_calls:
             return []
-
-        all_search_result = [_NO_INFO] * len(search_payload)
-        max_workers = min(self.config.search_max_workers, len(search_payload))
+        all_results = [_NO_INFO] * len(tool_calls)
+        max_workers = min(self.config.search_max_workers, len(tool_calls))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(
-                    self._search,
-                    query,
-                    problem,
-                    ground_truth,
-                    search_mode,
-                    gt_threshold,
-                    index,
-                )
-                for index, (query, problem, ground_truth) in enumerate(search_payload)
-            ]
+            futures = {
+                executor.submit(self._search, tc, search_mode, gt_threshold): pos
+                for pos, tc in enumerate(tool_calls)
+            }
             for future in as_completed(futures):
                 try:
-                    result, index = future.result()
-                    all_search_result[index] = result
+                    result, _ = future.result()
+                    all_results[futures[future]] = result
                 except Exception as exc:
                     logger.warning("Search future failed: %s", exc)
-                    continue
-        return all_search_result
+        return all_results
 
-    def _retrieve_from_endpoint(
+    def _search(
         self,
-        url: str,
-        query: str,
-        topk: int,
-        retry_attempts: int,
-        sleep_seconds: float = 1.0,
-    ) -> str:
-        import requests  # optional dep; imported here so the class loads without it
-
-        for _ in range(retry_attempts):
-            try:
-                resp = requests.post(
-                    url, json={"queries": [query], "topk": topk}, timeout=10
-                )
-                resp.raise_for_status()
-                rows = resp.json().get("result", [[]])[0]
-                return self._passages2string(rows) or _NO_INFO
-            except Exception:  # pragma: no cover - network/runtime dependent
-                time.sleep(sleep_seconds)
-        return _NO_INFO
+        tool_call: SearchToolCall,
+        search_mode: str,
+        gt_threshold: float,
+    ) -> tuple[str, int]:
+        result = self._make_retriever(tool_call, search_mode, gt_threshold).search(
+            tool_call.query, self.config.topk
+        )
+        return result or _NO_INFO, tool_call.batch_index
 
     def retrieve_from_wiki(self, ip: str | None, query: str, topk: int = 5) -> str:
         if not ip:
             return _NO_INFO
-        return self._retrieve_from_endpoint(
+        return EndpointRetriever(
             f"http://{ip}:6002/retrieve",
-            query,
-            topk,
             self.config.wiki_retry_attempts,
             self.config.wiki_retry_sleep_seconds,
-        )
+        ).search(query, topk)
 
     def retrieve_from_local(self, query: str, topk: int = 5) -> str:
-        """Call the repo's retrieval_server (POST /retrieve) directly."""
-        if not self.config.retrieval_url:
-            return _NO_INFO
-        return self._retrieve_from_endpoint(
-            self.config.retrieval_url,
-            query,
-            topk,
+        return EndpointRetriever(
+            self.config.retrieval_url or "",
             self.config.wiki_retry_attempts,
             self.config.wiki_retry_sleep_seconds,
-        )
+        ).search(query, topk)
 
     def retrieve_from_google(
         self, query: str, topk: int, retry_attempt: int | None = None
     ) -> str:
-        retry_attempt = retry_attempt or self.config.google_retry_attempts
-        api_key = os.environ.get("SERP_API_KEY")
-        if not api_key:
-            return _NO_INFO
-
-        import serpapi  # optional dep; imported here so the class loads without it
-
-        params = {"engine": "google", "q": query, "api_key": api_key, "num": topk}
-        for attempt in range(retry_attempt):
-            try:
-                search = serpapi.search(params)
-                search_result = search.get("organic_results", [])
-                search_texts = []
-                for item in search_result:
-                    text_data = (
-                        f"{item.get('title', '')}{item.get('snippet', '')}".strip()
-                    )
-                    if text_data:
-                        search_texts.append(text_data)
-                if not search_texts:
-                    return _NO_INFO
-                return "\n".join(
-                    [
-                        f"Doc {index + 1}: {doc}"
-                        for index, doc in enumerate(search_texts)
-                    ]
-                )
-            except Exception:  # pragma: no cover - network/runtime dependent
-                if attempt < retry_attempt - 1:
-                    time.sleep(self.config.google_retry_sleep_seconds)
-        return _NO_INFO
-
-    def _search(
-        self,
-        query: str,
-        problem: str,
-        ground_truth: str,
-        search_mode: str,
-        gt_threshold: float,
-        index: int,
-    ) -> tuple[str, int]:
-        if search_mode == "google":
-            doc_texts = self.retrieve_from_google(query, self.config.topk)
-        elif search_mode == "wiki":
-            doc_texts = self.retrieve_from_wiki(
-                self.config.retriever_ip, query, self.config.topk
-            )
-        elif search_mode in ("simulate_sft", "simulate_prompt"):
-            doc_texts = search_simulate(
-                self.config.llm_ip,
-                self.config.topk,
-                self.config.temperature,
-                query,
-                problem,
-                ground_truth,
-                gt_threshold,
-                use_examples=(search_mode == "simulate_prompt"),
-                llm_max_retries=self.config.llm_max_retries,
-            )
-        elif search_mode == "local":
-            doc_texts = self.retrieve_from_local(query, self.config.topk)
-        else:
-            doc_texts = "No information available"
-        return doc_texts, index
+        return GoogleRetriever(
+            os.environ.get("SERP_API_KEY", ""),
+            retry_attempt or self.config.google_retry_attempts,
+            self.config.google_retry_sleep_seconds,
+        ).search(query, topk)
 
     def _passages2string(self, retrieval_result: list[dict[str, Any]]) -> str:
-        parts = []
-        for index, doc_item in enumerate(retrieval_result):
-            content = doc_item["document"]["contents"]
-            title, _, text = content.partition("\n")
-            parts.append(f"Doc {index + 1}(Title: {title}) {text}")
-        return "\n".join(parts)
+        return _format_documents([_parse_api_item(item) for item in retrieval_result])
