@@ -81,6 +81,14 @@ class SearchToolCall:
 
 
 @dataclass(frozen=True)
+class FetchToolCall:
+    """One model-chosen page fetch invocation for the current rollout state."""
+
+    urls: list[str]
+    batch_index: int
+
+
+@dataclass(frozen=True)
 class ReActStep:
     """One (action, observation) pair in a ReAct trajectory.
 
@@ -185,11 +193,8 @@ def build_react_observation(action: "PolicyAction", retrieval_result: str = "") 
             "<answer>.</plan_feedback>\n\n"
         )
     if action.tag == "fetch":
-        return (
-            "\n\n<tool_feedback>Fetch was requested, but this rollout manager does "
-            "not yet execute fetch actions directly. Use <search> for retrieval-backed "
-            "evidence in this loop.</tool_feedback>\n\n"
-        )
+        content = retrieval_result.strip() or _NO_INFO
+        return f"\n\n<full_page>{content}</full_page>\n\n"
     if action.tag == "answer":
         return ""
     return (
@@ -211,6 +216,12 @@ def _format_documents(documents: list[RetrievedDocument]) -> str:
     return "\n".join(parts)
 
 
+def _derive_fetch_url(retrieval_url: str) -> str:
+    if retrieval_url.endswith("/retrieve"):
+        return retrieval_url[: -len("/retrieve")] + "/fetch"
+    return retrieval_url.rstrip("/") + "/fetch"
+
+
 @runtime_checkable
 class Retriever(Protocol):
     """Uniform interface for any retrieval backend.
@@ -223,6 +234,15 @@ class Retriever(Protocol):
 
     def search(self, query: str, topk: int) -> str:
         """Return retrieved documents as a formatted string ready for injection."""
+        ...
+
+
+@runtime_checkable
+class Fetcher(Protocol):
+    """Uniform interface for page-fetch backends used after a model emits <fetch>."""
+
+    def fetch(self, urls: list[str]) -> str:
+        """Return fetched page content formatted for the next model turn."""
         ...
 
 
@@ -246,6 +266,35 @@ class EndpointRetriever:
                 )
                 resp.raise_for_status()
                 rows = resp.json().get("result", [[]])[0]
+                return _format_documents([_parse_api_item(item) for item in rows])
+            except Exception:  # pragma: no cover - network dependent
+                time.sleep(self._sleep_seconds)
+        return _NO_INFO
+
+
+class EndpointFetcher:
+    """POST /fetch against a compatible search backend when available."""
+
+    def __init__(
+        self, fetch_url: str, retry_attempts: int, sleep_seconds: float
+    ) -> None:
+        self._fetch_url = fetch_url
+        self._retry_attempts = retry_attempts
+        self._sleep_seconds = sleep_seconds
+
+    def fetch(self, urls: list[str]) -> str:
+        clean_urls = [url.strip() for url in urls if url.strip()]
+        if not clean_urls or not self._fetch_url:
+            return _NO_INFO
+        import requests
+
+        for _ in range(self._retry_attempts):
+            try:
+                resp = requests.post(
+                    self._fetch_url, json={"urls": clean_urls}, timeout=10
+                )
+                resp.raise_for_status()
+                rows = resp.json().get("result", [])
                 return _format_documents([_parse_api_item(item) for item in rows])
             except Exception:  # pragma: no cover - network dependent
                 time.sleep(self._sleep_seconds)
@@ -480,6 +529,7 @@ class LLMGenerationManager:
         is_validation: bool = False,
         generation_backend: Any | None = None,
         actor_rollout_wg: Any | None = None,
+        fetcher: Fetcher | None = None,
     ) -> None:
         self.tokenizer = tokenizer
         self.generation_backend = generation_backend or actor_rollout_wg
@@ -487,6 +537,7 @@ class LLMGenerationManager:
             raise ValueError("generation_backend is required.")
         self.config = config
         self.is_validation = is_validation
+        self.fetcher = fetcher
         self.tensor_fn = TensorHelper(
             TensorConfig(
                 pad_token_id=tokenizer.pad_token_id,
@@ -826,6 +877,16 @@ class LLMGenerationManager:
         meta_info["active_mask"] = state.active_mask.tolist()
         meta_info["valid_action_stats"] = state.valid_action_stats.tolist()
         meta_info["valid_search_stats"] = state.valid_search_stats.tolist()
+
+        # Per-trajectory final answers and timeout flags for reward computation.
+        batch_size = len(state.trajectory_turns)
+        final_answers = meta_info.get("final_answers", {})
+        meta_info["final_answers"] = [
+            final_answers.get(idx) for idx in range(batch_size)
+        ]
+        meta_info["finished_without_answer"] = [
+            final_answers.get(idx) is None for idx in range(batch_size)
+        ]
         return meta_info
 
     def _record_policy_rollout_step(
@@ -871,6 +932,44 @@ class LLMGenerationManager:
             state.meta_info["search_queries_unique"] - 1,
         )
 
+    def _record_fetch_tool_calls(
+        self,
+        state: AgentLoopState,
+        parsed_actions: list[PolicyAction],
+    ) -> None:
+        fetch_urls = [
+            [url.strip() for url in re.split(r"[\n,]+", action.content) if url.strip()]
+            for action in parsed_actions
+            if action.tag == "fetch"
+        ]
+        if not fetch_urls:
+            return
+
+        state.meta_info.setdefault("fetch_url_history", []).extend(fetch_urls)
+        state.meta_info["fetched_urls_total"] = sum(
+            len(urls) for urls in state.meta_info["fetch_url_history"]
+        )
+
+    def _extract_trajectory_answers(
+        self,
+        state: AgentLoopState,
+        step_result: AgentLoopStepResult,
+    ) -> None:
+        """Store the <answer> content for each trajectory that just terminated.
+
+        Called after every turn so reward computation can read
+        meta_info["final_answers"][batch_idx] without re-parsing responses.
+        Trajectories that time out without producing <answer> are absent from
+        the dict — meta_info["finished_without_answer"] flags them explicitly.
+        """
+        for batch_idx, (action, done) in enumerate(
+            zip(step_result.parsed_actions, step_result.dones)
+        ):
+            if done and action.tag == "answer":
+                state.meta_info.setdefault("final_answers", {})[batch_idx] = (
+                    action.content.strip()
+                )
+
     def _run_one_turn(
         self,
         gen_batch: SearchBatch,
@@ -896,9 +995,11 @@ class LLMGenerationManager:
         state.meta_info.update(step_meta_info)
         self._record_policy_rollout_step(state, step_result.parsed_actions)
         self._record_search_tool_calls(state, step_result.parsed_actions)
+        self._record_fetch_tool_calls(state, step_result.parsed_actions)
         self._apply_step_result(
             state, step_result, include_observations=include_observations
         )
+        self._extract_trajectory_answers(state, step_result)
         return step_result
 
     def run_llm_loop(
@@ -1035,6 +1136,10 @@ class LLMGenerationManager:
             ground_truth=ground_truth,
             active_mask=active_mask,
         )
+        fetch_tool_calls = self.build_fetch_tool_calls(
+            sampled_actions,
+            active_mask=active_mask,
+        )
 
         if do_search and search_tool_calls:
             search_results = self.batch_search(
@@ -1042,12 +1147,17 @@ class LLMGenerationManager:
             )
         else:
             search_results = [""] * len(search_tool_calls)
+        if do_search and fetch_tool_calls:
+            fetch_results = self.batch_fetch(fetch_tool_calls)
+        else:
+            fetch_results = [""] * len(fetch_tool_calls)
 
         next_obs: list[str] = []
         dones: list[int] = []
         valid_action: list[int] = []
         is_search: list[int] = []
         search_result_index = 0
+        fetch_result_index = 0
 
         for sample_action, active in zip(sampled_actions, active_mask.tolist()):
             tag = sample_action.tag
@@ -1060,11 +1170,19 @@ class LLMGenerationManager:
 
             is_done = tag == "answer"
             retrieval = search_results[search_result_index] if tag == "search" else ""
+            fetch_content = fetch_results[fetch_result_index] if tag == "fetch" else ""
             if tag == "search":
                 search_result_index += 1
+            if tag == "fetch":
+                fetch_result_index += 1
 
             next_obs.append(
-                "" if is_done else build_react_observation(sample_action, retrieval)
+                ""
+                if is_done
+                else build_react_observation(
+                    sample_action,
+                    retrieval if tag == "search" else fetch_content,
+                )
             )
             dones.append(1 if is_done else 0)
             valid_action.append(
@@ -1134,6 +1252,39 @@ class LLMGenerationManager:
                 )
             )
         return calls
+
+    def build_fetch_tool_calls(
+        self,
+        parsed_actions: list[PolicyAction],
+        *,
+        active_mask: torch.Tensor,
+    ) -> list[FetchToolCall]:
+        """Convert model-emitted fetch actions into explicit tool calls."""
+
+        calls: list[FetchToolCall] = []
+        for index, (action, active) in enumerate(
+            zip(parsed_actions, active_mask.tolist())
+        ):
+            if not active or action.tag != "fetch":
+                continue
+            urls = [
+                part.strip()
+                for part in re.split(r"[\n,]+", action.content)
+                if part.strip()
+            ]
+            calls.append(FetchToolCall(urls=urls, batch_index=index))
+        return calls
+
+    def _resolve_fetcher(self) -> Fetcher | None:
+        if self.fetcher is not None:
+            return self.fetcher
+        if self.config.retrieval_url:
+            return EndpointFetcher(
+                _derive_fetch_url(self.config.retrieval_url),
+                retry_attempts=self.config.wiki_retry_attempts,
+                sleep_seconds=self.config.wiki_retry_sleep_seconds,
+            )
+        return None
 
     def postprocess_predictions(
         self, predictions: list[Any]
@@ -1207,6 +1358,28 @@ class LLMGenerationManager:
                     logger.warning("Search future failed: %s", exc)
         return all_results
 
+    def batch_fetch(self, tool_calls: list[FetchToolCall]) -> list[str]:
+        if not tool_calls:
+            return []
+        fetcher = self._resolve_fetcher()
+        if fetcher is None:
+            return [_NO_INFO] * len(tool_calls)
+
+        all_results = [_NO_INFO] * len(tool_calls)
+        max_workers = min(self.config.search_max_workers, len(tool_calls))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._fetch, tc, fetcher): pos
+                for pos, tc in enumerate(tool_calls)
+            }
+            for future in as_completed(futures):
+                try:
+                    result, _ = future.result()
+                    all_results[futures[future]] = result
+                except Exception as exc:
+                    logger.warning("Fetch future failed: %s", exc)
+        return all_results
+
     def _search(
         self,
         tool_call: SearchToolCall,
@@ -1216,6 +1389,14 @@ class LLMGenerationManager:
         result = self._make_retriever(tool_call, search_mode, gt_threshold).search(
             tool_call.query, self.config.topk
         )
+        return result or _NO_INFO, tool_call.batch_index
+
+    def _fetch(
+        self,
+        tool_call: FetchToolCall,
+        fetcher: Fetcher,
+    ) -> tuple[str, int]:
+        result = fetcher.fetch(tool_call.urls)
         return result or _NO_INFO, tool_call.batch_index
 
     def retrieve_from_wiki(self, ip: str | None, query: str, topk: int = 5) -> str:
