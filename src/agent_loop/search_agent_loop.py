@@ -27,6 +27,38 @@ from .evaluation import (
 )
 from .search_client import SearchClient, SearchClientConfig
 
+# ---------------------------------------------------------------------------
+# Search tool-call types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SearchToolCall:
+    """The model's search decision — parsed from <search>...</search> output.
+
+    Captures which queries to run this round, which were already seen
+    (repeated), and which are blocked by the round budget (overflow).
+    """
+
+    queries: list[str]
+    task_ids: list[str | None]
+    repeated: list[str]
+    overflow: list[str]
+
+    @property
+    def has_new_queries(self) -> bool:
+        return bool(self.queries)
+
+
+@dataclass(frozen=True)
+class SearchRoundResult:
+    """Outcome of executing one search round as a tool call."""
+
+    search_contexts: list[SearchContext]
+    evaluation: SearchRoundEvaluation | None
+    observation: str
+
+
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
 
@@ -507,6 +539,78 @@ class SearchAgentLoop(AgentLoopBase):
         return all(task_statuses.get(tid, False) for tid in active_tasks)
 
     # ------------------------------------------------------------------
+    # Search tool-call execution
+    # ------------------------------------------------------------------
+
+    async def _execute_search_round(
+        self,
+        tool_call: SearchToolCall,
+        *,
+        agent_ctx: AgentContext,
+        search_cache: dict[str, list[SearchResult]],
+        active_tasks: dict[str, str],
+        task_statuses: dict[str, bool],
+        metrics: dict[str, float],
+    ) -> SearchRoundResult:
+        """Execute the model's search tool call and return the observation.
+
+        This is the tool_call() invoked when the model outputs
+        <search>query</search> or <searches>...</searches>.  Handles retrieval,
+        cache, evaluation, and observation formatting in one place.
+        """
+        queries = tool_call.queries
+        task_ids = tool_call.task_ids
+        cfg = self.search_config
+
+        metrics["search_queries"] += len(queries)
+        metrics["search_cache_hits"] += sum(1 for q in queries if q in search_cache)
+
+        t0 = time.perf_counter()
+        results_by_query = await self._retrieve_with_cache(queries, search_cache)
+        metrics["search_rounds"] += 1
+        logger.debug(
+            "search returned %d total results across %d queries in %.2fs",
+            sum(len(r) for r in results_by_query),
+            len(queries),
+            time.perf_counter() - t0,
+        )
+
+        if any(results_by_query):
+            search_contexts = agent_ctx.add_round(
+                queries=queries,
+                results_by_query=results_by_query,
+                task_ids=task_ids,
+            )
+            evaluation = self._result_evaluator.evaluate_round(search_contexts)
+            sufficient_queries = sum(1 for qe in evaluation.queries if qe.is_sufficient)
+            if evaluation.queries:
+                metrics["search_quality_score_sum"] += sufficient_queries / len(
+                    evaluation.queries
+                )
+            if evaluation.is_sufficient:
+                metrics["evidence_sufficient_rounds"] += 1.0
+            else:
+                metrics["evidence_insufficient_rounds"] += 1.0
+            for tid, ev in self._evaluate_tasks(search_contexts).items():
+                task_statuses[tid] = ev.is_sufficient
+            return SearchRoundResult(
+                search_contexts=search_contexts,
+                evaluation=evaluation,
+                observation=self._build_search_observation(
+                    agent_ctx.num_rounds, search_contexts, evaluation
+                ),
+            )
+
+        metrics["evidence_insufficient_rounds"] += 1.0
+        return SearchRoundResult(
+            search_contexts=[],
+            evaluation=None,
+            observation=cfg.obs_template.format(
+                content="No results returned. Try rephrasing the search query."
+            ),
+        )
+
+    # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
 
@@ -652,8 +756,12 @@ class SearchAgentLoop(AgentLoopBase):
                     executed_queries=executed_queries,
                     rounds_used=rounds_used,
                 )
-                all_queries = [q for _, q in allowed_specs]
-                query_task_ids = [tid for tid, _ in allowed_specs]
+                search_tool_call = SearchToolCall(
+                    queries=[q for _, q in allowed_specs],
+                    task_ids=[tid for tid, _ in allowed_specs],
+                    repeated=repeated,
+                    overflow=overflow,
+                )
 
                 # Tentatively record the answer from this turn.  Doing this
                 # before the gating block ensures that a turn mixing <answer>
@@ -666,7 +774,7 @@ class SearchAgentLoop(AgentLoopBase):
                 # Answer gating: block early answers if evidence is insufficient.
                 if (
                     any(tag == answer_tag for tag, _ in actions)
-                    and not all_queries
+                    and not search_tool_call.has_new_queries
                     and not fetch_urls
                 ):
                     if (
@@ -705,19 +813,21 @@ class SearchAgentLoop(AgentLoopBase):
                 # Build observation for this turn (search + fetch combined into one message).
                 turn_observations: list[str] = []
 
-                if repeated:
-                    metrics["repeated_search_queries"] += len(repeated)
+                if search_tool_call.repeated:
+                    metrics["repeated_search_queries"] += len(search_tool_call.repeated)
                     turn_observations.append(
                         cfg.repeated_query_template.format(
-                            content="\n".join(f"- {q}" for q in repeated)
+                            content="\n".join(
+                                f"- {q}" for q in search_tool_call.repeated
+                            )
                         )
                     )
-                if overflow:
+                if search_tool_call.overflow:
                     metrics["search_limit_hits"] += 1.0
                     turn_observations.append(cfg.search_limit_template)
 
                 # Plan / subquestions only — no search or fetch.
-                if not all_queries and not fetch_urls:
+                if not search_tool_call.has_new_queries and not fetch_urls:
                     if declared_subquestions:
                         turn_observations.append(
                             cfg.subquestions_obs_template.format(
@@ -745,68 +855,26 @@ class SearchAgentLoop(AgentLoopBase):
                     continue
 
                 # Parallel search round (before fetch so evidence appears first).
-                if all_queries:
+                if search_tool_call.has_new_queries:
                     consecutive_rejections = 0
-                    metrics["search_queries"] += len(all_queries)
-                    metrics["search_cache_hits"] += sum(
-                        1 for q in all_queries if q in search_cache
-                    )
                     rounds_used += 1  # count rounds, not individual queries
-                    executed_queries.update(all_queries)
-
-                    t0 = time.perf_counter()
-                    results_by_query = await self._retrieve_with_cache(
-                        all_queries, search_cache
+                    executed_queries.update(search_tool_call.queries)
+                    round_result = await self._execute_search_round(
+                        search_tool_call,
+                        agent_ctx=agent_ctx,
+                        search_cache=search_cache,
+                        active_tasks=active_tasks,
+                        task_statuses=task_statuses,
+                        metrics=metrics,
                     )
-                    elapsed = time.perf_counter() - t0
-                    metrics["search_rounds"] += 1
-                    logger.debug(
-                        "search returned %d total results across %d queries in %.2fs",
-                        sum(len(r) for r in results_by_query),
-                        len(all_queries),
-                        elapsed,
-                    )
-
-                    if any(results_by_query):
-                        search_contexts = agent_ctx.add_round(
-                            queries=all_queries,
-                            results_by_query=results_by_query,
-                            task_ids=query_task_ids,
-                        )
-                        latest_evaluation = self._result_evaluator.evaluate_round(
-                            search_contexts
-                        )
-                        sufficient_queries = sum(
-                            1 for qe in latest_evaluation.queries if qe.is_sufficient
-                        )
-                        if latest_evaluation.queries:
-                            metrics["search_quality_score_sum"] += (
-                                sufficient_queries / len(latest_evaluation.queries)
-                            )
-                        if latest_evaluation.is_sufficient:
-                            metrics["evidence_sufficient_rounds"] += 1.0
-                        else:
-                            metrics["evidence_insufficient_rounds"] += 1.0
-                        for tid, ev in self._evaluate_tasks(search_contexts).items():
-                            task_statuses[tid] = ev.is_sufficient
+                    latest_evaluation = round_result.evaluation
+                    turn_observations.append(round_result.observation)
+                    if active_tasks:
                         turn_observations.append(
-                            self._build_search_observation(
-                                agent_ctx.num_rounds, search_contexts, latest_evaluation
-                            )
-                        )
-                        if active_tasks:
-                            turn_observations.append(
-                                cfg.subquestions_obs_template.format(
-                                    content=self._build_subquestion_status_feedback(
-                                        active_tasks, task_statuses
-                                    )
+                            cfg.subquestions_obs_template.format(
+                                content=self._build_subquestion_status_feedback(
+                                    active_tasks, task_statuses
                                 )
-                            )
-                    else:
-                        metrics["evidence_insufficient_rounds"] += 1.0
-                        turn_observations.append(
-                            cfg.obs_template.format(
-                                content="No results returned. Try rephrasing the search query."
                             )
                         )
 
