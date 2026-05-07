@@ -108,6 +108,20 @@ class ReActStep:
 
 
 @dataclass(frozen=True)
+class RolloutTrajectory:
+    """One complete RL rollout trajectory for a single prompt."""
+
+    batch_index: int
+    prompt_token_ids: list[int]
+    response_token_ids: list[int]
+    response_with_observation_mask: list[int]
+    trajectory_turns: int
+    steps: list[ReActStep]
+    final_answer: str | None
+    finished_without_answer: bool
+
+
+@dataclass(frozen=True)
 class RetrievedDocument:
     """Normalized retrieval document across BM25, dense, hybrid, web, and RAG backends."""
 
@@ -877,6 +891,7 @@ class LLMGenerationManager:
         meta_info["active_mask"] = state.active_mask.tolist()
         meta_info["valid_action_stats"] = state.valid_action_stats.tolist()
         meta_info["valid_search_stats"] = state.valid_search_stats.tolist()
+        meta_info["trajectory_turns"] = list(state.trajectory_turns)
 
         # Per-trajectory final answers and timeout flags for reward computation.
         batch_size = len(state.trajectory_turns)
@@ -1053,7 +1068,9 @@ class LLMGenerationManager:
 
         return (
             self._compose_final_output(
-                state.original_left_side, state.original_right_side, state.meta_info
+                state.original_left_side,
+                state.original_right_side,
+                state.meta_info,
             ),
             state.trajectory_turns,
         )
@@ -1086,6 +1103,20 @@ class LLMGenerationManager:
         right_side: dict[str, torch.Tensor],
         meta_info: dict[str, Any],
     ) -> SearchBatch:
+        """Assemble the training-ready RL rollout batch.
+
+        Tensor layout (all in search_batch.batch):
+            input_ids               — prompt + full response (prompt ++ actions ++ observations)
+            attention_mask          — which token positions are non-pad
+            info_mask               — 1 for model-generated tokens, 0 for env-injected observations
+            position_ids            — incremental positions over attention_mask
+            prompts                 — prompt token ids only (left side)
+            responses               — response token ids only (right side)
+            responses_with_info_mask — responses with observation tokens zeroed (for loss masking)
+
+        Non-tensor data (search_batch.non_tensor_batch):
+            trajectories — list[RolloutTrajectory], one per prompt in the batch
+        """
         final_output = right_side.copy()
         final_output["prompts"] = left_side["input_ids"]
         final_output["input_ids"] = torch.cat(
@@ -1113,7 +1144,63 @@ class LLMGenerationManager:
 
         search_batch = SearchBatch.from_dict(final_output)
         search_batch.meta_info.update(meta_info)
+        search_batch.non_tensor_batch["trajectories"] = (
+            self._build_rollout_trajectories(
+                left_side=left_side, right_side=right_side, meta_info=meta_info
+            )
+        )
         return search_batch
+
+    def _build_rollout_trajectories(
+        self,
+        *,
+        left_side: dict[str, torch.Tensor],
+        right_side: dict[str, torch.Tensor],
+        meta_info: dict[str, Any],
+    ) -> list[RolloutTrajectory]:
+        """Build one RolloutTrajectory per prompt from the completed loop state.
+
+        Each trajectory captures the full RL rollout:
+            prompt → search → retrieval → reasoning → answer
+
+        Fields are structured for reward computation and SFT data extraction
+        without re-parsing the raw token sequences.
+        """
+        prompt_ids = left_side["input_ids"].tolist()
+        response_ids = right_side["responses"].tolist()
+        response_with_obs = right_side["responses_with_info_mask"].tolist()
+
+        react_trajectory = meta_info.get("react_trajectory", [])
+        trajectory_turns = meta_info.get("trajectory_turns", [0] * len(prompt_ids))
+        final_answers = meta_info.get("final_answers", [])
+        finished_without_answer = meta_info.get("finished_without_answer", [])
+
+        trajectories: list[RolloutTrajectory] = []
+        for batch_index in range(len(prompt_ids)):
+            steps = [
+                turn_steps[batch_index]
+                for turn_steps in react_trajectory
+                if batch_index < len(turn_steps)
+            ]
+            trajectories.append(
+                RolloutTrajectory(
+                    batch_index=batch_index,
+                    prompt_token_ids=list(prompt_ids[batch_index]),
+                    response_token_ids=list(response_ids[batch_index]),
+                    response_with_observation_mask=list(response_with_obs[batch_index]),
+                    trajectory_turns=trajectory_turns[batch_index]
+                    if batch_index < len(trajectory_turns)
+                    else 0,
+                    steps=steps,
+                    final_answer=final_answers[batch_index]
+                    if batch_index < len(final_answers)
+                    else None,
+                    finished_without_answer=finished_without_answer[batch_index]
+                    if batch_index < len(finished_without_answer)
+                    else True,
+                )
+            )
+        return trajectories
 
     def execute_predictions(
         self,

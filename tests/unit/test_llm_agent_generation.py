@@ -352,6 +352,16 @@ def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
     )
     assert react[0][0].is_terminal is False
     assert len(final_batch.meta_info["context_token_lengths"]) == 1
+    assert final_batch.meta_info["trajectory_turns"] == [2]
+    trajectories = final_batch.non_tensor_batch["trajectories"]
+    assert len(trajectories) == 1
+    trajectory = trajectories[0]
+    assert trajectory.batch_index == 0
+    assert trajectory.trajectory_turns == 2
+    assert trajectory.final_answer == "done"
+    assert trajectory.finished_without_answer is False
+    assert len(trajectory.steps) == 1
+    assert trajectory.steps[0].action_tag == "search"
     assert final_batch.batch["responses"].shape[1] > 0
 
 
@@ -500,6 +510,13 @@ def test_run_llm_loop_supports_search_fetch_answer_second_rounds():
     assert react[1][0].observation == (
         "\n\n<full_page>Doc 1(Title: Nobel Full Page) Full article body with evidence.</full_page>\n\n"
     )
+    trajectory = final_batch.non_tensor_batch["trajectories"][0]
+    assert trajectory.trajectory_turns == 3
+    assert [step.action_tag for step in trajectory.steps] == ["search", "fetch"]
+    assert (
+        trajectory.final_answer == "The 2024 Nobel Prize in Physics was awarded to ..."
+    )
+    assert trajectory.finished_without_answer is False
 
 
 def test_postprocess_responses_truncates_to_first_complete_action():
