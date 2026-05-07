@@ -49,6 +49,8 @@ from .reward import SearchRewardConfig, SearchRewardFunction
 from .search_agent_loop import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
+    SearchRoundResult,
+    SearchToolCall,
     build_search_agent_instruction,
 )
 from .sft import SFTExample, build_search_sft_example
@@ -100,6 +102,8 @@ __all__ = [
     "QueryEvaluation",
     "SearchAgentLoop",
     "SearchAgentLoopConfig",
+    "SearchRoundResult",
+    "SearchToolCall",
     "SFTExample",
     "SearchClient",
     "SearchClientConfig",
