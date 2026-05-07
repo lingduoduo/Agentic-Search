@@ -83,6 +83,46 @@ def test_sample_prompt_group_assigns_shared_group_id_and_rollout_indices():
     assert [sample.output.rollout_index for sample in samples] == [0, 1, 2, 3]
 
 
+def test_sample_prompt_group_accepts_prebuilt_messages():
+    class _RecordingLoop(_DummyLoop):
+        def __init__(self):
+            super().__init__("ok")
+            self.seen_messages = None
+
+        async def run(self, messages, sampling_params):
+            self.seen_messages = list(messages)
+            return await super().run(messages, sampling_params)
+
+    holder: dict[str, _RecordingLoop] = {}
+
+    def loop_factory():
+        loop = _RecordingLoop()
+        holder["loop"] = loop
+        return loop
+
+    samples = asyncio.run(
+        sample_prompt_group(
+            loop_factory,
+            messages=[
+                {"role": "system", "content": "Available tools: search"},
+                {
+                    "role": "user",
+                    "content": "Who won the Nobel Prize in Physics in 2024?",
+                },
+            ],
+            sampling_params={"temperature": 0.7, "top_p": 0.9},
+            num_rollouts=1,
+            group_id="q-messages",
+        )
+    )
+
+    assert samples[0].group_id == "q-messages"
+    assert holder["loop"].seen_messages == [
+        {"role": "system", "content": "Available tools: search"},
+        {"role": "user", "content": "Who won the Nobel Prize in Physics in 2024?"},
+    ]
+
+
 def test_score_prompt_group_normalizes_rewards_within_shared_prompt_group():
     samples = [
         asyncio.run(
@@ -148,5 +188,31 @@ def test_sample_prompt_group_rejects_mismatched_sampling_variants():
                 sampling_params={"temperature": 0.7},
                 num_rollouts=2,
                 sampling_variants=[{"temperature": 0.7}],
+            )
+        )
+
+
+def test_sample_prompt_group_requires_exactly_one_prompt_input():
+    with pytest.raises(
+        ValueError, match="Either `question` or `messages` must be provided."
+    ):
+        asyncio.run(
+            sample_prompt_group(
+                lambda: _DummyLoop("x"),
+                sampling_params={"temperature": 0.7},
+                num_rollouts=1,
+            )
+        )
+
+    with pytest.raises(
+        ValueError, match="Provide only one of `question` or `messages`."
+    ):
+        asyncio.run(
+            sample_prompt_group(
+                lambda: _DummyLoop("x"),
+                question="hello",
+                messages=[{"role": "user", "content": "hello"}],
+                sampling_params={"temperature": 0.7},
+                num_rollouts=1,
             )
         )
