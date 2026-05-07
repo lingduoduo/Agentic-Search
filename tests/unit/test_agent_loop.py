@@ -7,6 +7,7 @@ import pytest
 from src.agent_loop import (
     AgentLoopBase,
     AgentLoopConfig,
+    RolloutStep,
     SearchEvaluationConfig,
     SearchAgentLoop,
     SearchAgentLoopConfig,
@@ -1122,3 +1123,91 @@ def test_search_agent_loop_processes_search_and_fetch_in_same_turn():
     assert "<information>" in second_prompt
     assert "<full_page>" in second_prompt
     assert output.num_turns == 2
+
+
+# ---------------------------------------------------------------------------
+# generate_rollout_step — explicit RL step: state → action → terminal/continue
+# ---------------------------------------------------------------------------
+
+
+def test_generate_rollout_step_classifies_search_action():
+    tokenizer = DummyTokenizerWithEncode()
+    loop = ConcreteAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(
+            tokenizer.encode("<search>who invented radar</search>")
+        ),
+        config=AgentLoopConfig(prompt_length=16, response_length=64),
+    )
+    step = asyncio.run(
+        loop.generate_rollout_step(
+            prompt_ids=[1, 2, 3],
+            sampling_params={"temperature": 0.7},
+        )
+    )
+    assert isinstance(step, RolloutStep)
+    assert step.action_type == "search"
+    assert step.action_content == "who invented radar"
+    assert step.is_terminal is False
+    assert step.prompt_ids == [1, 2, 3]
+    assert step.response_mask == [1] * len(step.response_ids)
+
+
+def test_generate_rollout_step_classifies_answer_as_terminal():
+    tokenizer = DummyTokenizerWithEncode()
+    loop = ConcreteAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(
+            tokenizer.encode("<answer>Watson and Watt</answer>")
+        ),
+        config=AgentLoopConfig(prompt_length=16, response_length=64),
+    )
+    step = asyncio.run(
+        loop.generate_rollout_step(
+            prompt_ids=[4, 5],
+            sampling_params={"temperature": 0.0},
+        )
+    )
+    assert step.action_type == "answer"
+    assert step.action_content == "Watson and Watt"
+    assert step.is_terminal is True
+
+
+def test_generate_rollout_step_marks_no_action_as_terminal():
+    tokenizer = DummyTokenizerWithEncode()
+    loop = ConcreteAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(tokenizer.encode("I have no idea.")),
+        config=AgentLoopConfig(prompt_length=16, response_length=64),
+    )
+    step = asyncio.run(
+        loop.generate_rollout_step(
+            prompt_ids=[1],
+            sampling_params={"temperature": 0.5},
+        )
+    )
+    assert step.action_type is None
+    assert step.action_content == ""
+    assert step.is_terminal is True
+
+
+def test_generate_rollout_step_accepts_custom_action_re_and_terminal_actions():
+    import re
+
+    tokenizer = DummyTokenizerWithEncode()
+    loop = ConcreteAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(tokenizer.encode("<tool>calculator</tool>")),
+        config=AgentLoopConfig(prompt_length=16, response_length=64),
+    )
+    step = asyncio.run(
+        loop.generate_rollout_step(
+            prompt_ids=[7, 8],
+            sampling_params={"temperature": 0.0},
+            action_re=re.compile(r"<(tool)>(.*?)</\1>", re.DOTALL),
+            terminal_actions=frozenset({"tool"}),
+        )
+    )
+    assert step.action_type == "tool"
+    assert step.action_content == "calculator"
+    assert step.is_terminal is True
