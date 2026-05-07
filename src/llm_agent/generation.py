@@ -81,6 +81,25 @@ class SearchToolCall:
 
 
 @dataclass(frozen=True)
+class ReActStep:
+    """One (action, observation) pair in a ReAct trajectory.
+
+    Captures the full context update for one turn:
+        context += action_text     # model output
+        context += observation     # <information>...</information> injected back
+
+    Accumulating these across turns gives the trajectory the model conditions
+    on during the next generation step.
+    """
+
+    turn: int
+    action_tag: str | None
+    action_content: str
+    observation: str
+    is_terminal: bool
+
+
+@dataclass(frozen=True)
 class RetrievedDocument:
     """Normalized retrieval document across BM25, dense, hybrid, web, and RAG backends."""
 
@@ -144,6 +163,39 @@ def _parse_api_item(item: dict[str, Any]) -> RetrievedDocument:
         score=float(score)
         if isinstance(score, (int, float)) and not isinstance(score, bool)
         else None,
+    )
+
+
+def build_react_observation(action: "PolicyAction", retrieval_result: str = "") -> str:
+    """Build the observation injected back into context after the model's action.
+
+    Completes the ReAct loop for one turn:
+        model generates action → environment returns observation → model sees it next turn
+
+    For <search>: wraps retrieval result in <information>...</information>.
+    For <answer>: returns "" (terminal — no observation needed).
+    For other tags: returns structured feedback the model can act on.
+    """
+    if action.tag == "search":
+        content = retrieval_result.strip() or _NO_INFO
+        return f"\n\n<information>{content}</information>\n\n"
+    if action.tag == "plan":
+        return (
+            "\n\n<plan_feedback>Plan recorded. Continue with <search>, <fetch>, or "
+            "<answer>.</plan_feedback>\n\n"
+        )
+    if action.tag == "fetch":
+        return (
+            "\n\n<tool_feedback>Fetch was requested, but this rollout manager does "
+            "not yet execute fetch actions directly. Use <search> for retrieval-backed "
+            "evidence in this loop.</tool_feedback>\n\n"
+        )
+    if action.tag == "answer":
+        return ""
+    return (
+        "\nMy previous action is invalid. "
+        "Valid actions in this rollout loop are <plan>, <search>, <fetch>, and "
+        "<answer>. Let me try again.\n"
     )
 
 
@@ -728,6 +780,24 @@ class LLMGenerationManager:
                 step_result.responses_ids,
                 next_obs_ids,
             )
+            turn_num = len(state.meta_info.get("react_trajectory", []))
+            state.meta_info.setdefault("react_trajectory", []).append(
+                [
+                    ReActStep(
+                        turn=turn_num,
+                        action_tag=action.tag,
+                        action_content=action.content,
+                        observation=obs,
+                        is_terminal=action.tag == "answer",
+                    )
+                    for action, obs in zip(
+                        step_result.parsed_actions, step_result.next_obs
+                    )
+                ]
+            )
+            state.meta_info.setdefault("context_token_lengths", []).append(
+                int(state.rollings.batch["attention_mask"].sum(dim=1).max().item())
+            )
         else:
             state.original_right_side = self._update_right_side(
                 state.original_right_side,
@@ -959,7 +1029,6 @@ class LLMGenerationManager:
         if active_mask is None:
             active_mask = torch.ones(batch_size, dtype=torch.bool)
 
-        cur_actions = [action.tag for action in sampled_actions]
         search_tool_calls = self.build_search_tool_calls(
             sampled_actions,
             problem=problem,
@@ -980,7 +1049,8 @@ class LLMGenerationManager:
         is_search: list[int] = []
         search_result_index = 0
 
-        for action, active in zip(cur_actions, active_mask.tolist()):
+        for sample_action, active in zip(sampled_actions, active_mask.tolist()):
+            tag = sample_action.tag
             if not active:
                 next_obs.append("")
                 dones.append(1)
@@ -988,49 +1058,19 @@ class LLMGenerationManager:
                 is_search.append(0)
                 continue
 
-            if action == "answer":
-                next_obs.append("")
-                dones.append(1)
-                valid_action.append(1)
-                is_search.append(0)
-                continue
-
-            if action == "search":
-                next_obs.append(
-                    f"\n\n<information>{search_results[search_result_index].strip()}</information>\n\n"
-                )
+            is_done = tag == "answer"
+            retrieval = search_results[search_result_index] if tag == "search" else ""
+            if tag == "search":
                 search_result_index += 1
-                dones.append(0)
-                valid_action.append(1)
-                is_search.append(1)
-                continue
-
-            if action == "plan":
-                next_obs.append(
-                    "\n\n<plan_feedback>Plan recorded. Continue with <search>, <fetch>, or <answer>.</plan_feedback>\n\n"
-                )
-                dones.append(0)
-                valid_action.append(1)
-                is_search.append(0)
-                continue
-
-            if action == "fetch":
-                next_obs.append(
-                    "\n\n<tool_feedback>Fetch was requested, but this rollout manager does not yet execute fetch actions directly. Use <search> for retrieval-backed evidence in this loop.</tool_feedback>\n\n"
-                )
-                dones.append(0)
-                valid_action.append(1)
-                is_search.append(0)
-                continue
 
             next_obs.append(
-                "\nMy previous action is invalid. "
-                "Valid actions in this rollout loop are <plan>, <search>, <fetch>, and <answer>. "
-                "Let me try again.\n"
+                "" if is_done else build_react_observation(sample_action, retrieval)
             )
-            dones.append(0)
-            valid_action.append(0)
-            is_search.append(0)
+            dones.append(1 if is_done else 0)
+            valid_action.append(
+                1 if tag in {"answer", "search", "plan", "fetch"} else 0
+            )
+            is_search.append(1 if tag == "search" else 0)
 
         return next_obs, dones, valid_action, is_search
 
