@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python -m pytest tests/unit/test_llm_agent_generation.py tests/unit/test_intent_classifier.py tests/unit/test_search_client.py -x -q)",
       "Bash(python -m pytest tests/unit/ -q)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(python -m pytest tests/unit/test_reward.py -q)",
+      "Bash(python -m pytest tests/unit/test_grpo.py tests/unit/test_reward.py -q)"
     ]
   },
   "hooks": {
