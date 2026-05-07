@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.llm_agent.generation import GenerationConfig, LLMGenerationManager  # noqa: E402
+from src.llm_agent.generation import GenerationConfig, LLMGenerationManager, SearchBatch  # noqa: E402
 
 
 class DummyTokenizer:
@@ -29,6 +29,23 @@ class DummyTokenizer:
 class DummyActorRollout:
     def generate_sequences(self, active_batch):
         return active_batch
+
+
+class SequencedActorRollout:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def generate_sequences(self, active_batch):
+        batch_size = active_batch.batch["input_ids"].shape[0]
+        width = max((len(item) for item in self.responses[self.calls]), default=0)
+        rows = []
+        for token_ids in self.responses[self.calls]:
+            rows.append(list(token_ids) + [0] * (width - len(token_ids)))
+        self.calls += 1
+        return SearchBatch.from_dict(
+            {"responses": torch.tensor(rows[:batch_size], dtype=torch.long)}
+        )
 
 
 def _manager() -> LLMGenerationManager:
@@ -107,3 +124,104 @@ def test_search_returns_fallback_for_unknown_mode():
     result, index = manager._search("query", "problem", "answer", "unknown", 0.5, 3)
     assert result == "No information available"
     assert index == 3
+
+
+def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
+    class LoopTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>cats</search>",
+                (2, 2): "<answer>done</answer>",
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(token for token in row if token != 0)
+                decoded.append(mapping[tokens])
+            return decoded
+
+    manager = LLMGenerationManager(
+        tokenizer=LoopTokenizer(),
+        config=GenerationConfig(
+            max_turns=1,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRollout(
+            responses=[
+                [[1, 1]],
+                [[2, 2]],
+            ]
+        ),
+    )
+
+    manager.batch_search = lambda payload, search_mode, gt_threshold: [
+        "Doc 1: evidence"
+    ]  # type: ignore[method-assign]
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["What is the answer?"],
+        "golden_answers": [["done"]],
+    }
+
+    final_batch, trajectory_turns = manager.run_llm_loop(
+        gen_batch=gen_batch,
+        search_mode="google",
+        current_step=0,
+        total_steps=10,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    assert trajectory_turns == [2]
+    assert final_batch.meta_info["valid_search_stats"] == [1]
+    assert final_batch.meta_info["valid_action_stats"] == [2]
+    assert final_batch.meta_info["active_mask"] == [False]
+    assert final_batch.batch["responses"].shape[1] > 0
+
+
+def test_run_agent_loop_alias_delegates_to_run_llm_loop():
+    manager = _manager()
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[1, 2]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["q"],
+        "golden_answers": [["a"]],
+    }
+    expected_batch = SearchBatch.from_dict(
+        {"responses": torch.tensor([[1]], dtype=torch.long)}
+    )
+
+    captured = {}
+
+    def fake_run_llm_loop(**kwargs):
+        captured.update(kwargs)
+        return expected_batch, [1]
+
+    manager.run_llm_loop = fake_run_llm_loop  # type: ignore[method-assign]
+
+    output_batch, turns = manager.run_agent_loop(
+        gen_batch=gen_batch,
+        search_mode="google",
+        current_step=1,
+        total_steps=10,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    assert output_batch is expected_batch
+    assert turns == [1]
+    assert captured["gen_batch"] is gen_batch
+    assert captured["search_mode"] == "google"
