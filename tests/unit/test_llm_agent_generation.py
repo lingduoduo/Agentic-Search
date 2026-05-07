@@ -464,6 +464,53 @@ def test_compute_policy_loss_requires_advantages():
         manager.compute_policy_loss(batch)
 
 
+def test_actor_rollout_step_samples_policy_actions_from_current_state():
+    class RolloutTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>cats</search>",
+                (2, 2): "<answer>done</answer>",
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(token for token in row if token != 0)
+                decoded.append(mapping[tokens])
+            return decoded
+
+    manager = LLMGenerationManager(
+        tokenizer=RolloutTokenizer(),
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRollout(responses=[[[1, 1]], [[2, 2]]]),
+    )
+    rollings = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+
+    rollout_step, meta_info = manager.actor_rollout_step(
+        rollings,
+        active_mask=torch.tensor([True]),
+    )
+
+    assert rollout_step.responses_ids.shape[0] == 1
+    assert rollout_step.responses_ids.shape[1] >= 1
+    assert rollout_step.responses_str == ["<search>cats</search>"]
+    assert rollout_step.parsed_actions[0].tag == "search"
+    assert rollout_step.parsed_actions[0].content == "cats"
+    assert meta_info == {}
+
+
 # ---------------------------------------------------------------------------
 # build_rollout_outputs — SearchBatch -> list[AgentLoopOutput]
 # ---------------------------------------------------------------------------
@@ -639,6 +686,128 @@ def test_build_rollout_outputs_empty_batch():
     batch = SearchBatch.from_dict({})
     batch.non_tensor_batch["trajectories"] = []
     assert manager.build_rollout_outputs(batch) == []
+
+
+# ---------------------------------------------------------------------------
+# Actor rollout: only active trajectories get ReActStep entries
+# ---------------------------------------------------------------------------
+
+
+def test_apply_step_result_does_not_record_steps_for_inactive_trajectories():
+    """Trajectories that finished before the current turn must not accumulate
+    ghost ReActStep entries.  _apply_step_result uses a participating_mask
+    snapshot; _build_rollout_trajectories filters None placeholders.
+    """
+    from src.llm_agent.generation import (
+        AgentLoopState,
+        AgentLoopStepResult,
+        PolicyAction,
+    )
+
+    manager = _manager_with_log_prob()
+
+    # Batch of 2: trajectory 0 is already done (active_mask[0]=False),
+    # trajectory 1 is still active.
+    active_mask = torch.tensor([False, True], dtype=torch.bool)
+    state = AgentLoopState(
+        rollings=SearchBatch.from_dict(
+            {
+                "input_ids": torch.ones(2, 4, dtype=torch.long),
+                "attention_mask": torch.ones(2, 4, dtype=torch.long),
+                "position_ids": torch.arange(4).unsqueeze(0).expand(2, -1),
+            }
+        ),
+        original_left_side={"input_ids": torch.ones(2, 4, dtype=torch.long)},
+        original_right_side={
+            "responses": torch.ones(2, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(2, 0, dtype=torch.long),
+        },
+        active_mask=active_mask,
+        trajectory_turns=[1, 0],
+        turns_stats=torch.tensor([1, 0], dtype=torch.int),
+        valid_action_stats=torch.zeros(2, dtype=torch.int),
+        valid_search_stats=torch.zeros(2, dtype=torch.int),
+        active_num_list=[2, 1],
+    )
+
+    step_result = AgentLoopStepResult(
+        responses_ids=torch.ones(2, 2, dtype=torch.long),
+        responses_str=["<answer>x</answer>", "<search>q</search>"],
+        parsed_actions=[
+            PolicyAction(tag="answer", content="x", raw_text="<answer>x</answer>"),
+            PolicyAction(tag="search", content="q", raw_text="<search>q</search>"),
+        ],
+        next_obs=["", "<information>doc</information>"],
+        dones=[1, 0],
+        valid_action=[1, 1],
+        is_search=[0, 1],
+    )
+
+    manager._apply_step_result(state, step_result, include_observations=True)
+
+    react_trajectory = state.meta_info.get("react_trajectory", [])
+    assert len(react_trajectory) == 1  # one turn recorded
+    turn_steps = react_trajectory[0]
+
+    # Trajectory 0 was inactive — its slot must be None (no ghost step)
+    assert turn_steps[0] is None
+    # Trajectory 1 was active — its step must be a real ReActStep
+    assert turn_steps[1] is not None
+    assert turn_steps[1].action_tag == "search"
+
+
+def test_build_rollout_trajectories_filters_none_steps():
+    """None placeholders from inactive turns must not appear in traj.steps."""
+    from src.llm_agent.generation import ReActStep
+
+    manager = _manager_with_log_prob()
+
+    # Manually build the react_trajectory as _apply_step_result would after the fix
+    real_step = ReActStep(
+        turn=0,
+        action_tag="search",
+        action_content="query",
+        observation="<information>doc</information>",
+        is_terminal=False,
+    )
+    # Turn 0: traj 0 active (real step), traj 1 inactive (None)
+    # Turn 1: traj 0 active (terminal), traj 1 still None
+    terminal_step = ReActStep(
+        turn=1,
+        action_tag="answer",
+        action_content="Paris",
+        observation="",
+        is_terminal=True,
+    )
+    react_trajectory = [
+        [real_step, None],
+        [terminal_step, None],
+    ]
+
+    left_side = {"input_ids": torch.zeros(2, 3, dtype=torch.long)}
+    right_side = {
+        "responses": torch.zeros(2, 2, dtype=torch.long),
+        "responses_with_info_mask": torch.zeros(2, 2, dtype=torch.long),
+    }
+    meta_info = {
+        "react_trajectory": react_trajectory,
+        "trajectory_turns": [2, 0],
+        "final_answers": {0: "Paris"},
+        "finished_without_answer": [False, True],
+    }
+
+    trajectories = manager._build_rollout_trajectories(
+        left_side=left_side, right_side=right_side, meta_info=meta_info
+    )
+
+    # Trajectory 0: two real steps, no None
+    assert all(s is not None for s in trajectories[0].steps)
+    assert len(trajectories[0].steps) == 2
+    assert trajectories[0].steps[0].action_tag == "search"
+    assert trajectories[0].steps[1].action_tag == "answer"
+
+    # Trajectory 1: all slots were None → empty steps
+    assert trajectories[1].steps == []
 
 
 # ---------------------------------------------------------------------------

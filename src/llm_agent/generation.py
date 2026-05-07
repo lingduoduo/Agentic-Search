@@ -65,6 +65,20 @@ class AgentLoopStepResult:
 
 
 @dataclass(frozen=True)
+class ActorRolloutStep:
+    """One policy rollout step before tool execution or environment feedback.
+
+    In RL terms, this is the sampled action emitted by the current policy for
+    the current state. In this agent setting the action space is expressed as
+    structured text such as `<search>`, `<plan>`, `<fetch>`, or `<answer>`.
+    """
+
+    responses_ids: torch.Tensor
+    responses_str: list[str]
+    parsed_actions: list["PolicyAction"]
+
+
+@dataclass(frozen=True)
 class PolicyAction:
     """One action sampled by the policy from the current state."""
 
@@ -1123,6 +1137,48 @@ class LLMGenerationManager:
         active_mask: torch.Tensor,
         do_search: bool = True,
     ) -> tuple[AgentLoopStepResult, dict[str, Any]]:
+        rollout_step, meta_info = self.actor_rollout_step(
+            rollings,
+            active_mask=active_mask,
+        )
+        next_obs, dones, valid_action, is_search = self.execute_predictions(
+            rollout_step.responses_str,
+            gen_batch.non_tensor_batch["question"],
+            gen_batch.non_tensor_batch["golden_answers"],
+            search_mode,
+            gt_threshold,
+            active_mask,
+            do_search=do_search,
+        )
+        return (
+            AgentLoopStepResult(
+                responses_ids=rollout_step.responses_ids,
+                responses_str=rollout_step.responses_str,
+                parsed_actions=rollout_step.parsed_actions,
+                next_obs=next_obs,
+                dones=dones,
+                valid_action=valid_action,
+                is_search=is_search,
+            ),
+            meta_info,
+        )
+
+    def actor_rollout_step(
+        self,
+        rollings: SearchBatch,
+        *,
+        active_mask: torch.Tensor,
+    ) -> tuple[ActorRolloutStep, dict[str, Any]]:
+        """Sample one agent action step from the current policy.
+
+        This is the actor rollout primitive:
+
+            state(SearchBatch) -> action tokens -> parsed PolicyAction
+
+        The sampled action can be a search, plan, fetch, or final answer. Tool
+        execution and observation appending happen afterwards in the outer agent
+        loop.
+        """
         gen_output = self._generate_with_gpu_padding(
             self._select_active_batch(rollings, active_mask)
         )
@@ -1135,25 +1191,12 @@ class LLMGenerationManager:
             responses_str,
             active_mask,
         )
-        next_obs, dones, valid_action, is_search = self.execute_predictions(
-            responses_str,
-            gen_batch.non_tensor_batch["question"],
-            gen_batch.non_tensor_batch["golden_answers"],
-            search_mode,
-            gt_threshold,
-            active_mask,
-            do_search=do_search,
-        )
         parsed_actions = self.parse_policy_actions(responses_str)
         return (
-            AgentLoopStepResult(
+            ActorRolloutStep(
                 responses_ids=responses_ids,
                 responses_str=responses_str,
                 parsed_actions=parsed_actions,
-                next_obs=next_obs,
-                dones=dones,
-                valid_action=valid_action,
-                is_search=is_search,
             ),
             meta_info,
         )
@@ -1165,6 +1208,11 @@ class LLMGenerationManager:
         *,
         include_observations: bool,
     ) -> None:
+        # Snapshot which trajectories participated in THIS turn before updating
+        # the mask.  Trajectories that were already done carry dummy
+        # responses_str / parsed_actions and must not pollute the step history.
+        participating = state.active_mask.tolist()
+
         curr_active_mask = torch.tensor(
             [not done for done in step_result.dones], dtype=torch.bool
         )
@@ -1194,8 +1242,10 @@ class LLMGenerationManager:
                         observation=obs,
                         is_terminal=action.tag == "answer",
                     )
-                    for action, obs in zip(
-                        step_result.parsed_actions, step_result.next_obs
+                    if was_active
+                    else None
+                    for action, obs, was_active in zip(
+                        step_result.parsed_actions, step_result.next_obs, participating
                     )
                 ]
             )
@@ -1624,9 +1674,13 @@ class LLMGenerationManager:
         trajectories: list[RolloutTrajectory] = []
         for batch_index in range(len(prompt_ids)):
             steps = [
-                turn_steps[batch_index]
+                step
                 for turn_steps in react_trajectory
                 if batch_index < len(turn_steps)
+                # None marks a turn where this trajectory was already done and
+                # did not participate — filter those placeholders out.
+                for step in (turn_steps[batch_index],)
+                if step is not None
             ]
             trajectories.append(
                 RolloutTrajectory(
