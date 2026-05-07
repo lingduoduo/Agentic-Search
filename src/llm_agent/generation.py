@@ -49,6 +49,11 @@ class AgentLoopState:
     valid_search_stats: torch.Tensor
     active_num_list: list[int]
     meta_info: dict[str, Any] = field(default_factory=dict)
+    # Per-rollout cache: (batch_index, query) -> retrieval result string.
+    # Prevents re-calling the retriever when the policy repeats a query within
+    # the same trajectory.  Keyed by (batch_index, query) so different
+    # trajectories never share cached results.
+    search_cache: dict[tuple[int, str], str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -95,6 +100,23 @@ class SearchToolCall:
     problem: str
     ground_truth: str
     batch_index: int
+
+
+@dataclass(frozen=True)
+class SearchDecision:
+    """One explicit model decision to call the search tool.
+
+    This captures the critical RL step where the policy decides:
+    - whether to search at all
+    - what query to issue
+    - which trajectory in the batch requested it
+    """
+
+    query: str
+    batch_index: int
+    problem: str
+    ground_truth: str
+    raw_action_text: str
 
 
 @dataclass(frozen=True)
@@ -1136,6 +1158,7 @@ class LLMGenerationManager:
         gt_threshold: float,
         active_mask: torch.Tensor,
         do_search: bool = True,
+        search_cache: dict[tuple[int, str], str] | None = None,
     ) -> tuple[AgentLoopStepResult, dict[str, Any]]:
         rollout_step, meta_info = self.actor_rollout_step(
             rollings,
@@ -1149,6 +1172,7 @@ class LLMGenerationManager:
             gt_threshold,
             active_mask,
             do_search=do_search,
+            search_cache=search_cache,
         )
         return (
             AgentLoopStepResult(
@@ -1320,6 +1344,19 @@ class LLMGenerationManager:
         query_history = state.meta_info.setdefault("search_query_history", [])
         query_history.append(list(search_queries))
 
+        # Per-trajectory query counts — keyed by batch index so that "cats"
+        # from trajectory 0 and "cats" from trajectory 1 are tracked separately.
+        per_traj: dict[int, dict[str, int]] = state.meta_info.setdefault(
+            "per_trajectory_query_counts", {}
+        )
+        active_list = state.active_mask.tolist()
+        for batch_idx, (action, is_active) in enumerate(
+            zip(parsed_actions, active_list)
+        ):
+            if is_active and action.tag == "search":
+                traj_counts = per_traj.setdefault(batch_idx, {})
+                traj_counts[action.content] = traj_counts.get(action.content, 0) + 1
+
         flattened_queries = [
             query
             for query_turn in state.meta_info["search_query_history"]
@@ -1395,6 +1432,7 @@ class LLMGenerationManager:
             gt_threshold=gt_threshold,
             active_mask=state.active_mask,
             do_search=do_search,
+            search_cache=state.search_cache,
         )
         state.meta_info.update(step_meta_info)
         self._record_policy_rollout_step(state, step_result.parsed_actions)
@@ -1549,6 +1587,12 @@ class LLMGenerationManager:
             "trajectories", []
         )
         valid_search_stats: list[int] = batch.meta_info.get("valid_search_stats", [])
+        # Per-trajectory query counts recorded by _record_search_tool_calls.
+        # Using this avoids scanning traj.steps and gives correct counts because
+        # each trajectory's queries are tracked separately.
+        per_traj_counts: dict[int, dict[str, int]] = batch.meta_info.get(
+            "per_trajectory_query_counts", {}
+        )
 
         outputs: list[AgentLoopOutput] = []
         for i, traj in enumerate(trajectories):
@@ -1556,12 +1600,10 @@ class LLMGenerationManager:
                 1 if tid != pad_id else 0 for tid in traj.response_with_observation_mask
             ]
 
-            search_queries = [
-                step.action_content
-                for step in traj.steps
-                if step.action_tag == "search"
-            ]
-            repeated = len(search_queries) - len(set(search_queries))
+            traj_query_counts = per_traj_counts.get(i, {})
+            repeated = sum(
+                count - 1 for count in traj_query_counts.values() if count > 1
+            )
             fetch_count = sum(1 for step in traj.steps if step.action_tag == "fetch")
             rounds = (
                 float(valid_search_stats[i]) if i < len(valid_search_stats) else 0.0
@@ -1580,7 +1622,7 @@ class LLMGenerationManager:
                         "fetched_pages": float(fetch_count),
                         "subquestion_coverage_ratio": 1.0,
                         "repeated_query_ratio": (
-                            repeated / max(len(search_queries), 1)
+                            repeated / max(sum(traj_query_counts.values()), 1)
                         ),
                         "search_budget_exhausted_without_answer": float(
                             traj.finished_without_answer
@@ -1702,6 +1744,38 @@ class LLMGenerationManager:
             )
         return trajectories
 
+    def _cached_batch_search(
+        self,
+        tool_calls: list[SearchToolCall],
+        search_mode: str,
+        gt_threshold: float,
+        cache: dict[tuple[int, str], str],
+    ) -> list[str]:
+        """Call the retriever only for queries not already in the rollout cache.
+
+        Repeated queries within the same trajectory return the cached result
+        immediately, avoiding redundant retriever calls and making the per-
+        trajectory ``repeated_search_queries`` metric accurate.
+        """
+        results: list[str | None] = [None] * len(tool_calls)
+        uncached_calls: list[SearchToolCall] = []
+        uncached_positions: list[int] = []
+        for pos, call in enumerate(tool_calls):
+            key = (call.batch_index, call.query)
+            if key in cache:
+                results[pos] = cache[key]
+            else:
+                uncached_calls.append(call)
+                uncached_positions.append(pos)
+        if uncached_calls:
+            new_results = self.batch_search(uncached_calls, search_mode, gt_threshold)
+            for pos, result, call in zip(
+                uncached_positions, new_results, uncached_calls
+            ):
+                cache[(call.batch_index, call.query)] = result
+                results[pos] = result
+        return [r for r in results if r is not None]
+
     def execute_predictions(
         self,
         predictions: list[str],
@@ -1711,6 +1785,7 @@ class LLMGenerationManager:
         gt_threshold: float,
         active_mask: torch.Tensor | None = None,
         do_search: bool = True,
+        search_cache: dict[tuple[int, str], str] | None = None,
     ) -> tuple[list[str], list[int], list[int], list[int]]:
         sampled_actions = self.parse_policy_actions(predictions)
         batch_size = len(predictions)
@@ -1729,9 +1804,14 @@ class LLMGenerationManager:
         )
 
         if do_search and search_tool_calls:
-            search_results = self.batch_search(
-                search_tool_calls, search_mode, gt_threshold
-            )
+            if search_cache is not None:
+                search_results = self._cached_batch_search(
+                    search_tool_calls, search_mode, gt_threshold, search_cache
+                )
+            else:
+                search_results = self.batch_search(
+                    search_tool_calls, search_mode, gt_threshold
+                )
         else:
             search_results = [""] * len(search_tool_calls)
         if do_search and fetch_tool_calls:
@@ -1823,22 +1903,56 @@ class LLMGenerationManager:
         active_mask: torch.Tensor,
     ) -> list[SearchToolCall]:
         """Convert model-emitted search actions into explicit tool calls."""
+        return [
+            SearchToolCall(
+                query=decision.query,
+                problem=decision.problem,
+                ground_truth=decision.ground_truth,
+                batch_index=decision.batch_index,
+            )
+            for decision in self.build_search_decisions(
+                parsed_actions,
+                problem=problem,
+                ground_truth=ground_truth,
+                active_mask=active_mask,
+            )
+        ]
 
-        calls: list[SearchToolCall] = []
+    def build_search_decisions(
+        self,
+        parsed_actions: list[PolicyAction],
+        *,
+        problem: list[str],
+        ground_truth: list[Any],
+        active_mask: torch.Tensor,
+    ) -> list[SearchDecision]:
+        """Convert model-emitted `<search>` actions into explicit decisions.
+
+        This is the moment where the policy decides to call the search tool,
+        rather than the environment hardcoding retrieval. Query reformulation
+        and multi-hop search naturally fall out of repeated search decisions
+        across turns.
+        """
+
+        decisions: list[SearchDecision] = []
         for index, (action, active) in enumerate(
             zip(parsed_actions, active_mask.tolist())
         ):
             if not active or action.tag != "search":
                 continue
-            calls.append(
-                SearchToolCall(
-                    query=action.content,
+            query = action.content.strip()
+            if not query:
+                continue
+            decisions.append(
+                SearchDecision(
+                    query=query,
                     problem=problem[index],
                     ground_truth=_resolve_ground_truth_text(ground_truth[index]),
                     batch_index=index,
+                    raw_action_text=action.raw_text,
                 )
             )
-        return calls
+        return decisions
 
     def build_fetch_tool_calls(
         self,

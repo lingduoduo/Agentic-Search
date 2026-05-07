@@ -191,6 +191,46 @@ def test_build_search_tool_calls_uses_model_emitted_queries():
     assert calls[0].batch_index == 0
 
 
+def test_build_search_decisions_makes_model_search_choice_explicit():
+    manager = _manager()
+    decisions = manager.build_search_decisions(
+        manager.parse_policy_actions(
+            [
+                "<search>2024 physics nobel prize winner</search>",
+                "<answer>done</answer>",
+            ]
+        ),
+        problem=["q1", "q2"],
+        ground_truth=[["a1"], ["a2"]],
+        active_mask=torch.tensor([True, True]),
+    )
+
+    assert len(decisions) == 1
+    assert decisions[0].query == "2024 physics nobel prize winner"
+    assert decisions[0].problem == "q1"
+    assert decisions[0].ground_truth == "a1"
+    assert decisions[0].batch_index == 0
+    assert decisions[0].raw_action_text == (
+        "<search>2024 physics nobel prize winner</search>"
+    )
+
+
+def test_build_search_decisions_skips_empty_queries_and_inactive_rows():
+    manager = _manager()
+    decisions = manager.build_search_decisions(
+        manager.parse_policy_actions(
+            [
+                "<search>   </search>",
+                "<search>cats</search>",
+            ]
+        ),
+        problem=["q1", "q2"],
+        ground_truth=[["a1"], ["a2"]],
+        active_mask=torch.tensor([True, False]),
+    )
+    assert decisions == []
+
+
 def test_execute_predictions_marks_inactive_examples_done():
     manager = _manager()
     next_obs, dones, valid_action, is_search = manager.execute_predictions(
@@ -606,12 +646,15 @@ def test_build_rollout_outputs_computes_per_trajectory_search_repetitions():
     batch = SearchBatch.from_dict({})
     batch.non_tensor_batch["trajectories"] = [traj]
     batch.meta_info["valid_search_stats"] = [2]
+    # per_trajectory_query_counts is populated by _record_search_tool_calls at
+    # rollout time.  In unit tests we inject it directly.
+    batch.meta_info["per_trajectory_query_counts"] = {0: {"cats": 2}}
 
     outputs = manager.build_rollout_outputs(batch)
 
     assert outputs[0].metrics["repeated_search_queries"] == pytest.approx(
         1.0
-    )  # "cats" repeated once
+    )  # "cats" issued twice → 1 repeat
     assert outputs[0].metrics["fetched_pages"] == pytest.approx(0.0)
 
 
