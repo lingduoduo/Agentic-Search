@@ -783,7 +783,11 @@ The repo includes helpers for generating and scoring multiple trajectories for t
 4. search + fetch
 
 ```python
-from src.agent_loop import sample_prompt_group, score_prompt_group
+from src.agent_loop import (
+    GRPOAdvantageConfig,
+    sample_prompt_group,
+    score_prompt_group,
+)
 
 samples = await sample_prompt_group(
     loop_factory,
@@ -796,20 +800,51 @@ scored = score_prompt_group(
     samples,
     ground_truth="...",
     judge_fn=my_judge_fn,
+    advantage_config=GRPOAdvantageConfig(mode="group_std_normalized"),
 )
 ```
 
 Each rollout gets a shared `group_id`, its own `rollout_index`, a scalar reward, and a within-group GRPO advantage. Better research strategies end up with positive advantage; wasteful or unsupported trajectories get negative advantage.
 
+### GRPO outcome advantage
+
+GRPO does not need a separate critic value model. Instead, for the same prompt it samples multiple trajectories and computes a relative outcome advantage from the group reward mean:
+
+```
+advantage_i = reward_i - mean(group_rewards)
+```
+
+You can compute that directly with `compute_grpo_outcome_advantage(rewards)` for one prompt group, or `SearchRewardFunction.compute_grpo_outcome_advantages(rewards, group_ids)` across a batch of prompt groups.
+
+If you want grouped rollout scoring to use this raw outcome advantage directly, set:
+
+```python
+advantage_config=GRPOAdvantageConfig(mode="group_outcome")
+```
+
+Example:
+
+```python
+from src.agent_loop import compute_grpo_outcome_advantage
+
+advantages = compute_grpo_outcome_advantage([1.0, 0.7, 0.1])
+# [0.4, 0.1, -0.5]
+```
+
 ### GRPO advantage normalisation
 
-`compute_batch_advantages(rewards, group_ids)` groups rollouts by their prompt ID and normalises advantages independently within each group:
+`compute_batch_advantages(rewards, group_ids)` is a normalized wrapper around the outcome advantage above:
 
 ```
-advantage_i = (reward_i − mean(group)) / (std(group) + ε)
+advantage_i = (reward_i − mean(group_rewards)) / (std(group_rewards) + ε)
 ```
 
-Single-sample groups get advantage `0.0` (no within-group signal). The population variance formula (N denominator) is used; if your GRPO trainer uses sample variance (N-1), normalise there instead and use `reward_fn.compute()` only for the raw reward values.
+Single-sample groups get advantage `0.0` (no within-group signal). The population variance formula (N denominator) is used; if your trainer wants sample variance (N-1), normalize there instead and use `compute_grpo_outcome_advantages()` or `reward_fn.compute()` for the raw values.
+
+Supported grouped-scoring modes:
+
+- `group_outcome`: use `reward_i - mean(group_rewards)`
+- `group_std_normalized`: use `(reward_i - mean(group_rewards)) / (std(group_rewards) + ε)`; this is the default in `score_prompt_group()`
 
 ## API Reference
 

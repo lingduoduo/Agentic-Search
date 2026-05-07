@@ -9,9 +9,11 @@ import pytest
 from src.agent_loop import (
     AgentLoopBase,
     AgentLoopOutput,
+    GRPOAdvantageConfig,
     SearchRewardConfig,
     SearchRewardFunction,
     build_grpo_sampling_params,
+    compute_grpo_outcome_advantage,
     sample_prompt_group,
     score_prompt_group,
 )
@@ -59,6 +61,17 @@ def test_build_grpo_sampling_params_creates_one_variant_per_rollout():
     assert variants[1]["temperature"] > variants[0]["temperature"]
     assert variants[3]["top_p"] >= variants[0]["top_p"]
     assert variants[0]["max_tokens"] == 64
+
+
+def test_compute_grpo_outcome_advantage_centers_rewards_by_group_mean():
+    advantages = compute_grpo_outcome_advantage([1.0, 0.7, 0.1])
+    assert advantages[0] == pytest.approx(0.4)
+    assert advantages[1] == pytest.approx(0.1)
+    assert advantages[2] == pytest.approx(-0.5)
+
+
+def test_compute_grpo_outcome_advantage_single_sample_group_returns_zero():
+    assert compute_grpo_outcome_advantage([2.0]) == [0.0]
 
 
 def test_sample_prompt_group_assigns_shared_group_id_and_rollout_indices():
@@ -177,6 +190,65 @@ def test_score_prompt_group_normalizes_rewards_within_shared_prompt_group():
     assert scored[0].reward > scored[1].reward
     assert scored[0].advantage > 0.0
     assert scored[1].advantage < 0.0
+
+
+def test_score_prompt_group_supports_group_outcome_advantage_mode():
+    samples = [
+        asyncio.run(
+            sample_prompt_group(
+                lambda: _DummyLoop("Paris"),
+                question="Capital of France?",
+                sampling_params={"temperature": 0.7, "top_p": 0.9},
+                num_rollouts=1,
+                group_id="capital",
+                sampling_variants=[{"temperature": 0.7, "top_p": 0.9}],
+            )
+        )[0],
+        asyncio.run(
+            sample_prompt_group(
+                lambda: _DummyLoop("Wrong"),
+                question="Capital of France?",
+                sampling_params={"temperature": 0.85, "top_p": 0.93},
+                num_rollouts=1,
+                group_id="capital",
+                sampling_variants=[{"temperature": 0.85, "top_p": 0.93}],
+            )
+        )[0],
+    ]
+
+    scored = score_prompt_group(
+        samples,
+        ground_truth="Paris",
+        judge_fn=lambda answer, truth: 1.0 if answer == truth else 0.0,
+        reward_fn=SearchRewardFunction(SearchRewardConfig.sparse_final_only()),
+        advantage_config=GRPOAdvantageConfig(mode="group_outcome"),
+    )
+
+    assert scored[0].reward == pytest.approx(1.0)
+    assert scored[1].reward == pytest.approx(0.0)
+    assert scored[0].advantage == pytest.approx(0.5)
+    assert scored[1].advantage == pytest.approx(-0.5)
+
+
+def test_score_prompt_group_rejects_unknown_advantage_mode():
+    samples = asyncio.run(
+        sample_prompt_group(
+            lambda: _DummyLoop("Paris"),
+            question="Capital of France?",
+            sampling_params={"temperature": 0.7, "top_p": 0.9},
+            num_rollouts=1,
+            group_id="capital",
+            sampling_variants=[{"temperature": 0.7, "top_p": 0.9}],
+        )
+    )
+
+    with pytest.raises(ValueError, match="Unsupported GRPO advantage mode"):
+        score_prompt_group(
+            samples,
+            ground_truth="Paris",
+            judge_fn=lambda answer, truth: 1.0 if answer == truth else 0.0,
+            advantage_config=GRPOAdvantageConfig(mode="unknown"),
+        )
 
 
 def test_sample_prompt_group_rejects_mismatched_sampling_variants():

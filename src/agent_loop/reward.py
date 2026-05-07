@@ -1,4 +1,4 @@
-"""Reward function and GRPO advantage computation for SearchAgentLoop rollouts."""
+"""Reward function and GRPO outcome-advantage computation for SearchAgentLoop rollouts."""
 
 from __future__ import annotations
 
@@ -145,12 +145,7 @@ class SearchRewardFunction:
         if n == 0:
             return []
         token_rewards = [0.0] * n
-        mask = output.response_mask
-        last_action_idx = next(
-            (i for i in range(n - 1, -1, -1) if i < len(mask) and mask[i]),
-            n - 1,
-        )
-        token_rewards[last_action_idx] = scalar
+        token_rewards[self._last_action_idx(output)] = scalar
         return token_rewards
 
     def reward_components(
@@ -254,14 +249,119 @@ class SearchRewardFunction:
     # GRPO advantage computation
     # ------------------------------------------------------------------
 
+    def assign_grpo_outcome_token_advantages(
+        self,
+        outputs: list[AgentLoopOutput],
+        ground_truths: list[str],
+        judge_fn: Callable[[str, str], float],
+        group_ids: list[str],
+    ) -> list[list[float]]:
+        """End-to-end GRPO outcome advantages as sparse token-level vectors.
+
+        Full pipeline:
+
+            1. Scalar outcome reward per rollout:
+                   r_i = judge_fn(answer_i, gt_i)
+
+            2. Group-relative centering (no value model):
+                   A_i = r_i - mean({r_j : group_j == group_i})
+
+            3. Std normalization within the group:
+                   A_i = A_i / (std(group) + ε)
+
+            4. Sparse token assignment — place A_i at the last
+               action token (last response_mask == 1 position) and 0
+               everywhere else.  All search, reasoning, and retrieval
+               tokens carry no gradient signal.
+
+        This is the DeepSeek-R1 / GRPO training loop in one call:
+        no separate value model, no token-level critic, no cross-prompt mixing.
+
+        Args:
+            outputs: One AgentLoopOutput per rollout.
+            ground_truths: Reference answer for each rollout.
+            judge_fn: ``(answer, ground_truth) -> float`` in ``[0, 1]``.
+            group_ids: Prompt-group identifier.  Rollouts sharing an ID were
+                sampled from the same prompt and are normalised together.
+
+        Returns:
+            One token-level advantage vector per rollout, aligned with outputs.
+            Each vector has length ``len(output.response_ids)`` and is all-zero
+            except at the last action token.
+        """
+        if len(outputs) != len(ground_truths) or len(outputs) != len(group_ids):
+            raise ValueError(
+                "outputs, ground_truths, and group_ids must have the same length."
+            )
+
+        rewards = [
+            self.compute(output, gt, judge_fn)
+            for output, gt in zip(outputs, ground_truths)
+        ]
+        scalar_advantages = self.compute_batch_advantages(rewards, group_ids)
+
+        result: list[list[float]] = []
+        for output, adv in zip(outputs, scalar_advantages):
+            n = len(output.response_ids)
+            if n == 0:
+                result.append([])
+                continue
+            token_advs = [0.0] * n
+            token_advs[self._last_action_idx(output)] = adv
+            result.append(token_advs)
+        return result
+
+    def compute_grpo_outcome_advantages(
+        self,
+        rewards: list[float],
+        group_ids: list[str],
+    ) -> list[float]:
+        """Compute GRPO outcome advantages without a critic value model.
+
+        For each prompt group, advantage is centered by the mean reward of the
+        trajectories sampled from that same prompt:
+
+            advantage_i = reward_i - mean(group_rewards)
+
+        This is the core outcome-based GRPO signal: no separate value model, no
+        token-level critic targets, and no cross-prompt mixing.
+        Single-sample groups get advantage 0.0 because there is no relative
+        within-group comparison signal.
+        """
+        if len(rewards) != len(group_ids):
+            raise ValueError("rewards and group_ids must have the same length.")
+
+        groups: dict[str, list[tuple[int, float]]] = {}
+        for idx, (gid, reward) in enumerate(zip(group_ids, rewards)):
+            groups.setdefault(gid, []).append((idx, reward))
+
+        advantages = [0.0] * len(rewards)
+        for group in groups.values():
+            if len(group) == 1:
+                continue
+            indices, group_rewards = zip(*group)
+            mean = sum(group_rewards) / len(group_rewards)
+            for idx, reward in zip(indices, group_rewards):
+                advantages[idx] = reward - mean
+        return advantages
+
     def compute_batch_advantages(
         self,
         rewards: list[float],
         group_ids: list[str],
     ) -> list[float]:
-        """Normalise rewards within each prompt group for GRPO training.
+        """Compute std-normalized GRPO advantages within each prompt group.
 
-        Each advantage is ``(reward - group_mean) / (group_std + eps)``.
+        This is a normalized wrapper around
+        :meth:`compute_grpo_outcome_advantages`. The underlying outcome
+        advantage is:
+
+            reward_i - mean(group_rewards)
+
+        and this method further scales it by ``group_std + eps``:
+
+            (reward_i - mean(group_rewards)) / (std(group_rewards) + eps)
+
         Groups with a single sample get advantage 0.0 (no within-group signal).
 
         Variance uses the population formula (N denominator) so that advantages
@@ -278,29 +378,42 @@ class SearchRewardFunction:
         Returns:
             A list of advantages aligned with *rewards*.
         """
-        if len(rewards) != len(group_ids):
-            raise ValueError("rewards and group_ids must have the same length.")
+        centered = self.compute_grpo_outcome_advantages(rewards, group_ids)
 
         groups: dict[str, list[tuple[int, float]]] = {}
-        for idx, (gid, r) in enumerate(zip(group_ids, rewards)):
-            groups.setdefault(gid, []).append((idx, r))
+        for idx, (gid, centered_adv) in enumerate(zip(group_ids, centered)):
+            groups.setdefault(gid, []).append((idx, centered_adv))
 
-        advantages = [0.0] * len(rewards)
+        advantages = [0.0] * len(centered)
         for group in groups.values():
             if len(group) == 1:
                 continue  # single-sample group: no within-group signal
-            indices, group_rewards = zip(*group)
-            mean = sum(group_rewards) / len(group_rewards)
+            indices, centered_advantages = zip(*group)
             # Population variance (N denominator) — see docstring for tradeoffs.
-            variance = sum((r - mean) ** 2 for r in group_rewards) / len(group_rewards)
+            variance = sum(a**2 for a in centered_advantages) / len(centered_advantages)
             std = math.sqrt(variance)
-            for idx, r in zip(indices, group_rewards):
-                advantages[idx] = (r - mean) / (std + 1e-8)
+            for idx, centered_adv in zip(indices, centered_advantages):
+                advantages[idx] = centered_adv / (std + 1e-8)
         return advantages
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _last_action_idx(output: AgentLoopOutput) -> int:
+        """Index of the last model-generated token in the response sequence.
+
+        Returns the last position where response_mask == 1 (truthy).
+        Falls back to ``len(response_ids) - 1`` when the mask is absent or
+        all-zero (e.g. padding-only or observation-only sequences).
+        """
+        n = len(output.response_ids)
+        mask = output.response_mask
+        return next(
+            (i for i in range(n - 1, -1, -1) if i < len(mask) and mask[i]),
+            n - 1,
+        )
 
     @staticmethod
     def _citation_support(answer: str, ctx: AgentContext | None) -> float:

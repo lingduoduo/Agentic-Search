@@ -583,10 +583,22 @@ def test_advantages_normalised_within_group():
     rf = SearchRewardFunction()
     rewards = [1.0, 3.0, 2.0]
     group_ids = ["g1", "g1", "g1"]
+    outcome_adv = rf.compute_grpo_outcome_advantages(rewards, group_ids)
     adv = rf.compute_batch_advantages(rewards, group_ids)
+    assert outcome_adv == pytest.approx([-1.0, 1.0, 0.0], abs=1e-9)
     # Within-group: mean=2, std=sqrt(2/3)≈0.816
     assert pytest.approx(adv[0], abs=0.01) == (1.0 - 2.0) / (0.8165 + 1e-8)
     assert pytest.approx(adv[2], abs=0.01) == (2.0 - 2.0) / (0.8165 + 1e-8)
+
+
+def test_outcome_advantages_are_computed_without_value_model():
+    rf = SearchRewardFunction()
+    rewards = [1.0, 0.7, 0.1]
+    group_ids = ["g1", "g1", "g1"]
+    adv = rf.compute_grpo_outcome_advantages(rewards, group_ids)
+    assert adv[0] == pytest.approx(0.4)
+    assert adv[1] == pytest.approx(0.1)
+    assert adv[2] == pytest.approx(-0.5)
 
 
 def test_advantages_across_groups_independent():
@@ -607,8 +619,10 @@ def test_advantages_single_sample_group_is_zero():
     rf = SearchRewardFunction()
     rewards = [5.0, 1.0, 3.0]
     group_ids = ["g1", "g2", "g1"]
+    outcome_adv = rf.compute_grpo_outcome_advantages(rewards, group_ids)
     adv = rf.compute_batch_advantages(rewards, group_ids)
     # g2 has one sample → advantage 0
+    assert outcome_adv[1] == 0.0
     assert adv[1] == 0.0
 
 
@@ -616,6 +630,131 @@ def test_advantages_length_mismatch_raises():
     rf = SearchRewardFunction()
     with pytest.raises(ValueError, match="same length"):
         rf.compute_batch_advantages([1.0, 2.0], ["g1"])
+
+
+# ---------------------------------------------------------------------------
+# assign_grpo_outcome_token_advantages — end-to-end GRPO token vectors
+# ---------------------------------------------------------------------------
+
+
+def test_grpo_token_advantages_group_normalised_at_last_action_token():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    # Three rollouts from the same prompt; rewards: 1.0, 0.7, 0.1 → mean=0.6
+    outputs = [
+        _output_with_tokens("Paris", [1, 2, 3], [1, 1, 1]),  # reward 1.0
+        _output_with_tokens("Paris", [1, 2, 3], [1, 1, 1]),  # reward 1.0
+        _output_with_tokens("Wrong", [1, 2, 3], [1, 1, 1]),  # reward 0.0
+    ]
+    group_ids = ["g1", "g1", "g1"]
+    ground_truths = ["Paris", "Paris", "Paris"]
+    result = rf.assign_grpo_outcome_token_advantages(
+        outputs, ground_truths, _exact_match, group_ids
+    )
+
+    assert len(result) == 3
+    # All non-last positions must be 0
+    for vec in result:
+        assert len(vec) == 3
+        assert vec[0] == 0.0
+        assert vec[1] == 0.0
+    # Rewards: 1.0, 1.0, 0.0 → mean=2/3, std>0 → first two positive, last negative
+    assert result[0][2] > 0.0
+    assert result[1][2] > 0.0
+    assert result[2][2] < 0.0
+
+
+def test_grpo_token_advantages_mask_determines_placement():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    # mask: search(1,1), obs(0,0), answer(1) — advantage goes to index 4
+    o1 = _output_with_tokens("Paris", [10, 11, 0, 0, 20], [1, 1, 0, 0, 1])
+    o2 = _output_with_tokens("Wrong", [10, 11, 0, 0, 20], [1, 1, 0, 0, 1])
+    result = rf.assign_grpo_outcome_token_advantages(
+        [o1, o2], ["Paris", "Paris"], _exact_match, ["g1", "g1"]
+    )
+    assert result[0][4] != 0.0
+    assert result[1][4] != 0.0
+    assert all(v == 0.0 for v in result[0][:4])
+    assert all(v == 0.0 for v in result[1][:4])
+
+
+def test_grpo_token_advantages_groups_normalised_independently():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    # g1: both wrong → std=0 → advantages 0.  g2: one right, one wrong → non-zero.
+    outputs = [
+        _output_with_tokens("Wrong", [1, 2], [1, 1]),
+        _output_with_tokens("Wrong", [1, 2], [1, 1]),
+        _output_with_tokens("Paris", [1, 2], [1, 1]),
+        _output_with_tokens("Wrong", [1, 2], [1, 1]),
+    ]
+    group_ids = ["g1", "g1", "g2", "g2"]
+    ground_truths = ["Paris"] * 4
+    result = rf.assign_grpo_outcome_token_advantages(
+        outputs, ground_truths, _exact_match, group_ids
+    )
+
+    # g1: identical rewards → std=0 → both advantages 0
+    assert result[0][1] == pytest.approx(0.0, abs=1e-6)
+    assert result[1][1] == pytest.approx(0.0, abs=1e-6)
+    # g2: one correct, one wrong → non-zero advantages with opposite signs
+    assert result[2][1] > 0.0
+    assert result[3][1] < 0.0
+
+
+def test_grpo_token_advantages_single_sample_group_gives_zero_vector():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    output = _output_with_tokens("Paris", [1, 2, 3], [1, 1, 1])
+    result = rf.assign_grpo_outcome_token_advantages(
+        [output], ["Paris"], _exact_match, ["g1"]
+    )
+    assert result[0] == [0.0, 0.0, 0.0]
+
+
+def test_grpo_token_advantages_empty_response_gives_empty_vector():
+    rf = SearchRewardFunction()
+    o1 = _output_with_tokens("Paris", [], [])
+    o2 = _output_with_tokens("Wrong", [], [])
+    result = rf.assign_grpo_outcome_token_advantages(
+        [o1, o2], ["Paris", "Paris"], _exact_match, ["g1", "g1"]
+    )
+    assert result[0] == []
+    assert result[1] == []
+
+
+def test_grpo_token_advantages_length_mismatch_raises():
+    rf = SearchRewardFunction()
+    o = _output_with_tokens("Paris", [1], [1])
+    with pytest.raises(ValueError, match="same length"):
+        rf.assign_grpo_outcome_token_advantages(
+            [o, o], ["Paris"], _exact_match, ["g1", "g1"]
+        )
 
 
 # ---------------------------------------------------------------------------
