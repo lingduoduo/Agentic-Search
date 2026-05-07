@@ -179,6 +179,7 @@ def test_execute_predictions_marks_inactive_examples_done():
 
 def test_execute_predictions_accepts_plan_and_fetch_actions():
     manager = _manager()
+    manager.batch_fetch = lambda payload: ["Full page body from fetch"]  # type: ignore[method-assign]
     next_obs, dones, valid_action, is_search = manager.execute_predictions(
         predictions=["<plan>outline</plan>", "<fetch>https://example.com</fetch>"],
         problem=["first", "second"],
@@ -186,13 +187,30 @@ def test_execute_predictions_accepts_plan_and_fetch_actions():
         search_mode="google",
         gt_threshold=0.5,
         active_mask=torch.tensor([True, True]),
-        do_search=False,
+        do_search=True,
     )
     assert "<plan_feedback>" in next_obs[0]
-    assert "<tool_feedback>" in next_obs[1]
+    assert next_obs[1] == "\n\n<full_page>Full page body from fetch</full_page>\n\n"
     assert dones == [0, 0]
     assert valid_action == [1, 1]
     assert is_search == [0, 0]
+
+
+def test_build_fetch_tool_calls_splits_urls_from_model_output():
+    manager = _manager()
+    calls = manager.build_fetch_tool_calls(
+        manager.parse_policy_actions(
+            [
+                "<fetch>https://a.example.com,\nhttps://b.example.com</fetch>",
+                "<answer>done</answer>",
+            ]
+        ),
+        active_mask=torch.tensor([True, True]),
+    )
+
+    assert len(calls) == 1
+    assert calls[0].urls == ["https://a.example.com", "https://b.example.com"]
+    assert calls[0].batch_index == 0
 
 
 def test_search_returns_fallback_for_unknown_mode():
@@ -404,6 +422,86 @@ def test_run_llm_loop_records_search_reformulations_across_turns():
     assert final_batch.meta_info["search_query_reformulations"] == 1
 
 
+def test_run_llm_loop_supports_search_fetch_answer_second_rounds():
+    class LoopTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>2024 physics nobel prize winner</search>",
+                (2, 2): "<fetch>https://example.com/nobel</fetch>",
+                (
+                    3,
+                    3,
+                ): "<answer>The 2024 Nobel Prize in Physics was awarded to ...</answer>",
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(token for token in row if token != 0)
+                decoded.append(mapping[tokens])
+            return decoded
+
+    manager = LLMGenerationManager(
+        tokenizer=LoopTokenizer(),
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=64,
+            max_response_length=16,
+            max_obs_length=32,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRollout(
+            responses=[
+                [[1, 1]],
+                [[2, 2]],
+                [[3, 3]],
+            ]
+        ),
+    )
+    manager.batch_search = lambda payload, search_mode, gt_threshold: [  # type: ignore[method-assign]
+        "Doc 1(Title: Nobel) The 2024 Nobel Prize in Physics was awarded to ... URL: https://example.com/nobel"
+    ]
+    manager.batch_fetch = lambda payload: [  # type: ignore[method-assign]
+        "Doc 1(Title: Nobel Full Page) Full article body with evidence."
+    ]
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["Who won the Nobel Prize in Physics in 2024?"],
+        "golden_answers": [["The 2024 Nobel Prize in Physics was awarded to ..."]],
+    }
+
+    final_batch, trajectory_turns = manager.run_llm_loop(
+        gen_batch=gen_batch,
+        search_mode="google",
+        current_step=0,
+        total_steps=10,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    assert trajectory_turns == [3]
+    assert final_batch.meta_info["policy_action_history"] == [
+        ["search"],
+        ["fetch"],
+        ["answer"],
+    ]
+    assert final_batch.meta_info["fetch_url_history"] == [["https://example.com/nobel"]]
+    assert final_batch.meta_info["fetched_urls_total"] == 1
+    react = final_batch.meta_info["react_trajectory"]
+    assert len(react) == 2
+    assert react[0][0].action_tag == "search"
+    assert "<information>" in react[0][0].observation
+    assert react[1][0].action_tag == "fetch"
+    assert react[1][0].observation == (
+        "\n\n<full_page>Doc 1(Title: Nobel Full Page) Full article body with evidence.</full_page>\n\n"
+    )
+
+
 def test_postprocess_responses_truncates_to_first_complete_action():
     class LoopTokenizer(DummyTokenizer):
         def batch_decode(self, responses, skip_special_tokens=True):
@@ -465,4 +563,64 @@ def test_run_agent_loop_alias_delegates_to_run_llm_loop():
     assert output_batch is expected_batch
     assert turns == [1]
     assert captured["gen_batch"] is gen_batch
-    assert captured["search_mode"] == "google"
+
+
+def test_run_llm_loop_extracts_final_answer_from_answer_turn():
+    """final_answers and finished_without_answer are set correctly in meta_info."""
+
+    class AnswerTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>query</search>",
+                (
+                    2,
+                    2,
+                ): "<answer>The 2024 Nobel Prize in Physics was awarded to Hopfield and Hinton.</answer>",
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(t for t in row if t != 0)
+                decoded.append(mapping.get(tokens, ""))
+            return decoded
+
+    manager = LLMGenerationManager(
+        tokenizer=AnswerTokenizer(),
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRollout(responses=[[[1, 1]], [[2, 2]]]),
+    )
+    manager.batch_search = lambda tool_calls, search_mode, gt_threshold: [  # type: ignore[method-assign]
+        "Doc 1: Nobel evidence"
+    ]
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["Who won the 2024 Nobel Prize in Physics?"],
+        "golden_answers": [["Hopfield and Hinton"]],
+    }
+
+    final_batch, trajectory_turns = manager.run_llm_loop(
+        gen_batch=gen_batch,
+        search_mode="simulate_sft",
+        current_step=0,
+        total_steps=100,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    assert final_batch.meta_info["final_answers"] == [
+        "The 2024 Nobel Prize in Physics was awarded to Hopfield and Hinton."
+    ]
+    assert final_batch.meta_info["finished_without_answer"] == [False]
+    assert trajectory_turns == [2]
