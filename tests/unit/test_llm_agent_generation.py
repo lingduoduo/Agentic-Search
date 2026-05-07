@@ -10,6 +10,7 @@ from src.llm_agent.generation import (  # noqa: E402
     GenerationConfig,
     LLMGenerationManager,
     PPOPolicyLossConfig,
+    RetrievedDocument,
     RolloutTrajectory,
     SearchBatch,
 )
@@ -322,6 +323,51 @@ def test_parse_api_item_supports_flat_snippet_shape():
     assert doc.url == "https://example.com"
 
 
+def test_documents_from_retrieve_payload_supports_standard_post_retrieve_shape():
+    from src.llm_agent.generation import _documents_from_retrieve_payload
+
+    docs = _documents_from_retrieve_payload(
+        {
+            "result": [
+                [
+                    {
+                        "document": {
+                            "title": "Physics Nobel",
+                            "contents": '"Physics Nobel"\nHopfield and Hinton won.',
+                            "url": "https://example.com/nobel",
+                        },
+                        "score": 0.9,
+                    }
+                ]
+            ]
+        }
+    )
+
+    assert len(docs) == 1
+    assert docs[0].title == "Physics Nobel"
+    assert docs[0].snippet == "Hopfield and Hinton won."
+    assert docs[0].url == "https://example.com/nobel"
+    assert docs[0].score == pytest.approx(0.9)
+
+
+def test_documents_from_retrieve_payload_supports_direct_row_list():
+    from src.llm_agent.generation import _documents_from_retrieve_payload
+
+    docs = _documents_from_retrieve_payload(
+        [
+            {
+                "title": "Physics Nobel",
+                "snippet": "Hopfield and Hinton won.",
+                "url": "https://example.com/nobel",
+            }
+        ]
+    )
+
+    assert len(docs) == 1
+    assert docs[0].title == "Physics Nobel"
+    assert docs[0].snippet == "Hopfield and Hinton won."
+
+
 def test_passages2string_formats_structured_retrieval_results():
     manager = _manager()
     rendered = manager._passages2string(
@@ -346,6 +392,133 @@ def test_passages2string_formats_structured_retrieval_results():
         "Doc 2(Title: Background) The Nobel Prize in Physics is awarded annually."
         in rendered
     )
+
+
+def test_documents_per_query_from_payload_parses_multi_query_response():
+    from src.llm_agent.generation import _documents_per_query_from_payload
+
+    payload = {
+        "result": [
+            [{"document": {"title": "A", "contents": "snippet A"}, "score": 0.9}],
+            [{"document": {"title": "B", "contents": "snippet B"}, "score": 0.7}],
+        ]
+    }
+    per_query = _documents_per_query_from_payload(payload, n_queries=2)
+    assert len(per_query) == 2
+    assert per_query[0][0].title == "A"
+    assert per_query[1][0].title == "B"
+
+
+def test_documents_per_query_from_payload_pads_missing_queries():
+    from src.llm_agent.generation import _documents_per_query_from_payload
+
+    payload = {"result": [[{"document": {"title": "A", "contents": ""}, "score": 0.9}]]}
+    per_query = _documents_per_query_from_payload(payload, n_queries=3)
+    assert len(per_query) == 3
+    assert len(per_query[0]) == 1
+    assert per_query[1] == []
+    assert per_query[2] == []
+
+
+def test_endpoint_batch_search_sends_one_request_for_multiple_queries(monkeypatch):
+    """batch_search in local mode must issue one POST with all queries, not N."""
+    from unittest.mock import MagicMock, patch
+
+    manager = _manager()
+    flat_calls = manager.build_search_tool_calls(
+        manager.parse_policy_actions(["<search>q1</search>", "<search>q2</search>"]),
+        problem=["p1", "p2"],
+        ground_truth=[["a1"], ["a2"]],
+        active_mask=torch.tensor([True, True]),
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "result": [
+            [{"document": {"title": "T1", "contents": "doc one"}}],
+            [{"document": {"title": "T2", "contents": "doc two"}}],
+        ]
+    }
+    mock_resp.raise_for_status = MagicMock()
+
+    posted_bodies = []
+
+    def fake_post(url, json=None, timeout=None):
+        posted_bodies.append(json)
+        return mock_resp
+
+    with patch("requests.post", side_effect=fake_post):
+        manager.config = manager.config.__class__(
+            **{
+                **manager.config.__dict__,
+                "retrieval_url": "http://localhost:6002/retrieve",
+            }
+        )
+        results = manager.batch_search(
+            flat_calls, search_mode="local", gt_threshold=0.5
+        )
+
+    # Only one HTTP request must have been sent
+    assert len(posted_bodies) == 1
+    assert posted_bodies[0]["queries"] == ["q1", "q2"]
+    assert len(results) == 2
+    assert "T1" in results[0] or "doc one" in results[0]
+    assert "T2" in results[1] or "doc two" in results[1]
+
+
+def test_batch_search_uses_parallel_threads_for_non_endpoint_modes():
+    """simulate modes must not hit the endpoint batch path."""
+    manager = _manager()
+    searched = []
+
+    def tracking_search(tc, search_mode, gt_threshold):
+        searched.append(tc.query)
+        return "simulated result", tc.batch_index
+
+    manager._search = tracking_search  # type: ignore[method-assign]
+    tool_calls = manager.build_search_tool_calls(
+        manager.parse_policy_actions(["<search>q1</search>", "<search>q2</search>"]),
+        problem=["p1", "p2"],
+        ground_truth=[["a1"], ["a2"]],
+        active_mask=torch.tensor([True, True]),
+    )
+    manager.batch_search(tool_calls, search_mode="simulate_sft", gt_threshold=0.5)
+    # Both queries must have gone through the per-query path
+    assert sorted(searched) == ["q1", "q2"]
+
+
+def test_retrieve_documents_returns_structured_docs_from_backend():
+    manager = _manager()
+
+    class FakeRetriever:
+        def retrieve(self, query, topk):
+            assert query == "2024 physics nobel prize winner"
+            assert topk == 3
+            return [
+                RetrievedDocument(
+                    title="Physics Nobel",
+                    snippet="Hopfield and Hinton won.",
+                    url="https://example.com/nobel",
+                    score=0.9,
+                )
+            ]
+
+        def search(self, query, topk):
+            del query, topk
+            return "unused"
+
+    manager._make_retriever = (
+        lambda tool_call, search_mode, gt_threshold: FakeRetriever()
+    )  # type: ignore[method-assign]
+    docs = manager.retrieve_documents(
+        "2024 physics nobel prize winner",
+        search_mode="local",
+        topk=3,
+    )
+
+    assert len(docs) == 1
+    assert docs[0].title == "Physics Nobel"
+    assert docs[0].snippet == "Hopfield and Hinton won."
 
 
 def test_compute_log_prob_stores_new_log_probs_on_batch_and_trajectory():

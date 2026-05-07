@@ -265,6 +265,69 @@ def _parse_api_item(item: dict[str, Any]) -> RetrievedDocument:
     )
 
 
+def _normalize_retrieve_result_rows(
+    payload: dict[str, Any] | list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Normalize `/retrieve` payloads from local, web, and RAG backends.
+
+    Common accepted shapes:
+    - {"result": [[{...}, {...}]]}     # POST /retrieve single-query batch
+    - {"result": [{...}, {...}]}       # looser single-query variant
+    - [{...}, {...}]                   # direct rows
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+
+    result = payload.get("result", [])
+    if isinstance(result, list):
+        if result and isinstance(result[0], list):
+            rows = result[0]
+        else:
+            rows = result
+        return [item for item in rows if isinstance(item, dict)]
+    return []
+
+
+def _documents_from_retrieve_payload(
+    payload: dict[str, Any] | list[dict[str, Any]] | None,
+) -> list[RetrievedDocument]:
+    """Parse a retrieval payload into normalized document objects."""
+    return [_parse_api_item(item) for item in _normalize_retrieve_result_rows(payload)]
+
+
+def _documents_per_query_from_payload(
+    payload: dict[str, Any],
+    n_queries: int,
+) -> list[list[RetrievedDocument]]:
+    """Parse a multi-query /retrieve response into per-query document lists.
+
+    Expected shape from the endpoint::
+
+        {"result": [[doc, doc, ...], [doc, doc, ...], ...]}
+
+    where ``result[i]`` contains documents for query ``i``.  Also handles the
+    single-query flat variant ``{"result": [doc, ...]}`` by returning it as the
+    first entry and empty lists for remaining queries.
+    """
+    result = payload.get("result", []) if isinstance(payload, dict) else []
+    if not isinstance(result, list) or not result:
+        return [[] for _ in range(n_queries)]
+    if isinstance(result[0], list):
+        per_query = [
+            [_parse_api_item(item) for item in rows if isinstance(item, dict)]
+            for rows in result[:n_queries]
+        ]
+        per_query += [[] for _ in range(n_queries - len(per_query))]
+        return per_query
+    # Flat list — treat as single-query response
+    docs = [_parse_api_item(item) for item in result if isinstance(item, dict)]
+    return [docs] + [[] for _ in range(n_queries - 1)]
+
+
 def build_react_observation(action: "PolicyAction", retrieval_result: str = "") -> str:
     """Build the observation injected back into context after the model's action.
 
@@ -323,8 +386,28 @@ class Retriever(Protocol):
     this one method — no changes to the dispatch logic.
     """
 
+    def retrieve(self, query: str, topk: int) -> list[RetrievedDocument]:
+        """Return structured retrieved documents for one query."""
+        ...
+
     def search(self, query: str, topk: int) -> str:
-        """Return retrieved documents as a formatted string ready for injection."""
+        """Return retrieved documents formatted for prompt injection."""
+        ...
+
+
+@runtime_checkable
+class BatchRetriever(Protocol):
+    """Retrieval backend that can serve multiple queries in a single call.
+
+    Backends that implement this avoid N separate HTTP round-trips when the
+    agent loop runs several trajectories in parallel.  Check with
+    ``isinstance(retriever, BatchRetriever)`` before using.
+    """
+
+    def retrieve_batch(
+        self, queries: list[str], topk: int
+    ) -> list[list[RetrievedDocument]]:
+        """Return per-query document lists for all queries in one request."""
         ...
 
 
@@ -354,9 +437,9 @@ class EndpointRetriever:
         self._retry_attempts = retry_attempts
         self._sleep_seconds = sleep_seconds
 
-    def search(self, query: str, topk: int) -> str:
+    def retrieve(self, query: str, topk: int) -> list[RetrievedDocument]:
         if not self._url:
-            return _NO_INFO
+            return []
         import requests
 
         for _ in range(self._retry_attempts):
@@ -365,11 +448,38 @@ class EndpointRetriever:
                     self._url, json={"queries": [query], "topk": topk}, timeout=10
                 )
                 resp.raise_for_status()
-                rows = resp.json().get("result", [[]])[0]
-                return _format_documents([_parse_api_item(item) for item in rows])
+                return _documents_from_retrieve_payload(resp.json())
             except Exception:  # pragma: no cover - network dependent
                 time.sleep(self._sleep_seconds)
-        return _NO_INFO
+        return []
+
+    def retrieve_batch(
+        self, queries: list[str], topk: int
+    ) -> list[list[RetrievedDocument]]:
+        """Send all queries in a single POST /retrieve and return per-query docs.
+
+        Reduces N individual HTTP calls to one, which matters when many
+        trajectories search simultaneously in a training batch.
+        """
+        if not self._url or not queries:
+            return [[] for _ in queries]
+        import requests
+
+        for _ in range(self._retry_attempts):
+            try:
+                resp = requests.post(
+                    self._url,
+                    json={"queries": queries, "topk": topk},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                return _documents_per_query_from_payload(resp.json(), len(queries))
+            except Exception:  # pragma: no cover - network dependent
+                time.sleep(self._sleep_seconds)
+        return [[] for _ in queries]
+
+    def search(self, query: str, topk: int) -> str:
+        return _format_documents(self.retrieve(query, topk))
 
 
 class EndpointFetcher:
@@ -409,20 +519,23 @@ class GoogleRetriever:
         self._retry_attempts = retry_attempts
         self._sleep_seconds = sleep_seconds
 
-    def search(self, query: str, topk: int) -> str:
+    def retrieve(self, query: str, topk: int) -> list[RetrievedDocument]:
         if not self._api_key:
-            return _NO_INFO
+            return []
         import serpapi  # optional dep
 
         params = {"engine": "google", "q": query, "api_key": self._api_key, "num": topk}
         for attempt in range(self._retry_attempts):
             try:
                 items = serpapi.search(params).get("organic_results", [])
-                return _format_documents([_parse_api_item(item) for item in items])
+                return [_parse_api_item(item) for item in items]
             except Exception:  # pragma: no cover - network dependent
                 if attempt < self._retry_attempts - 1:
                     time.sleep(self._sleep_seconds)
-        return _NO_INFO
+        return []
+
+    def search(self, query: str, topk: int) -> str:
+        return _format_documents(self.retrieve(query, topk))
 
 
 class SimulateRetriever:
@@ -466,6 +579,24 @@ class SimulateRetriever:
             )
             or _NO_INFO
         )
+
+    def retrieve(self, query: str, topk: int) -> list[RetrievedDocument]:
+        text = self.search(query, topk)
+        if not text or text == _NO_INFO:
+            return []
+        documents: list[RetrievedDocument] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            title = "Simulated retrieval result"
+            snippet = line
+            if ":" in line:
+                prefix, remainder = line.split(":", 1)
+                title = prefix.strip() or title
+                snippet = remainder.strip() or line
+            documents.append(RetrievedDocument(title=title, snippet=snippet))
+        return documents
 
 
 @dataclass(frozen=True)
@@ -2036,6 +2167,30 @@ class LLMGenerationManager:
             )
         return EndpointRetriever("", 0, 0.0)  # unknown mode → no-op
 
+    def _endpoint_batch_search(
+        self,
+        tool_calls: list[SearchToolCall],
+        search_mode: str,
+    ) -> list[str]:
+        """Send all queries in one POST /retrieve request.
+
+        Reduces N parallel HTTP requests to 1 for endpoint-based backends
+        (``local`` and ``wiki`` modes).  Results are aligned to *tool_calls*
+        by the server's ordered response array.
+        """
+        cfg = self.config
+        if search_mode == "wiki":
+            url = f"http://{cfg.retriever_ip}:6002/retrieve" if cfg.retriever_ip else ""
+        else:
+            url = cfg.retrieval_url or ""
+        retriever = EndpointRetriever(
+            url, cfg.wiki_retry_attempts, cfg.wiki_retry_sleep_seconds
+        )
+        per_query_docs = retriever.retrieve_batch(
+            [tc.query for tc in tool_calls], cfg.topk
+        )
+        return [_format_documents(docs) or _NO_INFO for docs in per_query_docs]
+
     def batch_search(
         self,
         tool_calls: list[SearchToolCall],
@@ -2044,6 +2199,10 @@ class LLMGenerationManager:
     ) -> list[str]:
         if not tool_calls:
             return []
+        # Fast path: one HTTP request for all queries on endpoint-based backends.
+        if search_mode in ("local", "wiki"):
+            return self._endpoint_batch_search(tool_calls, search_mode)
+        # Standard path: parallel per-query threads for Google and simulate modes.
         all_results = [_NO_INFO] * len(tool_calls)
         max_workers = min(self.config.search_max_workers, len(tool_calls))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -2087,10 +2246,38 @@ class LLMGenerationManager:
         search_mode: str,
         gt_threshold: float,
     ) -> tuple[str, int]:
-        result = self._make_retriever(tool_call, search_mode, gt_threshold).search(
-            tool_call.query, self.config.topk
-        )
+        retriever = self._make_retriever(tool_call, search_mode, gt_threshold)
+        docs = retriever.retrieve(tool_call.query, self.config.topk)
+        result = _format_documents(docs)
         return result or _NO_INFO, tool_call.batch_index
+
+    def retrieve_documents(
+        self,
+        query: str,
+        *,
+        search_mode: str | None = None,
+        problem: str = "",
+        ground_truth: str = "",
+        gt_threshold: float = 0.0,
+        topk: int | None = None,
+    ) -> list[RetrievedDocument]:
+        """Retrieve structured documents from any configured backend.
+
+        This is the normalized retrieval entrypoint for BM25, dense retrieval,
+        hybrid search, web search, and internal RAG-style backends.
+        """
+        tool_call = SearchToolCall(
+            query=query,
+            problem=problem,
+            ground_truth=ground_truth,
+            batch_index=0,
+        )
+        retriever = self._make_retriever(
+            tool_call,
+            search_mode or self.config.search_mode,
+            gt_threshold,
+        )
+        return retriever.retrieve(query, topk or self.config.topk)
 
     def _fetch(
         self,
