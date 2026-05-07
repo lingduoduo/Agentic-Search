@@ -487,6 +487,53 @@ def test_batch_search_uses_parallel_threads_for_non_endpoint_modes():
     assert sorted(searched) == ["q1", "q2"]
 
 
+def test_safe_truncate_observation_preserves_close_tag_on_long_information_block():
+    from src.llm_agent.generation import LLMGenerationManager
+
+    long_content = "word " * 200  # 1000 chars
+    obs = f"\n\n<information>{long_content}</information>\n\n"
+    truncated = LLMGenerationManager._safe_truncate_observation(obs, max_chars=100)
+
+    assert truncated.endswith("</information>\n\n")
+    assert len(truncated) <= 100 + len(
+        "</information>\n\n"
+    )  # slight overrun allowed by design
+
+
+def test_safe_truncate_observation_does_not_modify_short_observations():
+    from src.llm_agent.generation import LLMGenerationManager
+
+    obs = "\n\n<information>short result</information>\n\n"
+    assert LLMGenerationManager._safe_truncate_observation(obs, max_chars=500) == obs
+
+
+def test_safe_truncate_observation_hard_cuts_unknown_format():
+    from src.llm_agent.generation import LLMGenerationManager
+
+    obs = "plain text that is very long " * 20
+    truncated = LLMGenerationManager._safe_truncate_observation(obs, max_chars=50)
+    assert len(truncated) == 50
+    assert truncated == obs[:50]
+
+
+def test_build_react_context_transitions_captures_action_and_observation():
+    manager = _manager()
+    action = "<search>cats</search>"
+    obs = "\n\n<information>cats are animals</information>\n\n"
+    transitions = manager.build_react_context_transitions([action], [obs])
+
+    assert len(transitions) == 1
+    assert transitions[0].action_text == action
+    assert transitions[0].observation_text == obs
+    assert transitions[0].appended_context_text == action + obs
+
+
+def test_build_react_context_transitions_length_mismatch_raises():
+    manager = _manager()
+    with pytest.raises(ValueError, match="same length"):
+        manager.build_react_context_transitions(["a", "b"], ["x"])
+
+
 def test_retrieve_documents_returns_structured_docs_from_backend():
     manager = _manager()
 
@@ -722,6 +769,24 @@ def test_actor_rollout_step_samples_policy_actions_from_current_state():
     assert rollout_step.parsed_actions[0].tag == "search"
     assert rollout_step.parsed_actions[0].content == "cats"
     assert meta_info == {}
+
+
+def test_build_react_context_transitions_appends_action_and_observation():
+    manager = _manager()
+    transitions = manager.build_react_context_transitions(
+        ["<search>cats</search>"],
+        ["\n\n<information>Doc 1: evidence</information>\n\n"],
+    )
+
+    assert len(transitions) == 1
+    assert transitions[0].action_text == "<search>cats</search>"
+    assert (
+        transitions[0].observation_text
+        == "\n\n<information>Doc 1: evidence</information>\n\n"
+    )
+    assert transitions[0].appended_context_text == (
+        "<search>cats</search>\n\n<information>Doc 1: evidence</information>\n\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -970,6 +1035,14 @@ def test_apply_step_result_does_not_record_steps_for_inactive_trajectories():
     # Trajectory 1 was active — its step must be a real ReActStep
     assert turn_steps[1] is not None
     assert turn_steps[1].action_tag == "search"
+    context_transitions = state.meta_info.get("context_transitions", [])
+    assert len(context_transitions) == 1
+    assert context_transitions[0][0] is None
+    assert context_transitions[0][1] is not None
+    assert (
+        context_transitions[0][1].appended_context_text
+        == "<search>q</search><information>doc</information>"
+    )
 
 
 def test_build_rollout_trajectories_filters_none_steps():
