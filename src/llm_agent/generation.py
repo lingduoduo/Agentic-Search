@@ -165,6 +165,21 @@ class ReActContextTransition:
 
 
 @dataclass(frozen=True)
+class ContinuationDecision:
+    """Whether the agent should take another generation turn.
+
+    This makes second-round and later-round behavior explicit: if the policy
+    has not emitted `<answer>`, the loop can continue with another search,
+    fetch, or answer step using the updated ReAct context.
+    """
+
+    turn_index: int
+    continue_generation: bool
+    active_trajectories: int
+    reason: str
+
+
+@dataclass(frozen=True)
 class RolloutTrajectory:
     """One complete RL rollout trajectory for a single prompt."""
 
@@ -1635,6 +1650,69 @@ class LLMGenerationManager:
                     action.content.strip()
                 )
 
+    # Stop tool-use turns when the rolling context reaches this fraction of
+    # max_prompt_length.  Generating another search + long observation on top of
+    # a nearly-full context would be truncated at the input, losing evidence the
+    # model already gathered.  Force an answer turn instead.
+    _CONTEXT_BUDGET_RATIO: float = 0.85
+
+    def _make_continuation_decision(
+        self,
+        state: AgentLoopState,
+        *,
+        turn_index: int,
+        allow_tool_use: bool,
+    ) -> ContinuationDecision:
+        """Decide whether another generation turn should run."""
+        active_trajectories = int(state.active_mask.sum().item())
+        if active_trajectories <= 0:
+            return ContinuationDecision(
+                turn_index=turn_index,
+                continue_generation=False,
+                active_trajectories=0,
+                reason="all trajectories have terminated with <answer> or invalid completion",
+            )
+        if allow_tool_use:
+            # Stop early if the context is almost full.  Running another search
+            # turn would append max_obs_length more tokens; if the context is
+            # already near max_prompt_length the beginning would be truncated,
+            # losing evidence that was already retrieved.
+            context_lengths = state.meta_info.get("context_token_lengths", [])
+            if context_lengths:
+                current_len = context_lengths[-1]
+                budget = int(self.config.max_prompt_length * self._CONTEXT_BUDGET_RATIO)
+                if current_len >= budget:
+                    return ContinuationDecision(
+                        turn_index=turn_index,
+                        continue_generation=False,
+                        active_trajectories=active_trajectories,
+                        reason=(
+                            f"context length {current_len} reached "
+                            f"{self._CONTEXT_BUDGET_RATIO:.0%} of max_prompt_length "
+                            f"({self.config.max_prompt_length}); "
+                            "forcing answer to avoid truncating retrieved evidence"
+                        ),
+                    )
+            return ContinuationDecision(
+                turn_index=turn_index,
+                continue_generation=True,
+                active_trajectories=active_trajectories,
+                reason="no <answer> yet for all active trajectories; continue with another agent turn",
+            )
+        return ContinuationDecision(
+            turn_index=turn_index,
+            continue_generation=False,
+            active_trajectories=active_trajectories,
+            reason="search budget exhausted; run final no-tool answer attempt instead",
+        )
+
+    def _record_continuation_decision(
+        self,
+        state: AgentLoopState,
+        decision: ContinuationDecision,
+    ) -> None:
+        state.meta_info.setdefault("continuation_history", []).append(decision)
+
     def _run_one_turn(
         self,
         gen_batch: SearchBatch,
@@ -1683,7 +1761,13 @@ class LLMGenerationManager:
         state = self._initialize_agent_loop_state(gen_batch, resolved_initial_input_ids)
 
         for turn in range(self.config.max_turns):
-            if not bool(state.active_mask.sum()):
+            decision = self._make_continuation_decision(
+                state,
+                turn_index=turn,
+                allow_tool_use=True,
+            )
+            self._record_continuation_decision(state, decision)
+            if not decision.continue_generation:
                 break
             step_result = self._run_one_turn(
                 gen_batch,
@@ -1698,7 +1782,13 @@ class LLMGenerationManager:
                 state.trajectory_turns, step_result.dones, turn_value=turn + 1
             )
 
-        if bool(state.active_mask.sum()):
+        final_decision = self._make_continuation_decision(
+            state,
+            turn_index=self.config.max_turns,
+            allow_tool_use=False,
+        )
+        self._record_continuation_decision(state, final_decision)
+        if final_decision.active_trajectories > 0:
             step_result = self._run_one_turn(
                 gen_batch,
                 state,

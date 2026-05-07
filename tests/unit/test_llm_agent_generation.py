@@ -1552,6 +1552,13 @@ def test_run_llm_loop_supports_search_fetch_answer_second_rounds():
         trajectory.final_answer == "The 2024 Nobel Prize in Physics was awarded to ..."
     )
     assert trajectory.finished_without_answer is False
+    continuation = final_batch.meta_info["continuation_history"]
+    assert continuation[0].continue_generation is True
+    assert "continue with another agent turn" in continuation[0].reason
+    assert continuation[1].continue_generation is True
+    assert "continue with another agent turn" in continuation[1].reason
+    assert continuation[2].continue_generation is False
+    assert "final no-tool answer attempt" in continuation[2].reason
 
 
 def test_postprocess_responses_truncates_to_first_complete_action():
@@ -1709,6 +1716,152 @@ def test_run_prompt_rollout_batch_converts_prompt_batch_and_calls_agent_loop():
     assert converted.non_tensor_batch["golden_answers"] == [
         ["John Hopfield and Geoffrey Hinton."]
     ]
+
+
+def test_make_continuation_decision_continues_when_active_and_budget_available():
+    from src.llm_agent.generation import AgentLoopState
+
+    manager = _manager_with_log_prob()
+    state = AgentLoopState(
+        rollings=SearchBatch.from_dict(
+            {
+                "input_ids": torch.ones(1, 4, dtype=torch.long),
+                "attention_mask": torch.ones(1, 4, dtype=torch.long),
+                "position_ids": torch.arange(4).unsqueeze(0),
+            }
+        ),
+        original_left_side={"input_ids": torch.ones(1, 4, dtype=torch.long)},
+        original_right_side={
+            "responses": torch.ones(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(1, 0, dtype=torch.long),
+        },
+        active_mask=torch.tensor([True], dtype=torch.bool),
+        trajectory_turns=[0],
+        turns_stats=torch.zeros(1, dtype=torch.int),
+        valid_action_stats=torch.zeros(1, dtype=torch.int),
+        valid_search_stats=torch.zeros(1, dtype=torch.int),
+        active_num_list=[1],
+    )
+    # context_token_lengths not set yet — no budget check happens
+    decision = manager._make_continuation_decision(
+        state, turn_index=0, allow_tool_use=True
+    )
+    assert decision.continue_generation is True
+    assert decision.active_trajectories == 1
+
+
+def test_make_continuation_decision_forces_answer_when_context_nearly_full():
+    from src.llm_agent.generation import AgentLoopState
+
+    manager = LLMGenerationManager(
+        tokenizer=DummyTokenizer(),
+        config=GenerationConfig(
+            max_turns=5,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=DummyActorRollout(),
+    )
+    state = AgentLoopState(
+        rollings=SearchBatch.from_dict(
+            {
+                "input_ids": torch.ones(1, 4, dtype=torch.long),
+                "attention_mask": torch.ones(1, 4, dtype=torch.long),
+                "position_ids": torch.arange(4).unsqueeze(0),
+            }
+        ),
+        original_left_side={"input_ids": torch.ones(1, 4, dtype=torch.long)},
+        original_right_side={
+            "responses": torch.ones(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(1, 0, dtype=torch.long),
+        },
+        active_mask=torch.tensor([True], dtype=torch.bool),
+        trajectory_turns=[0],
+        turns_stats=torch.zeros(1, dtype=torch.int),
+        valid_action_stats=torch.zeros(1, dtype=torch.int),
+        valid_search_stats=torch.zeros(1, dtype=torch.int),
+        active_num_list=[1],
+    )
+    # Simulate context at 90% of max_prompt_length=32 → 29 tokens → above 85% budget
+    state.meta_info["context_token_lengths"] = [29]
+
+    decision = manager._make_continuation_decision(
+        state, turn_index=2, allow_tool_use=True
+    )
+
+    assert decision.continue_generation is False
+    assert "context length" in decision.reason
+    assert "forcing answer" in decision.reason
+    assert decision.active_trajectories == 1
+
+
+def test_make_continuation_decision_stops_when_all_done():
+    from src.llm_agent.generation import AgentLoopState
+
+    manager = _manager_with_log_prob()
+    state = AgentLoopState(
+        rollings=SearchBatch.from_dict(
+            {
+                "input_ids": torch.ones(1, 4, dtype=torch.long),
+                "attention_mask": torch.ones(1, 4, dtype=torch.long),
+                "position_ids": torch.arange(4).unsqueeze(0),
+            }
+        ),
+        original_left_side={"input_ids": torch.ones(1, 4, dtype=torch.long)},
+        original_right_side={
+            "responses": torch.ones(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(1, 0, dtype=torch.long),
+        },
+        active_mask=torch.tensor([False], dtype=torch.bool),
+        trajectory_turns=[1],
+        turns_stats=torch.ones(1, dtype=torch.int),
+        valid_action_stats=torch.zeros(1, dtype=torch.int),
+        valid_search_stats=torch.zeros(1, dtype=torch.int),
+        active_num_list=[1, 0],
+    )
+    decision = manager._make_continuation_decision(
+        state, turn_index=1, allow_tool_use=True
+    )
+    assert decision.continue_generation is False
+    assert decision.active_trajectories == 0
+
+
+def test_make_continuation_decision_records_history_in_meta_info():
+    from src.llm_agent.generation import AgentLoopState
+
+    manager = _manager_with_log_prob()
+    state = AgentLoopState(
+        rollings=SearchBatch.from_dict(
+            {
+                "input_ids": torch.ones(1, 4, dtype=torch.long),
+                "attention_mask": torch.ones(1, 4, dtype=torch.long),
+                "position_ids": torch.arange(4).unsqueeze(0),
+            }
+        ),
+        original_left_side={"input_ids": torch.ones(1, 4, dtype=torch.long)},
+        original_right_side={
+            "responses": torch.ones(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(1, 0, dtype=torch.long),
+        },
+        active_mask=torch.tensor([True], dtype=torch.bool),
+        trajectory_turns=[0],
+        turns_stats=torch.zeros(1, dtype=torch.int),
+        valid_action_stats=torch.zeros(1, dtype=torch.int),
+        valid_search_stats=torch.zeros(1, dtype=torch.int),
+        active_num_list=[1],
+    )
+    decision = manager._make_continuation_decision(
+        state, turn_index=0, allow_tool_use=True
+    )
+    manager._record_continuation_decision(state, decision)
+
+    history = state.meta_info.get("continuation_history", [])
+    assert len(history) == 1
+    assert history[0].turn_index == 0
+    assert history[0].continue_generation is True
 
 
 def test_run_llm_loop_extracts_final_answer_from_answer_turn():
