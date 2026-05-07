@@ -133,6 +133,17 @@ class RetrievedDocument:
     score: float | None = None
 
 
+@dataclass(frozen=True)
+class PPOPolicyLossConfig:
+    """Configuration for PPO / GRPO clipped policy optimization."""
+
+    clip_epsilon: float = 0.2
+    kl_coefficient: float = 0.0
+    # Per-action-type loss multipliers.  Keys: "search", "plan", "fetch", "answer".
+    # Tokens with no matching key keep weight 1.0.  None means uniform weighting.
+    action_type_weights: dict[str, float] | None = None
+
+
 ROLLOUT_ACTION_TAGS = ("plan", "search", "fetch", "answer")
 ACTION_PATTERN = re.compile(
     rf"<(?P<tag>{'|'.join(ROLLOUT_ACTION_TAGS)})>(?P<content>.*?)</(?P=tag)>",
@@ -140,6 +151,31 @@ ACTION_PATTERN = re.compile(
 )
 
 _NO_INFO = "No information available"
+
+
+def _token_char_offsets(ids: list[int], tokenizer: Any) -> list[tuple[int, int]]:
+    """Return (char_start, char_end) for each token in the decoded response.
+
+    Tries HF-style ``return_offsets_mapping`` first for accuracy with BPE /
+    SentencePiece tokenizers.  Falls back to cumulative per-token decode for
+    character-level and test tokenizers that don't support the HF calling
+    convention.
+    """
+    text = tokenizer.decode(ids, skip_special_tokens=False)
+    try:
+        enc = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
+        offsets = enc["offset_mapping"]
+        if len(offsets) == len(ids):
+            return list(offsets)
+    except Exception:
+        pass
+    pos = 0
+    offsets_fallback: list[tuple[int, int]] = []
+    for tid in ids:
+        piece = tokenizer.decode([tid], skip_special_tokens=False)
+        offsets_fallback.append((pos, pos + len(piece)))
+        pos += len(piece)
+    return offsets_fallback
 
 
 # ---------------------------------------------------------------------------
@@ -851,6 +887,168 @@ class LLMGenerationManager:
         ratio = torch.exp(log_ratio)
         batch.batch["prob_ratio"] = ratio
         return ratio
+
+    def compute_action_type_masks(self, batch: SearchBatch) -> dict[str, torch.Tensor]:
+        """Binary masks over response token positions, one per action type.
+
+        Returns a dict mapping each action tag — ``"search"``, ``"plan"``,
+        ``"fetch"``, ``"answer"`` — to a float32 tensor of shape
+        ``[batch_size, response_length]``.  Position ``[i, t]`` is ``1.0`` iff
+        token ``t`` in rollout ``i`` was emitted inside a ``<tag>…</tag>`` block
+        of that type.
+
+        Observation tokens injected by the environment are never part of a
+        policy action block and always get ``0.0`` across all masks.
+        """
+        response_ids_list = batch.batch["responses"].tolist()
+        B, T = batch.batch["responses"].shape
+        masks = {
+            tag: torch.zeros(B, T, dtype=torch.float32) for tag in ROLLOUT_ACTION_TAGS
+        }
+        for row, ids in enumerate(response_ids_list):
+            offsets = _token_char_offsets(ids, self.tokenizer)
+            text = self.tokenizer.decode(ids, skip_special_tokens=False)
+            for m in ACTION_PATTERN.finditer(text):
+                tag = m.group("tag")
+                span_start, span_end = m.start(), m.end()
+                for tok, (tok_start, tok_end) in enumerate(offsets):
+                    if (
+                        tok_start >= span_start
+                        and tok_end <= span_end
+                        and tok_start < tok_end
+                    ):
+                        masks[tag][row, tok] = 1.0
+        return masks
+
+    def policy_loss_breakdown(
+        self,
+        batch: SearchBatch,
+        *,
+        advantages: torch.Tensor | None = None,
+        config: PPOPolicyLossConfig | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Per-action-type clipped policy objective for diagnostic logging.
+
+        Computes the mean clipped surrogate contribution from each action type
+        (search, plan, fetch, answer) independently.  The four values together
+        describe where the gradient signal is coming from and whether one action
+        type dominates training.
+
+        Does not modify ``batch``; call ``compute_prob_ratio`` first if
+        ``prob_ratio`` is not already in ``batch.batch``.
+        """
+        cfg = config or PPOPolicyLossConfig()
+        ratio = batch.batch.get("prob_ratio")
+        if ratio is None:
+            ratio = self.compute_prob_ratio(batch)
+        resolved_advantages = advantages
+        if resolved_advantages is None:
+            resolved_advantages = batch.batch.get("advantages")
+        if resolved_advantages is None:
+            raise ValueError(
+                "advantages not found; pass `advantages=` or populate batch.batch['advantages'] first."
+            )
+        resolved_advantages = resolved_advantages.to(dtype=torch.float32)
+        clipped_ratio = torch.clamp(
+            ratio,
+            1.0 - float(cfg.clip_epsilon),
+            1.0 + float(cfg.clip_epsilon),
+        )
+        surrogate = torch.minimum(
+            ratio * resolved_advantages, clipped_ratio * resolved_advantages
+        )
+        type_masks = self.compute_action_type_masks(batch)
+        breakdown: dict[str, torch.Tensor] = {}
+        for tag, mask in type_masks.items():
+            n_tokens = torch.clamp(mask.sum(), min=1.0)
+            breakdown[tag] = (surrogate * mask).sum() / n_tokens
+        return breakdown
+
+    def compute_policy_loss(
+        self,
+        batch: SearchBatch,
+        *,
+        advantages: torch.Tensor | None = None,
+        config: PPOPolicyLossConfig | None = None,
+    ) -> torch.Tensor:
+        """Compute the clipped PPO / GRPO policy loss over action tokens.
+
+        This implements the standard clipped surrogate objective:
+
+            L_clip(theta) =
+                E[min(r_t(theta) A_t,
+                      clip(r_t(theta), 1-eps, 1+eps) A_t)]
+
+        The returned tensor is the negated objective so it can be minimized by
+        gradient descent. The same token-level policy is used for search,
+        reasoning, stopping, and answer generation, so one loss updates all of
+        them wherever `responses_with_info_mask` marks model-chosen action
+        tokens.
+        """
+        cfg = config or PPOPolicyLossConfig()
+        action_mask = self._response_action_mask(batch)
+        ratio = batch.batch.get("prob_ratio")
+        if ratio is None:
+            ratio = self.compute_prob_ratio(batch)
+
+        resolved_advantages = advantages
+        if resolved_advantages is None:
+            resolved_advantages = batch.batch.get("advantages")
+        if resolved_advantages is None:
+            raise ValueError(
+                "advantages not found; pass `advantages=` or populate batch.batch['advantages'] first."
+            )
+        resolved_advantages = resolved_advantages.to(dtype=torch.float32)
+        if resolved_advantages.shape != ratio.shape:
+            raise ValueError(
+                "advantages must align with prob_ratio shape "
+                f"{tuple(ratio.shape)}, got {tuple(resolved_advantages.shape)}."
+            )
+
+        clipped_ratio = torch.clamp(
+            ratio,
+            1.0 - float(cfg.clip_epsilon),
+            1.0 + float(cfg.clip_epsilon),
+        )
+        unclipped_objective = ratio * resolved_advantages
+        clipped_objective = clipped_ratio * resolved_advantages
+        surrogate = torch.minimum(unclipped_objective, clipped_objective) * action_mask
+
+        if cfg.action_type_weights:
+            type_masks = self.compute_action_type_masks(batch)
+            weight_tensor = torch.ones_like(ratio)
+            for tag, w in cfg.action_type_weights.items():
+                if tag in type_masks:
+                    weight_tensor = weight_tensor + (w - 1.0) * type_masks[tag].to(
+                        ratio.device
+                    )
+            surrogate = surrogate * weight_tensor
+
+        normalizer = torch.clamp(action_mask.sum(), min=1.0)
+        policy_objective = surrogate.sum() / normalizer
+
+        kl_term = torch.tensor(0.0, dtype=torch.float32, device=policy_objective.device)
+        if cfg.kl_coefficient:
+            kl = batch.batch.get("per_token_kl")
+            if kl is None:
+                kl = self.per_token_kl(batch)
+            kl_term = (kl * action_mask).sum() / normalizer
+
+        loss = -policy_objective + float(cfg.kl_coefficient) * kl_term
+        clip_fraction = (
+            (ratio != clipped_ratio).to(dtype=torch.float32) * action_mask
+        ).sum() / normalizer
+
+        batch.batch["advantages"] = resolved_advantages * action_mask
+        batch.batch["clipped_prob_ratio"] = clipped_ratio
+        batch.batch["policy_loss"] = loss
+        batch.batch["policy_objective"] = policy_objective.detach()
+        batch.batch["clip_fraction"] = clip_fraction.detach()
+        batch.batch["mean_advantage"] = (
+            (resolved_advantages * action_mask).sum() / normalizer
+        ).detach()
+        batch.batch["mean_kl"] = kl_term.detach()
+        return loss
 
     def per_token_kl(self, batch: SearchBatch) -> torch.Tensor:
         """Compute per-token KL divergence KL(π_θ_old ‖ π_θ) for GRPO regularisation.
