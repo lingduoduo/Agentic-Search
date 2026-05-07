@@ -111,6 +111,34 @@ def test_execute_predictions_keeps_search_payload_aligned():
     assert is_search == [0, 1]
 
 
+def test_build_react_observation_wraps_search_result_in_information_tags():
+    from src.llm_agent.generation import PolicyAction, build_react_observation
+
+    action = PolicyAction(tag="search", content="2024 physics nobel prize", raw_text="")
+    obs = build_react_observation(
+        action, "The 2024 Nobel Prize in Physics was awarded to ..."
+    )
+    assert obs == (
+        "\n\n<information>The 2024 Nobel Prize in Physics was awarded to ..."
+        "</information>\n\n"
+    )
+
+
+def test_build_react_observation_returns_empty_for_answer():
+    from src.llm_agent.generation import PolicyAction, build_react_observation
+
+    action = PolicyAction(tag="answer", content="Watson and Watt", raw_text="")
+    assert build_react_observation(action) == ""
+
+
+def test_build_react_observation_returns_plan_feedback():
+    from src.llm_agent.generation import PolicyAction, build_react_observation
+
+    action = PolicyAction(tag="plan", content="outline", raw_text="")
+    obs = build_react_observation(action)
+    assert "<plan_feedback>" in obs
+
+
 def test_build_search_tool_calls_uses_model_emitted_queries():
     manager = _manager()
     calls = manager.build_search_tool_calls(
@@ -297,6 +325,15 @@ def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
     assert final_batch.meta_info["search_queries_unique"] == 1
     assert final_batch.meta_info["search_query_repetitions"] == 0
     assert final_batch.meta_info["search_query_reformulations"] == 0
+    react = final_batch.meta_info["react_trajectory"]
+    assert len(react) == 1  # one turn with include_observations=True
+    assert react[0][0].action_tag == "search"
+    assert react[0][0].action_content == "cats"
+    assert (
+        react[0][0].observation == "\n\n<information>Doc 1: evidence</information>\n\n"
+    )
+    assert react[0][0].is_terminal is False
+    assert len(final_batch.meta_info["context_token_lengths"]) == 1
     assert final_batch.batch["responses"].shape[1] > 0
 
 
