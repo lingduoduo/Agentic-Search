@@ -28,6 +28,7 @@ class PromptTrainingExample:
 class PromptSample:
     """One tokenized prompt example ready for rollout generation."""
 
+    question: str
     messages: list[dict[str, Any]]
     prompt_ids: list[int]
     ground_truth: str
@@ -42,6 +43,7 @@ class PromptBatch:
     input_ids: torch.Tensor
     attention_mask: torch.Tensor
     prompt_lengths: list[int]
+    questions: list[str]
     messages: list[list[dict[str, Any]]]
     ground_truths: list[str]
     tools: list[list[str]]
@@ -160,6 +162,7 @@ class PromptOnlyDataset(Dataset[PromptSample]):
             prompt_length=self.prompt_length,
         )
         return PromptSample(
+            question=example.question,
             messages=messages,
             prompt_ids=prompt_ids,
             ground_truth=example.ground_truth,
@@ -187,18 +190,58 @@ def collate_prompt_batch(
         length = len(sample.prompt_ids)
         prompt_lengths.append(length)
         padding = max_length - length
-        input_ids.append(list(sample.prompt_ids) + [pad_token_id] * padding)
-        attention_masks.append([1] * length + [0] * padding)
+        # Left-pad so every prompt ends at position [-1], aligning generation
+        # starts without requiring per-sample index arithmetic.
+        input_ids.append([pad_token_id] * padding + list(sample.prompt_ids))
+        attention_masks.append([0] * padding + [1] * length)
 
     return PromptBatch(
         input_ids=torch.tensor(input_ids, dtype=torch.long),
         attention_mask=torch.tensor(attention_masks, dtype=torch.long),
         prompt_lengths=prompt_lengths,
+        questions=[sample.question for sample in samples],
         messages=[list(sample.messages) for sample in samples],
         ground_truths=[sample.ground_truth for sample in samples],
         tools=[list(sample.tools) for sample in samples],
         metadata=[dict(sample.metadata) for sample in samples],
     )
+
+
+def prompt_batch_to_search_batch(
+    batch: PromptBatch,
+) -> Any:
+    """Convert a PromptBatch into a rollout-ready SearchBatch.
+
+    The result matches the `gen_batch` shape expected by
+    `LLMGenerationManager.run_llm_loop(...)`: prompt token tensors live in
+    `.batch`, while prompt-only supervision fields stay in `.non_tensor_batch`.
+    Intermediate reasoning or tool traces are intentionally absent.
+    """
+
+    from src.llm_agent import SearchBatch
+
+    search_batch = SearchBatch.from_dict(
+        {
+            "input_ids": batch.input_ids,
+            "attention_mask": batch.attention_mask,
+            "position_ids": torch.arange(
+                batch.input_ids.shape[1],
+                dtype=torch.long,
+            )
+            .unsqueeze(0)
+            .expand_as(batch.input_ids),
+        }
+    )
+    search_batch.non_tensor_batch = {
+        "question": list(batch.questions),
+        "golden_answers": [[ground_truth] for ground_truth in batch.ground_truths],
+        "ground_truth": list(batch.ground_truths),
+        "messages": [list(messages) for messages in batch.messages],
+        "tools": [list(tools) for tools in batch.tools],
+        "metadata": [dict(item) for item in batch.metadata],
+    }
+    search_batch.meta_info["prompt_lengths"] = list(batch.prompt_lengths)
+    return search_batch
 
 
 def build_prompt_dataloader(
@@ -209,10 +252,12 @@ def build_prompt_dataloader(
     shuffle: bool = False,
     prompt_length: int = 4096,
     pad_token_id: int = 0,
+    num_workers: int = 0,
+    drop_last: bool = False,
     prompt_builder: Callable[[PromptTrainingExample], list[dict[str, Any]]]
     | None = None,
 ) -> DataLoader:
-    """Create a DataLoader that yields padded prompt-only rollout batches."""
+    """Create a DataLoader that yields left-padded prompt-only rollout batches."""
 
     dataset = PromptOnlyDataset(
         examples,
@@ -224,5 +269,7 @@ def build_prompt_dataloader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
+        num_workers=num_workers,
+        drop_last=drop_last,
         collate_fn=lambda batch: collate_prompt_batch(batch, pad_token_id=pad_token_id),
     )
