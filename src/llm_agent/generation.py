@@ -54,13 +54,37 @@ class AgentLoopStepResult:
 
     responses_ids: torch.Tensor
     responses_str: list[str]
+    parsed_actions: list["PolicyAction"]
     next_obs: list[str]
     dones: list[int]
     valid_action: list[int]
     is_search: list[int]
 
 
-ACTION_PATTERN = re.compile(r"<(search|answer)>(.*?)</\1>", re.DOTALL)
+@dataclass(frozen=True)
+class PolicyAction:
+    """One action sampled by the policy from the current state."""
+
+    tag: str | None
+    content: str
+    raw_text: str
+
+
+@dataclass(frozen=True)
+class SearchToolCall:
+    """One model-chosen search invocation for the current rollout state."""
+
+    query: str
+    problem: str
+    ground_truth: str
+    batch_index: int
+
+
+ROLLOUT_ACTION_TAGS = ("plan", "search", "fetch", "answer")
+ACTION_PATTERN = re.compile(
+    rf"<(?P<tag>{'|'.join(ROLLOUT_ACTION_TAGS)})>(?P<content>.*?)</(?P=tag)>",
+    re.DOTALL,
+)
 
 _NO_INFO = "No information available"
 
@@ -255,15 +279,29 @@ class LLMGenerationManager:
     ) -> tuple[torch.Tensor, list[str]]:
         responses_str = self.tokenizer.batch_decode(responses, skip_special_tokens=True)
         responses_str = [
-            response.split("</search>")[0] + "</search>"
-            if "</search>" in response
-            else response.split("</answer>")[0] + "</answer>"
-            if "</answer>" in response
-            else response
-            for response in responses_str
+            self._truncate_to_first_action(response) for response in responses_str
         ]
 
         return self._batch_tokenize(responses_str), responses_str
+
+    def _truncate_to_first_action(self, response: str) -> str:
+        """Keep only the first complete action block emitted by the policy."""
+
+        earliest_match = None
+        earliest_start = None
+        for tag in ROLLOUT_ACTION_TAGS:
+            end_tag = f"</{tag}>"
+            end_index = response.find(end_tag)
+            if end_index == -1:
+                continue
+            start_tag = f"<{tag}>"
+            start_index = response.rfind(start_tag, 0, end_index + len(end_tag))
+            if start_index == -1:
+                continue
+            if earliest_start is None or start_index < earliest_start:
+                earliest_start = start_index
+                earliest_match = response[start_index : end_index + len(end_tag)]
+        return earliest_match if earliest_match is not None else response
 
     def _process_next_obs(self, next_obs: list[str]) -> torch.Tensor:
         next_obs_ids = self.tokenizer(
@@ -472,10 +510,12 @@ class LLMGenerationManager:
             active_mask,
             do_search=do_search,
         )
+        parsed_actions = self.parse_policy_actions(responses_str)
         return (
             AgentLoopStepResult(
                 responses_ids=responses_ids,
                 responses_str=responses_str,
+                parsed_actions=parsed_actions,
                 next_obs=next_obs,
                 dones=dones,
                 valid_action=valid_action,
@@ -540,6 +580,49 @@ class LLMGenerationManager:
         meta_info["valid_search_stats"] = state.valid_search_stats.tolist()
         return meta_info
 
+    def _record_policy_rollout_step(
+        self,
+        state: AgentLoopState,
+        parsed_actions: list[PolicyAction],
+    ) -> None:
+        action_tags = [action.tag for action in parsed_actions]
+        state.meta_info.setdefault("policy_action_history", []).append(action_tags)
+        state.meta_info.setdefault("policy_action_contents", []).append(
+            [action.content for action in parsed_actions]
+        )
+        if "first_rollout_actions" not in state.meta_info:
+            state.meta_info["first_rollout_actions"] = list(action_tags)
+
+    def _record_search_tool_calls(
+        self,
+        state: AgentLoopState,
+        parsed_actions: list[PolicyAction],
+    ) -> None:
+        search_queries = [
+            action.content for action in parsed_actions if action.tag == "search"
+        ]
+        if not search_queries:
+            return
+
+        query_history = state.meta_info.setdefault("search_query_history", [])
+        query_history.append(list(search_queries))
+
+        flattened_queries = [
+            query
+            for query_turn in state.meta_info["search_query_history"]
+            for query in query_turn
+        ]
+        state.meta_info["search_queries_total"] = len(flattened_queries)
+        state.meta_info["search_queries_unique"] = len(dict.fromkeys(flattened_queries))
+        state.meta_info["search_query_repetitions"] = (
+            state.meta_info["search_queries_total"]
+            - state.meta_info["search_queries_unique"]
+        )
+        state.meta_info["search_query_reformulations"] = max(
+            0,
+            state.meta_info["search_queries_unique"] - 1,
+        )
+
     def _run_one_turn(
         self,
         gen_batch: SearchBatch,
@@ -554,7 +637,7 @@ class LLMGenerationManager:
         """One full turn: trim → generate → execute tool → apply observations."""
         gt_threshold = self.dynamic_threshold(current_step, total_steps)
         state.rollings = self._trim_rollings_for_generation(state.rollings)
-        step_result, state.meta_info = self._run_active_generation_step(
+        step_result, step_meta_info = self._run_active_generation_step(
             gen_batch,
             state.rollings,
             search_mode=search_mode,
@@ -562,6 +645,9 @@ class LLMGenerationManager:
             active_mask=state.active_mask,
             do_search=do_search,
         )
+        state.meta_info.update(step_meta_info)
+        self._record_policy_rollout_step(state, step_result.parsed_actions)
+        self._record_search_tool_calls(state, step_result.parsed_actions)
         self._apply_step_result(
             state, step_result, include_observations=include_observations
         )
@@ -690,29 +776,30 @@ class LLMGenerationManager:
         active_mask: torch.Tensor | None = None,
         do_search: bool = True,
     ) -> tuple[list[str], list[int], list[int], list[int]]:
-        cur_actions, contents = self.postprocess_predictions(predictions)
+        sampled_actions = self.parse_policy_actions(predictions)
         batch_size = len(predictions)
         if active_mask is None:
             active_mask = torch.ones(batch_size, dtype=torch.bool)
 
-        search_payload = [
-            (
-                content,
-                problem[index],
-                _resolve_ground_truth_text(ground_truth[index]),
-            )
-            for index, (action, content, active) in enumerate(
-                zip(cur_actions, contents, active_mask.tolist())
-            )
-            if active and action == "search"
-        ]
+        cur_actions = [action.tag for action in sampled_actions]
+        search_tool_calls = self.build_search_tool_calls(
+            sampled_actions,
+            problem=problem,
+            ground_truth=ground_truth,
+            active_mask=active_mask,
+        )
 
-        if do_search and search_payload:
+        if do_search and search_tool_calls:
             search_results = self.batch_search(
-                search_payload, search_mode, gt_threshold
+                [
+                    (call.query, call.problem, call.ground_truth)
+                    for call in search_tool_calls
+                ],
+                search_mode,
+                gt_threshold,
             )
         else:
-            search_results = [""] * len(search_payload)
+            search_results = [""] * len(search_tool_calls)
 
         next_obs: list[str] = []
         dones: list[int] = []
@@ -745,10 +832,28 @@ class LLMGenerationManager:
                 is_search.append(1)
                 continue
 
+            if action == "plan":
+                next_obs.append(
+                    "\n\n<plan_feedback>Plan recorded. Continue with <search>, <fetch>, or <answer>.</plan_feedback>\n\n"
+                )
+                dones.append(0)
+                valid_action.append(1)
+                is_search.append(0)
+                continue
+
+            if action == "fetch":
+                next_obs.append(
+                    "\n\n<tool_feedback>Fetch was requested, but this rollout manager does not yet execute fetch actions directly. Use <search> for retrieval-backed evidence in this loop.</tool_feedback>\n\n"
+                )
+                dones.append(0)
+                valid_action.append(1)
+                is_search.append(0)
+                continue
+
             next_obs.append(
                 "\nMy previous action is invalid. "
-                "If I want to search, I should put the query between <search> and </search>. "
-                "If I want to give the final answer, I should put the answer between <answer> and </answer>. Let me try again.\n"
+                "Valid actions in this rollout loop are <plan>, <search>, <fetch>, and <answer>. "
+                "Let me try again.\n"
             )
             dones.append(0)
             valid_action.append(0)
@@ -771,22 +876,59 @@ class LLMGenerationManager:
             self.config.end_threshold - self.config.start_threshold
         )
 
-    def postprocess_predictions(
-        self, predictions: list[Any]
-    ) -> tuple[list[str | None], list[str]]:
-        actions: list[str | None] = []
-        contents: list[str] = []
+    def parse_policy_actions(self, predictions: list[Any]) -> list[PolicyAction]:
+        """Parse one sampled policy action per trajectory step."""
+
+        actions: list[PolicyAction] = []
         for prediction in predictions:
             if not isinstance(prediction, str):
                 raise ValueError(f"Invalid prediction type: {type(prediction)}")
             match = ACTION_PATTERN.search(prediction)
             if match:
-                actions.append(match.group(1))
-                contents.append(match.group(2).strip())
+                actions.append(
+                    PolicyAction(
+                        tag=match.group("tag"),
+                        content=match.group("content").strip(),
+                        raw_text=prediction,
+                    )
+                )
             else:
-                actions.append(None)
-                contents.append("")
-        return actions, contents
+                actions.append(PolicyAction(tag=None, content="", raw_text=prediction))
+        return actions
+
+    def build_search_tool_calls(
+        self,
+        parsed_actions: list[PolicyAction],
+        *,
+        problem: list[str],
+        ground_truth: list[Any],
+        active_mask: torch.Tensor,
+    ) -> list[SearchToolCall]:
+        """Convert model-emitted search actions into explicit tool calls."""
+
+        calls: list[SearchToolCall] = []
+        for index, (action, active) in enumerate(
+            zip(parsed_actions, active_mask.tolist())
+        ):
+            if not active or action.tag != "search":
+                continue
+            calls.append(
+                SearchToolCall(
+                    query=action.content,
+                    problem=problem[index],
+                    ground_truth=_resolve_ground_truth_text(ground_truth[index]),
+                    batch_index=index,
+                )
+            )
+        return calls
+
+    def postprocess_predictions(
+        self, predictions: list[Any]
+    ) -> tuple[list[str | None], list[str]]:
+        parsed_actions = self.parse_policy_actions(predictions)
+        return [action.tag for action in parsed_actions], [
+            action.content for action in parsed_actions
+        ]
 
     def batch_search(
         self,
