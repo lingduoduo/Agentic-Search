@@ -147,6 +147,24 @@ class ReActStep:
 
 
 @dataclass(frozen=True)
+class ReActContextTransition:
+    """One context update fed back into the next model state.
+
+    ReAct-style agent loops do not just keep the model action. They append:
+
+        context += model_output
+        context += environment_observation
+
+    so the next generation step conditions on both the chosen action and the
+    retrieved information or tool feedback that came back.
+    """
+
+    action_text: str
+    observation_text: str
+    appended_context_text: str
+
+
+@dataclass(frozen=True)
 class RolloutTrajectory:
     """One complete RL rollout trajectory for a single prompt."""
 
@@ -815,7 +833,30 @@ class LLMGenerationManager:
                 earliest_match = response[start_index : end_index + len(end_tag)]
         return earliest_match if earliest_match is not None else response
 
+    @staticmethod
+    def _safe_truncate_observation(obs: str, max_chars: int) -> str:
+        """Truncate a long observation while preserving structural closing tags.
+
+        A hard character cut can leave the context with a dangling
+        ``<information>`` block that never closes, confusing the model on the
+        next generation step.  This method truncates the *content* instead,
+        always re-appending the closing tag so the context stays well-formed.
+        """
+        if len(obs) <= max_chars:
+            return obs
+        close = "</information>\n\n"
+        if close in obs:
+            before_close = obs[: obs.rindex(close)]
+            budget = max_chars - len(close) - 3  # 3 for "..."
+            if budget > 0:
+                return before_close[:budget] + "..." + close
+        return obs[:max_chars]
+
     def _process_next_obs(self, next_obs: list[str]) -> torch.Tensor:
+        # Pre-truncate at character level so the token cut never lands inside
+        # a closing tag.  4 chars ≈ 1 token is conservative for most tokenizers.
+        max_chars = self.config.max_obs_length * 4
+        next_obs = [self._safe_truncate_observation(obs, max_chars) for obs in next_obs]
         next_obs_ids = self.tokenizer(
             next_obs,
             padding="longest",
@@ -825,6 +866,30 @@ class LLMGenerationManager:
         if next_obs_ids.shape[1] > self.config.max_obs_length:
             next_obs_ids = next_obs_ids[:, : self.config.max_obs_length]
         return next_obs_ids
+
+    def build_react_context_transitions(
+        self,
+        responses_str: list[str],
+        next_obs: list[str],
+    ) -> list[ReActContextTransition]:
+        """Build ReAct context transitions for the next generation step.
+
+        Each transition explicitly captures the text appended back into context
+        after one action:
+
+            context += model_output
+            context += retrieval_result / tool observation
+        """
+        if len(responses_str) != len(next_obs):
+            raise ValueError("responses_str and next_obs must have the same length.")
+        return [
+            ReActContextTransition(
+                action_text=action_text,
+                observation_text=observation_text,
+                appended_context_text=action_text + observation_text,
+            )
+            for action_text, observation_text in zip(responses_str, next_obs)
+        ]
 
     def _update_rolling_state(
         self,
@@ -849,6 +914,26 @@ class LLMGenerationManager:
         )
         new_rollings.meta_info.update(getattr(rollings, "meta_info", {}))
         return new_rollings
+
+    def apply_react_context_transitions(
+        self,
+        rollings: SearchBatch,
+        cur_responses: torch.Tensor,
+        responses_str: list[str],
+        next_obs: list[str],
+    ) -> tuple[SearchBatch, torch.Tensor, list[ReActContextTransition]]:
+        """Append action outputs and observations into the next-step context."""
+        transitions = self.build_react_context_transitions(
+            responses_str,
+            next_obs,
+        )
+        next_obs_ids = self._process_next_obs(next_obs)
+        updated_rollings = self._update_rolling_state(
+            rollings,
+            cur_responses,
+            next_obs_ids,
+        )
+        return updated_rollings, next_obs_ids, transitions
 
     def _info_masked_concatenate_with_padding(
         self,
@@ -1376,11 +1461,13 @@ class LLMGenerationManager:
 
         if include_observations:
             state.turns_stats[curr_active_mask] += 1
-            next_obs_ids = self._process_next_obs(step_result.next_obs)
-            state.rollings = self._update_rolling_state(
-                state.rollings,
-                step_result.responses_ids,
-                next_obs_ids,
+            state.rollings, next_obs_ids, transitions = (
+                self.apply_react_context_transitions(
+                    state.rollings,
+                    step_result.responses_ids,
+                    step_result.responses_str,
+                    step_result.next_obs,
+                )
             )
             state.original_right_side = self._update_right_side(
                 state.original_right_side,
@@ -1402,6 +1489,12 @@ class LLMGenerationManager:
                     for action, obs, was_active in zip(
                         step_result.parsed_actions, step_result.next_obs, participating
                     )
+                ]
+            )
+            state.meta_info.setdefault("context_transitions", []).append(
+                [
+                    transition if was_active else None
+                    for transition, was_active in zip(transitions, participating)
                 ]
             )
             state.meta_info.setdefault("context_token_lengths", []).append(
