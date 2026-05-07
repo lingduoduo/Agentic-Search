@@ -12,6 +12,11 @@ from .context import AgentContext
 
 @dataclass(frozen=True)
 class SearchRewardConfig:
+    # Reward aggregation mode:
+    # - "shaped": final-answer reward plus process-level shaping terms
+    # - "sparse_final_only": only the final-answer judge contributes to total
+    reward_mode: str = "shaped"
+
     # Primary signal — weight applied to the judge score in [0, 1].
     correctness_weight: float = 1.0
 
@@ -49,6 +54,34 @@ class SearchRewardConfig:
     # Reference budget for the budget-penalty calculation.  Set to the same
     # value as SearchAgentLoopConfig.max_search_limit when known.
     max_search_rounds: int = 5
+
+    @classmethod
+    def sparse_final_only(
+        cls,
+        *,
+        correctness_weight: float = 1.0,
+    ) -> "SearchRewardConfig":
+        """Build a strict sparse-reward config for agent RL.
+
+        In this mode the rollout gets reward only from the final answer score.
+        Search, reasoning, and retrieval traces remain available as labelled
+        diagnostics, but they do not contribute to the optimisation target.
+        """
+        return cls(
+            reward_mode="sparse_final_only",
+            correctness_weight=correctness_weight,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            duplicate_query_penalty=0.0,
+            budget_penalty_threshold=1.0,
+            budget_penalty=0.0,
+            unnecessary_fetch_penalty=0.0,
+            answer_when_evidence_insufficient_penalty=0.0,
+            search_budget_exhausted_without_answer_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+        )
 
 
 class SearchRewardFunction:
@@ -90,6 +123,35 @@ class SearchRewardFunction:
             A scalar reward (may be negative when penalties dominate).
         """
         return self.reward_components(output, ground_truth, judge_fn)["total"]
+
+    def compute_token_rewards(
+        self,
+        output: AgentLoopOutput,
+        ground_truth: str,
+        judge_fn: Callable[[str, str], float],
+    ) -> list[float]:
+        """Sparse token-level reward vector for Agent RL training.
+
+        Places the scalar rollout reward at the last model-generated token
+        (last position where response_mask == 1) and 0 everywhere else.
+        This mirrors the standard sparse-reward formulation: search tokens,
+        reasoning tokens, and retrieval tokens receive no reward signal — only
+        the final <answer> token does.
+
+        Falls back to the last token when response_mask is absent or all-zero.
+        """
+        scalar = self.compute(output, ground_truth, judge_fn)
+        n = len(output.response_ids)
+        if n == 0:
+            return []
+        token_rewards = [0.0] * n
+        mask = output.response_mask
+        last_action_idx = next(
+            (i for i in range(n - 1, -1, -1) if i < len(mask) and mask[i]),
+            n - 1,
+        )
+        token_rewards[last_action_idx] = scalar
+        return token_rewards
 
     def reward_components(
         self,
@@ -154,9 +216,9 @@ class SearchRewardFunction:
         # search results whose URLs were later fetched for deeper inspection.
         fetch_reward = self._fetch_usefulness_reward(answer, ctx)
 
-        total = (
-            cfg.correctness_weight * correctness
-            + cfg.citation_support_weight * citation_support
+        terminal_reward = cfg.correctness_weight * correctness
+        shaping_total = (
+            cfg.citation_support_weight * citation_support
             + cfg.subquestion_coverage_weight * coverage
             + cfg.search_quality_weight * search_quality
             + unnecessary_pen
@@ -167,8 +229,10 @@ class SearchRewardFunction:
             + exhausted_without_answer_pen
             + fetch_reward
         )
+        total = self._aggregate_total_reward(terminal_reward, shaping_total)
         return {
-            "correctness": cfg.correctness_weight * correctness,
+            "reward_mode": cfg.reward_mode,
+            "correctness": terminal_reward,
             "citation_support": cfg.citation_support_weight * citation_support,
             "subquestion_coverage": cfg.subquestion_coverage_weight * coverage,
             "search_quality": cfg.search_quality_weight * search_quality,
@@ -181,6 +245,8 @@ class SearchRewardFunction:
                 exhausted_without_answer_pen
             ),
             "fetch_usefulness_reward": fetch_reward,
+            "terminal_reward": terminal_reward,
+            "shaping_total": shaping_total,
             "total": total,
         }
 
@@ -272,3 +338,19 @@ class SearchRewardFunction:
         if cited_urls & fetched_urls:
             return self.config.fetch_usefulness_reward
         return 0.0
+
+    def _aggregate_total_reward(
+        self,
+        terminal_reward: float,
+        shaping_total: float,
+    ) -> float:
+        """Combine terminal reward and shaping according to the configured mode."""
+        mode = self.config.reward_mode
+        if mode == "shaped":
+            return terminal_reward + shaping_total
+        if mode == "sparse_final_only":
+            return terminal_reward
+        raise ValueError(
+            f"Unsupported reward_mode: {mode!r}. "
+            "Expected 'shaped' or 'sparse_final_only'."
+        )

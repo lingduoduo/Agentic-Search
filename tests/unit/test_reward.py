@@ -329,6 +329,47 @@ def test_reward_components_matches_compute():
     assert components["total"] == pytest.approx(total, abs=1e-9)
 
 
+def test_sparse_final_only_reward_ignores_process_shaping():
+    rf = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
+    output = _output_with_answer(
+        "Paris",
+        rounds_used=4.0,
+        repeated_search_queries=3.0,
+        search_quality_score=0.1,
+        final_evidence_sufficient=0.0,
+        subquestion_coverage_ratio=0.25,
+        unnecessary_fetch_count=2.0,
+        answer_when_evidence_insufficient=1.0,
+    )
+    total = rf.compute(output, ground_truth="Paris", judge_fn=_exact_match)
+    components = rf.reward_components(
+        output, ground_truth="Paris", judge_fn=_exact_match
+    )
+
+    assert total == pytest.approx(1.0, abs=1e-9)
+    assert components["reward_mode"] == "sparse_final_only"
+    assert components["terminal_reward"] == pytest.approx(1.0, abs=1e-9)
+    assert components["shaping_total"] == pytest.approx(0.0, abs=1e-9)
+    assert components["total"] == pytest.approx(1.0, abs=1e-9)
+
+
+def test_sparse_final_only_builder_zeroes_non_terminal_weights():
+    cfg = SearchRewardConfig.sparse_final_only(correctness_weight=2.5)
+
+    assert cfg.reward_mode == "sparse_final_only"
+    assert cfg.correctness_weight == pytest.approx(2.5)
+    assert cfg.citation_support_weight == 0.0
+    assert cfg.subquestion_coverage_weight == 0.0
+    assert cfg.search_quality_weight == 0.0
+    assert cfg.unnecessary_search_penalty == 0.0
+    assert cfg.duplicate_query_penalty == 0.0
+    assert cfg.budget_penalty == 0.0
+    assert cfg.unnecessary_fetch_penalty == 0.0
+    assert cfg.answer_when_evidence_insufficient_penalty == 0.0
+    assert cfg.search_budget_exhausted_without_answer_penalty == 0.0
+    assert cfg.fetch_usefulness_reward == 0.0
+
+
 def test_reward_with_null_context():
     rf = SearchRewardFunction(SearchRewardConfig(citation_support_weight=0.5))
     output = AgentLoopOutput(
@@ -422,6 +463,120 @@ def test_reward_search_quality_uses_evaluator_metrics():
 # ---------------------------------------------------------------------------
 # GRPO advantage computation
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# compute_token_rewards — sparse reward at the final action token
+# ---------------------------------------------------------------------------
+
+
+def _output_with_tokens(
+    answer: str | None,
+    response_ids: list[int],
+    response_mask: list[int],
+    **metric_overrides,
+) -> AgentLoopOutput:
+    metrics = {
+        "search_rounds": 1.0,
+        "rounds_used": 1.0,
+        "fetched_pages": 0.0,
+        "repeated_search_queries": 0.0,
+        "subquestion_coverage_ratio": 1.0,
+        "repeated_query_ratio": 0.0,
+    }
+    metrics.update(metric_overrides)
+    return AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=response_ids,
+        response_mask=response_mask,
+        num_turns=1,
+        metrics=metrics,
+        context=None,
+        final_answer=answer,
+    )
+
+
+def test_token_rewards_placed_at_last_action_token():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    # mask: search(1,1), obs(0,0), answer(1,1) — reward goes at index 5
+    output = _output_with_tokens("Paris", [10, 11, 0, 0, 20, 21], [1, 1, 0, 0, 1, 1])
+    token_rewards = rf.compute_token_rewards(output, "Paris", _exact_match)
+    assert len(token_rewards) == 6
+    assert token_rewards[5] == pytest.approx(1.0)
+    assert all(r == 0.0 for r in token_rewards[:5])
+
+
+def test_token_rewards_zero_reward_all_zeros():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    output = _output_with_tokens("Wrong", [10, 11, 20, 21], [1, 1, 1, 1])
+    token_rewards = rf.compute_token_rewards(output, "Paris", _exact_match)
+    assert all(r == 0.0 for r in token_rewards)
+
+
+def test_token_rewards_empty_response_returns_empty():
+    rf = SearchRewardFunction()
+    output = _output_with_tokens("Paris", [], [])
+    assert rf.compute_token_rewards(output, "Paris", _exact_match) == []
+
+
+def test_token_rewards_no_mask_falls_back_to_last_token():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    output = _output_with_tokens("Paris", [1, 2, 3], [])
+    token_rewards = rf.compute_token_rewards(output, "Paris", _exact_match)
+    assert token_rewards[2] == pytest.approx(1.0)
+    assert token_rewards[0] == 0.0
+    assert token_rewards[1] == 0.0
+
+
+def test_token_rewards_all_zero_mask_falls_back_to_last_token():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    output = _output_with_tokens("Paris", [1, 2, 3], [0, 0, 0])
+    token_rewards = rf.compute_token_rewards(output, "Paris", _exact_match)
+    assert token_rewards[2] == pytest.approx(1.0)
+
+
+def test_token_rewards_sparse_mode_only_final_answer_contributes():
+    rf = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
+    # Multi-turn: search tokens, then answer — shaping terms must not leak in
+    output = _output_with_tokens(
+        "Paris",
+        [1, 2, 3, 4, 5],
+        [1, 1, 0, 1, 1],
+        rounds_used=3.0,
+        repeated_search_queries=5.0,
+        subquestion_coverage_ratio=0.1,
+    )
+    token_rewards = rf.compute_token_rewards(output, "Paris", _exact_match)
+    assert token_rewards[4] == pytest.approx(1.0)
+    assert all(r == 0.0 for r in token_rewards[:4])
 
 
 def test_advantages_normalised_within_group():
