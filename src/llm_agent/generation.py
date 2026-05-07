@@ -9,7 +9,7 @@ import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from typing import Any, Protocol, runtime_checkable
 
 import torch
@@ -119,6 +119,8 @@ class RolloutTrajectory:
     steps: list[ReActStep]
     final_answer: str | None
     finished_without_answer: bool
+    old_log_probs: list[float] | None = None
+    new_log_probs: list[float] | None = None
 
 
 @dataclass(frozen=True)
@@ -257,6 +259,15 @@ class Fetcher(Protocol):
 
     def fetch(self, urls: list[str]) -> str:
         """Return fetched page content formatted for the next model turn."""
+        ...
+
+
+@runtime_checkable
+class LogProbCapable(Protocol):
+    """Backend that can score token log probabilities for PPO/GRPO."""
+
+    def compute_log_prob(self, batch: SearchBatch) -> torch.Tensor | SearchBatch | dict:
+        """Return token log probabilities aligned with the response sequence."""
         ...
 
 
@@ -735,6 +746,133 @@ class LLMGenerationManager:
         padded_output.meta_info = trimmed_meta
         return padded_output
 
+    def _response_action_mask(self, batch: SearchBatch) -> torch.Tensor:
+        """Mask for model-generated action tokens inside the response sequence."""
+
+        return self.tensor_fn.create_attention_mask(
+            batch.batch["responses_with_info_mask"]
+        ).to(dtype=torch.float32)
+
+    def _normalize_log_prob_output(
+        self,
+        result: torch.Tensor | SearchBatch | dict[str, Any],
+    ) -> torch.Tensor:
+        if isinstance(result, torch.Tensor):
+            return result
+        if isinstance(result, SearchBatch):
+            if "log_probs" in result.batch:
+                return result.batch["log_probs"]
+            if "log_probs" in result.meta_info:
+                return result.meta_info["log_probs"]
+        if isinstance(result, dict) and "log_probs" in result:
+            return result["log_probs"]
+        raise TypeError(
+            "compute_log_prob(...) must return a Tensor, SearchBatch with `log_probs`, "
+            "or dict containing `log_probs`."
+        )
+
+    def compute_log_prob(
+        self,
+        batch: SearchBatch,
+        *,
+        backend: LogProbCapable | None = None,
+        store_key: str = "new_log_probs",
+    ) -> torch.Tensor:
+        """Recompute token log probabilities aligned with the rollout response.
+
+        Used twice in PPO/GRPO-style training:
+        - `old_log_probs`: under the policy that generated the rollout
+        - `new_log_probs`: under the current policy being optimized
+        """
+
+        scorer = backend or self.generation_backend
+        if not isinstance(scorer, LogProbCapable):
+            raise TypeError(
+                "generation backend does not implement compute_log_prob(...)"
+            )
+
+        raw = scorer.compute_log_prob(batch)
+        log_probs = self._normalize_log_prob_output(raw).to(dtype=torch.float32)
+        if log_probs.shape != batch.batch["responses"].shape:
+            raise ValueError(
+                "compute_log_prob(...) must return log_probs aligned with `responses` "
+                f"shape {tuple(batch.batch['responses'].shape)}, got {tuple(log_probs.shape)}."
+            )
+
+        masked_log_probs = log_probs * self._response_action_mask(batch)
+        batch.batch[store_key] = masked_log_probs
+        self._attach_log_probs_to_trajectories(batch, store_key)
+        return masked_log_probs
+
+    def _attach_log_probs_to_trajectories(
+        self,
+        batch: SearchBatch,
+        store_key: str,
+    ) -> None:
+        if store_key not in {"old_log_probs", "new_log_probs"}:
+            raise ValueError(
+                f"store_key must be 'old_log_probs' or 'new_log_probs', got {store_key!r}"
+            )
+        trajectories = batch.non_tensor_batch.get("trajectories", [])
+        log_probs = batch.batch.get(store_key)
+        if log_probs is None or not trajectories:
+            return
+        batch.non_tensor_batch["trajectories"] = [
+            dataclass_replace(
+                traj,
+                **{store_key: log_probs[i].tolist() if i < log_probs.shape[0] else []},
+            )
+            for i, traj in enumerate(trajectories)
+        ]
+
+    def compute_prob_ratio(self, batch: SearchBatch) -> torch.Tensor:
+        """Compute the per-token PPO / GRPO probability ratio r_t(θ).
+
+        r_t(θ) = π_θ(a_t | s_t) / π_θ_old(a_t | s_t)
+               = exp(new_log_probs − old_log_probs)
+
+        Requires both compute_log_prob(..., store_key='old_log_probs') and
+        compute_log_prob(..., store_key='new_log_probs') to have been called.
+        Env-injected observation tokens get ratio 1.0 (no gradient contribution).
+        Result is stored in batch.batch['prob_ratio'] and returned.
+        """
+        old_lp = batch.batch.get("old_log_probs")
+        new_lp = batch.batch.get("new_log_probs")
+        if old_lp is None:
+            raise ValueError(
+                "old_log_probs not found; call compute_log_prob(..., store_key='old_log_probs') first."
+            )
+        if new_lp is None:
+            raise ValueError(
+                "new_log_probs not found; call compute_log_prob(..., store_key='new_log_probs') first."
+            )
+        action_mask = self._response_action_mask(batch)
+        log_ratio = (new_lp - old_lp) * action_mask
+        ratio = torch.exp(log_ratio)
+        batch.batch["prob_ratio"] = ratio
+        return ratio
+
+    def per_token_kl(self, batch: SearchBatch) -> torch.Tensor:
+        """Compute per-token KL divergence KL(π_θ_old ‖ π_θ) for GRPO regularisation.
+
+        Uses the unbiased estimator:
+            KL(p ‖ q) ≈ exp(log_p − log_q) − (log_p − log_q) − 1
+
+        Env-injected observation tokens contribute 0 KL (masked out).
+        Result is stored in batch.batch['per_token_kl'] and returned.
+        """
+        old_lp = batch.batch.get("old_log_probs")
+        new_lp = batch.batch.get("new_log_probs")
+        if old_lp is None or new_lp is None:
+            raise ValueError(
+                "Both old_log_probs and new_log_probs must be computed before calling per_token_kl."
+            )
+        action_mask = self._response_action_mask(batch)
+        log_ratio = (old_lp - new_lp) * action_mask
+        kl = (torch.exp(log_ratio) - log_ratio - 1.0) * action_mask
+        batch.batch["per_token_kl"] = kl
+        return kl
+
     def _initialize_agent_loop_state(
         self,
         gen_batch: SearchBatch,
@@ -1149,6 +1287,8 @@ class LLMGenerationManager:
                 left_side=left_side, right_side=right_side, meta_info=meta_info
             )
         )
+        if isinstance(self.generation_backend, LogProbCapable):
+            self.compute_log_prob(search_batch, store_key="old_log_probs")
         return search_batch
 
     def _build_rollout_trajectories(

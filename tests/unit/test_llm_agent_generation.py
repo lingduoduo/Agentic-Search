@@ -4,7 +4,12 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.llm_agent.generation import GenerationConfig, LLMGenerationManager, SearchBatch  # noqa: E402
+from src.llm_agent.generation import (  # noqa: E402
+    GenerationConfig,
+    LLMGenerationManager,
+    RolloutTrajectory,
+    SearchBatch,
+)
 
 
 class DummyTokenizer:
@@ -29,6 +34,11 @@ class DummyTokenizer:
 class DummyActorRollout:
     def generate_sequences(self, active_batch):
         return active_batch
+
+
+class DummyActorRolloutWithLogProb(DummyActorRollout):
+    def compute_log_prob(self, batch):
+        return torch.full_like(batch.batch["responses"], -0.5, dtype=torch.float32)
 
 
 class SequencedActorRollout:
@@ -60,6 +70,21 @@ def _manager() -> LLMGenerationManager:
             num_gpus=1,
         ),
         generation_backend=DummyActorRollout(),
+    )
+
+
+def _manager_with_log_prob() -> LLMGenerationManager:
+    return LLMGenerationManager(
+        tokenizer=DummyTokenizer(),
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=DummyActorRolloutWithLogProb(),
     )
 
 
@@ -277,6 +302,76 @@ def test_passages2string_formats_structured_retrieval_results():
     )
 
 
+def test_compute_log_prob_stores_new_log_probs_on_batch_and_trajectory():
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6, 0]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6, 0]], dtype=torch.long),
+        }
+    )
+    batch.non_tensor_batch["trajectories"] = [
+        RolloutTrajectory(
+            batch_index=0,
+            prompt_token_ids=[1, 2],
+            response_token_ids=[5, 6, 0],
+            response_with_observation_mask=[5, 6, 0],
+            trajectory_turns=1,
+            steps=[],
+            final_answer="done",
+            finished_without_answer=False,
+        )
+    ]
+
+    log_probs = manager.compute_log_prob(batch, store_key="new_log_probs")
+
+    assert torch.allclose(
+        log_probs, torch.tensor([[-0.5, -0.5, -0.0]], dtype=torch.float32)
+    )
+    assert "new_log_probs" in batch.batch
+    assert batch.non_tensor_batch["trajectories"][0].new_log_probs == [-0.5, -0.5, -0.0]
+
+
+def _batch_with_old_and_new_log_probs(
+    old: list[float], new: list[float]
+) -> "SearchBatch":
+    n = len(old)
+    responses = torch.ones(1, n, dtype=torch.long)
+    obs_mask = torch.ones(1, n, dtype=torch.long)
+    batch = SearchBatch.from_dict(
+        {"responses": responses, "responses_with_info_mask": obs_mask}
+    )
+    batch.batch["old_log_probs"] = torch.tensor([old], dtype=torch.float32)
+    batch.batch["new_log_probs"] = torch.tensor([new], dtype=torch.float32)
+    return batch
+
+
+def test_compute_prob_ratio_equals_exp_of_log_difference():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-0.5, -1.5])
+    ratio = manager.compute_prob_ratio(batch)
+    expected = torch.exp(
+        torch.tensor([[-0.5 - -1.0, -1.5 - -2.0]], dtype=torch.float32)
+    )
+    assert torch.allclose(ratio, expected, atol=1e-5)
+    assert "prob_ratio" in batch.batch
+
+
+def test_per_token_kl_is_non_negative():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-0.5, -1.5])
+    kl = manager.per_token_kl(batch)
+    assert (kl >= 0).all(), "KL divergence must be non-negative"
+    assert "per_token_kl" in batch.batch
+
+
+def test_per_token_kl_is_zero_when_policies_are_identical():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-1.0, -2.0])
+    kl = manager.per_token_kl(batch)
+    assert torch.allclose(kl, torch.zeros_like(kl), atol=1e-6)
+
+
 def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
     class LoopTokenizer(DummyTokenizer):
         def batch_decode(self, responses, skip_special_tokens=True):
@@ -360,9 +455,72 @@ def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
     assert trajectory.trajectory_turns == 2
     assert trajectory.final_answer == "done"
     assert trajectory.finished_without_answer is False
+    assert trajectory.old_log_probs is None
     assert len(trajectory.steps) == 1
     assert trajectory.steps[0].action_tag == "search"
     assert final_batch.batch["responses"].shape[1] > 0
+
+
+def test_run_llm_loop_saves_old_log_probs_when_backend_supports_it():
+    class LoopTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>cats</search>",
+                (2, 2): "<answer>done</answer>",
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(token for token in row if token != 0)
+                decoded.append(mapping[tokens])
+            return decoded
+
+    class SequencedActorRolloutWithLogProb(SequencedActorRollout):
+        def compute_log_prob(self, batch):
+            return torch.full_like(batch.batch["responses"], -0.25, dtype=torch.float32)
+
+    manager = LLMGenerationManager(
+        tokenizer=LoopTokenizer(),
+        config=GenerationConfig(
+            max_turns=1,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRolloutWithLogProb(
+            responses=[
+                [[1, 1]],
+                [[2, 2]],
+            ]
+        ),
+    )
+    manager.batch_search = lambda payload, search_mode, gt_threshold: [  # type: ignore[method-assign]
+        "Doc 1: evidence"
+    ]
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["What is the answer?"],
+        "golden_answers": [["done"]],
+    }
+
+    final_batch, _ = manager.run_llm_loop(
+        gen_batch=gen_batch,
+        search_mode="google",
+        current_step=0,
+        total_steps=10,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    assert "old_log_probs" in final_batch.batch
+    assert final_batch.non_tensor_batch["trajectories"][0].old_log_probs is not None
 
 
 def test_run_llm_loop_records_search_reformulations_across_turns():
