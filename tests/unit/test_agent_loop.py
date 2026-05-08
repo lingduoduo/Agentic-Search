@@ -15,6 +15,7 @@ from src.agent_loop import (
     SearchContext,
     SearchResult,
     SingleTurnAgentLoop,
+    SingleTurnAgentLoopConfig,
     get_registered_agent_loop,
     list_registered_agent_loops,
     register,
@@ -26,6 +27,10 @@ class DummyTokenizerWithTemplate:
         assert add_generation_prompt is True
         assert tokenize is True
         return [11, 12, 13, 14, 15]
+
+    def decode(self, token_ids, skip_special_tokens=True):
+        del skip_special_tokens
+        return "".join(chr(token_id) for token_id in token_ids)
 
 
 class DummyTokenizerWithEncode:
@@ -113,22 +118,231 @@ def test_generate_response_ids_truncates_to_response_length():
     assert server_manager.calls[0]["request_id"] == "req-1"
 
 
-def test_single_turn_agent_loop_returns_expected_output():
+# ── force_search=True (classic pre-retrieval RAG, backward-compat) ───────────
+
+
+def test_single_turn_agent_loop_force_search_returns_expected_output():
+    """force_search=True: retrieve unconditionally, then generate once."""
     server_manager = DummyServerManager([21, 22, 23, 24])
     loop = SingleTurnAgentLoop(
         tokenizer=DummyTokenizerWithTemplate(),
         server_manager=server_manager,
-        config=AgentLoopConfig(prompt_length=4, response_length=2),
+        config=SingleTurnAgentLoopConfig(
+            prompt_length=4, response_length=2, force_search=True
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("hello",): [
+                [SearchResult(contents='"Greeting"\nHello world evidence')],
+            ],
+        }
     )
     output = asyncio.run(
         loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.7})
     )
-    assert output.prompt_ids == [12, 13, 14, 15]
     assert output.response_ids == [21, 22]
     assert output.response_mask == [1, 1]
     assert output.num_turns == 1
+    assert output.context.num_rounds == 1
+    assert output.context.queries == ["hello"]
+    assert output.final_answer is not None
+    assert output.trajectory_messages[-1]["role"] == "assistant"
+    assert "retrieve" in output.metrics
     assert "generate_sequences" in output.metrics
     assert output.request_id is not None
+
+
+def test_single_turn_agent_loop_force_search_injects_evidence_into_prompt():
+    """force_search=True: retrieved evidence must appear in the prompt."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager([tokenizer.encode("Answer with evidence")])
+    loop = SingleTurnAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        config=SingleTurnAgentLoopConfig(response_length=64, force_search=True),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what happened",): [
+                [SearchResult(contents='"Doc A"\nEvidence body')],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run(
+            [{"role": "user", "content": "what happened"}],
+            {"temperature": 0.0},
+        )
+    )
+
+    prompt_text = tokenizer.decode(output.prompt_ids, skip_special_tokens=False)
+    assert "<information>" in prompt_text
+    assert "Evidence body" in prompt_text
+    assert output.context.num_results == 1
+
+
+def test_single_turn_agent_loop_force_search_disabled_retrieval():
+    """force_search=True but use_retrieval=False: no retrieval, one generation."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager([tokenizer.encode("Direct answer")])
+    loop = SingleTurnAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        config=SingleTurnAgentLoopConfig(
+            response_length=64, force_search=True, use_retrieval=False
+        ),
+    )
+    fake_client = FakeSearchClient({})
+    loop._search_client = fake_client
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.0})
+    )
+
+    assert fake_client.calls == []
+    assert output.context.num_rounds == 0
+    assert output.num_turns == 1
+
+
+# ── default mode: tool-augmented one-shot ─────────────────────────────────────
+
+
+def test_single_turn_agent_loop_tool_augmented_search_then_answer():
+    """Default mode: model emits <search>, retrieves, then emits <answer>."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [
+            # First generation: model decides to search
+            tokenizer.encode("<search>Nobel Prize Physics 2024</search>"),
+            # Second generation: model answers with evidence
+            tokenizer.encode("<answer>Hopfield and Hinton</answer>"),
+        ]
+    )
+    loop = SingleTurnAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        config=SingleTurnAgentLoopConfig(response_length=64),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("Nobel Prize Physics 2024",): [
+                [SearchResult(contents='"Nobel 2024"\nHopfield and Hinton won')],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run(
+            [{"role": "user", "content": "Who won the Nobel Prize in Physics 2024?"}],
+            {"temperature": 0.8},
+        )
+    )
+
+    assert output.num_turns == 2
+    assert output.context.num_rounds == 1
+    assert output.context.queries == ["Nobel Prize Physics 2024"]
+    assert output.final_answer == "Hopfield and Hinton"
+    assert "retrieve" in output.metrics
+    assert "generate_sequences" in output.metrics
+    assert "generate_sequences_2" in output.metrics
+    assert output.metrics["search_rounds"] == 1.0
+    # Trajectory must include: original user msg, assistant <search>, user <information>, assistant <answer>
+    roles = [m["role"] for m in output.trajectory_messages]
+    assert roles.count("assistant") >= 1
+
+
+def test_single_turn_agent_loop_tool_augmented_direct_answer():
+    """Default mode: model emits <answer> directly — no retrieval call."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [tokenizer.encode("<answer>Paris is the capital of France.</answer>")]
+    )
+    loop = SingleTurnAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        config=SingleTurnAgentLoopConfig(response_length=64),
+    )
+    fake_client = FakeSearchClient({})
+    loop._search_client = fake_client
+
+    output = asyncio.run(
+        loop.run(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            {"temperature": 0.0},
+        )
+    )
+
+    assert fake_client.calls == []  # no retrieval
+    assert output.num_turns == 1  # only one generation step
+    assert output.context.num_rounds == 0
+    assert output.final_answer == "Paris is the capital of France."
+    assert output.metrics["search_rounds"] == 0.0
+
+
+def test_single_turn_agent_loop_tool_augmented_search_tag_no_retrieval():
+    """Default mode: model emits <search> but use_retrieval=False — falls through to direct answer."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [tokenizer.encode("<search>some query</search>")]
+    )
+    loop = SingleTurnAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        config=SingleTurnAgentLoopConfig(response_length=64, use_retrieval=False),
+    )
+    fake_client = FakeSearchClient({})
+    loop._search_client = fake_client
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.0})
+    )
+
+    assert fake_client.calls == []  # retrieval skipped
+    assert output.num_turns == 1  # no second generation step
+    assert output.context.num_rounds == 0
+
+
+def test_single_turn_agent_loop_tool_augmented_observation_in_second_prompt():
+    """Default mode: after <search>, the second prompt contains <information>."""
+    tokenizer = DummyTokenizerWithEncode()
+    second_gen_prompt_ids: list[list[int]] = []
+
+    class CapturingServerManager:
+        call_count = 0
+
+        async def generate(self, request_id, prompt_ids, sampling_params):
+            self.call_count += 1
+            if self.call_count == 1:
+                return tokenizer.encode("<search>query</search>")
+            second_gen_prompt_ids.append(list(prompt_ids))
+            return tokenizer.encode("<answer>found it</answer>")
+
+    loop = SingleTurnAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=CapturingServerManager(),
+        config=SingleTurnAgentLoopConfig(response_length=128),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("query",): [
+                [SearchResult(contents='"Source"\nKey evidence here')],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "question"}], {"temperature": 0.7})
+    )
+
+    assert output.num_turns == 2
+    # The second generation prompt must include the retrieved evidence
+    second_prompt_text = tokenizer.decode(
+        second_gen_prompt_ids[0], skip_special_tokens=False
+    )
+    assert "<information>" in second_prompt_text
+    assert "Key evidence here" in second_prompt_text
 
 
 def test_register_stores_class_by_name():

@@ -3210,7 +3210,24 @@ class LLMGenerationManager:
         total_steps: int = 1,
         initial_input_ids: torch.Tensor | None = None,
     ) -> tuple[SearchBatch, list[int]]:
-        """Run the core agent loop: generate → maybe search → append context → repeat."""
+        """Multi-turn ReAct loop: generate → search → observe → repeat → answer.
+
+        This is the **RL/GRPO training path** — unbounded search+observe+generate
+        turns, full token-level trajectory tracking (``RolloutTrajectory``), and
+        ``response_mask`` / ``old_log_probs`` alignment for policy-gradient updates.
+
+        Contrast with the one-shot retrieval path in
+        ``src/agent_loop/single_turn_agent_loop.py``:
+
+        +-----------------------------+----------------------------------------+
+        | ``SingleTurnAgentLoop``     | ``LLMGenerationManager.run_llm_loop``  |
+        +=============================+========================================+
+        | At most ONE search call     | Unbounded search rounds                |
+        | At most TWO generation steps| Unbounded generation turns             |
+        | Async chat-message API      | Batched token tensor API               |
+        | Classic RAG or one-shot RL  | Full ReAct / GRPO rollout              |
+        +-----------------------------+----------------------------------------+
+        """
         resolved_initial_input_ids = initial_input_ids
         if resolved_initial_input_ids is None:
             resolved_initial_input_ids = gen_batch.batch["input_ids"]
