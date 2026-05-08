@@ -1,46 +1,49 @@
 # Agentic-Search
 
-A FastAPI codebase for search-backed retrieval services, multi-turn agentic research loops, full-trace SFT targets, and RL reward computation for GRPO training.
+A FastAPI codebase for search-backed retrieval services, multi-turn agentic research loops, full-trace SFT targets, and end-to-end GRPO/PPO RL training.
 
 - Google Custom Search and SerpAPI search servers
 - Dense (FAISS) and sparse (BM25) retrieval with optional reranking
 - `SearchAgentLoop`: plan → adaptive search decision → subquestions → parallel queries → evidence evaluation → fetch → cited answer
 - `SearchRewardFunction`: strategy-aware reward signal + GRPO within-group advantage normalisation
 - Full action-trace SFT support: train on `<plan> ... <answer>`, not only the final answer
-- Prompt-only rollout dataset helpers: train RL from `question / ground_truth / tools` without storing intermediate reasoning
-- Config-driven text preprocessing for structured documents and `rec_texts` payloads
+- **End-to-end GRPO/PPO training loop**: rollout → reward → advantage → log probs → clipped loss → optimizer step
+- Async rollout with rollout-level concurrency (`N_prompts × G` parallel tasks) to overlap HTTP search I/O
 
 ## Project Structure
 
 ```text
 src/
-  run_agentic_search.py       # CLI + importable entry point for all agent loop flows
-  train_intent_classifier.py  # Offline: train and save the intent classifier (.pt)
-  generate_intent_examples.py # Offline: generate intent training examples from corpus
+  run_agentic_search.py          # CLI + importable entry point for all agent loop flows
+  train_intent_classifier.py     # Offline: train and save the intent classifier (.pt)
+  generate_intent_examples.py    # Offline: generate intent training examples from corpus
   agent_loop/
-    agent_loop.py          # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
-    context.py             # SearchResult, SearchContext, AgentContext
-    evaluation.py          # SearchResultEvaluator, SearchEvaluationConfig
-    grpo.py                # Prompt-group rollout sampling + within-group scoring helpers
-    intent_classifier.py    # IntentPipeline: train / save / load + resolve_search_settings
-    reward.py              # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
-    search_agent_loop.py   # SearchAgentLoop (registered as "search_agent")
-    search_client.py       # async aiohttp client with session reuse for /retrieve and /fetch
+    agent_loop.py            # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
+    context.py               # SearchResult, SearchContext, AgentContext
+    evaluation.py            # SearchResultEvaluator, SearchEvaluationConfig
+    grpo.py                  # Prompt-group rollout sampling + within-group scoring helpers
+    intent_classifier.py     # IntentPipeline: train / save / load + resolve_search_settings
+    reward.py                # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
+    search_agent_loop.py     # SearchAgentLoop (registered as "search_agent")
+    search_client.py         # async aiohttp client with session reuse for /retrieve and /fetch
     single_turn_agent_loop.py
-    sft.py                 # Build supervised examples from full search-agent trajectories
-    tool.py                # Tool, FunctionTool — tool abstraction and JSON schema
-    tool_agent_loop.py     # ToolAgentLoop (registered as "tool_agent")
-    tool_parser.py         # Hermes / Llama3 / JSON tool-call parsers
+    sft.py                   # Build supervised examples from full search-agent trajectories
+    tool.py                  # Tool, FunctionTool — tool abstraction and JSON schema
+    tool_agent_loop.py       # ToolAgentLoop (registered as "tool_agent")
+    tool_parser.py           # Hermes / Llama3 / JSON tool-call parsers
+  llm_agent/
+    generation.py            # LLMGenerationManager — rollout, log probs, GRPO loss, async
+    tensor_helper.py         # TensorConfig, TensorHelper — padding and batch helpers
   search/
     search_app.py
     google_search_server.py
     index_builder.py
     rerank.py
-    retrieval.py
+    retrieval.py             # DenseRetriever (CPU default to avoid VRAM contention)
     retrieval_rerank_server.py
-    retrieval_server.py
+    retrieval_server.py      # FastAPI /retrieve — single-query + batch modes
     serp_search_server.py
-    text_processor.py     # config-driven cleanup / segmentation for structured text
+    text_processor.py        # config-driven cleanup / segmentation for structured text
     vocabulary.py
 tests/
   unit/
@@ -69,108 +72,395 @@ SERP_API_KEY=...
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 only
 ```
 
+---
+
+## PPO / GRPO Training Pipeline
+
+The full RL training loop is implemented in `src/llm_agent/generation.py` and `src/agent_loop/`. The pipeline follows these 10 steps:
+
+```
+1. run_llm_loop()          → trajectory (RolloutTrajectory + SearchTrajectoryLog)
+2. SearchTool              → FastAPI /retrieve (EndpointRetriever)
+3. G=4 rollouts/prompt     → run_prompt_rollout_group / async_run_prompt_rollout_group
+4. reward_fn               → SearchRewardFunction scores each rollout
+5. compute_grpo_advantage  → assign_group_relative_advantages
+6. save_training_batch_jsonl → JSONL training data
+7. compute_log_probs       → trajectory_log_prob_pack (prompt-aligned)
+8. GRPO loss               → compute_trajectory_policy_loss / compute_policy_loss
+9. run_grpo_training_step  → end-to-end on small model + small data
+10. async                  → async_run_grpo_training_step (N×G concurrent rollouts)
+```
+
+### Step 1 — Trajectory output from `run_llm_loop`
+
+```python
+from src.llm_agent import LLMGenerationManager, GenerationConfig
+
+manager = LLMGenerationManager(
+    tokenizer=tokenizer,
+    config=GenerationConfig(max_turns=3, max_search_rounds=3),
+    generation_backend=actor_backend,
+)
+
+final_batch, trajectory_turns = manager.run_llm_loop(
+    gen_batch=gen_batch,
+    search_mode="local",   # "local" | "wiki" | "google" | "simulate"
+)
+
+# Per-trajectory structured log
+log = final_batch.non_tensor_batch["trajectory_logs"][0]
+print(log)                 # compact trace: "Step 1: search ... Step 2: answer ..."
+print(log.to_dict())       # dict for JSONL / wandb logging
+
+# Aligned token arrays (prompt + response length, same size)
+from src.llm_agent import trajectory_log_prob_pack
+traj = final_batch.non_tensor_batch["trajectories"][0]
+pack = trajectory_log_prob_pack(traj)
+# pack["tokens"], pack["attention_mask"], pack["response_mask"], pack["old_log_probs"]
+```
+
+### Step 2 — SearchTool → FastAPI `/retrieve`
+
+The retrieval server runs separately from the trainer to avoid VRAM contention.
+`DenseRetrieverConfig` defaults to `device="cpu"`.
+
+```bash
+# Start the retrieval server (CPU, 1 worker)
+python3 -m src.search.retrieval_server \
+  --model_path intfloat/e5-base-v2 \
+  --index_path indexes/e5_Flat.index \
+  --corpus_path data/corpus.jsonl \
+  --retrieval_method e5 \
+  --device cpu \
+  --workers 1 \
+  --topk 5
+
+# Test it
+curl -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "2024 Nobel Prize Physics", "top_k": 3}'
+```
+
+Inside the manager, set `search_mode="local"` and `retrieval_url="http://localhost:8000/retrieve"`.
+
+### Step 3 — G=4 rollouts per prompt
+
+```python
+# Sequential (reproducible, RNG save/restore between rollouts)
+grouped = manager.run_prompt_rollout_group(
+    prompt_batch,
+    search_mode="local",
+    sampling_params={"temperature": 0.8, "top_p": 0.95},
+    num_rollouts=4,
+    base_seed=42,
+)
+# grouped[i].group_id  — shared across 4 rollouts
+# grouped[i].rollout_index  — 0, 1, 2, 3
+# grouped[i].final_output.trajectory_logs[0]  — per-rollout trace
+
+# Async (N_prompts × G tasks concurrent — overlaps HTTP search I/O)
+import asyncio
+from src.llm_agent import async_run_prompt_rollout_group
+
+all_groups = asyncio.run(
+    async_run_prompt_rollout_group(
+        manager,
+        [single_batch_0, single_batch_1, single_batch_2],
+        search_mode="local",
+        sampling_params={"temperature": 0.8},
+        num_rollouts=4,
+        base_seed=0,
+        # 12 concurrent tasks: each (prompt_i, rollout_j) is one thread-pool task
+        # seed for (prompt i, rollout j) = base_seed + i*num_rollouts + j
+    )
+)
+# all_groups[i] == list[GroupedRolloutBatch] for prompt i, sorted by rollout_index
+```
+
+### Step 4 — `reward_fn` scores each rollout
+
+```python
+from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+from src.agent_loop.reward import simple_sparse_correctness_reward
+
+# Phase 0 — strict sparse (only final answer correctness)
+reward_fn = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
+
+# Phase 1 — recommended first-pass (correctness - 0.02 * num_searches)
+reward_fn = SearchRewardFunction(
+    SearchRewardConfig.simple_sparse_with_search_penalty(per_search_penalty=-0.02)
+)
+
+# Phase 2 — full shaping (citation support, unsupported-claim penalty, dup query)
+reward_fn = SearchRewardFunction(SearchRewardConfig.second_pass())
+
+# Score one rollout
+reward = reward_fn.compute(output, ground_truth=gt, judge_fn=simple_sparse_correctness_reward)
+
+# Batch judge (fewer LLM API calls for LLM-based scoring)
+from src.agent_loop.reward import compute_batch_sparse_token_rewards
+
+token_rewards = compute_batch_sparse_token_rewards(
+    outputs, ground_truths, judge_fn=simple_sparse_correctness_reward
+)
+
+# Full penalty breakdown per rollout
+components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=simple_sparse_correctness_reward)
+# {"correctness": 1.0, "search_penalty": -0.04, "total": 0.96, ...}
+```
+
+### Step 5 — `compute_grpo_advantage`
+
+```python
+from src.llm_agent import assign_group_relative_advantages
+
+# Mean-centering only (DeepSeek-R1 style)
+scored = assign_group_relative_advantages(
+    grouped,
+    rewards=[1.0, 0.7, 0.0, 0.0],
+    normalize=False,
+)
+# [0.575, 0.275, -0.425, -0.425]
+
+# Std-normalized (default, more stable)
+scored = assign_group_relative_advantages(
+    grouped,
+    rewards=[1.0, 0.7, 0.0, 0.0],
+    normalize=True,  # (reward - mean) / (std + 1e-8)
+)
+
+# Full pipeline: score + advantage in one call
+from src.llm_agent import score_group_rollout
+scored = score_group_rollout(
+    grouped,
+    ground_truth="Hopfield and Hinton",
+    judge_fn=simple_sparse_correctness_reward,
+    reward_fn=reward_fn,
+)
+```
+
+### Step 6 — Save JSONL training data
+
+```python
+from src.llm_agent import save_training_batch_jsonl
+
+# Write / overwrite
+n = save_training_batch_jsonl(scored_rollouts, "data/train.jsonl")
+
+# Append across training steps
+n = save_training_batch_jsonl(scored_rollouts, "data/train.jsonl", append=True)
+```
+
+Each JSONL record contains: `group_id`, `rollout_index`, `reward`, `advantage`,
+`reward_components`, `trajectory` (full `SearchTrajectoryLog.to_dict()`),
+`tokens`, `response_mask`, `old_log_probs` (all prompt+response aligned).
+
+### Step 7 — Offline `compute_log_probs`
+
+```python
+# Compute old_log_probs (frozen at rollout time)
+manager.compute_log_prob(training_batch, backend=rollout_backend, store_key="old_log_probs")
+
+# Compute new_log_probs (current policy being trained)
+manager.compute_log_prob(training_batch, backend=train_backend, store_key="new_log_probs")
+
+# Optional: reference policy for KL penalty
+manager.compute_log_prob(training_batch, backend=ref_backend, store_key="ref_log_probs")
+
+# Extract aligned arrays from one trajectory
+from src.llm_agent import trajectory_log_prob_pack
+
+pack = trajectory_log_prob_pack(traj)
+# All 4 lists are the same length: len(prompt_token_ids) + len(response_token_ids)
+# old_log_probs: [0.0, ..., 0.0,  -0.5, -0.3, -1.2, ...]
+#                 ^^^^prompt^^^^   ^^^^^^^^^response^^^^^^^^^
+# response_mask: [0, ..., 0,       1,    1,    1,   0, ...]  (0 for <information>)
+```
+
+**Alignment rule**: `old_log_probs` is prepended with `len(prompt_token_ids)` zeros so
+it aligns with `tokens` and `attention_mask` without any slicing in the loss loop.
+
+### Step 8 — GRPO loss
+
+```python
+from src.llm_agent import PPOPolicyLossConfig, compute_trajectory_policy_loss
+
+# Trajectory-level loss (no GPU batch, no tokenizer — pure Python/Torch)
+result = compute_trajectory_policy_loss(
+    new_log_probs=pack["new_log_probs"],
+    old_log_probs=pack["old_log_probs"],
+    advantages=pack["advantages"],
+    response_mask=pack["response_mask"],
+    ref_log_probs=pack.get("ref_log_probs"),   # optional KL anchor
+    clip_epsilon=0.2,
+    kl_beta=0.01,
+)
+# result["grpo_policy_loss"], ["kl_penalty"], ["total_loss"], ["clip_fraction"], ["mean_ratio"]
+
+# Batch-level loss with action-type weights and entropy bonus
+loss = manager.compute_policy_loss(
+    training_batch,
+    config=PPOPolicyLossConfig(
+        clip_epsilon=0.2,
+        kl_coefficient=0.01,
+        entropy_coefficient=0.001,        # prevents mode collapse
+        action_type_weights={"search": 1.5, "answer": 1.0},
+    ),
+)
+loss.backward()
+optimizer.step()
+```
+
+Formula:
+
+```
+ratio_t       = exp(new_log_probs_t − old_log_probs_t)
+L_clip        = −mean(min(ratio * A, clip(ratio, 1−ε, 1+ε) * A) * mask)
+kl_penalty    = β × KL(π_ref ∥ π_θ) × mask   # or KL(π_old ∥ π_θ) if no ref
+entropy_bonus = −coef × mean(log π_θ × mask)
+total_loss    = L_clip + kl_penalty − entropy_bonus
+```
+
+`response_mask` is `1` only for model-generated action tokens (`<search>`, `<plan>`,
+`<fetch>`, `<answer>`); `0` for prompt tokens and environment `<information>` observations.
+
+### Step 9 — End-to-end on small model + small data
+
+```python
+result = manager.run_grpo_training_step(
+    prompt_batch,
+    search_mode="local",
+    sampling_params={"temperature": 0.8, "top_p": 0.95},
+    judge_fn=simple_sparse_correctness_reward,
+    num_rollouts=4,
+    reward_fn=SearchRewardFunction(
+        SearchRewardConfig.simple_sparse_with_search_penalty()
+    ),
+    old_backend=rollout_policy,    # frozen at rollout time
+    new_backend=actor_policy,      # being trained
+    ref_backend=reference_policy,  # optional KL anchor
+    loss_config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.01),
+    safety_config=GRPORolloutSafetyConfig(
+        allowed_actions=("search", "answer"),
+        max_search_rounds=3,
+        invalid_action_penalty=-0.2,
+        repeated_query_penalty=-0.1,
+    ),
+    optimizer=optimizer,
+)
+
+print(result.mean_reward)       # average reward across all rollouts this step
+print(result.mean_advantage)    # average advantage
+print(result.loss)              # scalar Torch tensor (already backpropped)
+print(result.optimizer_stepped) # True if optimizer.step() was called
+```
+
+What `run_grpo_training_step` does internally:
+
+1. For each prompt: `run_prompt_rollout_group()` → G rollouts
+2. `score_group_rollout()` — reward + GRPO advantage per rollout
+3. `apply_safety_penalties_to_scored_rollouts()` — penalize unsafe tool use
+4. `collate_scored_rollouts_for_training()` — merge into one `SearchBatch`
+5. `compute_log_prob()` for `old_log_probs`, `new_log_probs`, `ref_log_probs`
+6. `compute_policy_loss()` — clipped surrogate + KL + entropy
+7. `loss.backward(); optimizer.step()`
+
+### Step 10 — Async / distributed rollout
+
+```python
+import asyncio
+from src.llm_agent import async_run_grpo_training_step
+
+result = asyncio.run(
+    async_run_grpo_training_step(
+        manager,
+        prompt_batch,
+        search_mode="local",
+        sampling_params={"temperature": 0.8},
+        judge_fn=simple_sparse_correctness_reward,
+        num_rollouts=4,
+        reward_fn=reward_fn,
+        optimizer=optimizer,
+        max_workers=16,   # up to N_prompts × num_rollouts concurrent threads
+    )
+)
+```
+
+**Execution model** — `N_prompts × G` rollout tasks run concurrently in a `ThreadPoolExecutor`.
+While rollout A waits for HTTP search results, rollouts B/C/D continue generating.
+Effective search wall-time drops from `G × search_latency` to roughly `max(per-rollout latency)`.
+
+Each task calls `manager._run_one_rollout(prompt_batch, rollout_idx, variant, group_id, ...)`
+on a `copy.copy(manager)`, so `self.config` mutations (temperature, seed) never race across threads.
+
+Future path to Ray workers:
+
+```
+Rollout workers  →  async_run_prompt_rollout_group (already concurrent)
+Learner          →  compute_policy_loss + optimizer.step (one central update)
+```
+
+### Safety constraints
+
+```python
+from src.llm_agent import GRPORolloutSafetyConfig, apply_rollout_safety_penalties
+from src.llm_agent import apply_safety_penalties_to_scored_rollouts
+
+config = GRPORolloutSafetyConfig(
+    max_search_rounds=3,       # force answer after 3 search rounds
+    max_total_rounds=6,        # soft cap on total agent turns
+    allowed_actions=("search", "answer"),   # <plan>/<fetch> = disallowed
+    invalid_action_penalty=-0.2,            # per malformed/disallowed XML tag
+    repeated_query_penalty=-0.1,            # per repeated search query
+    excess_search_penalty=-0.1,             # per round over max_search_rounds
+)
+
+# Per-rollout (uses AgentLoopOutput.metrics)
+adjusted_reward = apply_rollout_safety_penalties(reward, output, config=config)
+
+# Batch (also checks trajectory steps for disallowed tags, stores breakdown in reward_components)
+scored = apply_safety_penalties_to_scored_rollouts(
+    scored_rollouts,
+    config=config,
+    normalize_advantages=True,   # re-derive advantages after penalty adjustment
+)
+# scored[i].reward_components keys added:
+#   "invalid_action_penalty", "repeated_query_penalty",
+#   "excess_search_penalty", "disallowed_action_penalty"
+```
+
+The `allowed_actions` parser inspects `trajectory.steps` for valid-XML-but-disallowed tags
+(e.g. `<fetch>` or `<plan>` when only `["search", "answer"]` are permitted), applying
+`invalid_action_penalty` per disallowed tag. This is separate from `invalid_action_count`
+in metrics (which only catches malformed XML).
+
+---
+
 ## Running the Agent
 
-`src/run_agentic_search.py` is the unified entry point. It works as both a CLI script and an importable module.
-
-Choose one inference backend:
-
-- `vLLM / OpenAI-compatible server`: fastest path for repeated runs and larger models
-- `local Hugging Face model`: simplest offline path, no separate inference server
-
-**Full retrieval-backed pipeline (first-time setup)**
-
-```
-1. Build an index        →  src.search.index_builder        (one-time, offline)
-2. Start retrieval server→  src.search.retrieval_server     (or retrieval_rerank_server)
-3. Train intent model    →  src.train_intent_classifier     (one-time, offline, optional)
-4. Run the agent         →  src.run_agentic_search          (every query)
-```
-
-For quick experiments without a corpus, skip steps 1–3 and start with `--mode single`.
+`src/run_agentic_search.py` is the unified entry point.
 
 ### vLLM / server-backed inference
 
-Use this when you already have a serving stack running at `--vllm_url`. This is the recommended path for faster interactive runs.
-
 ```bash
-# Deep-research loop (vLLM server + retrieval server)
 python3 -m src.run_agentic_search \
     --mode search \
     --question "Compare dense vs sparse retrieval" \
     --model meta-llama/Llama-3.1-8B-Instruct \
     --vllm_url http://localhost:8080 \
     --search_url http://localhost:8000/retrieve
-
-# Single-turn answer through the same server (no retrieval)
-python3 -m src.run_agentic_search \
-    --mode single \
-    --question "What is FAISS?" \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --vllm_url http://localhost:8080 \
-    --max_tokens 256 \
-    --temperature 0
-
-# Tool-calling loop through vLLM
-python3 -m src.run_agentic_search \
-    --mode tool \
-    --question "What is the capital of France?" \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --vllm_url http://localhost:8080 \
-    --tool_format hermes
 ```
-
-Typical setup:
-
-1. Start `vllm serve ... --port 8080`
-2. Start a search backend at `http://localhost:8000/retrieve` if using `--mode search`
-3. Run `python3 -m src.run_agentic_search ...` without `--local`
 
 ### Local inference
 
-Use this when you want an all-in-one offline workflow and are okay with slower generation than a dedicated serving stack.
-
 ```bash
-# Single-turn (no search), local model on CPU
 python3 -m src.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
-  --local \
-  --device cpu \
-  --max_tokens 256 \
-  --temperature 0 \
-  --generation_timeout_seconds 120 \
-  --generation_heartbeat_seconds 5
-
-# Search loop with local generation + local retrieval server
-python3 -m src.run_agentic_search \
-  --mode search \
-  --question "Compare dense vs sparse retrieval" \
-  --model Qwen/Qwen2.5-1.5B-Instruct \
-  --local \
-  --device cpu \
-  --search_url http://localhost:8000/retrieve
-
-# MPS (Apple Silicon GPU) — requires --allow_unsafe_mps and PyTorch ≥2.5 + transformers ≥4.46
-python3 -m src.run_agentic_search \
-  --mode single \
-  --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct \
-  --local \
-  --device mps \
-  --allow_unsafe_mps \
-  --max_tokens 256 \
-  --temperature 0 \
-  --generation_timeout_seconds 120 \
-  --generation_heartbeat_seconds 5
+  --local --device cpu \
+  --max_tokens 256 --temperature 0
 ```
-
-Typical setup:
-
-1. Skip `--vllm_url` and add `--local`
-2. Pick `--device cpu`, `--device cuda`, or `--device mps --allow_unsafe_mps`
-3. Start a retrieval server separately if using `--mode search`
 
 ### Key flags
 
@@ -178,328 +468,208 @@ Typical setup:
 |------|---------|---------|
 | `--mode` | `search` | `single` / `search` / `tool` |
 | `--local` | off | Load model in-process (no vLLM) |
-| `--device` | `auto` | `cpu` / `cuda` / `mps` (local mode only); MPS requires `--allow_unsafe_mps` |
-| `--allow_unsafe_mps` | off | Unlock MPS device; disabled by default due to segfault risk with some causal LMs |
-| `--dtype` | auto | Override model dtype (`bfloat16` / `float16` / `float32`); auto selects bfloat16 on Apple Silicon |
-| `--vllm_url` | `http://localhost:8080` | Base URL for the OpenAI-compatible server when not using `--local` |
-| `--search_url` | `http://localhost:8000/retrieve` | Retrieval endpoint used by `search` mode |
-| `--max_tokens` | `512` | Maximum new tokens to generate; set too low and answers will be truncated |
-| `--generation_timeout_seconds` | `120` | Wall-clock deadline for local generation; local mode only |
-| `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
-| `--require_search` | off | Force search even when model has internal knowledge |
+| `--device` | `auto` | `cpu` / `cuda` / `mps` (local only) |
+| `--allow_unsafe_mps` | off | Unlock MPS; disabled by default (segfault risk on some models) |
+| `--vllm_url` | `http://localhost:8080` | OpenAI-compatible server base URL |
+| `--search_url` | `http://localhost:8000/retrieve` | Retrieval endpoint |
+| `--max_turns` | `6` | Max agent turns |
 | `--max_search_limit` | 0 (= max_turns) | Cap on search rounds |
-| `--intent_model` | none | Load a pre-trained intent classifier (`.pt`); preferred for production |
-| `--intent_examples` | none | Train an intent classifier from a JSON examples file at startup (slow path, for development) |
-| `--intent_min_confidence` | `0.6` | Minimum confidence required before intent routing overrides defaults |
-| `--tool_format` | `hermes` | Tool-call parser for `tool` mode |
+| `--max_tokens` | `512` | Max new tokens per generation step |
+| `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
 
-When intent routing is active (via `--intent_model` or `--intent_examples`), high-confidence `purchase`, `navigate`, and `recommendation` intents automatically force evidence gathering and disable direct internal-knowledge answers; `qa` leaves the current settings unchanged.
+---
 
-### Intent classifier: training and inference
+## Reward Function & RL Training
 
-Train once offline, then reuse across all agent runs:
+### Reward presets
 
-```bash
-# Step 1 — generate labelled examples from a local corpus (optional; edit the JSON directly if preferred)
-python3 -m src.generate_intent_examples \
-    --corpus data/corpus.jsonl \
-    --vocabulary data/vocabulary_corpus.json \
-    --output data/intent_examples.json
-
-# Step 2 — train and save
-python3 -m src.train_intent_classifier \
-    --examples data/intent_examples.json \
-    --output models/intent_classifier.pt
-
-# Step 3 — load at runtime (no retraining overhead)
-python3 -m src.run_agentic_search \
-    --intent_model models/intent_classifier.pt \
-    --mode search --question "Buy me a noise-cancelling headphone" \
-    --model Qwen/Qwen2.5-1.5B-Instruct \
-    --vllm_url http://localhost:8080 \
-    --search_url http://localhost:8000/retrieve
-```
-
-`--intent_examples` trains the same classifier on startup and is convenient for quick iteration, but adds startup latency on every run. Use `--intent_model` once the classifier is stable.
-
-### Prompt-only RL data pipeline
-
-For tool-use RL or GRPO, the first training-stage input often contains only the
-prompt-side fields, not the intermediate chain-of-thought:
+| Preset | Formula | When to use |
+|--------|---------|-------------|
+| `sparse_final_only()` | `correctness` | Phase 0 — baseline |
+| `simple_sparse_with_search_penalty()` | `correctness − 0.02 × num_searches` | Phase 1 — recommended first-pass |
+| `second_pass()` | Phase 1 + citation support + unsupported-claim penalty + dup-query | Phase 2 — after Phase 1 converges |
 
 ```python
-examples = [
-    {
-        "question": "Who won the Nobel Prize in Physics in 2024?",
-        "ground_truth": "John Hopfield and Geoffrey Hinton.",
-        "tools": ["search"],
-    }
-]
-```
+from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+from src.agent_loop.reward import simple_sparse_correctness_reward
 
-You can turn these raw records into rollout-ready prompt batches with
-`src.agent_loop.data`:
-
-```python
-from src.agent_loop import build_prompt_dataloader, sample_prompt_group
-
-dataloader = build_prompt_dataloader(
-    examples,
-    tokenizer=tokenizer,
-    batch_size=2,
+reward_fn = SearchRewardFunction(
+    SearchRewardConfig.simple_sparse_with_search_penalty(per_search_penalty=-0.02)
 )
-
-batch = next(iter(dataloader))
-samples = await sample_prompt_group(
-    loop_factory,
-    messages=batch.messages[0],
-    sampling_params={"temperature": 0.7, "top_p": 0.95},
-    num_rollouts=4,
-)
+reward = reward_fn.compute(output, ground_truth=gt, judge_fn=simple_sparse_correctness_reward)
 ```
 
-This keeps the RL dataset prompt-only: the model generates its own action trace
-or tool trajectory during rollout, and `ground_truth` stays outside the prompt
-for reward computation.
-
-At the end of the loop, the batch exposes a `final_gen_batch_output` object
-that represents the full RL rollout batch. Each trajectory is the complete
-sequence:
-
-```text
-prompt
--> search
--> retrieval
--> reasoning
--> answer
-```
-
-This is the RL rollout trajectory. It is available both as a structured
-`RolloutTrajectory` and as a reward-ready `AgentLoopOutput`.
-
-The batch also carries `trajectory_logs`, a step-by-step trace intended for
-inspection before training. Each logged `SearchStep` records:
-
-- the pre-action `state` (current context)
-- the raw `model_output`
-- the parsed `action_type` / `action_value`
-- the tool `observation`
-- whether the step is `done`
-
-You can render one directly:
+### GRPO advantage presets
 
 ```python
-from src.llm_agent import format_search_trajectory_log
+from src.agent_loop import GRPOAdvantageConfig
 
-batch, _ = manager.run_prompt_rollout_batch(prompt_batch, search_mode="google")
-log = batch.non_tensor_batch["trajectory_logs"][0]
-print(format_search_trajectory_log(log, reward=1.0))
+# DeepSeek-R1 style: raw mean-centering
+config = GRPOAdvantageConfig.outcome_only()
+# advantage_i = reward_i − mean(group)
+
+# Std-normalized (more stable training)
+config = GRPOAdvantageConfig.std_normalized()
+# advantage_i = (reward_i − mean) / (std + ε)
 ```
 
-This prints a human-readable trace like:
+### Reward components
 
-```text
-Question: Who won the Nobel Prize in Physics in 2024?
-Step 1: search 2024 physics nobel prize winner
-Observation: <information>...</information>
-Step 2: answer Hopfield and Hinton
-Reward: 1.0
-```
+| Component | Config key | Description |
+|-----------|-----------|-------------|
+| Answer correctness | `correctness_weight` | `judge_fn(final_answer, ground_truth)` |
+| Citation support | `citation_support_weight` | Fraction of retrieved results cited via `[R{r}Q{q}D{d}]` |
+| Subquestion coverage | `subquestion_coverage_weight` | Fraction of declared subquestions with sufficient evidence |
+| Search quality | `search_quality_weight` | Evidence sufficiency × query quality |
+| Per-search penalty | `per_search_penalty` | Per search round (Phase 1) |
+| Duplicate-query penalty | `duplicate_query_penalty` | Per repeated query |
+| Budget penalty | `budget_penalty` | Fired once when `rounds_used / max_search_rounds ≥ threshold` |
+| Unsupported-claim penalty | `unsupported_claim_penalty` | Agent searched + got results + cited nothing |
+| Fetch usefulness reward | `fetch_usefulness_reward` | Fetched pages cited in final answer |
 
-### Grouped rollouts for GRPO
+---
 
-On the training-side agent loop, you can now sample multiple trajectories for
-the same prompt directly from `LLMGenerationManager`:
+## Infrastructure
 
-```python
-group = manager.run_prompt_rollout_group(
-    prompt_batch,
-    search_mode="google",
-    sampling_params={"temperature": 0.8, "top_p": 0.9},
-    num_rollouts=4,
-    base_seed=0,
-)
-```
+### Dense Retrieval Server
 
-This produces four rollouts under one shared `group_id`, each with its own
-`rollout_index` and `sampling_params`. The returned trajectories match the GRPO
-setup:
-
-```text
-same question:
-  traj_1: search A -> answer wrong
-  traj_2: search B -> answer right
-  traj_3: search C -> answer partial
-  traj_4: answer directly wrong
-```
-
-Each grouped rollout stores:
-
-- `group_id`
-- `rollout_index`
-- `sampling_params`
-- `final_output` with trajectories, logs, and reward-ready rollout outputs
-
-### Local model notes
-
-Use `--local` to load a HuggingFace model in-process instead of connecting to a vLLM server. Useful for offline development or when a server is not available.
+The retrieval server defaults to `device="cpu"` so it does not compete with the trainer for GPU memory.
 
 ```bash
-python3 -m src.run_agentic_search \
-    --mode single \
-    --question "What is FAISS?" \
-    --model Qwen/Qwen2.5-1.5B-Instruct \
-    --local \
-    --device cpu \
-    --max_tokens 256 \
-    --temperature 0 \
-    --generation_timeout_seconds 120 \
-    --generation_heartbeat_seconds 5
+python3 -m src.search.retrieval_server \
+  --model_path intfloat/e5-base-v2 \
+  --index_path indexes/e5_Flat.index \
+  --corpus_path data/corpus.jsonl \
+  --retrieval_method e5 \
+  --device cpu \
+  --workers 1
+
+# Trainer-friendly single-query
+curl -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Nobel Prize Physics 2024", "top_k": 5}'
+
+# Legacy batch query
+curl -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"queries": ["query 1", "query 2"], "topk": 3}'
 ```
 
-**Device and dtype selection**
+Both request shapes are supported; the server normalises responses automatically.
 
-| `--device` | `--dtype` auto-selected | Notes |
-|-----------|------------------------|-------|
-| `cpu` on Apple Silicon (arm64) | `bfloat16` | 2-3x faster than float32; requires PyTorch ≥2.0 |
-| `cuda` | `float16` | Standard GPU half-precision |
-| `mps` | `float16` | Requires `--allow_unsafe_mps`, PyTorch ≥2.5, transformers ≥4.46 |
-| `cpu` on x86 | `float32` | Safe default; slowest |
-
-Override with `--dtype bfloat16` / `float16` / `float32`. Do not use `mps` with old toolchain versions — the runtime validates the stack and raises an error before loading the model.
-
-**Generation timeout**
-
-`--generation_timeout_seconds` (default `120`) sets a wall-clock deadline enforced by a `StoppingCriteria` that fires at the first token check after the deadline. Unlike `max_time=`, it interrupts generation even during long prefill phases. `--generation_heartbeat_seconds` controls how often the criteria is polled.
-
-Set the timeout to comfortably cover prefill + generation: on Apple Silicon CPU with bfloat16, `--max_tokens 256` typically completes in under 60s, but `120` gives safe headroom. A timeout that fires mid-generation will truncate the answer just as `--max_tokens` does.
-
-### vLLM tokenizer and gated models
-
-When using `--vllm_url`, the CLI still loads the tokenizer locally to build prompt IDs. If the tokenizer Hub fetch fails because the model is gated (e.g. `meta-llama/Llama-3.1-8B-Instruct`), it automatically retries from the local cache — so if vLLM already downloaded the model, no login is required.
-
-If the tokenizer is not cached at all, authenticate first and retry with the Hub model ID:
+### Building an Index
 
 ```bash
-hf auth login   # or: huggingface-cli login
-python3 -m src.run_agentic_search \
-    --mode tool --question "What is the capital of France?" \
-    --model meta-llama/Llama-3.1-8B-Instruct \
-    --vllm_url http://localhost:8080 --tool_format hermes
-```
-
-For `--local` mode, pass `--allow_remote_model_downloads` to permit downloading weights at runtime (disabled by default).
-
-### Programmatic use
-
-```python
-import asyncio
-from transformers import AutoTokenizer
-from src.run_agentic_search import VLLMServerManager, run_search_agent
-
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
-server_manager = VLLMServerManager(
-    tokenizer=tokenizer,
-    base_url="http://localhost:8080",
-    model="meta-llama/Llama-3.1-8B-Instruct",
-)
-
-asyncio.run(run_search_agent(
-    tokenizer=tokenizer,
-    server_manager=server_manager,
-    question="Compare dense vs sparse retrieval.",
-    sampling_params={"temperature": 0.7},
-    search_url="http://localhost:8000/retrieve",
-    topk=5,
-    max_turns=8,
-))
-```
-
-`run_search_agent` prints `output.context.queries` and `output.metrics`, then the formatted answer and search trace.
-
-| Class | When to use |
-|-------|-------------|
-| `VLLMServerManager` | Any OpenAI-compatible server (vLLM, Ollama, LiteLLM) |
-| `LocalServerManager` | Offline — loads HuggingFace model in-process |
-
-## Search Servers
-
-### Google Custom Search
-
-```bash
-python3 -m src.search.google_search_server
-```
-
-Optional flags: `--topk N`, `--snippet_only`, `--host`, `--port`.
-
-> Pass API keys via `.env`, not via shell variable expansion (`"$GOOGLE_API_KEY"` expands to empty if not exported).
-
-### SerpAPI
-
-```bash
-python3 -m src.search.serp_search_server
-```
-
-Same flags as Google plus `--serp_engine` and `--search_url`. Both servers listen on `http://localhost:8000` by default.
-
-## Building an Index
-
-Dense index:
-
-```bash
+# Dense (E5 / BGE)
 python3 -m src.search.index_builder \
-  --retrieval_method bge \
-  --model_path BAAI/bge-base-en-v1.5 \
+  --retrieval_method e5 \
+  --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl \
   --save_dir indexes/
-```
 
-BM25 index (requires Java):
-
-```bash
+# BM25 (requires Java)
 python3 -m src.search.index_builder \
   --retrieval_method bm25 \
   --corpus_path data/corpus.jsonl \
   --save_dir indexes/
 ```
 
-Notes: GPU is used automatically when available; `--bm25_threads N` sets Lucene thread count (default: all CPUs); `--no_save_vocabulary` skips the `vocabulary_corpus.json` sidecar.
-
-## Dense Retrieval Server
-
-```bash
-python3 -m src.search.retrieval_server \
-  --model_path BAAI/bge-base-en-v1.5 \
-  --index_path indexes/bge_Flat.index \
-  --corpus_path data/corpus.jsonl \
-  --retrieval_method bge
-```
-
-```bash
-curl -X POST http://localhost:8000/retrieve \
-  -H "Content-Type: application/json" \
-  -d '{"queries": ["What is agentic search?"], "topk": 3}'
-```
-
-## Rerank Server
-
-```bash
-python3 -m src.search.rerank_server \
-  --rerank_model_name_or_path cross-encoder/ms-marco-MiniLM-L12-v2 \
-  --rerank_topk 3
-# listens on port 6980 by default
-```
-
-## Retrieval + Rerank Server
+### Retrieval + Rerank Server
 
 ```bash
 python3 -m src.search.retrieval_rerank_server \
-  --retriever_model BAAI/bge-base-en-v1.5 \
-  --index_path indexes/bge_Flat.index \
+  --retriever_model intfloat/e5-base-v2 \
+  --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
-  --retrieval_method bge \
+  --retrieval_method e5 \
   --retrieval_topk 10 --rerank_topk 3
 ```
+
+---
+
+## Testing
+
+```bash
+pip install pytest httpx
+
+# All tests
+python3 -m pytest
+
+# Unit tests only (no server, no model weights required)
+python3 -m pytest tests/unit/ -v
+
+# By module
+python3 -m pytest tests/unit/test_llm_agent_generation.py -v
+python3 -m pytest tests/unit/test_reward.py -v
+python3 -m pytest tests/unit/test_grpo.py -v
+```
+
+### PPO / GRPO pipeline tests
+
+```bash
+# Trajectory output and log-prob alignment
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "trajectory_log_prob or compute_log_prob or log_probs_alignment" -v
+
+# Policy loss (clipped surrogate, KL penalty, entropy bonus)
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "compute_trajectory_policy_loss or compute_policy_loss" -v
+
+# GRPO advantage computation
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "assign_group_relative_advantages" -v
+
+python3 -m pytest tests/unit/test_grpo.py \
+  -k "compute_batch_advantages or outcome_advantage" -v
+
+# Group rollout scoring (score_group_rollout, format_group_rollout)
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "score_group_rollout or format_group_rollout or format_scored_group" -v
+
+# End-to-end training step
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "run_grpo_training_step" -v
+
+# Async rollout (rollout-level N×G concurrency)
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "async_run_prompt_rollout_group or async_run_grpo_training_step" -v
+
+# Safety constraints (allowed_actions parser, penalty breakdown)
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "safety_penalties or safety_config" -v
+
+# JSONL export
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  -k "save_training_batch_jsonl" -v
+
+# Reward function (sparse, shaped, batch judge)
+python3 -m pytest tests/unit/test_reward.py -v
+
+# Run all PPO/GRPO tests at once
+python3 -m pytest tests/unit/test_llm_agent_generation.py \
+  tests/unit/test_reward.py tests/unit/test_grpo.py -v
+```
+
+### Test coverage by area
+
+| File | What is tested |
+|------|---------------|
+| `test_llm_agent_generation.py` | Trajectory logging; `RolloutTrajectory` fields; `trajectory_log_prob_pack` alignment; `compute_log_prob` store/overwrite guard; `compute_trajectory_policy_loss` clipped surrogate, KL penalty, length-mismatch guard; `compute_policy_loss` entropy bonus, action-type weights, policy-family breakdown; `assign_group_relative_advantages` mean-center + std-norm modes; `score_group_rollout`; `format_group_rollout` diversity display; `collate_scored_rollouts_for_training` padding; `run_grpo_training_step` end-to-end; `async_run_prompt_rollout_group` N×G fan-out, per-rollout seeds, result ordering; `async_run_grpo_training_step`; `GRPORolloutSafetyConfig` defaults; `apply_rollout_safety_penalties` (invalid action, repeated query, excess search); `apply_safety_penalties_to_scored_rollouts` (allowed-actions parser, penalty breakdown, advantage recompute); `save_training_batch_jsonl` (write/append/overwrite, trajectory field, components); `_run_one_rollout` extraction; action parsing; search payload; tensor helper |
+| `test_reward.py` | `normalize_answer_text`; `simple_sparse_correctness_reward`; `compute_batch_sparse_token_rewards`; `SearchRewardConfig` presets (`sparse_final_only`, `simple_sparse_with_search_penalty`, `second_pass`); `SearchRewardFunction.compute` full components; unsupported-claim penalty; `assign_grpo_outcome_token_advantages`; batch judge dispatch |
+| `test_grpo.py` | `build_grpo_sampling_params` temperature diversification; `score_prompt_group` reward + advantage; `score_prompt_batch` batching; `compute_batch_advantages` within-group normalisation, cross-group independence, single-sample groups |
+| `test_agent_loop.py` | `SearchAgentLoop` multi-turn; plan, parallel search, subquestions, fetch, gating; repeated-query dedup; search-round limit; cache and metrics |
+| `test_retrieval_server.py` | Single-query + batch-query request shapes; `--device` / `--workers` CLI flags |
+| `test_sft.py` | Full action-trace SFT example construction |
+| `test_search_client.py` | Session reuse; `results` / `result` response shape normalisation |
+| `test_intent_classifier.py` | `IntentPipeline` train / save / load; `resolve_search_settings` |
+| `test_run_agentic_search.py` | Local model config validation; MPS guard; `LocalServerManager` |
+| `test_llm_agent_tensor_helper.py` | Padding conversion; batch re-expansion |
+| `test_rerank.py` | `SentenceTransformerReranker.rerank` |
+| `test_index_builder.py` | `IndexBuilderConfig.validate`, pooling methods |
+| `test_vocabulary.py` | Tokenization, keyword extraction |
+| `test_search_app.py` | `/health`, `/retrieve` endpoints |
+
+---
 
 ## Agentic Search Loop
 
@@ -508,154 +678,45 @@ python3 -m src.search.retrieval_rerank_server \
 | Name | Class | Description |
 |------|-------|-------------|
 | `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
-| `"search_agent"` | `SearchAgentLoop` | Multi-turn research with planning, adaptive search, fetch, and evidence gating |
+| `"search_agent"` | `SearchAgentLoop` | Multi-turn: plan → search → subquestions → fetch → cited answer |
 | `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
-
-### What `SearchAgentLoop` actually does
-
-The current loop is not a simple "search once, then answer" flow. It behaves more like a small research controller:
-
-1. The model can write a `<plan>`.
-2. The model must decide whether to answer from internal knowledge or search using `<search_decision>`.
-3. For multi-hop questions, it can register named tracks with `<subquestions>`.
-4. It can issue one query with `<search>` or many in parallel with `<searches>`.
-5. The loop evaluates each search round and injects both evidence and a search-quality verdict.
-6. If snippets are weak, the model can refine queries or fetch full pages with `<fetch>`.
-7. `<answer>` is accepted only when the loop allows it:
-   - immediately, if internal knowledge answers are allowed and the model chose `<search_decision>answer</search_decision>`
-   - after search, only when the latest evidence is sufficient overall and for every active subquestion
-
-Important runtime behavior:
-
-- Search rounds are capped by `max_search_limit`.
-- Repeated queries are skipped and called out explicitly.
-- Search and page fetches are cached for the duration of one run.
-- Multiple actions in one model response are supported and processed in order.
-- The output keeps the full assistant action trace so you can train on the whole strategy, not only the final answer.
 
 ### XML protocol
 
-`SearchAgentLoop` is driven by XML tags the model emits and loop-generated feedback tags:
-
 | Tag | Direction | Purpose |
 |-----|-----------|---------|
-| `<plan>` | model → loop | Record a short research plan |
-| `<search_decision>answer\|search</search_decision>` | model → loop | Declare whether to answer directly or retrieve evidence |
-| `<subquestions>` | model → loop | Register named research tracks such as `T1`, `T2` |
-| `<search>query</search>` | model → loop | Send one query |
-| `<searches>` | model → loop | Send multiple queries in parallel, one per line |
-| `<fetch>url1, url2</fetch>` | model → loop | Fetch full-page content for URLs returned by search |
-| `<answer>` | model → loop | Final answer candidate |
-| `<plan_feedback>` | loop → model | Acknowledges the plan and tells the model to continue |
-| `<decision_feedback>` | loop → model | Prompts for or acknowledges the current search decision |
-| `<subquestions_feedback>` | loop → model | Confirms registered subquestions |
-| `<information>` | loop → model | Search results with citation labels such as `[R1Q2D1]` |
-| `<search_evaluation>` | loop → model | Sufficiency verdict and per-query feedback for the latest round |
-| `<full_page>` | loop → model | Full fetched page content |
-| `<search_feedback>` | loop → model | Explains repeated-query skips or search-limit enforcement |
-| `<answer_feedback>` | loop → model | Rejects premature answers and explains what is still missing |
+| `<plan>` | model → loop | Record a research plan |
+| `<search_decision>answer\|search</search_decision>` | model → loop | Declare retrieval intent |
+| `<subquestions>` | model → loop | Register named research tracks |
+| `<search>query</search>` | model → loop | Single query |
+| `<searches>` | model → loop | Multiple parallel queries |
+| `<fetch>url1, url2</fetch>` | model → loop | Fetch full pages |
+| `<answer>` | model → loop | Final answer |
+| `<information>` | loop → model | Search results with citation labels `[R{r}Q{q}D{d}]` |
+| `<search_evaluation>` | loop → model | Sufficiency verdict + per-query feedback |
 
-Inside `<searches>`, queries can optionally be task-scoped with prefixes like `[T1] FAISS benchmark` so the loop can track evidence per subquestion.
-
-Multiple tags in the same response are processed in one turn. Evidence labels follow `R{round}Q{query}D{doc}`. Full-page fetches are surfaced separately from search rounds.
-
-### Typical flow
-
-```xml
-<plan>Compare dense and sparse retrieval.</plan>
-<search_decision>search</search_decision>
-<subquestions>
-T1: dense retrieval with FAISS
-T2: sparse retrieval with BM25
-</subquestions>
-<searches>
-[T1] dense retrieval FAISS overview
-[T2] BM25 sparse retrieval Lucene
-</searches>
-```
-
-The loop then injects:
-
-```xml
-<search_evaluation>
-INSUFFICIENT
-...
-</search_evaluation>
-<information>
-Round 1
-...
-</information>
-```
-
-If one track is still weak, the model can refine just that track:
-
-```xml
-<searches>
-[T1] FAISS vs BM25 benchmark 2024
-</searches>
-```
-
-If snippets are not enough, it can fetch pages:
-
-```xml
-<fetch>https://example.com/faiss-benchmark</fetch>
-```
-
-And only then produce a cited answer:
-
-```xml
-<answer>
-Dense retrieval [R1Q1D1] outperforms BM25 [R1Q2D1] on semantic queries,
-but BM25 remains competitive for keyword-heavy tasks [R2Q1D1][R3P1].
-</answer>
-```
-
-### Direct use (without `run_agentic_search.py`)
+### Direct use
 
 ```python
-from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig, SearchEvaluationConfig
+from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig
 
 loop = SearchAgentLoop(
     tokenizer=tokenizer,
     server_manager=server_manager,
     search_config=SearchAgentLoopConfig(
         search_url="http://localhost:8000/retrieve",
-        topk=5,
-        max_turns=8,
-        max_search_limit=6,
-        allow_internal_knowledge_answer=True,
-        evaluation_config=SearchEvaluationConfig(
-            min_results_per_query=1,
-            min_total_results=2,
-            min_content_length=10,
-        ),
+        topk=5, max_turns=8, max_search_limit=6,
     ),
 )
 output = await loop.run(
     messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
     sampling_params={"temperature": 0.7},
 )
-print(output.final_answer)      # content of the last accepted <answer> tag
-print(output.action_trace)      # full assistant trace: <plan> ... <answer>
-print(output.context.queries)   # flat list of issued queries
-print(output.context.tasks)     # registered subquestions, if any
-print(output.metrics)           # timing, cache, gating, search, and RL-ready counters
+print(output.final_answer)
+print(output.metrics)      # search_rounds, repeated_search_queries, rounds_used, ...
 ```
 
 ### Full-trace SFT
-
-The search loop now exposes the full assistant trajectory, not just `output.final_answer`. This makes it straightforward to supervise the whole search policy:
-
-```xml
-<plan>...</plan>
-<search_decision>search</search_decision>
-<subquestions>...</subquestions>
-<searches>...</searches>
-<fetch>...</fetch>
-<answer>...</answer>
-```
-
-Programmatic helper:
 
 ```python
 from src.agent_loop import build_search_sft_example
@@ -664,654 +725,44 @@ example = build_search_sft_example(
     [{"role": "user", "content": "Compare dense vs sparse retrieval."}],
     output,
 )
-
-print(example.completion)  # full assistant action trace
+print(example.completion)  # <plan>...<search>...<answer>...
 ```
 
-Set `include_environment_messages=True` if you want to preserve loop-generated feedback such as `<information>` and `<search_evaluation>` in the returned trajectory.
-
-### Tool agent
-
-Use `--mode tool` from the CLI, or:
-
-```python
-from src.agent_loop import ToolAgentLoop, ToolAgentLoopConfig, FunctionTool
-
-@FunctionTool.from_fn(description="Search", parameters={...})
-async def search(query: str) -> str: ...
-
-loop = ToolAgentLoop(tokenizer=tokenizer, server_manager=server_manager,
-                    tools=[search],
-                    config=ToolAgentLoopConfig(tool_parser_format="hermes"))
-```
-
-Supported `tool_parser_format` values:
-
-| Format | Model family |
-|--------|-------------|
-| `"hermes"` | NousResearch Hermes 2.5 / 3 |
-| `"llama3"` | Meta Llama 3.1 / 3.2 |
-| `"json"` | Generic fallback (best-effort) |
-
-### Output fields
-
-`AgentLoopOutput` fields produced by `SearchAgentLoop.run()`:
+### Output fields (`AgentLoopOutput`)
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `prompt_ids` | `list[int]` | Tokenised prompt for the final turn |
-| `response_ids` | `list[int]` | All generated token IDs across all turns |
-| `response_mask` | `list[int]` | `1` for every response token (used in RL loss masking) |
-| `num_turns` | `int` | Number of generation steps taken |
-| `final_answer` | `str \| None` | Content of the last accepted `<answer>` tag; `None` if the loop exhausted `max_turns` without a valid answer |
-| `metrics` | `dict[str, float]` | See metrics table below |
-| `group_id` | `str \| None` | Optional prompt-group ID for GRPO-style grouped rollouts |
-| `rollout_index` | `int \| None` | Optional rollout index within a prompt group |
-| `context` | `AgentContext` | Full search state — all rounds, tasks, and results |
-| `trajectory_messages` | `list[dict[str, Any]]` | Full multi-turn conversation including assistant actions and loop feedback |
-| `action_trace` | `str \| None` | Concatenated assistant XML trace across turns, e.g. `<plan>...<answer>...` |
-
-### Context objects
-
-- `SearchResult(contents, score, title, url)`
-- `SearchContext(query, results, task_id, task_description)` — `.to_information_block(citation_prefix=...)` formats for injection
-- `AgentContext` — attached to `AgentLoopOutput.context`:
-  - `.rounds` — `list[list[SearchContext]]`, one list per search round
-  - `.turns` — flat list of every `SearchContext`
-  - `.tasks` — `dict[str, str]` of task id → description (from `<subquestions>`)
-  - `.queries` — flat list of query strings in issue order
-  - `.num_rounds`, `.num_searches`, `.num_results`
-  - `.cited_result_ids(answer_text)` — returns a `frozenset[str]` of citation keys (e.g. `"R1Q2D3"`) that appear in `answer_text` and map to an actual retrieved result; used by the reward function
-  - `.cited_results(answer_text)` — returns the retrieved `SearchResult` objects referenced by valid citations
+| `response_ids` | `list[int]` | All generated token IDs across turns |
+| `response_mask` | `list[int]` | `1` for every response token |
+| `num_turns` | `int` | Generation steps taken |
+| `final_answer` | `str \| None` | Content of the last accepted `<answer>` tag |
+| `metrics` | `dict[str, float]` | `search_rounds`, `repeated_search_queries`, `invalid_action_count`, `rounds_used`, … |
+| `group_id` | `str \| None` | Prompt-group ID for GRPO grouped rollouts |
+| `rollout_index` | `int \| None` | Rollout index within a prompt group |
+| `context` | `AgentContext` | Full search state — all rounds, tasks, results |
+| `action_trace` | `str \| None` | Concatenated assistant XML trace |
 
 ### Metrics (`output.metrics`)
-
-Raw counters:
 
 | Key | Meaning |
 |-----|---------|
 | `search_rounds` | Rounds that hit the retrieval server |
-| `search_queries` | Individual queries dispatched (after dedup and repeat filtering) |
-| `search_cache_hits` | Queries served from the per-run cache |
-| `page_cache_hits` | Fetched pages served from the per-run cache |
-| `fetched_pages` | Pages retrieved via `<fetch>` |
-| `answer_rejections` | Times `<answer>` was blocked by the evidence gate |
-| `direct_answers` | Times the model answered from internal knowledge without searching |
-| `decision_prompts` | Times a `<search_decision>` feedback turn was injected |
-| `repeated_search_queries` | Queries skipped because they were issued in a previous turn |
-| `search_limit_hits` | Turns where the round cap blocked further searches |
-| `active_subquestions` | Number of registered subquestion tasks |
-| `evidence_sufficient_rounds` | Search rounds whose evaluator verdict was sufficient |
-| `evidence_insufficient_rounds` | Search rounds whose evaluator verdict was insufficient |
-
-Derived metrics (computed at end of `run()`, ready for the reward function):
-
-| Key | Meaning |
-|-----|---------|
-| `rounds_used` | Alias of `search_rounds` as a float, for reward computation |
-| `repeated_query_ratio` | `repeated / (dispatched + repeated)` — always in `[0, 1]` |
-| `subquestion_coverage_ratio` | Fraction of declared subquestions whose evidence was marked sufficient; `1.0` when no subquestions were declared |
-| `subquestions_covered` | Count of subquestions marked sufficient by the evaluator |
-| `budget_used_ratio` | `rounds_used / max_search_limit` |
-| `search_quality_score` | Average per-round fraction of evaluator-approved queries |
-| `answer_allowed` | `1.0` when the final answer was accepted by loop policy |
-| `final_evidence_sufficient` | `1.0` when the final evidence state was sufficient |
-| `useful_fetched_pages` | Count of fetched pages whose URLs overlap with cited evidence |
-| `unnecessary_fetch_count` | Count of fetched pages not used by cited evidence |
-| `answer_when_evidence_insufficient` | `1.0` if the rollout answered despite insufficient evidence |
-| `search_budget_exhausted_without_answer` | `1.0` if the rollout hit the search limit and still produced no answer |
-
-## Reward Function & RL Training
-
-`SearchRewardFunction` computes a scalar reward for each rollout and GRPO advantages across prompt groups. It consumes `AgentLoopOutput` directly — no post-processing needed.
-
-Two reward styles are supported:
-
-- `reward_mode="shaped"`: default; combines final-answer correctness with search/process shaping terms.
-- `reward_mode="sparse_final_only"`: strict sparse reward for agent RL; only the final answer score contributes to `total`, while search/retrieval metrics stay in the breakdown as diagnostics.
-
-### Reward components
-
-| Component | Config key | Description |
-|-----------|-----------|-------------|
-| Answer correctness | `correctness_weight` | `judge_fn(final_answer, ground_truth)` — inject any scorer (exact-match, F1, LLM judge) |
-| Citation support | `citation_support_weight` | Fraction of retrieved results cited in the final answer via `[R{r}Q{q}D{d}]` labels |
-| Subquestion coverage | `subquestion_coverage_weight` | Fraction of declared subquestions with sufficient evidence at loop exit |
-| Search quality | `search_quality_weight` | Blends final evidence sufficiency with average per-round query quality |
-| Unnecessary-search penalty | `unnecessary_search_penalty` | Per search round beyond the first; encourages efficiency |
-| Duplicate-query penalty | `duplicate_query_penalty` | Per repeated query issued across turns |
-| Budget penalty | `budget_penalty` / `budget_penalty_threshold` | Fired once when `rounds_used / max_search_rounds ≥ threshold` |
-| Unnecessary-fetch penalty | `unnecessary_fetch_penalty` | Per fetched page that does not contribute to cited evidence |
-| Insufficient-evidence answer penalty | `answer_when_evidence_insufficient_penalty` | Fired when the rollout answers while evidence is still insufficient |
-| Budget-exhausted-without-answer penalty | `search_budget_exhausted_without_answer_penalty` | Fired when the rollout hits the search budget and still produces no answer |
-| Fetch usefulness reward | `fetch_usefulness_reward` | Rewarded when cited evidence overlaps with URLs that were actually fetched |
-
-### Usage
-
-```python
-from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-
-reward_fn = SearchRewardFunction(SearchRewardConfig(
-    reward_mode="shaped",
-    correctness_weight=1.0,
-    citation_support_weight=0.3,
-    subquestion_coverage_weight=0.2,
-    search_quality_weight=0.15,
-    unnecessary_search_penalty=-0.05,
-    duplicate_query_penalty=-0.1,
-    budget_penalty=-0.1,
-    budget_penalty_threshold=0.8,
-    unnecessary_fetch_penalty=-0.1,
-    answer_when_evidence_insufficient_penalty=-0.2,
-    search_budget_exhausted_without_answer_penalty=-0.2,
-    fetch_usefulness_reward=0.1,
-    max_search_rounds=5,   # match SearchAgentLoopConfig.max_search_limit
-))
-
-# Per-rollout reward (inject your own judge function)
-def exact_match(answer: str, ground_truth: str) -> float:
-    return 1.0 if answer.strip() == ground_truth.strip() else 0.0
-
-rewards = [
-    reward_fn.compute(output, ground_truth=gt, judge_fn=exact_match)
-    for output, gt in zip(outputs, ground_truths)
-]
-
-# Labelled breakdown for logging / debugging
-components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=exact_match)
-# {"correctness": 1.0, "citation_support": 0.15, "subquestion_coverage": 0.2,
-#  "search_quality": 0.15, "unnecessary_search_penalty": -0.05,
-#  "duplicate_query_penalty": 0.0, "budget_penalty": 0.0,
-#  "unnecessary_fetch_penalty": 0.0,
-#  "answer_when_evidence_insufficient_penalty": 0.0,
-#  "search_budget_exhausted_without_answer_penalty": 0.0,
-#  "fetch_usefulness_reward": 0.0, "total": 1.45}
-
-# GRPO: normalise rewards within each prompt group
-# group_ids[i] is the prompt that produced outputs[i]
-advantages = reward_fn.compute_batch_advantages(rewards, group_ids=["p1", "p1", "p2", "p2"])
-# advantage_i = (reward_i - group_mean) / (group_std + 1e-8)
-```
-
-### Strict sparse reward
-
-If you want the RL objective to match the common "reward only on the final answer" setup, use the sparse preset:
-
-```python
-from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-
-reward_fn = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
-
-reward = reward_fn.compute(output, ground_truth=gt, judge_fn=exact_match)
-# == exact_match(output.final_answer, gt)
-
-components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=exact_match)
-# components["terminal_reward"] -> optimisation target
-# components["shaping_total"]   -> always 0.0 in sparse mode
-# components["citation_support"], ["search_quality"], ... stay available for logging
-```
-
-For trainer code, there are now two explicit terminal-only helpers:
-
-```python
-terminal_reward = reward_fn.compute_terminal_reward(
-    output,
-    ground_truth=gt,
-    judge_fn=exact_match,
-)
-
-token_rewards = reward_fn.compute_sparse_token_rewards(
-    output,
-    ground_truth=gt,
-    judge_fn=exact_match,
-)
-```
-
-`compute_terminal_reward(...)` is always just the final answer score, and
-`compute_sparse_token_rewards(...)` places that scalar only at the last
-model-generated token. Search tokens, reasoning tokens, retrieval tokens, and
-environment observations all get `0.0`.
-
-### Recommended first-pass reward
-
-For an early GRPO / agent-RL setup, the repo now includes a deliberately simple
-reward recipe:
-
-```python
-from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-from src.agent_loop.reward import simple_sparse_correctness_reward
-
-reward_fn = SearchRewardFunction(
-    SearchRewardConfig.simple_sparse_with_search_penalty(
-        per_search_penalty=-0.02,
-    )
-)
-
-reward = reward_fn.compute(
-    output,
-    ground_truth=gt,
-    judge_fn=simple_sparse_correctness_reward,
-)
-```
-
-This gives:
-
-```text
-reward = correctness_reward - 0.02 * num_searches
-```
-
-where the default simple correctness judge is:
-
-```python
-def reward_fn(pred, gold):
-    if normalize(pred) == normalize(gold):
-        return 1.0
-    if normalize(gold) in normalize(pred):
-        return 0.7
-    return 0.0
-```
-
-This is a good first version because it keeps the signal easy to interpret.
-The more detailed second-pass terms are still available later through the
-existing config fields such as:
-
-- `citation_support_weight`
-- `duplicate_query_penalty`
-- `unnecessary_fetch_penalty`
-- `fetch_usefulness_reward`
-
-### Grouped rollouts for GRPO
-
-The repo includes helpers for generating and scoring multiple trajectories for the same question. This is useful when you want GRPO to compare strategies such as:
-
-1. answer directly
-2. search once
-3. decompose + parallel search
-4. search + fetch
-
-```python
-from src.agent_loop import (
-    GRPOAdvantageConfig,
-    sample_prompt_group,
-    score_prompt_group,
-)
-
-samples = await sample_prompt_group(
-    loop_factory,
-    question="Compare dense vs sparse retrieval.",
-    sampling_params={"temperature": 0.7, "top_p": 0.9, "max_tokens": 512},
-    num_rollouts=4,
-)
-
-scored = score_prompt_group(
-    samples,
-    ground_truth="...",
-    judge_fn=my_judge_fn,
-    advantage_config=GRPOAdvantageConfig(mode="group_std_normalized"),
-)
-```
-
-Each rollout gets a shared `group_id`, its own `rollout_index`, a scalar reward, and a within-group GRPO advantage. Better research strategies end up with positive advantage; wasteful or unsupported trajectories get negative advantage.
-
-### GRPO outcome advantage
-
-GRPO does not need a separate critic value model. Instead, for the same prompt it samples multiple trajectories and computes a relative outcome advantage from the group reward mean:
-
-```
-advantage_i = reward_i - mean(group_rewards)
-```
-
-You can compute that directly with `compute_grpo_outcome_advantage(rewards)` for one prompt group, or `SearchRewardFunction.compute_grpo_outcome_advantages(rewards, group_ids)` across a batch of prompt groups.
-
-If you want grouped rollout scoring to use this raw outcome advantage directly, set:
-
-```python
-advantage_config=GRPOAdvantageConfig(mode="group_outcome")
-```
-
-If you want this outcome advantage to be based strictly on the final answer
-score rather than the shaped total reward, use:
-
-```python
-advantage_config=GRPOAdvantageConfig.outcome_only()
-```
-
-That preset means:
-
-```
-reward_i    = terminal_reward_i
-advantage_i = reward_i - mean(group_rewards)
-```
-
-So GRPO stays critic-free and group-relative, while also matching sparse
-final-answer agent RL more closely.
-
-Example:
-
-```python
-from src.agent_loop import compute_grpo_outcome_advantage
-
-advantages = compute_grpo_outcome_advantage([1.0, 0.7, 0.1])
-# [0.4, 0.1, -0.5]
-```
-
-If you already have one prompt group's full rollout trajectories plus their
-scalar rewards, use the grouped-rollout helper directly:
-
-```python
-from src.llm_agent import assign_group_relative_advantages
-
-scored = assign_group_relative_advantages(
-    grouped_rollouts,
-    rewards=[1.0, 0.7, 0.0, 0.0],
-)
-
-[s.advantage for s in scored]
-# [0.575, 0.275, -0.425, -0.425]
-```
-
-This is the simple GRPO behavior you usually want first:
-- better trajectory -> positive advantage
-- worse trajectory -> negative advantage
-- no critic value model required
-
-### GRPO advantage normalisation
-
-`compute_batch_advantages(rewards, group_ids)` is a normalized wrapper around the outcome advantage above:
-
-```
-advantage_i = (reward_i − mean(group_rewards)) / (std(group_rewards) + ε)
-```
-
-Single-sample groups get advantage `0.0` (no within-group signal). The population variance formula (N denominator) is used; if your trainer wants sample variance (N-1), normalize there instead and use `compute_grpo_outcome_advantages()` or `reward_fn.compute()` for the raw values.
-
-### Recomputing policy log probabilities
-
-After rollout, PPO / GRPO needs the token-level policy likelihood under both the
-rollout policy and the current policy being optimized:
-
-```
-old_log_probs = log pi_theta_old(a_t | s_t)
-new_log_probs = log pi_theta(a_t | s_t)
-ratio_t       = exp(new_log_probs - old_log_probs)
-```
-
-`LLMGenerationManager.compute_log_prob(...)` recomputes log probabilities aligned
-with the generated action tokens, and `prepare_policy_log_probs(...)` prepares the
-full PPO / GRPO pair in one call:
-
-```python
-old_log_probs, new_log_probs = manager.prepare_policy_log_probs(
-    final_batch,
-    old_backend=rollout_policy,
-    new_backend=train_policy,
-)
-
-loss = manager.compute_policy_loss(final_batch, advantages=advantages)
-```
-
-This stores `old_log_probs`, `new_log_probs`, and optionally `prob_ratio` on
-`final_batch.batch`, while also mirroring the values into each
-`RolloutTrajectory`. Observation tokens injected by the environment stay masked
-out, so only model-chosen action tokens contribute to PPO / GRPO updates.
-
-For clipped PPO / GRPO, the ratio still uses the rollout policy:
-
-```text
-ratio_t = exp(new_log_probs_t - old_log_probs_t)
-```
-
-If you also supply `ref_log_probs`, the KL regularizer uses the frozen
-reference policy instead:
-
-```text
-grpo_policy_loss = -mean(min(ratio * advantage, clip(ratio, 1-eps, 1+eps) * advantage) * response_mask)
-kl_penalty       = beta * KL(pi_ref || pi_theta)
-total_loss       = grpo_policy_loss + kl_penalty
-```
-
-`prepare_policy_log_probs(...)` now accepts `ref_backend=...` and stores
-`ref_log_probs` on the batch when you want that RLHF / GRPO-style KL anchor.
-
-The masking rule is:
-
-```text
-[prompt tokens] [model action tokens] [environment information] [model answer tokens]
-      0                 1                       0                      1
-```
-
-Each `RolloutTrajectory` now keeps:
-
-- `tokens`: full prompt + response token sequence
-- `attention_mask`: non-pad mask for that full sequence
-- `response_mask`: `1` only where the model acted (`<search>`, `<plan>`, `<fetch>`, `<answer>`)
-- `old_log_probs` / `new_log_probs`: response-aligned token log-probs, zeroed on non-action positions
-
-`compute_policy_loss(...)` applies one clipped PPO / GRPO objective over all
-model-chosen action tokens, so the same update simultaneously trains:
-
-- `search_policy` via `<search> ... </search>` tokens
-- `reasoning_policy` via `<plan> ... </plan>` and `<fetch> ... </fetch>` tokens
-- `stopping_policy` via terminal `<answer> ... </answer>` tokens
-- `answer_policy` via `<answer> ... </answer>` tokens
-
-### Training loop
-
-The codebase now has a trainer-side helper that stitches the whole GRPO step
-together for one `PromptBatch`:
-
-```python
-result = manager.run_grpo_training_step(
-    prompt_batch,
-    search_mode="google",
-    sampling_params={"temperature": 0.8, "top_p": 0.95},
-    judge_fn=exact_match,
-    num_rollouts=4,
-    reward_fn=reward_fn,
-    old_backend=rollout_policy,
-    new_backend=actor_policy,
-    ref_backend=reference_policy,
-    loss_config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.01),
-    optimizer=optimizer,
-)
-```
-
-What it does:
-
-- loops over each prompt in the DataLoader batch
-- samples a rollout group for that prompt
-- scores each trajectory with the reward function
-- computes within-group GRPO advantages
-- collates all trajectories into one training batch
-- computes `old_log_probs`, `new_log_probs`, and optional `ref_log_probs`
-- applies clipped PPO / GRPO loss
-- optionally runs `loss.backward()` and `optimizer.step()`
-
-The default trainer-step advantage mode is group-relative outcome GRPO over the
-chosen reward component:
-
-```text
-advantage_i = reward_i - mean(group_rewards)
-```
-
-The collated training batch keeps sparse token-level advantages: only the last
-model action token gets the rollout advantage, while prompt and
-`<information>...</information>` tokens stay at `0`.
-
-### Safety constraints
-
-The rollout loop now supports a stricter safety profile for tool use:
-
-- `allowed_actions = ("search", "answer")`
-- `max_search_rounds = 3`
-- `max_total_rounds = 6`
-- invalid XML / disallowed action penalty: `-0.2`
-- repeated query penalty: `-0.1`
-
-In `GenerationConfig`, disallowed tags such as `<plan>` or `<fetch>` are
-treated as invalid when they are not listed in `allowed_actions`. The rollout
-loop also stops tool-use turns once `max_search_rounds` is reached and switches
-to the final answer attempt.
-
-On the trainer side, `run_grpo_training_step(...)` now applies
-`GRPORolloutSafetyConfig` before computing group-relative advantages, so unsafe
-tool behavior directly lowers the optimized reward:
-
-```python
-result = manager.run_grpo_training_step(
-    prompt_batch,
-    ...,
-    safety_config=GRPORolloutSafetyConfig(
-        allowed_actions=("search", "answer"),
-        max_search_rounds=3,
-        max_total_rounds=6,
-        invalid_action_penalty=-0.2,
-        repeated_query_penalty=-0.1,
-    ),
-)
-```
-
-This means:
-
-- malformed or disallowed actions reduce reward
-- repeated search queries reduce reward
-- too many searches stop further tool use and force the answer phase
-
-For training diagnostics, the batch now records:
-
-- `meta_info["updated_policies"]`
-- `meta_info["policy_update_token_counts"]`
-- `meta_info["policy_update_breakdown"]`
-
-so you can see which parts of the agent policy actually received PPO / GRPO
-signal on a rollout batch.
-
-Supported grouped-scoring modes:
-
-- `group_outcome`: use `reward_i - mean(group_rewards)`
-- `group_std_normalized`: use `(reward_i - mean(group_rewards)) / (std(group_rewards) + ε)`; this is the default in `score_prompt_group()`
-
-Supported reward sources for grouped scoring:
-
-- `total`: the reward that will normally be optimized by the rollout configuration
-- `terminal_reward`: final-answer-only reward, useful for sparse outcome GRPO without process shaping
-
-## API Reference
-
-### `GET /health`
-
-```json
-{"status": "ok"}
-```
-
-### `POST /retrieve`
-
-The retrieval server is designed to run as a standalone FastAPI service so the
-trainer can stay separate from FAISS and the embedding model. This avoids the
-retriever competing with the trainer for GPU memory.
-
-Trainer-friendly single-query request:
-
-```json
-{"query": "Who won the Nobel Prize in Physics in 2024?", "top_k": 5}
-```
-
-Response:
-
-```json
-{
-  "query": "Who won the Nobel Prize in Physics in 2024?",
-  "top_k": 5,
-  "results": [
-    {
-      "doc_id": "doc-123",
-      "score": 0.91,
-      "title": "2024 Nobel Prize in Physics",
-      "text": "\"2024 Nobel Prize in Physics\"\nAwarded to ...",
-      "url": "https://example.com/nobel"
-    }
-  ]
-}
-```
-
-Legacy batch request for the current agent loop:
-
-```json
-{"queries": ["query 1", "query 2"], "topk": 3}
-```
-
-Response:
-
-```json
-{
-  "result": [
-    [{"document": {"contents": "\"Title\"\nBody text."}}],
-    [{"document": {"contents": "\"Title 2\"\nBody text."}}]
-  ]
-}
-```
-
-Example standalone launch:
-
-```bash
-python3 -m src.search.retrieval_server \
-  --index_path /path/to/index.faiss \
-  --corpus_path /path/to/corpus.jsonl \
-  --retrieval_method e5 \
-  --model_path intfloat/e5-base-v2 \
-  --topk 5
-```
-
-Example trainer-side call:
-
-```python
-import requests
-
-resp = requests.post(
-    "http://retrieval-host:8000/retrieve",
-    json={"query": query, "top_k": 5},
-    timeout=10,
-)
-docs = resp.json()["results"]
-```
-
-### `POST /fetch` (Google server only)
-
-```json
-{"urls": ["https://example.com/page"]}
-```
-
-Response shape mirrors `/retrieve`.
-
-## Testing
-
-```bash
-pip install pytest httpx
-python3 -m pytest              # all tests
-python3 -m pytest tests/unit/  # unit tests only (no server or model required)
-python3 -m pytest tests/load/ -v -s -m load  # latency/throughput tests
-```
-
-Unit test coverage:
-
-| File | What is tested |
-|------|---------------|
-| `test_agent_loop.py` | `AgentLoopBase`; `SingleTurnAgentLoop`; `SearchAgentLoop` — plan, parallel search, multi-round refinement, subquestions, `<fetch>`, search+fetch in one turn, evaluation feedback, answer gating, adaptive search-decision, direct internal-knowledge answer, repeated-query dedup, search-round limit, cache and metrics, search client cleanup; `SearchResultEvaluator`; `SearchClientConfig.get_fetch_url` |
-| `test_reward.py` | `AgentContext.cited_result_ids` — valid citations, out-of-range doc index, empty answer; `AgentContext.num_results`; `SearchRewardFunction.compute` — reward components, explicit penalties, context=None path, fetch-citation guard; `reward_components` totals match `compute`; GRPO `compute_batch_advantages` — within-group normalisation, cross-group independence, single-sample groups, length mismatch guard; integration tests for `final_answer` capture and derived metric emission |
-| `test_grpo.py` | Prompt-group rollout sampling, shared `group_id`, rollout indices, and within-group scoring helpers |
-| `test_sft.py` | Full assistant action-trace capture and SFT example construction from multi-turn search trajectories |
-| `test_search_client.py` | `SearchClient` session reuse and `aclose()` lifecycle |
-| `test_intent_classifier.py` | `Vocabulary` sequence training; `IntentPipeline` untrained guard; `resolve_search_settings` purchase / low-confidence / qa / recommendation policies; `INTENT_LABELS` snapshot; save/load round-trip; save-before-train guard |
-| `test_run_agentic_search.py` | `_build_prompt_ids_sync` chat-template fallback; `_validate_local_generation_config` encoder-only rejection; `_friendly_model_load_error` gated/missing/cache-miss messages; `_resolve_local_device`; `_has_accelerate`; `_parse_major_minor`; `_validate_local_runtime_device` MPS guard; `_validate_local_runtime_stack` old-stack rejection and CPU/new-stack allowance; `LocalServerManager._generate_sync` greedy-decode attention mask and wall-clock stopping criteria |
-| `test_vocabulary.py` | `Vocabulary`, tokenization, keyword extraction |
-| `test_index_builder.py` | `IndexBuilderConfig.validate`, `prepare_texts`, `resolve_pooling_method`, `pooling` |
-| `test_llm_agent_generation.py` | action parsing, search payload, inactive examples, unknown search mode |
-| `test_llm_agent_tensor_helper.py` | padding conversion, batch re-expansion |
-| `test_rerank.py` | passage formatting, `RerankerConfig.validate`, `SentenceTransformerReranker.rerank` |
-| `test_search_app.py` | `format_document`, `/health`, `/retrieve` endpoints |
+| `search_queries` | Individual queries dispatched |
+| `repeated_search_queries` | Queries skipped (repeated) |
+| `invalid_action_count` | Malformed XML / disallowed tags |
+| `rounds_used` | Alias of `search_rounds` for reward computation |
+| `repeated_query_ratio` | `repeated / (dispatched + repeated)` |
+| `budget_used_ratio` | `rounds_used / max_search_rounds` |
+| `search_quality_score` | Average per-round evaluator-approved fraction |
+| `answer_when_evidence_insufficient` | `1.0` if answered before evidence was sufficient |
+| `search_budget_exhausted_without_answer` | `1.0` if hit budget limit without answering |
+
+---
 
 ## Notes
 
 - Google Custom Search and SerpAPI usage are subject to their respective quota and billing rules.
 - Some result pages may block scraping or return little usable text.
 - Empty or invalid queries return empty result lists.
+- `DenseRetriever` defaults to `device="cpu"` to avoid competing with the trainer GPU — set `--device cuda` only on a dedicated retrieval node.
