@@ -585,7 +585,7 @@ def build_react_observation(action: "PolicyAction", retrieval_result: str = "") 
         return ""
     return (
         "\nMy previous action is invalid. "
-        "Valid actions in this rollout loop are <plan>, <search>, <fetch>, and "
+        "Valid actions in this rollout loop are <search> and "
         "<answer>. Let me try again.\n"
     )
 
@@ -1032,6 +1032,114 @@ def apply_rollout_safety_penalties(
         reward += config.excess_search_penalty * excess
 
     return reward
+
+
+def apply_safety_penalties_to_scored_rollouts(
+    scored_rollouts: "list[ScoredGroupedRollout]",
+    *,
+    config: GRPORolloutSafetyConfig,
+    normalize_advantages: bool = False,
+) -> "list[ScoredGroupedRollout]":
+    """Apply safety penalties to each rollout's reward and recompute group advantages.
+
+    Three penalty sources are applied in order:
+
+    1. **Metric-based** (via :func:`apply_rollout_safety_penalties`):
+       invalid XML actions, repeated queries, excess search rounds.
+    2. **Disallowed-tag** (from trajectory steps): valid XML but tag not in
+       ``config.allowed_actions`` (e.g. ``<fetch>`` or ``<plan>`` when only
+       ``["search", "answer"]`` are permitted) — penalised at the same rate as
+       invalid-XML actions so the agent learns the permitted action vocabulary.
+    3. **Advantage recomputation**: GRPO group advantages are re-derived from
+       the penalized rewards so they reflect the safety adjustments.
+
+    All penalty amounts are stored in the returned ``reward_components`` dict
+    (keys: ``"invalid_action_penalty"``, ``"repeated_query_penalty"``,
+    ``"excess_search_penalty"``, ``"disallowed_action_penalty"``) so dashboards
+    can break down the safety signal separately from correctness.
+
+    Args:
+        scored_rollouts:     Group of rollouts after primary reward scoring.
+        config:              Safety thresholds and per-event penalty amounts.
+        normalize_advantages: Std-normalise re-derived advantages when ``True``;
+                             raw mean-centering when ``False``.
+
+    Returns:
+        New list of :class:`ScoredGroupedRollout` with adjusted rewards,
+        updated ``reward_components``, and re-derived ``advantage`` values.
+    """
+    if not scored_rollouts:
+        return []
+
+    penalized: list[tuple[float, dict[str, float]]] = []
+    for scored in scored_rollouts:
+        reward = scored.reward
+        components: dict[str, float] = dict(scored.reward_components or {})
+
+        # 1. Metric-based penalties from the AgentLoopOutput metrics dict.
+        outputs = scored.final_output.rollout_outputs
+        if outputs:
+            output = outputs[0]
+            metrics = output.metrics
+
+            invalid_count = int(metrics.get("invalid_action_count", 0))
+            if invalid_count > 0:
+                pen = config.invalid_action_penalty * invalid_count
+                reward += pen
+                components["invalid_action_penalty"] = pen
+
+            repeated_count = int(metrics.get("repeated_search_queries", 0))
+            if repeated_count > 0:
+                pen = config.repeated_query_penalty * repeated_count
+                reward += pen
+                components["repeated_query_penalty"] = pen
+
+            search_rounds = int(metrics.get("search_rounds", 0))
+            excess = search_rounds - config.max_search_rounds
+            if excess > 0:
+                pen = config.excess_search_penalty * excess
+                reward += pen
+                components["excess_search_penalty"] = pen
+
+        # 2. Disallowed-tag penalty: valid XML but action not in allowed_actions.
+        #    Example: <plan> or <fetch> emitted when only ["search", "answer"]
+        #    are permitted.  Uses the trajectory steps rather than the metrics
+        #    dict so it works even when the loop doesn't track this separately.
+        traj = (
+            scored.final_output.trajectories[0]
+            if scored.final_output.trajectories
+            else None
+        )
+        if traj is not None and config.allowed_actions:
+            disallowed = sum(
+                1
+                for step in traj.steps
+                if step.action_tag is not None
+                and step.action_tag not in config.allowed_actions
+            )
+            if disallowed > 0:
+                pen = config.invalid_action_penalty * disallowed
+                reward += pen
+                components["disallowed_action_penalty"] = pen
+
+        penalized.append((reward, components))
+
+    penalized_rewards = [r for r, _ in penalized]
+    advantages = _grpo_advantages(penalized_rewards, normalize=normalize_advantages)
+    return [
+        ScoredGroupedRollout(
+            group_id=scored.group_id,
+            rollout_index=scored.rollout_index,
+            sampling_params=scored.sampling_params,
+            final_output=scored.final_output,
+            reward=float(reward),
+            reward_components=components,
+            advantage=float(advantage),
+        )
+        for scored, (reward, components), advantage in zip(
+            scored_rollouts, penalized, advantages
+        )
+    ]
 
 
 def save_training_batch_jsonl(
@@ -1529,6 +1637,9 @@ class GenerationConfig:
     end_threshold: float = 0.5
     start_threshold: float = 0.5
     llm_max_retries: int = 5
+    max_search_rounds: int = 3
+    max_total_rounds: int = 6
+    allowed_actions: tuple[str, ...] = ("search", "answer")
     search_max_workers: int = 10
     wiki_retry_attempts: int = 10
     google_retry_attempts: int = 3
@@ -2828,6 +2939,7 @@ class LLMGenerationManager:
     ) -> ContinuationDecision:
         """Decide whether another generation turn should run."""
         active_trajectories = int(state.active_mask.sum().item())
+        search_rounds_used = int(state.valid_search_stats.max().item())
         if active_trajectories <= 0:
             return ContinuationDecision(
                 turn_index=turn_index,
@@ -2836,6 +2948,16 @@ class LLMGenerationManager:
                 reason="all trajectories have terminated with <answer> or invalid completion",
             )
         if allow_tool_use:
+            if search_rounds_used >= int(self.config.max_search_rounds):
+                return ContinuationDecision(
+                    turn_index=turn_index,
+                    continue_generation=False,
+                    active_trajectories=active_trajectories,
+                    reason=(
+                        f"search round budget reached ({search_rounds_used}/"
+                        f"{self.config.max_search_rounds}); forcing answer"
+                    ),
+                )
             # Stop early if the context is almost full.  Running another search
             # turn would append max_obs_length more tokens; if the context is
             # already near max_prompt_length the beginning would be truncated,
@@ -2927,7 +3049,8 @@ class LLMGenerationManager:
         if "question" in gen_batch.non_tensor_batch:
             state.meta_info["questions"] = list(gen_batch.non_tensor_batch["question"])
 
-        for turn in range(self.config.max_turns):
+        tool_turn_limit = min(self.config.max_turns, self.config.max_total_rounds)
+        for turn in range(tool_turn_limit):
             decision = self._make_continuation_decision(
                 state,
                 turn_index=turn,
@@ -2951,7 +3074,7 @@ class LLMGenerationManager:
 
         final_decision = self._make_continuation_decision(
             state,
-            turn_index=self.config.max_turns,
+            turn_index=tool_turn_limit,
             allow_tool_use=False,
         )
         self._record_continuation_decision(state, final_decision)
@@ -2968,13 +3091,13 @@ class LLMGenerationManager:
             self._record_finished_trajectories(
                 state.trajectory_turns,
                 [1] * len(step_result.dones),
-                turn_value=self.config.max_turns + 1,
+                turn_value=tool_turn_limit + 1,
             )
 
         state.meta_info = self._finalize_agent_loop_meta(state)
         logger.info("active_traj_num: %s", state.active_num_list)
         traj_tensor = torch.tensor(state.trajectory_turns)
-        for turn in range(1, self.config.max_turns + 2):
+        for turn in range(1, tool_turn_limit + 2):
             logger.info("finish at turn %d: %d", turn, int((traj_tensor == turn).sum()))
 
         return (
@@ -3333,6 +3456,7 @@ class LLMGenerationManager:
         new_backend: LogProbCapable | None = None,
         ref_backend: LogProbCapable | None = None,
         loss_config: PPOPolicyLossConfig | None = None,
+        safety_config: GRPORolloutSafetyConfig | None = None,
         optimizer: Any = None,
         base_seed: int | None = None,
         current_step: int = 0,
@@ -3344,6 +3468,13 @@ class LLMGenerationManager:
         resolved_advantage_config = advantage_config or GRPOAdvantageConfig(
             mode="group_outcome",
             reward_component="total",
+        )
+
+        normalize_advantages = resolved_advantage_config.mode == "group_std_normalized"
+        resolved_safety_config = safety_config or GRPORolloutSafetyConfig(
+            max_search_rounds=self.config.max_search_rounds,
+            max_total_rounds=self.config.max_total_rounds,
+            allowed_actions=tuple(self.config.allowed_actions),
         )
 
         group_results: list[GRPOPromptGroupResult] = []
@@ -3370,6 +3501,11 @@ class LLMGenerationManager:
                 reward_fn=reward_fn,
                 advantage_config=resolved_advantage_config,
                 batch_judge_fn=batch_judge_fn,
+            )
+            scored = apply_safety_penalties_to_scored_rollouts(
+                scored,
+                config=resolved_safety_config,
+                normalize_advantages=normalize_advantages,
             )
             group_results.append(
                 GRPOPromptGroupResult(
@@ -3480,6 +3616,7 @@ class LLMGenerationManager:
                 count - 1 for count in traj_query_counts.values() if count > 1
             )
             fetch_count = sum(1 for step in traj.steps if step.action_tag == "fetch")
+            invalid_count = sum(1 for step in traj.steps if step.action_tag is None)
             rounds = (
                 float(valid_search_stats[i]) if i < len(valid_search_stats) else 0.0
             )
@@ -3494,6 +3631,7 @@ class LLMGenerationManager:
                         "rounds_used": rounds,
                         "search_rounds": rounds,
                         "repeated_search_queries": float(repeated),
+                        "invalid_action_count": float(invalid_count),
                         "fetched_pages": float(fetch_count),
                         "subquestion_coverage_ratio": 1.0,
                         "repeated_query_ratio": (
@@ -3846,14 +3984,21 @@ class LLMGenerationManager:
         """Parse one sampled policy action per trajectory step."""
 
         actions: list[PolicyAction] = []
+        allowed_actions = set(self.config.allowed_actions)
         for prediction in predictions:
             if not isinstance(prediction, str):
                 raise ValueError(f"Invalid prediction type: {type(prediction)}")
             match = ACTION_PATTERN.search(prediction)
             if match:
+                tag = match.group("tag")
+                if tag not in allowed_actions:
+                    actions.append(
+                        PolicyAction(tag=None, content="", raw_text=prediction)
+                    )
+                    continue
                 actions.append(
                     PolicyAction(
-                        tag=match.group("tag"),
+                        tag=tag,
                         content=match.group("content").strip(),
                         raw_text=prediction,
                     )
