@@ -2508,6 +2508,144 @@ def test_score_group_rollout_empty_input_returns_empty():
     assert score_group_rollout([], ground_truth="x", judge_fn=lambda a, g: 1.0) == []
 
 
+def test_assign_group_relative_advantages_centers_rewards_by_group_mean():
+    from src.llm_agent.generation import assign_group_relative_advantages
+
+    grouped = [
+        _make_grouped_rollout("g1", 0, "traj 1", 0.8, 0),
+        _make_grouped_rollout("g1", 1, "traj 2", 0.85, 1),
+        _make_grouped_rollout("g1", 2, "traj 3", 0.9, 2),
+        _make_grouped_rollout("g1", 3, "traj 4", 0.95, 3),
+    ]
+
+    # normalize=False → raw mean-centering: advantage_i = reward_i - mean
+    scored = assign_group_relative_advantages(
+        grouped,
+        rewards=[1.0, 0.7, 0.0, 0.0],
+        normalize=False,
+    )
+
+    assert [s.reward for s in scored] == pytest.approx([1.0, 0.7, 0.0, 0.0])
+    assert [s.advantage for s in scored] == pytest.approx(
+        [0.575, 0.275, -0.425, -0.425]
+    )
+
+
+def test_assign_group_relative_advantages_std_normalized():
+    import math
+    from src.llm_agent.generation import assign_group_relative_advantages
+
+    grouped = [
+        _make_grouped_rollout("g1", 0, "traj 1", 0.8, 0),
+        _make_grouped_rollout("g1", 1, "traj 2", 0.85, 1),
+        _make_grouped_rollout("g1", 2, "traj 3", 0.9, 2),
+        _make_grouped_rollout("g1", 3, "traj 4", 0.95, 3),
+    ]
+    rewards = [1.0, 0.7, 0.0, 0.0]
+
+    # normalize=True (default) → (reward - mean) / (std + eps)
+    scored = assign_group_relative_advantages(grouped, rewards=rewards)
+
+    mean = sum(rewards) / len(rewards)
+    variance = sum((r - mean) ** 2 for r in rewards) / len(rewards)
+    std = math.sqrt(variance)
+    expected = [(r - mean) / (std + 1e-8) for r in rewards]
+
+    assert [s.advantage for s in scored] == pytest.approx(expected, abs=1e-5)
+    # Positive for above-mean rollouts, negative for below-mean
+    assert scored[0].advantage > 0.0
+    assert scored[1].advantage > 0.0
+    assert scored[2].advantage < 0.0
+    assert scored[3].advantage < 0.0
+
+
+def test_assign_group_relative_advantages_all_equal_rewards_gives_zero_advantages():
+    from src.llm_agent.generation import assign_group_relative_advantages
+
+    grouped = [_make_grouped_rollout("g1", i, "answer", 0.8, i) for i in range(4)]
+    # All zero rewards → std=0 → all advantages 0.0 in both modes
+    for normalize in (True, False):
+        scored = assign_group_relative_advantages(
+            grouped, rewards=[0.0, 0.0, 0.0, 0.0], normalize=normalize
+        )
+        assert all(s.advantage == pytest.approx(0.0) for s in scored)
+
+
+def test_assign_group_relative_advantages_single_rollout_gives_zero_advantage():
+    from src.llm_agent.generation import assign_group_relative_advantages
+
+    grouped = [_make_grouped_rollout("g1", 0, "answer", 0.8, 0)]
+    for normalize in (True, False):
+        scored = assign_group_relative_advantages(
+            grouped, rewards=[1.0], normalize=normalize
+        )
+        assert scored[0].advantage == pytest.approx(0.0)
+
+
+def test_format_scored_group_rollout_matches_format_group_rollout():
+    from src.llm_agent.generation import (
+        assign_group_relative_advantages,
+        format_scored_group_rollout,
+    )
+
+    grouped = [
+        _make_grouped_rollout("g1", 0, "right answer", 0.8, 0),
+        _make_grouped_rollout("g1", 1, "wrong answer", 0.9, 1),
+    ]
+    scored = assign_group_relative_advantages(
+        grouped, rewards=[1.0, 0.0], normalize=False
+    )
+    rendered = format_scored_group_rollout(scored)
+
+    assert "Rollout 0" in rendered
+    assert "Rollout 1" in rendered
+    assert "Reward: 1.000" in rendered
+    assert "Reward: 0.000" in rendered
+    assert "Advantage: +0.500" in rendered
+    assert "Advantage: -0.500" in rendered
+
+
+def test_assign_group_relative_advantages_preserves_rollout_identity():
+    from src.llm_agent.generation import assign_group_relative_advantages
+
+    grouped = [
+        _make_grouped_rollout("g42", 0, "answer A", 0.8, 0),
+        _make_grouped_rollout("g42", 1, "answer B", 0.95, 1),
+    ]
+
+    scored = assign_group_relative_advantages(
+        grouped,
+        rewards=[1.0, 0.0],
+        reward_components=[{"terminal_reward": 1.0}, {"terminal_reward": 0.0}],
+        normalize=False,  # raw mean-centering: advantage = reward - mean
+    )
+
+    assert scored[0].group_id == "g42"
+    assert scored[0].rollout_index == 0
+    assert scored[0].reward_components == {"terminal_reward": 1.0}
+    assert scored[0].advantage == pytest.approx(0.5)
+    assert scored[1].group_id == "g42"
+    assert scored[1].rollout_index == 1
+    assert scored[1].reward_components == {"terminal_reward": 0.0}
+    assert scored[1].advantage == pytest.approx(-0.5)
+
+
+def test_assign_group_relative_advantages_rejects_length_mismatch():
+    from src.llm_agent.generation import assign_group_relative_advantages
+
+    grouped = [_make_grouped_rollout("g1", 0, "answer", 0.8, 0)]
+
+    with pytest.raises(ValueError, match="same length"):
+        assign_group_relative_advantages(grouped, rewards=[1.0, 0.0])
+
+    with pytest.raises(ValueError, match="same length"):
+        assign_group_relative_advantages(
+            grouped,
+            rewards=[1.0],
+            reward_components=[{"terminal_reward": 1.0}, {"terminal_reward": 0.0}],
+        )
+
+
 def test_format_group_rollout_shows_all_rollout_indices_and_group_id():
     from src.llm_agent.generation import format_group_rollout
 

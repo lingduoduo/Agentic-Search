@@ -684,6 +684,121 @@ def score_group_rollout(
     ]
 
 
+def _grpo_advantages(rewards: list[float], *, normalize: bool) -> list[float]:
+    """Mean-center rewards; optionally divide by within-group std.
+
+    Single-sample groups get advantage 0.0 — no relative comparison exists.
+    """
+    n = len(rewards)
+    if n <= 1:
+        return [0.0] * n
+    mean = sum(rewards) / n
+    centered = [r - mean for r in rewards]
+    if not normalize:
+        return centered
+    variance = sum(c * c for c in centered) / n
+    std = math.sqrt(variance)
+    return [c / (std + 1e-8) for c in centered]
+
+
+def assign_group_relative_advantages(
+    grouped_rollouts: "list[GroupedRolloutBatch]",
+    *,
+    rewards: "list[float]",
+    reward_components: "list[dict[str, float]] | None" = None,
+    normalize: bool = True,
+) -> "list[ScoredGroupedRollout]":
+    """Attach GRPO outcome advantages to one prompt group's rollout trajectories.
+
+    Applies the group-relative GRPO advantage transform to pre-computed scalar
+    rewards so you can use any reward function without going through the full
+    ``score_group_rollout`` pipeline:
+
+        grouped = manager.run_prompt_rollout_group(prompt_batch, ...)
+        rewards = [1.0, 0.7, 0.0, 0.0]
+        scored  = assign_group_relative_advantages(grouped, rewards=rewards)
+        print(format_scored_group_rollout(scored))
+
+    With ``normalize=True`` (default) advantages are std-normalized within the
+    group — the GRPO objective is more stable this way:
+
+        advantage_i = (reward_i − mean) / (std(group) + ε)
+
+    With ``normalize=False`` only mean-centering is applied (the original GRPO
+    paper formula):
+
+        advantage_i = reward_i − mean(group_rewards)
+
+    In both modes a single-sample group returns advantage 0.0 (no relative
+    comparison is possible).
+
+    Example — rewards [1.0, 0.7, 0.0, 0.0], mean = 0.425::
+
+        normalize=False  →  [+0.575, +0.275, -0.425, -0.425]
+        normalize=True   →  (divided by within-group std ≈ 0.406)
+                            [+1.416,  +0.677, -1.046, -1.046]
+    """
+    if len(grouped_rollouts) != len(rewards):
+        raise ValueError(
+            "grouped_rollouts and rewards must have the same length, got "
+            f"{len(grouped_rollouts)} and {len(rewards)}."
+        )
+
+    resolved_components = reward_components or [{} for _ in rewards]
+    if len(resolved_components) != len(rewards):
+        raise ValueError(
+            "reward_components and rewards must have the same length, got "
+            f"{len(resolved_components)} and {len(rewards)}."
+        )
+
+    advantages = _grpo_advantages(list(rewards), normalize=normalize)
+    return [
+        ScoredGroupedRollout(
+            group_id=grb.group_id,
+            rollout_index=grb.rollout_index,
+            sampling_params=grb.sampling_params,
+            final_output=grb.final_output,
+            reward=float(reward),
+            reward_components=dict(components),
+            advantage=float(advantage),
+        )
+        for grb, reward, components, advantage in zip(
+            grouped_rollouts, rewards, resolved_components, advantages
+        )
+    ]
+
+
+def format_scored_group_rollout(
+    scored_rollouts: "list[ScoredGroupedRollout]",
+    *,
+    max_obs_chars: int = 200,
+) -> str:
+    """Print a GRPO prompt group that has already been scored and advantaged.
+
+    Convenience wrapper around :func:`format_group_rollout` for
+    :class:`ScoredGroupedRollout` objects — extracts ``rewards`` and
+    ``advantages`` automatically so you don't have to re-unpack them::
+
+        scored = assign_group_relative_advantages(grouped, rewards=rewards)
+        print(format_scored_group_rollout(scored))
+    """
+    grouped = [
+        GroupedRolloutBatch(
+            group_id=s.group_id,
+            rollout_index=s.rollout_index,
+            sampling_params=s.sampling_params,
+            final_output=s.final_output,
+        )
+        for s in scored_rollouts
+    ]
+    return format_group_rollout(
+        grouped,
+        rewards=[s.reward for s in scored_rollouts],
+        advantages=[s.advantage for s in scored_rollouts],
+        max_obs_chars=max_obs_chars,
+    )
+
+
 def format_group_rollout(
     grouped_rollouts: "list[GroupedRolloutBatch]",
     *,
