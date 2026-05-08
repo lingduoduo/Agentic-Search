@@ -606,7 +606,50 @@ def test_compute_log_prob_stores_new_log_probs_on_batch_and_trajectory():
         log_probs, torch.tensor([[-0.5, -0.5, -0.0]], dtype=torch.float32)
     )
     assert "new_log_probs" in batch.batch
-    assert batch.non_tensor_batch["trajectories"][0].new_log_probs == [-0.5, -0.5, -0.0]
+    # new_log_probs is prompt-padded: [0.0, 0.0] for prompt [1,2] then response values
+    assert batch.non_tensor_batch["trajectories"][0].new_log_probs == [
+        0.0,
+        0.0,
+        -0.5,
+        -0.5,
+        -0.0,
+    ]
+
+
+def test_compute_log_prob_zeros_out_environment_information_tokens():
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6, 7]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 0, 7]], dtype=torch.long),
+        }
+    )
+    batch.non_tensor_batch["trajectories"] = [
+        RolloutTrajectory(
+            batch_index=0,
+            prompt_token_ids=[1, 2],
+            response_token_ids=[5, 6, 7],
+            response_with_observation_mask=[5, 0, 7],
+            trajectory_turns=1,
+            steps=[],
+            final_answer="done",
+            finished_without_answer=False,
+        )
+    ]
+
+    log_probs = manager.compute_log_prob(batch, store_key="old_log_probs")
+
+    assert torch.allclose(
+        log_probs, torch.tensor([[-0.5, -0.0, -0.5]], dtype=torch.float32)
+    )
+    # old_log_probs is prompt-padded: [0.0, 0.0] for prompt [1,2] then response values
+    assert batch.non_tensor_batch["trajectories"][0].old_log_probs == [
+        0.0,
+        0.0,
+        -0.5,
+        -0.0,
+        -0.5,
+    ]
 
 
 def test_prepare_policy_log_probs_stores_old_new_and_ratio():
@@ -647,8 +690,130 @@ def test_prepare_policy_log_probs_stores_old_new_and_ratio():
     assert torch.allclose(batch.batch["prob_ratio"], expected_ratio)
     assert batch.meta_info["policy_log_probs_prepared"] is True
     trajectory = batch.non_tensor_batch["trajectories"][0]
-    assert trajectory.old_log_probs == [-1.0, -1.0, -0.0]
-    assert trajectory.new_log_probs == [-0.5, -0.5, -0.0]
+    # prompt_token_ids=[1, 2] → two 0.0 prefix values before response log probs
+    assert trajectory.old_log_probs == [0.0, 0.0, -1.0, -1.0, -0.0]
+    assert trajectory.new_log_probs == [0.0, 0.0, -0.5, -0.5, -0.0]
+
+
+def test_old_log_probs_aligned_with_tokens_and_response_mask():
+    """tokens, attention_mask, response_mask, old_log_probs must all be the same length."""
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6, 0]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6, 0]], dtype=torch.long),
+        }
+    )
+    prompt_ids = [1, 2]
+    batch.non_tensor_batch["trajectories"] = [
+        RolloutTrajectory(
+            batch_index=0,
+            prompt_token_ids=prompt_ids,
+            response_token_ids=[5, 6, 0],
+            response_with_observation_mask=[5, 6, 0],
+            trajectory_turns=1,
+            steps=[],
+            final_answer="done",
+            finished_without_answer=False,
+            tokens=prompt_ids + [5, 6, 0],
+            attention_mask=[1, 1, 1, 1, 1],
+            response_mask=[0, 0, 1, 1, 0],
+        )
+    ]
+
+    manager.compute_log_prob(batch, store_key="old_log_probs")
+    traj = batch.non_tensor_batch["trajectories"][0]
+
+    n = len(traj.tokens)
+    assert len(traj.old_log_probs) == n, "old_log_probs must be prompt+response length"
+    assert len(traj.attention_mask) == n
+    assert len(traj.response_mask) == n
+    # Prompt positions must have 0.0 log prob and 0 response mask
+    n_prompt = len(prompt_ids)
+    assert traj.old_log_probs[:n_prompt] == [0.0] * n_prompt
+    assert traj.response_mask[:n_prompt] == [0] * n_prompt
+
+
+def test_trajectory_log_prob_pack_returns_aligned_arrays():
+    from src.llm_agent.generation import trajectory_log_prob_pack
+
+    traj = RolloutTrajectory(
+        batch_index=0,
+        prompt_token_ids=[1, 2],
+        response_token_ids=[5, 6, 7],
+        response_with_observation_mask=[5, 0, 7],
+        trajectory_turns=1,
+        steps=[],
+        final_answer="done",
+        finished_without_answer=False,
+        tokens=[1, 2, 5, 6, 7],
+        attention_mask=[1, 1, 1, 1, 1],
+        response_mask=[0, 0, 1, 0, 1],
+        old_log_probs=[0.0, 0.0, -0.5, 0.0, -0.5],
+    )
+    pack = trajectory_log_prob_pack(traj)
+
+    assert set(pack.keys()) == {
+        "tokens",
+        "attention_mask",
+        "response_mask",
+        "old_log_probs",
+    }
+    n = len(pack["tokens"])
+    assert len(pack["attention_mask"]) == n
+    assert len(pack["response_mask"]) == n
+    assert len(pack["old_log_probs"]) == n
+    # observation token at index 3 → response_mask=0, old_log_probs=0.0
+    assert pack["response_mask"][3] == 0
+    assert pack["old_log_probs"][3] == 0.0
+
+
+def test_trajectory_log_prob_pack_falls_back_to_zeros_when_log_probs_none():
+    from src.llm_agent.generation import trajectory_log_prob_pack
+
+    traj = RolloutTrajectory(
+        batch_index=0,
+        prompt_token_ids=[1, 2],
+        response_token_ids=[5, 6],
+        response_with_observation_mask=[5, 6],
+        trajectory_turns=1,
+        steps=[],
+        final_answer="done",
+        finished_without_answer=False,
+        tokens=[1, 2, 5, 6],
+        attention_mask=[1, 1, 1, 1],
+        response_mask=[0, 0, 1, 1],
+        old_log_probs=None,  # backend didn't compute log probs
+    )
+    pack = trajectory_log_prob_pack(traj)
+
+    assert len(pack["old_log_probs"]) == 4
+    assert pack["old_log_probs"] == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_compose_final_output_stores_training_tokens_and_masks_on_trajectory():
+    manager = _manager()
+    left_side = {
+        "input_ids": torch.tensor([[11, 12]], dtype=torch.long),
+    }
+    right_side = {
+        "responses": torch.tensor([[21, 22, 23]], dtype=torch.long),
+        "responses_with_info_mask": torch.tensor([[21, 0, 23]], dtype=torch.long),
+    }
+    meta_info = {
+        "trajectory_turns": [2],
+        "final_answers": ["done"],
+        "finished_without_answer": [False],
+        "react_trajectory": [[]],
+        "questions": ["What is the answer?"],
+    }
+
+    batch = manager._compose_final_output(left_side, right_side, meta_info)
+    trajectory = batch.non_tensor_batch["trajectories"][0]
+
+    assert trajectory.tokens == [11, 12, 21, 22, 23]
+    assert trajectory.attention_mask == [1, 1, 1, 1, 1]
+    assert trajectory.response_mask == [0, 0, 1, 0, 1]
 
 
 def test_prepare_policy_log_probs_can_skip_ratio_computation():
