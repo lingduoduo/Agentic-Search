@@ -35,6 +35,10 @@ class DenseRetrieverConfig:
     max_length: int = 180
     use_fp16: bool = False
     pooling_method: str | None = None
+    # Default to CPU so the retrieval service never competes with the trainer
+    # for GPU memory.  Set to "cuda" (or "cuda:N") only when the retrieval
+    # server is deployed on a dedicated GPU that the trainer does not use.
+    device: str = "cpu"
 
     def validate(self) -> None:
         if not self.model_path:
@@ -48,6 +52,33 @@ class DenseRetrieverConfig:
         if self.topk < 1:
             raise ValueError("topk must be at least 1.")
 
+    @classmethod
+    def for_e5_base_v2(
+        cls,
+        model_path: str = "intfloat/e5-base-v2",
+        *,
+        index_path: str,
+        corpus_path: str,
+        topk: int = 5,
+        device: str = "cpu",
+        **kwargs: object,
+    ) -> "DenseRetrieverConfig":
+        """Preset for the intfloat/e5-base-v2 retriever.
+
+        Runs on CPU by default so the trainer GPU is not affected.
+        Pass ``device="cuda:1"`` when the retrieval server has a
+        dedicated GPU separate from the trainer.
+        """
+        return cls(
+            model_path=model_path,
+            index_path=index_path,
+            corpus_path=corpus_path,
+            retrieval_method="e5",
+            topk=topk,
+            device=device,
+            **kwargs,
+        )
+
 
 class DenseRetriever:
     """Loads a FAISS index and returns the top matching corpus documents."""
@@ -55,10 +86,14 @@ class DenseRetriever:
     def __init__(self, config: DenseRetrieverConfig):
         config.validate()
         self.config = config
-        torch = _require_torch()
+        _require_torch()
         faiss = _require_faiss()
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Use the configured device.  The default is "cpu" so that a
+        # standalone retrieval service never competes with the trainer for
+        # GPU memory.  The trainer calls this service over HTTP and never
+        # loads the embedding model or FAISS index in-process.
+        self.device = config.device
         self.pooling_method = resolve_pooling_method(
             config.retrieval_method,
             config.pooling_method,
