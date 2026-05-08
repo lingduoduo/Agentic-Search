@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -12,6 +13,37 @@ from .context import AgentContext
 # Type aliases for judge callables.
 JudgeFn = Callable[[str, str], float]
 BatchJudgeFn = Callable[[list[str], list[str]], list[float]]
+
+
+def normalize_answer_text(text: str) -> str:
+    """Normalize an answer string for simple sparse-reward matching."""
+    lowered = text.strip().lower()
+    lowered = re.sub(r"\s+", " ", lowered)
+    return lowered
+
+
+def simple_sparse_correctness_reward(
+    pred: str,
+    gold: str,
+    *,
+    partial_match_reward: float = 0.7,
+) -> float:
+    """Simple first-pass sparse reward for final answers.
+
+    Rules:
+    - exact normalized match -> 1.0
+    - normalized gold is contained in normalized prediction -> 0.7
+    - otherwise -> 0.0
+    """
+    norm_pred = normalize_answer_text(pred)
+    norm_gold = normalize_answer_text(gold)
+    if not norm_pred or not norm_gold:
+        return 0.0
+    if norm_pred == norm_gold:
+        return 1.0
+    if norm_gold in norm_pred:
+        return float(partial_match_reward)
+    return 0.0
 
 
 def _score_answers(
@@ -50,6 +82,10 @@ class SearchRewardConfig:
     # Reward for good evaluator verdicts and strong per-query search quality.
     search_quality_weight: float = 0.15
 
+    # Simple first-pass efficiency penalty: subtract this per search round used.
+    # Example: -0.02 * num_searches
+    per_search_penalty: float = 0.0
+
     # Applied per search round beyond the first (encourages efficiency).
     unnecessary_search_penalty: float = -0.05
 
@@ -62,6 +98,13 @@ class SearchRewardConfig:
 
     # Applied per fetched page that does not contribute to cited evidence.
     unnecessary_fetch_penalty: float = -0.1
+
+    # Applied once when the agent answers with no retrieval citations despite
+    # having issued searches that returned results.  A negative value penalises
+    # answers that make claims without any retrieved evidence — i.e. the agent
+    # searched, got documents, and then ignored them.
+    # Phase 2 recommended: -0.1
+    unsupported_claim_penalty: float = 0.0
 
     # Applied once when the agent answers despite insufficient evidence.
     answer_when_evidence_insufficient_penalty: float = -0.2
@@ -94,8 +137,86 @@ class SearchRewardConfig:
             citation_support_weight=0.0,
             subquestion_coverage_weight=0.0,
             search_quality_weight=0.0,
+            per_search_penalty=0.0,
             unnecessary_search_penalty=0.0,
             duplicate_query_penalty=0.0,
+            budget_penalty_threshold=1.0,
+            budget_penalty=0.0,
+            unnecessary_fetch_penalty=0.0,
+            answer_when_evidence_insufficient_penalty=0.0,
+            search_budget_exhausted_without_answer_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+        )
+
+    @classmethod
+    def simple_sparse_with_search_penalty(
+        cls,
+        *,
+        correctness_weight: float = 1.0,
+        per_search_penalty: float = -0.02,
+    ) -> "SearchRewardConfig":
+        """Build the recommended first-pass reward for early agent RL.
+
+        Objective:
+
+            reward = correctness_reward - 0.02 * num_searches
+
+        Everything else is disabled so the signal stays easy to reason about.
+        Use with :func:`simple_sparse_correctness_reward` as the judge for a
+        straightforward first training phase.
+        """
+        return cls(
+            reward_mode="shaped",
+            correctness_weight=correctness_weight,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            per_search_penalty=per_search_penalty,
+            unnecessary_search_penalty=0.0,
+            duplicate_query_penalty=0.0,
+            budget_penalty_threshold=1.0,
+            budget_penalty=0.0,
+            unnecessary_fetch_penalty=0.0,
+            answer_when_evidence_insufficient_penalty=0.0,
+            search_budget_exhausted_without_answer_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+        )
+
+    @classmethod
+    def second_pass(
+        cls,
+        *,
+        correctness_weight: float = 1.0,
+        per_search_penalty: float = -0.02,
+        citation_support_weight: float = 0.1,
+        unsupported_claim_penalty: float = -0.1,
+        duplicate_query_penalty: float = -0.05,
+    ) -> "SearchRewardConfig":
+        """Phase 2 reward: first-pass formula plus citation and query-quality signals.
+
+        Adds three terms to the Phase 1 (simple sparse + search penalty) objective:
+
+            reward = correctness
+                   - 0.02 * num_searches            ← search efficiency
+                   + 0.1  * citation_support         ← fraction of retrieved docs cited
+                   - 0.1  * unsupported_claim        ← searched but cited nothing
+                   - 0.05 * repeated_query_count     ← duplicate search penalty
+
+        Use :func:`simple_sparse_correctness_reward` as the judge unless you
+        already have a trained LLM evaluator.  Move to Phase 2 only after the
+        model reliably produces answers in Phase 1 (policy has converged enough
+        to benefit from the finer-grained signal).
+        """
+        return cls(
+            reward_mode="shaped",
+            correctness_weight=correctness_weight,
+            per_search_penalty=per_search_penalty,
+            citation_support_weight=citation_support_weight,
+            unsupported_claim_penalty=unsupported_claim_penalty,
+            duplicate_query_penalty=duplicate_query_penalty,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            unnecessary_search_penalty=0.0,
             budget_penalty_threshold=1.0,
             budget_penalty=0.0,
             unnecessary_fetch_penalty=0.0,
@@ -306,6 +427,7 @@ class SearchRewardFunction:
 
         # 5. Unnecessary-search penalty: each round beyond the first costs a little.
         rounds_used = int(metrics.get("rounds_used", 0))
+        per_search_pen = cfg.per_search_penalty * rounds_used
         unnecessary_pen = cfg.unnecessary_search_penalty * max(0, rounds_used - 1)
 
         # 6. Duplicate-query penalty.
@@ -335,7 +457,11 @@ class SearchRewardFunction:
             * metrics.get("search_budget_exhausted_without_answer", 0.0)
         )
 
-        # 9. Fetch usefulness reward: fetched pages help only when the answer cites
+        # 9. Unsupported-claim penalty: fires when the agent searched and got
+        # results but the answer cites none of them — the model is fabricating.
+        unsupported_claim_pen = self._unsupported_claim_penalty(answer, ctx, metrics)
+
+        # 10. Fetch usefulness reward: fetched pages help only when the answer cites
         # search results whose URLs were later fetched for deeper inspection.
         fetch_reward = self._fetch_usefulness_reward(answer, ctx)
 
@@ -344,10 +470,12 @@ class SearchRewardFunction:
             cfg.citation_support_weight * citation_support
             + cfg.subquestion_coverage_weight * coverage
             + cfg.search_quality_weight * search_quality
+            + per_search_pen
             + unnecessary_pen
             + dup_pen
             + budget_pen
             + unnecessary_fetch_pen
+            + unsupported_claim_pen
             + insufficient_answer_pen
             + exhausted_without_answer_pen
             + fetch_reward
@@ -359,10 +487,12 @@ class SearchRewardFunction:
             "citation_support": cfg.citation_support_weight * citation_support,
             "subquestion_coverage": cfg.subquestion_coverage_weight * coverage,
             "search_quality": cfg.search_quality_weight * search_quality,
+            "per_search_penalty": per_search_pen,
             "unnecessary_search_penalty": unnecessary_pen,
             "duplicate_query_penalty": dup_pen,
             "budget_penalty": budget_pen,
             "unnecessary_fetch_penalty": unnecessary_fetch_pen,
+            "unsupported_claim_penalty": unsupported_claim_pen,
             "answer_when_evidence_insufficient_penalty": insufficient_answer_pen,
             "search_budget_exhausted_without_answer_penalty": (
                 exhausted_without_answer_pen
@@ -560,6 +690,35 @@ class SearchRewardFunction:
         if search_rounds <= 0:
             return metrics.get("answer_allowed", 0.0)
         return (final_sufficient + avg_quality) / 2.0
+
+    def _unsupported_claim_penalty(
+        self,
+        answer: str,
+        ctx: AgentContext | None,
+        metrics: dict,
+    ) -> float:
+        """Penalty fired when the agent searched but cited none of the results.
+
+        Conditions for the penalty to fire (all must be true):
+        - The answer is non-empty.
+        - The agent issued at least one search (rounds_used > 0).
+        - Retrieved results exist (ctx.num_results > 0).
+        - The answer cites zero of those results.
+
+        This catches the fabrication pattern: the model searched, received
+        documents, and then wrote an answer that ignores all of them — a sign
+        that it is drawing on prior knowledge (or hallucinating) rather than
+        grounding claims in the retrieved evidence.
+        """
+        if not answer or self.config.unsupported_claim_penalty == 0.0:
+            return 0.0
+        if metrics.get("rounds_used", 0) <= 0:
+            return 0.0
+        if ctx is None or ctx.num_results == 0:
+            return 0.0
+        if len(ctx.cited_result_ids(answer)) > 0:
+            return 0.0
+        return self.config.unsupported_claim_penalty
 
     def _fetch_usefulness_reward(
         self,

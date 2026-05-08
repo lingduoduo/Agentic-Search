@@ -48,7 +48,14 @@ from .grpo import (
     sample_prompt_group,
     score_prompt_group,
 )
-from .reward import BatchJudgeFn, JudgeFn, SearchRewardConfig, SearchRewardFunction
+from .reward import (
+    BatchJudgeFn,
+    JudgeFn,
+    SearchRewardConfig,
+    SearchRewardFunction,
+    normalize_answer_text,
+    simple_sparse_correctness_reward,
+)
 from .search_agent_loop import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
@@ -82,6 +89,8 @@ __all__ = [
     "JudgeFn",
     "SearchRewardConfig",
     "SearchRewardFunction",
+    "normalize_answer_text",
+    "simple_sparse_correctness_reward",
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
