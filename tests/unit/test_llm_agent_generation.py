@@ -4200,18 +4200,32 @@ def test_async_run_prompt_rollout_group_returns_one_list_per_prompt():
     from src.llm_agent.generation import async_run_prompt_rollout_group
 
     class _FakeManager:
-        def run_prompt_rollout_group(
+        # New API: async_run_prompt_rollout_group fans out at rollout level,
+        # calling _run_one_rollout per (prompt, rollout) task.
+        def _run_one_rollout(
             self,
             prompt_batch,
+            rollout_index,
+            variant,
+            group_id,
             *,
             search_mode,
-            sampling_params,
-            num_rollouts,
-            base_seed,
             current_step,
             total_steps,
         ):
-            return [_make_grouped_rollout(f"g{prompt_batch}", 0, "ans", 0.8, 0)]
+            from src.llm_agent.generation import GroupedRolloutBatch
+
+            grb = _make_grouped_rollout(
+                f"g{prompt_batch}", rollout_index, "ans", 0.8, 0
+            )
+            # Override group_id with the one pre-assigned by async_run_prompt_rollout_group
+
+            return GroupedRolloutBatch(
+                group_id=group_id,
+                rollout_index=rollout_index,
+                sampling_params=grb.sampling_params,
+                final_output=grb.final_output,
+            )
 
     manager = _FakeManager()
     results = asyncio.run(
@@ -4225,9 +4239,10 @@ def test_async_run_prompt_rollout_group_returns_one_list_per_prompt():
     )
 
     assert len(results) == 3
-    assert results[0][0].group_id == "g0"
-    assert results[1][0].group_id == "g1"
-    assert results[2][0].group_id == "g2"
+    # Each prompt group has 1 rollout; group_ids are pre-assigned UUIDs — just
+    # verify structure: 3 groups, each with 1 GroupedRolloutBatch at index 0.
+    assert all(len(g) == 1 for g in results)
+    assert all(g[0].rollout_index == 0 for g in results)
 
 
 def test_async_run_prompt_rollout_group_empty_returns_empty():
@@ -4235,8 +4250,8 @@ def test_async_run_prompt_rollout_group_empty_returns_empty():
     from src.llm_agent.generation import async_run_prompt_rollout_group
 
     class _FakeManager:
-        def run_prompt_rollout_group(self, prompt_batch, **kwargs):
-            return []
+        def _run_one_rollout(self, *args, **kwargs):
+            raise AssertionError("should not be called for empty input")
 
     results = asyncio.run(
         async_run_prompt_rollout_group(
@@ -4250,22 +4265,84 @@ def test_async_run_prompt_rollout_group_empty_returns_empty():
     assert results == []
 
 
-def test_async_run_prompt_rollout_group_uses_per_prompt_seed():
+def test_async_run_prompt_rollout_group_fans_out_all_rollouts():
+    """N_prompts × N_rollouts tasks are submitted, not N_prompts tasks."""
     import asyncio
-    from src.llm_agent.generation import async_run_prompt_rollout_group
+    from src.llm_agent.generation import (
+        GroupedRolloutBatch,
+        async_run_prompt_rollout_group,
+    )
 
-    received_seeds: list[int | None] = []
+    call_log: list[tuple[int, int]] = []  # (prompt_batch_val, rollout_index)
 
-    class _SeedCapture:
-        def run_prompt_rollout_group(
+    class _Capture:
+        def _run_one_rollout(
             self,
             prompt_batch,
+            rollout_index,
+            variant,
+            group_id,
             *,
-            base_seed,
-            **kwargs,
+            search_mode,
+            current_step,
+            total_steps,
         ):
-            received_seeds.append(base_seed)
-            return [_make_grouped_rollout(f"g{prompt_batch}", 0, "x", 0.8, 0)]
+            call_log.append((prompt_batch, rollout_index))
+            grb = _make_grouped_rollout("g", rollout_index, "x", 0.8, 0)
+            return GroupedRolloutBatch(
+                group_id=group_id,
+                rollout_index=rollout_index,
+                sampling_params=grb.sampling_params,
+                final_output=grb.final_output,
+            )
+
+    asyncio.run(
+        async_run_prompt_rollout_group(
+            _Capture(),
+            [10, 20, 30],  # 3 prompts
+            search_mode="simulate",
+            sampling_params={"temperature": 0.8},
+            num_rollouts=4,  # 4 rollouts each → 12 total tasks
+        )
+    )
+
+    assert len(call_log) == 12  # 3 prompts × 4 rollouts
+    # All 4 rollout indices appear for each prompt
+    assert sorted(set(ri for _, ri in call_log)) == [0, 1, 2, 3]
+
+
+def test_async_run_prompt_rollout_group_per_rollout_seeds():
+    """Each (prompt i, rollout j) receives seed = base_seed + i*num_rollouts + j."""
+    import asyncio
+    from src.llm_agent.generation import (
+        GroupedRolloutBatch,
+        async_run_prompt_rollout_group,
+    )
+
+    received: list[
+        tuple[int, int, int | None]
+    ] = []  # (prompt_batch, rollout_idx, seed)
+
+    class _SeedCapture:
+        def _run_one_rollout(
+            self,
+            prompt_batch,
+            rollout_index,
+            variant,
+            group_id,
+            *,
+            search_mode,
+            current_step,
+            total_steps,
+        ):
+            received.append((prompt_batch, rollout_index, variant.get("seed")))
+            grb = _make_grouped_rollout("g", rollout_index, "x", 0.8, 0)
+            return GroupedRolloutBatch(
+                group_id=group_id,
+                rollout_index=rollout_index,
+                sampling_params=grb.sampling_params,
+                final_output=grb.final_output,
+            )
 
     asyncio.run(
         async_run_prompt_rollout_group(
@@ -4278,5 +4355,171 @@ def test_async_run_prompt_rollout_group_uses_per_prompt_seed():
         )
     )
 
-    # prompt i should receive seed 100 + i * 4
-    assert set(received_seeds) == {100, 104, 108}
+    seed_map = {(pb, ri): seed for pb, ri, seed in received}
+    # prompt 0, rollout 0 → 100; prompt 0, rollout 3 → 103
+    # prompt 1, rollout 0 → 104; prompt 2, rollout 0 → 108
+    assert seed_map[(0, 0)] == 100
+    assert seed_map[(0, 3)] == 103
+    assert seed_map[(1, 0)] == 104
+    assert seed_map[(2, 0)] == 108
+
+
+def test_async_run_prompt_rollout_group_results_sorted_by_rollout_index():
+    """Results within each prompt group are sorted by rollout_index."""
+    import asyncio
+    from src.llm_agent.generation import (
+        GroupedRolloutBatch,
+        async_run_prompt_rollout_group,
+    )
+
+    class _ReversedCapture:
+        def _run_one_rollout(
+            self,
+            prompt_batch,
+            rollout_index,
+            variant,
+            group_id,
+            **kwargs,
+        ):
+            grb = _make_grouped_rollout("g", rollout_index, "x", 0.8, 0)
+            return GroupedRolloutBatch(
+                group_id=group_id,
+                rollout_index=rollout_index,
+                sampling_params=grb.sampling_params,
+                final_output=grb.final_output,
+            )
+
+    results = asyncio.run(
+        async_run_prompt_rollout_group(
+            _ReversedCapture(),
+            [0],
+            search_mode="simulate",
+            sampling_params={"temperature": 0.8},
+            num_rollouts=4,
+        )
+    )
+
+    indices = [grb.rollout_index for grb in results[0]]
+    assert indices == sorted(indices)
+
+
+def test_async_run_grpo_training_step_parallelizes_rollouts_then_updates_once():
+    import asyncio
+    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src.llm_agent.generation import async_run_grpo_training_step
+
+    tokenizer = DummyTokenizer()
+    actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)
+    manager = LLMGenerationManager(
+        tokenizer=tokenizer,
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=actor_backend,
+    )
+
+    prompt_to_group = {
+        "q1": [
+            _make_training_grouped_rollout(
+                "g1",
+                0,
+                "a1",
+                question="q1",
+                ground_truth="a1",
+                response_ids=[2, 3],
+                response_with_info_mask=[2, 3],
+            ),
+            _make_training_grouped_rollout(
+                "g1",
+                1,
+                "wrong",
+                question="q1",
+                ground_truth="a1",
+                response_ids=[4, 5],
+                response_with_info_mask=[4, 5],
+            ),
+        ],
+        "q2": [
+            _make_training_grouped_rollout(
+                "g2",
+                0,
+                "a2",
+                question="q2",
+                ground_truth="a2",
+                response_ids=[6, 7],
+                response_with_info_mask=[6, 7],
+            ),
+            _make_training_grouped_rollout(
+                "g2",
+                1,
+                "wrong",
+                question="q2",
+                ground_truth="a2",
+                response_ids=[8, 9],
+                response_with_info_mask=[8, 9],
+            ),
+        ],
+    }
+
+    call_order: list[str] = []
+
+    def _fake_run_one_rollout(
+        self_mgr, prompt_batch, rollout_index, variant, group_id, **kwargs
+    ):
+        question = prompt_batch.questions[0]
+        call_order.append(question)
+        grb = prompt_to_group[question][rollout_index]
+        from src.llm_agent.generation import GroupedRolloutBatch
+
+        return GroupedRolloutBatch(
+            group_id=group_id,
+            rollout_index=rollout_index,
+            sampling_params=grb.sampling_params,
+            final_output=grb.final_output,
+        )
+
+    # Patch as instance method so copy.copy(manager) inherits it
+    import types
+
+    manager._run_one_rollout = types.MethodType(_fake_run_one_rollout, manager)  # type: ignore[method-assign]
+
+    examples = [
+        {"question": "q1", "ground_truth": "a1", "tools": ["search"]},
+        {"question": "q2", "ground_truth": "a2", "tools": ["search"]},
+    ]
+    prompt_batch = next(
+        iter(build_prompt_dataloader(examples, tokenizer=tokenizer, batch_size=2))
+    )
+
+    optimizer = torch.optim.SGD([actor_backend.scale], lr=0.1)
+    before = actor_backend.scale.detach().item()
+
+    result = asyncio.run(
+        async_run_grpo_training_step(
+            manager,
+            prompt_batch,
+            search_mode="google",
+            sampling_params={"temperature": 0.8, "top_p": 0.95},
+            judge_fn=lambda a, g: 1.0 if a.strip() == g.strip() else 0.0,
+            num_rollouts=2,
+            reward_fn=SearchRewardFunction(SearchRewardConfig.sparse_final_only()),
+            old_backend=FixedLogProbBackend(-1.0),
+            new_backend=actor_backend,
+            ref_backend=FixedLogProbBackend(-1.2),
+            loss_config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.05),
+            optimizer=optimizer,
+            max_workers=2,
+        )
+    )
+
+    assert set(call_order) == {"q1", "q2"}
+    assert len(result.group_results) == 2
+    assert len(result.scored_rollouts) == 4
+    assert result.optimizer_stepped is True
+    assert result.training_batch.batch["advantages"].shape[0] == 4
+    assert actor_backend.scale.detach().item() != pytest.approx(before)

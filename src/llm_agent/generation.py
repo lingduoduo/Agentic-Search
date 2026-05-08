@@ -1208,65 +1208,234 @@ async def async_run_prompt_rollout_group(
     total_steps: int = 1,
     max_workers: int | None = None,
 ) -> "list[list[GroupedRolloutBatch]]":
-    """Run :meth:`~LLMGenerationManager.run_prompt_rollout_group` concurrently.
+    """Run all rollouts across all prompts concurrently to overlap search I/O.
 
-    Parallelises the per-prompt rollout loop across a thread pool so that I/O-
-    bound retrieval calls overlap instead of serialising.  Each prompt gets a
-    shallow copy of ``manager`` to avoid races on ``self.config`` mutations that
-    happen inside the rollout loop (temperature, seed overrides).
+    The dominant latency in GRPO rollouts is **HTTP search**: while one
+    trajectory waits for retrieval results, the GPU is idle.  This function
+    eliminates that dead time by scheduling every individual rollout as its own
+    thread-pool task — all ``N_prompts × N_rollouts`` trajectories run in
+    parallel::
 
-    Minimum viable async rollout::
+        async_run_prompt_rollout_group(manager, [b0, b1, b2],
+                                       num_rollouts=4, ...)
+        # 12 concurrent tasks instead of 3 sequential groups of 4
 
-        results = await async_run_prompt_rollout_group(
-            manager,
-            [single_batch_0, single_batch_1, single_batch_2],
-            search_mode="simulate",
-            sampling_params={"temperature": 0.8},
-            num_rollouts=4,
-        )
-        # results[i] == list[GroupedRolloutBatch] for prompt i
+    Each task gets a shallow :func:`copy.copy` of ``manager`` so temperature
+    and seed overrides inside :meth:`~LLMGenerationManager._run_one_rollout`
+    never race across threads on ``self.config``.
+
+    Seed assignment for (prompt ``i``, rollout ``j``)::
+
+        seed = base_seed + i * num_rollouts + j
+
+    This keeps seeds unique across all (prompt, rollout) pairs and matches the
+    sequential :meth:`~LLMGenerationManager.run_prompt_rollout_group` scheme.
 
     Args:
-        manager:         Source :class:`LLMGenerationManager`; copied per prompt.
+        manager:         Source :class:`LLMGenerationManager`; copied per rollout.
         prompt_batches:  One single-prompt batch per prompt to roll out.
-        search_mode:     Forwarded to each ``run_prompt_rollout_group`` call.
-        sampling_params: Forwarded to each ``run_prompt_rollout_group`` call.
-        num_rollouts:    Trajectories sampled per prompt.
-        base_seed:       Prompt ``i`` uses seed ``base_seed + i * num_rollouts``.
+        search_mode:     Forwarded to :meth:`~LLMGenerationManager._run_one_rollout`.
+        sampling_params: Base sampling params; diversified by
+                         :func:`~src.agent_loop.grpo.build_grpo_sampling_params`.
+        num_rollouts:    Trajectories per prompt.
+        base_seed:       Unique seed for (prompt i, rollout j) =
+                         ``base_seed + i * num_rollouts + j``.
         current_step:    Training step (forwarded for curriculum scheduling).
         total_steps:     Total training steps (forwarded for scheduling).
-        max_workers:     Thread pool size; defaults to ``len(prompt_batches)``.
+        max_workers:     Thread pool size; defaults to
+                         ``len(prompt_batches) * num_rollouts``.
 
     Returns:
-        List parallel to ``prompt_batches``; element ``i`` is the
-        ``list[GroupedRolloutBatch]`` produced for prompt ``i``.
+        List parallel to ``prompt_batches``; element ``i`` is a
+        ``list[GroupedRolloutBatch]`` sorted by ``rollout_index``.
     """
     import asyncio
     import copy
 
-    loop = asyncio.get_event_loop()
-    workers = max_workers or max(len(prompt_batches), 1)
+    from src.agent_loop.grpo import build_grpo_sampling_params
 
-    def _run_one(args: tuple[int, Any]) -> "list[GroupedRolloutBatch]":
-        prompt_index, prompt_batch = args
+    n_prompts = len(prompt_batches)
+    if n_prompts == 0:
+        return []
+
+    loop = asyncio.get_event_loop()
+    workers = max_workers or max(n_prompts * num_rollouts, 1)
+
+    # Pre-assign one group_id per prompt so all rollouts for a prompt share it.
+    group_ids = [f"prompt_group_{uuid4().hex}" for _ in range(n_prompts)]
+
+    # Build a flat task list: one entry per (prompt, rollout) pair.
+    _Task = tuple  # (prompt_idx, rollout_idx, variant, group_id, prompt_batch)
+    task_args: list[_Task] = []
+    for prompt_idx, pb in enumerate(prompt_batches):
+        variants = build_grpo_sampling_params(
+            sampling_params, num_rollouts=num_rollouts
+        )
+        for rollout_idx, variant in enumerate(variants):
+            resolved = dict(variant)
+            if base_seed is not None and "seed" not in resolved:
+                resolved["seed"] = base_seed + prompt_idx * num_rollouts + rollout_idx
+            task_args.append(
+                (prompt_idx, rollout_idx, resolved, group_ids[prompt_idx], pb)
+            )
+
+    def _run(task: _Task) -> "GroupedRolloutBatch":
+        prompt_idx, rollout_idx, resolved_variant, group_id, pb = task
         mgr_copy = copy.copy(manager)
-        seed = None if base_seed is None else base_seed + prompt_index * num_rollouts
-        return mgr_copy.run_prompt_rollout_group(
-            prompt_batch,
+        return mgr_copy._run_one_rollout(
+            pb,
+            rollout_idx,
+            resolved_variant,
+            group_id,
             search_mode=search_mode,
-            sampling_params=sampling_params,
-            num_rollouts=num_rollouts,
-            base_seed=seed,
             current_step=current_step,
             total_steps=total_steps,
         )
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [
-            loop.run_in_executor(executor, _run_one, (i, pb))
-            for i, pb in enumerate(prompt_batches)
-        ]
-        return list(await asyncio.gather(*futures))
+        futures = [loop.run_in_executor(executor, _run, t) for t in task_args]
+        flat: list[GroupedRolloutBatch] = list(await asyncio.gather(*futures))
+
+    # Reassemble per-prompt groups and sort by rollout_index.
+    result: list[list[GroupedRolloutBatch]] = [[] for _ in range(n_prompts)]
+    for (prompt_idx, *_), grb in zip(task_args, flat):
+        result[prompt_idx].append(grb)
+    for group in result:
+        group.sort(key=lambda g: g.rollout_index)
+    return result
+
+
+async def async_run_grpo_training_step(
+    manager: "LLMGenerationManager",
+    prompt_batch: Any,
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    judge_fn: Callable[[str, str], float],
+    num_rollouts: int = 4,
+    reward_fn: Any = None,
+    advantage_config: Any = None,
+    batch_judge_fn: Any = None,
+    old_backend: LogProbCapable | None = None,
+    new_backend: LogProbCapable | None = None,
+    ref_backend: LogProbCapable | None = None,
+    loss_config: PPOPolicyLossConfig | None = None,
+    safety_config: GRPORolloutSafetyConfig | None = None,
+    optimizer: Any = None,
+    base_seed: int | None = None,
+    current_step: int = 0,
+    total_steps: int = 1,
+    max_workers: int | None = None,
+) -> GRPOTrainingStepResult:
+    """Run one GRPO trainer step with prompt-level rollout concurrency.
+
+    Parallelises the expensive prompt-level rollout stage — LLM generation,
+    HTTP retrieval, reranking — then performs one learner-side update after all
+    prompt groups have completed.
+    """
+    from src.agent_loop import GRPOAdvantageConfig
+
+    single_prompt_batches = [
+        _single_prompt_batch(prompt_batch, i)
+        for i in range(len(prompt_batch.questions))
+    ]
+    grouped_results = await async_run_prompt_rollout_group(
+        manager,
+        single_prompt_batches,
+        search_mode=search_mode,
+        sampling_params=sampling_params,
+        num_rollouts=num_rollouts,
+        base_seed=base_seed,
+        current_step=current_step,
+        total_steps=total_steps,
+        max_workers=max_workers,
+    )
+
+    resolved_advantage_config = advantage_config or GRPOAdvantageConfig(
+        mode="group_outcome",
+        reward_component="total",
+    )
+    normalize_advantages = resolved_advantage_config.mode == "group_std_normalized"
+    resolved_safety_config = safety_config or GRPORolloutSafetyConfig(
+        max_search_rounds=manager.config.max_search_rounds,
+        max_total_rounds=manager.config.max_total_rounds,
+        allowed_actions=tuple(manager.config.allowed_actions),
+    )
+
+    group_results: list[GRPOPromptGroupResult] = []
+    scored_rollouts: list[ScoredGroupedRollout] = []
+    for question, single_batch, grouped in zip(
+        prompt_batch.questions, single_prompt_batches, grouped_results
+    ):
+        scored = score_group_rollout(
+            grouped,
+            ground_truth=single_batch.ground_truths[0],
+            judge_fn=judge_fn,
+            reward_fn=reward_fn,
+            advantage_config=resolved_advantage_config,
+            batch_judge_fn=batch_judge_fn,
+        )
+        scored = apply_safety_penalties_to_scored_rollouts(
+            scored,
+            config=resolved_safety_config,
+            normalize_advantages=normalize_advantages,
+        )
+        group_results.append(
+            GRPOPromptGroupResult(
+                question=question,
+                ground_truth=single_batch.ground_truths[0],
+                grouped_rollouts=grouped,
+                scored_rollouts=scored,
+            )
+        )
+        scored_rollouts.extend(scored)
+
+    training_batch = manager.collate_scored_rollouts_for_training(scored_rollouts)
+
+    if "old_log_probs" not in training_batch.batch or old_backend is not None:
+        manager.compute_log_prob(
+            training_batch,
+            backend=old_backend or manager.generation_backend,
+            store_key="old_log_probs",
+            overwrite=(
+                old_backend is not None or "old_log_probs" not in training_batch.batch
+            ),
+        )
+    manager.compute_log_prob(
+        training_batch,
+        backend=new_backend or manager.generation_backend,
+        store_key="new_log_probs",
+    )
+    if ref_backend is not None:
+        manager.compute_log_prob(
+            training_batch,
+            backend=ref_backend,
+            store_key="ref_log_probs",
+        )
+
+    loss = manager.compute_policy_loss(training_batch, config=loss_config)
+
+    optimizer_stepped = False
+    if optimizer is not None:
+        try:
+            optimizer.zero_grad(set_to_none=True)
+        except TypeError:
+            optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        optimizer_stepped = True
+
+    rewards = [scored.reward for scored in scored_rollouts]
+    advantages = [scored.advantage for scored in scored_rollouts]
+    return GRPOTrainingStepResult(
+        group_results=group_results,
+        scored_rollouts=scored_rollouts,
+        training_batch=training_batch,
+        loss=loss,
+        optimizer_stepped=optimizer_stepped,
+        mean_reward=(sum(rewards) / len(rewards)) if rewards else 0.0,
+        mean_advantage=(sum(advantages) / len(advantages)) if advantages else 0.0,
+    )
 
 
 def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
@@ -3194,7 +3363,6 @@ class LLMGenerationManager:
         metadata on the returned rollout batch so custom backends can consume
         them if needed.
         """
-        from src.agent_loop.data import prompt_batch_to_search_batch
         from src.agent_loop.grpo import build_grpo_sampling_params
 
         if num_rollouts <= 0:
@@ -3214,52 +3382,92 @@ class LLMGenerationManager:
             if base_seed is not None and "seed" not in resolved_variant:
                 resolved_variant["seed"] = base_seed + rollout_index
 
+            # Save/restore global Python+Torch RNG so each sequential rollout
+            # starts from the same base state before applying its own seed.
             py_state = random.getstate()
             torch_state = torch.random.get_rng_state()
-            old_temperature = float(self.config.temperature)
-
             try:
-                seed = resolved_variant.get("seed")
-                if seed is not None:
-                    random.seed(int(seed))
-                    torch.manual_seed(int(seed))
-
-                if "temperature" in resolved_variant:
-                    self.config = dataclass_replace(
-                        self.config,
-                        temperature=float(resolved_variant["temperature"]),
+                grouped_rollouts.append(
+                    self._run_one_rollout(
+                        prompt_batch,
+                        rollout_index,
+                        resolved_variant,
+                        resolved_group_id,
+                        search_mode=search_mode,
+                        current_step=current_step,
+                        total_steps=total_steps,
                     )
-
-                gen_batch = prompt_batch_to_search_batch(prompt_batch)
-                gen_batch.non_tensor_batch["sampling_params"] = dict(resolved_variant)
-                final_batch, _ = self.run_llm_loop(
-                    gen_batch=gen_batch,
-                    search_mode=search_mode,
-                    current_step=current_step,
-                    total_steps=total_steps,
                 )
             finally:
-                self.config = dataclass_replace(
-                    self.config, temperature=old_temperature
-                )
                 random.setstate(py_state)
                 torch.random.set_rng_state(torch_state)
 
-            final_batch.meta_info["group_id"] = resolved_group_id
-            final_batch.meta_info["rollout_index"] = rollout_index
-            final_batch.meta_info["sampling_params"] = dict(resolved_variant)
-            final_output = self.build_final_gen_batch_output(final_batch)
-            final_batch.non_tensor_batch["final_gen_batch_output"] = final_output
-            grouped_rollouts.append(
-                GroupedRolloutBatch(
-                    group_id=resolved_group_id,
-                    rollout_index=rollout_index,
-                    sampling_params=dict(resolved_variant),
-                    final_output=final_output,
-                )
-            )
-
         return grouped_rollouts
+
+    def _run_one_rollout(
+        self,
+        prompt_batch: Any,
+        rollout_index: int,
+        variant: dict[str, Any],
+        group_id: str,
+        *,
+        search_mode: str,
+        current_step: int,
+        total_steps: int,
+    ) -> GroupedRolloutBatch:
+        """Run a single rollout trajectory for one (prompt, variant) pair.
+
+        Designed to be safe when called on a **per-thread manager copy** inside
+        :func:`async_run_prompt_rollout_group`.  It manages only its own
+        ``self.config`` state (temperature override) — the caller is responsible
+        for saving / restoring any global Python or Torch RNG state when calling
+        from a sequential context.
+
+        Args:
+            prompt_batch:  Single-prompt batch (output of ``_single_prompt_batch``
+                           or ``prompt_batch_to_search_batch``).
+            rollout_index: 0-based index within the prompt group.
+            variant:       Sampling params for this rollout (temperature, seed, …).
+            group_id:      Shared group identifier for all rollouts of this prompt.
+            search_mode:   Forwarded to ``run_llm_loop``.
+            current_step:  Training step for curriculum scheduling.
+            total_steps:   Total training steps for curriculum scheduling.
+        """
+        from src.agent_loop.data import prompt_batch_to_search_batch
+
+        old_temperature = float(self.config.temperature)
+        try:
+            seed = variant.get("seed")
+            if seed is not None:
+                random.seed(int(seed))
+                torch.manual_seed(int(seed))
+            if "temperature" in variant:
+                self.config = dataclass_replace(
+                    self.config,
+                    temperature=float(variant["temperature"]),
+                )
+            gen_batch = prompt_batch_to_search_batch(prompt_batch)
+            gen_batch.non_tensor_batch["sampling_params"] = dict(variant)
+            final_batch, _ = self.run_llm_loop(
+                gen_batch=gen_batch,
+                search_mode=search_mode,
+                current_step=current_step,
+                total_steps=total_steps,
+            )
+        finally:
+            self.config = dataclass_replace(self.config, temperature=old_temperature)
+
+        final_batch.meta_info["group_id"] = group_id
+        final_batch.meta_info["rollout_index"] = rollout_index
+        final_batch.meta_info["sampling_params"] = dict(variant)
+        final_output = self.build_final_gen_batch_output(final_batch)
+        final_batch.non_tensor_batch["final_gen_batch_output"] = final_output
+        return GroupedRolloutBatch(
+            group_id=group_id,
+            rollout_index=rollout_index,
+            sampling_params=dict(variant),
+            final_output=final_output,
+        )
 
     def collate_scored_rollouts_for_training(
         self,
