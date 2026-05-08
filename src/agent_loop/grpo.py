@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from .agent_loop import AgentLoopBase, AgentLoopOutput
 from .data import PromptBatch
-from .reward import SearchRewardFunction
+from .reward import BatchJudgeFn, JudgeFn, SearchRewardFunction, _score_answers
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,7 @@ class ScoredGRPORollout:
     sampling_params: dict[str, Any]
     output: AgentLoopOutput
     reward: float
+    reward_component: str
     reward_components: dict[str, float]
     advantage: float
 
@@ -51,6 +52,37 @@ class GRPOAdvantageConfig:
     """How grouped rollout rewards are converted into training advantages."""
 
     mode: str = "group_std_normalized"
+    reward_component: str = "total"
+
+    @classmethod
+    def outcome_only(cls) -> "GRPOAdvantageConfig":
+        """Preset for critic-free final-outcome GRPO (DeepSeek-R1 / sparse reward).
+
+        Group-relative advantage from the terminal judge score only:
+
+            A_i = r_i - mean({r_j : group_j == group_i})
+            r_i = correctness_weight * judge(answer_i, ground_truth)
+
+        No std normalisation, no process shaping, no value model.
+        This is the sparse-reward variant described in the DeepSeek-R1 paper
+        and suited for long-CoT / agent trajectories.
+        """
+        return cls(mode="group_outcome", reward_component="terminal_reward")
+
+    @classmethod
+    def std_normalized(cls) -> "GRPOAdvantageConfig":
+        """Preset for std-normalized group-relative GRPO.
+
+        Advantages are mean-centered and divided by within-group std:
+
+            A_i = (r_i - mean(group)) / (std(group) + ε)
+
+        Uses the shaped total reward, which includes process-shaping terms
+        such as citation support, search efficiency, and duplicate-query
+        penalties.  If you want std-normalisation with sparse rewards, use
+        :meth:`outcome_only` and pass ``SearchRewardConfig.sparse_final_only()``.
+        """
+        return cls(mode="group_std_normalized", reward_component="total")
 
 
 def build_grpo_sampling_params(
@@ -164,28 +196,46 @@ def score_prompt_group(
     samples: list[GRPORolloutSample],
     *,
     ground_truth: str,
-    judge_fn: Callable[[str, str], float],
+    judge_fn: JudgeFn,
     reward_fn: SearchRewardFunction | None = None,
     advantage_config: GRPOAdvantageConfig | None = None,
+    batch_judge_fn: BatchJudgeFn | None = None,
 ) -> list[ScoredGRPORollout]:
-    """Score a prompt group and compute GRPO advantages within that group."""
+    """Score a prompt group and compute GRPO advantages within that group.
+
+    All rollouts in the group share the same ``ground_truth`` (they were all
+    sampled from the same prompt).  The judge is called once per sample, or
+    once for the whole group when ``batch_judge_fn`` is supplied — pass this
+    for LLM judges to avoid ``num_rollouts`` separate API calls.
+    """
     if not samples:
         return []
 
     reward_function = reward_fn or SearchRewardFunction()
     resolved_advantage_config = advantage_config or GRPOAdvantageConfig()
+
+    # Score all answers in one batch call if a batch judge is available.
+    answers = [s.output.final_answer or "" for s in samples]
+    gt_list = [ground_truth] * len(samples)
+    correctness_scores = _score_answers(
+        judge_fn, answers, gt_list, batch_judge_fn=batch_judge_fn
+    )
+
     rewards: list[float] = []
     reward_components: list[dict[str, float]] = []
     group_ids: list[str] = []
 
-    for sample in samples:
-        components = reward_function.reward_components(
-            sample.output,
-            ground_truth=ground_truth,
-            judge_fn=judge_fn,
+    for sample, correctness in zip(samples, correctness_scores):
+        components = reward_function._reward_components_from_correctness(
+            sample.output, correctness
         )
         reward_components.append(components)
-        rewards.append(components["total"])
+        rewards.append(
+            _select_reward_component(
+                components,
+                component=resolved_advantage_config.reward_component,
+            )
+        )
         group_ids.append(sample.group_id)
 
     advantages = _compute_advantages(
@@ -201,6 +251,7 @@ def score_prompt_group(
             sampling_params=sample.sampling_params,
             output=sample.output,
             reward=reward,
+            reward_component=resolved_advantage_config.reward_component,
             reward_components=components,
             advantage=advantage,
         )
@@ -228,6 +279,21 @@ def compute_grpo_outcome_advantage(rewards: list[float]) -> list[float]:
     return [reward - mean for reward in rewards]
 
 
+def _select_reward_component(
+    reward_components: dict[str, float],
+    *,
+    component: str,
+) -> float:
+    """Pick which scalar reward should feed GRPO advantage estimation."""
+    if component not in reward_components:
+        available = ", ".join(sorted(reward_components))
+        raise ValueError(
+            f"Unsupported GRPO reward component: {component!r}. "
+            f"Available components: {available}."
+        )
+    return float(reward_components[component])
+
+
 def _compute_advantages(
     reward_function: SearchRewardFunction,
     rewards: list[float],
@@ -250,15 +316,19 @@ def score_prompt_batch(
     grouped_samples: list[list[GRPORolloutSample]],
     *,
     ground_truths: list[str],
-    judge_fn: Callable[[str, str], float],
+    judge_fn: JudgeFn,
     reward_fn: SearchRewardFunction | None = None,
     advantage_config: GRPOAdvantageConfig | None = None,
+    batch_judge_fn: BatchJudgeFn | None = None,
 ) -> list[list[ScoredGRPORollout]]:
     """Score all rollout groups from a DataLoader batch.
 
     Args:
-        grouped_samples: output of `sample_prompt_batch` — one list per prompt.
-        ground_truths: aligned to `batch.ground_truths`.
+        grouped_samples: output of ``sample_prompt_batch`` — one list per prompt.
+        ground_truths: aligned to ``batch.ground_truths``.
+        batch_judge_fn: Optional batch judge called once per prompt group
+            instead of once per rollout.  Pass this for LLM judges to reduce
+            API calls from ``num_prompts * num_rollouts`` down to ``num_prompts``.
     """
     if len(grouped_samples) != len(ground_truths):
         raise ValueError("grouped_samples and ground_truths must have the same length.")
@@ -270,6 +340,7 @@ def score_prompt_batch(
             judge_fn=judge_fn,
             reward_fn=reward_function,
             advantage_config=advantage_config,
+            batch_judge_fn=batch_judge_fn,
         )
         for samples, gt in zip(grouped_samples, ground_truths)
     ]

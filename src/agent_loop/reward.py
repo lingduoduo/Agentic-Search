@@ -274,13 +274,25 @@ class SearchRewardFunction:
 
         The ``"total"`` key equals what :meth:`compute` returns.
         """
+        answer = output.final_answer or ""
+        correctness = judge_fn(answer, ground_truth) if answer else 0.0
+        return self._reward_components_from_correctness(output, correctness)
+
+    def _reward_components_from_correctness(
+        self,
+        output: AgentLoopOutput,
+        correctness: float,
+    ) -> dict[str, float]:
+        """Compute reward breakdown with a pre-scored correctness value.
+
+        Separating the judge call from the arithmetic lets callers batch all
+        judge calls upfront (e.g. using a single LLM API request for N rollouts)
+        and then compute the full breakdown per sample without re-calling the judge.
+        """
         cfg = self.config
         answer = output.final_answer or ""
         metrics = output.metrics
         ctx: AgentContext | None = output.context
-
-        # 1. Answer correctness (primary signal).
-        correctness = judge_fn(answer, ground_truth) if answer else 0.0
 
         # 2. Citation support: fraction of retrieved docs cited in the answer.
         citation_support = self._citation_support(answer, ctx)
@@ -480,48 +492,35 @@ class SearchRewardFunction:
     ) -> list[float]:
         """Compute std-normalized GRPO advantages within each prompt group.
 
-        This is a normalized wrapper around
-        :meth:`compute_grpo_outcome_advantages`. The underlying outcome
-        advantage is:
+        For each prompt group:
 
-            reward_i - mean(group_rewards)
-
-        and this method further scales it by ``group_std + eps``:
-
-            (reward_i - mean(group_rewards)) / (std(group_rewards) + eps)
+            advantage_i = (reward_i - mean(group)) / (std(group) + ε)
 
         Groups with a single sample get advantage 0.0 (no within-group signal).
+        Variance uses the population formula (N denominator).  If your trainer
+        uses sample variance (N-1), normalise at that layer instead.
 
-        Variance uses the population formula (N denominator) so that advantages
-        are scaled consistently regardless of group size.  If the surrounding
-        GRPO trainer uses sample variance (N-1), pass ``group_std`` from there
-        instead of calling this method directly.
-
-        Args:
-            rewards: One scalar reward per rollout.
-            group_ids: Prompt-group identifier for each rollout.  Rollouts that
-                share a ``group_id`` were generated from the same prompt and are
-                normalised together.
-
-        Returns:
-            A list of advantages aligned with *rewards*.
+        Single-pass: mean and std are computed together in one traversal of each
+        group rather than first centering then re-scanning for std.
         """
-        centered = self.compute_grpo_outcome_advantages(rewards, group_ids)
+        if len(rewards) != len(group_ids):
+            raise ValueError("rewards and group_ids must have the same length.")
 
         groups: dict[str, list[tuple[int, float]]] = {}
-        for idx, (gid, centered_adv) in enumerate(zip(group_ids, centered)):
-            groups.setdefault(gid, []).append((idx, centered_adv))
+        for idx, (gid, reward) in enumerate(zip(group_ids, rewards)):
+            groups.setdefault(gid, []).append((idx, reward))
 
-        advantages = [0.0] * len(centered)
+        advantages = [0.0] * len(rewards)
         for group in groups.values():
             if len(group) == 1:
-                continue  # single-sample group: no within-group signal
-            indices, centered_advantages = zip(*group)
-            # Population variance (N denominator) — see docstring for tradeoffs.
-            variance = sum(a**2 for a in centered_advantages) / len(centered_advantages)
+                continue
+            indices, group_rewards = zip(*group)
+            n = len(group_rewards)
+            mean = sum(group_rewards) / n
+            variance = sum((r - mean) ** 2 for r in group_rewards) / n
             std = math.sqrt(variance)
-            for idx, centered_adv in zip(indices, centered_advantages):
-                advantages[idx] = centered_adv / (std + 1e-8)
+            for idx, reward in zip(indices, group_rewards):
+                advantages[idx] = (reward - mean) / (std + 1e-8)
         return advantages
 
     # ------------------------------------------------------------------
