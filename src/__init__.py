@@ -43,6 +43,7 @@ __all__ = [
     "TensorConfig",
     "TensorHelper",
     "assign_group_relative_advantages",
+    "apply_safety_penalties_to_scored_rollouts",
     "format_search_trajectory_log",
     "AgentLoopBase",
     "AgentLoopConfig",
@@ -82,6 +83,7 @@ def __getattr__(name: str) -> Any:
         "TensorConfig",
         "TensorHelper",
         "assign_group_relative_advantages",
+        "apply_safety_penalties_to_scored_rollouts",
         "format_search_trajectory_log",
     }:
         llm_agent_module = import_module(".llm_agent", __name__)

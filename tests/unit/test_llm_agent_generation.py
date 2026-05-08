@@ -96,6 +96,7 @@ def _manager() -> LLMGenerationManager:
             max_response_length=16,
             max_obs_length=16,
             num_gpus=1,
+            allowed_actions=("plan", "search", "fetch", "answer"),
         ),
         generation_backend=DummyActorRollout(),
     )
@@ -111,6 +112,7 @@ def _manager_with_log_prob() -> LLMGenerationManager:
             max_response_length=16,
             max_obs_length=16,
             num_gpus=1,
+            allowed_actions=("plan", "search", "fetch", "answer"),
         ),
         generation_backend=DummyActorRolloutWithLogProb(),
     )
@@ -129,6 +131,30 @@ def test_postprocess_predictions_extracts_rollout_action_tags():
     )
     assert actions == ["search", "answer", "plan", "fetch", None]
     assert contents == ["cats", "42", "break it down", "https://example.com", ""]
+
+
+def test_parse_policy_actions_rejects_tags_outside_allowed_actions():
+    manager = LLMGenerationManager(
+        tokenizer=DummyTokenizer(),
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+            allowed_actions=("search", "answer"),
+        ),
+        generation_backend=DummyActorRollout(),
+    )
+
+    actions = manager.parse_policy_actions(
+        ["<search>cats</search>", "<plan>outline</plan>", "<fetch>url</fetch>"]
+    )
+
+    assert actions[0].tag == "search"
+    assert actions[1].tag is None
+    assert actions[2].tag is None
 
 
 def test_execute_predictions_keeps_search_payload_aligned():
@@ -2514,6 +2540,7 @@ def test_run_llm_loop_supports_search_fetch_answer_second_rounds():
             max_response_length=16,
             max_obs_length=32,
             num_gpus=1,
+            allowed_actions=("plan", "search", "fetch", "answer"),
         ),
         generation_backend=SequencedActorRollout(
             responses=[
@@ -3328,6 +3355,77 @@ def test_run_grpo_training_step_stitches_rollout_reward_advantage_and_loss():
     assert actor_backend.scale.detach().item() != pytest.approx(before)
 
 
+def test_run_grpo_training_step_applies_safety_penalties_before_advantage():
+    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src.llm_agent.generation import GRPORolloutSafetyConfig
+
+    tokenizer = DummyTokenizer()
+    actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)
+    manager = LLMGenerationManager(
+        tokenizer=tokenizer,
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=actor_backend,
+    )
+
+    safe = _make_training_grouped_rollout(
+        "g1",
+        0,
+        "Hopfield and Hinton",
+        ground_truth="Hopfield and Hinton",
+    )
+    unsafe = _make_training_grouped_rollout(
+        "g1",
+        1,
+        "Hopfield and Hinton",
+        ground_truth="Hopfield and Hinton",
+    )
+    unsafe.final_output.rollout_outputs[0].metrics["invalid_action_count"] = 1.0
+    unsafe.final_output.rollout_outputs[0].metrics["repeated_search_queries"] = 1.0
+
+    manager.run_prompt_rollout_group = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: [safe, unsafe]
+    )
+
+    examples = [
+        {
+            "question": "Who won the 2024 Nobel Prize in Physics?",
+            "ground_truth": "Hopfield and Hinton",
+            "tools": ["search"],
+        }
+    ]
+    prompt_batch = next(
+        iter(build_prompt_dataloader(examples, tokenizer=tokenizer, batch_size=1))
+    )
+
+    result = manager.run_grpo_training_step(
+        prompt_batch,
+        search_mode="google",
+        sampling_params={"temperature": 0.8, "top_p": 0.95},
+        judge_fn=lambda a, g: 1.0 if a.strip() == g.strip() else 0.0,
+        num_rollouts=2,
+        reward_fn=SearchRewardFunction(SearchRewardConfig.sparse_final_only()),
+        old_backend=FixedLogProbBackend(-1.0),
+        new_backend=actor_backend,
+        safety_config=GRPORolloutSafetyConfig(
+            invalid_action_penalty=-0.2,
+            repeated_query_penalty=-0.1,
+            max_search_rounds=3,
+        ),
+    )
+
+    assert result.scored_rollouts[0].reward == pytest.approx(1.0)
+    assert result.scored_rollouts[1].reward == pytest.approx(0.7)
+    assert result.scored_rollouts[0].advantage > 0.0
+    assert result.scored_rollouts[1].advantage < 0.0
+
+
 def test_format_group_rollout_shows_all_rollout_indices_and_group_id():
     from src.llm_agent.generation import format_group_rollout
 
@@ -3729,6 +3827,286 @@ def test_apply_rollout_safety_penalties_all_violations_combined():
     result = apply_rollout_safety_penalties(1.0, out, config=config)
     # -0.2 (1 invalid) + -0.2 (2 repeated) + -0.2 (2 excess rounds) = -0.6
     assert result == pytest.approx(0.4)
+
+
+# ── apply_safety_penalties_to_scored_rollouts ────────────────────────────────
+
+
+def _make_scored_rollout_with_steps(
+    group_id,
+    rollout_index,
+    *,
+    reward=0.0,
+    advantage=0.0,
+    metrics=None,
+    step_tags=None,
+):
+    """Helper: builds ScoredGroupedRollout with controllable steps and metrics."""
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        FinalGenBatchOutput,
+        GroupedRolloutBatch,
+        ReActStep,
+        RolloutTrajectory,
+        ScoredGroupedRollout,
+        SearchStep,
+        SearchTrajectoryLog,
+    )
+
+    steps = [
+        ReActStep(
+            turn=i,
+            action_tag=tag,
+            action_content="content",
+            observation="",
+            is_terminal=(tag == "answer"),
+        )
+        for i, tag in enumerate(step_tags or [])
+    ]
+    traj = RolloutTrajectory(
+        batch_index=0,
+        prompt_token_ids=[1, 2],
+        response_token_ids=[3, 4],
+        response_with_observation_mask=[3, 4],
+        trajectory_turns=len(steps),
+        steps=steps,
+        final_answer=None,
+        finished_without_answer=False,
+    )
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question="Q?",
+        steps=[
+            SearchStep(
+                step_id=i,
+                state="",
+                model_output="",
+                action_type=tag or "invalid",
+                action_value="",
+                observation=None,
+            )
+            for i, tag in enumerate(step_tags or [])
+        ],
+        final_answer=None,
+        finished_without_answer=False,
+    )
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.zeros(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.zeros(1, 0, dtype=torch.long),
+        }
+    )
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=len(steps),
+        metrics=metrics or {},
+    )
+    final_output = FinalGenBatchOutput(
+        search_batch=batch,
+        trajectories=[traj],
+        trajectory_logs=[log],
+        rollout_outputs=[out],
+        trajectory_turns=[len(steps)],
+    )
+    grb = GroupedRolloutBatch(
+        group_id=group_id,
+        rollout_index=rollout_index,
+        sampling_params={"temperature": 0.8},
+        final_output=final_output,
+    )
+    return ScoredGroupedRollout(
+        group_id=group_id,
+        rollout_index=rollout_index,
+        sampling_params=grb.sampling_params,
+        final_output=final_output,
+        reward=reward,
+        advantage=advantage,
+        reward_components=None,
+    )
+
+
+def test_apply_safety_penalties_to_scored_rollouts_empty_returns_empty():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    assert (
+        apply_safety_penalties_to_scored_rollouts([], config=GRPORolloutSafetyConfig())
+        == []
+    )
+
+
+def test_apply_safety_penalties_to_scored_rollouts_none_reward_components_no_crash():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    scored = [
+        _make_scored_rollout_with_steps("g1", 0, reward=1.0, step_tags=["answer"])
+    ]
+    result = apply_safety_penalties_to_scored_rollouts(
+        scored, config=GRPORolloutSafetyConfig()
+    )
+    assert len(result) == 1
+    assert result[0].reward == pytest.approx(1.0)
+
+
+def test_apply_safety_penalties_to_scored_rollouts_empty_rollout_outputs_no_crash():
+    from src.llm_agent.generation import (
+        FinalGenBatchOutput,
+        GRPORolloutSafetyConfig,
+        ScoredGroupedRollout,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.zeros(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.zeros(1, 0, dtype=torch.long),
+        }
+    )
+    final_output = FinalGenBatchOutput(
+        search_batch=batch,
+        trajectories=[],
+        trajectory_logs=[],
+        rollout_outputs=[],  # empty — should not crash
+        trajectory_turns=[],
+    )
+    scored = [
+        ScoredGroupedRollout(
+            group_id="g1",
+            rollout_index=0,
+            sampling_params={},
+            final_output=final_output,
+            reward=0.5,
+            advantage=0.0,
+            reward_components=None,
+        )
+    ]
+    result = apply_safety_penalties_to_scored_rollouts(
+        scored, config=GRPORolloutSafetyConfig()
+    )
+    assert result[0].reward == pytest.approx(0.5)
+
+
+def test_apply_safety_penalties_to_scored_rollouts_disallowed_tag_deducted():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    # <plan> is not in allowed_actions=("search", "answer")
+    scored = [
+        _make_scored_rollout_with_steps(
+            "g1", 0, reward=1.0, step_tags=["plan", "search", "answer"]
+        )
+    ]
+    config = GRPORolloutSafetyConfig(
+        allowed_actions=("search", "answer"),
+        invalid_action_penalty=-0.2,
+    )
+    result = apply_safety_penalties_to_scored_rollouts(scored, config=config)
+    # 1 disallowed <plan> tag → -0.2
+    assert result[0].reward == pytest.approx(0.8)
+    assert "disallowed_action_penalty" in result[0].reward_components
+
+
+def test_apply_safety_penalties_to_scored_rollouts_allowed_tags_no_penalty():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    scored = [
+        _make_scored_rollout_with_steps(
+            "g1", 0, reward=1.0, step_tags=["search", "answer"]
+        )
+    ]
+    config = GRPORolloutSafetyConfig(allowed_actions=("search", "answer"))
+    result = apply_safety_penalties_to_scored_rollouts(scored, config=config)
+    assert result[0].reward == pytest.approx(1.0)
+    assert "disallowed_action_penalty" not in result[0].reward_components
+
+
+def test_apply_safety_penalties_to_scored_rollouts_metric_penalties_in_components():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    scored = [
+        _make_scored_rollout_with_steps(
+            "g1",
+            0,
+            reward=1.0,
+            metrics={"invalid_action_count": 1, "repeated_search_queries": 2},
+        )
+    ]
+    config = GRPORolloutSafetyConfig(
+        invalid_action_penalty=-0.2,
+        repeated_query_penalty=-0.1,
+    )
+    result = apply_safety_penalties_to_scored_rollouts(scored, config=config)
+    comps = result[0].reward_components
+    assert comps["invalid_action_penalty"] == pytest.approx(-0.2)
+    assert comps["repeated_query_penalty"] == pytest.approx(-0.2)
+
+
+def test_apply_safety_penalties_to_scored_rollouts_recomputes_advantages():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    # Two rollouts: one has an excess search, the other doesn't
+    scored = [
+        _make_scored_rollout_with_steps(
+            "g1",
+            0,
+            reward=1.0,
+            metrics={"search_rounds": 5},  # excess = 2 → -0.2
+        ),
+        _make_scored_rollout_with_steps("g1", 1, reward=1.0),
+    ]
+    config = GRPORolloutSafetyConfig(max_search_rounds=3, excess_search_penalty=-0.1)
+    result = apply_safety_penalties_to_scored_rollouts(scored, config=config)
+
+    # After penalties: rewards = [0.8, 1.0]; mean = 0.9
+    # Advantages (normalize=False, default): [0.8-0.9, 1.0-0.9] = [-0.1, 0.1]
+    assert result[0].reward == pytest.approx(0.8)
+    assert result[1].reward == pytest.approx(1.0)
+    assert result[0].advantage == pytest.approx(-0.1)
+    assert result[1].advantage == pytest.approx(0.1)
+
+
+def test_apply_safety_penalties_to_scored_rollouts_preserves_existing_components():
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        ScoredGroupedRollout,
+        apply_safety_penalties_to_scored_rollouts,
+    )
+
+    scored = [
+        _make_scored_rollout_with_steps("g1", 0, reward=1.0, step_tags=["answer"])
+    ]
+    # Manually set a pre-existing component
+    scored[0] = ScoredGroupedRollout(
+        group_id=scored[0].group_id,
+        rollout_index=scored[0].rollout_index,
+        sampling_params=scored[0].sampling_params,
+        final_output=scored[0].final_output,
+        reward=scored[0].reward,
+        advantage=scored[0].advantage,
+        reward_components={"correctness": 1.0},
+    )
+    result = apply_safety_penalties_to_scored_rollouts(
+        scored, config=GRPORolloutSafetyConfig()
+    )
+    assert result[0].reward_components["correctness"] == pytest.approx(1.0)
 
 
 # ── save_training_batch_jsonl ────────────────────────────────────────────────
