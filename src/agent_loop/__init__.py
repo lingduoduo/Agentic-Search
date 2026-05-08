@@ -48,7 +48,7 @@ from .grpo import (
     sample_prompt_group,
     score_prompt_group,
 )
-from .reward import SearchRewardConfig, SearchRewardFunction
+from .reward import BatchJudgeFn, JudgeFn, SearchRewardConfig, SearchRewardFunction
 from .search_agent_loop import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
@@ -78,6 +78,8 @@ __all__ = [
     "build_prompt_ids_from_messages",
     "build_prompt_messages",
     "prompt_batch_to_search_batch",
+    "BatchJudgeFn",
+    "JudgeFn",
     "SearchRewardConfig",
     "SearchRewardFunction",
     "AgentLoopBase",

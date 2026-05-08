@@ -9,6 +9,27 @@ from typing import Callable
 from .agent_loop import AgentLoopOutput
 from .context import AgentContext
 
+# Type aliases for judge callables.
+JudgeFn = Callable[[str, str], float]
+BatchJudgeFn = Callable[[list[str], list[str]], list[float]]
+
+
+def _score_answers(
+    judge_fn: JudgeFn,
+    answers: list[str],
+    ground_truths: list[str],
+    *,
+    batch_judge_fn: BatchJudgeFn | None = None,
+) -> list[float]:
+    """Score answer/ground-truth pairs, preferring the batch judge when provided.
+
+    Pass `batch_judge_fn` to have an LLM judge score all pairs in a single
+    API call instead of making N separate round-trips.
+    """
+    if batch_judge_fn is not None:
+        return [float(s) for s in batch_judge_fn(answers, ground_truths)]
+    return [float(judge_fn(a, g)) for a, g in zip(answers, ground_truths)]
+
 
 @dataclass(frozen=True)
 class SearchRewardConfig:
@@ -124,6 +145,27 @@ class SearchRewardFunction:
         """
         return self.reward_components(output, ground_truth, judge_fn)["total"]
 
+    def compute_terminal_reward(
+        self,
+        output: AgentLoopOutput,
+        ground_truth: str,
+        judge_fn: Callable[[str, str], float],
+    ) -> float:
+        """Return the final-answer reward with no process shaping.
+
+        This is the strict sparse-reward signal used in many Agent RL setups:
+
+            reward = judge_fn(final_answer, ground_truth)
+
+        It ignores search, retrieval, reasoning, and fetch behaviour entirely.
+        Use this when you want an explicit terminal-only optimisation target
+        regardless of the configured reward aggregation mode.
+        """
+        answer = output.final_answer or ""
+        if not answer:
+            return 0.0
+        return float(self.config.correctness_weight) * judge_fn(answer, ground_truth)
+
     def compute_token_rewards(
         self,
         output: AgentLoopOutput,
@@ -147,6 +189,80 @@ class SearchRewardFunction:
         token_rewards = [0.0] * n
         token_rewards[self._last_action_idx(output)] = scalar
         return token_rewards
+
+    def compute_sparse_token_rewards(
+        self,
+        output: AgentLoopOutput,
+        ground_truth: str,
+        judge_fn: Callable[[str, str], float],
+    ) -> list[float]:
+        """Strict sparse token rewards using only the terminal answer score.
+
+        Unlike :meth:`compute_token_rewards`, this helper never includes any
+        process shaping. The final-answer reward is placed only at the last
+        model-generated token and every earlier token gets 0.0.
+        """
+        scalar = self.compute_terminal_reward(output, ground_truth, judge_fn)
+        n = len(output.response_ids)
+        if n == 0:
+            return []
+        token_rewards = [0.0] * n
+        token_rewards[self._last_action_idx(output)] = scalar
+        return token_rewards
+
+    def compute_batch_sparse_token_rewards(
+        self,
+        outputs: list[AgentLoopOutput],
+        ground_truths: list[str],
+        judge_fn: JudgeFn,
+        *,
+        batch_judge_fn: BatchJudgeFn | None = None,
+    ) -> list[list[float]]:
+        """Strict sparse token rewards for an entire batch in one call.
+
+        The standard Agent RL sparse-reward loop:
+
+            for each rollout i:
+                token_rewards[i][last_action_token] = correctness_weight
+                                                      * judge(answer_i, gt_i)
+                token_rewards[i][all other tokens]  = 0.0
+
+        Search tokens, reasoning tokens, and retrieval tokens always receive
+        zero reward — only the final ``<answer>`` token carries the signal.
+
+        Args:
+            outputs: One :class:`AgentLoopOutput` per rollout.
+            ground_truths: Reference answer for each rollout.
+            judge_fn: ``(answer, ground_truth) -> float`` in ``[0, 1]``.
+            batch_judge_fn: Optional batch variant
+                ``(list[answers], list[ground_truths]) -> list[float]``.
+                Supply this for LLM judges so all N pairs are scored in a
+                single API call rather than N separate round-trips.
+
+        Returns:
+            One token-level reward vector per rollout.
+        """
+        if len(outputs) != len(ground_truths):
+            raise ValueError("outputs and ground_truths must have the same length.")
+        answers = [output.final_answer or "" for output in outputs]
+        scores = _score_answers(
+            judge_fn, answers, ground_truths, batch_judge_fn=batch_judge_fn
+        )
+        result: list[list[float]] = []
+        for output, score in zip(outputs, scores):
+            n = len(output.response_ids)
+            if n == 0:
+                result.append([])
+                continue
+            terminal = (
+                float(self.config.correctness_weight) * score
+                if output.final_answer
+                else 0.0
+            )
+            token_rewards = [0.0] * n
+            token_rewards[self._last_action_idx(output)] = terminal
+            result.append(token_rewards)
+        return result
 
     def reward_components(
         self,
@@ -253,15 +369,17 @@ class SearchRewardFunction:
         self,
         outputs: list[AgentLoopOutput],
         ground_truths: list[str],
-        judge_fn: Callable[[str, str], float],
+        judge_fn: JudgeFn,
         group_ids: list[str],
+        *,
+        batch_judge_fn: BatchJudgeFn | None = None,
     ) -> list[list[float]]:
         """End-to-end GRPO outcome advantages as sparse token-level vectors.
 
         Full pipeline:
 
-            1. Scalar outcome reward per rollout:
-                   r_i = judge_fn(answer_i, gt_i)
+            1. Terminal reward per rollout (sparse — no process shaping):
+                   r_i = correctness_weight * judge_fn(answer_i, gt_i)
 
             2. Group-relative centering (no value model):
                    A_i = r_i - mean({r_j : group_j == group_i})
@@ -283,6 +401,10 @@ class SearchRewardFunction:
             judge_fn: ``(answer, ground_truth) -> float`` in ``[0, 1]``.
             group_ids: Prompt-group identifier.  Rollouts sharing an ID were
                 sampled from the same prompt and are normalised together.
+            batch_judge_fn: Optional batch variant
+                ``(list[answers], list[ground_truths]) -> list[float]``.
+                Supply this for LLM judges to score all N rollouts in a
+                single API call instead of N separate calls.
 
         Returns:
             One token-level advantage vector per rollout, aligned with outputs.
@@ -294,9 +416,15 @@ class SearchRewardFunction:
                 "outputs, ground_truths, and group_ids must have the same length."
             )
 
+        answers = [output.final_answer or "" for output in outputs]
+        scores = _score_answers(
+            judge_fn, answers, ground_truths, batch_judge_fn=batch_judge_fn
+        )
         rewards = [
-            self.compute(output, gt, judge_fn)
-            for output, gt in zip(outputs, ground_truths)
+            float(self.config.correctness_weight) * score
+            if output.final_answer
+            else 0.0
+            for output, score in zip(outputs, scores)
         ]
         scalar_advantages = self.compute_batch_advantages(rewards, group_ids)
 
