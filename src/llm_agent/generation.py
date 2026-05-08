@@ -250,6 +250,9 @@ class RolloutTrajectory:
     steps: list[ReActStep]
     final_answer: str | None
     finished_without_answer: bool
+    tokens: list[int] | None = None
+    attention_mask: list[int] | None = None
+    response_mask: list[int] | None = None
     old_log_probs: list[float] | None = None
     new_log_probs: list[float] | None = None
 
@@ -797,6 +800,45 @@ def format_scored_group_rollout(
         advantages=[s.advantage for s in scored_rollouts],
         max_obs_chars=max_obs_chars,
     )
+
+
+def trajectory_log_prob_pack(
+    traj: "RolloutTrajectory",
+) -> dict[str, list]:
+    """Extract the four training-aligned arrays from one rollout trajectory.
+
+    All returned lists have the same length (prompt length + response length)
+    so they can be zipped directly in the training loss loop without slicing::
+
+        pack = trajectory_log_prob_pack(traj)
+        loss = sum(
+            -lp * advantage
+            for lp, mask in zip(pack["old_log_probs"], pack["response_mask"])
+            if mask
+        )
+
+    Mask semantics — ``response_mask`` is 1 only for model-generated action
+    tokens inside ``<search>…</search>`` and ``<answer>…</answer>`` spans.
+    It is 0 for:
+
+        - prompt tokens  (model didn't generate these)
+        - ``<information>…</information>`` observation tokens  (environment,
+          not model action — never included in the policy gradient loss)
+
+    If ``old_log_probs`` is ``None`` (backend doesn't implement
+    ``compute_log_prob``), this falls back to zeros of the correct length
+    so the structure is always valid.
+
+    Returns a dict with keys: ``tokens``, ``attention_mask``,
+    ``response_mask``, ``old_log_probs``.
+    """
+    n = len(traj.tokens or [])
+    return {
+        "tokens": list(traj.tokens or []),
+        "attention_mask": list(traj.attention_mask or [1] * n),
+        "response_mask": list(traj.response_mask or [0] * n),
+        "old_log_probs": list(traj.old_log_probs or [0.0] * n),
+    }
 
 
 def format_group_rollout(
@@ -1635,7 +1677,16 @@ class LLMGenerationManager:
         batch.non_tensor_batch["trajectories"] = [
             dataclass_replace(
                 traj,
-                **{store_key: log_probs[i].tolist() if i < log_probs.shape[0] else []},
+                **{
+                    store_key: (
+                        # Prepend prompt-length zeros so old/new_log_probs aligns with
+                        # traj.tokens (prompt + response) and traj.response_mask.
+                        # Training loops can then zip all four arrays without slicing:
+                        #   tokens, attention_mask, response_mask, old_log_probs
+                        [0.0] * len(traj.prompt_token_ids)
+                        + (log_probs[i].tolist() if i < log_probs.shape[0] else [])
+                    )
+                },
             )
             for i, traj in enumerate(trajectories)
         ]
@@ -2953,6 +3004,15 @@ class LLMGenerationManager:
         prompt_ids = left_side["input_ids"].tolist()
         response_ids = right_side["responses"].tolist()
         response_with_obs = right_side["responses_with_info_mask"].tolist()
+        prompt_attention_mask = self.tensor_fn.create_attention_mask(
+            left_side["input_ids"]
+        ).tolist()
+        response_attention_mask = self.tensor_fn.create_attention_mask(
+            right_side["responses"]
+        ).tolist()
+        response_action_mask = self.tensor_fn.create_attention_mask(
+            right_side["responses_with_info_mask"]
+        ).tolist()
 
         react_trajectory = meta_info.get("react_trajectory", [])
         trajectory_turns = meta_info.get("trajectory_turns", [0] * len(prompt_ids))
@@ -2986,6 +3046,12 @@ class LLMGenerationManager:
                     finished_without_answer=finished_without_answer[batch_index]
                     if batch_index < len(finished_without_answer)
                     else True,
+                    tokens=list(prompt_ids[batch_index])
+                    + list(response_ids[batch_index]),
+                    attention_mask=list(prompt_attention_mask[batch_index])
+                    + list(response_attention_mask[batch_index]),
+                    response_mask=([0] * len(prompt_ids[batch_index]))
+                    + list(response_action_mask[batch_index]),
                 )
             )
         return trajectories
