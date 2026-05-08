@@ -59,6 +59,16 @@ class FixedLogProbBackend(DummyActorRollout):
         )
 
 
+class TokenWeightedLogProbBackend(DummyActorRollout):
+    def __init__(self, initial_scale: float = -0.05):
+        self.scale = torch.nn.Parameter(
+            torch.tensor(initial_scale, dtype=torch.float32)
+        )
+
+    def compute_log_prob(self, batch):
+        return self.scale * batch.batch["responses"].to(dtype=torch.float32)
+
+
 class SequencedActorRollout:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -2890,6 +2900,120 @@ def _make_grouped_rollout(group_id, rollout_index, answer, temperature, seed):
     )
 
 
+def _make_training_grouped_rollout(
+    group_id,
+    rollout_index,
+    answer,
+    *,
+    prompt_ids=None,
+    response_ids=None,
+    response_with_info_mask=None,
+    question="Who won the 2024 Nobel Prize in Physics?",
+    ground_truth="Hopfield and Hinton",
+    temperature=0.8,
+    seed=0,
+):
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        FinalGenBatchOutput,
+        GroupedRolloutBatch,
+        RolloutTrajectory,
+        SearchStep,
+        SearchTrajectoryLog,
+    )
+
+    prompt_ids = list(prompt_ids or [11, 12])
+    response_ids = list(response_ids or [21, 22])
+    response_with_info_mask = list(response_with_info_mask or response_ids)
+    response_mask = [1 if tid != 0 else 0 for tid in response_with_info_mask]
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question=question,
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="",
+                model_output=f"<answer>{answer}</answer>",
+                action_type="answer",
+                action_value=answer,
+                observation=None,
+                done=True,
+            )
+        ],
+        final_answer=answer,
+        finished_without_answer=False,
+    )
+    traj = RolloutTrajectory(
+        batch_index=0,
+        prompt_token_ids=prompt_ids,
+        response_token_ids=response_ids,
+        response_with_observation_mask=response_with_info_mask,
+        trajectory_turns=1,
+        steps=[],
+        final_answer=answer,
+        finished_without_answer=False,
+        tokens=prompt_ids + response_ids,
+        attention_mask=[1] * (len(prompt_ids) + len(response_ids)),
+        response_mask=[0] * len(prompt_ids) + response_mask,
+    )
+    batch = SearchBatch.from_dict(
+        {
+            "prompts": torch.tensor([prompt_ids], dtype=torch.long),
+            "responses": torch.tensor([response_ids], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor(
+                [response_with_info_mask], dtype=torch.long
+            ),
+            "input_ids": torch.tensor([prompt_ids + response_ids], dtype=torch.long),
+            "attention_mask": torch.ones(
+                1, len(prompt_ids) + len(response_ids), dtype=torch.long
+            ),
+            "info_mask": torch.tensor(
+                [[1] * len(prompt_ids) + response_mask],
+                dtype=torch.long,
+            ),
+            "position_ids": torch.arange(
+                len(prompt_ids) + len(response_ids), dtype=torch.long
+            ).unsqueeze(0),
+        }
+    )
+    batch.meta_info = {
+        "trajectory_turns": [1],
+        "final_answers": [answer],
+        "finished_without_answer": [False],
+        "group_id": group_id,
+        "rollout_index": rollout_index,
+    }
+    batch.non_tensor_batch = {
+        "trajectories": [traj],
+        "ground_truth": [ground_truth],
+        "question": [question],
+    }
+    out = AgentLoopOutput(
+        prompt_ids=prompt_ids,
+        response_ids=response_ids,
+        response_mask=response_mask,
+        num_turns=1,
+        metrics={},
+        context=None,
+        final_answer=answer,
+    )
+    out.group_id = group_id
+    out.rollout_index = rollout_index
+    final_output = FinalGenBatchOutput(
+        search_batch=batch,
+        trajectories=[traj],
+        trajectory_logs=[log],
+        rollout_outputs=[out],
+        trajectory_turns=[1],
+    )
+    return GroupedRolloutBatch(
+        group_id=group_id,
+        rollout_index=rollout_index,
+        sampling_params={"temperature": temperature, "seed": seed},
+        final_output=final_output,
+    )
+
+
 def test_score_group_rollout_assigns_reward_and_advantage_per_rollout():
     from src.agent_loop import SearchRewardConfig, SearchRewardFunction
     from src.llm_agent.generation import score_group_rollout
@@ -3058,6 +3182,150 @@ def test_assign_group_relative_advantages_rejects_length_mismatch():
             rewards=[1.0],
             reward_components=[{"terminal_reward": 1.0}, {"terminal_reward": 0.0}],
         )
+
+
+def test_collate_scored_rollouts_for_training_builds_sparse_advantages():
+    from src.llm_agent.generation import ScoredGroupedRollout
+
+    manager = _manager()
+    rollout_a = _make_training_grouped_rollout(
+        "g1",
+        0,
+        "right",
+        response_ids=[31, 32, 33],
+        response_with_info_mask=[31, 0, 33],
+    )
+    rollout_b = _make_training_grouped_rollout(
+        "g1",
+        1,
+        "wrong",
+        response_ids=[41, 42],
+        response_with_info_mask=[41, 42],
+    )
+    rollout_a.final_output.search_batch.batch["old_log_probs"] = torch.tensor(
+        [[-1.0, 0.0, -1.2]], dtype=torch.float32
+    )
+    rollout_b.final_output.search_batch.batch["old_log_probs"] = torch.tensor(
+        [[-0.9, -1.1]], dtype=torch.float32
+    )
+
+    scored = [
+        ScoredGroupedRollout(
+            group_id="g1",
+            rollout_index=0,
+            sampling_params=rollout_a.sampling_params,
+            final_output=rollout_a.final_output,
+            reward=1.0,
+            reward_components={"terminal_reward": 1.0},
+            advantage=0.5,
+        ),
+        ScoredGroupedRollout(
+            group_id="g1",
+            rollout_index=1,
+            sampling_params=rollout_b.sampling_params,
+            final_output=rollout_b.final_output,
+            reward=0.0,
+            reward_components={"terminal_reward": 0.0},
+            advantage=-0.5,
+        ),
+    ]
+
+    batch = manager.collate_scored_rollouts_for_training(scored)
+
+    assert batch.batch["advantages"].shape == (2, 3)
+    assert torch.allclose(
+        batch.batch["advantages"],
+        torch.tensor([[0.0, 0.0, 0.5], [0.0, -0.5, 0.0]], dtype=torch.float32),
+    )
+    assert torch.allclose(
+        batch.batch["old_log_probs"],
+        torch.tensor([[-1.0, 0.0, -1.2], [-0.9, -1.1, 0.0]], dtype=torch.float32),
+    )
+    assert batch.meta_info["group_ids"] == ["g1", "g1"]
+    assert batch.meta_info["rollout_indices"] == [0, 1]
+
+
+def test_run_grpo_training_step_stitches_rollout_reward_advantage_and_loss():
+    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+
+    tokenizer = DummyTokenizer()
+    actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)
+    manager = LLMGenerationManager(
+        tokenizer=tokenizer,
+        config=GenerationConfig(
+            max_turns=2,
+            max_start_length=8,
+            max_prompt_length=32,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=actor_backend,
+    )
+
+    grouped = [
+        _make_training_grouped_rollout(
+            "g1",
+            0,
+            "Hopfield and Hinton",
+            response_ids=[2, 3],
+            response_with_info_mask=[2, 3],
+            ground_truth="Hopfield and Hinton",
+        ),
+        _make_training_grouped_rollout(
+            "g1",
+            1,
+            "wrong answer",
+            response_ids=[4, 5],
+            response_with_info_mask=[4, 5],
+            ground_truth="Hopfield and Hinton",
+        ),
+    ]
+
+    manager.run_prompt_rollout_group = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: grouped
+    )
+
+    examples = [
+        {
+            "question": "Who won the 2024 Nobel Prize in Physics?",
+            "ground_truth": "Hopfield and Hinton",
+            "tools": ["search"],
+        }
+    ]
+    prompt_batch = next(
+        iter(build_prompt_dataloader(examples, tokenizer=tokenizer, batch_size=1))
+    )
+
+    optimizer = torch.optim.SGD([actor_backend.scale], lr=0.1)
+    before = actor_backend.scale.detach().item()
+
+    result = manager.run_grpo_training_step(
+        prompt_batch,
+        search_mode="google",
+        sampling_params={"temperature": 0.8, "top_p": 0.95},
+        judge_fn=lambda a, g: 1.0 if a.strip() == g.strip() else 0.0,
+        num_rollouts=2,
+        reward_fn=SearchRewardFunction(SearchRewardConfig.sparse_final_only()),
+        old_backend=FixedLogProbBackend(-1.0),
+        new_backend=actor_backend,
+        ref_backend=FixedLogProbBackend(-1.2),
+        loss_config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.05),
+        optimizer=optimizer,
+    )
+
+    assert len(result.group_results) == 1
+    assert len(result.scored_rollouts) == 2
+    assert result.optimizer_stepped is True
+    assert "advantages" in result.training_batch.batch
+    assert "old_log_probs" in result.training_batch.batch
+    assert "new_log_probs" in result.training_batch.batch
+    assert "ref_log_probs" in result.training_batch.batch
+    assert "policy_loss" in result.training_batch.batch
+    assert "grpo_policy_loss" in result.training_batch.batch
+    assert "kl_penalty" in result.training_batch.batch
+    assert result.loss.requires_grad is True
+    assert actor_backend.scale.detach().item() != pytest.approx(before)
 
 
 def test_format_group_rollout_shows_all_rollout_indices_and_group_id():
@@ -3305,3 +3573,332 @@ def test_run_llm_loop_extracts_final_answer_from_answer_turn():
     ]
     assert final_batch.meta_info["finished_without_answer"] == [False]
     assert trajectory_turns == [2]
+
+
+# ── Priority 9: Safety constraints ──────────────────────────────────────────
+
+
+def _make_scored_rollout(
+    group_id, rollout_index, *, reward, advantage, reward_components=None
+):
+    """Helper that builds a minimal ScoredGroupedRollout for testing."""
+    from src.llm_agent.generation import ScoredGroupedRollout
+
+    grb = _make_grouped_rollout(group_id, rollout_index, "answer", 0.8, 0)
+    return ScoredGroupedRollout(
+        group_id=group_id,
+        rollout_index=rollout_index,
+        sampling_params=grb.sampling_params,
+        final_output=grb.final_output,
+        reward=reward,
+        advantage=advantage,
+        reward_components=reward_components,
+    )
+
+
+def test_grpo_rollout_safety_config_defaults():
+    from src.llm_agent.generation import GRPORolloutSafetyConfig
+
+    cfg = GRPORolloutSafetyConfig()
+    assert cfg.max_search_rounds == 3
+    assert cfg.max_total_rounds == 6
+    assert cfg.invalid_action_penalty == pytest.approx(-0.2)
+    assert cfg.repeated_query_penalty == pytest.approx(-0.1)
+    assert "search" in cfg.allowed_actions
+    assert "answer" in cfg.allowed_actions
+
+
+def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_rollout_safety_penalties,
+    )
+
+    out = AgentLoopOutput(
+        prompt_ids=[], response_ids=[], response_mask=[], num_turns=1, metrics={}
+    )
+    assert apply_rollout_safety_penalties(
+        1.0, out, config=GRPORolloutSafetyConfig()
+    ) == pytest.approx(1.0)
+
+
+def test_apply_rollout_safety_penalties_invalid_action_deducted():
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_rollout_safety_penalties,
+    )
+
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=2,
+        metrics={"invalid_action_count": 2},
+    )
+    result = apply_rollout_safety_penalties(
+        1.0, out, config=GRPORolloutSafetyConfig(invalid_action_penalty=-0.2)
+    )
+    assert result == pytest.approx(0.6)  # 1.0 + 2 * -0.2
+
+
+def test_apply_rollout_safety_penalties_repeated_query_deducted():
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_rollout_safety_penalties,
+    )
+
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=3,
+        metrics={"repeated_search_queries": 3},
+    )
+    result = apply_rollout_safety_penalties(
+        1.0, out, config=GRPORolloutSafetyConfig(repeated_query_penalty=-0.1)
+    )
+    assert result == pytest.approx(0.7)  # 1.0 + 3 * -0.1
+
+
+def test_apply_rollout_safety_penalties_excess_search_deducted():
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_rollout_safety_penalties,
+    )
+
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=5,
+        metrics={"search_rounds": 5},
+    )
+    config = GRPORolloutSafetyConfig(max_search_rounds=3, excess_search_penalty=-0.1)
+    result = apply_rollout_safety_penalties(1.0, out, config=config)
+    assert result == pytest.approx(0.8)  # excess=2; 1.0 + 2 * -0.1
+
+
+def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_rollout_safety_penalties,
+    )
+
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=3,
+        metrics={"search_rounds": 3},
+    )
+    result = apply_rollout_safety_penalties(
+        1.0, out, config=GRPORolloutSafetyConfig(max_search_rounds=3)
+    )
+    assert result == pytest.approx(1.0)
+
+
+def test_apply_rollout_safety_penalties_all_violations_combined():
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        GRPORolloutSafetyConfig,
+        apply_rollout_safety_penalties,
+    )
+
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=6,
+        metrics={
+            "invalid_action_count": 1,
+            "repeated_search_queries": 2,
+            "search_rounds": 5,
+        },
+    )
+    config = GRPORolloutSafetyConfig(
+        max_search_rounds=3,
+        invalid_action_penalty=-0.2,
+        repeated_query_penalty=-0.1,
+        excess_search_penalty=-0.1,
+    )
+    result = apply_rollout_safety_penalties(1.0, out, config=config)
+    # -0.2 (1 invalid) + -0.2 (2 repeated) + -0.2 (2 excess rounds) = -0.6
+    assert result == pytest.approx(0.4)
+
+
+# ── save_training_batch_jsonl ────────────────────────────────────────────────
+
+
+def test_save_training_batch_jsonl_writes_one_record_per_rollout(tmp_path):
+    import json
+    from src.llm_agent.generation import save_training_batch_jsonl
+
+    scored = [
+        _make_scored_rollout("g1", 0, reward=1.0, advantage=0.5),
+        _make_scored_rollout("g1", 1, reward=0.0, advantage=-0.5),
+    ]
+    path = tmp_path / "train.jsonl"
+    count = save_training_batch_jsonl(scored, path)
+
+    assert count == 2
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    rec0 = json.loads(lines[0])
+    assert rec0["group_id"] == "g1"
+    assert rec0["rollout_index"] == 0
+    assert rec0["reward"] == pytest.approx(1.0)
+    assert rec0["advantage"] == pytest.approx(0.5)
+
+
+def test_save_training_batch_jsonl_record_has_trajectory_field(tmp_path):
+    import json
+    from src.llm_agent.generation import save_training_batch_jsonl
+
+    scored = [_make_scored_rollout("g2", 0, reward=0.8, advantage=0.3)]
+    path = tmp_path / "out.jsonl"
+    save_training_batch_jsonl(scored, path)
+
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    assert "trajectory" in rec
+    assert rec["trajectory"]["question"] == "Who won the 2024 Nobel Prize in Physics?"
+
+
+def test_save_training_batch_jsonl_reward_components_serialised(tmp_path):
+    import json
+    from src.llm_agent.generation import save_training_batch_jsonl
+
+    scored = [
+        _make_scored_rollout(
+            "g3",
+            0,
+            reward=0.8,
+            advantage=0.3,
+            reward_components={"correctness": 1.0, "search_penalty": -0.2},
+        )
+    ]
+    path = tmp_path / "out.jsonl"
+    save_training_batch_jsonl(scored, path)
+
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    assert rec["reward_components"]["correctness"] == pytest.approx(1.0)
+    assert rec["reward_components"]["search_penalty"] == pytest.approx(-0.2)
+
+
+def test_save_training_batch_jsonl_append_accumulates_records(tmp_path):
+    from src.llm_agent.generation import save_training_batch_jsonl
+
+    scored = [_make_scored_rollout("g4", 0, reward=1.0, advantage=0.5)]
+    path = tmp_path / "train.jsonl"
+    save_training_batch_jsonl(scored, path)
+    save_training_batch_jsonl(scored, path, append=True)
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+
+
+def test_save_training_batch_jsonl_overwrite_replaces_existing(tmp_path):
+    from src.llm_agent.generation import save_training_batch_jsonl
+
+    scored = [_make_scored_rollout("g5", 0, reward=1.0, advantage=0.5)]
+    path = tmp_path / "train.jsonl"
+    save_training_batch_jsonl(scored, path)
+    # Overwrite with a fresh call (append=False, the default)
+    save_training_batch_jsonl(scored, path)
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+
+
+# ── async_run_prompt_rollout_group ───────────────────────────────────────────
+
+
+def test_async_run_prompt_rollout_group_returns_one_list_per_prompt():
+    import asyncio
+    from src.llm_agent.generation import async_run_prompt_rollout_group
+
+    class _FakeManager:
+        def run_prompt_rollout_group(
+            self,
+            prompt_batch,
+            *,
+            search_mode,
+            sampling_params,
+            num_rollouts,
+            base_seed,
+            current_step,
+            total_steps,
+        ):
+            return [_make_grouped_rollout(f"g{prompt_batch}", 0, "ans", 0.8, 0)]
+
+    manager = _FakeManager()
+    results = asyncio.run(
+        async_run_prompt_rollout_group(
+            manager,
+            [0, 1, 2],
+            search_mode="simulate",
+            sampling_params={"temperature": 0.8},
+            num_rollouts=1,
+        )
+    )
+
+    assert len(results) == 3
+    assert results[0][0].group_id == "g0"
+    assert results[1][0].group_id == "g1"
+    assert results[2][0].group_id == "g2"
+
+
+def test_async_run_prompt_rollout_group_empty_returns_empty():
+    import asyncio
+    from src.llm_agent.generation import async_run_prompt_rollout_group
+
+    class _FakeManager:
+        def run_prompt_rollout_group(self, prompt_batch, **kwargs):
+            return []
+
+    results = asyncio.run(
+        async_run_prompt_rollout_group(
+            _FakeManager(),
+            [],
+            search_mode="simulate",
+            sampling_params={},
+            num_rollouts=1,
+        )
+    )
+    assert results == []
+
+
+def test_async_run_prompt_rollout_group_uses_per_prompt_seed():
+    import asyncio
+    from src.llm_agent.generation import async_run_prompt_rollout_group
+
+    received_seeds: list[int | None] = []
+
+    class _SeedCapture:
+        def run_prompt_rollout_group(
+            self,
+            prompt_batch,
+            *,
+            base_seed,
+            **kwargs,
+        ):
+            received_seeds.append(base_seed)
+            return [_make_grouped_rollout(f"g{prompt_batch}", 0, "x", 0.8, 0)]
+
+    asyncio.run(
+        async_run_prompt_rollout_group(
+            _SeedCapture(),
+            [0, 1, 2],
+            search_mode="simulate",
+            sampling_params={},
+            num_rollouts=4,
+            base_seed=100,
+        )
+    )
+
+    # prompt i should receive seed 100 + i * 4
+    assert set(received_seeds) == {100, 104, 108}

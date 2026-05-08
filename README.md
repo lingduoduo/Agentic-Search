@@ -277,6 +277,69 @@ prompt
 This is the RL rollout trajectory. It is available both as a structured
 `RolloutTrajectory` and as a reward-ready `AgentLoopOutput`.
 
+The batch also carries `trajectory_logs`, a step-by-step trace intended for
+inspection before training. Each logged `SearchStep` records:
+
+- the pre-action `state` (current context)
+- the raw `model_output`
+- the parsed `action_type` / `action_value`
+- the tool `observation`
+- whether the step is `done`
+
+You can render one directly:
+
+```python
+from src.llm_agent import format_search_trajectory_log
+
+batch, _ = manager.run_prompt_rollout_batch(prompt_batch, search_mode="google")
+log = batch.non_tensor_batch["trajectory_logs"][0]
+print(format_search_trajectory_log(log, reward=1.0))
+```
+
+This prints a human-readable trace like:
+
+```text
+Question: Who won the Nobel Prize in Physics in 2024?
+Step 1: search 2024 physics nobel prize winner
+Observation: <information>...</information>
+Step 2: answer Hopfield and Hinton
+Reward: 1.0
+```
+
+### Grouped rollouts for GRPO
+
+On the training-side agent loop, you can now sample multiple trajectories for
+the same prompt directly from `LLMGenerationManager`:
+
+```python
+group = manager.run_prompt_rollout_group(
+    prompt_batch,
+    search_mode="google",
+    sampling_params={"temperature": 0.8, "top_p": 0.9},
+    num_rollouts=4,
+    base_seed=0,
+)
+```
+
+This produces four rollouts under one shared `group_id`, each with its own
+`rollout_index` and `sampling_params`. The returned trajectories match the GRPO
+setup:
+
+```text
+same question:
+  traj_1: search A -> answer wrong
+  traj_2: search B -> answer right
+  traj_3: search C -> answer partial
+  traj_4: answer directly wrong
+```
+
+Each grouped rollout stores:
+
+- `group_id`
+- `rollout_index`
+- `sampling_params`
+- `final_output` with trajectories, logs, and reward-ready rollout outputs
+
 ### Local model notes
 
 Use `--local` to load a HuggingFace model in-process instead of connecting to a vLLM server. Useful for offline development or when a server is not available.
@@ -788,6 +851,75 @@ components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=exact
 # components["citation_support"], ["search_quality"], ... stay available for logging
 ```
 
+For trainer code, there are now two explicit terminal-only helpers:
+
+```python
+terminal_reward = reward_fn.compute_terminal_reward(
+    output,
+    ground_truth=gt,
+    judge_fn=exact_match,
+)
+
+token_rewards = reward_fn.compute_sparse_token_rewards(
+    output,
+    ground_truth=gt,
+    judge_fn=exact_match,
+)
+```
+
+`compute_terminal_reward(...)` is always just the final answer score, and
+`compute_sparse_token_rewards(...)` places that scalar only at the last
+model-generated token. Search tokens, reasoning tokens, retrieval tokens, and
+environment observations all get `0.0`.
+
+### Recommended first-pass reward
+
+For an early GRPO / agent-RL setup, the repo now includes a deliberately simple
+reward recipe:
+
+```python
+from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+from src.agent_loop.reward import simple_sparse_correctness_reward
+
+reward_fn = SearchRewardFunction(
+    SearchRewardConfig.simple_sparse_with_search_penalty(
+        per_search_penalty=-0.02,
+    )
+)
+
+reward = reward_fn.compute(
+    output,
+    ground_truth=gt,
+    judge_fn=simple_sparse_correctness_reward,
+)
+```
+
+This gives:
+
+```text
+reward = correctness_reward - 0.02 * num_searches
+```
+
+where the default simple correctness judge is:
+
+```python
+def reward_fn(pred, gold):
+    if normalize(pred) == normalize(gold):
+        return 1.0
+    if normalize(gold) in normalize(pred):
+        return 0.7
+    return 0.0
+```
+
+This is a good first version because it keeps the signal easy to interpret.
+The more detailed second-pass terms are still available later through the
+existing config fields such as:
+
+- `citation_support_weight`
+- `duplicate_query_penalty`
+- `unnecessary_fetch_penalty`
+- `fetch_usefulness_reward`
+
 ### Grouped rollouts for GRPO
 
 The repo includes helpers for generating and scoring multiple trajectories for the same question. This is useful when you want GRPO to compare strategies such as:
@@ -837,6 +969,23 @@ If you want grouped rollout scoring to use this raw outcome advantage directly, 
 advantage_config=GRPOAdvantageConfig(mode="group_outcome")
 ```
 
+If you want this outcome advantage to be based strictly on the final answer
+score rather than the shaped total reward, use:
+
+```python
+advantage_config=GRPOAdvantageConfig.outcome_only()
+```
+
+That preset means:
+
+```
+reward_i    = terminal_reward_i
+advantage_i = reward_i - mean(group_rewards)
+```
+
+So GRPO stays critic-free and group-relative, while also matching sparse
+final-answer agent RL more closely.
+
 Example:
 
 ```python
@@ -845,6 +994,26 @@ from src.agent_loop import compute_grpo_outcome_advantage
 advantages = compute_grpo_outcome_advantage([1.0, 0.7, 0.1])
 # [0.4, 0.1, -0.5]
 ```
+
+If you already have one prompt group's full rollout trajectories plus their
+scalar rewards, use the grouped-rollout helper directly:
+
+```python
+from src.llm_agent import assign_group_relative_advantages
+
+scored = assign_group_relative_advantages(
+    grouped_rollouts,
+    rewards=[1.0, 0.7, 0.0, 0.0],
+)
+
+[s.advantage for s in scored]
+# [0.575, 0.275, -0.425, -0.425]
+```
+
+This is the simple GRPO behavior you usually want first:
+- better trajectory -> positive advantage
+- worse trajectory -> negative advantage
+- no critic value model required
 
 ### GRPO advantage normalisation
 
@@ -886,10 +1055,107 @@ This stores `old_log_probs`, `new_log_probs`, and optionally `prob_ratio` on
 `RolloutTrajectory`. Observation tokens injected by the environment stay masked
 out, so only model-chosen action tokens contribute to PPO / GRPO updates.
 
+For clipped PPO / GRPO, the ratio still uses the rollout policy:
+
+```text
+ratio_t = exp(new_log_probs_t - old_log_probs_t)
+```
+
+If you also supply `ref_log_probs`, the KL regularizer uses the frozen
+reference policy instead:
+
+```text
+grpo_policy_loss = -mean(min(ratio * advantage, clip(ratio, 1-eps, 1+eps) * advantage) * response_mask)
+kl_penalty       = beta * KL(pi_ref || pi_theta)
+total_loss       = grpo_policy_loss + kl_penalty
+```
+
+`prepare_policy_log_probs(...)` now accepts `ref_backend=...` and stores
+`ref_log_probs` on the batch when you want that RLHF / GRPO-style KL anchor.
+
+The masking rule is:
+
+```text
+[prompt tokens] [model action tokens] [environment information] [model answer tokens]
+      0                 1                       0                      1
+```
+
+Each `RolloutTrajectory` now keeps:
+
+- `tokens`: full prompt + response token sequence
+- `attention_mask`: non-pad mask for that full sequence
+- `response_mask`: `1` only where the model acted (`<search>`, `<plan>`, `<fetch>`, `<answer>`)
+- `old_log_probs` / `new_log_probs`: response-aligned token log-probs, zeroed on non-action positions
+
+`compute_policy_loss(...)` applies one clipped PPO / GRPO objective over all
+model-chosen action tokens, so the same update simultaneously trains:
+
+- `search_policy` via `<search> ... </search>` tokens
+- `reasoning_policy` via `<plan> ... </plan>` and `<fetch> ... </fetch>` tokens
+- `stopping_policy` via terminal `<answer> ... </answer>` tokens
+- `answer_policy` via `<answer> ... </answer>` tokens
+
+### Training loop
+
+The codebase now has a trainer-side helper that stitches the whole GRPO step
+together for one `PromptBatch`:
+
+```python
+result = manager.run_grpo_training_step(
+    prompt_batch,
+    search_mode="google",
+    sampling_params={"temperature": 0.8, "top_p": 0.95},
+    judge_fn=exact_match,
+    num_rollouts=4,
+    reward_fn=reward_fn,
+    old_backend=rollout_policy,
+    new_backend=actor_policy,
+    ref_backend=reference_policy,
+    loss_config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.01),
+    optimizer=optimizer,
+)
+```
+
+What it does:
+
+- loops over each prompt in the DataLoader batch
+- samples a rollout group for that prompt
+- scores each trajectory with the reward function
+- computes within-group GRPO advantages
+- collates all trajectories into one training batch
+- computes `old_log_probs`, `new_log_probs`, and optional `ref_log_probs`
+- applies clipped PPO / GRPO loss
+- optionally runs `loss.backward()` and `optimizer.step()`
+
+The default trainer-step advantage mode is group-relative outcome GRPO over the
+chosen reward component:
+
+```text
+advantage_i = reward_i - mean(group_rewards)
+```
+
+The collated training batch keeps sparse token-level advantages: only the last
+model action token gets the rollout advantage, while prompt and
+`<information>...</information>` tokens stay at `0`.
+
+For training diagnostics, the batch now records:
+
+- `meta_info["updated_policies"]`
+- `meta_info["policy_update_token_counts"]`
+- `meta_info["policy_update_breakdown"]`
+
+so you can see which parts of the agent policy actually received PPO / GRPO
+signal on a rollout batch.
+
 Supported grouped-scoring modes:
 
 - `group_outcome`: use `reward_i - mean(group_rewards)`
 - `group_std_normalized`: use `(reward_i - mean(group_rewards)) / (std(group_rewards) + ε)`; this is the default in `score_prompt_group()`
+
+Supported reward sources for grouped scoring:
+
+- `total`: the reward that will normally be optimized by the rollout configuration
+- `terminal_reward`: final-answer-only reward, useful for sparse outcome GRPO without process shaping
 
 ## API Reference
 
@@ -900,6 +1166,36 @@ Supported grouped-scoring modes:
 ```
 
 ### `POST /retrieve`
+
+The retrieval server is designed to run as a standalone FastAPI service so the
+trainer can stay separate from FAISS and the embedding model. This avoids the
+retriever competing with the trainer for GPU memory.
+
+Trainer-friendly single-query request:
+
+```json
+{"query": "Who won the Nobel Prize in Physics in 2024?", "top_k": 5}
+```
+
+Response:
+
+```json
+{
+  "query": "Who won the Nobel Prize in Physics in 2024?",
+  "top_k": 5,
+  "results": [
+    {
+      "doc_id": "doc-123",
+      "score": 0.91,
+      "title": "2024 Nobel Prize in Physics",
+      "text": "\"2024 Nobel Prize in Physics\"\nAwarded to ...",
+      "url": "https://example.com/nobel"
+    }
+  ]
+}
+```
+
+Legacy batch request for the current agent loop:
 
 ```json
 {"queries": ["query 1", "query 2"], "topk": 3}
@@ -914,6 +1210,30 @@ Response:
     [{"document": {"contents": "\"Title 2\"\nBody text."}}]
   ]
 }
+```
+
+Example standalone launch:
+
+```bash
+python3 -m src.search.retrieval_server \
+  --index_path /path/to/index.faiss \
+  --corpus_path /path/to/corpus.jsonl \
+  --retrieval_method e5 \
+  --model_path intfloat/e5-base-v2 \
+  --topk 5
+```
+
+Example trainer-side call:
+
+```python
+import requests
+
+resp = requests.post(
+    "http://retrieval-host:8000/retrieve",
+    json={"query": query, "top_k": 5},
+    timeout=10,
+)
+docs = resp.json()["results"]
 ```
 
 ### `POST /fetch` (Google server only)
