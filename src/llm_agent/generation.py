@@ -180,6 +180,64 @@ class ContinuationDecision:
 
 
 @dataclass(frozen=True)
+class SearchStep:
+    """One fully logged agent step for RL trajectory inspection."""
+
+    step_id: int
+    state: str
+    model_output: str
+    action_type: str
+    action_value: str
+    observation: str | None
+    done: bool = False
+
+
+@dataclass(frozen=True)
+class SearchTrajectoryLog:
+    """Human-readable trajectory log for one prompt.
+
+    This is the primary RL data record: everything that happened during one
+    agent rollout, structured for printing, saving, and reward labelling.
+
+    Usage::
+
+        log = trajectory_logs[0]
+        print(log)                                     # compact trace
+        print(log.to_dict())                           # dict for JSONL
+        print(format_search_trajectory_log(log,
+              reward=1.0, verbose=True))               # full debug dump
+    """
+
+    batch_index: int
+    question: str
+    steps: list[SearchStep]
+    final_answer: str | None
+    finished_without_answer: bool
+
+    def __str__(self) -> str:
+        return format_search_trajectory_log(self)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict for JSONL saving and RL data export."""
+        return {
+            "batch_index": self.batch_index,
+            "question": self.question,
+            "steps": [
+                {
+                    "step_id": step.step_id,
+                    "action_type": step.action_type,
+                    "action_value": step.action_value,
+                    "observation": step.observation,
+                    "done": step.done,
+                }
+                for step in self.steps
+            ],
+            "final_answer": self.final_answer,
+            "finished_without_answer": self.finished_without_answer,
+        }
+
+
+@dataclass(frozen=True)
 class RolloutTrajectory:
     """One complete RL rollout trajectory for a single prompt."""
 
@@ -222,6 +280,7 @@ class FinalGenBatchOutput:
 
     search_batch: SearchBatch
     trajectories: list["RolloutTrajectory"]
+    trajectory_logs: list["SearchTrajectoryLog"]
     rollout_outputs: list["AgentLoopOutput"]
     trajectory_turns: list[int]
 
@@ -242,6 +301,11 @@ class PPOPolicyLossConfig:
 
     clip_epsilon: float = 0.2
     kl_coefficient: float = 0.0
+    # Coefficient for the entropy bonus added to the objective.  A positive
+    # value encourages the search / reasoning / stopping policies to remain
+    # diverse and prevents premature mode collapse onto a single strategy.
+    # Requires new_log_probs to be present in batch.batch.
+    entropy_coefficient: float = 0.0
     # Per-action-type loss multipliers.  Keys: "search", "plan", "fetch", "answer".
     # Tokens with no matching key keep weight 1.0.  None means uniform weighting.
     action_type_weights: dict[str, float] | None = None
@@ -426,6 +490,79 @@ def build_react_observation(action: "PolicyAction", retrieval_result: str = "") 
         "Valid actions in this rollout loop are <plan>, <search>, <fetch>, and "
         "<answer>. Let me try again.\n"
     )
+
+
+def format_search_trajectory_log(
+    trajectory_log: "SearchTrajectoryLog",
+    *,
+    reward: float | None = None,
+    verbose: bool = False,
+    max_obs_chars: int = 300,
+) -> str:
+    """Render one logged trajectory as a printable text trace.
+
+    Compact mode (default) produces the minimal RL-readable trace::
+
+        Question: Who won the 2024 Nobel Prize in Physics?
+        Step 1: search 2024 Nobel Prize Physics winner
+          Observation: The 2024 Nobel Prize was awarded to Hopfield and Hinton ...
+        Step 2: answer John Hopfield and Geoffrey Hinton.
+        Final Answer: John Hopfield and Geoffrey Hinton.
+        Reward: 1.0
+
+    Verbose mode (``verbose=True``) additionally includes the full state
+    context and raw model output for each step — useful for debugging.
+    """
+    lines = [f"Question: {trajectory_log.question}"]
+    for step in trajectory_log.steps:
+        lines.append(
+            f"Step {step.step_id}: {step.action_type} {step.action_value}".rstrip()
+        )
+        if verbose:
+            lines.append(f"  State: {step.state}")
+            lines.append(f"  Model Output: {step.model_output}")
+        if step.observation:
+            obs = step.observation
+            if not verbose and len(obs) > max_obs_chars:
+                obs = obs[:max_obs_chars] + "..."
+            lines.append(f"  Observation: {obs}")
+    if trajectory_log.final_answer is not None:
+        lines.append(f"Final Answer: {trajectory_log.final_answer}")
+    if reward is not None:
+        lines.append(f"Reward: {reward}")
+    return "\n".join(lines)
+
+
+def format_trajectory_batch(
+    logs: "list[SearchTrajectoryLog]",
+    rewards: "list[float] | None" = None,
+    *,
+    verbose: bool = False,
+    max_obs_chars: int = 300,
+) -> str:
+    """Format all trajectories from one rollout batch as a single printable string.
+
+    Each trajectory is separated by a horizontal rule so you can scan through
+    the batch output to see what the agent did for each prompt.  Call after
+    ``run_llm_loop`` / ``build_final_gen_batch_output`` to inspect a training
+    batch before computing rewards::
+
+        batch, _ = manager.run_llm_loop(...)
+        logs = batch.non_tensor_batch["trajectory_logs"]
+        rewards = [reward_fn.compute(o, gt, judge) for o, gt in zip(outputs, gts)]
+        print(format_trajectory_batch(logs, rewards))
+    """
+    separator = "\n" + "─" * 60 + "\n"
+    parts = [
+        format_search_trajectory_log(
+            log,
+            reward=rewards[i] if rewards is not None and i < len(rewards) else None,
+            verbose=verbose,
+            max_obs_chars=max_obs_chars,
+        )
+        for i, log in enumerate(logs)
+    ]
+    return separator.join(parts)
 
 
 def _format_documents(documents: list[RetrievedDocument]) -> str:
@@ -1262,6 +1399,8 @@ class LLMGenerationManager:
         masks = {
             tag: torch.zeros(B, T, dtype=torch.float32) for tag in ROLLOUT_ACTION_TAGS
         }
+        if not hasattr(self.tokenizer, "decode"):
+            return masks
         for row, ids in enumerate(response_ids_list):
             offsets = _token_char_offsets(ids, self.tokenizer)
             text = self.tokenizer.decode(ids, skip_special_tokens=False)
@@ -1276,6 +1415,38 @@ class LLMGenerationManager:
                     ):
                         masks[tag][row, tok] = 1.0
         return masks
+
+    def compute_policy_family_masks(
+        self,
+        batch: SearchBatch,
+    ) -> dict[str, torch.Tensor]:
+        """Higher-level masks for search / reasoning / stopping / answer policies.
+
+        The rollout emits explicit action tags, but PPO / GRPO discussions often
+        refer to broader policy families. In this codebase the mapping is:
+
+        - ``search_policy``    -> ``<search> ... </search>``
+        - ``reasoning_policy`` -> ``<plan> ... </plan>`` and ``<fetch> ... </fetch>``
+        - ``stopping_policy``  -> terminal ``<answer> ... </answer>``
+        - ``answer_policy``    -> ``<answer> ... </answer>``
+
+        ``stopping_policy`` and ``answer_policy`` intentionally share the same
+        token span because the stop decision is represented by emitting the
+        final answer action.
+        """
+        type_masks = self.compute_action_type_masks(batch)
+        answer_mask = type_masks["answer"]
+        reasoning_mask = torch.clamp(
+            type_masks["plan"] + type_masks["fetch"],
+            min=0.0,
+            max=1.0,
+        )
+        return {
+            "search_policy": type_masks["search"],
+            "reasoning_policy": reasoning_mask,
+            "stopping_policy": answer_mask,
+            "answer_policy": answer_mask,
+        }
 
     def policy_loss_breakdown(
         self,
@@ -1319,6 +1490,41 @@ class LLMGenerationManager:
         for tag, mask in type_masks.items():
             n_tokens = torch.clamp(mask.sum(), min=1.0)
             breakdown[tag] = (surrogate * mask).sum() / n_tokens
+        return breakdown
+
+    def policy_update_breakdown(
+        self,
+        batch: SearchBatch,
+        *,
+        advantages: torch.Tensor | None = None,
+        config: PPOPolicyLossConfig | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Per-policy-family clipped objective for PPO / GRPO diagnostics."""
+        cfg = config or PPOPolicyLossConfig()
+        ratio = batch.batch.get("prob_ratio")
+        if ratio is None:
+            ratio = self.compute_prob_ratio(batch)
+        resolved_advantages = advantages
+        if resolved_advantages is None:
+            resolved_advantages = batch.batch.get("advantages")
+        if resolved_advantages is None:
+            raise ValueError(
+                "advantages not found; pass `advantages=` or populate batch.batch['advantages'] first."
+            )
+        resolved_advantages = resolved_advantages.to(dtype=torch.float32)
+        clipped_ratio = torch.clamp(
+            ratio,
+            1.0 - float(cfg.clip_epsilon),
+            1.0 + float(cfg.clip_epsilon),
+        )
+        surrogate = torch.minimum(
+            ratio * resolved_advantages, clipped_ratio * resolved_advantages
+        )
+        family_masks = self.compute_policy_family_masks(batch)
+        breakdown: dict[str, torch.Tensor] = {}
+        for family, mask in family_masks.items():
+            n_tokens = torch.clamp(mask.sum(), min=1.0)
+            breakdown[family] = (surrogate * mask).sum() / n_tokens
         return breakdown
 
     def compute_policy_loss(
@@ -1367,12 +1573,19 @@ class LLMGenerationManager:
             1.0 - float(cfg.clip_epsilon),
             1.0 + float(cfg.clip_epsilon),
         )
-        unclipped_objective = ratio * resolved_advantages
-        clipped_objective = clipped_ratio * resolved_advantages
-        surrogate = torch.minimum(unclipped_objective, clipped_objective) * action_mask
+        surrogate = (
+            torch.minimum(
+                ratio * resolved_advantages, clipped_ratio * resolved_advantages
+            )
+            * action_mask
+        )
+
+        # Compute action-type masks once — shared by action_type_weights reweighting
+        # and the policy-family breakdown below.  Without this, compute_action_type_masks
+        # would be called 2–3 times (one tokenizer decode pass per call).
+        type_masks = self.compute_action_type_masks(batch)
 
         if cfg.action_type_weights:
-            type_masks = self.compute_action_type_masks(batch)
             weight_tensor = torch.ones_like(ratio)
             for tag, w in cfg.action_type_weights.items():
                 if tag in type_masks:
@@ -1391,10 +1604,46 @@ class LLMGenerationManager:
                 kl = self.per_token_kl(batch)
             kl_term = (kl * action_mask).sum() / normalizer
 
-        loss = -policy_objective + float(cfg.kl_coefficient) * kl_term
+        # Entropy bonus: H(π) ≈ −E[log π(a|s)] over action tokens.
+        # Adding this to the objective keeps the search / reasoning / stopping
+        # policies diverse and prevents premature mode collapse.
+        entropy_term = torch.tensor(
+            0.0, dtype=torch.float32, device=policy_objective.device
+        )
+        if cfg.entropy_coefficient:
+            new_lp = batch.batch.get("new_log_probs")
+            if new_lp is not None:
+                entropy_term = -(new_lp * action_mask).sum() / normalizer
+
+        loss = (
+            -policy_objective
+            + float(cfg.kl_coefficient) * kl_term
+            - float(cfg.entropy_coefficient) * entropy_term
+        )
         clip_fraction = (
             (ratio != clipped_ratio).to(dtype=torch.float32) * action_mask
         ).sum() / normalizer
+
+        # Policy-family breakdown from the already-computed type_masks — no extra
+        # decode pass.  stopping_policy and answer_policy share the <answer> span.
+        answer_mask = type_masks["answer"]
+        reasoning_mask = torch.clamp(
+            type_masks["plan"] + type_masks["fetch"], min=0.0, max=1.0
+        )
+        family_masks = {
+            "search_policy": type_masks["search"],
+            "reasoning_policy": reasoning_mask,
+            "stopping_policy": answer_mask,
+            "answer_policy": answer_mask,
+        }
+        family_breakdown: dict[str, float] = {}
+        family_token_counts: dict[str, float] = {}
+        for family, fmask in family_masks.items():
+            n_fam = torch.clamp(fmask.sum(), min=1.0)
+            family_breakdown[family] = float(
+                ((surrogate * fmask).sum() / n_fam).detach().item()
+            )
+            family_token_counts[family] = float(fmask.sum().item())
 
         batch.batch["advantages"] = resolved_advantages * action_mask
         batch.batch["clipped_prob_ratio"] = clipped_ratio
@@ -1405,6 +1654,13 @@ class LLMGenerationManager:
             (resolved_advantages * action_mask).sum() / normalizer
         ).detach()
         batch.batch["mean_kl"] = kl_term.detach()
+        if cfg.entropy_coefficient:
+            batch.batch["entropy"] = entropy_term.detach()
+        batch.meta_info["policy_update_token_counts"] = family_token_counts
+        batch.meta_info["updated_policies"] = [
+            family for family, count in family_token_counts.items() if count > 0.0
+        ]
+        batch.meta_info["policy_update_breakdown"] = family_breakdown
         return loss
 
     def per_token_kl(self, batch: SearchBatch) -> torch.Tensor:
@@ -1617,6 +1873,78 @@ class LLMGenerationManager:
         )
         state.valid_search_stats += torch.tensor(step_result.is_search, dtype=torch.int)
 
+    def _decode_context_rows(self, input_ids: torch.Tensor) -> list[str]:
+        if hasattr(self.tokenizer, "batch_decode"):
+            try:
+                return list(
+                    self.tokenizer.batch_decode(input_ids, skip_special_tokens=False)
+                )
+            except Exception:
+                pass
+        if hasattr(self.tokenizer, "decode"):
+            decoded_rows: list[str] = []
+            for row in input_ids:
+                try:
+                    decoded_rows.append(
+                        self.tokenizer.decode(row.tolist(), skip_special_tokens=False)
+                    )
+                except Exception:
+                    decoded_rows.append(" ".join(str(int(tok)) for tok in row.tolist()))
+            return decoded_rows
+        return [" ".join(str(int(tok)) for tok in row.tolist()) for row in input_ids]
+
+    def _snapshot_rollout_states(self, rollings: SearchBatch) -> list[str]:
+        """Decode the current per-trajectory context before the next action."""
+        input_ids = rollings.batch.get("input_ids")
+        if input_ids is None:
+            return []
+        return self._decode_context_rows(input_ids)
+
+    def _record_search_steps(
+        self,
+        state: AgentLoopState,
+        step_result: AgentLoopStepResult,
+        state_snapshots: list[str],
+    ) -> None:
+        """Record step-by-step RL trajectory logs for every participating prompt."""
+        step_history = state.meta_info.setdefault("search_step_history", [])
+        participating = state.active_mask.tolist()
+        current_turn = len(step_history) + 1
+        per_turn_steps: list[SearchStep | None] = []
+        for batch_index, (
+            was_active,
+            action,
+            model_output,
+            observation,
+            done,
+        ) in enumerate(
+            zip(
+                participating,
+                step_result.parsed_actions,
+                step_result.responses_str,
+                step_result.next_obs,
+                step_result.dones,
+            )
+        ):
+            if not was_active:
+                per_turn_steps.append(None)
+                continue
+            action_type = action.tag if action.tag is not None else "invalid"
+            per_turn_steps.append(
+                SearchStep(
+                    step_id=current_turn,
+                    state=state_snapshots[batch_index]
+                    if batch_index < len(state_snapshots)
+                    else "",
+                    model_output=model_output,
+                    action_type=action_type,
+                    action_value=action.content,
+                    observation=observation or None,
+                    done=bool(done),
+                )
+            )
+        step_history.append(per_turn_steps)
+
     def _record_finished_trajectories(
         self,
         trajectory_turns: list[int],
@@ -1818,6 +2146,7 @@ class LLMGenerationManager:
         """One full turn: trim → generate → execute tool → apply observations."""
         gt_threshold = self.dynamic_threshold(current_step, total_steps)
         state.rollings = self._trim_rollings_for_generation(state.rollings)
+        state_snapshots = self._snapshot_rollout_states(state.rollings)
         step_result, step_meta_info = self._run_active_generation_step(
             gen_batch,
             state.rollings,
@@ -1831,6 +2160,7 @@ class LLMGenerationManager:
         self._record_policy_rollout_step(state, step_result.parsed_actions)
         self._record_search_tool_calls(state, step_result.parsed_actions)
         self._record_fetch_tool_calls(state, step_result.parsed_actions)
+        self._record_search_steps(state, step_result, state_snapshots)
         self._apply_step_result(
             state, step_result, include_observations=include_observations
         )
@@ -1850,6 +2180,8 @@ class LLMGenerationManager:
         if resolved_initial_input_ids is None:
             resolved_initial_input_ids = gen_batch.batch["input_ids"]
         state = self._initialize_agent_loop_state(gen_batch, resolved_initial_input_ids)
+        if "question" in gen_batch.non_tensor_batch:
+            state.meta_info["questions"] = list(gen_batch.non_tensor_batch["question"])
 
         for turn in range(self.config.max_turns):
             decision = self._make_continuation_decision(
@@ -2038,6 +2370,51 @@ class LLMGenerationManager:
             )
         return outputs
 
+    def build_search_trajectory_logs(
+        self,
+        batch: SearchBatch,
+    ) -> list[SearchTrajectoryLog]:
+        """Build step-by-step printable trajectory logs for each prompt."""
+        step_history: list[list[SearchStep | None]] = batch.meta_info.get(
+            "search_step_history", []
+        )
+        questions: list[str] = batch.non_tensor_batch.get("question", [])
+        final_answers: list[str | None] = batch.meta_info.get("final_answers", [])
+        finished_without_answer: list[bool] = batch.meta_info.get(
+            "finished_without_answer", []
+        )
+        batch_size = len(questions) if questions else len(final_answers)
+        if batch_size == 0:
+            trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(
+                "trajectories", []
+            )
+            batch_size = len(trajectories)
+        logs: list[SearchTrajectoryLog] = []
+        for batch_index in range(batch_size):
+            steps = [
+                step
+                for turn_steps in step_history
+                if batch_index < len(turn_steps)
+                for step in (turn_steps[batch_index],)
+                if step is not None
+            ]
+            logs.append(
+                SearchTrajectoryLog(
+                    batch_index=batch_index,
+                    question=questions[batch_index]
+                    if batch_index < len(questions)
+                    else "",
+                    steps=steps,
+                    final_answer=final_answers[batch_index]
+                    if batch_index < len(final_answers)
+                    else None,
+                    finished_without_answer=finished_without_answer[batch_index]
+                    if batch_index < len(finished_without_answer)
+                    else True,
+                )
+            )
+        return logs
+
     def build_final_gen_batch_output(self, batch: SearchBatch) -> FinalGenBatchOutput:
         """Build the unified final rollout object for one generated batch.
 
@@ -2053,11 +2430,13 @@ class LLMGenerationManager:
         trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(
             "trajectories", []
         )
+        trajectory_logs = self.build_search_trajectory_logs(batch)
         rollout_outputs = self.build_rollout_outputs(batch)
         trajectory_turns: list[int] = batch.meta_info.get("trajectory_turns", [])
         return FinalGenBatchOutput(
             search_batch=batch,
             trajectories=trajectories,
+            trajectory_logs=trajectory_logs,
             rollout_outputs=rollout_outputs,
             trajectory_turns=trajectory_turns,
         )
@@ -2109,10 +2488,15 @@ class LLMGenerationManager:
 
         search_batch = SearchBatch.from_dict(final_output)
         search_batch.meta_info.update(meta_info)
+        if "questions" in meta_info:
+            search_batch.non_tensor_batch["question"] = list(meta_info["questions"])
         search_batch.non_tensor_batch["trajectories"] = (
             self._build_rollout_trajectories(
                 left_side=left_side, right_side=right_side, meta_info=meta_info
             )
+        )
+        search_batch.non_tensor_batch["trajectory_logs"] = (
+            self.build_search_trajectory_logs(search_batch)
         )
         if isinstance(self.generation_backend, LogProbCapable):
             self.compute_log_prob(search_batch, store_key="old_log_probs")

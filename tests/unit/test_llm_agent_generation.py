@@ -13,6 +13,7 @@ from src.llm_agent.generation import (  # noqa: E402
     RetrievedDocument,
     RolloutTrajectory,
     SearchBatch,
+    format_search_trajectory_log,
 )
 
 
@@ -1377,6 +1378,29 @@ def test_compute_action_type_masks_multi_batch():
     assert masks["search"][1].sum().item() == 0.0
 
 
+def test_compute_policy_family_masks_maps_reasoning_and_stopping_policies():
+    manager = _manager_with_char_tokenizer()
+    text = "<plan>think</plan><fetch>url</fetch><answer>x</answer>"
+    batch = _batch_from_texts(text)
+
+    masks = manager.compute_policy_family_masks(batch)
+
+    assert set(masks.keys()) == {
+        "search_policy",
+        "reasoning_policy",
+        "stopping_policy",
+        "answer_policy",
+    }
+    assert masks["search_policy"].sum().item() == pytest.approx(0.0)
+    assert masks["reasoning_policy"].sum().item() == pytest.approx(
+        len("<plan>think</plan><fetch>url</fetch>")
+    )
+    assert masks["stopping_policy"].sum().item() == pytest.approx(
+        len("<answer>x</answer>")
+    )
+    assert torch.allclose(masks["stopping_policy"], masks["answer_policy"])
+
+
 def test_policy_loss_breakdown_returns_per_type_scalars():
     manager = _manager_with_char_tokenizer()
     text = "<search>q</search><answer>x</answer>"
@@ -1399,6 +1423,37 @@ def test_policy_loss_breakdown_returns_per_type_scalars():
     # plan and fetch absent from text → their masks are all-zero → 0 contribution
     assert breakdown["plan"].item() == pytest.approx(0.0, abs=1e-5)
     assert breakdown["fetch"].item() == pytest.approx(0.0, abs=1e-5)
+
+
+def test_policy_update_breakdown_returns_search_reasoning_stopping_answer():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><plan>think</plan><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    breakdown = manager.policy_update_breakdown(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    assert set(breakdown.keys()) == {
+        "search_policy",
+        "reasoning_policy",
+        "stopping_policy",
+        "answer_policy",
+    }
+    assert breakdown["search_policy"].item() > 0.0
+    assert breakdown["reasoning_policy"].item() > 0.0
+    assert breakdown["stopping_policy"].item() > 0.0
+    assert breakdown["answer_policy"].item() > 0.0
+    assert breakdown["stopping_policy"].item() == pytest.approx(
+        breakdown["answer_policy"].item(),
+        abs=1e-6,
+    )
 
 
 def test_policy_loss_breakdown_requires_advantages():
@@ -1434,6 +1489,120 @@ def test_compute_policy_loss_action_type_weights_upweight_answer():
     )
     # Upweighting answer tokens increases the objective → negated loss is smaller
     assert loss_weighted.item() < loss_base.item()
+
+
+def test_compute_policy_loss_records_updated_policy_families():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><plan>think</plan><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    assert batch.meta_info["updated_policies"] == [
+        "search_policy",
+        "reasoning_policy",
+        "stopping_policy",
+        "answer_policy",
+    ]
+    assert batch.meta_info["policy_update_token_counts"]["search_policy"] > 0.0
+    assert batch.meta_info["policy_update_token_counts"]["reasoning_policy"] > 0.0
+    assert batch.meta_info["policy_update_token_counts"]["stopping_policy"] > 0.0
+    assert batch.meta_info["policy_update_breakdown"]["answer_policy"] == pytest.approx(
+        batch.meta_info["policy_update_breakdown"]["stopping_policy"],
+        abs=1e-6,
+    )
+
+
+def test_ppo_policy_loss_config_entropy_coefficient_default_zero():
+    cfg = PPOPolicyLossConfig()
+    assert cfg.entropy_coefficient == 0.0
+
+
+def test_compute_policy_loss_entropy_bonus_lowers_loss_for_low_entropy_policy():
+    """Entropy bonus (entropy_coefficient > 0) must reduce the loss when
+    new_log_probs are present — more negative log probs → higher entropy term
+    → smaller (more negative) objective before negation → smaller loss."""
+    manager = _manager_with_char_tokenizer()
+    text = "<answer>x</answer>"
+    batch_no_ent = _batch_from_texts(text)
+    batch_with_ent = _batch_from_texts(text)
+    n = batch_no_ent.batch["responses"].shape[1]
+    for b in (batch_no_ent, batch_with_ent):
+        b.batch["old_log_probs"] = torch.full((1, n), -1.0)
+        b.batch["new_log_probs"] = torch.full((1, n), -2.0)  # high entropy signal
+    advantages = torch.ones(1, n)
+
+    loss_no_ent = manager.compute_policy_loss(
+        batch_no_ent,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, entropy_coefficient=0.0),
+    )
+    loss_with_ent = manager.compute_policy_loss(
+        batch_with_ent,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, entropy_coefficient=0.1),
+    )
+
+    # entropy_term = -mean(new_log_probs) = -(-2.0) = 2.0
+    # loss_with_ent = loss_no_ent - 0.1 * 2.0  (lower loss)
+    assert loss_with_ent.item() < loss_no_ent.item()
+    assert "entropy" in batch_with_ent.batch
+    assert batch_with_ent.batch["entropy"].item() == pytest.approx(2.0, abs=1e-5)
+
+
+def test_compute_policy_loss_entropy_not_stored_when_coefficient_zero():
+    manager = _manager_with_char_tokenizer()
+    text = "<answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -2.0)
+    advantages = torch.ones(1, n)
+
+    manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(entropy_coefficient=0.0),
+    )
+
+    assert "entropy" not in batch.batch
+
+
+def test_compute_policy_loss_type_masks_computed_once_even_with_action_type_weights():
+    """With action_type_weights set, type masks must not trigger extra tokenizer
+    decode passes.  We verify correctness (not call-count) by checking that
+    the per-family breakdown and the weighted loss are both populated correctly
+    in a single compute_policy_loss call."""
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(
+            clip_epsilon=0.2,
+            action_type_weights={"search": 2.0, "answer": 1.5},
+        ),
+    )
+
+    # Family breakdown must be populated (uses same type_masks pass)
+    assert "search_policy" in batch.meta_info["policy_update_breakdown"]
+    assert "answer_policy" in batch.meta_info["policy_update_breakdown"]
+    # Loss must be a finite scalar
+    assert torch.isfinite(loss)
 
 
 def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
@@ -1585,6 +1754,246 @@ def test_run_llm_loop_saves_old_log_probs_when_backend_supports_it():
 
     assert "old_log_probs" in final_batch.batch
     assert final_batch.non_tensor_batch["trajectories"][0].old_log_probs is not None
+
+
+def test_run_llm_loop_records_printable_search_trajectory_logs():
+    class LoopTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>cats</search>",
+                (2, 2): "<answer>done</answer>",
+                (3, 4): "Question context",
+                (3, 4, 1, 1): "Question context<search>cats</search>",
+                (3, 4, 1, 1, 9, 9, 2, 2): (
+                    "Question context<search>cats</search>"
+                    "<information>Doc 1: evidence</information><answer>done</answer>"
+                ),
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(token for token in row if token != 0)
+                decoded.append(mapping.get(tokens, " ".join(str(t) for t in tokens)))
+            return decoded
+
+    manager = LLMGenerationManager(
+        tokenizer=LoopTokenizer(),
+        config=GenerationConfig(
+            max_turns=1,
+            max_start_length=8,
+            max_prompt_length=64,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRollout(responses=[[[1, 1]], [[2, 2]]]),
+    )
+    manager.batch_search = lambda payload, search_mode, gt_threshold: [  # type: ignore[method-assign]
+        "Doc 1: evidence"
+    ]
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["What is the answer?"],
+        "golden_answers": [["done"]],
+    }
+
+    final_batch, _ = manager.run_llm_loop(
+        gen_batch=gen_batch,
+        search_mode="google",
+        current_step=0,
+        total_steps=10,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    logs = final_batch.non_tensor_batch["trajectory_logs"]
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.question == "What is the answer?"
+    assert [step.action_type for step in log.steps] == ["search", "answer"]
+    assert log.steps[0].step_id == 1
+    assert log.steps[0].action_value == "cats"
+    assert "Doc 1: evidence" in (log.steps[0].observation or "")
+    assert log.steps[1].done is True
+    rendered = format_search_trajectory_log(log, reward=1.0)
+    assert "Question: What is the answer?" in rendered
+    assert "Step 1: search cats" in rendered
+    assert "Observation:" in rendered
+    assert "Step 2: answer done" in rendered
+    assert "Reward: 1.0" in rendered
+    # Compact mode must NOT show the raw State / Model Output dumps
+    assert "State:" not in rendered
+    assert "Model Output:" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# format_search_trajectory_log — compact vs verbose, to_dict, batch formatter
+# ---------------------------------------------------------------------------
+
+
+def _make_two_step_log():
+    from src.llm_agent.generation import SearchStep, SearchTrajectoryLog
+
+    return SearchTrajectoryLog(
+        batch_index=0,
+        question="Who won the 2024 Nobel Prize in Physics?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="context-window-contents-here",
+                model_output="<search>2024 Nobel Physics</search>",
+                action_type="search",
+                action_value="2024 Nobel Physics",
+                observation="Hopfield and Hinton won the Nobel Prize.",
+                done=False,
+            ),
+            SearchStep(
+                step_id=2,
+                state="context-window-contents-here",
+                model_output="<answer>Hopfield and Hinton</answer>",
+                action_type="answer",
+                action_value="Hopfield and Hinton",
+                observation=None,
+                done=True,
+            ),
+        ],
+        final_answer="Hopfield and Hinton",
+        finished_without_answer=False,
+    )
+
+
+def test_format_search_trajectory_log_compact_omits_state_and_model_output():
+    from src.llm_agent.generation import format_search_trajectory_log
+
+    log = _make_two_step_log()
+    rendered = format_search_trajectory_log(log, reward=1.0)
+
+    assert "Question: Who won the 2024 Nobel Prize in Physics?" in rendered
+    assert "Step 1: search 2024 Nobel Physics" in rendered
+    assert "Observation: Hopfield and Hinton won" in rendered
+    assert "Step 2: answer Hopfield and Hinton" in rendered
+    assert "Final Answer: Hopfield and Hinton" in rendered
+    assert "Reward: 1.0" in rendered
+    # Compact: state and raw model output must be hidden
+    assert "State:" not in rendered
+    assert "Model Output:" not in rendered
+
+
+def test_format_search_trajectory_log_verbose_includes_state_and_model_output():
+    from src.llm_agent.generation import format_search_trajectory_log
+
+    log = _make_two_step_log()
+    rendered = format_search_trajectory_log(log, verbose=True)
+
+    assert "State: context-window-contents-here" in rendered
+    assert "Model Output: <search>2024 Nobel Physics</search>" in rendered
+
+
+def test_format_search_trajectory_log_truncates_long_observation_in_compact_mode():
+    from src.llm_agent.generation import (
+        SearchStep,
+        SearchTrajectoryLog,
+        format_search_trajectory_log,
+    )
+
+    long_obs = "x" * 500
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question="q?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="",
+                model_output="<search>q</search>",
+                action_type="search",
+                action_value="q",
+                observation=long_obs,
+                done=False,
+            )
+        ],
+        final_answer=None,
+        finished_without_answer=True,
+    )
+    rendered = format_search_trajectory_log(log, max_obs_chars=100)
+    assert "..." in rendered
+    assert len(rendered) < len(long_obs)
+
+
+def test_format_search_trajectory_log_verbose_does_not_truncate_observation():
+    from src.llm_agent.generation import (
+        SearchStep,
+        SearchTrajectoryLog,
+        format_search_trajectory_log,
+    )
+
+    long_obs = "y" * 500
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question="q?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="",
+                model_output="<search>q</search>",
+                action_type="search",
+                action_value="q",
+                observation=long_obs,
+                done=False,
+            )
+        ],
+        final_answer=None,
+        finished_without_answer=True,
+    )
+    rendered = format_search_trajectory_log(log, verbose=True)
+    assert "..." not in rendered
+    assert long_obs in rendered
+
+
+def test_search_trajectory_log_str_returns_compact_format():
+    from src.llm_agent.generation import format_search_trajectory_log
+
+    log = _make_two_step_log()
+    assert str(log) == format_search_trajectory_log(log)
+
+
+def test_search_trajectory_log_to_dict_serializes_all_steps():
+    log = _make_two_step_log()
+    d = log.to_dict()
+
+    assert d["question"] == "Who won the 2024 Nobel Prize in Physics?"
+    assert d["final_answer"] == "Hopfield and Hinton"
+    assert d["finished_without_answer"] is False
+    assert len(d["steps"]) == 2
+    assert d["steps"][0]["action_type"] == "search"
+    assert d["steps"][0]["action_value"] == "2024 Nobel Physics"
+    assert d["steps"][0]["observation"] == "Hopfield and Hinton won the Nobel Prize."
+    assert d["steps"][0]["done"] is False
+    assert d["steps"][1]["action_type"] == "answer"
+    assert d["steps"][1]["done"] is True
+
+
+def test_format_trajectory_batch_joins_multiple_logs_with_separator():
+    from src.llm_agent.generation import format_trajectory_batch
+
+    log1 = _make_two_step_log()
+    log2 = _make_two_step_log()
+    rendered = format_trajectory_batch([log1, log2], rewards=[1.0, 0.0])
+
+    assert rendered.count("Question:") == 2
+    assert "Reward: 1.0" in rendered
+    assert "Reward: 0.0" in rendered
+    assert "─" in rendered  # separator
+
+
+def test_format_trajectory_batch_empty_list_returns_empty_string():
+    from src.llm_agent.generation import format_trajectory_batch
+
+    assert format_trajectory_batch([]) == ""
 
 
 def test_run_llm_loop_records_search_reformulations_across_turns():
