@@ -255,6 +255,12 @@ ACTION_PATTERN = re.compile(
 
 _NO_INFO = "No information available"
 
+# Clamp applied to log(π_θ / π_θ_old) before torch.exp() in prob_ratio and KL
+# computations.  Float32 can represent exp(88) ≈ 1.7e38 before overflow; 20.0
+# caps the ratio at ~4.9e8 while keeping gradients numerically stable in early
+# training when the policy can diverge quickly.
+_LOG_RATIO_CLAMP = 20.0
+
 
 def _token_char_offsets(ids: list[int], tokenizer: Any) -> list[tuple[int, int]]:
     """Return (char_start, char_end) for each token in the decoded response.
@@ -1114,13 +1120,20 @@ class LLMGenerationManager:
         *,
         backend: LogProbCapable | None = None,
         store_key: str = "new_log_probs",
+        overwrite: bool = True,
     ) -> torch.Tensor:
         """Recompute token log probabilities aligned with the rollout response.
 
         Used twice in PPO/GRPO-style training:
         - `old_log_probs`: under the policy that generated the rollout
         - `new_log_probs`: under the current policy being optimized
+
+        When `store_key='old_log_probs'` and `overwrite=False`, returns the
+        already-stored tensor without recomputing.  This protects the frozen
+        rollout log probs from being silently overwritten during PPO updates.
         """
+        if not overwrite and store_key in batch.batch:
+            return batch.batch[store_key]
 
         scorer = backend or self.generation_backend
         if not isinstance(scorer, LogProbCapable):
@@ -1162,6 +1175,45 @@ class LLMGenerationManager:
             for i, traj in enumerate(trajectories)
         ]
 
+    def prepare_policy_log_probs(
+        self,
+        batch: SearchBatch,
+        *,
+        old_backend: LogProbCapable | None = None,
+        new_backend: LogProbCapable | None = None,
+        compute_ratio: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Prepare old/new token log probabilities for PPO / GRPO updates.
+
+        This is the standard policy-evaluation step needed before computing
+        PPO/GRPO ratios:
+
+            old_log_probs = log pi_theta_old(a_t | s_t)
+            new_log_probs = log pi_theta(a_t | s_t)
+
+        The tensors are stored on ``batch.batch`` under
+        ``"old_log_probs"`` and ``"new_log_probs"`` and mirrored into each
+        ``RolloutTrajectory`` when present. When ``compute_ratio=True`` this
+        also computes ``prob_ratio = exp(new - old)``.
+        """
+        resolved_old_backend = old_backend or self.generation_backend
+        resolved_new_backend = new_backend or self.generation_backend
+
+        old_log_probs = self.compute_log_prob(
+            batch,
+            backend=resolved_old_backend,
+            store_key="old_log_probs",
+        )
+        new_log_probs = self.compute_log_prob(
+            batch,
+            backend=resolved_new_backend,
+            store_key="new_log_probs",
+        )
+        if compute_ratio:
+            self.compute_prob_ratio(batch)
+        batch.meta_info["policy_log_probs_prepared"] = True
+        return old_log_probs, new_log_probs
+
     def compute_prob_ratio(self, batch: SearchBatch) -> torch.Tensor:
         """Compute the per-token PPO / GRPO probability ratio r_t(θ).
 
@@ -1184,7 +1236,11 @@ class LLMGenerationManager:
                 "new_log_probs not found; call compute_log_prob(..., store_key='new_log_probs') first."
             )
         action_mask = self._response_action_mask(batch)
-        log_ratio = (new_lp - old_lp) * action_mask
+        log_ratio = torch.clamp(
+            (new_lp - old_lp) * action_mask,
+            min=-_LOG_RATIO_CLAMP,
+            max=_LOG_RATIO_CLAMP,
+        )
         ratio = torch.exp(log_ratio)
         batch.batch["prob_ratio"] = ratio
         return ratio
@@ -1367,7 +1423,11 @@ class LLMGenerationManager:
                 "Both old_log_probs and new_log_probs must be computed before calling per_token_kl."
             )
         action_mask = self._response_action_mask(batch)
-        log_ratio = (old_lp - new_lp) * action_mask
+        log_ratio = torch.clamp(
+            (old_lp - new_lp) * action_mask,
+            min=-_LOG_RATIO_CLAMP,
+            max=_LOG_RATIO_CLAMP,
+        )
         kl = (torch.exp(log_ratio) - log_ratio - 1.0) * action_mask
         batch.batch["per_token_kl"] = kl
         return kl
