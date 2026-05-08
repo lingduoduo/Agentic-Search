@@ -255,6 +255,7 @@ class RolloutTrajectory:
     response_mask: list[int] | None = None
     old_log_probs: list[float] | None = None
     new_log_probs: list[float] | None = None
+    ref_log_probs: list[float] | None = None
 
 
 @dataclass(frozen=True)
@@ -838,6 +839,103 @@ def trajectory_log_prob_pack(
         "attention_mask": list(traj.attention_mask or [1] * n),
         "response_mask": list(traj.response_mask or [0] * n),
         "old_log_probs": list(traj.old_log_probs or [0.0] * n),
+    }
+
+
+def compute_trajectory_policy_loss(
+    *,
+    new_log_probs: list[float],
+    old_log_probs: list[float],
+    advantages: list[float],
+    response_mask: list[int],
+    ref_log_probs: list[float] | None = None,
+    clip_epsilon: float = 0.2,
+    kl_beta: float = 0.0,
+) -> dict[str, float]:
+    """Compute the GRPO / PPO clipped policy loss for one trajectory.
+
+    Operates on the aligned lists produced by :func:`trajectory_log_prob_pack`
+    so it requires no :class:`SearchBatch`, no tokenizer, and no GPU batch.
+
+    Formula::
+
+        ratio      = exp(new_log_probs - old_log_probs)
+        loss1      = ratio * advantages
+        loss2      = clamp(ratio, 1-ε, 1+ε) * advantages
+        grpo_loss  = -mean(min(loss1, loss2) * response_mask)
+
+        kl         = KL(ref || new)  using ref_log_probs if given,
+                     else KL(old || new)
+        kl_penalty = kl_beta * mean(kl * response_mask)
+
+        total_loss = grpo_loss + kl_penalty
+
+    ``response_mask`` must be 1 only for model-generated action tokens.
+    Prompt positions and environment-injected ``<information>…</information>``
+    observation tokens must be 0 — they are never trained.
+
+    Args:
+        new_log_probs: Log probs under the current policy (prompt+response aligned).
+        old_log_probs: Log probs frozen at rollout time (same shape).
+        advantages:    Per-token advantage signal (same shape; typically 0.0
+                       everywhere except the final action token for sparse GRPO).
+        response_mask: Binary mask — 1 for model action tokens, 0 for the rest.
+        ref_log_probs: Log probs of a frozen reference policy for KL.
+                       If ``None``, falls back to ``old_log_probs``.
+        clip_epsilon:  PPO clip range (default 0.2).
+        kl_beta:       KL penalty coefficient β (default 0.0 = no KL).
+
+    Returns:
+        Dict with ``grpo_policy_loss``, ``kl_penalty``, ``total_loss``,
+        ``clip_fraction``, and ``mean_ratio`` for logging.
+    """
+    n = len(new_log_probs)
+    if not (len(old_log_probs) == len(advantages) == len(response_mask) == n):
+        raise ValueError(
+            "new_log_probs, old_log_probs, advantages, and response_mask "
+            f"must all have the same length, got lengths "
+            f"{n}, {len(old_log_probs)}, {len(advantages)}, {len(response_mask)}."
+        )
+
+    new_lp = torch.tensor(new_log_probs, dtype=torch.float32)
+    old_lp = torch.tensor(old_log_probs, dtype=torch.float32)
+    adv = torch.tensor(advantages, dtype=torch.float32)
+    mask = torch.tensor(response_mask, dtype=torch.float32)
+
+    log_ratio = torch.clamp(
+        new_lp - old_lp, min=-_LOG_RATIO_CLAMP, max=_LOG_RATIO_CLAMP
+    )
+    ratio = torch.exp(log_ratio)
+    clipped_ratio = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon)
+    surrogate = torch.minimum(ratio * adv, clipped_ratio * adv)
+
+    normalizer = max(float(mask.sum()), 1.0)
+    grpo_policy_loss = float(-(surrogate * mask).sum() / normalizer)
+
+    kl_penalty = 0.0
+    if kl_beta:
+        baseline = (
+            torch.tensor(ref_log_probs, dtype=torch.float32)
+            if ref_log_probs is not None
+            else old_lp
+        )
+        kl_log_ratio = torch.clamp(
+            (baseline - new_lp) * mask,
+            min=-_LOG_RATIO_CLAMP,
+            max=_LOG_RATIO_CLAMP,
+        )
+        kl = (torch.exp(kl_log_ratio) - kl_log_ratio - 1.0) * mask
+        kl_penalty = kl_beta * float(kl.sum() / normalizer)
+
+    clip_fraction = float(
+        ((ratio != clipped_ratio).to(dtype=torch.float32) * mask).sum() / normalizer
+    )
+    return {
+        "grpo_policy_loss": grpo_policy_loss,
+        "kl_penalty": kl_penalty,
+        "total_loss": grpo_policy_loss + kl_penalty,
+        "clip_fraction": clip_fraction,
+        "mean_ratio": float((ratio * mask).sum() / normalizer),
     }
 
 
@@ -1666,9 +1764,10 @@ class LLMGenerationManager:
         batch: SearchBatch,
         store_key: str,
     ) -> None:
-        if store_key not in {"old_log_probs", "new_log_probs"}:
+        if store_key not in {"old_log_probs", "new_log_probs", "ref_log_probs"}:
             raise ValueError(
-                f"store_key must be 'old_log_probs' or 'new_log_probs', got {store_key!r}"
+                "store_key must be 'old_log_probs', 'new_log_probs', or "
+                f"'ref_log_probs', got {store_key!r}"
             )
         trajectories = batch.non_tensor_batch.get("trajectories", [])
         log_probs = batch.batch.get(store_key)
@@ -1697,6 +1796,7 @@ class LLMGenerationManager:
         *,
         old_backend: LogProbCapable | None = None,
         new_backend: LogProbCapable | None = None,
+        ref_backend: LogProbCapable | None = None,
         compute_ratio: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Prepare old/new token log probabilities for PPO / GRPO updates.
@@ -1709,8 +1809,10 @@ class LLMGenerationManager:
 
         The tensors are stored on ``batch.batch`` under
         ``"old_log_probs"`` and ``"new_log_probs"`` and mirrored into each
-        ``RolloutTrajectory`` when present. When ``compute_ratio=True`` this
-        also computes ``prob_ratio = exp(new - old)``.
+        ``RolloutTrajectory`` when present. If ``ref_backend`` is supplied,
+        this also stores ``ref_log_probs`` for KL regularization against a
+        separate frozen reference policy. When ``compute_ratio=True`` this also
+        computes ``prob_ratio = exp(new - old)``.
         """
         resolved_old_backend = old_backend or self.generation_backend
         resolved_new_backend = new_backend or self.generation_backend
@@ -1725,6 +1827,12 @@ class LLMGenerationManager:
             backend=resolved_new_backend,
             store_key="new_log_probs",
         )
+        if ref_backend is not None:
+            self.compute_log_prob(
+                batch,
+                backend=ref_backend,
+                store_key="ref_log_probs",
+            )
         if compute_ratio:
             self.compute_prob_ratio(batch)
         batch.meta_info["policy_log_probs_prepared"] = True
@@ -1975,6 +2083,7 @@ class LLMGenerationManager:
 
         normalizer = torch.clamp(action_mask.sum(), min=1.0)
         policy_objective = surrogate.sum() / normalizer
+        grpo_policy_loss = -policy_objective
 
         kl_term = torch.tensor(0.0, dtype=torch.float32, device=policy_objective.device)
         if cfg.kl_coefficient:
@@ -1994,9 +2103,10 @@ class LLMGenerationManager:
             if new_lp is not None:
                 entropy_term = -(new_lp * action_mask).sum() / normalizer
 
+        kl_penalty = float(cfg.kl_coefficient) * kl_term
         loss = (
-            -policy_objective
-            + float(cfg.kl_coefficient) * kl_term
+            grpo_policy_loss
+            + kl_penalty
             - float(cfg.entropy_coefficient) * entropy_term
         )
         clip_fraction = (
@@ -2027,6 +2137,9 @@ class LLMGenerationManager:
         batch.batch["advantages"] = resolved_advantages * action_mask
         batch.batch["clipped_prob_ratio"] = clipped_ratio
         batch.batch["policy_loss"] = loss
+        batch.batch["grpo_policy_loss"] = grpo_policy_loss.detach()
+        batch.batch["kl_penalty"] = kl_penalty.detach()
+        batch.batch["total_policy_loss"] = loss.detach()
         batch.batch["policy_objective"] = policy_objective.detach()
         batch.batch["clip_fraction"] = clip_fraction.detach()
         batch.batch["mean_advantage"] = (
@@ -2043,28 +2156,42 @@ class LLMGenerationManager:
         return loss
 
     def per_token_kl(self, batch: SearchBatch) -> torch.Tensor:
-        """Compute per-token KL divergence KL(π_θ_old ‖ π_θ) for GRPO regularisation.
+        """Compute per-token KL divergence for GRPO / PPO regularisation.
 
         Uses the unbiased estimator:
             KL(p ‖ q) ≈ exp(log_p − log_q) − (log_p − log_q) − 1
 
+        If ``batch.batch["ref_log_probs"]`` is present, that frozen reference
+        policy is used as ``p`` and ``new_log_probs`` is used as ``q``. This is
+        the standard GRPO / RLHF-style KL penalty:
+
+            kl_t = KL(pi_ref || pi_theta)
+
+        Otherwise it falls back to ``old_log_probs`` vs ``new_log_probs``.
+
         Env-injected observation tokens contribute 0 KL (masked out).
         Result is stored in batch.batch['per_token_kl'] and returned.
         """
+        ref_lp = batch.batch.get("ref_log_probs")
         old_lp = batch.batch.get("old_log_probs")
         new_lp = batch.batch.get("new_log_probs")
-        if old_lp is None or new_lp is None:
+        baseline_lp = ref_lp if ref_lp is not None else old_lp
+        if baseline_lp is None or new_lp is None:
             raise ValueError(
-                "Both old_log_probs and new_log_probs must be computed before calling per_token_kl."
+                "Need either ref_log_probs or old_log_probs, plus new_log_probs, "
+                "before calling per_token_kl."
             )
         action_mask = self._response_action_mask(batch)
         log_ratio = torch.clamp(
-            (old_lp - new_lp) * action_mask,
+            (baseline_lp - new_lp) * action_mask,
             min=-_LOG_RATIO_CLAMP,
             max=_LOG_RATIO_CLAMP,
         )
         kl = (torch.exp(log_ratio) - log_ratio - 1.0) * action_mask
         batch.batch["per_token_kl"] = kl
+        batch.meta_info["kl_reference"] = (
+            "ref_log_probs" if ref_lp is not None else "old_log_probs"
+        )
         return kl
 
     def _initialize_agent_loop_state(

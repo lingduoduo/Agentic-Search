@@ -21,6 +21,7 @@ from .generation import (
     format_trajectory_batch,
     score_group_rollout,
     trajectory_log_prob_pack,
+    compute_trajectory_policy_loss,
 )
 from .tensor_helper import TensorConfig, TensorHelper
 
@@ -47,4 +48,5 @@ __all__ = [
     "format_trajectory_batch",
     "score_group_rollout",
     "trajectory_log_prob_pack",
+    "compute_trajectory_policy_loss",
 ]
