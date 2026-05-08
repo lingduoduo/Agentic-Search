@@ -262,6 +262,21 @@ This keeps the RL dataset prompt-only: the model generates its own action trace
 or tool trajectory during rollout, and `ground_truth` stays outside the prompt
 for reward computation.
 
+At the end of the loop, the batch exposes a `final_gen_batch_output` object
+that represents the full RL rollout batch. Each trajectory is the complete
+sequence:
+
+```text
+prompt
+-> search
+-> retrieval
+-> reasoning
+-> answer
+```
+
+This is the RL rollout trajectory. It is available both as a structured
+`RolloutTrajectory` and as a reward-ready `AgentLoopOutput`.
+
 ### Local model notes
 
 Use `--local` to load a HuggingFace model in-process instead of connecting to a vLLM server. Useful for offline development or when a server is not available.
@@ -840,6 +855,36 @@ advantage_i = (reward_i − mean(group_rewards)) / (std(group_rewards) + ε)
 ```
 
 Single-sample groups get advantage `0.0` (no within-group signal). The population variance formula (N denominator) is used; if your trainer wants sample variance (N-1), normalize there instead and use `compute_grpo_outcome_advantages()` or `reward_fn.compute()` for the raw values.
+
+### Recomputing policy log probabilities
+
+After rollout, PPO / GRPO needs the token-level policy likelihood under both the
+rollout policy and the current policy being optimized:
+
+```
+old_log_probs = log pi_theta_old(a_t | s_t)
+new_log_probs = log pi_theta(a_t | s_t)
+ratio_t       = exp(new_log_probs - old_log_probs)
+```
+
+`LLMGenerationManager.compute_log_prob(...)` recomputes log probabilities aligned
+with the generated action tokens, and `prepare_policy_log_probs(...)` prepares the
+full PPO / GRPO pair in one call:
+
+```python
+old_log_probs, new_log_probs = manager.prepare_policy_log_probs(
+    final_batch,
+    old_backend=rollout_policy,
+    new_backend=train_policy,
+)
+
+loss = manager.compute_policy_loss(final_batch, advantages=advantages)
+```
+
+This stores `old_log_probs`, `new_log_probs`, and optionally `prob_ratio` on
+`final_batch.batch`, while also mirroring the values into each
+`RolloutTrajectory`. Observation tokens injected by the environment stay masked
+out, so only model-chosen action tokens contribute to PPO / GRPO updates.
 
 Supported grouped-scoring modes:
 

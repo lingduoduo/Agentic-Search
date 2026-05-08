@@ -22,6 +22,7 @@ from .data import (
     build_prompt_messages,
     collate_prompt_batch,
     normalize_prompt_training_example,
+    prompt_batch_to_search_batch,
 )
 from .evaluation import (
     QueryEvaluation,
@@ -76,6 +77,7 @@ __all__ = [
     "build_prompt_dataloader",
     "build_prompt_ids_from_messages",
     "build_prompt_messages",
+    "prompt_batch_to_search_batch",
     "SearchRewardConfig",
     "SearchRewardFunction",
     "AgentLoopBase",

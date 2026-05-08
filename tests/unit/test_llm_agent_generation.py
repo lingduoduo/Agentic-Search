@@ -48,6 +48,16 @@ class DummyActorRolloutWithLogProb(DummyActorRollout):
         return torch.full_like(batch.batch["responses"], -0.5, dtype=torch.float32)
 
 
+class FixedLogProbBackend(DummyActorRollout):
+    def __init__(self, value: float):
+        self.value = value
+
+    def compute_log_prob(self, batch):
+        return torch.full_like(
+            batch.batch["responses"], self.value, dtype=torch.float32
+        )
+
+
 class SequencedActorRollout:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -598,6 +608,70 @@ def test_compute_log_prob_stores_new_log_probs_on_batch_and_trajectory():
     assert batch.non_tensor_batch["trajectories"][0].new_log_probs == [-0.5, -0.5, -0.0]
 
 
+def test_prepare_policy_log_probs_stores_old_new_and_ratio():
+    manager = _manager()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6, 0]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6, 0]], dtype=torch.long),
+        }
+    )
+    batch.non_tensor_batch["trajectories"] = [
+        RolloutTrajectory(
+            batch_index=0,
+            prompt_token_ids=[1, 2],
+            response_token_ids=[5, 6, 0],
+            response_with_observation_mask=[5, 6, 0],
+            trajectory_turns=1,
+            steps=[],
+            final_answer="done",
+            finished_without_answer=False,
+        )
+    ]
+
+    old_log_probs, new_log_probs = manager.prepare_policy_log_probs(
+        batch,
+        old_backend=FixedLogProbBackend(-1.0),
+        new_backend=FixedLogProbBackend(-0.5),
+    )
+
+    expected_old = torch.tensor([[-1.0, -1.0, -0.0]], dtype=torch.float32)
+    expected_new = torch.tensor([[-0.5, -0.5, -0.0]], dtype=torch.float32)
+    expected_ratio = torch.exp(expected_new - expected_old)
+
+    assert torch.allclose(old_log_probs, expected_old)
+    assert torch.allclose(new_log_probs, expected_new)
+    assert torch.allclose(batch.batch["old_log_probs"], expected_old)
+    assert torch.allclose(batch.batch["new_log_probs"], expected_new)
+    assert torch.allclose(batch.batch["prob_ratio"], expected_ratio)
+    assert batch.meta_info["policy_log_probs_prepared"] is True
+    trajectory = batch.non_tensor_batch["trajectories"][0]
+    assert trajectory.old_log_probs == [-1.0, -1.0, -0.0]
+    assert trajectory.new_log_probs == [-0.5, -0.5, -0.0]
+
+
+def test_prepare_policy_log_probs_can_skip_ratio_computation():
+    manager = _manager()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6]], dtype=torch.long),
+        }
+    )
+
+    manager.prepare_policy_log_probs(
+        batch,
+        old_backend=FixedLogProbBackend(-1.0),
+        new_backend=FixedLogProbBackend(-0.5),
+        compute_ratio=False,
+    )
+
+    assert "old_log_probs" in batch.batch
+    assert "new_log_probs" in batch.batch
+    assert "prob_ratio" not in batch.batch
+    assert batch.meta_info["policy_log_probs_prepared"] is True
+
+
 def _batch_with_old_and_new_log_probs(
     old: list[float], new: list[float]
 ) -> "SearchBatch":
@@ -636,6 +710,72 @@ def test_per_token_kl_is_zero_when_policies_are_identical():
     batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-1.0, -2.0])
     kl = manager.per_token_kl(batch)
     assert torch.allclose(kl, torch.zeros_like(kl), atol=1e-6)
+
+
+def test_compute_prob_ratio_is_finite_for_extreme_log_differences():
+    # Without clamping, new_lp=0.0 and old_lp=-100.0 gives exp(100)=overflow in float32.
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.ones(1, 2, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(1, 2, dtype=torch.long),
+        }
+    )
+    batch.batch["old_log_probs"] = torch.tensor([[-100.0, 0.0]], dtype=torch.float32)
+    batch.batch["new_log_probs"] = torch.tensor([[0.0, -100.0]], dtype=torch.float32)
+
+    ratio = manager.compute_prob_ratio(batch)
+
+    assert torch.isfinite(ratio).all()
+
+
+def test_per_token_kl_is_finite_for_extreme_log_differences():
+    manager = _manager_with_log_prob()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.ones(1, 2, dtype=torch.long),
+            "responses_with_info_mask": torch.ones(1, 2, dtype=torch.long),
+        }
+    )
+    batch.batch["old_log_probs"] = torch.tensor([[0.0, -100.0]], dtype=torch.float32)
+    batch.batch["new_log_probs"] = torch.tensor([[-100.0, 0.0]], dtype=torch.float32)
+
+    kl = manager.per_token_kl(batch)
+
+    assert torch.isfinite(kl).all()
+
+
+def test_compute_log_prob_skips_recompute_when_overwrite_false():
+    # old_log_probs stored at rollout time must not be silently overwritten.
+    manager = _manager_with_log_prob()  # backend returns -0.5
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6]], dtype=torch.long),
+        }
+    )
+    frozen = torch.tensor([[-9.9, -9.9]], dtype=torch.float32)
+    batch.batch["old_log_probs"] = frozen
+
+    result = manager.compute_log_prob(batch, store_key="old_log_probs", overwrite=False)
+
+    assert torch.allclose(result, frozen)
+    assert torch.allclose(batch.batch["old_log_probs"], frozen)
+
+
+def test_compute_log_prob_overwrites_old_log_probs_when_overwrite_true():
+    manager = _manager_with_log_prob()  # backend returns -0.5
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6]], dtype=torch.long),
+        }
+    )
+    batch.batch["old_log_probs"] = torch.tensor([[-9.9, -9.9]], dtype=torch.float32)
+
+    result = manager.compute_log_prob(batch, store_key="old_log_probs", overwrite=True)
+
+    assert torch.allclose(result, torch.tensor([[-0.5, -0.5]], dtype=torch.float32))
 
 
 def test_compute_policy_loss_matches_clipped_ppo_objective():
