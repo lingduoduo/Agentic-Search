@@ -1,8 +1,12 @@
 """HTTP client for the repo's search and retrieval servers.
 
-All three servers expose the same POST /retrieve interface:
+Servers may expose either:
     Request:  {"queries": ["..."], "topk": N}
     Response: {"result": [[item, ...], ...]}  — one inner list per query
+
+or a trainer-friendly single-query shape:
+    Request:  {"query": "...", "top_k": N}
+    Response: {"query": "...", "results": [item, ...]}
 
 Item shapes differ by server:
     retrieval_server (return_scores=True):  {"document": {...}, "score": float}
@@ -98,7 +102,9 @@ class SearchClient:
         """
         payload = {"queries": queries, "topk": topk or self.config.topk}
         data = await self._post_json(self.config.url, payload, "retrieve")
-        rows = data.get("result", [])
+        rows = data.get("result", data.get("results", []))
+        if rows and isinstance(rows[0], dict):
+            rows = [rows]
         return [[SearchResult.from_api_item(item) for item in row] for row in rows]
 
     async def retrieve_one(
