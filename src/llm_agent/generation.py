@@ -242,6 +242,11 @@ class PPOPolicyLossConfig:
 
     clip_epsilon: float = 0.2
     kl_coefficient: float = 0.0
+    # Coefficient for the entropy bonus added to the objective.  A positive
+    # value encourages the search / reasoning / stopping policies to remain
+    # diverse and prevents premature mode collapse onto a single strategy.
+    # Requires new_log_probs to be present in batch.batch.
+    entropy_coefficient: float = 0.0
     # Per-action-type loss multipliers.  Keys: "search", "plan", "fetch", "answer".
     # Tokens with no matching key keep weight 1.0.  None means uniform weighting.
     action_type_weights: dict[str, float] | None = None
@@ -1262,6 +1267,8 @@ class LLMGenerationManager:
         masks = {
             tag: torch.zeros(B, T, dtype=torch.float32) for tag in ROLLOUT_ACTION_TAGS
         }
+        if not hasattr(self.tokenizer, "decode"):
+            return masks
         for row, ids in enumerate(response_ids_list):
             offsets = _token_char_offsets(ids, self.tokenizer)
             text = self.tokenizer.decode(ids, skip_special_tokens=False)
@@ -1276,6 +1283,38 @@ class LLMGenerationManager:
                     ):
                         masks[tag][row, tok] = 1.0
         return masks
+
+    def compute_policy_family_masks(
+        self,
+        batch: SearchBatch,
+    ) -> dict[str, torch.Tensor]:
+        """Higher-level masks for search / reasoning / stopping / answer policies.
+
+        The rollout emits explicit action tags, but PPO / GRPO discussions often
+        refer to broader policy families. In this codebase the mapping is:
+
+        - ``search_policy``    -> ``<search> ... </search>``
+        - ``reasoning_policy`` -> ``<plan> ... </plan>`` and ``<fetch> ... </fetch>``
+        - ``stopping_policy``  -> terminal ``<answer> ... </answer>``
+        - ``answer_policy``    -> ``<answer> ... </answer>``
+
+        ``stopping_policy`` and ``answer_policy`` intentionally share the same
+        token span because the stop decision is represented by emitting the
+        final answer action.
+        """
+        type_masks = self.compute_action_type_masks(batch)
+        answer_mask = type_masks["answer"]
+        reasoning_mask = torch.clamp(
+            type_masks["plan"] + type_masks["fetch"],
+            min=0.0,
+            max=1.0,
+        )
+        return {
+            "search_policy": type_masks["search"],
+            "reasoning_policy": reasoning_mask,
+            "stopping_policy": answer_mask,
+            "answer_policy": answer_mask,
+        }
 
     def policy_loss_breakdown(
         self,
@@ -1319,6 +1358,41 @@ class LLMGenerationManager:
         for tag, mask in type_masks.items():
             n_tokens = torch.clamp(mask.sum(), min=1.0)
             breakdown[tag] = (surrogate * mask).sum() / n_tokens
+        return breakdown
+
+    def policy_update_breakdown(
+        self,
+        batch: SearchBatch,
+        *,
+        advantages: torch.Tensor | None = None,
+        config: PPOPolicyLossConfig | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Per-policy-family clipped objective for PPO / GRPO diagnostics."""
+        cfg = config or PPOPolicyLossConfig()
+        ratio = batch.batch.get("prob_ratio")
+        if ratio is None:
+            ratio = self.compute_prob_ratio(batch)
+        resolved_advantages = advantages
+        if resolved_advantages is None:
+            resolved_advantages = batch.batch.get("advantages")
+        if resolved_advantages is None:
+            raise ValueError(
+                "advantages not found; pass `advantages=` or populate batch.batch['advantages'] first."
+            )
+        resolved_advantages = resolved_advantages.to(dtype=torch.float32)
+        clipped_ratio = torch.clamp(
+            ratio,
+            1.0 - float(cfg.clip_epsilon),
+            1.0 + float(cfg.clip_epsilon),
+        )
+        surrogate = torch.minimum(
+            ratio * resolved_advantages, clipped_ratio * resolved_advantages
+        )
+        family_masks = self.compute_policy_family_masks(batch)
+        breakdown: dict[str, torch.Tensor] = {}
+        for family, mask in family_masks.items():
+            n_tokens = torch.clamp(mask.sum(), min=1.0)
+            breakdown[family] = (surrogate * mask).sum() / n_tokens
         return breakdown
 
     def compute_policy_loss(
@@ -1367,12 +1441,19 @@ class LLMGenerationManager:
             1.0 - float(cfg.clip_epsilon),
             1.0 + float(cfg.clip_epsilon),
         )
-        unclipped_objective = ratio * resolved_advantages
-        clipped_objective = clipped_ratio * resolved_advantages
-        surrogate = torch.minimum(unclipped_objective, clipped_objective) * action_mask
+        surrogate = (
+            torch.minimum(
+                ratio * resolved_advantages, clipped_ratio * resolved_advantages
+            )
+            * action_mask
+        )
+
+        # Compute action-type masks once — shared by action_type_weights reweighting
+        # and the policy-family breakdown below.  Without this, compute_action_type_masks
+        # would be called 2–3 times (one tokenizer decode pass per call).
+        type_masks = self.compute_action_type_masks(batch)
 
         if cfg.action_type_weights:
-            type_masks = self.compute_action_type_masks(batch)
             weight_tensor = torch.ones_like(ratio)
             for tag, w in cfg.action_type_weights.items():
                 if tag in type_masks:
@@ -1391,10 +1472,46 @@ class LLMGenerationManager:
                 kl = self.per_token_kl(batch)
             kl_term = (kl * action_mask).sum() / normalizer
 
-        loss = -policy_objective + float(cfg.kl_coefficient) * kl_term
+        # Entropy bonus: H(π) ≈ −E[log π(a|s)] over action tokens.
+        # Adding this to the objective keeps the search / reasoning / stopping
+        # policies diverse and prevents premature mode collapse.
+        entropy_term = torch.tensor(
+            0.0, dtype=torch.float32, device=policy_objective.device
+        )
+        if cfg.entropy_coefficient:
+            new_lp = batch.batch.get("new_log_probs")
+            if new_lp is not None:
+                entropy_term = -(new_lp * action_mask).sum() / normalizer
+
+        loss = (
+            -policy_objective
+            + float(cfg.kl_coefficient) * kl_term
+            - float(cfg.entropy_coefficient) * entropy_term
+        )
         clip_fraction = (
             (ratio != clipped_ratio).to(dtype=torch.float32) * action_mask
         ).sum() / normalizer
+
+        # Policy-family breakdown from the already-computed type_masks — no extra
+        # decode pass.  stopping_policy and answer_policy share the <answer> span.
+        answer_mask = type_masks["answer"]
+        reasoning_mask = torch.clamp(
+            type_masks["plan"] + type_masks["fetch"], min=0.0, max=1.0
+        )
+        family_masks = {
+            "search_policy": type_masks["search"],
+            "reasoning_policy": reasoning_mask,
+            "stopping_policy": answer_mask,
+            "answer_policy": answer_mask,
+        }
+        family_breakdown: dict[str, float] = {}
+        family_token_counts: dict[str, float] = {}
+        for family, fmask in family_masks.items():
+            n_fam = torch.clamp(fmask.sum(), min=1.0)
+            family_breakdown[family] = float(
+                ((surrogate * fmask).sum() / n_fam).detach().item()
+            )
+            family_token_counts[family] = float(fmask.sum().item())
 
         batch.batch["advantages"] = resolved_advantages * action_mask
         batch.batch["clipped_prob_ratio"] = clipped_ratio
@@ -1405,6 +1522,13 @@ class LLMGenerationManager:
             (resolved_advantages * action_mask).sum() / normalizer
         ).detach()
         batch.batch["mean_kl"] = kl_term.detach()
+        if cfg.entropy_coefficient:
+            batch.batch["entropy"] = entropy_term.detach()
+        batch.meta_info["policy_update_token_counts"] = family_token_counts
+        batch.meta_info["updated_policies"] = [
+            family for family, count in family_token_counts.items() if count > 0.0
+        ]
+        batch.meta_info["policy_update_breakdown"] = family_breakdown
         return loss
 
     def per_token_kl(self, batch: SearchBatch) -> torch.Tensor:

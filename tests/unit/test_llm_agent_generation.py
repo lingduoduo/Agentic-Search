@@ -1377,6 +1377,29 @@ def test_compute_action_type_masks_multi_batch():
     assert masks["search"][1].sum().item() == 0.0
 
 
+def test_compute_policy_family_masks_maps_reasoning_and_stopping_policies():
+    manager = _manager_with_char_tokenizer()
+    text = "<plan>think</plan><fetch>url</fetch><answer>x</answer>"
+    batch = _batch_from_texts(text)
+
+    masks = manager.compute_policy_family_masks(batch)
+
+    assert set(masks.keys()) == {
+        "search_policy",
+        "reasoning_policy",
+        "stopping_policy",
+        "answer_policy",
+    }
+    assert masks["search_policy"].sum().item() == pytest.approx(0.0)
+    assert masks["reasoning_policy"].sum().item() == pytest.approx(
+        len("<plan>think</plan><fetch>url</fetch>")
+    )
+    assert masks["stopping_policy"].sum().item() == pytest.approx(
+        len("<answer>x</answer>")
+    )
+    assert torch.allclose(masks["stopping_policy"], masks["answer_policy"])
+
+
 def test_policy_loss_breakdown_returns_per_type_scalars():
     manager = _manager_with_char_tokenizer()
     text = "<search>q</search><answer>x</answer>"
@@ -1399,6 +1422,37 @@ def test_policy_loss_breakdown_returns_per_type_scalars():
     # plan and fetch absent from text → their masks are all-zero → 0 contribution
     assert breakdown["plan"].item() == pytest.approx(0.0, abs=1e-5)
     assert breakdown["fetch"].item() == pytest.approx(0.0, abs=1e-5)
+
+
+def test_policy_update_breakdown_returns_search_reasoning_stopping_answer():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><plan>think</plan><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    breakdown = manager.policy_update_breakdown(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    assert set(breakdown.keys()) == {
+        "search_policy",
+        "reasoning_policy",
+        "stopping_policy",
+        "answer_policy",
+    }
+    assert breakdown["search_policy"].item() > 0.0
+    assert breakdown["reasoning_policy"].item() > 0.0
+    assert breakdown["stopping_policy"].item() > 0.0
+    assert breakdown["answer_policy"].item() > 0.0
+    assert breakdown["stopping_policy"].item() == pytest.approx(
+        breakdown["answer_policy"].item(),
+        abs=1e-6,
+    )
 
 
 def test_policy_loss_breakdown_requires_advantages():
@@ -1434,6 +1488,120 @@ def test_compute_policy_loss_action_type_weights_upweight_answer():
     )
     # Upweighting answer tokens increases the objective → negated loss is smaller
     assert loss_weighted.item() < loss_base.item()
+
+
+def test_compute_policy_loss_records_updated_policy_families():
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><plan>think</plan><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2),
+    )
+
+    assert batch.meta_info["updated_policies"] == [
+        "search_policy",
+        "reasoning_policy",
+        "stopping_policy",
+        "answer_policy",
+    ]
+    assert batch.meta_info["policy_update_token_counts"]["search_policy"] > 0.0
+    assert batch.meta_info["policy_update_token_counts"]["reasoning_policy"] > 0.0
+    assert batch.meta_info["policy_update_token_counts"]["stopping_policy"] > 0.0
+    assert batch.meta_info["policy_update_breakdown"]["answer_policy"] == pytest.approx(
+        batch.meta_info["policy_update_breakdown"]["stopping_policy"],
+        abs=1e-6,
+    )
+
+
+def test_ppo_policy_loss_config_entropy_coefficient_default_zero():
+    cfg = PPOPolicyLossConfig()
+    assert cfg.entropy_coefficient == 0.0
+
+
+def test_compute_policy_loss_entropy_bonus_lowers_loss_for_low_entropy_policy():
+    """Entropy bonus (entropy_coefficient > 0) must reduce the loss when
+    new_log_probs are present — more negative log probs → higher entropy term
+    → smaller (more negative) objective before negation → smaller loss."""
+    manager = _manager_with_char_tokenizer()
+    text = "<answer>x</answer>"
+    batch_no_ent = _batch_from_texts(text)
+    batch_with_ent = _batch_from_texts(text)
+    n = batch_no_ent.batch["responses"].shape[1]
+    for b in (batch_no_ent, batch_with_ent):
+        b.batch["old_log_probs"] = torch.full((1, n), -1.0)
+        b.batch["new_log_probs"] = torch.full((1, n), -2.0)  # high entropy signal
+    advantages = torch.ones(1, n)
+
+    loss_no_ent = manager.compute_policy_loss(
+        batch_no_ent,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, entropy_coefficient=0.0),
+    )
+    loss_with_ent = manager.compute_policy_loss(
+        batch_with_ent,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, entropy_coefficient=0.1),
+    )
+
+    # entropy_term = -mean(new_log_probs) = -(-2.0) = 2.0
+    # loss_with_ent = loss_no_ent - 0.1 * 2.0  (lower loss)
+    assert loss_with_ent.item() < loss_no_ent.item()
+    assert "entropy" in batch_with_ent.batch
+    assert batch_with_ent.batch["entropy"].item() == pytest.approx(2.0, abs=1e-5)
+
+
+def test_compute_policy_loss_entropy_not_stored_when_coefficient_zero():
+    manager = _manager_with_char_tokenizer()
+    text = "<answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -2.0)
+    advantages = torch.ones(1, n)
+
+    manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(entropy_coefficient=0.0),
+    )
+
+    assert "entropy" not in batch.batch
+
+
+def test_compute_policy_loss_type_masks_computed_once_even_with_action_type_weights():
+    """With action_type_weights set, type masks must not trigger extra tokenizer
+    decode passes.  We verify correctness (not call-count) by checking that
+    the per-family breakdown and the weighted loss are both populated correctly
+    in a single compute_policy_loss call."""
+    manager = _manager_with_char_tokenizer()
+    text = "<search>q</search><answer>x</answer>"
+    batch = _batch_from_texts(text)
+    n = batch.batch["responses"].shape[1]
+    batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
+    batch.batch["new_log_probs"] = torch.full((1, n), -0.9)
+    advantages = torch.ones(1, n)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(
+            clip_epsilon=0.2,
+            action_type_weights={"search": 2.0, "answer": 1.5},
+        ),
+    )
+
+    # Family breakdown must be populated (uses same type_masks pass)
+    assert "search_policy" in batch.meta_info["policy_update_breakdown"]
+    assert "answer_policy" in batch.meta_info["policy_update_breakdown"]
+    # Loss must be a finite scalar
+    assert torch.isfinite(loss)
 
 
 def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
