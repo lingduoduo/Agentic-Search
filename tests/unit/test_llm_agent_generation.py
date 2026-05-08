@@ -13,6 +13,7 @@ from src.llm_agent.generation import (  # noqa: E402
     RetrievedDocument,
     RolloutTrajectory,
     SearchBatch,
+    format_search_trajectory_log,
 )
 
 
@@ -1753,6 +1754,246 @@ def test_run_llm_loop_saves_old_log_probs_when_backend_supports_it():
 
     assert "old_log_probs" in final_batch.batch
     assert final_batch.non_tensor_batch["trajectories"][0].old_log_probs is not None
+
+
+def test_run_llm_loop_records_printable_search_trajectory_logs():
+    class LoopTokenizer(DummyTokenizer):
+        def batch_decode(self, responses, skip_special_tokens=True):
+            del skip_special_tokens
+            mapping = {
+                (1, 1): "<search>cats</search>",
+                (2, 2): "<answer>done</answer>",
+                (3, 4): "Question context",
+                (3, 4, 1, 1): "Question context<search>cats</search>",
+                (3, 4, 1, 1, 9, 9, 2, 2): (
+                    "Question context<search>cats</search>"
+                    "<information>Doc 1: evidence</information><answer>done</answer>"
+                ),
+            }
+            decoded = []
+            for row in responses.tolist():
+                tokens = tuple(token for token in row if token != 0)
+                decoded.append(mapping.get(tokens, " ".join(str(t) for t in tokens)))
+            return decoded
+
+    manager = LLMGenerationManager(
+        tokenizer=LoopTokenizer(),
+        config=GenerationConfig(
+            max_turns=1,
+            max_start_length=8,
+            max_prompt_length=64,
+            max_response_length=16,
+            max_obs_length=16,
+            num_gpus=1,
+        ),
+        generation_backend=SequencedActorRollout(responses=[[[1, 1]], [[2, 2]]]),
+    )
+    manager.batch_search = lambda payload, search_mode, gt_threshold: [  # type: ignore[method-assign]
+        "Doc 1: evidence"
+    ]
+    gen_batch = SearchBatch.from_dict(
+        {
+            "input_ids": torch.tensor([[3, 4]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        }
+    )
+    gen_batch.non_tensor_batch = {
+        "question": ["What is the answer?"],
+        "golden_answers": [["done"]],
+    }
+
+    final_batch, _ = manager.run_llm_loop(
+        gen_batch=gen_batch,
+        search_mode="google",
+        current_step=0,
+        total_steps=10,
+        initial_input_ids=gen_batch.batch["input_ids"],
+    )
+
+    logs = final_batch.non_tensor_batch["trajectory_logs"]
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.question == "What is the answer?"
+    assert [step.action_type for step in log.steps] == ["search", "answer"]
+    assert log.steps[0].step_id == 1
+    assert log.steps[0].action_value == "cats"
+    assert "Doc 1: evidence" in (log.steps[0].observation or "")
+    assert log.steps[1].done is True
+    rendered = format_search_trajectory_log(log, reward=1.0)
+    assert "Question: What is the answer?" in rendered
+    assert "Step 1: search cats" in rendered
+    assert "Observation:" in rendered
+    assert "Step 2: answer done" in rendered
+    assert "Reward: 1.0" in rendered
+    # Compact mode must NOT show the raw State / Model Output dumps
+    assert "State:" not in rendered
+    assert "Model Output:" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# format_search_trajectory_log — compact vs verbose, to_dict, batch formatter
+# ---------------------------------------------------------------------------
+
+
+def _make_two_step_log():
+    from src.llm_agent.generation import SearchStep, SearchTrajectoryLog
+
+    return SearchTrajectoryLog(
+        batch_index=0,
+        question="Who won the 2024 Nobel Prize in Physics?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="context-window-contents-here",
+                model_output="<search>2024 Nobel Physics</search>",
+                action_type="search",
+                action_value="2024 Nobel Physics",
+                observation="Hopfield and Hinton won the Nobel Prize.",
+                done=False,
+            ),
+            SearchStep(
+                step_id=2,
+                state="context-window-contents-here",
+                model_output="<answer>Hopfield and Hinton</answer>",
+                action_type="answer",
+                action_value="Hopfield and Hinton",
+                observation=None,
+                done=True,
+            ),
+        ],
+        final_answer="Hopfield and Hinton",
+        finished_without_answer=False,
+    )
+
+
+def test_format_search_trajectory_log_compact_omits_state_and_model_output():
+    from src.llm_agent.generation import format_search_trajectory_log
+
+    log = _make_two_step_log()
+    rendered = format_search_trajectory_log(log, reward=1.0)
+
+    assert "Question: Who won the 2024 Nobel Prize in Physics?" in rendered
+    assert "Step 1: search 2024 Nobel Physics" in rendered
+    assert "Observation: Hopfield and Hinton won" in rendered
+    assert "Step 2: answer Hopfield and Hinton" in rendered
+    assert "Final Answer: Hopfield and Hinton" in rendered
+    assert "Reward: 1.0" in rendered
+    # Compact: state and raw model output must be hidden
+    assert "State:" not in rendered
+    assert "Model Output:" not in rendered
+
+
+def test_format_search_trajectory_log_verbose_includes_state_and_model_output():
+    from src.llm_agent.generation import format_search_trajectory_log
+
+    log = _make_two_step_log()
+    rendered = format_search_trajectory_log(log, verbose=True)
+
+    assert "State: context-window-contents-here" in rendered
+    assert "Model Output: <search>2024 Nobel Physics</search>" in rendered
+
+
+def test_format_search_trajectory_log_truncates_long_observation_in_compact_mode():
+    from src.llm_agent.generation import (
+        SearchStep,
+        SearchTrajectoryLog,
+        format_search_trajectory_log,
+    )
+
+    long_obs = "x" * 500
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question="q?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="",
+                model_output="<search>q</search>",
+                action_type="search",
+                action_value="q",
+                observation=long_obs,
+                done=False,
+            )
+        ],
+        final_answer=None,
+        finished_without_answer=True,
+    )
+    rendered = format_search_trajectory_log(log, max_obs_chars=100)
+    assert "..." in rendered
+    assert len(rendered) < len(long_obs)
+
+
+def test_format_search_trajectory_log_verbose_does_not_truncate_observation():
+    from src.llm_agent.generation import (
+        SearchStep,
+        SearchTrajectoryLog,
+        format_search_trajectory_log,
+    )
+
+    long_obs = "y" * 500
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question="q?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="",
+                model_output="<search>q</search>",
+                action_type="search",
+                action_value="q",
+                observation=long_obs,
+                done=False,
+            )
+        ],
+        final_answer=None,
+        finished_without_answer=True,
+    )
+    rendered = format_search_trajectory_log(log, verbose=True)
+    assert "..." not in rendered
+    assert long_obs in rendered
+
+
+def test_search_trajectory_log_str_returns_compact_format():
+    from src.llm_agent.generation import format_search_trajectory_log
+
+    log = _make_two_step_log()
+    assert str(log) == format_search_trajectory_log(log)
+
+
+def test_search_trajectory_log_to_dict_serializes_all_steps():
+    log = _make_two_step_log()
+    d = log.to_dict()
+
+    assert d["question"] == "Who won the 2024 Nobel Prize in Physics?"
+    assert d["final_answer"] == "Hopfield and Hinton"
+    assert d["finished_without_answer"] is False
+    assert len(d["steps"]) == 2
+    assert d["steps"][0]["action_type"] == "search"
+    assert d["steps"][0]["action_value"] == "2024 Nobel Physics"
+    assert d["steps"][0]["observation"] == "Hopfield and Hinton won the Nobel Prize."
+    assert d["steps"][0]["done"] is False
+    assert d["steps"][1]["action_type"] == "answer"
+    assert d["steps"][1]["done"] is True
+
+
+def test_format_trajectory_batch_joins_multiple_logs_with_separator():
+    from src.llm_agent.generation import format_trajectory_batch
+
+    log1 = _make_two_step_log()
+    log2 = _make_two_step_log()
+    rendered = format_trajectory_batch([log1, log2], rewards=[1.0, 0.0])
+
+    assert rendered.count("Question:") == 2
+    assert "Reward: 1.0" in rendered
+    assert "Reward: 0.0" in rendered
+    assert "─" in rendered  # separator
+
+
+def test_format_trajectory_batch_empty_list_returns_empty_string():
+    from src.llm_agent.generation import format_trajectory_batch
+
+    assert format_trajectory_batch([]) == ""
 
 
 def test_run_llm_loop_records_search_reformulations_across_turns():
