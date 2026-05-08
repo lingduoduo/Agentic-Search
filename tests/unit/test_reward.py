@@ -14,6 +14,10 @@ from src.agent_loop import (
     SearchRewardFunction,
 )
 from src.agent_loop.context import AgentContext, SearchResult
+from src.agent_loop.reward import (
+    normalize_answer_text,
+    simple_sparse_correctness_reward,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +163,168 @@ def test_reward_correctness_weight():
     reward = rf.compute(output, ground_truth="Paris", judge_fn=_exact_match)
     # correctness=1.0 * 2.0 + coverage=1.0 * 0.0 + search_pen=-0.0 = 2.0
     assert pytest.approx(reward, abs=0.01) == 2.0
+
+
+def test_normalize_answer_text_lowercases_and_collapses_whitespace():
+    assert normalize_answer_text("  John   Hopfield \n") == "john hopfield"
+
+
+def test_simple_sparse_correctness_reward_exact_match_gets_one():
+    assert simple_sparse_correctness_reward(
+        " John Hopfield ", "john hopfield"
+    ) == pytest.approx(1.0)
+
+
+def test_simple_sparse_correctness_reward_contains_gold_gets_partial_credit():
+    assert simple_sparse_correctness_reward(
+        "The winner was John Hopfield and Geoffrey Hinton.",
+        "John Hopfield",
+    ) == pytest.approx(0.7)
+
+
+def test_simple_sparse_correctness_reward_non_match_gets_zero():
+    assert simple_sparse_correctness_reward("Paris", "London") == pytest.approx(0.0)
+
+
+def test_simple_sparse_with_search_penalty_matches_first_pass_formula():
+    rf = SearchRewardFunction(
+        SearchRewardConfig.simple_sparse_with_search_penalty(per_search_penalty=-0.02)
+    )
+    output = _output_with_answer("Paris", rounds_used=3.0)
+
+    reward = rf.compute(output, "Paris", simple_sparse_correctness_reward)
+    components = rf.reward_components(output, "Paris", simple_sparse_correctness_reward)
+
+    assert reward == pytest.approx(1.0 - 0.02 * 3.0)
+    assert components["terminal_reward"] == pytest.approx(1.0)
+    assert components["per_search_penalty"] == pytest.approx(-0.06)
+    assert components["total"] == pytest.approx(0.94)
+
+
+def test_simple_sparse_builder_disables_complex_second_pass_terms():
+    cfg = SearchRewardConfig.simple_sparse_with_search_penalty()
+    assert cfg.citation_support_weight == 0.0
+    assert cfg.search_quality_weight == 0.0
+    assert cfg.duplicate_query_penalty == 0.0
+    assert cfg.fetch_usefulness_reward == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 reward: second_pass preset + unsupported_claim_penalty
+# ---------------------------------------------------------------------------
+
+
+def test_second_pass_config_enables_exactly_the_phase2_terms():
+    cfg = SearchRewardConfig.second_pass()
+    assert cfg.per_search_penalty == pytest.approx(-0.02)
+    assert cfg.citation_support_weight == pytest.approx(0.1)
+    assert cfg.unsupported_claim_penalty == pytest.approx(-0.1)
+    assert cfg.duplicate_query_penalty == pytest.approx(-0.05)
+    # Everything else off
+    assert cfg.subquestion_coverage_weight == 0.0
+    assert cfg.search_quality_weight == 0.0
+    assert cfg.unnecessary_search_penalty == 0.0
+    assert cfg.fetch_usefulness_reward == 0.0
+
+
+def test_second_pass_reward_matches_formula():
+    """Phase 2 total = correctness - 0.02*searches + 0.1*citation - 0.05*dup_queries."""
+    rf = SearchRewardFunction(SearchRewardConfig.second_pass())
+    ctx = _make_ctx_with_results()
+    # Cite one of the four retrieved results in the answer.
+    answer = "The answer cites [R1Q1D1] for evidence."
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=2,
+        metrics={
+            "rounds_used": 2.0,
+            "repeated_search_queries": 1.0,
+            "subquestion_coverage_ratio": 1.0,
+        },
+        context=ctx,
+        final_answer=answer,
+    )
+    components = rf.reward_components(output, "anything", lambda a, g: 1.0)
+
+    # correctness = 1.0 * 1.0 = 1.0
+    assert components["correctness"] == pytest.approx(1.0)
+    # search penalty = -0.02 * 2 = -0.04
+    assert components["per_search_penalty"] == pytest.approx(-0.04)
+    # citation support = 1 cited / 4 total = 0.25; weight 0.1 → 0.025
+    assert components["citation_support"] == pytest.approx(0.025, abs=0.001)
+    # unsupported claim: answer DID cite → no penalty
+    assert components["unsupported_claim_penalty"] == pytest.approx(0.0)
+    # duplicate query: 1 repeated * -0.05 = -0.05
+    assert components["duplicate_query_penalty"] == pytest.approx(-0.05)
+
+
+def test_unsupported_claim_penalty_fires_when_searched_but_no_citation():
+    """Agent searched, got results, but cited nothing — penalty should fire."""
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            unsupported_claim_penalty=-0.1,
+        )
+    )
+    ctx = _make_ctx_with_results()  # has 4 retrieved results
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        metrics={"rounds_used": 1.0, "repeated_search_queries": 0.0},
+        context=ctx,
+        final_answer="An answer with no citations.",
+    )
+    components = rf.reward_components(output, "anything", lambda a, g: 1.0)
+    assert components["unsupported_claim_penalty"] == pytest.approx(-0.1)
+
+
+def test_unsupported_claim_penalty_does_not_fire_when_answer_cites_result():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            unsupported_claim_penalty=-0.1,
+        )
+    )
+    ctx = _make_ctx_with_results()
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        metrics={"rounds_used": 1.0, "repeated_search_queries": 0.0},
+        context=ctx,
+        final_answer="According to [R1Q1D1] the answer is clear.",
+    )
+    components = rf.reward_components(output, "anything", lambda a, g: 1.0)
+    assert components["unsupported_claim_penalty"] == pytest.approx(0.0)
+
+
+def test_unsupported_claim_penalty_does_not_fire_when_no_search_was_performed():
+    """Agent answered directly without searching — no fabrication signal."""
+    rf = SearchRewardFunction(SearchRewardConfig(unsupported_claim_penalty=-0.1))
+    ctx = _make_ctx_with_results()
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        # rounds_used = 0 → agent did not search
+        metrics={"rounds_used": 0.0, "repeated_search_queries": 0.0},
+        context=ctx,
+        final_answer="Direct answer with no citations.",
+    )
+    components = rf.reward_components(output, "anything", lambda a, g: 1.0)
+    assert components["unsupported_claim_penalty"] == pytest.approx(0.0)
 
 
 def test_reward_zero_when_no_answer():
