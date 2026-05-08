@@ -10,7 +10,8 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace as dataclass_replace
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from src.agent_loop.agent_loop import AgentLoopOutput
@@ -286,6 +287,44 @@ class FinalGenBatchOutput:
 
 
 @dataclass(frozen=True)
+class GroupedRolloutBatch:
+    """One rollout sampled as part of a GRPO prompt group."""
+
+    group_id: str
+    rollout_index: int
+    sampling_params: dict[str, Any]
+    final_output: FinalGenBatchOutput
+
+
+@dataclass(frozen=True)
+class ScoredGroupedRollout:
+    """A GroupedRolloutBatch with its scalar reward and within-group GRPO advantage.
+
+    Produced by :func:`score_group_rollout`.  Contains everything a GRPO
+    training step needs for one rollout: the full trajectory output for
+    policy-gradient updates, the scalar reward for logging, and the
+    group-normalized advantage for the surrogate objective.
+
+    Typical flow::
+
+        grouped = manager.run_prompt_rollout_group(prompt_batch, ...)
+        scored  = score_group_rollout(grouped,
+                      ground_truth="...", judge_fn=exact_match)
+        print(format_group_rollout(grouped,
+                  rewards=[s.reward for s in scored],
+                  advantages=[s.advantage for s in scored]))
+    """
+
+    group_id: str
+    rollout_index: int
+    sampling_params: dict[str, Any]
+    final_output: FinalGenBatchOutput
+    reward: float
+    reward_components: dict[str, float]
+    advantage: float
+
+
+@dataclass(frozen=True)
 class RetrievedDocument:
     """Normalized retrieval document across BM25, dense, hybrid, web, and RAG backends."""
 
@@ -407,6 +446,7 @@ def _normalize_retrieve_result_rows(
     Common accepted shapes:
     - {"result": [[{...}, {...}]]}     # POST /retrieve single-query batch
     - {"result": [{...}, {...}]}       # looser single-query variant
+    - {"results": [{...}, {...}]}      # standalone single-query retrieval service
     - [{...}, {...}]                   # direct rows
     """
     if payload is None:
@@ -416,7 +456,7 @@ def _normalize_retrieve_result_rows(
     if not isinstance(payload, dict):
         return []
 
-    result = payload.get("result", [])
+    result = payload.get("result", payload.get("results", []))
     if isinstance(result, list):
         if result and isinstance(result[0], list):
             rows = result[0]
@@ -442,12 +482,17 @@ def _documents_per_query_from_payload(
     Expected shape from the endpoint::
 
         {"result": [[doc, doc, ...], [doc, doc, ...], ...]}
+        {"results": [[doc, doc, ...], [doc, doc, ...], ...]}
 
     where ``result[i]`` contains documents for query ``i``.  Also handles the
     single-query flat variant ``{"result": [doc, ...]}`` by returning it as the
     first entry and empty lists for remaining queries.
     """
-    result = payload.get("result", []) if isinstance(payload, dict) else []
+    result = (
+        payload.get("result", payload.get("results", []))
+        if isinstance(payload, dict)
+        else []
+    )
     if not isinstance(result, list) or not result:
         return [[] for _ in range(n_queries)]
     if isinstance(result[0], list):
@@ -563,6 +608,174 @@ def format_trajectory_batch(
         for i, log in enumerate(logs)
     ]
     return separator.join(parts)
+
+
+def score_group_rollout(
+    grouped_rollouts: "list[GroupedRolloutBatch]",
+    *,
+    ground_truth: str,
+    judge_fn: "Callable[[str, str], float]",
+    reward_fn: Any = None,
+    advantage_config: Any = None,
+    batch_judge_fn: Any = None,
+) -> "list[ScoredGroupedRollout]":
+    """Score a GRPO prompt group from :meth:`LLMGenerationManager.run_prompt_rollout_group`.
+
+    Bridges the ``LLMGenerationManager``-based rollout output to the standard
+    GRPO scoring pipeline:
+
+        run_prompt_rollout_group()        → list[GroupedRolloutBatch]
+        score_group_rollout(...)          → list[ScoredGroupedRollout]
+        format_group_rollout(...)         → printable group trace
+
+    Each rollout's ``rollout_outputs[0]`` is the ``AgentLoopOutput`` for the
+    (single-prompt) trajectory.  Multi-prompt batches keep only the first
+    output per rollout — for multi-prompt groups use :func:`score_prompt_batch`
+    from ``src.agent_loop.grpo`` directly.
+
+    Args:
+        grouped_rollouts: List returned by ``run_prompt_rollout_group``.
+        ground_truth:     Reference answer for the shared prompt.
+        judge_fn:         ``(answer, ground_truth) -> float`` in ``[0, 1]``.
+        reward_fn:        Optional :class:`SearchRewardFunction` instance.
+        advantage_config: Optional :class:`GRPOAdvantageConfig`.
+        batch_judge_fn:   Optional batch judge for LLM-based scoring.
+    """
+    from src.agent_loop.grpo import GRPORolloutSample, score_prompt_group
+    from src.agent_loop.reward import SearchRewardFunction
+
+    if not grouped_rollouts:
+        return []
+
+    samples = [
+        GRPORolloutSample(
+            group_id=grb.group_id,
+            rollout_index=grb.rollout_index,
+            sampling_params=grb.sampling_params,
+            output=grb.final_output.rollout_outputs[0],
+        )
+        for grb in grouped_rollouts
+        if grb.final_output.rollout_outputs
+    ]
+    if not samples:
+        return []
+
+    scored = score_prompt_group(
+        samples,
+        ground_truth=ground_truth,
+        judge_fn=judge_fn,
+        reward_fn=reward_fn or SearchRewardFunction(),
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+    )
+    scored_by_index = {s.rollout_index: s for s in scored}
+    return [
+        ScoredGroupedRollout(
+            group_id=grb.group_id,
+            rollout_index=grb.rollout_index,
+            sampling_params=grb.sampling_params,
+            final_output=grb.final_output,
+            reward=scored_by_index[grb.rollout_index].reward,
+            reward_components=scored_by_index[grb.rollout_index].reward_components,
+            advantage=scored_by_index[grb.rollout_index].advantage,
+        )
+        for grb in grouped_rollouts
+        if grb.rollout_index in scored_by_index
+    ]
+
+
+def format_group_rollout(
+    grouped_rollouts: "list[GroupedRolloutBatch]",
+    *,
+    rewards: "list[float] | None" = None,
+    advantages: "list[float] | None" = None,
+    max_obs_chars: int = 200,
+) -> str:
+    """Print the strategy diversity across rollouts in one GRPO prompt group.
+
+    Shows what each rollout did — which queries it issued, what it found, and
+    what it answered — alongside the reward and group-normalized advantage.
+    This is the primary tool for verifying that the group has enough diversity
+    for GRPO to compute a meaningful advantage signal::
+
+        grouped = manager.run_prompt_rollout_group(prompt_batch, ...)
+        scored  = score_group_rollout(grouped, ground_truth=gt, judge_fn=f)
+        print(format_group_rollout(
+            grouped,
+            rewards=[s.reward for s in scored],
+            advantages=[s.advantage for s in scored],
+        ))
+
+    Example output::
+
+        Question: Who won the 2024 Nobel Prize in Physics?
+        Group: prompt-group-abc  (4 rollouts)
+        ────────────────────────────────────────────────────────────
+        Rollout 0  temperature=0.80  seed=0
+          Step 1: search 2024 Nobel Physics winner
+            Observation: Hopfield and Hinton won ...
+          Step 2: answer John Hopfield and Geoffrey Hinton.
+          [Reward: 1.000 | Advantage: +1.000]
+        ────────────────────────────────────────────────────────────
+        Rollout 1  temperature=0.95  seed=1
+          Step 1: answer directly wrong answer.
+          [Reward: 0.000 | Advantage: -1.000]
+        ────────────────────────────────────────────────────────────
+        Group mean reward: 0.500
+    """
+    if not grouped_rollouts:
+        return ""
+
+    group_id = grouped_rollouts[0].group_id
+    question = ""
+    logs0 = grouped_rollouts[0].final_output.trajectory_logs
+    if logs0:
+        question = logs0[0].question
+
+    divider = "─" * 60
+    lines: list[str] = [
+        f"Question: {question}",
+        f"Group: {group_id}  ({len(grouped_rollouts)} rollouts)",
+    ]
+
+    for i, grb in enumerate(grouped_rollouts):
+        lines.append(divider)
+        parts = [f"Rollout {grb.rollout_index}"]
+        temp = grb.sampling_params.get("temperature")
+        seed = grb.sampling_params.get("seed")
+        if temp is not None:
+            parts.append(f"temperature={float(temp):.2f}")
+        if seed is not None:
+            parts.append(f"seed={seed}")
+        lines.append("  ".join(parts))
+
+        traj_logs = grb.final_output.trajectory_logs
+        if traj_logs:
+            reward_i = rewards[i] if rewards is not None and i < len(rewards) else None
+            rendered = format_search_trajectory_log(
+                traj_logs[0], max_obs_chars=max_obs_chars
+            )
+            for line in rendered.splitlines():
+                lines.append(f"  {line}")
+            suffix: list[str] = []
+            if reward_i is not None:
+                suffix.append(f"Reward: {reward_i:.3f}")
+            adv_i = (
+                advantages[i]
+                if advantages is not None and i < len(advantages)
+                else None
+            )
+            if adv_i is not None:
+                sign = "+" if adv_i >= 0 else ""
+                suffix.append(f"Advantage: {sign}{adv_i:.3f}")
+            if suffix:
+                lines.append(f"  [{' | '.join(suffix)}]")
+
+    lines.append(divider)
+    if rewards:
+        mean_r = sum(rewards) / len(rewards)
+        lines.append(f"Group mean reward: {mean_r:.3f}")
+    return "\n".join(lines)
 
 
 def _format_documents(documents: list[RetrievedDocument]) -> str:
@@ -2293,6 +2506,107 @@ class LLMGenerationManager:
             total_steps=total_steps,
         )
 
+    def run_prompt_rollout_group(
+        self,
+        prompt_batch: Any,
+        *,
+        search_mode: str,
+        sampling_params: dict[str, Any],
+        num_rollouts: int = 4,
+        sampling_variants: list[dict[str, Any]] | None = None,
+        group_id: str | None = None,
+        base_seed: int | None = None,
+        current_step: int = 0,
+        total_steps: int = 1,
+    ) -> list[GroupedRolloutBatch]:
+        """Sample multiple trajectories for the same prompt group.
+
+        This is the GRPO rollout primitive on the training-side agent loop:
+
+            same prompt -> rollout 1
+                        -> rollout 2
+                        -> rollout 3
+                        -> rollout 4
+
+        Each rollout gets the same ``group_id`` plus its own
+        ``rollout_index`` and ``sampling_params`` metadata.  When
+        ``base_seed`` is provided, rollout ``i`` receives seed
+        ``base_seed + i`` unless that sampling variant already specifies a
+        seed explicitly.
+
+        The manager currently applies ``temperature`` overrides directly to
+        ``GenerationConfig.temperature`` and seeds Python/Torch RNGs for the
+        duration of each rollout.  Other sampling params are preserved as
+        metadata on the returned rollout batch so custom backends can consume
+        them if needed.
+        """
+        from src.agent_loop.data import prompt_batch_to_search_batch
+        from src.agent_loop.grpo import build_grpo_sampling_params
+
+        if num_rollouts <= 0:
+            raise ValueError("num_rollouts must be positive.")
+
+        resolved_group_id = group_id or f"prompt_group_{uuid4().hex}"
+        variants = sampling_variants or build_grpo_sampling_params(
+            sampling_params,
+            num_rollouts=num_rollouts,
+        )
+        if len(variants) != num_rollouts:
+            raise ValueError("sampling_variants length must equal num_rollouts.")
+
+        grouped_rollouts: list[GroupedRolloutBatch] = []
+        for rollout_index, variant in enumerate(variants):
+            resolved_variant = dict(variant)
+            if base_seed is not None and "seed" not in resolved_variant:
+                resolved_variant["seed"] = base_seed + rollout_index
+
+            py_state = random.getstate()
+            torch_state = torch.random.get_rng_state()
+            old_temperature = float(self.config.temperature)
+
+            try:
+                seed = resolved_variant.get("seed")
+                if seed is not None:
+                    random.seed(int(seed))
+                    torch.manual_seed(int(seed))
+
+                if "temperature" in resolved_variant:
+                    self.config = dataclass_replace(
+                        self.config,
+                        temperature=float(resolved_variant["temperature"]),
+                    )
+
+                gen_batch = prompt_batch_to_search_batch(prompt_batch)
+                gen_batch.non_tensor_batch["sampling_params"] = dict(resolved_variant)
+                final_batch, _ = self.run_llm_loop(
+                    gen_batch=gen_batch,
+                    search_mode=search_mode,
+                    current_step=current_step,
+                    total_steps=total_steps,
+                )
+            finally:
+                self.config = dataclass_replace(
+                    self.config, temperature=old_temperature
+                )
+                random.setstate(py_state)
+                torch.random.set_rng_state(torch_state)
+
+            final_batch.meta_info["group_id"] = resolved_group_id
+            final_batch.meta_info["rollout_index"] = rollout_index
+            final_batch.meta_info["sampling_params"] = dict(resolved_variant)
+            final_output = self.build_final_gen_batch_output(final_batch)
+            final_batch.non_tensor_batch["final_gen_batch_output"] = final_output
+            grouped_rollouts.append(
+                GroupedRolloutBatch(
+                    group_id=resolved_group_id,
+                    rollout_index=rollout_index,
+                    sampling_params=dict(resolved_variant),
+                    final_output=final_output,
+                )
+            )
+
+        return grouped_rollouts
+
     def build_rollout_outputs(self, batch: SearchBatch) -> list[AgentLoopOutput]:
         """Convert a run_llm_loop SearchBatch to per-trajectory AgentLoopOutputs.
 
@@ -2323,6 +2637,8 @@ class LLMGenerationManager:
         trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(
             "trajectories", []
         )
+        group_id = batch.meta_info.get("group_id")
+        rollout_index = batch.meta_info.get("rollout_index")
         valid_search_stats: list[int] = batch.meta_info.get("valid_search_stats", [])
         # Per-trajectory query counts recorded by _record_search_tool_calls.
         # Using this avoids scanning traj.steps and gives correct counts because
@@ -2366,6 +2682,8 @@ class LLMGenerationManager:
                         ),
                     },
                     final_answer=traj.final_answer,
+                    group_id=group_id,
+                    rollout_index=rollout_index,
                 )
             )
         return outputs

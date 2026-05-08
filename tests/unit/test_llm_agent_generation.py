@@ -2314,6 +2314,240 @@ def test_run_prompt_rollout_batch_converts_prompt_batch_and_calls_agent_loop():
     ]
 
 
+def test_run_prompt_rollout_group_assigns_shared_group_id_and_rollout_indices():
+    manager = _manager()
+    loader = build_prompt_dataloader(
+        [
+            {
+                "question": "Who won the Nobel Prize in Physics in 2024?",
+                "ground_truth": "John Hopfield and Geoffrey Hinton.",
+                "tools": ["search"],
+            }
+        ],
+        tokenizer=DummyTokenizer(),
+        batch_size=1,
+        shuffle=False,
+    )
+    prompt_batch = next(iter(loader))
+
+    captured_variants: list[dict[str, object]] = []
+
+    def fake_run_llm_loop(**kwargs):
+        gen_batch = kwargs["gen_batch"]
+        captured_variants.append(dict(gen_batch.non_tensor_batch["sampling_params"]))
+        batch = SearchBatch.from_dict(
+            {
+                "responses": torch.zeros((1, 0), dtype=torch.long),
+                "responses_with_info_mask": torch.zeros((1, 0), dtype=torch.long),
+            }
+        )
+        batch.non_tensor_batch = {
+            "question": ["Who won the Nobel Prize in Physics in 2024?"],
+            "trajectories": [],
+        }
+        batch.meta_info = {
+            "final_answers": ["John Hopfield and Geoffrey Hinton."],
+            "finished_without_answer": [False],
+            "trajectory_turns": [1],
+        }
+        return batch, [1]
+
+    manager.run_llm_loop = fake_run_llm_loop  # type: ignore[method-assign]
+
+    grouped = manager.run_prompt_rollout_group(
+        prompt_batch,
+        search_mode="google",
+        sampling_params={"temperature": 0.8, "top_p": 0.9},
+        num_rollouts=3,
+        group_id="prompt-group-1",
+        base_seed=10,
+    )
+
+    assert [item.group_id for item in grouped] == [
+        "prompt-group-1",
+        "prompt-group-1",
+        "prompt-group-1",
+    ]
+    assert [item.rollout_index for item in grouped] == [0, 1, 2]
+    assert [item.sampling_params["seed"] for item in grouped] == [10, 11, 12]
+    assert captured_variants[0]["temperature"] == pytest.approx(0.8)
+    assert captured_variants[1]["temperature"] > captured_variants[0]["temperature"]
+    assert (
+        grouped[0].final_output.search_batch.meta_info["group_id"] == "prompt-group-1"
+    )
+    assert grouped[2].final_output.search_batch.meta_info["rollout_index"] == 2
+
+
+def test_build_rollout_outputs_propagates_group_rollout_metadata():
+    manager = _manager_with_char_tokenizer()
+    traj = _make_trajectory(
+        prompt_ids=[1, 2],
+        response_ids=[10, 11],
+        obs_mask=[10, 11],
+        turns=1,
+        final_answer="Paris",
+        finished_without_answer=False,
+    )
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[10, 11]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[10, 11]], dtype=torch.long),
+        }
+    )
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [1]
+    batch.meta_info["group_id"] = "prompt-group-1"
+    batch.meta_info["rollout_index"] = 2
+
+    outputs = manager.build_rollout_outputs(batch)
+
+    assert outputs[0].group_id == "prompt-group-1"
+    assert outputs[0].rollout_index == 2
+
+
+# ---------------------------------------------------------------------------
+# score_group_rollout + format_group_rollout
+# ---------------------------------------------------------------------------
+
+
+def _make_grouped_rollout(group_id, rollout_index, answer, temperature, seed):
+    """Helper that builds a minimal GroupedRolloutBatch for testing."""
+    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.llm_agent.generation import (
+        FinalGenBatchOutput,
+        GroupedRolloutBatch,
+        SearchStep,
+        SearchTrajectoryLog,
+    )
+
+    log = SearchTrajectoryLog(
+        batch_index=0,
+        question="Who won the 2024 Nobel Prize in Physics?",
+        steps=[
+            SearchStep(
+                step_id=1,
+                state="",
+                model_output=f"<answer>{answer}</answer>",
+                action_type="answer",
+                action_value=answer,
+                observation=None,
+                done=True,
+            )
+        ],
+        final_answer=answer,
+        finished_without_answer=False,
+    )
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.zeros(1, 0, dtype=torch.long),
+            "responses_with_info_mask": torch.zeros(1, 0, dtype=torch.long),
+        }
+    )
+    batch.meta_info = {
+        "trajectory_turns": [1],
+        "final_answers": [answer],
+        "finished_without_answer": [False],
+        "group_id": group_id,
+        "rollout_index": rollout_index,
+    }
+    out = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        metrics={},
+        context=None,
+        final_answer=answer,
+    )
+    out.group_id = group_id
+    out.rollout_index = rollout_index
+    final_output = FinalGenBatchOutput(
+        search_batch=batch,
+        trajectories=[],
+        trajectory_logs=[log],
+        rollout_outputs=[out],
+        trajectory_turns=[1],
+    )
+    return GroupedRolloutBatch(
+        group_id=group_id,
+        rollout_index=rollout_index,
+        sampling_params={"temperature": temperature, "seed": seed},
+        final_output=final_output,
+    )
+
+
+def test_score_group_rollout_assigns_reward_and_advantage_per_rollout():
+    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src.llm_agent.generation import score_group_rollout
+
+    grouped = [
+        _make_grouped_rollout("g1", 0, "Hopfield and Hinton", 0.8, 0),  # correct
+        _make_grouped_rollout("g1", 1, "wrong answer", 0.95, 1),  # wrong
+    ]
+
+    scored = score_group_rollout(
+        grouped,
+        ground_truth="Hopfield and Hinton",
+        judge_fn=lambda a, g: 1.0 if a.strip() == g.strip() else 0.0,
+        reward_fn=SearchRewardFunction(SearchRewardConfig.sparse_final_only()),
+    )
+
+    assert len(scored) == 2
+    assert scored[0].group_id == "g1"
+    assert scored[0].rollout_index == 0
+    assert scored[0].reward == pytest.approx(1.0)
+    assert scored[1].reward == pytest.approx(0.0)
+    # Correct rollout gets positive advantage, wrong rollout negative
+    assert scored[0].advantage > 0.0
+    assert scored[1].advantage < 0.0
+
+
+def test_score_group_rollout_empty_input_returns_empty():
+    from src.llm_agent.generation import score_group_rollout
+
+    assert score_group_rollout([], ground_truth="x", judge_fn=lambda a, g: 1.0) == []
+
+
+def test_format_group_rollout_shows_all_rollout_indices_and_group_id():
+    from src.llm_agent.generation import format_group_rollout
+
+    grouped = [
+        _make_grouped_rollout("grp-abc", 0, "answer A", 0.8, 0),
+        _make_grouped_rollout("grp-abc", 1, "answer B", 0.95, 1),
+        _make_grouped_rollout("grp-abc", 2, "answer C", 1.1, 2),
+    ]
+    rendered = format_group_rollout(grouped)
+
+    assert "Group: grp-abc" in rendered
+    assert "Rollout 0" in rendered
+    assert "Rollout 1" in rendered
+    assert "Rollout 2" in rendered
+    assert "3 rollouts" in rendered
+    assert "temperature=0.80" in rendered
+
+
+def test_format_group_rollout_shows_rewards_and_advantages():
+    from src.llm_agent.generation import format_group_rollout
+
+    grouped = [
+        _make_grouped_rollout("g1", 0, "right", 0.8, 0),
+        _make_grouped_rollout("g1", 1, "wrong", 0.95, 1),
+    ]
+    rendered = format_group_rollout(grouped, rewards=[1.0, 0.0], advantages=[0.5, -0.5])
+
+    assert "Reward: 1.000" in rendered
+    assert "Reward: 0.000" in rendered
+    assert "Advantage: +0.500" in rendered
+    assert "Advantage: -0.500" in rendered
+    assert "Group mean reward: 0.500" in rendered
+
+
+def test_format_group_rollout_empty_returns_empty_string():
+    from src.llm_agent.generation import format_group_rollout
+
+    assert format_group_rollout([]) == ""
+
+
 def test_make_continuation_decision_continues_when_active_and_budget_available():
     from src.llm_agent.generation import AgentLoopState
 
