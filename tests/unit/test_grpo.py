@@ -225,9 +225,78 @@ def test_score_prompt_group_supports_group_outcome_advantage_mode():
     )
 
     assert scored[0].reward == pytest.approx(1.0)
+    assert scored[0].reward_component == "total"
     assert scored[1].reward == pytest.approx(0.0)
     assert scored[0].advantage == pytest.approx(0.5)
     assert scored[1].advantage == pytest.approx(-0.5)
+
+
+def test_score_prompt_group_can_use_terminal_reward_for_group_outcome():
+    samples = [
+        asyncio.run(
+            sample_prompt_group(
+                lambda: _DummyLoop("Paris"),
+                question="Capital of France?",
+                sampling_params={"temperature": 0.7, "top_p": 0.9},
+                num_rollouts=1,
+                group_id="capital",
+                sampling_variants=[{"temperature": 0.7, "top_p": 0.9}],
+            )
+        )[0],
+        asyncio.run(
+            sample_prompt_group(
+                lambda: _DummyLoop(
+                    "Wrong",
+                    metrics={
+                        "rounds_used": 4.0,
+                        "repeated_search_queries": 5.0,
+                        "answer_when_evidence_insufficient": 1.0,
+                        "final_evidence_sufficient": 0.0,
+                        "answer_allowed": 0.0,
+                        "search_quality_score": 0.1,
+                    },
+                ),
+                question="Capital of France?",
+                sampling_params={"temperature": 0.85, "top_p": 0.93},
+                num_rollouts=1,
+                group_id="capital",
+                sampling_variants=[{"temperature": 0.85, "top_p": 0.93}],
+            )
+        )[0],
+    ]
+
+    reward_fn = SearchRewardFunction(
+        SearchRewardConfig(
+            reward_mode="shaped",
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            fetch_usefulness_reward=0.0,
+        )
+    )
+    scored = score_prompt_group(
+        samples,
+        ground_truth="Paris",
+        judge_fn=lambda answer, truth: 1.0 if answer == truth else 0.0,
+        reward_fn=reward_fn,
+        advantage_config=GRPOAdvantageConfig(
+            mode="group_outcome",
+            reward_component="terminal_reward",
+        ),
+    )
+
+    assert scored[0].reward_component == "terminal_reward"
+    assert scored[0].reward == pytest.approx(1.0)
+    assert scored[1].reward == pytest.approx(0.0)
+    assert scored[0].reward_components["total"] != pytest.approx(scored[0].reward)
+    assert scored[1].reward_components["total"] != pytest.approx(scored[1].reward)
+    assert scored[0].advantage == pytest.approx(0.5)
+    assert scored[1].advantage == pytest.approx(-0.5)
+
+
+def test_grpo_advantage_config_outcome_only_preset_uses_terminal_reward():
+    cfg = GRPOAdvantageConfig.outcome_only()
+    assert cfg.mode == "group_outcome"
+    assert cfg.reward_component == "terminal_reward"
 
 
 def test_score_prompt_group_rejects_unknown_advantage_mode():
@@ -251,6 +320,27 @@ def test_score_prompt_group_rejects_unknown_advantage_mode():
         )
 
 
+def test_score_prompt_group_rejects_unknown_reward_component():
+    samples = asyncio.run(
+        sample_prompt_group(
+            lambda: _DummyLoop("Paris"),
+            question="Capital of France?",
+            sampling_params={"temperature": 0.7, "top_p": 0.9},
+            num_rollouts=1,
+            group_id="capital",
+            sampling_variants=[{"temperature": 0.7, "top_p": 0.9}],
+        )
+    )
+
+    with pytest.raises(ValueError, match="Unsupported GRPO reward component"):
+        score_prompt_group(
+            samples,
+            ground_truth="Paris",
+            judge_fn=lambda answer, truth: 1.0 if answer == truth else 0.0,
+            advantage_config=GRPOAdvantageConfig(reward_component="unknown_component"),
+        )
+
+
 def test_sample_prompt_group_rejects_mismatched_sampling_variants():
     with pytest.raises(ValueError, match="sampling_variants length must equal"):
         asyncio.run(
@@ -262,6 +352,71 @@ def test_sample_prompt_group_rejects_mismatched_sampling_variants():
                 sampling_variants=[{"temperature": 0.7}],
             )
         )
+
+
+def test_grpo_advantage_config_std_normalized_preset():
+    cfg = GRPOAdvantageConfig.std_normalized()
+    assert cfg.mode == "group_std_normalized"
+    assert cfg.reward_component == "total"
+
+
+def test_score_prompt_group_batch_judge_fn_called_once_not_per_rollout():
+    """With batch_judge_fn, the judge is called once per group, not once per rollout."""
+    from src.agent_loop import score_prompt_group
+
+    call_count = {"n": 0}
+
+    def batch_judge(answers: list[str], gts: list[str]) -> list[float]:
+        call_count["n"] += 1
+        return [1.0 if a.strip() == g.strip() else 0.0 for a, g in zip(answers, gts)]
+
+    samples = asyncio.run(
+        sample_prompt_group(
+            lambda: _DummyLoop("Paris"),
+            question="Capital of France?",
+            sampling_params={"temperature": 0.7, "top_p": 0.9},
+            num_rollouts=3,
+            group_id="capital",
+        )
+    )
+
+    scored = score_prompt_group(
+        samples,
+        ground_truth="Paris",
+        judge_fn=lambda a, g: 1.0 if a.strip() == g.strip() else 0.0,
+        reward_fn=SearchRewardFunction(SearchRewardConfig.sparse_final_only()),
+        advantage_config=GRPOAdvantageConfig.outcome_only(),
+        batch_judge_fn=batch_judge,
+    )
+
+    assert call_count["n"] == 1, "batch_judge_fn must be called once per group"
+    assert len(scored) == 3
+    for rollout in scored:
+        assert rollout.reward == pytest.approx(1.0)
+
+
+def test_compute_batch_advantages_single_pass_matches_two_pass_result():
+    """Single-pass compute_batch_advantages must give the same result as before."""
+    rf = SearchRewardFunction()
+    rewards = [1.0, 0.2, 0.8, 0.5, 0.5]
+    group_ids = ["g1", "g1", "g1", "g2", "g2"]
+
+    # Ground truth: per-group (reward - mean) / std
+    adv = rf.compute_batch_advantages(rewards, group_ids)
+
+    # g1: mean=0.666, std=sqrt(((0.333)^2+(0.466)^2+(0.133)^2)/3)
+    g1_mean = (1.0 + 0.2 + 0.8) / 3
+    g1_var = sum((r - g1_mean) ** 2 for r in [1.0, 0.2, 0.8]) / 3
+    import math
+
+    g1_std = math.sqrt(g1_var)
+    assert adv[0] == pytest.approx((1.0 - g1_mean) / (g1_std + 1e-8), abs=1e-6)
+    assert adv[1] == pytest.approx((0.2 - g1_mean) / (g1_std + 1e-8), abs=1e-6)
+    assert adv[2] == pytest.approx((0.8 - g1_mean) / (g1_std + 1e-8), abs=1e-6)
+
+    # g2: identical rewards → std=0 → all advantages 0
+    assert adv[3] == pytest.approx(0.0, abs=1e-6)
+    assert adv[4] == pytest.approx(0.0, abs=1e-6)
 
 
 def test_sample_prompt_group_requires_exactly_one_prompt_input():
