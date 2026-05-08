@@ -579,6 +579,59 @@ def test_token_rewards_sparse_mode_only_final_answer_contributes():
     assert all(r == 0.0 for r in token_rewards[:4])
 
 
+def test_compute_terminal_reward_ignores_shaping_even_in_shaped_mode():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            reward_mode="shaped",
+            correctness_weight=1.0,
+            citation_support_weight=0.3,
+            subquestion_coverage_weight=0.2,
+            search_quality_weight=0.15,
+            unnecessary_search_penalty=-0.05,
+            duplicate_query_penalty=-0.1,
+        )
+    )
+    output = _output_with_tokens(
+        "Paris",
+        [1, 2, 3, 4, 5],
+        [1, 1, 0, 1, 1],
+        rounds_used=4.0,
+        repeated_search_queries=5.0,
+        subquestion_coverage_ratio=0.1,
+    )
+
+    assert rf.compute(output, "Paris", _exact_match) != pytest.approx(1.0)
+    assert rf.compute_terminal_reward(output, "Paris", _exact_match) == pytest.approx(
+        1.0
+    )
+
+
+def test_compute_sparse_token_rewards_uses_only_terminal_reward():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            reward_mode="shaped",
+            correctness_weight=1.0,
+            citation_support_weight=0.3,
+            subquestion_coverage_weight=0.2,
+            search_quality_weight=0.15,
+            unnecessary_search_penalty=-0.05,
+            duplicate_query_penalty=-0.1,
+        )
+    )
+    output = _output_with_tokens(
+        "Paris",
+        [1, 2, 3, 4, 5],
+        [1, 1, 0, 1, 1],
+        rounds_used=4.0,
+        repeated_search_queries=5.0,
+        subquestion_coverage_ratio=0.1,
+    )
+
+    token_rewards = rf.compute_sparse_token_rewards(output, "Paris", _exact_match)
+    assert token_rewards[4] == pytest.approx(1.0)
+    assert all(r == 0.0 for r in token_rewards[:4])
+
+
 def test_advantages_normalised_within_group():
     rf = SearchRewardFunction()
     rewards = [1.0, 3.0, 2.0]
@@ -755,6 +808,138 @@ def test_grpo_token_advantages_length_mismatch_raises():
         rf.assign_grpo_outcome_token_advantages(
             [o, o], ["Paris"], _exact_match, ["g1", "g1"]
         )
+
+
+# ---------------------------------------------------------------------------
+# compute_batch_sparse_token_rewards — batch API for the training loop
+# ---------------------------------------------------------------------------
+
+
+def test_compute_batch_sparse_token_rewards_matches_individual_calls():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    outputs = [
+        _output_with_tokens("Paris", [1, 2, 3, 4], [1, 1, 0, 1]),
+        _output_with_tokens("Wrong", [1, 2, 3], [1, 1, 1]),
+        _output_with_tokens("Paris", [], []),
+    ]
+    ground_truths = ["Paris", "Paris", "Paris"]
+
+    batch = rf.compute_batch_sparse_token_rewards(outputs, ground_truths, _exact_match)
+    individual = [
+        rf.compute_sparse_token_rewards(o, g, _exact_match)
+        for o, g in zip(outputs, ground_truths)
+    ]
+
+    assert batch == individual
+
+
+def test_compute_batch_sparse_token_rewards_length_mismatch_raises():
+    rf = SearchRewardFunction()
+    o = _output_with_tokens("Paris", [1], [1])
+    with pytest.raises(ValueError, match="same length"):
+        rf.compute_batch_sparse_token_rewards([o], ["Paris", "extra"], _exact_match)
+
+
+def test_compute_batch_sparse_token_rewards_uses_batch_judge_fn():
+    """batch_judge_fn should be called once, not once per rollout."""
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    call_count = {"n": 0}
+
+    def batch_judge(answers: list[str], gts: list[str]) -> list[float]:
+        call_count["n"] += 1
+        return [1.0 if a.strip() == g.strip() else 0.0 for a, g in zip(answers, gts)]
+
+    outputs = [
+        _output_with_tokens("Paris", [1, 2], [1, 1]),
+        _output_with_tokens("Wrong", [1, 2], [1, 1]),
+        _output_with_tokens("Paris", [1, 2], [1, 1]),
+    ]
+    result = rf.compute_batch_sparse_token_rewards(
+        outputs, ["Paris", "Paris", "Paris"], _exact_match, batch_judge_fn=batch_judge
+    )
+
+    assert call_count["n"] == 1, "batch_judge_fn must be called exactly once"
+    assert result[0][1] == pytest.approx(1.0)
+    assert result[1][1] == pytest.approx(0.0)
+    assert result[2][1] == pytest.approx(1.0)
+
+
+def test_grpo_advantages_use_terminal_reward_not_shaped():
+    """assign_grpo_outcome_token_advantages must use terminal reward only.
+
+    When the reward config includes shaping terms, the GRPO advantage
+    computation must still use only the terminal (judge) score for group
+    normalisation — not the full shaped reward.
+    """
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            reward_mode="shaped",
+            correctness_weight=1.0,
+            citation_support_weight=0.3,
+            subquestion_coverage_weight=0.2,
+            search_quality_weight=0.15,
+            unnecessary_search_penalty=-0.05,
+            duplicate_query_penalty=-0.1,
+        )
+    )
+    # One correct, one wrong — heavy penalties on the correct rollout.
+    # If shaping were included, the rewards would be inverted.
+    outputs = [
+        _output_with_tokens(
+            "Paris", [1, 2], [1, 1], rounds_used=4.0, repeated_search_queries=5.0
+        ),
+        _output_with_tokens("Wrong", [1, 2], [1, 1]),
+    ]
+    result = rf.assign_grpo_outcome_token_advantages(
+        outputs, ["Paris", "Paris"], _exact_match, ["g1", "g1"]
+    )
+
+    # Terminal reward for "Paris" = 1.0, for "Wrong" = 0.0 → "Paris" has higher advantage
+    assert result[0][1] > result[1][1]
+
+
+def test_grpo_advantages_batch_judge_fn_called_once():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=1.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            unnecessary_search_penalty=0.0,
+        )
+    )
+    call_count = {"n": 0}
+
+    def batch_judge(answers: list[str], gts: list[str]) -> list[float]:
+        call_count["n"] += 1
+        return [1.0 if a.strip() == g.strip() else 0.0 for a, g in zip(answers, gts)]
+
+    outputs = [
+        _output_with_tokens("Paris", [1, 2], [1, 1]),
+        _output_with_tokens("Wrong", [1, 2], [1, 1]),
+    ]
+    rf.assign_grpo_outcome_token_advantages(
+        outputs,
+        ["Paris", "Paris"],
+        _exact_match,
+        ["g1", "g1"],
+        batch_judge_fn=batch_judge,
+    )
+
+    assert call_count["n"] == 1
 
 
 # ---------------------------------------------------------------------------
