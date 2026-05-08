@@ -1138,6 +1138,45 @@ The collated training batch keeps sparse token-level advantages: only the last
 model action token gets the rollout advantage, while prompt and
 `<information>...</information>` tokens stay at `0`.
 
+### Safety constraints
+
+The rollout loop now supports a stricter safety profile for tool use:
+
+- `allowed_actions = ("search", "answer")`
+- `max_search_rounds = 3`
+- `max_total_rounds = 6`
+- invalid XML / disallowed action penalty: `-0.2`
+- repeated query penalty: `-0.1`
+
+In `GenerationConfig`, disallowed tags such as `<plan>` or `<fetch>` are
+treated as invalid when they are not listed in `allowed_actions`. The rollout
+loop also stops tool-use turns once `max_search_rounds` is reached and switches
+to the final answer attempt.
+
+On the trainer side, `run_grpo_training_step(...)` now applies
+`GRPORolloutSafetyConfig` before computing group-relative advantages, so unsafe
+tool behavior directly lowers the optimized reward:
+
+```python
+result = manager.run_grpo_training_step(
+    prompt_batch,
+    ...,
+    safety_config=GRPORolloutSafetyConfig(
+        allowed_actions=("search", "answer"),
+        max_search_rounds=3,
+        max_total_rounds=6,
+        invalid_action_penalty=-0.2,
+        repeated_query_penalty=-0.1,
+    ),
+)
+```
+
+This means:
+
+- malformed or disallowed actions reduce reward
+- repeated search queries reduce reward
+- too many searches stop further tool use and force the answer phase
+
 For training diagnostics, the batch now records:
 
 - `meta_info["updated_policies"]`
