@@ -196,6 +196,37 @@ class RolloutTrajectory:
 
 
 @dataclass(frozen=True)
+class FinalGenBatchOutput:
+    """Final rollout artifact for one generated batch.
+
+    This is the RL rollout object after the full agent loop finishes.  It
+    consolidates everything a training loop needs in one place:
+
+        prompt → search → retrieval → reasoning → answer
+              ↓
+        search_batch      — tensor layout for policy/log-prob/loss computation
+        trajectories      — one RolloutTrajectory per prompt (symbolic trace)
+        rollout_outputs   — one AgentLoopOutput per trajectory (reward interface)
+        trajectory_turns  — which turn each trajectory completed at
+                            (0 = never answered, 1..max_turns = answered in turn N,
+                             max_turns+1 = forced answer after budget exhaustion)
+
+    Intended usage::
+
+        final = manager.build_final_gen_batch_output(batch)
+        rewards = reward_fn.compute_batch(final.rollout_outputs, ground_truths, judge)
+        advantages = reward_fn.assign_grpo_outcome_token_advantages(
+            final.rollout_outputs, ground_truths, judge, group_ids
+        )
+    """
+
+    search_batch: SearchBatch
+    trajectories: list["RolloutTrajectory"]
+    rollout_outputs: list["AgentLoopOutput"]
+    trajectory_turns: list[int]
+
+
+@dataclass(frozen=True)
 class RetrievedDocument:
     """Normalized retrieval document across BM25, dense, hybrid, web, and RAG backends."""
 
@@ -1946,6 +1977,30 @@ class LLMGenerationManager:
                 )
             )
         return outputs
+
+    def build_final_gen_batch_output(self, batch: SearchBatch) -> FinalGenBatchOutput:
+        """Build the unified final rollout object for one generated batch.
+
+        Consolidates the tensor batch, per-trajectory symbolic traces, and
+        reward-ready AgentLoopOutput objects into a single ``FinalGenBatchOutput``
+        that contains everything a GRPO/PPO training step needs.
+
+        Call this after ``run_llm_loop`` / ``run_prompt_rollout_batch``::
+
+            batch, _ = manager.run_prompt_rollout_batch(prompt_batch, ...)
+            final = manager.build_final_gen_batch_output(batch)
+        """
+        trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(
+            "trajectories", []
+        )
+        rollout_outputs = self.build_rollout_outputs(batch)
+        trajectory_turns: list[int] = batch.meta_info.get("trajectory_turns", [])
+        return FinalGenBatchOutput(
+            search_batch=batch,
+            trajectories=trajectories,
+            rollout_outputs=rollout_outputs,
+            trajectory_turns=trajectory_turns,
+        )
 
     def _compose_final_output(
         self,

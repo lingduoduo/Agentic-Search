@@ -969,6 +969,53 @@ def test_build_rollout_outputs_empty_batch():
     assert manager.build_rollout_outputs(batch) == []
 
 
+def test_build_final_gen_batch_output_packages_complete_rl_rollouts():
+    manager = _manager_with_log_prob()
+    traj = _make_trajectory(
+        prompt_ids=[1, 2],
+        response_ids=[10, 11],
+        obs_mask=[10, 11],
+        turns=2,
+        final_answer="Paris",
+        finished_without_answer=False,
+    )
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [1]
+    batch.meta_info["trajectory_turns"] = [2]
+
+    final_output = manager.build_final_gen_batch_output(batch)
+
+    assert final_output.search_batch is batch
+    assert final_output.trajectories == [traj]
+    assert len(final_output.rollout_outputs) == 1
+    assert final_output.rollout_outputs[0].prompt_ids == [1, 2]
+    assert final_output.rollout_outputs[0].final_answer == "Paris"
+    assert final_output.trajectory_turns == [2]
+
+
+def test_build_final_gen_batch_output_is_not_stored_in_batch():
+    """FinalGenBatchOutput must not be stored inside the batch it wraps.
+
+    Storing it would create a circular reference: batch → final_output → batch.
+    Callers should use build_final_gen_batch_output() explicitly.
+    """
+    traj = _make_trajectory(
+        prompt_ids=[1],
+        response_ids=[2],
+        obs_mask=[2],
+        turns=1,
+        final_answer="done",
+        finished_without_answer=False,
+    )
+    batch = SearchBatch.from_dict({})
+    batch.non_tensor_batch["trajectories"] = [traj]
+    batch.meta_info["valid_search_stats"] = [0]
+
+    # batch itself should not contain a reference back to FinalGenBatchOutput
+    assert "final_gen_batch_output" not in batch.non_tensor_batch
+
+
 # ---------------------------------------------------------------------------
 # Actor rollout: only active trajectories get ReActStep entries
 # ---------------------------------------------------------------------------
