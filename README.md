@@ -1,4 +1,4 @@
-# Agentic-Search
+# Agentic-Search-GRPO
 
 A FastAPI codebase for search-backed retrieval services, multi-turn agentic research loops, full-trace SFT targets, and end-to-end GRPO/PPO RL training.
 
