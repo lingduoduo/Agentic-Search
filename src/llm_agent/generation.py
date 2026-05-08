@@ -329,6 +329,29 @@ class ScoredGroupedRollout:
 
 
 @dataclass(frozen=True)
+class GRPOPromptGroupResult:
+    """One prompt's grouped rollouts after reward scoring and GRPO advantage."""
+
+    question: str
+    ground_truth: str
+    grouped_rollouts: list[GroupedRolloutBatch]
+    scored_rollouts: list[ScoredGroupedRollout]
+
+
+@dataclass(frozen=True)
+class GRPOTrainingStepResult:
+    """End-to-end GRPO trainer-step artifact for one prompt DataLoader batch."""
+
+    group_results: list[GRPOPromptGroupResult]
+    scored_rollouts: list[ScoredGroupedRollout]
+    training_batch: SearchBatch
+    loss: torch.Tensor
+    optimizer_stepped: bool
+    mean_reward: float
+    mean_advantage: float
+
+
+@dataclass(frozen=True)
 class RetrievedDocument:
     """Normalized retrieval document across BM25, dense, hybrid, web, and RAG backends."""
 
@@ -352,6 +375,32 @@ class PPOPolicyLossConfig:
     # Per-action-type loss multipliers.  Keys: "search", "plan", "fetch", "answer".
     # Tokens with no matching key keep weight 1.0.  None means uniform weighting.
     action_type_weights: dict[str, float] | None = None
+
+
+@dataclass(frozen=True)
+class GRPORolloutSafetyConfig:
+    """Post-hoc reward penalties that discourage unsafe rollout behaviour.
+
+    Tunable thresholds and per-event deductions applied by
+    :func:`apply_rollout_safety_penalties` after the agent loop finishes.
+    """
+
+    # Maximum allowed search rounds before excess-search penalties fire.
+    max_search_rounds: int = 3
+    # Soft cap on the total number of agent turns (informational; not enforced
+    # in the reward function — enforce at rollout time in the agent loop).
+    max_total_rounds: int = 6
+    # Deducted once per invalid action emitted (malformed XML or tag not in
+    # allowed_actions).  Read from metrics["invalid_action_count"].
+    invalid_action_penalty: float = -0.2
+    # Deducted per repeated search query.  Read from
+    # metrics["repeated_search_queries"].
+    repeated_query_penalty: float = -0.1
+    # Deducted per search round in excess of max_search_rounds.
+    excess_search_penalty: float = -0.1
+    # XML action tags considered valid.  Anything else increments
+    # invalid_action_count in the agent-loop metrics.
+    allowed_actions: tuple[str, ...] = ("search", "answer")
 
 
 ROLLOUT_ACTION_TAGS = ("plan", "search", "fetch", "answer")
@@ -937,6 +986,195 @@ def compute_trajectory_policy_loss(
         "clip_fraction": clip_fraction,
         "mean_ratio": float((ratio * mask).sum() / normalizer),
     }
+
+
+def apply_rollout_safety_penalties(
+    reward: float,
+    output: "AgentLoopOutput",
+    *,
+    config: GRPORolloutSafetyConfig,
+) -> float:
+    """Apply post-hoc safety penalties to a completed rollout's scalar reward.
+
+    Reads event counts from ``output.metrics`` (populated by the agent loop)
+    and deducts a per-event penalty for three categories of misbehaviour:
+
+    - **invalid actions** — XML tag not in ``config.allowed_actions``:
+      ``metrics["invalid_action_count"]`` × ``config.invalid_action_penalty``
+    - **repeated queries** — same search query issued more than once:
+      ``metrics["repeated_search_queries"]`` × ``config.repeated_query_penalty``
+    - **excess searches** — search rounds beyond ``config.max_search_rounds``:
+      ``max(0, rounds - max_search_rounds)`` × ``config.excess_search_penalty``
+
+    Missing metrics keys are treated as zero (no penalty).
+
+    Args:
+        reward:  Scalar reward before safety adjustments.
+        output:  Completed rollout output; its ``metrics`` dict is read.
+        config:  Thresholds and per-event penalty amounts.
+
+    Returns:
+        Adjusted scalar reward (may be negative).
+    """
+    metrics = output.metrics
+
+    invalid_count = int(metrics.get("invalid_action_count", 0))
+    if invalid_count > 0:
+        reward += config.invalid_action_penalty * invalid_count
+
+    repeated_count = int(metrics.get("repeated_search_queries", 0))
+    if repeated_count > 0:
+        reward += config.repeated_query_penalty * repeated_count
+
+    search_rounds = int(metrics.get("search_rounds", 0))
+    excess = search_rounds - config.max_search_rounds
+    if excess > 0:
+        reward += config.excess_search_penalty * excess
+
+    return reward
+
+
+def save_training_batch_jsonl(
+    scored_rollouts: "list[ScoredGroupedRollout]",
+    path: "str | os.PathLike[str]",
+    *,
+    append: bool = False,
+) -> int:
+    """Save scored rollouts to a JSONL file for offline / replay training.
+
+    Each line is a JSON object containing:
+
+    - Rollout identity: ``group_id``, ``rollout_index``
+    - Reward signal: ``reward``, ``advantage``, ``reward_components``
+    - Trajectory log: ``trajectory`` (via :meth:`SearchTrajectoryLog.to_dict`)
+    - Training tensors: ``tokens``, ``response_mask``, ``old_log_probs``
+      (prompt+response aligned; empty lists when not yet computed)
+
+    Args:
+        scored_rollouts: Output of :func:`score_group_rollout` or
+                         :meth:`LLMGenerationManager.run_grpo_training_step`.
+        path:            Destination file path. Parent directory must exist.
+        append:          Append to an existing file instead of overwriting.
+
+    Returns:
+        Number of JSONL records written.
+    """
+    import json
+
+    mode = "a" if append else "w"
+    count = 0
+    with open(path, mode, encoding="utf-8") as fh:
+        for scored in scored_rollouts:
+            final = scored.final_output
+            traj = final.trajectories[0] if final.trajectories else None
+            traj_log = final.trajectory_logs[0] if final.trajectory_logs else None
+            record: dict[str, Any] = {
+                "group_id": scored.group_id,
+                "rollout_index": scored.rollout_index,
+                "reward": scored.reward,
+                "advantage": scored.advantage,
+                "reward_components": scored.reward_components or {},
+                "trajectory": traj_log.to_dict() if traj_log is not None else {},
+                "tokens": list(traj.tokens or []) if traj is not None else [],
+                "response_mask": (
+                    list(traj.response_mask or []) if traj is not None else []
+                ),
+                "old_log_probs": (
+                    list(traj.old_log_probs or []) if traj is not None else []
+                ),
+            }
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            count += 1
+    return count
+
+
+async def async_run_prompt_rollout_group(
+    manager: "LLMGenerationManager",
+    prompt_batches: list[Any],
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    num_rollouts: int = 4,
+    base_seed: int | None = None,
+    current_step: int = 0,
+    total_steps: int = 1,
+    max_workers: int | None = None,
+) -> "list[list[GroupedRolloutBatch]]":
+    """Run :meth:`~LLMGenerationManager.run_prompt_rollout_group` concurrently.
+
+    Parallelises the per-prompt rollout loop across a thread pool so that I/O-
+    bound retrieval calls overlap instead of serialising.  Each prompt gets a
+    shallow copy of ``manager`` to avoid races on ``self.config`` mutations that
+    happen inside the rollout loop (temperature, seed overrides).
+
+    Minimum viable async rollout::
+
+        results = await async_run_prompt_rollout_group(
+            manager,
+            [single_batch_0, single_batch_1, single_batch_2],
+            search_mode="simulate",
+            sampling_params={"temperature": 0.8},
+            num_rollouts=4,
+        )
+        # results[i] == list[GroupedRolloutBatch] for prompt i
+
+    Args:
+        manager:         Source :class:`LLMGenerationManager`; copied per prompt.
+        prompt_batches:  One single-prompt batch per prompt to roll out.
+        search_mode:     Forwarded to each ``run_prompt_rollout_group`` call.
+        sampling_params: Forwarded to each ``run_prompt_rollout_group`` call.
+        num_rollouts:    Trajectories sampled per prompt.
+        base_seed:       Prompt ``i`` uses seed ``base_seed + i * num_rollouts``.
+        current_step:    Training step (forwarded for curriculum scheduling).
+        total_steps:     Total training steps (forwarded for scheduling).
+        max_workers:     Thread pool size; defaults to ``len(prompt_batches)``.
+
+    Returns:
+        List parallel to ``prompt_batches``; element ``i`` is the
+        ``list[GroupedRolloutBatch]`` produced for prompt ``i``.
+    """
+    import asyncio
+    import copy
+
+    loop = asyncio.get_event_loop()
+    workers = max_workers or max(len(prompt_batches), 1)
+
+    def _run_one(args: tuple[int, Any]) -> "list[GroupedRolloutBatch]":
+        prompt_index, prompt_batch = args
+        mgr_copy = copy.copy(manager)
+        seed = None if base_seed is None else base_seed + prompt_index * num_rollouts
+        return mgr_copy.run_prompt_rollout_group(
+            prompt_batch,
+            search_mode=search_mode,
+            sampling_params=sampling_params,
+            num_rollouts=num_rollouts,
+            base_seed=seed,
+            current_step=current_step,
+            total_steps=total_steps,
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            loop.run_in_executor(executor, _run_one, (i, pb))
+            for i, pb in enumerate(prompt_batches)
+        ]
+        return list(await asyncio.gather(*futures))
+
+
+def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
+    """Slice one prompt out of a PromptBatch, preserving batch structure."""
+    from src.agent_loop.data import PromptBatch
+
+    return PromptBatch(
+        input_ids=prompt_batch.input_ids[index : index + 1].clone(),
+        attention_mask=prompt_batch.attention_mask[index : index + 1].clone(),
+        prompt_lengths=[prompt_batch.prompt_lengths[index]],
+        questions=[prompt_batch.questions[index]],
+        messages=[list(prompt_batch.messages[index])],
+        ground_truths=[prompt_batch.ground_truths[index]],
+        tools=[list(prompt_batch.tools[index])],
+        metadata=[dict(prompt_batch.metadata[index])],
+    )
 
 
 def format_group_rollout(
@@ -2899,6 +3137,297 @@ class LLMGenerationManager:
             )
 
         return grouped_rollouts
+
+    def collate_scored_rollouts_for_training(
+        self,
+        scored_rollouts: list[ScoredGroupedRollout],
+    ) -> SearchBatch:
+        """Merge scored grouped rollouts into one PPO / GRPO training batch."""
+        if not scored_rollouts:
+            raise ValueError("Cannot collate an empty scored rollout list.")
+
+        pad_id = getattr(self.tokenizer, "pad_token_id", 0) or 0
+        prompt_rows: list[torch.Tensor] = []
+        response_rows: list[torch.Tensor] = []
+        response_with_info_rows: list[torch.Tensor] = []
+        advantage_rows: list[torch.Tensor] = []
+        old_log_prob_rows: list[torch.Tensor] = []
+        ref_log_prob_rows: list[torch.Tensor] = []
+        trajectories: list[RolloutTrajectory] = []
+        questions: list[str] = []
+        ground_truths: list[str] = []
+        group_ids: list[str] = []
+        rollout_indices: list[int] = []
+
+        def _response_slice_from_traj(
+            values: list[float] | None,
+            traj: RolloutTrajectory,
+        ) -> list[float] | None:
+            if values is None:
+                return None
+            if len(values) == len(traj.response_token_ids):
+                return list(values)
+            prompt_len = len(traj.prompt_token_ids)
+            if len(values) == prompt_len + len(traj.response_token_ids):
+                return list(values[prompt_len:])
+            return None
+
+        for scored in scored_rollouts:
+            final_output = scored.final_output
+            batch = final_output.search_batch
+            traj = (
+                final_output.trajectories[0]
+                if final_output.trajectories
+                else batch.non_tensor_batch.get("trajectories", [None])[0]
+            )
+            if traj is None:
+                raise ValueError(
+                    "Each scored rollout must carry at least one trajectory."
+                )
+
+            prompt_tensor = torch.tensor(traj.prompt_token_ids, dtype=torch.long)
+            response_tensor = torch.tensor(traj.response_token_ids, dtype=torch.long)
+            response_with_info_tensor = torch.tensor(
+                traj.response_with_observation_mask,
+                dtype=torch.long,
+            )
+
+            prompt_rows.append(prompt_tensor)
+            response_rows.append(response_tensor)
+            response_with_info_rows.append(response_with_info_tensor)
+            trajectories.append(traj)
+            group_ids.append(scored.group_id)
+            rollout_indices.append(scored.rollout_index)
+
+            traj_log = (
+                final_output.trajectory_logs[0]
+                if final_output.trajectory_logs
+                else None
+            )
+            questions.append(traj_log.question if traj_log is not None else "")
+            ground_truths.append(
+                str(
+                    batch.non_tensor_batch.get("ground_truth", [""])[0]
+                    if batch.non_tensor_batch.get("ground_truth")
+                    else ""
+                )
+            )
+
+            token_advantages = torch.zeros(
+                len(traj.response_token_ids),
+                dtype=torch.float32,
+            )
+            action_positions = [
+                idx
+                for idx, tid in enumerate(traj.response_with_observation_mask)
+                if tid != pad_id
+            ]
+            if action_positions:
+                token_advantages[action_positions[-1]] = float(scored.advantage)
+            advantage_rows.append(token_advantages)
+
+            old_row = batch.batch.get("old_log_probs")
+            old_values = (
+                old_row[0].tolist()
+                if old_row is not None and old_row.shape[0] > 0
+                else None
+            )
+            if old_values is None:
+                old_values = _response_slice_from_traj(traj.old_log_probs, traj)
+            if old_values is not None:
+                old_log_prob_rows.append(torch.tensor(old_values, dtype=torch.float32))
+
+            ref_row = batch.batch.get("ref_log_probs")
+            ref_values = (
+                ref_row[0].tolist()
+                if ref_row is not None and ref_row.shape[0] > 0
+                else None
+            )
+            if ref_values is None:
+                ref_values = _response_slice_from_traj(traj.ref_log_probs, traj)
+            if ref_values is not None:
+                ref_log_prob_rows.append(torch.tensor(ref_values, dtype=torch.float32))
+
+        max_prompt_len = max(row.numel() for row in prompt_rows)
+        prompts = torch.tensor(
+            [
+                [pad_id] * (max_prompt_len - row.numel()) + row.tolist()
+                for row in prompt_rows
+            ],
+            dtype=torch.long,
+        )
+        prompt_attention = (prompts != pad_id).long()
+        responses = torch.nn.utils.rnn.pad_sequence(
+            response_rows,
+            batch_first=True,
+            padding_value=pad_id,
+        )
+        response_attention = (responses != pad_id).long()
+        responses_with_info_mask = torch.nn.utils.rnn.pad_sequence(
+            response_with_info_rows,
+            batch_first=True,
+            padding_value=0,
+        )
+        advantages = torch.nn.utils.rnn.pad_sequence(
+            advantage_rows,
+            batch_first=True,
+            padding_value=0.0,
+        )
+
+        input_ids = torch.cat([prompts, responses], dim=1)
+        attention_mask = torch.cat([prompt_attention, response_attention], dim=1)
+        info_mask = torch.cat(
+            [
+                prompt_attention,
+                self.tensor_fn.create_attention_mask(responses_with_info_mask),
+            ],
+            dim=1,
+        )
+        position_ids = self.tensor_fn.create_position_ids(attention_mask)
+
+        training_batch = SearchBatch.from_dict(
+            {
+                "prompts": prompts,
+                "responses": responses,
+                "responses_with_info_mask": responses_with_info_mask,
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "info_mask": info_mask,
+                "position_ids": position_ids,
+                "advantages": advantages,
+            }
+        )
+        if old_log_prob_rows and len(old_log_prob_rows) == len(scored_rollouts):
+            training_batch.batch["old_log_probs"] = torch.nn.utils.rnn.pad_sequence(
+                old_log_prob_rows,
+                batch_first=True,
+                padding_value=0.0,
+            )
+        if ref_log_prob_rows and len(ref_log_prob_rows) == len(scored_rollouts):
+            training_batch.batch["ref_log_probs"] = torch.nn.utils.rnn.pad_sequence(
+                ref_log_prob_rows,
+                batch_first=True,
+                padding_value=0.0,
+            )
+
+        training_batch.non_tensor_batch["trajectories"] = trajectories
+        training_batch.non_tensor_batch["questions"] = questions
+        training_batch.non_tensor_batch["ground_truths"] = ground_truths
+        training_batch.non_tensor_batch["scored_rollouts"] = list(scored_rollouts)
+        training_batch.meta_info["group_ids"] = group_ids
+        training_batch.meta_info["rollout_indices"] = rollout_indices
+        return training_batch
+
+    def run_grpo_training_step(
+        self,
+        prompt_batch: Any,
+        *,
+        search_mode: str,
+        sampling_params: dict[str, Any],
+        judge_fn: Callable[[str, str], float],
+        num_rollouts: int = 4,
+        reward_fn: Any = None,
+        advantage_config: Any = None,
+        batch_judge_fn: Any = None,
+        old_backend: LogProbCapable | None = None,
+        new_backend: LogProbCapable | None = None,
+        ref_backend: LogProbCapable | None = None,
+        loss_config: PPOPolicyLossConfig | None = None,
+        optimizer: Any = None,
+        base_seed: int | None = None,
+        current_step: int = 0,
+        total_steps: int = 1,
+    ) -> GRPOTrainingStepResult:
+        """Run one end-to-end GRPO trainer step over a PromptBatch."""
+        from src.agent_loop import GRPOAdvantageConfig
+
+        resolved_advantage_config = advantage_config or GRPOAdvantageConfig(
+            mode="group_outcome",
+            reward_component="total",
+        )
+
+        group_results: list[GRPOPromptGroupResult] = []
+        scored_rollouts: list[ScoredGroupedRollout] = []
+        for prompt_index, question in enumerate(prompt_batch.questions):
+            single_batch = _single_prompt_batch(prompt_batch, prompt_index)
+            grouped = self.run_prompt_rollout_group(
+                single_batch,
+                search_mode=search_mode,
+                sampling_params=sampling_params,
+                num_rollouts=num_rollouts,
+                base_seed=(
+                    None
+                    if base_seed is None
+                    else base_seed + prompt_index * num_rollouts
+                ),
+                current_step=current_step,
+                total_steps=total_steps,
+            )
+            scored = score_group_rollout(
+                grouped,
+                ground_truth=single_batch.ground_truths[0],
+                judge_fn=judge_fn,
+                reward_fn=reward_fn,
+                advantage_config=resolved_advantage_config,
+                batch_judge_fn=batch_judge_fn,
+            )
+            group_results.append(
+                GRPOPromptGroupResult(
+                    question=question,
+                    ground_truth=single_batch.ground_truths[0],
+                    grouped_rollouts=grouped,
+                    scored_rollouts=scored,
+                )
+            )
+            scored_rollouts.extend(scored)
+
+        training_batch = self.collate_scored_rollouts_for_training(scored_rollouts)
+
+        if "old_log_probs" not in training_batch.batch or old_backend is not None:
+            self.compute_log_prob(
+                training_batch,
+                backend=old_backend or self.generation_backend,
+                store_key="old_log_probs",
+                overwrite=(
+                    old_backend is not None
+                    or "old_log_probs" not in training_batch.batch
+                ),
+            )
+        self.compute_log_prob(
+            training_batch,
+            backend=new_backend or self.generation_backend,
+            store_key="new_log_probs",
+        )
+        if ref_backend is not None:
+            self.compute_log_prob(
+                training_batch,
+                backend=ref_backend,
+                store_key="ref_log_probs",
+            )
+
+        loss = self.compute_policy_loss(training_batch, config=loss_config)
+
+        optimizer_stepped = False
+        if optimizer is not None:
+            try:
+                optimizer.zero_grad(set_to_none=True)
+            except TypeError:
+                optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            optimizer_stepped = True
+
+        rewards = [scored.reward for scored in scored_rollouts]
+        advantages = [scored.advantage for scored in scored_rollouts]
+        return GRPOTrainingStepResult(
+            group_results=group_results,
+            scored_rollouts=scored_rollouts,
+            training_batch=training_batch,
+            loss=loss,
+            optimizer_stepped=optimizer_stepped,
+            mean_reward=(sum(rewards) / len(rewards)) if rewards else 0.0,
+            mean_advantage=(sum(advantages) / len(advantages)) if advantages else 0.0,
+        )
 
     def build_rollout_outputs(self, batch: SearchBatch) -> list[AgentLoopOutput]:
         """Convert a run_llm_loop SearchBatch to per-trajectory AgentLoopOutputs.
