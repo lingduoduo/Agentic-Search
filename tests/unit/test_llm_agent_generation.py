@@ -695,6 +695,49 @@ def test_prepare_policy_log_probs_stores_old_new_and_ratio():
     assert trajectory.new_log_probs == [0.0, 0.0, -0.5, -0.5, -0.0]
 
 
+def test_prepare_policy_log_probs_can_store_reference_log_probs():
+    manager = _manager()
+    batch = SearchBatch.from_dict(
+        {
+            "responses": torch.tensor([[5, 6]], dtype=torch.long),
+            "responses_with_info_mask": torch.tensor([[5, 6]], dtype=torch.long),
+        }
+    )
+    batch.non_tensor_batch["trajectories"] = [
+        RolloutTrajectory(
+            batch_index=0,
+            prompt_token_ids=[1, 2],
+            response_token_ids=[5, 6],
+            response_with_observation_mask=[5, 6],
+            trajectory_turns=1,
+            steps=[],
+            final_answer="done",
+            finished_without_answer=False,
+            tokens=[1, 2, 5, 6],
+            attention_mask=[1, 1, 1, 1],
+            response_mask=[0, 0, 1, 1],
+        )
+    ]
+
+    manager.prepare_policy_log_probs(
+        batch,
+        old_backend=FixedLogProbBackend(-1.0),
+        new_backend=FixedLogProbBackend(-0.5),
+        ref_backend=FixedLogProbBackend(-1.5),
+    )
+
+    assert torch.allclose(
+        batch.batch["ref_log_probs"],
+        torch.tensor([[-1.5, -1.5]], dtype=torch.float32),
+    )
+    assert batch.non_tensor_batch["trajectories"][0].ref_log_probs == [
+        0.0,
+        0.0,
+        -1.5,
+        -1.5,
+    ]
+
+
 def test_old_log_probs_aligned_with_tokens_and_response_mask():
     """tokens, attention_mask, response_mask, old_log_probs must all be the same length."""
     manager = _manager_with_log_prob()
@@ -789,6 +832,167 @@ def test_trajectory_log_prob_pack_falls_back_to_zeros_when_log_probs_none():
 
     assert len(pack["old_log_probs"]) == 4
     assert pack["old_log_probs"] == [0.0, 0.0, 0.0, 0.0]
+
+
+# ---------------------------------------------------------------------------
+# compute_trajectory_policy_loss — GRPO/PPO clipped loss, trajectory level
+# ---------------------------------------------------------------------------
+
+
+def test_compute_trajectory_policy_loss_matches_grpo_formula():
+    """ratio=exp(new-old), loss=-mean(min(r*A, clip(r)*A)*mask)."""
+    from src.llm_agent.generation import compute_trajectory_policy_loss
+
+    # 5-element aligned arrays: 2 prompt zeros + 3 response positions
+    new_lp = [0.0, 0.0, -0.5, -0.5, -0.5]
+    old_lp = [0.0, 0.0, -1.0, -1.0, -1.0]
+    # Sparse GRPO: reward only at last action token (index 4)
+    advantages = [0.0, 0.0, 0.0, 0.0, 1.0]
+    mask = [0, 0, 1, 1, 1]  # 0 for prompt, 1 for model actions
+
+    out = compute_trajectory_policy_loss(
+        new_log_probs=new_lp,
+        old_log_probs=old_lp,
+        advantages=advantages,
+        response_mask=mask,
+        clip_epsilon=0.2,
+    )
+
+    # ratio = exp(0.5) ≈ 1.649; clamped to 1.2 (clip_epsilon=0.2)
+    # Only index 4 has advantage=1.0; indices 2,3 have advantage=0 → contribute 0
+    # policy_loss = -(1.2 * 1.0) / 3  (3 masked tokens)
+    expected_loss = -(1.2 * 1.0) / 3
+    assert out["grpo_policy_loss"] == pytest.approx(expected_loss, abs=1e-5)
+    assert out["kl_penalty"] == pytest.approx(0.0)
+    assert out["total_loss"] == pytest.approx(expected_loss, abs=1e-5)
+    # All 3 action tokens are clipped (ratio ≈ 1.65 > 1.2) → clip_fraction = 1.0
+    assert out["clip_fraction"] == pytest.approx(1.0, abs=1e-5)
+
+
+def test_compute_trajectory_policy_loss_negative_advantage_penalises_above_clip():
+    from src.llm_agent.generation import compute_trajectory_policy_loss
+    import math
+
+    # ratio > 1 + eps with A < 0 → should be clipped
+    new_lp = [0.0, 0.0, -0.5]
+    old_lp = [0.0, 0.0, -1.5]  # ratio = exp(1.0) ≈ 2.72, well above 1.2
+    advantages = [0.0, 0.0, -1.0]  # negative advantage
+    mask = [0, 0, 1]
+
+    out = compute_trajectory_policy_loss(
+        new_log_probs=new_lp,
+        old_log_probs=old_lp,
+        advantages=advantages,
+        response_mask=mask,
+        clip_epsilon=0.2,
+    )
+
+    # min(r * -1, clip(r) * -1) = min(-2.72, -1.2) = -2.72 (unclipped is worse)
+    # surrogate = -2.72 * 1 mask token → loss = -(-2.72)/1 = +2.72
+    r = math.exp(1.0)
+    expected = r * 1.0  # positive loss — clip does NOT help for A<0, ratio>1+eps
+    assert out["grpo_policy_loss"] == pytest.approx(expected, abs=1e-4)
+
+
+def test_compute_trajectory_policy_loss_kl_penalty_fires_with_ref_log_probs():
+    from src.llm_agent.generation import compute_trajectory_policy_loss
+
+    # ref = old = new → KL = 0; use ref != new to get non-zero KL
+    new_lp = [0.0, 0.0, -0.5, -0.5]
+    old_lp = [0.0, 0.0, -0.5, -0.5]  # ratio = 1.0 everywhere
+    ref_lp = [0.0, 0.0, -1.0, -1.0]  # ref diverges from new
+    advantages = [0.0, 0.0, 1.0, 0.0]
+    mask = [0, 0, 1, 1]
+
+    out_no_kl = compute_trajectory_policy_loss(
+        new_log_probs=new_lp,
+        old_log_probs=old_lp,
+        advantages=advantages,
+        response_mask=mask,
+        kl_beta=0.0,
+    )
+    out_with_kl = compute_trajectory_policy_loss(
+        new_log_probs=new_lp,
+        old_log_probs=old_lp,
+        advantages=advantages,
+        response_mask=mask,
+        ref_log_probs=ref_lp,
+        kl_beta=0.1,
+    )
+
+    assert out_no_kl["kl_penalty"] == pytest.approx(0.0)
+    assert out_with_kl["kl_penalty"] > 0.0
+    assert out_with_kl["total_loss"] > out_no_kl["total_loss"]
+
+
+def test_compute_trajectory_policy_loss_kl_uses_old_when_ref_absent():
+    from src.llm_agent.generation import compute_trajectory_policy_loss
+
+    new_lp = [0.0, 0.0, -0.5]
+    old_lp = [0.0, 0.0, -0.5]  # identical → KL = 0
+    advantages = [0.0, 0.0, 1.0]
+    mask = [0, 0, 1]
+
+    out = compute_trajectory_policy_loss(
+        new_log_probs=new_lp,
+        old_log_probs=old_lp,
+        advantages=advantages,
+        response_mask=mask,
+        kl_beta=0.5,  # beta > 0 but no ref, old==new
+    )
+
+    assert out["kl_penalty"] == pytest.approx(0.0, abs=1e-7)
+
+
+def test_compute_trajectory_policy_loss_length_mismatch_raises():
+    from src.llm_agent.generation import compute_trajectory_policy_loss
+
+    with pytest.raises(ValueError, match="same length"):
+        compute_trajectory_policy_loss(
+            new_log_probs=[0.0, -0.5],
+            old_log_probs=[0.0],  # wrong length
+            advantages=[0.0, 1.0],
+            response_mask=[0, 1],
+        )
+
+
+def test_compute_trajectory_policy_loss_with_trajectory_log_prob_pack():
+    """End-to-end: pack + loss computes without error."""
+    from src.llm_agent.generation import (
+        compute_trajectory_policy_loss,
+        trajectory_log_prob_pack,
+    )
+
+    traj = RolloutTrajectory(
+        batch_index=0,
+        prompt_token_ids=[1, 2],
+        response_token_ids=[5, 6, 7],
+        response_with_observation_mask=[5, 0, 7],
+        trajectory_turns=1,
+        steps=[],
+        final_answer="done",
+        finished_without_answer=False,
+        tokens=[1, 2, 5, 6, 7],
+        attention_mask=[1, 1, 1, 1, 1],
+        response_mask=[0, 0, 1, 0, 1],
+        old_log_probs=[0.0, 0.0, -1.0, 0.0, -1.0],
+    )
+    traj_new_lps = [0.0, 0.0, -0.8, 0.0, -0.8]
+    pack = trajectory_log_prob_pack(traj)
+    advantages = [0.0] * 5
+    advantages[4] = 1.0  # sparse: reward at last action token only
+
+    out = compute_trajectory_policy_loss(
+        new_log_probs=traj_new_lps,
+        old_log_probs=pack["old_log_probs"],
+        advantages=advantages,
+        response_mask=pack["response_mask"],
+        clip_epsilon=0.2,
+    )
+
+    assert "grpo_policy_loss" in out
+    assert "total_loss" in out
+    assert isinstance(out["total_loss"], float)
 
 
 def test_compose_final_output_stores_training_tokens_and_masks_on_trajectory():
@@ -1021,6 +1225,51 @@ def test_compute_policy_loss_adds_kl_penalty_when_requested():
     kl = manager.per_token_kl(batch).sum() / 2.0
     expected_loss = -expected_policy + 0.1 * kl
     assert torch.allclose(loss, expected_loss, atol=1e-5)
+
+
+def test_compute_policy_loss_records_grpo_policy_loss_and_kl_penalty():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-1.0, -2.0], new=[-0.5, -1.5])
+    advantages = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.1),
+    )
+
+    assert "grpo_policy_loss" in batch.batch
+    assert "kl_penalty" in batch.batch
+    assert "total_policy_loss" in batch.batch
+    assert torch.allclose(batch.batch["policy_loss"], loss)
+    assert torch.allclose(batch.batch["total_policy_loss"], loss.detach())
+    assert batch.batch["kl_penalty"].item() >= 0.0
+
+
+def test_compute_policy_loss_prefers_reference_log_probs_for_kl_penalty():
+    manager = _manager_with_log_prob()
+    batch = _batch_with_old_and_new_log_probs(old=[-10.0, -10.0], new=[-0.5, -0.5])
+    batch.batch["ref_log_probs"] = torch.tensor([[-0.6, -0.6]], dtype=torch.float32)
+    advantages = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+
+    loss = manager.compute_policy_loss(
+        batch,
+        advantages=advantages,
+        config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.1),
+    )
+
+    expected_policy = (
+        torch.minimum(
+            torch.full((1, 2), 1.2, dtype=torch.float32) * advantages,
+            torch.full((1, 2), 1.2, dtype=torch.float32) * advantages,
+        ).sum()
+        / 2.0
+    )
+    kl = manager.per_token_kl(batch).sum() / 2.0
+    expected_loss = -expected_policy + 0.1 * kl
+
+    assert torch.allclose(loss, expected_loss, atol=1e-5)
+    assert batch.meta_info["kl_reference"] == "ref_log_probs"
 
 
 def test_compute_policy_loss_requires_advantages():
