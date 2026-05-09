@@ -2071,7 +2071,15 @@ class LLMGenerationManager:
         rollings: SearchBatch,
         cur_responses: torch.Tensor,
         next_obs_ids: torch.Tensor,
+        active_mask: torch.Tensor | None = None,
     ) -> SearchBatch:
+        """Slide the context window forward by appending responses and observations.
+
+        Only active trajectories (active_mask=True) get their context updated.
+        Inactive trajectories preserve their last valid context so padding never
+        accumulates in finished sequences — mirroring the original_left_side /
+        original_right_side separation in the reference run_llm_loop.
+        """
         new_input_ids = self.tensor_fn.concatenate_with_padding(
             [rollings.batch["input_ids"], cur_responses, next_obs_ids]
         )
@@ -2080,11 +2088,40 @@ class LLMGenerationManager:
         effective_len = int(new_attention_mask.sum(dim=1).max().item())
         max_len = min(self.config.max_prompt_length, effective_len)
 
+        new_input_ids = new_input_ids[:, -max_len:]
+        new_attention_mask = new_attention_mask[:, -max_len:]
+        new_position_ids = new_position_ids[:, -max_len:]
+
+        # Restore inactive trajectories' last valid context so they don't
+        # accumulate padding responses that would corrupt subsequent turns.
+        if active_mask is not None and not active_mask.all():
+            old_ids = rollings.batch["input_ids"]
+            old_mask = rollings.batch["attention_mask"]
+            old_pos = rollings.batch["position_ids"]
+            old_len = old_ids.shape[1]
+            if old_len < max_len:
+                pad = new_input_ids.new_full(
+                    (old_ids.shape[0], max_len - old_len),
+                    self.tokenizer.pad_token_id,
+                )
+                old_ids = torch.cat([pad, old_ids], dim=1)
+                old_mask = torch.cat([torch.zeros_like(pad), old_mask], dim=1)
+                old_pos = self.tensor_fn.create_position_ids(old_mask)
+            elif old_len > max_len:
+                old_ids = old_ids[:, -max_len:]
+                old_mask = old_mask[:, -max_len:]
+                old_pos = old_pos[:, -max_len:]
+
+            expand = active_mask.unsqueeze(1)
+            new_input_ids = torch.where(expand, new_input_ids, old_ids)
+            new_attention_mask = torch.where(expand, new_attention_mask, old_mask)
+            new_position_ids = torch.where(expand, new_position_ids, old_pos)
+
         new_rollings = SearchBatch.from_dict(
             {
-                "input_ids": new_input_ids[:, -max_len:],
-                "position_ids": new_position_ids[:, -max_len:],
-                "attention_mask": new_attention_mask[:, -max_len:],
+                "input_ids": new_input_ids,
+                "position_ids": new_position_ids,
+                "attention_mask": new_attention_mask,
             }
         )
         new_rollings.meta_info.update(getattr(rollings, "meta_info", {}))
@@ -2096,8 +2133,14 @@ class LLMGenerationManager:
         cur_responses: torch.Tensor,
         responses_str: list[str],
         next_obs: list[str],
+        active_mask: torch.Tensor | None = None,
     ) -> tuple[SearchBatch, torch.Tensor, list[ReActContextTransition]]:
-        """Append action outputs and observations into the next-step context."""
+        """Append action outputs and observations into the next-step context.
+
+        active_mask (pre-step) gates which trajectories get their rolling
+        context updated — inactive ones keep their last valid prompt/response
+        state, matching the original_left_side pattern in run_llm_loop.
+        """
         transitions = self.build_react_context_transitions(
             responses_str,
             next_obs,
@@ -2107,6 +2150,7 @@ class LLMGenerationManager:
             rollings,
             cur_responses,
             next_obs_ids,
+            active_mask=active_mask,
         )
         return updated_rollings, next_obs_ids, transitions
 
@@ -2847,12 +2891,14 @@ class LLMGenerationManager:
 
         if include_observations:
             state.turns_stats[curr_active_mask] += 1
+            pre_step_mask = torch.tensor(participating, dtype=torch.bool)
             state.rollings, next_obs_ids, transitions = (
                 self.apply_react_context_transitions(
                     state.rollings,
                     step_result.responses_ids,
                     step_result.responses_str,
                     step_result.next_obs,
+                    active_mask=pre_step_mask,
                 )
             )
             state.original_right_side = self._update_right_side(
@@ -2986,6 +3032,7 @@ class LLMGenerationManager:
         meta_info["active_mask"] = state.active_mask.tolist()
         meta_info["valid_action_stats"] = state.valid_action_stats.tolist()
         meta_info["valid_search_stats"] = state.valid_search_stats.tolist()
+        meta_info["active_num_list"] = list(state.active_num_list)
         meta_info["trajectory_turns"] = list(state.trajectory_turns)
 
         # Per-trajectory final answers and timeout flags for reward computation.
