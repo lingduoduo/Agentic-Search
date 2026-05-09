@@ -1216,114 +1216,34 @@ async def async_run_grpo_training_step(
     total_steps: int = 1,
     max_workers: int | None = None,
 ) -> GRPOTrainingStepResult:
-    """Run one GRPO trainer step with prompt-level rollout concurrency.
+    """Run one GRPO trainer step with concurrent rollout collection.
 
-    Parallelises the expensive prompt-level rollout stage — LLM generation,
-    HTTP retrieval, reranking — then performs one learner-side update after all
-    prompt groups have completed.
+    Delegates to ``LocalGRPOController.async_training_step`` which runs all
+    ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
+    search I/O, then performs one learner-side update.
     """
-    from src.agent_loop import GRPOAdvantageConfig
+    from src.trainer.ppo.controller import LocalGRPOController
 
-    single_prompt_batches = [
-        _single_prompt_batch(prompt_batch, i)
-        for i in range(len(prompt_batch.questions))
-    ]
-    grouped_results = await async_run_prompt_rollout_group(
-        manager,
-        single_prompt_batches,
+    return await LocalGRPOController(
+        manager, num_rollouts=num_rollouts, max_workers=max_workers
+    ).async_training_step(
+        prompt_batch,
         search_mode=search_mode,
         sampling_params=sampling_params,
+        judge_fn=judge_fn,
         num_rollouts=num_rollouts,
+        reward_fn=reward_fn,
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+        old_backend=old_backend,
+        new_backend=new_backend,
+        ref_backend=ref_backend,
+        loss_config=loss_config,
+        safety_config=safety_config,
+        optimizer=optimizer,
         base_seed=base_seed,
         current_step=current_step,
         total_steps=total_steps,
-        max_workers=max_workers,
-    )
-
-    resolved_advantage_config = advantage_config or GRPOAdvantageConfig(
-        mode="group_outcome",
-        reward_component="total",
-    )
-    normalize_advantages = resolved_advantage_config.mode == "group_std_normalized"
-    resolved_safety_config = safety_config or GRPORolloutSafetyConfig(
-        max_search_rounds=manager.config.max_search_rounds,
-        max_total_rounds=manager.config.max_total_rounds,
-        allowed_actions=tuple(manager.config.allowed_actions),
-    )
-
-    group_results: list[GRPOPromptGroupResult] = []
-    scored_rollouts: list[ScoredGroupedRollout] = []
-    for question, single_batch, grouped in zip(
-        prompt_batch.questions, single_prompt_batches, grouped_results
-    ):
-        scored = score_group_rollout(
-            grouped,
-            ground_truth=single_batch.ground_truths[0],
-            judge_fn=judge_fn,
-            reward_fn=reward_fn,
-            advantage_config=resolved_advantage_config,
-            batch_judge_fn=batch_judge_fn,
-        )
-        scored = apply_safety_penalties_to_scored_rollouts(
-            scored,
-            config=resolved_safety_config,
-            normalize_advantages=normalize_advantages,
-        )
-        group_results.append(
-            GRPOPromptGroupResult(
-                question=question,
-                ground_truth=single_batch.ground_truths[0],
-                grouped_rollouts=grouped,
-                scored_rollouts=scored,
-            )
-        )
-        scored_rollouts.extend(scored)
-
-    training_batch = manager.collate_scored_rollouts_for_training(scored_rollouts)
-
-    if "old_log_probs" not in training_batch.batch or old_backend is not None:
-        manager.compute_log_prob(
-            training_batch,
-            backend=old_backend or manager.generation_backend,
-            store_key="old_log_probs",
-            overwrite=(
-                old_backend is not None or "old_log_probs" not in training_batch.batch
-            ),
-        )
-    manager.compute_log_prob(
-        training_batch,
-        backend=new_backend or manager.generation_backend,
-        store_key="new_log_probs",
-    )
-    if ref_backend is not None:
-        manager.compute_log_prob(
-            training_batch,
-            backend=ref_backend,
-            store_key="ref_log_probs",
-        )
-
-    loss = manager.compute_policy_loss(training_batch, config=loss_config)
-
-    optimizer_stepped = False
-    if optimizer is not None:
-        try:
-            optimizer.zero_grad(set_to_none=True)
-        except TypeError:
-            optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        optimizer_stepped = True
-
-    rewards = [scored.reward for scored in scored_rollouts]
-    advantages = [scored.advantage for scored in scored_rollouts]
-    return GRPOTrainingStepResult(
-        group_results=group_results,
-        scored_rollouts=scored_rollouts,
-        training_batch=training_batch,
-        loss=loss,
-        optimizer_stepped=optimizer_stepped,
-        mean_reward=(sum(rewards) / len(rewards)) if rewards else 0.0,
-        mean_advantage=(sum(advantages) / len(advantages)) if advantages else 0.0,
     )
 
 

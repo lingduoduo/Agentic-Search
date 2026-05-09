@@ -1,5 +1,7 @@
 """LLM agent helpers for iterative, search-oriented generation workflows."""
 
+from src.trainer.ppo.controller import LocalGRPOController, RolloutResult
+
 from .generation import (
     ActorRolloutStep,
     ContinuationDecision,
@@ -35,6 +37,8 @@ from .tensor_helper import TensorConfig, TensorHelper
 
 __all__ = [
     "ActorRolloutStep",
+    "LocalGRPOController",
+    "RolloutResult",
     "ContinuationDecision",
     "FinalGenBatchOutput",
     "GenerationConfig",

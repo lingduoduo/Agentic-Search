@@ -46,6 +46,8 @@ __all__ = [
     "apply_safety_penalties_to_scored_rollouts",
     "async_run_grpo_training_step",
     "format_search_trajectory_log",
+    "LocalGRPOController",
+    "RolloutResult",
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
@@ -88,6 +90,8 @@ def __getattr__(name: str) -> Any:
         "apply_safety_penalties_to_scored_rollouts",
         "async_run_grpo_training_step",
         "format_search_trajectory_log",
+        "LocalGRPOController",
+        "RolloutResult",
     }:
         llm_agent_module = import_module(".llm_agent", __name__)
         return getattr(llm_agent_module, name)
