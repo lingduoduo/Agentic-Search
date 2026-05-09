@@ -3633,107 +3633,31 @@ class LLMGenerationManager:
         current_step: int = 0,
         total_steps: int = 1,
     ) -> GRPOTrainingStepResult:
-        """Run one end-to-end GRPO trainer step over a PromptBatch."""
-        from src.agent_loop import GRPOAdvantageConfig
+        """Run one end-to-end GRPO trainer step over a PromptBatch.
 
-        resolved_advantage_config = advantage_config or GRPOAdvantageConfig(
-            mode="group_outcome",
-            reward_component="total",
-        )
+        Kept as the public compatibility entrypoint; orchestration lives in the
+        local PPO controller layer.
+        """
+        from src.trainer.ppo.controller import LocalGRPOController
 
-        normalize_advantages = resolved_advantage_config.mode == "group_std_normalized"
-        resolved_safety_config = safety_config or GRPORolloutSafetyConfig(
-            max_search_rounds=self.config.max_search_rounds,
-            max_total_rounds=self.config.max_total_rounds,
-            allowed_actions=tuple(self.config.allowed_actions),
-        )
-
-        group_results: list[GRPOPromptGroupResult] = []
-        scored_rollouts: list[ScoredGroupedRollout] = []
-        for prompt_index, question in enumerate(prompt_batch.questions):
-            single_batch = _single_prompt_batch(prompt_batch, prompt_index)
-            grouped = self.run_prompt_rollout_group(
-                single_batch,
-                search_mode=search_mode,
-                sampling_params=sampling_params,
-                num_rollouts=num_rollouts,
-                base_seed=(
-                    None
-                    if base_seed is None
-                    else base_seed + prompt_index * num_rollouts
-                ),
-                current_step=current_step,
-                total_steps=total_steps,
-            )
-            scored = score_group_rollout(
-                grouped,
-                ground_truth=single_batch.ground_truths[0],
-                judge_fn=judge_fn,
-                reward_fn=reward_fn,
-                advantage_config=resolved_advantage_config,
-                batch_judge_fn=batch_judge_fn,
-            )
-            scored = apply_safety_penalties_to_scored_rollouts(
-                scored,
-                config=resolved_safety_config,
-                normalize_advantages=normalize_advantages,
-            )
-            group_results.append(
-                GRPOPromptGroupResult(
-                    question=question,
-                    ground_truth=single_batch.ground_truths[0],
-                    grouped_rollouts=grouped,
-                    scored_rollouts=scored,
-                )
-            )
-            scored_rollouts.extend(scored)
-
-        training_batch = self.collate_scored_rollouts_for_training(scored_rollouts)
-
-        if "old_log_probs" not in training_batch.batch or old_backend is not None:
-            self.compute_log_prob(
-                training_batch,
-                backend=old_backend or self.generation_backend,
-                store_key="old_log_probs",
-                overwrite=(
-                    old_backend is not None
-                    or "old_log_probs" not in training_batch.batch
-                ),
-            )
-        self.compute_log_prob(
-            training_batch,
-            backend=new_backend or self.generation_backend,
-            store_key="new_log_probs",
-        )
-        if ref_backend is not None:
-            self.compute_log_prob(
-                training_batch,
-                backend=ref_backend,
-                store_key="ref_log_probs",
-            )
-
-        loss = self.compute_policy_loss(training_batch, config=loss_config)
-
-        optimizer_stepped = False
-        if optimizer is not None:
-            try:
-                optimizer.zero_grad(set_to_none=True)
-            except TypeError:
-                optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            optimizer_stepped = True
-
-        rewards = [scored.reward for scored in scored_rollouts]
-        advantages = [scored.advantage for scored in scored_rollouts]
-        return GRPOTrainingStepResult(
-            group_results=group_results,
-            scored_rollouts=scored_rollouts,
-            training_batch=training_batch,
-            loss=loss,
-            optimizer_stepped=optimizer_stepped,
-            mean_reward=(sum(rewards) / len(rewards)) if rewards else 0.0,
-            mean_advantage=(sum(advantages) / len(advantages)) if advantages else 0.0,
+        return LocalGRPOController(self, num_rollouts=num_rollouts).training_step(
+            prompt_batch,
+            search_mode=search_mode,
+            sampling_params=sampling_params,
+            judge_fn=judge_fn,
+            num_rollouts=num_rollouts,
+            reward_fn=reward_fn,
+            advantage_config=advantage_config,
+            batch_judge_fn=batch_judge_fn,
+            old_backend=old_backend,
+            new_backend=new_backend,
+            ref_backend=ref_backend,
+            loss_config=loss_config,
+            safety_config=safety_config,
+            optimizer=optimizer,
+            base_seed=base_seed,
+            current_step=current_step,
+            total_steps=total_steps,
         )
 
     def build_rollout_outputs(self, batch: SearchBatch) -> list[AgentLoopOutput]:

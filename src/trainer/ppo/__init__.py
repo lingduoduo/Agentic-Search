@@ -16,11 +16,14 @@ from .core_algos import (
     masked_mean,
     masked_whiten,
 )
+from .controller import LocalGRPOController, RolloutResult
 
 __all__ = [
     "AdaptiveKLController",
     "FixedKLController",
+    "LocalGRPOController",
     "PPOPolicyLossConfig",
+    "RolloutResult",
     "clip_by_value",
     "compute_entropy_loss",
     "compute_grpo_outcome_advantage",

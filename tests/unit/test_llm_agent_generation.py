@@ -1323,6 +1323,20 @@ def test_kl_controllers_update_expected_values():
     assert fixed.value == pytest.approx(0.3)
 
 
+def test_local_grpo_controller_assigns_group_advantages():
+    from src.trainer.ppo import LocalGRPOController, RolloutResult
+
+    group = [
+        RolloutResult(prompt_id=0, rollout_id=0, trajectory=None, reward=1.0),
+        RolloutResult(prompt_id=0, rollout_id=1, trajectory=None, reward=3.0),
+    ]
+
+    LocalGRPOController.assign_group_advantages(group)
+
+    assert group[0].advantage == pytest.approx(-1.0)
+    assert group[1].advantage == pytest.approx(1.0)
+
+
 def test_compute_policy_loss_ignores_observation_tokens_via_action_mask():
     manager = _manager_with_log_prob()
     batch = SearchBatch.from_dict(
