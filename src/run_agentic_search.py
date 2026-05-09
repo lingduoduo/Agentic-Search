@@ -660,13 +660,20 @@ async def run_single_turn(
     question: str,
     sampling_params: dict[str, Any],
     max_tokens: int,
+    *,
+    search_url: str = "http://localhost:8000/retrieve",
+    topk: int = 5,
 ) -> None:
-    from src.agent_loop import SingleTurnAgentLoop, AgentLoopConfig
+    from src.agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
 
     loop = SingleTurnAgentLoop(
         tokenizer=tokenizer,
         server_manager=server_manager,
-        config=AgentLoopConfig(response_length=max_tokens),
+        config=SingleTurnAgentLoopConfig(
+            response_length=max_tokens,
+            search_url=search_url,
+            topk=topk,
+        ),
     )
     output = await loop.run(
         messages=[{"role": "user", "content": question}],
@@ -1077,6 +1084,8 @@ async def main() -> None:
                 args.question,
                 sampling_params,
                 args.max_tokens,
+                search_url=args.search_url,
+                topk=args.topk,
             )
         elif args.mode == "search":
             await run_search_agent(
