@@ -23,6 +23,199 @@ from .tensor_helper import TensorConfig, TensorHelper
 logger = logging.getLogger(__name__)
 
 
+def masked_mean(x: torch.Tensor, mask: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """Mean over masked positions, used by PPO/GRPO core losses."""
+    resolved_mask = mask.to(dtype=x.dtype, device=x.device)
+    return (x * resolved_mask).sum() / (resolved_mask.sum() + eps)
+
+
+def masked_whiten(
+    values: torch.Tensor,
+    mask: torch.Tensor,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Whiten values over masked positions while preserving tensor shape."""
+    resolved_mask = mask.to(dtype=values.dtype, device=values.device)
+    mean = masked_mean(values, resolved_mask, eps)
+    var = masked_mean((values - mean).square(), resolved_mask, eps)
+    return (values - mean) / torch.sqrt(var + eps)
+
+
+def entropy_from_logits(logits: torch.Tensor) -> torch.Tensor:
+    """Per-token categorical entropy from unnormalized logits."""
+    probs = torch.softmax(logits, dim=-1)
+    log_probs = torch.log_softmax(logits, dim=-1)
+    return -(probs * log_probs).sum(dim=-1)
+
+
+def clip_by_value(
+    x: torch.Tensor,
+    min_value: torch.Tensor | float,
+    max_value: torch.Tensor | float,
+) -> torch.Tensor:
+    """Clamp with tensor-compatible bounds."""
+    return torch.max(torch.min(x, max_value), min_value)
+
+
+class AdaptiveKLController:
+    """Adaptive KL coefficient controller for PPO-style training."""
+
+    def __init__(self, init_kl_coef: float, target_kl: float, horizon: int) -> None:
+        self.value = float(init_kl_coef)
+        self.target = float(target_kl)
+        self.horizon = int(horizon)
+
+    def update(self, current_kl: float, n_steps: int) -> None:
+        if self.target <= 0 or self.horizon <= 0:
+            return
+        proportional_error = max(
+            min(float(current_kl) / self.target - 1.0, 0.2),
+            -0.2,
+        )
+        mult = 1.0 + proportional_error * int(n_steps) / self.horizon
+        self.value *= mult
+
+
+class FixedKLController:
+    """Fixed KL coefficient controller with the same interface as adaptive KL."""
+
+    def __init__(self, kl_coef: float) -> None:
+        self.value = float(kl_coef)
+
+    def update(self, current_kl: float, n_steps: int) -> None:
+        del current_kl, n_steps
+
+
+def compute_grpo_outcome_advantage(
+    token_level_rewards: torch.Tensor,
+    eos_mask: torch.Tensor,
+    index: torch.Tensor,
+    epsilon: float = 1e-6,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Group-normalized outcome advantages expanded over response tokens."""
+    response_length = token_level_rewards.shape[-1]
+    scores = token_level_rewards.sum(dim=-1)
+    advantages = torch.zeros_like(token_level_rewards)
+
+    with torch.no_grad():
+        for group_id in torch.unique(index).tolist():
+            group_mask = index == int(group_id)
+            group_scores = scores[group_mask]
+            if group_scores.numel() == 0:
+                continue
+            mean = group_scores.mean()
+            std = (
+                group_scores.std(unbiased=False)
+                if group_scores.numel() > 1
+                else torch.tensor(1.0, device=scores.device, dtype=scores.dtype)
+            )
+            normalized = (group_scores - mean) / (std + epsilon)
+            advantages[group_mask] = (
+                normalized.unsqueeze(-1).expand(-1, response_length)
+                * eos_mask[group_mask]
+            )
+
+    return advantages, advantages
+
+
+def compute_rewards(
+    token_level_scores: torch.Tensor,
+    old_log_prob: torch.Tensor,
+    ref_log_prob: torch.Tensor,
+    kl_ratio: float,
+) -> torch.Tensor:
+    """Token rewards after subtracting old-vs-reference KL penalty."""
+    kl = old_log_prob - ref_log_prob
+    return token_level_scores - kl * float(kl_ratio)
+
+
+def compute_ppo_policy_loss_core(
+    old_log_prob: torch.Tensor,
+    log_prob: torch.Tensor,
+    advantages: torch.Tensor,
+    eos_mask: torch.Tensor,
+    cliprange: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Clipped PPO policy loss core.
+
+    Returns ``(pg_loss, pg_clipfrac, ppo_kl, surrogate)`` where:
+
+    - ``pg_loss``    — masked-mean pessimistic surrogate; ready to minimize.
+    - ``pg_clipfrac``— fraction of tokens where the clip was active.
+    - ``ppo_kl``     — approximate KL for monitoring.
+    - ``surrogate``  — per-token ``max(pg_losses, pg_losses_clipped)``; reuse
+                       this in callers for action-type breakdown without a
+                       second forward pass.
+    """
+    negative_approx_kl = log_prob - old_log_prob
+    ratio = torch.exp(
+        torch.clamp(negative_approx_kl, -_LOG_RATIO_CLAMP, _LOG_RATIO_CLAMP)
+    )
+    ppo_kl = masked_mean(-negative_approx_kl, eos_mask)
+
+    pg_losses = -advantages * ratio
+    pg_losses_clipped = -advantages * torch.clamp(
+        ratio,
+        1.0 - float(cliprange),
+        1.0 + float(cliprange),
+    )
+    surrogate = torch.maximum(pg_losses, pg_losses_clipped)
+    pg_loss = masked_mean(surrogate, eos_mask)
+    pg_clipfrac = masked_mean(
+        (pg_losses_clipped > pg_losses).to(dtype=log_prob.dtype),
+        eos_mask,
+    )
+    return pg_loss, pg_clipfrac, ppo_kl, surrogate
+
+
+def compute_entropy_loss(logits: torch.Tensor, eos_mask: torch.Tensor) -> torch.Tensor:
+    """Masked mean policy entropy."""
+    return masked_mean(entropy_from_logits(logits), eos_mask)
+
+
+def compute_value_loss(
+    vpreds: torch.Tensor,
+    returns: torch.Tensor,
+    values: torch.Tensor,
+    eos_mask: torch.Tensor,
+    cliprange_value: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Clipped value-function loss used by PPO."""
+    vpred_clipped = clip_by_value(
+        vpreds,
+        values - float(cliprange_value),
+        values + float(cliprange_value),
+    )
+    vf_losses1 = (vpreds - returns).square()
+    vf_losses2 = (vpred_clipped - returns).square()
+    vf_loss = 0.5 * masked_mean(torch.maximum(vf_losses1, vf_losses2), eos_mask)
+    vf_clipfrac = masked_mean(
+        (vf_losses2 > vf_losses1).to(dtype=vpreds.dtype),
+        eos_mask,
+    )
+    return vf_loss, vf_clipfrac
+
+
+def kl_penalty(
+    logprob: torch.Tensor,
+    ref_logprob: torch.Tensor,
+    kl_penalty_type: str,
+) -> torch.Tensor:
+    """Per-token KL penalty variants commonly used by PPO/GRPO trainers."""
+    if kl_penalty_type == "kl":
+        return logprob - ref_logprob
+    if kl_penalty_type == "abs":
+        return (logprob - ref_logprob).abs()
+    if kl_penalty_type == "mse":
+        return 0.5 * (logprob - ref_logprob).square()
+    if kl_penalty_type == "low_var_kl":
+        kl = ref_logprob - logprob
+        ratio = torch.exp(torch.clamp(kl, -_LOG_RATIO_CLAMP, _LOG_RATIO_CLAMP))
+        kld = ratio - kl - 1.0
+        return torch.clamp(kld, min=-10.0, max=10.0)
+    raise NotImplementedError(f"Unknown KL penalty type: {kl_penalty_type}")
+
+
 @dataclass
 class SearchBatch:
     """Lightweight batch container for multi-turn search generation."""
@@ -375,6 +568,10 @@ class PPOPolicyLossConfig:
     # Per-action-type loss multipliers.  Keys: "search", "think", "fetch", "answer".
     # Tokens with no matching key keep weight 1.0.  None means uniform weighting.
     action_type_weights: dict[str, float] | None = None
+    # Whiten advantages over action tokens before computing the PPO loss.
+    # Reduces gradient variance by zero-meaning and unit-scaling the signal
+    # across the batch before it enters the clipped surrogate.
+    whiten_advantages: bool = False
 
 
 @dataclass(frozen=True)
@@ -2599,9 +2796,13 @@ class LLMGenerationManager:
         """
         cfg = config or PPOPolicyLossConfig()
         action_mask = self._response_action_mask(batch)
-        ratio = batch.batch.get("prob_ratio")
-        if ratio is None:
-            ratio = self.compute_prob_ratio(batch)
+        old_lp = batch.batch.get("old_log_probs")
+        new_lp = batch.batch.get("new_log_probs")
+        if old_lp is None or new_lp is None:
+            raise ValueError(
+                "old_log_probs and new_log_probs are required; call "
+                "compute_log_prob for both rollout and current policy first."
+            )
 
         resolved_advantages = advantages
         if resolved_advantages is None:
@@ -2611,29 +2812,42 @@ class LLMGenerationManager:
                 "advantages not found; pass `advantages=` or populate batch.batch['advantages'] first."
             )
         resolved_advantages = resolved_advantages.to(dtype=torch.float32)
-        if resolved_advantages.shape != ratio.shape:
+        if resolved_advantages.shape != old_lp.shape:
             raise ValueError(
-                "advantages must align with prob_ratio shape "
-                f"{tuple(ratio.shape)}, got {tuple(resolved_advantages.shape)}."
+                "advantages must align with old_log_probs shape "
+                f"{tuple(old_lp.shape)}, got {tuple(resolved_advantages.shape)}."
             )
 
-        clipped_ratio = torch.clamp(
-            ratio,
-            1.0 - float(cfg.clip_epsilon),
-            1.0 + float(cfg.clip_epsilon),
-        )
-        surrogate = (
-            torch.minimum(
-                ratio * resolved_advantages, clipped_ratio * resolved_advantages
+        # Optional advantage whitening reduces gradient variance across the batch.
+        if cfg.whiten_advantages:
+            resolved_advantages = masked_whiten(resolved_advantages, action_mask)
+
+        # Single forward pass: PPO clipped loss + per-token surrogate for breakdown.
+        # surrogate = max(pg_losses, pg_losses_clipped); negated = per-token objective.
+        grpo_policy_loss, clip_fraction, ppo_approx_kl, surrogate = (
+            compute_ppo_policy_loss_core(
+                old_lp,
+                new_lp,
+                resolved_advantages,
+                action_mask,
+                float(cfg.clip_epsilon),
             )
-            * action_mask
         )
 
-        # Compute action-type masks once — shared by action_type_weights reweighting
-        # and the policy-family breakdown below.  Without this, compute_action_type_masks
-        # would be called 2–3 times (one tokenizer decode pass per call).
+        # Compute action-type masks once — reused for weights, breakdown, and ratio caching.
         type_masks = self.compute_action_type_masks(batch)
 
+        # Store prob_ratio for downstream breakdown methods (action tokens only).
+        ratio = batch.batch.get("prob_ratio")
+        if ratio is None:
+            ratio = self.compute_prob_ratio(batch)
+        clipped_ratio = torch.clamp(
+            ratio, 1.0 - float(cfg.clip_epsilon), 1.0 + float(cfg.clip_epsilon)
+        )
+
+        # Per-action-type reweighting: scale surrogate before averaging.
+        # Uses the surrogate already computed above — no second ratio pass.
+        policy_objective = -grpo_policy_loss
         if cfg.action_type_weights:
             weight_tensor = torch.ones_like(ratio)
             for tag, w in cfg.action_type_weights.items():
@@ -2641,29 +2855,25 @@ class LLMGenerationManager:
                     weight_tensor = weight_tensor + (w - 1.0) * type_masks[tag].to(
                         ratio.device
                     )
-            surrogate = surrogate * weight_tensor
+            policy_objective = masked_mean(-surrogate * weight_tensor, action_mask)
+            grpo_policy_loss = -policy_objective
 
-        normalizer = torch.clamp(action_mask.sum(), min=1.0)
-        policy_objective = surrogate.sum() / normalizer
-        grpo_policy_loss = -policy_objective
-
-        kl_term = torch.tensor(0.0, dtype=torch.float32, device=policy_objective.device)
+        # KL regularization.
+        kl_term = torch.zeros(
+            1, dtype=torch.float32, device=policy_objective.device
+        ).squeeze()
         if cfg.kl_coefficient:
             kl = batch.batch.get("per_token_kl")
             if kl is None:
                 kl = self.per_token_kl(batch)
-            kl_term = (kl * action_mask).sum() / normalizer
+            kl_term = masked_mean(kl, action_mask)
 
         # Entropy bonus: H(π) ≈ −E[log π(a|s)] over action tokens.
-        # Adding this to the objective keeps the search / reasoning / stopping
-        # policies diverse and prevents premature mode collapse.
-        entropy_term = torch.tensor(
-            0.0, dtype=torch.float32, device=policy_objective.device
-        )
-        if cfg.entropy_coefficient:
-            new_lp = batch.batch.get("new_log_probs")
-            if new_lp is not None:
-                entropy_term = -(new_lp * action_mask).sum() / normalizer
+        entropy_term = torch.zeros(
+            1, dtype=torch.float32, device=policy_objective.device
+        ).squeeze()
+        if cfg.entropy_coefficient and new_lp is not None:
+            entropy_term = masked_mean(-new_lp, action_mask)
 
         kl_penalty = float(cfg.kl_coefficient) * kl_term
         loss = (
@@ -2671,12 +2881,9 @@ class LLMGenerationManager:
             + kl_penalty
             - float(cfg.entropy_coefficient) * entropy_term
         )
-        clip_fraction = (
-            (ratio != clipped_ratio).to(dtype=torch.float32) * action_mask
-        ).sum() / normalizer
 
-        # Policy-family breakdown from the already-computed type_masks — no extra
-        # decode pass.  stopping_policy and answer_policy share the <answer> span.
+        # Policy-family breakdown from the already-computed surrogate and type_masks.
+        # No extra decode pass: stopping_policy and answer_policy share <answer>.
         answer_mask = type_masks["answer"]
         reasoning_mask = torch.clamp(
             type_masks["think"] + type_masks["fetch"], min=0.0, max=1.0
@@ -2689,11 +2896,10 @@ class LLMGenerationManager:
         }
         family_breakdown: dict[str, float] = {}
         family_token_counts: dict[str, float] = {}
+        # objective_per_token = -surrogate (positive = improvement)
+        obj_per_token = -surrogate * action_mask
         for family, fmask in family_masks.items():
-            n_fam = torch.clamp(fmask.sum(), min=1.0)
-            family_breakdown[family] = float(
-                ((surrogate * fmask).sum() / n_fam).detach().item()
-            )
+            family_breakdown[family] = float(masked_mean(obj_per_token, fmask).detach())
             family_token_counts[family] = float(fmask.sum().item())
 
         batch.batch["advantages"] = resolved_advantages * action_mask
@@ -2704,10 +2910,11 @@ class LLMGenerationManager:
         batch.batch["total_policy_loss"] = loss.detach()
         batch.batch["policy_objective"] = policy_objective.detach()
         batch.batch["clip_fraction"] = clip_fraction.detach()
-        batch.batch["mean_advantage"] = (
-            (resolved_advantages * action_mask).sum() / normalizer
+        batch.batch["mean_advantage"] = masked_mean(
+            resolved_advantages, action_mask
         ).detach()
         batch.batch["mean_kl"] = kl_term.detach()
+        batch.batch["ppo_approx_kl"] = ppo_approx_kl.detach()
         if cfg.entropy_coefficient:
             batch.batch["entropy"] = entropy_term.detach()
         batch.meta_info["policy_update_token_counts"] = family_token_counts
