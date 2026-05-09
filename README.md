@@ -677,15 +677,26 @@ python3 -m pytest tests/unit/test_llm_agent_generation.py \
 
 | Name | Class | Description |
 |------|-------|-------------|
-| `"single_turn_agent"` | `SingleTurnAgentLoop` | One generation step, no search |
+| `"single_turn_agent"` | `SingleTurnAgentLoop` | Single-turn retrieve-then-answer |
 | `"search_agent"` | `SearchAgentLoop` | Multi-turn: plan → search → subquestions → fetch → cited answer |
 | `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
 
 ### XML protocol
 
+The training-facing trace follows a compact ReAct shape:
+
+```xml
+<think>decide whether to answer or search; plan the next useful action</think>
+<search>precise query when external evidence is needed</search>
+<information>environment-injected evidence only; the model must not write this</information>
+<answer>final response grounded in evidence</answer>
+```
+
+`<information>` is environment output and is masked out of policy/SFT action loss.
+
 | Tag | Direction | Purpose |
 |-----|-----------|---------|
-| `<plan>` | model → loop | Record a research plan |
+| `<think>` | model → loop | Reasoning step — decide answer vs search |
 | `<search_decision>answer\|search</search_decision>` | model → loop | Declare retrieval intent |
 | `<subquestions>` | model → loop | Register named research tracks |
 | `<search>query</search>` | model → loop | Single query |

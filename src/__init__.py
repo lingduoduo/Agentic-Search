@@ -44,6 +44,7 @@ __all__ = [
     "TensorHelper",
     "assign_group_relative_advantages",
     "apply_safety_penalties_to_scored_rollouts",
+    "async_run_grpo_training_step",
     "format_search_trajectory_log",
     "AgentLoopBase",
     "AgentLoopConfig",
@@ -54,6 +55,7 @@ __all__ = [
     "ScoredGRPORollout",
     "SFTExample",
     "SingleTurnAgentLoop",
+    "SingleTurnAgentLoopConfig",
     "build_grpo_sampling_params",
     "compute_grpo_outcome_advantage",
     "build_search_sft_example",
@@ -84,6 +86,7 @@ def __getattr__(name: str) -> Any:
         "TensorHelper",
         "assign_group_relative_advantages",
         "apply_safety_penalties_to_scored_rollouts",
+        "async_run_grpo_training_step",
         "format_search_trajectory_log",
     }:
         llm_agent_module = import_module(".llm_agent", __name__)
@@ -98,6 +101,7 @@ def __getattr__(name: str) -> Any:
         "ScoredGRPORollout",
         "SFTExample",
         "SingleTurnAgentLoop",
+        "SingleTurnAgentLoopConfig",
         "build_grpo_sampling_params",
         "compute_grpo_outcome_advantage",
         "build_search_sft_example",

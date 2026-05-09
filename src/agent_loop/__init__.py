@@ -65,7 +65,7 @@ from .search_agent_loop import (
 )
 from .sft import SFTExample, build_search_sft_example
 from .search_client import SearchClient, SearchClientConfig
-from .single_turn_agent_loop import SingleTurnAgentLoop
+from .single_turn_agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
 from .tool import FunctionTool, Tool, ToolSchema
 from .tool_agent_loop import ToolAgentLoop, ToolAgentLoopConfig
 from .tool_parser import (
@@ -131,6 +131,7 @@ __all__ = [
     "SearchRoundEvaluation",
     "ScoredGRPORollout",
     "SingleTurnAgentLoop",
+    "SingleTurnAgentLoopConfig",
     "build_search_sft_example",
     "sample_prompt_group",
     "score_prompt_group",

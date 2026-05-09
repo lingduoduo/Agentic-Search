@@ -104,6 +104,20 @@ def test_build_prompt_ids_falls_back_to_encode():
     assert len(prompt_ids) == 4
 
 
+def test_search_agent_default_prompt_includes_training_template_boundaries():
+    loop = SearchAgentLoop(
+        tokenizer=DummyTokenizerWithEncode(),
+        server_manager=DummyServerManager([]),
+    )
+    prompt = loop.search_config.system_prompt
+    assert prompt is not None
+    assert "<think>" in prompt
+    assert "<search>" in prompt
+    assert "<information>" in prompt
+    assert "<answer>" in prompt
+    assert "Never write or fabricate this block" in prompt
+
+
 def test_generate_response_ids_truncates_to_response_length():
     server_manager = DummyServerManager([1, 2, 3, 4, 5])
     loop = ConcreteAgentLoop(
