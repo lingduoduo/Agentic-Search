@@ -7,12 +7,20 @@ torch = pytest.importorskip("torch", reason="torch not installed", exc_type=Impo
 from src.agent_loop import build_prompt_dataloader  # noqa: E402
 from src.llm_agent.generation import (  # noqa: E402
     AgentLoopState,
+    AdaptiveKLController,
+    FixedKLController,
     GenerationConfig,
     LLMGenerationManager,
     PPOPolicyLossConfig,
     RetrievedDocument,
     RolloutTrajectory,
     SearchBatch,
+    compute_grpo_outcome_advantage,
+    compute_ppo_policy_loss_core,
+    compute_value_loss,
+    kl_penalty,
+    masked_mean,
+    masked_whiten,
     format_search_trajectory_log,
 )
 
@@ -1235,6 +1243,84 @@ def test_compute_policy_loss_matches_clipped_ppo_objective():
     assert "policy_loss" in batch.batch
     assert "clipped_prob_ratio" in batch.batch
     assert "clip_fraction" in batch.batch
+
+
+def test_ppo_core_policy_loss_matches_clipped_objective():
+    old_lp = torch.tensor([[-1.0, -2.0]], dtype=torch.float32)
+    new_lp = torch.tensor([[-0.5, -2.3]], dtype=torch.float32)
+    advantages = torch.tensor([[1.0, -1.0]], dtype=torch.float32)
+    mask = torch.tensor([[1, 1]], dtype=torch.long)
+
+    pg_loss, clipfrac, ppo_kl, surrogate = compute_ppo_policy_loss_core(
+        old_lp, new_lp, advantages, mask, cliprange=0.2
+    )
+
+    ratio = torch.exp(torch.tensor([[0.5, -0.3]], dtype=torch.float32))
+    expected_losses = torch.maximum(
+        -advantages * ratio,
+        -advantages * torch.clamp(ratio, 0.8, 1.2),
+    )
+    assert torch.allclose(pg_loss, expected_losses.mean(), atol=1e-5)
+    assert torch.allclose(clipfrac, torch.tensor(1.0))
+    assert torch.allclose(ppo_kl, torch.tensor(-0.1), atol=1e-5)
+
+
+def test_masked_mean_and_whiten_only_use_masked_positions():
+    values = torch.tensor([[1.0, 100.0, 3.0]], dtype=torch.float32)
+    mask = torch.tensor([[1, 0, 1]], dtype=torch.long)
+
+    assert torch.allclose(masked_mean(values, mask), torch.tensor(2.0))
+    whitened = masked_whiten(values, mask)
+    assert torch.allclose(masked_mean(whitened, mask), torch.tensor(0.0), atol=1e-5)
+    masked_var = masked_mean(whitened.square(), mask)
+    assert torch.allclose(masked_var, torch.tensor(1.0), atol=1e-5)
+
+
+def test_grpo_outcome_advantage_normalizes_within_prompt_group():
+    rewards = torch.tensor([[1.0, 0.0], [3.0, 0.0], [10.0, 0.0]])
+    eos_mask = torch.ones_like(rewards)
+    index = torch.tensor([0, 0, 1], dtype=torch.long)
+
+    advantages, returns = compute_grpo_outcome_advantage(rewards, eos_mask, index)
+
+    assert torch.allclose(advantages[0], torch.tensor([-1.0, -1.0]), atol=1e-5)
+    assert torch.allclose(advantages[1], torch.tensor([1.0, 1.0]), atol=1e-5)
+    assert torch.allclose(advantages[2], torch.tensor([0.0, 0.0]), atol=1e-5)
+    assert torch.allclose(returns, advantages)
+
+
+def test_value_loss_and_kl_penalty_variants():
+    vpreds = torch.tensor([[2.0, 10.0]], dtype=torch.float32)
+    returns = torch.tensor([[4.0, 0.0]], dtype=torch.float32)
+    values = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+    mask = torch.tensor([[1, 0]], dtype=torch.long)
+
+    vf_loss, vf_clipfrac = compute_value_loss(
+        vpreds, returns, values, mask, cliprange_value=0.5
+    )
+
+    assert torch.allclose(vf_loss, torch.tensor(3.125), atol=1e-5)
+    assert torch.allclose(vf_clipfrac, torch.tensor(1.0), atol=1e-5)
+    logprob = torch.tensor([[-1.0]], dtype=torch.float32)
+    ref_logprob = torch.tensor([[-1.5]], dtype=torch.float32)
+    assert torch.allclose(kl_penalty(logprob, ref_logprob, "kl"), torch.tensor([[0.5]]))
+    assert torch.allclose(
+        kl_penalty(logprob, ref_logprob, "abs"), torch.tensor([[0.5]])
+    )
+    assert torch.allclose(
+        kl_penalty(logprob, ref_logprob, "mse"), torch.tensor([[0.125]])
+    )
+    assert torch.all(kl_penalty(logprob, ref_logprob, "low_var_kl") >= 0.0)
+
+
+def test_kl_controllers_update_expected_values():
+    adaptive = AdaptiveKLController(init_kl_coef=0.2, target_kl=0.1, horizon=10)
+    adaptive.update(current_kl=0.2, n_steps=5)
+    assert adaptive.value == pytest.approx(0.22)
+
+    fixed = FixedKLController(kl_coef=0.3)
+    fixed.update(current_kl=99.0, n_steps=100)
+    assert fixed.value == pytest.approx(0.3)
 
 
 def test_compute_policy_loss_ignores_observation_tokens_via_action_mask():
