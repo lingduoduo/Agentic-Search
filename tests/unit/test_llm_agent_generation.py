@@ -2114,6 +2114,7 @@ def test_run_llm_loop_behaves_like_multi_turn_agent_orchestration():
     assert final_batch.meta_info["valid_search_stats"] == [1]
     assert final_batch.meta_info["valid_action_stats"] == [2]
     assert final_batch.meta_info["active_mask"] == [False]
+    assert final_batch.meta_info["active_num_list"] == [1, 1, 0]
     assert final_batch.meta_info["first_rollout_actions"] == ["search"]
     assert final_batch.meta_info["policy_action_history"] == [["search"], ["answer"]]
     assert final_batch.meta_info["search_query_history"] == [["cats"]]
