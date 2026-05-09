@@ -76,7 +76,7 @@ class ActorRolloutStep:
 
     In RL terms, this is the sampled action emitted by the current policy for
     the current state. In this agent setting the action space is expressed as
-    structured text such as `<search>`, `<plan>`, `<fetch>`, or `<answer>`.
+    structured text such as `<think>`, `<search>`, `<fetch>`, or `<answer>`.
     """
 
     responses_ids: torch.Tensor
@@ -372,7 +372,7 @@ class PPOPolicyLossConfig:
     # diverse and prevents premature mode collapse onto a single strategy.
     # Requires new_log_probs to be present in batch.batch.
     entropy_coefficient: float = 0.0
-    # Per-action-type loss multipliers.  Keys: "search", "plan", "fetch", "answer".
+    # Per-action-type loss multipliers.  Keys: "search", "think", "fetch", "answer".
     # Tokens with no matching key keep weight 1.0.  None means uniform weighting.
     action_type_weights: dict[str, float] | None = None
 
@@ -403,7 +403,7 @@ class GRPORolloutSafetyConfig:
     allowed_actions: tuple[str, ...] = ("search", "answer")
 
 
-ROLLOUT_ACTION_TAGS = ("plan", "search", "fetch", "answer")
+ROLLOUT_ACTION_TAGS = ("think", "search", "fetch", "answer")
 ACTION_PATTERN = re.compile(
     rf"<(?P<tag>{'|'.join(ROLLOUT_ACTION_TAGS)})>(?P<content>.*?)</(?P=tag)>",
     re.DOTALL,
@@ -573,10 +573,10 @@ def build_react_observation(action: "PolicyAction", retrieval_result: str = "") 
     if action.tag == "search":
         content = retrieval_result.strip() or _NO_INFO
         return f"\n\n<information>{content}</information>\n\n"
-    if action.tag == "plan":
+    if action.tag == "think":
         return (
-            "\n\n<plan_feedback>Plan recorded. Continue with <search>, <fetch>, or "
-            "<answer>.</plan_feedback>\n\n"
+            "\n\n<think_feedback>Reasoning recorded. Continue with <search>, <fetch>, or "
+            "<answer>.</think_feedback>\n\n"
         )
     if action.tag == "fetch":
         content = retrieval_result.strip() or _NO_INFO
@@ -1047,7 +1047,7 @@ def apply_safety_penalties_to_scored_rollouts(
     1. **Metric-based** (via :func:`apply_rollout_safety_penalties`):
        invalid XML actions, repeated queries, excess search rounds.
     2. **Disallowed-tag** (from trajectory steps): valid XML but tag not in
-       ``config.allowed_actions`` (e.g. ``<fetch>`` or ``<plan>`` when only
+       ``config.allowed_actions`` (e.g. ``<fetch>`` or ``<think>`` when only
        ``["search", "answer"]`` are permitted) — penalised at the same rate as
        invalid-XML actions so the agent learns the permitted action vocabulary.
     3. **Advantage recomputation**: GRPO group advantages are re-derived from
@@ -1102,7 +1102,7 @@ def apply_safety_penalties_to_scored_rollouts(
                 components["excess_search_penalty"] = pen
 
         # 2. Disallowed-tag penalty: valid XML but action not in allowed_actions.
-        #    Example: <plan> or <fetch> emitted when only ["search", "answer"]
+        #    Example: <think> or <fetch> emitted when only ["search", "answer"]
         #    are permitted.  Uses the trajectory steps rather than the metrics
         #    dict so it works even when the loop doesn't track this separately.
         traj = (
@@ -2434,7 +2434,7 @@ class LLMGenerationManager:
     def compute_action_type_masks(self, batch: SearchBatch) -> dict[str, torch.Tensor]:
         """Binary masks over response token positions, one per action type.
 
-        Returns a dict mapping each action tag — ``"search"``, ``"plan"``,
+        Returns a dict mapping each action tag — ``"search"``, ``"think"``,
         ``"fetch"``, ``"answer"`` — to a float32 tensor of shape
         ``[batch_size, response_length]``.  Position ``[i, t]`` is ``1.0`` iff
         token ``t`` in rollout ``i`` was emitted inside a ``<tag>…</tag>`` block
@@ -2475,7 +2475,7 @@ class LLMGenerationManager:
         refer to broader policy families. In this codebase the mapping is:
 
         - ``search_policy``    -> ``<search> ... </search>``
-        - ``reasoning_policy`` -> ``<plan> ... </plan>`` and ``<fetch> ... </fetch>``
+        - ``reasoning_policy`` -> ``<think> ... </think>`` and ``<fetch> ... </fetch>``
         - ``stopping_policy``  -> terminal ``<answer> ... </answer>``
         - ``answer_policy``    -> ``<answer> ... </answer>``
 
@@ -2486,7 +2486,7 @@ class LLMGenerationManager:
         type_masks = self.compute_action_type_masks(batch)
         answer_mask = type_masks["answer"]
         reasoning_mask = torch.clamp(
-            type_masks["plan"] + type_masks["fetch"],
+            type_masks["think"] + type_masks["fetch"],
             min=0.0,
             max=1.0,
         )
@@ -2679,7 +2679,7 @@ class LLMGenerationManager:
         # decode pass.  stopping_policy and answer_policy share the <answer> span.
         answer_mask = type_masks["answer"]
         reasoning_mask = torch.clamp(
-            type_masks["plan"] + type_masks["fetch"], min=0.0, max=1.0
+            type_masks["think"] + type_masks["fetch"], min=0.0, max=1.0
         )
         family_masks = {
             "search_policy": type_masks["search"],
@@ -4196,6 +4196,16 @@ class LLMGenerationManager:
             fetch_results = self.batch_fetch(fetch_tool_calls)
         else:
             fetch_results = [""] * len(fetch_tool_calls)
+        if len(search_results) != len(search_tool_calls):
+            raise ValueError(
+                "batch_search returned the wrong number of results: "
+                f"expected {len(search_tool_calls)}, got {len(search_results)}."
+            )
+        if len(fetch_results) != len(fetch_tool_calls):
+            raise ValueError(
+                "batch_fetch returned the wrong number of results: "
+                f"expected {len(fetch_tool_calls)}, got {len(fetch_results)}."
+            )
 
         next_obs: list[str] = []
         dones: list[int] = []
@@ -4231,9 +4241,20 @@ class LLMGenerationManager:
             )
             dones.append(1 if is_done else 0)
             valid_action.append(
-                1 if tag in {"answer", "search", "plan", "fetch"} else 0
+                1 if tag in {"answer", "search", "think", "fetch"} else 0
             )
             is_search.append(1 if tag == "search" else 0)
+
+        if search_result_index != len(search_results):
+            raise ValueError(
+                "Not all search results were consumed by active search actions: "
+                f"consumed {search_result_index}, available {len(search_results)}."
+            )
+        if fetch_result_index != len(fetch_results):
+            raise ValueError(
+                "Not all fetch results were consumed by active fetch actions: "
+                f"consumed {fetch_result_index}, available {len(fetch_results)}."
+            )
 
         return next_obs, dones, valid_action, is_search
 

@@ -96,7 +96,7 @@ def _manager() -> LLMGenerationManager:
             max_response_length=16,
             max_obs_length=16,
             num_gpus=1,
-            allowed_actions=("plan", "search", "fetch", "answer"),
+            allowed_actions=("think", "search", "fetch", "answer"),
         ),
         generation_backend=DummyActorRollout(),
     )
@@ -112,7 +112,7 @@ def _manager_with_log_prob() -> LLMGenerationManager:
             max_response_length=16,
             max_obs_length=16,
             num_gpus=1,
-            allowed_actions=("plan", "search", "fetch", "answer"),
+            allowed_actions=("think", "search", "fetch", "answer"),
         ),
         generation_backend=DummyActorRolloutWithLogProb(),
     )
@@ -124,12 +124,12 @@ def test_postprocess_predictions_extracts_rollout_action_tags():
         [
             "before <search>cats</search> after",
             "<answer>42</answer>",
-            "<plan>break it down</plan>",
+            "<think>break it down</think>",
             "<fetch>https://example.com</fetch>",
             "plain text",
         ]
     )
-    assert actions == ["search", "answer", "plan", "fetch", None]
+    assert actions == ["search", "answer", "think", "fetch", None]
     assert contents == ["cats", "42", "break it down", "https://example.com", ""]
 
 
@@ -149,7 +149,7 @@ def test_parse_policy_actions_rejects_tags_outside_allowed_actions():
     )
 
     actions = manager.parse_policy_actions(
-        ["<search>cats</search>", "<plan>outline</plan>", "<fetch>url</fetch>"]
+        ["<search>cats</search>", "<think>outline</think>", "<fetch>url</fetch>"]
     )
 
     assert actions[0].tag == "search"
@@ -190,6 +190,21 @@ def test_execute_predictions_keeps_search_payload_aligned():
     assert is_search == [0, 1]
 
 
+def test_execute_predictions_rejects_misaligned_search_results():
+    manager = _manager()
+    manager.batch_search = lambda payload, search_mode, gt_threshold: []  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="batch_search returned the wrong number"):
+        manager.execute_predictions(
+            predictions=["<search>cats</search>"],
+            problem=["question"],
+            ground_truth=[["answer"]],
+            search_mode="google",
+            gt_threshold=0.8,
+            active_mask=torch.tensor([True]),
+        )
+
+
 def test_build_react_observation_wraps_search_result_in_information_tags():
     from src.llm_agent.generation import PolicyAction, build_react_observation
 
@@ -210,12 +225,12 @@ def test_build_react_observation_returns_empty_for_answer():
     assert build_react_observation(action) == ""
 
 
-def test_build_react_observation_returns_plan_feedback():
+def test_build_react_observation_returns_think_feedback():
     from src.llm_agent.generation import PolicyAction, build_react_observation
 
-    action = PolicyAction(tag="plan", content="outline", raw_text="")
+    action = PolicyAction(tag="think", content="outline", raw_text="")
     obs = build_react_observation(action)
-    assert "<plan_feedback>" in obs
+    assert "<think_feedback>" in obs
 
 
 def test_build_search_tool_calls_uses_model_emitted_queries():
@@ -296,11 +311,11 @@ def test_execute_predictions_marks_inactive_examples_done():
     assert is_search == [0, 0]
 
 
-def test_execute_predictions_accepts_plan_and_fetch_actions():
+def test_execute_predictions_accepts_think_and_fetch_actions():
     manager = _manager()
     manager.batch_fetch = lambda payload: ["Full page body from fetch"]  # type: ignore[method-assign]
     next_obs, dones, valid_action, is_search = manager.execute_predictions(
-        predictions=["<plan>outline</plan>", "<fetch>https://example.com</fetch>"],
+        predictions=["<think>outline</think>", "<fetch>https://example.com</fetch>"],
         problem=["first", "second"],
         ground_truth=[["a"], ["b"]],
         search_mode="google",
@@ -308,11 +323,27 @@ def test_execute_predictions_accepts_plan_and_fetch_actions():
         active_mask=torch.tensor([True, True]),
         do_search=True,
     )
-    assert "<plan_feedback>" in next_obs[0]
+    assert "<think_feedback>" in next_obs[0]
     assert next_obs[1] == "\n\n<full_page>Full page body from fetch</full_page>\n\n"
     assert dones == [0, 0]
     assert valid_action == [1, 1]
     assert is_search == [0, 0]
+
+
+def test_execute_predictions_rejects_misaligned_fetch_results():
+    manager = _manager()
+    manager.batch_fetch = lambda payload: []  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="batch_fetch returned the wrong number"):
+        manager.execute_predictions(
+            predictions=["<fetch>https://example.com</fetch>"],
+            problem=["question"],
+            ground_truth=[["answer"]],
+            search_mode="google",
+            gt_threshold=0.5,
+            active_mask=torch.tensor([True]),
+            do_search=True,
+        )
 
 
 def test_build_fetch_tool_calls_splits_urls_from_model_output():
@@ -1790,9 +1821,9 @@ def test_compute_action_type_masks_identifies_search_and_answer_tokens():
     batch = _batch_from_texts(text)
     masks = manager.compute_action_type_masks(batch)
 
-    assert set(masks.keys()) == {"search", "plan", "fetch", "answer"}
+    assert set(masks.keys()) == {"search", "think", "fetch", "answer"}
     # Every character token falls in exactly one action block
-    combined = sum(masks[t][0] for t in ("search", "answer", "plan", "fetch"))
+    combined = sum(masks[t][0] for t in ("search", "answer", "think", "fetch"))
     assert combined.sum().item() == pytest.approx(len(text))
     # search mask covers exactly the <search>…</search> span
     search_span_len = len("<search>query</search>")
@@ -1802,18 +1833,18 @@ def test_compute_action_type_masks_identifies_search_and_answer_tokens():
     assert masks["search"][0, search_span_len:].sum().item() == pytest.approx(0.0)
 
 
-def test_compute_action_type_masks_handles_plan_fetch_tags():
+def test_compute_action_type_masks_handles_think_fetch_tags():
     manager = _manager_with_char_tokenizer()
-    text = "<plan>think</plan><fetch>url</fetch>"
+    text = "<think>reasoning</think><fetch>url</fetch>"
     batch = _batch_from_texts(text)
     masks = manager.compute_action_type_masks(batch)
 
-    plan_len = len("<plan>think</plan>")
-    assert masks["plan"][0, :plan_len].sum().item() == pytest.approx(plan_len)
-    assert masks["plan"][0, plan_len:].sum().item() == pytest.approx(0.0)
+    think_len = len("<think>reasoning</think>")
+    assert masks["think"][0, :think_len].sum().item() == pytest.approx(think_len)
+    assert masks["think"][0, think_len:].sum().item() == pytest.approx(0.0)
     fetch_len = len("<fetch>url</fetch>")
     assert masks["fetch"][
-        0, plan_len : plan_len + fetch_len
+        0, think_len : think_len + fetch_len
     ].sum().item() == pytest.approx(fetch_len)
 
 
@@ -1830,7 +1861,7 @@ def test_compute_action_type_masks_multi_batch():
 
 def test_compute_policy_family_masks_maps_reasoning_and_stopping_policies():
     manager = _manager_with_char_tokenizer()
-    text = "<plan>think</plan><fetch>url</fetch><answer>x</answer>"
+    text = "<think>reasoning</think><fetch>url</fetch><answer>x</answer>"
     batch = _batch_from_texts(text)
 
     masks = manager.compute_policy_family_masks(batch)
@@ -1843,7 +1874,7 @@ def test_compute_policy_family_masks_maps_reasoning_and_stopping_policies():
     }
     assert masks["search_policy"].sum().item() == pytest.approx(0.0)
     assert masks["reasoning_policy"].sum().item() == pytest.approx(
-        len("<plan>think</plan><fetch>url</fetch>")
+        len("<think>reasoning</think><fetch>url</fetch>")
     )
     assert masks["stopping_policy"].sum().item() == pytest.approx(
         len("<answer>x</answer>")
@@ -1866,18 +1897,18 @@ def test_policy_loss_breakdown_returns_per_type_scalars():
         config=PPOPolicyLossConfig(clip_epsilon=0.2),
     )
 
-    assert set(breakdown.keys()) == {"search", "plan", "fetch", "answer"}
+    assert set(breakdown.keys()) == {"search", "think", "fetch", "answer"}
     # ratio = exp(0.1) ≈ 1.105, within clip → positive objective for present types
     assert breakdown["search"].item() > 0.0
     assert breakdown["answer"].item() > 0.0
-    # plan and fetch absent from text → their masks are all-zero → 0 contribution
-    assert breakdown["plan"].item() == pytest.approx(0.0, abs=1e-5)
+    # think and fetch absent from text → their masks are all-zero → 0 contribution
+    assert breakdown["think"].item() == pytest.approx(0.0, abs=1e-5)
     assert breakdown["fetch"].item() == pytest.approx(0.0, abs=1e-5)
 
 
 def test_policy_update_breakdown_returns_search_reasoning_stopping_answer():
     manager = _manager_with_char_tokenizer()
-    text = "<search>q</search><plan>think</plan><answer>x</answer>"
+    text = "<search>q</search><think>reasoning</think><answer>x</answer>"
     batch = _batch_from_texts(text)
     n = batch.batch["responses"].shape[1]
     batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
@@ -1943,7 +1974,7 @@ def test_compute_policy_loss_action_type_weights_upweight_answer():
 
 def test_compute_policy_loss_records_updated_policy_families():
     manager = _manager_with_char_tokenizer()
-    text = "<search>q</search><plan>think</plan><answer>x</answer>"
+    text = "<search>q</search><think>reasoning</think><answer>x</answer>"
     batch = _batch_from_texts(text)
     n = batch.batch["responses"].shape[1]
     batch.batch["old_log_probs"] = torch.full((1, n), -1.0)
@@ -2541,7 +2572,7 @@ def test_run_llm_loop_supports_search_fetch_answer_second_rounds():
             max_response_length=16,
             max_obs_length=32,
             num_gpus=1,
-            allowed_actions=("plan", "search", "fetch", "answer"),
+            allowed_actions=("think", "search", "fetch", "answer"),
         ),
         generation_backend=SequencedActorRollout(
             responses=[
@@ -2613,7 +2644,7 @@ def test_postprocess_responses_truncates_to_first_complete_action():
     class LoopTokenizer(DummyTokenizer):
         def batch_decode(self, responses, skip_special_tokens=True):
             del responses, skip_special_tokens
-            return ["preface <plan>outline</plan><answer>done</answer> tail"]
+            return ["preface <think>outline</think><answer>done</answer> tail"]
 
     manager = LLMGenerationManager(
         tokenizer=LoopTokenizer(),
@@ -2631,7 +2662,7 @@ def test_postprocess_responses_truncates_to_first_complete_action():
     _, responses = manager._postprocess_responses(
         torch.tensor([[1, 1]], dtype=torch.long)
     )
-    assert responses == ["<plan>outline</plan>"]
+    assert responses == ["<think>outline</think>"]
 
 
 def test_run_agent_loop_alias_delegates_to_run_llm_loop():
@@ -4000,10 +4031,10 @@ def test_apply_safety_penalties_to_scored_rollouts_disallowed_tag_deducted():
         apply_safety_penalties_to_scored_rollouts,
     )
 
-    # <plan> is not in allowed_actions=("search", "answer")
+    # <think> is not in allowed_actions=("search", "answer")
     scored = [
         _make_scored_rollout_with_steps(
-            "g1", 0, reward=1.0, step_tags=["plan", "search", "answer"]
+            "g1", 0, reward=1.0, step_tags=["think", "search", "answer"]
         )
     ]
     config = GRPORolloutSafetyConfig(
@@ -4011,7 +4042,7 @@ def test_apply_safety_penalties_to_scored_rollouts_disallowed_tag_deducted():
         invalid_action_penalty=-0.2,
     )
     result = apply_safety_penalties_to_scored_rollouts(scored, config=config)
-    # 1 disallowed <plan> tag → -0.2
+    # 1 disallowed <think> tag → -0.2
     assert result[0].reward == pytest.approx(0.8)
     assert "disallowed_action_penalty" in result[0].reward_components
 
