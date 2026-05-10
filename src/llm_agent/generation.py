@@ -20,13 +20,21 @@ import torch
 
 from src.trainer.ppo.core_algos import (
     LOG_RATIO_CLAMP as _LOG_RATIO_CLAMP,
+    AdaptiveKLController as AdaptiveKLController,
+    FixedKLController as FixedKLController,
     PPOPolicyLossConfig,
+    compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
     compute_ppo_policy_loss_core,
+    compute_trajectory_policy_loss as compute_trajectory_policy_loss,
+    compute_value_loss as compute_value_loss,
+    kl_penalty as _kl_penalty,
     masked_mean,
     masked_whiten,
 )
 
 from .tensor_helper import TensorConfig, TensorHelper
+
+kl_penalty = _kl_penalty
 
 logger = logging.getLogger(__name__)
 
