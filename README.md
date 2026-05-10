@@ -453,6 +453,8 @@ python3 -m src.run_agentic_search \
 
 ### Local inference
 
+Single-turn generation without search or tool calls:
+
 ```bash
 python3 -m src.run_agentic_search \
   --mode single \
@@ -460,6 +462,44 @@ python3 -m src.run_agentic_search \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --local --device cpu \
   --max_tokens 256 --temperature 0
+```
+
+Local search agent against a running retrieval server:
+
+```bash
+python3 -m src.run_agentic_search \
+  --mode search \
+  --question "Compare dense vs sparse retrieval" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --local --device cpu \
+  --search_url http://localhost:8000/retrieve \
+  --topk 5 \
+  --max_turns 6 --max_search_limit 3 \
+  --max_tokens 512 --temperature 0
+```
+
+Local tool-calling agent with the built-in search tool:
+
+```bash
+python3 -m src.run_agentic_search \
+  --mode tool \
+  --question "Find recent evidence about hybrid retrieval and summarize it" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --local --device cpu \
+  --search_url http://localhost:8000/retrieve \
+  --topk 5 \
+  --tool_format hermes \
+  --max_turns 6 \
+  --max_tokens 512 --temperature 0
+```
+
+For local `search` and `tool` modes, start a retrieval server first:
+
+```bash
+python3 -m src.search.retrieval_server \
+  --index_path indexes/wiki.faiss \
+  --corpus_path data/wiki_corpus.jsonl \
+  --host 0.0.0.0 --port 8000
 ```
 
 ### Key flags
