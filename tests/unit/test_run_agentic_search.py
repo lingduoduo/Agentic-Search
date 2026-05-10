@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,7 @@ from src.run_agentic_search import (
     _validate_local_runtime_device,
     _validate_local_runtime_stack,
     _validate_local_generation_config,
+    run_single_turn,
 )
 
 
@@ -40,6 +42,33 @@ class _TokenizerWithIds:
     eos_token_id = 99
 
 
+class _PlainGenerationTokenizer:
+    chat_template = None
+
+    def encode(self, text: str) -> list[int]:
+        return [ord(ch) for ch in text]
+
+    def decode(self, ids, skip_special_tokens=True):
+        del skip_special_tokens
+        return "".join(chr(i) for i in ids)
+
+
+class _RecordingServerManager:
+    def __init__(self, response_text: str):
+        self.response_ids = [ord(ch) for ch in response_text]
+        self.calls: list[dict[str, object]] = []
+
+    async def generate(self, request_id, prompt_ids, sampling_params):
+        self.calls.append(
+            {
+                "request_id": request_id,
+                "prompt_ids": list(prompt_ids),
+                "sampling_params": dict(sampling_params),
+            }
+        )
+        return self.response_ids
+
+
 def test_build_prompt_ids_falls_back_to_encode_without_chat_template():
     loop = _DummyLoop(
         tokenizer=_TokenizerWithoutChatTemplate(),
@@ -49,6 +78,28 @@ def test_build_prompt_ids_falls_back_to_encode_without_chat_template():
         [{"role": "user", "content": "What is FAISS?"}]
     )
     assert prompt_ids == [14]
+
+
+def test_run_single_turn_is_plain_model_generation(capsys):
+    tokenizer = _PlainGenerationTokenizer()
+    server_manager = _RecordingServerManager("plain answer")
+
+    asyncio.run(
+        run_single_turn(
+            tokenizer=tokenizer,
+            server_manager=server_manager,
+            question="What is FAISS?",
+            sampling_params={"temperature": 0.0, "max_tokens": 16},
+            max_tokens=16,
+            search_url="http://should-not-be-used/retrieve",
+            topk=99,
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert "plain answer" in captured.out
+    assert len(server_manager.calls) == 1
+    assert server_manager.calls[0]["sampling_params"]["max_tokens"] == 16
 
 
 def test_validate_local_generation_config_rejects_encoder_only_model():

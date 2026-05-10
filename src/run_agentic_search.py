@@ -49,6 +49,7 @@ import platform
 import threading
 import time
 from typing import Any
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -664,22 +665,43 @@ async def run_single_turn(
     search_url: str = "http://localhost:8000/retrieve",
     topk: int = 5,
 ) -> None:
-    from src.agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
+    from src.agent_loop import (
+        AgentLoopBase,
+        AgentLoopConfig,
+        AgentLoopOutput,
+        simple_timer,
+    )
 
-    loop = SingleTurnAgentLoop(
+    del search_url, topk
+
+    loop = AgentLoopBase(
         tokenizer=tokenizer,
         server_manager=server_manager,
-        config=SingleTurnAgentLoopConfig(
-            response_length=max_tokens,
-            search_url=search_url,
-            topk=topk,
-        ),
+        config=AgentLoopConfig(response_length=max_tokens),
     )
-    output = await loop.run(
-        messages=[{"role": "user", "content": question}],
-        sampling_params=sampling_params,
+    messages = [{"role": "user", "content": question}]
+    metrics: dict[str, float] = {}
+    request_id = uuid4().hex
+
+    with simple_timer("generate_sequences", metrics):
+        prompt_ids = await loop.build_prompt_ids(messages)
+        response_ids = await loop.generate_response_ids(
+            request_id=request_id,
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+        )
+
+    answer = tokenizer.decode(response_ids, skip_special_tokens=True)
+    output = AgentLoopOutput(
+        prompt_ids=prompt_ids,
+        response_ids=response_ids,
+        response_mask=loop.build_response_mask(response_ids),
+        num_turns=1,
+        metrics=metrics,
+        request_id=request_id,
+        trajectory_messages=messages + [{"role": "assistant", "content": answer}],
+        final_answer=answer,
     )
-    answer = tokenizer.decode(output.response_ids, skip_special_tokens=True)
     _print_result(answer=answer, output=output, rounds=None)
 
 
@@ -791,7 +813,7 @@ async def run_tool_agent(
     search_url: str = "http://localhost:8000/retrieve",
     topk: int = 5,
     max_turns: int = 8,
-    tool_format: str = "hermes",
+    tool_format: str = "json",
 ) -> None:
     """Run the ToolAgentLoop with a built-in search tool and print results.
 
@@ -1013,7 +1035,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Minimum confidence for intent-based routing",
     )
     parser.add_argument(
-        "--tool_format", choices=["hermes", "llama3", "json"], default="hermes"
+        "--tool_format", choices=["hermes", "llama3", "json"], default="json"
     )
 
     # Sampling
