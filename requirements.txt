@@ -1,5 +1,6 @@
 # Server/runtime dependencies for FastAPI search services.
-fastapi==0.110.1
+# fastapi==0.110.1
+faiss-cpu==1.13.2
 uvicorn>=0.31.1
 
 # Core client / utility dependencies.

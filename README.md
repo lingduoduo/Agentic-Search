@@ -453,6 +453,62 @@ python3 -m src.run_agentic_search \
 
 ### Local inference
 
+`single`, `search`, and `tool` are CLI modes, not HTTP endpoints. Use `curl`
+to test the local retrieval service, then run the agent loop with
+`python3 -m src.run_agentic_search`.
+
+#### 1. Start local retrieval
+
+```bash
+conda install -c conda-forge faiss-cpu
+```
+
+```bash
+python3 -m src.search.retrieval_server \
+  --model_path BAAI/bge-base-en-v1.5 \
+  --index_path indexes/bge_Flat.index \
+  --corpus_path data/corpus.jsonl \
+  --retrieval_method bge \
+  --device cpu \
+  --workers 1 \
+  --topk 5 \
+  --host 0.0.0.0 --port 8000
+```
+
+#### 2. Test retrieval with curl
+
+Health check:
+
+```bash
+curl -s http://localhost:8000/health
+```
+
+Single-query retrieval:
+
+```bash
+curl -s -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What is FAISS?","top_k":5}'
+```
+
+Batch retrieval, matching the agent-loop request shape:
+
+```bash
+curl -s -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"queries":["dense retrieval","BM25 sparse retrieval"],"topk":3}'
+```
+
+Retrieval with scores:
+
+```bash
+curl -s -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query":"hybrid retrieval","top_k":5,"return_scores":true}'
+```
+
+#### 3. Run local agent modes
+
 Single-turn generation without search or tool calls:
 
 ```bash
@@ -464,7 +520,7 @@ python3 -m src.run_agentic_search \
   --max_tokens 256 --temperature 0
 ```
 
-Local search agent against a running retrieval server:
+Search agent using the local retrieval server:
 
 ```bash
 python3 -m src.run_agentic_search \
@@ -478,7 +534,7 @@ python3 -m src.run_agentic_search \
   --max_tokens 512 --temperature 0
 ```
 
-Local tool-calling agent with the built-in search tool:
+Tool-calling agent with the built-in search tool:
 
 ```bash
 python3 -m src.run_agentic_search \
@@ -491,15 +547,6 @@ python3 -m src.run_agentic_search \
   --tool_format hermes \
   --max_turns 6 \
   --max_tokens 512 --temperature 0
-```
-
-For local `search` and `tool` modes, start a retrieval server first:
-
-```bash
-python3 -m src.search.retrieval_server \
-  --index_path indexes/wiki.faiss \
-  --corpus_path data/wiki_corpus.jsonl \
-  --host 0.0.0.0 --port 8000
 ```
 
 ### Key flags
