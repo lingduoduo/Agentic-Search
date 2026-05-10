@@ -1,4 +1,15 @@
-"""Agent loop utilities for local generation workflows."""
+"""Agent loop utilities for local generation workflows.
+
+The lightweight runtime loops are imported eagerly so their registry names are
+available immediately. Training/data helpers are resolved lazily to avoid
+pulling in heavier optional dependencies, such as torch, for simple CLI smoke
+tests.
+"""
+
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
 
 from .agent_loop import (
     AgentLoopBase,
@@ -11,51 +22,13 @@ from .agent_loop import (
     simple_timer,
 )
 from .context import AgentContext, SearchContext, SearchResult
-from .data import (
-    DEFAULT_TOOL_SYSTEM_PROMPT,
-    PromptBatch,
-    PromptOnlyDataset,
-    PromptSample,
-    PromptTrainingExample,
-    build_prompt_dataloader,
-    build_prompt_ids_from_messages,
-    build_prompt_messages,
-    collate_prompt_batch,
-    normalize_prompt_training_example,
-    prompt_batch_to_search_batch,
-)
 from .evaluation import (
     QueryEvaluation,
     SearchEvaluationConfig,
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from .intent_classifier import (
-    INTENT_LABELS,
-    IntentPipeline,
-    IntentPrediction,
-    IntentionClassificationPipeline,
-    load_training_data as load_intent_training_data,
-    resolve_search_settings,
-)
-from .grpo import (
-    GRPOAdvantageConfig,
-    GRPORolloutSample,
-    PromptGroupSamplingConfig,
-    ScoredGRPORollout,
-    build_grpo_sampling_params,
-    compute_grpo_outcome_advantage,
-    sample_prompt_group,
-    score_prompt_group,
-)
-from .reward import (
-    BatchJudgeFn,
-    JudgeFn,
-    SearchRewardConfig,
-    SearchRewardFunction,
-    normalize_answer_text,
-    simple_sparse_correctness_reward,
-)
+from .plain_generation_loop import PlainGenerationLoop, PlainGenerationLoopConfig
 from .search_agent_loop import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
@@ -63,8 +36,8 @@ from .search_agent_loop import (
     SearchToolCall,
     build_search_agent_instruction,
 )
-from .sft import SFTExample, build_search_sft_example
 from .search_client import SearchClient, SearchClientConfig
+from .sft import SFTExample, build_search_sft_example
 from .single_turn_agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
 from .tool import FunctionTool, Tool, ToolSchema
 from .tool_agent_loop import ToolAgentLoop, ToolAgentLoopConfig
@@ -75,6 +48,59 @@ from .tool_parser import (
     Llama3ToolParser,
     ToolParser,
 )
+
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    # data.py imports torch; keep it out of lightweight runtime imports.
+    "DEFAULT_TOOL_SYSTEM_PROMPT": (".data", "DEFAULT_TOOL_SYSTEM_PROMPT"),
+    "PromptBatch": (".data", "PromptBatch"),
+    "PromptOnlyDataset": (".data", "PromptOnlyDataset"),
+    "PromptSample": (".data", "PromptSample"),
+    "PromptTrainingExample": (".data", "PromptTrainingExample"),
+    "build_prompt_dataloader": (".data", "build_prompt_dataloader"),
+    "build_prompt_ids_from_messages": (".data", "build_prompt_ids_from_messages"),
+    "build_prompt_messages": (".data", "build_prompt_messages"),
+    "collate_prompt_batch": (".data", "collate_prompt_batch"),
+    "normalize_prompt_training_example": (".data", "normalize_prompt_training_example"),
+    "prompt_batch_to_search_batch": (".data", "prompt_batch_to_search_batch"),
+    # grpo.py depends on data.py and reward.py.
+    "GRPOAdvantageConfig": (".grpo", "GRPOAdvantageConfig"),
+    "GRPORolloutSample": (".grpo", "GRPORolloutSample"),
+    "PromptGroupSamplingConfig": (".grpo", "PromptGroupSamplingConfig"),
+    "ScoredGRPORollout": (".grpo", "ScoredGRPORollout"),
+    "build_grpo_sampling_params": (".grpo", "build_grpo_sampling_params"),
+    "compute_grpo_outcome_advantage": (".grpo", "compute_grpo_outcome_advantage"),
+    "sample_prompt_group": (".grpo", "sample_prompt_group"),
+    "score_prompt_group": (".grpo", "score_prompt_group"),
+    # Reward is light today, but lazy keeps the public surface grouped.
+    "BatchJudgeFn": (".reward", "BatchJudgeFn"),
+    "JudgeFn": (".reward", "JudgeFn"),
+    "SearchRewardConfig": (".reward", "SearchRewardConfig"),
+    "SearchRewardFunction": (".reward", "SearchRewardFunction"),
+    "normalize_answer_text": (".reward", "normalize_answer_text"),
+    "simple_sparse_correctness_reward": (".reward", "simple_sparse_correctness_reward"),
+    # Intent model imports torch only when trained/loaded, but it is not needed
+    # for plain local generation.
+    "INTENT_LABELS": (".intent_classifier", "INTENT_LABELS"),
+    "IntentPipeline": (".intent_classifier", "IntentPipeline"),
+    "IntentPrediction": (".intent_classifier", "IntentPrediction"),
+    "IntentionClassificationPipeline": (
+        ".intent_classifier",
+        "IntentionClassificationPipeline",
+    ),
+    "load_intent_training_data": (".intent_classifier", "load_training_data"),
+    "resolve_search_settings": (".intent_classifier", "resolve_search_settings"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name, __name__), attr_name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "AgentContext",
@@ -94,6 +120,8 @@ __all__ = [
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
+    "PlainGenerationLoop",
+    "PlainGenerationLoopConfig",
     "RolloutStep",
     "build_search_agent_instruction",
     "collate_prompt_batch",

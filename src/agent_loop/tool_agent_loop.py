@@ -1,8 +1,12 @@
-"""Multi-turn tool-use agent loop.
+"""Generic multi-turn function/tool-calling agent loop.
 
 The agent generates a response, the ToolParser extracts function calls from it,
 the tools are executed in parallel, and their results are injected back as
 ``{"role": "tool", ...}`` messages before the next generation step.
+
+This loop is intentionally not tied to search-agent XML actions. Search may be
+registered as one function tool, but the same loop can call calculators,
+databases, file tools, or any other JSON-schema-described function.
 
 Supported tool-call formats are controlled by ``ToolAgentLoopConfig.tool_parser_format``:
     - ``"hermes"``  — NousResearch Hermes 2.5 / 3
@@ -22,7 +26,7 @@ Usage::
         tokenizer=tokenizer,
         server_manager=server_manager,
         tools=[search],
-        config=ToolAgentLoopConfig(tool_parser_format="hermes"),
+        config=ToolAgentLoopConfig(tool_parser_format="json"),
     )
     output = await loop.run(messages, sampling_params)
 """
@@ -66,12 +70,12 @@ class ToolAgentLoopConfig(AgentLoopConfig):
     #   "right"  — prepend "(truncated)...", keep the end
     #   "middle" — keep equal halves from start and end
     tool_response_truncate_side: str = "right"
-    tool_parser_format: str = "hermes"
+    tool_parser_format: str = "json"
 
 
 @register("tool_agent")
 class ToolAgentLoop(AgentLoopBase):
-    """Multi-turn agent loop that executes tool calls returned by the model.
+    """Multi-turn agent loop that executes generic tool calls from the model.
 
     Each iteration:
       1. Tokenise the current message history (including tool schemas).
