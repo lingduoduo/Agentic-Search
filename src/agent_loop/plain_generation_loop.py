@@ -29,29 +29,6 @@ class PlainGenerationLoopConfig(AgentLoopConfig):
 class PlainGenerationLoop(AgentLoopBase):
     """Simplest smoke-test loop: prompt -> model -> text response."""
 
-    def __init__(
-        self,
-        tokenizer: Any,
-        server_manager: Any,
-        config: AgentLoopConfig | PlainGenerationLoopConfig | None = None,
-        loop: Any | None = None,
-    ) -> None:
-        cfg = config or PlainGenerationLoopConfig()
-        super().__init__(
-            tokenizer=tokenizer,
-            server_manager=server_manager,
-            config=AgentLoopConfig(
-                prompt_length=cfg.prompt_length,
-                response_length=cfg.response_length,
-            ),
-            loop=loop,
-        )
-
-    def _decode(self, token_ids: list[int]) -> str:
-        if hasattr(self.tokenizer, "decode"):
-            return self.tokenizer.decode(token_ids, skip_special_tokens=True)
-        return ""
-
     async def run(
         self,
         messages: list[dict[str, Any]],
@@ -68,7 +45,7 @@ class PlainGenerationLoop(AgentLoopBase):
                 sampling_params=sampling_params,
             )
 
-        answer = self._decode(response_ids)
+        answer = self.decode_response_ids(response_ids)
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids,

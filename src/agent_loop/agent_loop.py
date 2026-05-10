@@ -169,6 +169,12 @@ class AgentLoopBase:
     def build_response_mask(self, response_ids: list[int]) -> list[int]:
         return [1] * len(response_ids)
 
+    def decode_response_ids(self, response_ids: list[int]) -> str:
+        """Decode model-generated response ids when the tokenizer supports it."""
+        if hasattr(self.tokenizer, "decode"):
+            return self.tokenizer.decode(response_ids, skip_special_tokens=True)
+        return ""
+
     async def generate_rollout_step(
         self,
         prompt_ids: list[int],
@@ -192,7 +198,7 @@ class AgentLoopBase:
             sampling_params=sampling_params,
             request_id=request_id,
         )
-        response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+        response_text = self.decode_response_ids(response_ids)
         match = action_re.search(response_text)
         action_type = match.group(1) if match else None
         action_content = match.group(2).strip() if match else ""

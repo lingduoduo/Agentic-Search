@@ -233,14 +233,12 @@ def test_single_turn_agent_loop_force_search_disabled_retrieval():
             response_length=64, force_search=True, use_retrieval=False
         ),
     )
-    fake_client = FakeSearchClient({})
-    loop._search_client = fake_client
 
     output = asyncio.run(
         loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.0})
     )
 
-    assert fake_client.calls == []
+    assert loop._search_client is None
     assert output.context.num_rounds == 0
     assert output.num_turns == 1
 
