@@ -457,6 +457,14 @@ python3 -m src.run_agentic_search \
 to test the local retrieval service, then run the agent loop with
 `python3 -m src.run_agentic_search`.
 
+Use the modes this way:
+
+| Mode | Best use | Notes |
+|------|----------|-------|
+| `single` | Simplest smoke test for local model generation | No multi-turn search-agent trajectory required |
+| `search` | Project-native search-agent / RL trajectory format | Uses XML actions such as `<think>`, `<search>`, `<information>`, and `<answer>` |
+| `tool` | Function/tool calling | Generic tool schema flow; not necessarily search-specific XML |
+
 #### 1. Start local retrieval
 
 In terminal 1, start the retrieval server and leave it running:
@@ -511,9 +519,9 @@ curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
   -d '{"query":"hybrid retrieval","top_k":5,"return_scores":true}'
 ```
 
-#### 3. Run local agent modes
+#### 3. Run local modes
 
-Single-turn generation without search or tool calls:
+`single`: simplest smoke test for model generation.
 
 ```bash
 python3 -m src.run_agentic_search \
@@ -521,36 +529,39 @@ python3 -m src.run_agentic_search \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --local --device cpu \
-  --max_tokens 256 --temperature 0
+  --max_tokens 64 --temperature 0 \
+  --generation_timeout_seconds 30
 ```
 
-Search agent using the local retrieval server:
+`search`: best for this project's search-agent / RL trajectory format.
 
 ```bash
 python3 -m src.run_agentic_search \
   --mode search \
-  --question "Compare dense vs sparse retrieval" \
+  --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --local --device cpu \
-  --search_url http://localhost:8000/retrieve \
-  --topk 5 \
-  --max_turns 6 --max_search_limit 3 \
-  --max_tokens 512 --temperature 0
+  --search_url http://127.0.0.1:8000/retrieve \
+  --topk 2 \
+  --max_turns 2 --max_search_limit 1 \
+  --max_tokens 128 --temperature 0 \
+  --generation_timeout_seconds 45
 ```
 
-Tool-calling agent with the built-in search tool:
+`tool`: function/tool calling, not necessarily search-specific XML.
 
 ```bash
 python3 -m src.run_agentic_search \
   --mode tool \
-  --question "Find recent evidence about hybrid retrieval and summarize it" \
+  --question "Search for FAISS and summarize one result." \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --local --device cpu \
-  --search_url http://localhost:8000/retrieve \
-  --topk 5 \
-  --tool_format hermes \
-  --max_turns 6 \
-  --max_tokens 512 --temperature 0
+  --search_url http://127.0.0.1:8000/retrieve \
+  --topk 2 \
+  --tool_format json \
+  --max_turns 2 \
+  --max_tokens 128 --temperature 0 \
+  --generation_timeout_seconds 45
 ```
 
 ### Key flags
