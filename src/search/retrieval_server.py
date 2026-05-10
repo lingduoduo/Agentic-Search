@@ -66,6 +66,28 @@ def _flatten_document_row(row: dict) -> dict[str, object]:
     }
 
 
+def _retrieve_rows(
+    retriever: DenseRetriever,
+    queries: list[str],
+    *,
+    topk: int,
+    return_scores: bool,
+) -> list[list[dict]]:
+    """Retrieve each query independently for local-server reliability."""
+    rows: list[list[dict]] = []
+    for query in queries:
+        if return_scores:
+            query_rows = retriever.retrieve([query], topk=topk)
+        else:
+            query_rows = retriever.batch_search(
+                [query],
+                num=topk,
+                return_score=False,
+            )
+        rows.append(query_rows[0] if query_rows else [])
+    return rows
+
+
 def create_app(config: DenseRetrieverConfig | RetrievalServerConfig):
     server_config = (
         config
@@ -80,15 +102,12 @@ def create_app(config: DenseRetrieverConfig | RetrievalServerConfig):
         try:
             queries = request.resolved_queries()
             topk = request.resolved_topk(server_config.retriever.topk)
-            if request.return_scores:
-                rows = retriever.retrieve(queries, topk=topk)
-            else:
-                documents = retriever.batch_search(
-                    queries,
-                    num=topk,
-                    return_score=False,
-                )
-                rows = documents
+            rows = _retrieve_rows(
+                retriever,
+                queries,
+                topk=topk,
+                return_scores=request.return_scores,
+            )
 
             if request.is_single_query():
                 single_rows = rows[0] if rows else []

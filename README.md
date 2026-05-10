@@ -459,6 +459,8 @@ to test the local retrieval service, then run the agent loop with
 
 #### 1. Start local retrieval
 
+In terminal 1, start the retrieval server and leave it running:
+
 ```bash
 conda install -c conda-forge faiss-cpu
 ```
@@ -477,16 +479,18 @@ python3 -m src.search.retrieval_server \
 
 #### 2. Test retrieval with curl
 
+In terminal 2, test the running server:
+
 Health check:
 
 ```bash
-curl -s http://localhost:8000/health
+curl -i -sS http://127.0.0.1:8000/health
 ```
 
 Single-query retrieval:
 
 ```bash
-curl -s -X POST http://localhost:8000/retrieve \
+curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
   -H "Content-Type: application/json" \
   -d '{"query":"What is FAISS?","top_k":5}'
 ```
@@ -494,7 +498,7 @@ curl -s -X POST http://localhost:8000/retrieve \
 Batch retrieval, matching the agent-loop request shape:
 
 ```bash
-curl -s -X POST http://localhost:8000/retrieve \
+curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
   -H "Content-Type: application/json" \
   -d '{"queries":["dense retrieval","BM25 sparse retrieval"],"topk":3}'
 ```
@@ -502,7 +506,7 @@ curl -s -X POST http://localhost:8000/retrieve \
 Retrieval with scores:
 
 ```bash
-curl -s -X POST http://localhost:8000/retrieve \
+curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
   -H "Content-Type: application/json" \
   -d '{"query":"hybrid retrieval","top_k":5,"return_scores":true}'
 ```
