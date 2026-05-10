@@ -1,39 +1,15 @@
-"""Retrieval-assisted one-shot loop kept for RAG-style workflows.
+"""One-shot retrieval-assisted generation loop.
 
-Conceptual role
----------------
-This module handles the **one-shot retrieval-assist** use case:
+``SingleTurnAgentLoop`` is a compact RAG loop for cases that need at most one
+retrieval step. It supports two flows:
 
-    question  →  [optional <search>query</search>]
-              →  retrieve documents
-              →  <answer>response</answer>
+- model-directed: generate ``<search>query</search>`` or ``<answer>text</answer>``;
+  search only when the model requests it, then generate the final answer.
+- forced RAG: retrieve using the user question first, inject ``<information>``,
+  then generate one answer.
 
-It is **not** CLI ``--mode single``. The CLI single mode is plain model
-generation and uses ``PlainGenerationLoop``. Use this class when you explicitly
-want a one-shot RAG/search assist.
-
-It is also **not** the multi-turn ReAct/search-agent loop. For that, use
-``SearchAgentLoop`` or ``src/llm_agent/generation.py:LLMGenerationManager.run_llm_loop``.
-
-Two modes
----------
-``force_search=False`` (default — tool-augmented one-shot):
-    1. Generate: model emits ``<search>query</search>`` or ``<answer>text</answer>``.
-    2. If ``<search>``: retrieve → inject ``<information>`` → generate ``<answer>``.
-    3. If ``<answer>`` directly (no search): accepted as-is.
-
-``force_search=True`` (pre-retrieval RAG, classic mode):
-    1. Extract the user query.
-    2. Retrieve unconditionally.
-    3. Inject evidence into the prompt.
-    4. Generate one response.
-    This reproduces the original behaviour of this class.
-
-Contrast with the three CLI modes
----------------------------------
-    ``single``: plain model-generation smoke test, no retrieval and no tools.
-    ``search``: project-native XML search-agent / RL trajectory format.
-    ``tool``: generic function/tool-calling flow.
+Use ``PlainGenerationLoop`` for no-retrieval smoke tests, and ``SearchAgentLoop``
+for multi-turn XML search trajectories used by RL/SFT workflows.
 """
 
 from __future__ import annotations
@@ -55,7 +31,7 @@ from .agent_loop import (
 from .context import AgentContext
 from .search_client import SearchClient, SearchClientConfig
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 logger.setLevel(
     os.getenv("AGENTIC_SEARCH_LOG_LEVEL", os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 )
@@ -167,22 +143,9 @@ class SingleTurnAgentLoop(AgentLoopBase):
             loop=loop,
         )
         self.single_turn_config = cfg
-        self._search_client = SearchClient(
-            SearchClientConfig(
-                url=cfg.search_url,
-                topk=cfg.topk,
-                timeout_seconds=cfg.search_timeout_seconds,
-                max_retries=cfg.search_max_retries,
-                fetch_url=cfg.fetch_url,
-            )
-        )
+        self._search_client: SearchClient | None = None
 
     # ── private helpers ──────────────────────────────────────────────────────
-
-    def _decode(self, token_ids: list[int]) -> str:
-        if hasattr(self.tokenizer, "decode"):
-            return self.tokenizer.decode(token_ids, skip_special_tokens=True)
-        return ""
 
     def _maybe_prepend_system(
         self, messages: list[dict[str, Any]]
@@ -207,13 +170,29 @@ class SingleTurnAgentLoop(AgentLoopBase):
                 return str(message.get("content", "")).strip()
         return str(messages[-1].get("content", "")).strip() if messages else ""
 
+    def _get_search_client(self) -> SearchClient:
+        if self._search_client is None:
+            cfg = self.single_turn_config
+            self._search_client = SearchClient(
+                SearchClientConfig(
+                    url=cfg.search_url,
+                    topk=cfg.topk,
+                    timeout_seconds=cfg.search_timeout_seconds,
+                    max_retries=cfg.search_max_retries,
+                    fetch_url=cfg.fetch_url,
+                )
+            )
+        return self._search_client
+
     async def _retrieve(self, query: str) -> list:
         """Call the retrieval server; returns a flat list of SearchResult."""
-        retrieve_one = getattr(self._search_client, "retrieve_one", None)
+        search_client = self._get_search_client()
+        retrieve_one = getattr(search_client, "retrieve_one", None)
         if callable(retrieve_one):
             return await retrieve_one(query, topk=self.single_turn_config.topk)
-        retrieved = await self._search_client.retrieve(
-            [query], topk=self.single_turn_config.topk
+        retrieved = await search_client.retrieve(
+            [query],
+            topk=self.single_turn_config.topk,
         )
         return retrieved[0] if retrieved else []
 
@@ -346,7 +325,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
                 sampling_params=sampling_params,
             )
 
-        response_text = self._decode(response_ids)
+        response_text = self.decode_response_ids(response_ids)
         final_answer = _extract_answer_text(response_text) or response_text
         trajectory = prompt_messages + [{"role": "assistant", "content": response_text}]
 
@@ -381,7 +360,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
                 prompt_ids=prompt_ids,
                 sampling_params=sampling_params,
             )
-        first_text = self._decode(first_ids)
+        first_text = self.decode_response_ids(first_ids)
         action = _parse_first_action(first_text)
 
         if action and action[0] == "search" and cfg.use_retrieval:
@@ -403,7 +382,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
                     prompt_ids=prompt_ids_2,
                     sampling_params=sampling_params,
                 )
-            final_text = self._decode(final_ids)
+            final_text = self.decode_response_ids(final_ids)
             final_answer = _extract_answer_text(final_text) or final_text
             trajectory = obs_messages + [{"role": "assistant", "content": final_text}]
             return self._make_output(

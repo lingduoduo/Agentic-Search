@@ -20,9 +20,23 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from importlib import import_module
 from urllib.parse import urlparse, urlunparse
 
 from .context import SearchResult
+
+
+class _LazyAiohttp:
+    """Import aiohttp on first use while preserving monkeypatchable attributes."""
+
+    def __getattr__(self, name: str):
+        module = import_module("aiohttp")
+        value = getattr(module, name)
+        setattr(self, name, value)
+        return value
+
+
+aiohttp = _LazyAiohttp()
 
 
 @dataclass(frozen=True)
@@ -49,15 +63,11 @@ class SearchClient:
     """Async client for any POST /retrieve endpoint."""
 
     def __init__(self, config: SearchClientConfig) -> None:
-        import aiohttp
-
         self.config = config
         self._timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
         self._session = None
 
     async def _get_session(self):
-        import aiohttp
-
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(timeout=self._timeout)
         return self._session
@@ -68,8 +78,6 @@ class SearchClient:
         self._session = None
 
     async def _post_json(self, url: str, payload: dict, action: str) -> dict:
-        import aiohttp
-
         last_exc: Exception | None = None
 
         for attempt in range(self.config.max_retries):

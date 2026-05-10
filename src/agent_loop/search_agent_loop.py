@@ -269,6 +269,37 @@ class SearchAgentLoop(AgentLoopBase):
             )
         )
 
+    def _initial_metrics(self) -> dict[str, float]:
+        return {
+            "search_rounds": 0.0,
+            "fetched_pages": 0.0,
+            "answer_rejections": 0.0,
+            "search_queries": 0.0,
+            "active_subquestions": 0.0,
+            "search_limit_hits": 0.0,
+            "repeated_search_queries": 0.0,
+            "search_cache_hits": 0.0,
+            "page_cache_hits": 0.0,
+            "decision_prompts": 0.0,
+            "direct_answers": 0.0,
+            "evidence_sufficient_rounds": 0.0,
+            "evidence_insufficient_rounds": 0.0,
+            "search_quality_score_sum": 0.0,
+        }
+
+    def _with_system_prompt(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if self.search_config.system_prompt and (
+            not messages or messages[0].get("role") != "system"
+        ):
+            return [
+                {"role": "system", "content": self.search_config.system_prompt},
+                *messages,
+            ]
+        return list(messages)
+
     # ------------------------------------------------------------------
     # Parsing helpers
     # ------------------------------------------------------------------
@@ -632,33 +663,11 @@ class SearchAgentLoop(AgentLoopBase):
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
     ) -> AgentLoopOutput:
-        metrics: dict[str, float] = {
-            "search_rounds": 0.0,
-            "fetched_pages": 0.0,
-            "answer_rejections": 0.0,
-            "search_queries": 0.0,
-            "active_subquestions": 0.0,
-            "search_limit_hits": 0.0,
-            "repeated_search_queries": 0.0,
-            "search_cache_hits": 0.0,
-            "page_cache_hits": 0.0,
-            "decision_prompts": 0.0,
-            "direct_answers": 0.0,
-            "evidence_sufficient_rounds": 0.0,
-            "evidence_insufficient_rounds": 0.0,
-            "search_quality_score_sum": 0.0,
-        }
+        metrics: dict[str, float] = self._initial_metrics()
         request_id = uuid4().hex
         agent_ctx = AgentContext()
 
-        working_messages = list(messages)
-        if self.search_config.system_prompt and (
-            not working_messages or working_messages[0].get("role") != "system"
-        ):
-            working_messages = [
-                {"role": "system", "content": self.search_config.system_prompt},
-                *working_messages,
-            ]
+        working_messages = self._with_system_prompt(list(messages))
 
         all_response_ids: list[int] = []
         final_prompt_ids: list[int] = []
@@ -700,9 +709,7 @@ class SearchAgentLoop(AgentLoopBase):
                 all_response_ids.extend(response_ids)
                 num_turns += 1
 
-                response_text = self.tokenizer.decode(
-                    response_ids, skip_special_tokens=True
-                )
+                response_text = self.decode_response_ids(response_ids)
                 actions = self._parse_actions(response_text)
                 logger.debug(
                     "turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions]

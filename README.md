@@ -462,9 +462,17 @@ Use the modes this way:
 
 | Mode | Best use | Notes |
 |------|----------|-------|
-| `single` | Simplest smoke test for local model generation | No multi-turn search-agent trajectory required |
-| `search` | Project-native search-agent / RL trajectory format | Uses XML actions such as `<think>`, `<search>`, `<information>`, and `<answer>` |
+| `single` | Simplest smoke test for local model generation | Uses `PlainGenerationLoop`; no retrieval, tools, or XML actions |
+| `search` | Project-native search-agent / RL trajectory format | Uses `SearchAgentLoop` with XML actions such as `<think>`, `<search>`, `<information>`, and `<answer>` |
 | `tool` | Function/tool calling | Generic tool schema flow; not necessarily search-specific XML |
+
+Loop differences:
+
+| Loop | Retrieval | Turns | Output shape |
+|------|-----------|-------|--------------|
+| `PlainGenerationLoop` | Never | One model generation | Plain assistant text |
+| `SingleTurnAgentLoop` | Optional one-shot RAG | One generation, or search then one more generation | Optional `<search>` / `<information>` / `<answer>` trace |
+| `SearchAgentLoop` | Multi-turn search workflow | Repeated generate → search/fetch → observe | Full XML action trajectory for RL/SFT |
 
 #### 1. Start local retrieval
 
@@ -520,9 +528,10 @@ curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
   -d '{"query":"hybrid retrieval","top_k":5,"return_scores":true}'
 ```
 
-#### 3. Run local modes
+#### 3. Run loop-specific smoke tests
 
-`single`: simplest smoke test for model generation.
+`PlainGenerationLoop`: simplest smoke test for model generation. This does not
+need the retrieval server.
 
 ```bash
 python3 -m src.run_agentic_search \
@@ -534,7 +543,47 @@ python3 -m src.run_agentic_search \
   --generation_timeout_seconds 30
 ```
 
-`search`: best for this project's search-agent / RL trajectory format.
+`SingleTurnAgentLoop`: one-shot retrieval-assisted RAG. This is an importable
+loop rather than a CLI mode; keep the retrieval server running first.
+
+```bash
+python3 - <<'PY'
+import asyncio
+from transformers import AutoTokenizer
+
+from src.agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
+from src.run_agentic_search import LocalServerManager
+
+model = "Qwen/Qwen2.5-1.5B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(model, local_files_only=True)
+server_manager = LocalServerManager(
+    model_path=model,
+    device="cpu",
+    generation_timeout_seconds=45,
+)
+loop = SingleTurnAgentLoop(
+    tokenizer=tokenizer,
+    server_manager=server_manager,
+    config=SingleTurnAgentLoopConfig(
+        force_search=True,
+        search_url="http://127.0.0.1:8000/retrieve",
+        topk=2,
+        response_length=128,
+    ),
+)
+
+async def main():
+    output = await loop.run(
+        [{"role": "user", "content": "What is FAISS?"}],
+        {"temperature": 0, "max_tokens": 128},
+    )
+    print(output.final_answer)
+
+asyncio.run(main())
+PY
+```
+
+`SearchAgentLoop`: project-native search-agent / RL trajectory format.
 
 ```bash
 python3 -m src.run_agentic_search \
