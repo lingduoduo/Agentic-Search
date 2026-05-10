@@ -1,4 +1,4 @@
-"""Single-turn retrieval-assisted agent loop implementation.
+"""Retrieval-assisted one-shot loop kept for RAG-style workflows.
 
 Conceptual role
 ---------------
@@ -8,8 +8,12 @@ This module handles the **one-shot retrieval-assist** use case:
               →  retrieve documents
               →  <answer>response</answer>
 
-It is **not** the multi-turn ReAct loop. For that, see
-``src/llm_agent/generation.py:LLMGenerationManager.run_llm_loop``.
+It is **not** CLI ``--mode single``. The CLI single mode is plain model
+generation and uses ``PlainGenerationLoop``. Use this class when you explicitly
+want a one-shot RAG/search assist.
+
+It is also **not** the multi-turn ReAct/search-agent loop. For that, use
+``SearchAgentLoop`` or ``src/llm_agent/generation.py:LLMGenerationManager.run_llm_loop``.
 
 Two modes
 ---------
@@ -25,11 +29,11 @@ Two modes
     4. Generate one response.
     This reproduces the original behaviour of this class.
 
-Contrast with multi-turn (``run_llm_loop``)
--------------------------------------------
-    Single-turn: at most ONE search call, at most TWO generation steps.
-    Multi-turn:  unbounded search+observe+generate turns, full ReAct trajectory,
-                 token-level masks, log probs, GRPO loss — the full RL path.
+Contrast with the three CLI modes
+---------------------------------
+    ``single``: plain model-generation smoke test, no retrieval and no tools.
+    ``search``: project-native XML search-agent / RL trajectory format.
+    ``tool``: generic function/tool-calling flow.
 """
 
 from __future__ import annotations
@@ -135,8 +139,9 @@ class SingleTurnAgentLoop(AgentLoopBase):
         → inject evidence into prompt
         model: "Hopfield and Hinton."
 
-    For multi-turn ReAct (search → observe → search again → answer),
-    use ``LLMGenerationManager.run_llm_loop()`` in ``src/llm_agent/generation.py``.
+    For CLI ``--mode single``, use ``PlainGenerationLoop`` through
+    ``src.run_agentic_search``. For project-native search-agent trajectories,
+    use ``SearchAgentLoop``.
     """
 
     def __init__(

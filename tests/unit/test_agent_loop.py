@@ -7,6 +7,8 @@ import pytest
 from src.agent_loop import (
     AgentLoopBase,
     AgentLoopConfig,
+    PlainGenerationLoop,
+    PlainGenerationLoopConfig,
     RolloutStep,
     SearchEvaluationConfig,
     SearchAgentLoop,
@@ -16,6 +18,7 @@ from src.agent_loop import (
     SearchResult,
     SingleTurnAgentLoop,
     SingleTurnAgentLoopConfig,
+    ToolAgentLoopConfig,
     get_registered_agent_loop,
     list_registered_agent_loops,
     register,
@@ -102,6 +105,28 @@ def test_build_prompt_ids_falls_back_to_encode():
         )
     )
     assert len(prompt_ids) == 4
+
+
+def test_plain_generation_loop_runs_one_model_generation():
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(tokenizer.encode("plain answer"))
+    loop = PlainGenerationLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        config=PlainGenerationLoopConfig(response_length=64),
+    )
+
+    output = asyncio.run(
+        loop.run(
+            [{"role": "user", "content": "What is FAISS?"}],
+            {"temperature": 0.0},
+        )
+    )
+
+    assert output.num_turns == 1
+    assert output.final_answer == "plain answer"
+    assert output.context is None
+    assert len(server_manager.calls) == 1
 
 
 def test_search_agent_default_prompt_includes_training_template_boundaries():
@@ -372,8 +397,18 @@ def test_get_registered_agent_loop_returns_single_turn_loop():
     assert registered is SingleTurnAgentLoop
 
 
+def test_get_registered_agent_loop_returns_plain_generation_loop():
+    registered = get_registered_agent_loop("plain_generation")
+    assert registered is PlainGenerationLoop
+
+
 def test_list_registered_agent_loops_includes_single_turn():
     assert "single_turn_agent" in list_registered_agent_loops()
+    assert "plain_generation" in list_registered_agent_loops()
+
+
+def test_tool_agent_loop_defaults_to_generic_json_parser():
+    assert ToolAgentLoopConfig().tool_parser_format == "json"
 
 
 def test_get_registered_agent_loop_raises_for_unknown_name():

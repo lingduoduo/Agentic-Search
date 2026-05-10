@@ -1,4 +1,9 @@
-"""Tool abstraction for the ToolAgentLoop."""
+"""Generic function/tool abstractions for ``ToolAgentLoop``.
+
+Tools are plain callable capabilities exposed through JSON schemas. They are
+not search-agent XML actions; search can be one tool among many, but the tool
+loop itself is intentionally domain-agnostic.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ from typing import Any, Callable
 
 @dataclass
 class ToolSchema:
-    """JSON Schema description of one tool, following the OpenAI function-calling spec."""
+    """JSON Schema description of one generic function-calling tool."""
 
     name: str
     description: str

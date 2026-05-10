@@ -23,10 +23,11 @@ src/
     evaluation.py            # SearchResultEvaluator, SearchEvaluationConfig
     grpo.py                  # Prompt-group rollout sampling + within-group scoring helpers
     intent_classifier.py     # IntentPipeline: train / save / load + resolve_search_settings
+    plain_generation_loop.py # PlainGenerationLoop (registered as "plain_generation")
     reward.py                # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
     search_agent_loop.py     # SearchAgentLoop (registered as "search_agent")
     search_client.py         # async aiohttp client with session reuse for /retrieve and /fetch
-    single_turn_agent_loop.py
+    single_turn_agent_loop.py # One-shot retrieval-assisted RAG loop
     sft.py                   # Build supervised examples from full search-agent trajectories
     tool.py                  # Tool, FunctionTool — tool abstraction and JSON schema
     tool_agent_loop.py       # ToolAgentLoop (registered as "tool_agent")
@@ -779,9 +780,10 @@ python3 -m pytest tests/unit/test_llm_agent_generation.py \
 
 | Name | Class | Description |
 |------|-------|-------------|
-| `"single_turn_agent"` | `SingleTurnAgentLoop` | Single-turn retrieve-then-answer |
-| `"search_agent"` | `SearchAgentLoop` | Multi-turn: plan → search → subquestions → fetch → cited answer |
-| `"tool_agent"` | `ToolAgentLoop` | Multi-turn with parallel tool execution |
+| `"plain_generation"` | `PlainGenerationLoop` | Plain one-shot model generation; backs CLI `--mode single` |
+| `"single_turn_agent"` | `SingleTurnAgentLoop` | One-shot retrieval-assisted RAG flow |
+| `"search_agent"` | `SearchAgentLoop` | Project-native XML search-agent / RL trajectory format |
+| `"tool_agent"` | `ToolAgentLoop` | Generic function/tool calling with parallel tool execution |
 
 ### XML protocol
 
