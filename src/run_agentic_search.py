@@ -48,6 +48,7 @@ import logging
 import platform
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,92 @@ def _build_sampling_params(args: argparse.Namespace) -> dict[str, Any]:
         "max_tokens": args.max_tokens,
         "top_p": args.top_p,
     }
+
+
+@dataclass(frozen=True)
+class ModelRouteDecision:
+    """Selected generation model for one CLI request."""
+
+    model: str
+    route: str
+    reason: str
+    metadata: dict[str, Any]
+
+
+def _resolve_model_route(
+    args: argparse.Namespace,
+    intent_prediction: Any | None = None,
+) -> ModelRouteDecision:
+    """Choose a request-level generation model without touching agent loops.
+
+    The selected model is still passed through the existing tokenizer and
+    server-manager path.  This is deliberately request-level routing; per-turn
+    model routing would require a multi-backend server manager.
+    """
+
+    metadata: dict[str, Any] = {
+        "model_routing": args.model_routing,
+        "base_model": args.model,
+    }
+    if args.model_routing == "off":
+        return ModelRouteDecision(
+            model=args.model,
+            route="base",
+            reason="model routing disabled",
+            metadata=metadata,
+        )
+
+    if intent_prediction is None:
+        metadata["model_routing_applied"] = False
+        return ModelRouteDecision(
+            model=args.model,
+            route="base",
+            reason="no intent prediction available",
+            metadata=metadata,
+        )
+
+    metadata.update(
+        {
+            "predicted_intent": intent_prediction.intent,
+            "intent_confidence": intent_prediction.confidence,
+        }
+    )
+    if intent_prediction.confidence < args.model_routing_min_confidence:
+        metadata["model_routing_applied"] = False
+        return ModelRouteDecision(
+            model=args.model,
+            route="base",
+            reason="intent confidence below routing threshold",
+            metadata=metadata,
+        )
+
+    route_by_intent = {
+        "qa": "fast",
+        "navigate": "fast",
+        "recommendation": "balanced",
+        "purchase": "reasoning",
+    }
+    route = route_by_intent.get(intent_prediction.intent, "base")
+    model_by_route = {
+        "base": args.model,
+        "fast": args.fast_model or args.model,
+        "balanced": args.balanced_model or args.model,
+        "reasoning": args.reasoning_model or args.balanced_model or args.model,
+    }
+    model = model_by_route[route]
+    metadata.update(
+        {
+            "model_routing_applied": model != args.model,
+            "selected_route": route,
+            "selected_model": model,
+        }
+    )
+    return ModelRouteDecision(
+        model=model,
+        route=route,
+        reason=f"intent={intent_prediction.intent}",
+        metadata=metadata,
+    )
 
 
 def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
@@ -644,9 +731,24 @@ class LocalServerManager:
             temperature=temp,
             top_p=top_p,
         )
+        generation_start = time.perf_counter()
         out = self._run_generate_with_heartbeat(inputs, generate_kwargs)
+        elapsed = time.perf_counter() - generation_start
+        response_ids = out[0][len(prompt_ids) :].tolist()
+        if (
+            self.generation_timeout_seconds is not None
+            and self.generation_timeout_seconds > 0
+            and elapsed >= float(self.generation_timeout_seconds)
+            and len(response_ids) < max_new
+        ):
+            print(
+                "Warning : generation stopped by "
+                f"--generation_timeout_seconds={self.generation_timeout_seconds} "
+                f"after {len(response_ids)} token(s). Increase it or pass 0 to "
+                "disable the timeout."
+            )
         print("Status  : generation complete")
-        return out[0][len(prompt_ids) :].tolist()
+        return response_ids
 
 
 # ---------------------------------------------------------------------------
@@ -928,6 +1030,36 @@ def _build_parser() -> argparse.ArgumentParser:
         "--model", type=str, required=True, help="HuggingFace model name or path"
     )
     parser.add_argument(
+        "--model_routing",
+        choices=["off", "intent"],
+        default="off",
+        help="Route the generation model before running the loop",
+    )
+    parser.add_argument(
+        "--fast_model",
+        type=str,
+        default=None,
+        help="Low-latency model for simple QA / navigation when --model_routing intent is enabled",
+    )
+    parser.add_argument(
+        "--balanced_model",
+        type=str,
+        default=None,
+        help="Medium model for synthesis / recommendation when --model_routing intent is enabled",
+    )
+    parser.add_argument(
+        "--reasoning_model",
+        type=str,
+        default=None,
+        help="Larger model for high-stakes or complex intents when --model_routing intent is enabled",
+    )
+    parser.add_argument(
+        "--model_routing_min_confidence",
+        type=float,
+        default=0.7,
+        help="Minimum intent confidence required before switching models",
+    )
+    parser.add_argument(
         "--local", action="store_true", help="Run model locally (no vLLM server)"
     )
     parser.add_argument(
@@ -953,7 +1085,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--generation_timeout_seconds",
         type=float,
         default=120.0,
-        help="Best-effort local generation timeout in seconds",
+        help="Best-effort local generation timeout in seconds; pass 0 to disable",
     )
     parser.add_argument(
         "--generation_heartbeat_seconds",
@@ -1033,9 +1165,42 @@ async def main() -> None:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
+    intent_pipeline = None
+    intent_prediction = None
+    if args.intent_model:
+        # Fast path: load a pre-trained model saved by run_train_intent_classifier.py
+        from src.agent_loop.intent_classifier import IntentPipeline
+
+        print(f"Status  : loading intent model from {args.intent_model}")
+        intent_pipeline = IntentPipeline.load(args.intent_model)
+        print(
+            f"Status  : intent model ready (vocab size {len(intent_pipeline._vocab.token2idx)})"
+        )
+    elif args.intent_examples:
+        # Slow path: train from scratch on the fly (use --intent_model for production)
+        from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
+
+        print(f"Status  : training intent classifier from {args.intent_examples}")
+        training_data = load_training_data(args.intent_examples)
+        if training_data:
+            intent_pipeline = IntentPipeline()
+            intent_pipeline.train(training_data, epochs=10)
+            print("Status  : intent classifier ready")
+
+    if intent_pipeline is not None:
+        intent_prediction = intent_pipeline.predict_text(args.question)
+
+    model_route = _resolve_model_route(args, intent_prediction)
+    args.model = model_route.model
+
     print(f"\nMode    : {args.mode}")
     print(f"Model   : {args.model}")
     print(f"Question: {args.question}\n")
+    if args.model_routing != "off":
+        print(
+            "Model route: "
+            f"{model_route.route} ({model_route.reason}; {model_route.metadata})"
+        )
 
     # Load tokenizer
     logger.info("Loading tokenizer %s …", args.model)
@@ -1059,27 +1224,6 @@ async def main() -> None:
     server_manager = _build_server_manager(args, tokenizer)
 
     sampling_params = _build_sampling_params(args)
-
-    intent_pipeline = None
-    if args.intent_model:
-        # Fast path: load a pre-trained model saved by run_train_intent_classifier.py
-        from src.agent_loop.intent_classifier import IntentPipeline
-
-        print(f"Status  : loading intent model from {args.intent_model}")
-        intent_pipeline = IntentPipeline.load(args.intent_model)
-        print(
-            f"Status  : intent model ready (vocab size {len(intent_pipeline._vocab.token2idx)})"
-        )
-    elif args.intent_examples:
-        # Slow path: train from scratch on the fly (use --intent_model for production)
-        from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
-
-        print(f"Status  : training intent classifier from {args.intent_examples}")
-        training_data = load_training_data(args.intent_examples)
-        if training_data:
-            intent_pipeline = IntentPipeline()
-            intent_pipeline.train(training_data, epochs=10)
-            print("Status  : intent classifier ready")
 
     try:
         if args.mode == "single":
