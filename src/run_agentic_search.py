@@ -644,9 +644,24 @@ class LocalServerManager:
             temperature=temp,
             top_p=top_p,
         )
+        generation_start = time.perf_counter()
         out = self._run_generate_with_heartbeat(inputs, generate_kwargs)
+        elapsed = time.perf_counter() - generation_start
+        response_ids = out[0][len(prompt_ids) :].tolist()
+        if (
+            self.generation_timeout_seconds is not None
+            and self.generation_timeout_seconds > 0
+            and elapsed >= float(self.generation_timeout_seconds)
+            and len(response_ids) < max_new
+        ):
+            print(
+                "Warning : generation stopped by "
+                f"--generation_timeout_seconds={self.generation_timeout_seconds} "
+                f"after {len(response_ids)} token(s). Increase it or pass 0 to "
+                "disable the timeout."
+            )
         print("Status  : generation complete")
-        return out[0][len(prompt_ids) :].tolist()
+        return response_ids
 
 
 # ---------------------------------------------------------------------------
@@ -953,7 +968,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--generation_timeout_seconds",
         type=float,
         default=120.0,
-        help="Best-effort local generation timeout in seconds",
+        help="Best-effort local generation timeout in seconds; pass 0 to disable",
     )
     parser.add_argument(
         "--generation_heartbeat_seconds",
