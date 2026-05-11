@@ -116,7 +116,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
         model: "Hopfield and Hinton."
 
     For CLI ``--mode single``, use ``PlainGenerationLoop`` through
-    ``src.run_agentic_search``. For project-native search-agent trajectories,
+    ``examples.run_agentic_search``. For project-native search-agent trajectories,
     use ``SearchAgentLoop``.
     """
 

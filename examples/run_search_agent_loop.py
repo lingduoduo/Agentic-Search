@@ -14,6 +14,7 @@ from src.agent_loop import (
     SearchAgentLoopConfig,
     SearchEvaluationConfig,
 )
+from src.agent_loop.search_client import aiohttp
 
 
 async def run_search_agent_loop_example(
@@ -29,6 +30,9 @@ async def run_search_agent_loop_example(
     search_client: Any | None = None,
 ) -> Any:
     """Build and run SearchAgentLoop with README-friendly defaults."""
+
+    if search_client is not None:
+        _allow_fake_search_client_without_aiohttp()
 
     loop = SearchAgentLoop(
         tokenizer=tokenizer,
@@ -52,3 +56,17 @@ async def run_search_agent_loop_example(
         messages=[{"role": "user", "content": question}],
         sampling_params=sampling_params or {"temperature": 0.7},
     )
+
+
+def _allow_fake_search_client_without_aiohttp() -> None:
+    """Let fake-client examples construct SearchAgentLoop without aiohttp."""
+
+    try:
+        aiohttp.ClientTimeout
+    except ModuleNotFoundError:
+        aiohttp.ClientTimeout = _noop_client_timeout
+
+
+def _noop_client_timeout(total):
+    del total
+    return None
