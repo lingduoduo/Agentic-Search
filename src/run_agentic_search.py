@@ -994,7 +994,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--intent_model",
         type=str,
         default=None,
-        help="Path to a pre-trained intent classifier (.pt file from train_intent_classifier.py). "
+        help="Path to a pre-trained intent classifier (.pt file from run_train_intent_classifier.py). "
         "Preferred over --intent_examples — loads instantly with no retraining.",
     )
     parser.add_argument(
@@ -1045,6 +1045,13 @@ async def main() -> None:
             local=args.local,
             allow_remote_model_downloads=args.allow_remote_model_downloads,
         )
+    except ModuleNotFoundError as exc:
+        print(
+            f"Error   : missing Python dependency {exc.name!r}. "
+            "Install the project requirements first, for example: "
+            "`python3 -m pip install -r requirements.txt`."
+        )
+        return
     except RuntimeError as exc:
         print(f"Error   : {exc}")
         return
@@ -1055,7 +1062,7 @@ async def main() -> None:
 
     intent_pipeline = None
     if args.intent_model:
-        # Fast path: load a pre-trained model saved by train_intent_classifier.py
+        # Fast path: load a pre-trained model saved by run_train_intent_classifier.py
         from src.agent_loop.intent_classifier import IntentPipeline
 
         print(f"Status  : loading intent model from {args.intent_model}")
