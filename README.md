@@ -791,6 +791,7 @@ python3 -m pytest tests/unit/test_llm_agent_generation.py \
 | `test_search_client.py` | Session reuse; `results` / `result` response shape normalisation |
 | `test_intent_classifier.py` | `IntentPipeline` train / save / load; `resolve_search_settings` |
 | `test_run_agentic_search.py` | Local model config validation; MPS guard; `LocalServerManager` |
+| `test_readme_examples.py` | Runnable README examples with fake model/search backends |
 | `test_llm_agent_tensor_helper.py` | Padding conversion; batch re-expansion |
 | `test_rerank.py` | `SentenceTransformerReranker.rerank` |
 | `test_index_builder.py` | `IndexBuilderConfig.validate`, pooling methods |
@@ -837,24 +838,23 @@ The training-facing trace follows a compact ReAct shape:
 
 ### Direct use
 
-```python
-from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig
+For importable `SearchAgentLoop` wiring, use
+`examples/search_agent_loop_example.py`. The example builds the loop, runs one
+question, and returns `AgentLoopOutput`:
 
-loop = SearchAgentLoop(
+```python
+from examples.search_agent_loop_example import run_search_agent_loop_example
+
+output = await run_search_agent_loop_example(
     tokenizer=tokenizer,
     server_manager=server_manager,
-    search_config=SearchAgentLoopConfig(
-        search_url="http://localhost:8000/retrieve",
-        topk=5, max_turns=8, max_search_limit=6,
-    ),
-)
-output = await loop.run(
-    messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
-    sampling_params={"temperature": 0.7},
 )
 print(output.final_answer)
-print(output.metrics)      # search_rounds, repeated_search_queries, rounds_used, ...
+print(output.metrics)  # search_rounds, repeated_search_queries, rounds_used, ...
 ```
+
+The example module is covered by `tests/unit/test_readme_examples.py` with fake
+model and search backends so README-facing code stays runnable.
 
 ### Full-trace SFT
 
