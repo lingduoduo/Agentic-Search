@@ -454,9 +454,8 @@ python3 -m src.run_agentic_search \
 
 ### Local inference
 
-`single`, `search`, and `tool` are CLI modes, not HTTP endpoints. Use `curl`
-to test the local retrieval service, then run the agent loop with
-`python3 -m src.run_agentic_search`.
+`single`, `search`, and `tool` are CLI modes, not HTTP endpoints. First use
+`curl` to check the retrieval service, then run the loop you want to test.
 
 Use the modes this way:
 
@@ -464,7 +463,7 @@ Use the modes this way:
 |------|----------|-------|
 | `single` | Simplest smoke test for local model generation | Uses `PlainGenerationLoop`; no retrieval, tools, or XML actions |
 | `search` | Project-native search-agent / RL trajectory format | Uses `SearchAgentLoop` with XML actions such as `<think>`, `<search>`, `<information>`, and `<answer>` |
-| `tool` | Function/tool calling | Generic tool schema flow; not necessarily search-specific XML |
+| `tool` | Generic function/tool calling | Optional path for tool-schema parsing; not the primary search-agent flow |
 
 Loop differences:
 
@@ -473,6 +472,21 @@ Loop differences:
 | `PlainGenerationLoop` | Never | One model generation | Plain assistant text |
 | `SingleTurnAgentLoop` | Optional one-shot RAG | One generation, or search then one more generation | Optional `<search>` / `<information>` / `<answer>` trace |
 | `SearchAgentLoop` | Multi-turn search workflow | Repeated generate → search/fetch → observe | Full XML action trajectory for RL/SFT |
+| `ToolAgentLoop` | Through registered tools | Repeated generate → tool calls → observe | Generic function-call trajectory with tool messages |
+
+Briefly:
+
+- `PlainGenerationLoop` is the baseline local-generation path. It sends the
+  prompt to the model once and prints the raw answer, so it is the fastest way
+  to check model loading and decoding.
+- `SingleTurnAgentLoop` is the small RAG path. It can retrieve once, inject the
+  retrieved evidence, and ask the model for one final answer.
+- `SearchAgentLoop` is the full agentic-search path. It lets the model plan,
+  search or fetch over multiple turns, inspect observations, and produce a
+  trajectory suitable for RL/SFT experiments.
+- `ToolAgentLoop` is the generic function-calling path. It uses `Tool`,
+  `FunctionTool`, and `ToolParser` to expose JSON-schema-described tools,
+  execute parsed tool calls, and feed tool results back into the conversation.
 
 #### 1. Start local retrieval
 
@@ -528,10 +542,10 @@ curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
   -d '{"query":"hybrid retrieval","top_k":5,"return_scores":true}'
 ```
 
-#### 3. Run loop-specific smoke tests
+#### 3. Run the smoke tests
 
-`PlainGenerationLoop`: simplest smoke test for model generation. This does not
-need the retrieval server.
+Start with `PlainGenerationLoop` to confirm the local model loads and can
+generate text. This does not need the retrieval server.
 
 ```bash
 python3 -m src.run_agentic_search \
@@ -543,47 +557,20 @@ python3 -m src.run_agentic_search \
   --generation_timeout_seconds 30
 ```
 
-`SingleTurnAgentLoop`: one-shot retrieval-assisted RAG. This is an importable
-loop rather than a CLI mode; keep the retrieval server running first.
+Then run `SingleTurnAgentLoop` for the smallest retrieval-assisted RAG path.
+Keep the retrieval server running first.
 
 ```bash
-python3 - <<'PY'
-import asyncio
-from transformers import AutoTokenizer
-
-from src.agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
-from src.run_agentic_search import LocalServerManager
-
-model = "Qwen/Qwen2.5-1.5B-Instruct"
-tokenizer = AutoTokenizer.from_pretrained(model, local_files_only=True)
-server_manager = LocalServerManager(
-    model_path=model,
-    device="cpu",
-    generation_timeout_seconds=45,
-)
-loop = SingleTurnAgentLoop(
-    tokenizer=tokenizer,
-    server_manager=server_manager,
-    config=SingleTurnAgentLoopConfig(
-        force_search=True,
-        search_url="http://127.0.0.1:8000/retrieve",
-        topk=2,
-        response_length=128,
-    ),
-)
-
-async def main():
-    output = await loop.run(
-        [{"role": "user", "content": "What is FAISS?"}],
-        {"temperature": 0, "max_tokens": 128},
-    )
-    print(output.final_answer)
-
-asyncio.run(main())
-PY
+python3 -m src.run_single_turn_agent
 ```
 
-`SearchAgentLoop`: project-native search-agent / RL trajectory format.
+The script contains the minimal importable example for wiring
+`SingleTurnAgentLoop`, `SingleTurnAgentLoopConfig`, and `LocalServerManager`.
+Adjust the model, search URL, or token limits directly in
+`src/run_single_turn_agent.py` when testing variants.
+
+Finally, run `SearchAgentLoop` when you want the project-native search-agent
+trajectory used by the RL/SFT code.
 
 ```bash
 python3 -m src.run_agentic_search \
@@ -598,21 +585,9 @@ python3 -m src.run_agentic_search \
   --generation_timeout_seconds 45
 ```
 
-`tool`: function/tool calling, not necessarily search-specific XML.
-
-```bash
-python3 -m src.run_agentic_search \
-  --mode tool \
-  --question "Search for FAISS and summarize one result." \
-  --model Qwen/Qwen2.5-1.5B-Instruct \
-  --local --device cpu \
-  --search_url http://127.0.0.1:8000/retrieve \
-  --topk 2 \
-  --tool_format json \
-  --max_turns 2 \
-  --max_tokens 128 --temperature 0 \
-  --generation_timeout_seconds 45
-```
+`ToolAgentLoop` is the supported generic function/tool-calling path. Use it
+when you want to test `Tool` / `FunctionTool` schemas and `ToolParser` formats
+(`json`, `hermes`, or `llama3`) rather than the XML search-agent trajectory.
 
 ### Key flags
 
@@ -624,9 +599,10 @@ python3 -m src.run_agentic_search \
 | `--allow_unsafe_mps` | off | Unlock MPS; disabled by default (segfault risk on some models) |
 | `--vllm_url` | `http://localhost:8080` | OpenAI-compatible server base URL |
 | `--search_url` | `http://localhost:8000/retrieve` | Retrieval endpoint |
-| `--max_turns` | `6` | Max agent turns |
+| `--max_turns` | `8` | Max agent turns |
 | `--max_search_limit` | 0 (= max_turns) | Cap on search rounds |
 | `--max_tokens` | `512` | Max new tokens per generation step |
+| `--generation_timeout_seconds` | `120` | Local generation wall-clock timeout; use `0` to disable |
 | `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
 
 ---
@@ -815,6 +791,7 @@ python3 -m pytest tests/unit/test_llm_agent_generation.py \
 | `test_search_client.py` | Session reuse; `results` / `result` response shape normalisation |
 | `test_intent_classifier.py` | `IntentPipeline` train / save / load; `resolve_search_settings` |
 | `test_run_agentic_search.py` | Local model config validation; MPS guard; `LocalServerManager` |
+| `test_readme_examples.py` | Runnable README examples with fake model/search backends |
 | `test_llm_agent_tensor_helper.py` | Padding conversion; batch re-expansion |
 | `test_rerank.py` | `SentenceTransformerReranker.rerank` |
 | `test_index_builder.py` | `IndexBuilderConfig.validate`, pooling methods |
@@ -861,24 +838,23 @@ The training-facing trace follows a compact ReAct shape:
 
 ### Direct use
 
-```python
-from src.agent_loop import SearchAgentLoop, SearchAgentLoopConfig
+For importable `SearchAgentLoop` wiring, use
+`examples/search_agent_loop_example.py`. The example builds the loop, runs one
+question, and returns `AgentLoopOutput`:
 
-loop = SearchAgentLoop(
+```python
+from examples.search_agent_loop_example import run_search_agent_loop_example
+
+output = await run_search_agent_loop_example(
     tokenizer=tokenizer,
     server_manager=server_manager,
-    search_config=SearchAgentLoopConfig(
-        search_url="http://localhost:8000/retrieve",
-        topk=5, max_turns=8, max_search_limit=6,
-    ),
-)
-output = await loop.run(
-    messages=[{"role": "user", "content": "Compare dense vs sparse retrieval."}],
-    sampling_params={"temperature": 0.7},
 )
 print(output.final_answer)
-print(output.metrics)      # search_rounds, repeated_search_queries, rounds_used, ...
+print(output.metrics)  # search_rounds, repeated_search_queries, rounds_used, ...
 ```
+
+The example module is covered by `tests/unit/test_readme_examples.py` with fake
+model and search backends so README-facing code stays runnable.
 
 ### Full-trace SFT
 
