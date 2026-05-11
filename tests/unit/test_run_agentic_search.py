@@ -6,12 +6,14 @@ from types import SimpleNamespace
 import pytest
 
 from src.agent_loop.agent_loop import AgentLoopBase
+from src.agent_loop.intent_classifier import IntentPrediction
 from src.run_agentic_search import (
     _build_sampling_params,
     _has_accelerate,
     _friendly_model_load_error,
     _handle_local_cli_value_error,
     _parse_major_minor,
+    _resolve_model_route,
     _resolve_local_device,
     _validate_local_runtime_device,
     _validate_local_runtime_stack,
@@ -159,6 +161,73 @@ def test_build_sampling_params_uses_cli_namespace():
         "max_tokens": 64,
         "top_p": 0.9,
     }
+
+
+def test_resolve_model_route_uses_base_model_when_disabled():
+    args = SimpleNamespace(
+        model_routing="off",
+        model="base-model",
+        fast_model="fast-model",
+        balanced_model="balanced-model",
+        reasoning_model="reasoning-model",
+        model_routing_min_confidence=0.7,
+    )
+
+    decision = _resolve_model_route(
+        args,
+        IntentPrediction(intent="qa", confidence=0.99),
+    )
+
+    assert decision.model == "base-model"
+    assert decision.route == "base"
+    assert decision.metadata["model_routing"] == "off"
+
+
+def test_resolve_model_route_maps_intents_to_model_tiers():
+    args = SimpleNamespace(
+        model_routing="intent",
+        model="base-model",
+        fast_model="fast-model",
+        balanced_model="balanced-model",
+        reasoning_model="reasoning-model",
+        model_routing_min_confidence=0.7,
+    )
+
+    assert (
+        _resolve_model_route(args, IntentPrediction(intent="qa", confidence=0.8)).model
+        == "fast-model"
+    )
+    assert (
+        _resolve_model_route(
+            args, IntentPrediction(intent="recommendation", confidence=0.8)
+        ).model
+        == "balanced-model"
+    )
+    assert (
+        _resolve_model_route(
+            args, IntentPrediction(intent="purchase", confidence=0.8)
+        ).model
+        == "reasoning-model"
+    )
+
+
+def test_resolve_model_route_keeps_base_model_for_low_confidence():
+    args = SimpleNamespace(
+        model_routing="intent",
+        model="base-model",
+        fast_model="fast-model",
+        balanced_model="balanced-model",
+        reasoning_model="reasoning-model",
+        model_routing_min_confidence=0.7,
+    )
+
+    decision = _resolve_model_route(
+        args,
+        IntentPrediction(intent="qa", confidence=0.2),
+    )
+
+    assert decision.model == "base-model"
+    assert decision.metadata["model_routing_applied"] is False
 
 
 def test_resolve_local_device_returns_explicit_choice():

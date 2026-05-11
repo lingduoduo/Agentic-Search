@@ -595,6 +595,10 @@ when you want to test `Tool` / `FunctionTool` schemas and `ToolParser` formats
 |------|---------|---------|
 | `--mode` | `search` | `single` / `search` / `tool` |
 | `--local` | off | Load model in-process (no vLLM) |
+| `--model_routing` | `off` | `off` / `intent`; choose a generation model before loading it |
+| `--fast_model` | unset | Low-latency model for simple QA / navigation when model routing is enabled |
+| `--balanced_model` | unset | Medium model for synthesis / recommendation when model routing is enabled |
+| `--reasoning_model` | unset | Larger model for complex or high-stakes intents when model routing is enabled |
 | `--device` | `auto` | `cpu` / `cuda` / `mps` (local only) |
 | `--allow_unsafe_mps` | off | Unlock MPS; disabled by default (segfault risk on some models) |
 | `--vllm_url` | `http://localhost:8080` | OpenAI-compatible server base URL |
@@ -604,6 +608,36 @@ when you want to test `Tool` / `FunctionTool` schemas and `ToolParser` formats
 | `--max_tokens` | `512` | Max new tokens per generation step |
 | `--generation_timeout_seconds` | `120` | Local generation wall-clock timeout; use `0` to disable |
 | `--no_evidence_gate` | off | Allow `<answer>` before evidence is sufficient |
+
+### Model routing
+
+`--model_routing intent` reuses the intent classifier as a lightweight model
+router. The router chooses the generation model before loading the tokenizer or
+server manager, so the agent loops themselves do not need to change.
+
+```bash
+python3 -m src.run_agentic_search \
+  --mode search \
+  --question "Recommend a dense retrieval setup for a small budget" \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --model_routing intent \
+  --intent_model models/intent_classifier.pt \
+  --fast_model Qwen/Qwen2.5-0.5B-Instruct \
+  --balanced_model Qwen/Qwen2.5-1.5B-Instruct \
+  --reasoning_model Qwen/Qwen2.5-7B-Instruct \
+  --local --device cpu
+```
+
+Default intent-to-model tiers:
+
+| Intent | Route | Typical use |
+|--------|-------|-------------|
+| `qa`, `navigate` | `fast_model` | Simple factual answers or navigation |
+| `recommendation` | `balanced_model` | Synthesis and comparison |
+| `purchase` | `reasoning_model` | Higher-stakes recommendation / buying decisions |
+
+If confidence is below `--model_routing_min_confidence`, or if a route-specific
+model is not provided, the CLI falls back to `--model`.
 
 ---
 
