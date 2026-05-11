@@ -15,8 +15,8 @@ A FastAPI codebase for search-backed retrieval services, multi-turn agentic rese
 ```text
 src/
   run_agentic_search.py          # CLI + importable entry point for all agent loop flows
-  train_intent_classifier.py     # Offline: train and save the intent classifier (.pt)
-  generate_intent_examples.py    # Offline: generate intent training examples from corpus
+  run_train_intent_classifier.py     # Offline: train and save the intent classifier (.pt)
+  run_generate_intent_examples.py    # Offline: generate intent training examples from corpus
   agent_loop/
     agent_loop.py            # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
     context.py               # SearchResult, SearchContext, AgentContext

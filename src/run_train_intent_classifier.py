@@ -3,13 +3,13 @@
 Usage
 -----
 # Step 1 (once): generate training examples from the local corpus
-python3 -m src.generate_intent_examples \
+python3 -m src.run_generate_intent_examples \
     --corpus data/corpus.jsonl \
     --vocabulary data/vocabulary_corpus.json \
     --output data/intent_examples.json
 
 # Step 2 (once): train and save the classifier
-python3 -m src.train_intent_classifier \
+python3 -m src.run_train_intent_classifier \
     --examples data/intent_examples.json \
     --output models/intent_classifier.pt
 
@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument(
         "--examples",
         required=True,
-        help="JSON file of intent-labelled training examples (from generate_intent_examples.py)",
+        help="JSON file of intent-labelled training examples (from run_generate_intent_examples.py)",
     )
     parser.add_argument(
         "--output",
@@ -73,12 +73,20 @@ def main() -> None:
 
     print(f"Training for {args.epochs} epoch(s) …")
     t0 = time.perf_counter()
-    pipeline = IntentPipeline(
-        vocab_size=args.vocab_size,
-        embedding_dim=args.embedding_dim,
-        hidden_dim=args.hidden_dim,
-    )
-    pipeline.train(data, epochs=args.epochs, lr=args.lr, min_freq=args.min_freq)
+    try:
+        pipeline = IntentPipeline(
+            vocab_size=args.vocab_size,
+            embedding_dim=args.embedding_dim,
+            hidden_dim=args.hidden_dim,
+        )
+        pipeline.train(data, epochs=args.epochs, lr=args.lr, min_freq=args.min_freq)
+    except ModuleNotFoundError as exc:
+        print(
+            f"Missing Python dependency {exc.name!r}. Install the project "
+            "requirements first, for example: "
+            "`python3 -m pip install -r requirements.txt`."
+        )
+        raise SystemExit(1) from exc
     elapsed = time.perf_counter() - t0
     print(f"  training complete in {elapsed:.1f}s")
     print(f"  vocabulary size: {len(pipeline._vocab.token2idx)} tokens")
