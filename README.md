@@ -64,6 +64,43 @@ The practical path is: use SFT to establish the behavior scaffold quickly, then
 use GRPO/PPO rewards to improve the policy choices that only show up after the
 agent interacts with retrieval.
 
+### Lowering Inference Cost
+
+In multi-task or multi-agent systems, the main tradeoff is not simply small
+model vs large model. It is deciding which work deserves expensive reasoning,
+which work can be routed to cheaper paths, and when the system has enough
+evidence to stop.
+
+This repo exposes several cost-control layers:
+
+| Lever | Lower-cost choice | Accuracy-oriented choice |
+|-------|-------------------|--------------------------|
+| Loop | `PlainGenerationLoop` or `SingleTurnAgentLoop` | `SearchAgentLoop` |
+| Model | `--model_routing intent` with `fast_model` / `balanced_model` / `reasoning_model` | Always use the strongest model |
+| Retrieval | smaller `topk`, fewer search rounds | larger `topk`, more rounds, fetch pages |
+| Agent budget | lower `--max_turns` and `--max_search_limit` | allow more turns before forcing an answer |
+| Evidence policy | answer when confidence is enough | keep `require_sufficient_evidence_before_answer` enabled |
+| Training reward | penalize search cost and repeated queries | reward citation support and evidence sufficiency |
+
+The intended pattern is hybrid routing:
+
+- Use small or fast models for classification, routing, simple QA, and
+  navigation-style tasks.
+- Use retrieval before escalating to a larger model when the missing piece is
+  external knowledge rather than deeper reasoning.
+- Use larger reasoning models for high-ambiguity, high-stakes, multi-hop, or
+  synthesis-heavy tasks.
+- Use `SearchAgentLoop` only when the task benefits from multi-turn evidence
+  gathering; otherwise prefer the simpler loop.
+- Train with rewards that make cost visible, such as search penalties, repeated
+  query penalties, and budget exhaustion metrics.
+
+For multi-agent systems, optimize the system-level policy rather than each
+agent in isolation. A cheap router can decide whether to answer directly,
+retrieve once, invoke the full search agent, or escalate to a stronger model.
+Accuracy improves when expensive agents are reserved for cases where they
+change the outcome, not when every task uses the heaviest path by default.
+
 ## Project Structure
 
 ```text
