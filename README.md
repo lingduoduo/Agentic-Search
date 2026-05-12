@@ -24,15 +24,19 @@ agentic search:
 
 RAG and fine-tuning solve different problems here:
 
-- RAG answers questions with external knowledge at runtime. It is best when
-  knowledge is large, changing, private, or needs evidence/citations. In this
-  repo, RAG is represented by retrieval servers, `SingleTurnAgentLoop`, and the
-  search/evidence steps inside `SearchAgentLoop`.
-- Fine-tuning changes model behavior. It is best when the model needs to learn
-  a stable format, policy, or workflow: when to search, how to write queries,
-  how to avoid repeated searches, how to cite evidence, and when to stop.
-  In this repo, fine-tuning data comes from full search-agent traces and RL
-  rewards rather than final answers alone.
+| Dimension | RAG | Fine-tuning |
+|-----------|-----|-------------|
+| Primary goal | Add external knowledge at inference time | Change model behavior or policy |
+| Best for | Fresh, large, private, or citation-sensitive knowledge | Stable formats, workflows, tool-use habits, search policy |
+| Update path | Re-index or update the corpus | Regenerate traces, train, evaluate, redeploy |
+| Failure mode | Bad retrieval, missing evidence, weak grounding | Overfitting, stale learned behavior, format drift |
+| Cost profile | More runtime latency from retrieval and longer prompts | More training cost, cheaper repeated inference if behavior improves |
+| Repo path | `src/search/`, `SingleTurnAgentLoop`, `SearchAgentLoop` observations | `sft.py`, `SearchRewardFunction`, `grpo.py`, `src/llm_agent/generation.py` |
+
+Use RAG when the model needs facts it should not memorize. Use fine-tuning when
+the model already has enough capability but needs to behave consistently: when
+to search, how to write queries, how to avoid repeated searches, how to cite
+evidence, and when to stop.
 
 In short: RAG teaches the system where to get knowledge; fine-tuning teaches
 the model how to behave while using that knowledge.
@@ -49,6 +53,16 @@ is slower to iterate but more useful when the target behavior is hard to write
 as a single gold trace. Use it when there are tradeoffs: search more or answer
 now, cite enough but avoid bloated answers, explore subquestions without
 repeating queries, or optimize final answer quality under a search budget.
+
+| Dimension | SFT | RLHF / GRPO |
+|-----------|-----|-------------|
+| Iteration speed | Faster first loop | Slower, needs rollouts and reward evaluation |
+| Training signal | Demonstration traces | Rewards, preferences, or outcome/process scores |
+| Best for | Teaching the protocol and a known-good workflow | Improving decisions with tradeoffs and delayed outcomes |
+| Data shape | Full action traces from `build_search_sft_example()` | Groups of rollouts scored by `SearchRewardFunction` |
+| Debuggability | High: inspect the target trace directly | Medium: inspect rewards, advantages, and trajectory metrics |
+| Breakthrough point | Make a strong base model reliably follow the agent scaffold | Make the agent choose better trajectories than supervised examples cover |
+| Repo path | `examples.run_build_search_sft_example`, `src/agent_loop/sft.py` | `examples.run_grpo_training_pipeline`, `src/agent_loop/grpo.py`, `src/llm_agent/generation.py` |
 
 As base models become stronger, the bottleneck shifts:
 
