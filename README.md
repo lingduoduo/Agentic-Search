@@ -10,6 +10,33 @@ A FastAPI codebase for search-backed retrieval services, multi-turn agentic rese
 - **End-to-end GRPO/PPO training loop**: rollout → reward → advantage → log probs → clipped loss → optimizer step
 - Async rollout with rollout-level concurrency (`N_prompts × G` parallel tasks) to overlap HTTP search I/O
 
+## How to Read This Repo
+
+This repo is organized around a progression from basic retrieval to trainable
+agentic search:
+
+| Stage | What it does | Main code path |
+|-------|--------------|----------------|
+| Simple search | Retrieve documents from a search or vector endpoint | `src/search/`, `/retrieve` |
+| RAG | Retrieve evidence at inference time, inject it into the prompt, then answer | `SingleTurnAgentLoop` |
+| Agentic Search | Let the model decide when to search, what to search, when evidence is sufficient, and when to answer | `SearchAgentLoop` |
+| Agentic Search + RL | Train better search behavior from full trajectories, rewards, and GRPO/PPO losses | `SearchRewardFunction`, `sft.py`, `grpo.py`, `src/llm_agent/generation.py` |
+
+RAG and fine-tuning solve different problems here:
+
+- RAG answers questions with external knowledge at runtime. It is best when
+  knowledge is large, changing, private, or needs evidence/citations. In this
+  repo, RAG is represented by retrieval servers, `SingleTurnAgentLoop`, and the
+  search/evidence steps inside `SearchAgentLoop`.
+- Fine-tuning changes model behavior. It is best when the model needs to learn
+  a stable format, policy, or workflow: when to search, how to write queries,
+  how to avoid repeated searches, how to cite evidence, and when to stop.
+  In this repo, fine-tuning data comes from full search-agent traces and RL
+  rewards rather than final answers alone.
+
+In short: RAG teaches the system where to get knowledge; fine-tuning teaches
+the model how to behave while using that knowledge.
+
 ## Project Structure
 
 ```text
