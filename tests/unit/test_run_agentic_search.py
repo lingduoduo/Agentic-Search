@@ -7,7 +7,7 @@ import pytest
 
 from src.agent_loop.agent_loop import AgentLoopBase
 from src.agent_loop.intent_classifier import IntentPrediction
-from src.run_agentic_search import (
+from examples.run_agentic_search import (
     _build_sampling_params,
     _has_accelerate,
     _friendly_model_load_error,
@@ -293,7 +293,7 @@ def test_handle_local_cli_value_error_returns_true_for_known_error(capsys):
 
 def test_local_generate_sync_adds_attention_mask_for_greedy_decode():
     torch = pytest.importorskip("torch")
-    from src.run_agentic_search import LocalServerManager
+    from examples.run_agentic_search import LocalServerManager
 
     captured: dict[str, object] = {}
 

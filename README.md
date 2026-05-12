@@ -14,9 +14,6 @@ A FastAPI codebase for search-backed retrieval services, multi-turn agentic rese
 
 ```text
 src/
-  run_agentic_search.py          # CLI + importable entry point for all agent loop flows
-  run_train_intent_classifier.py     # Offline: train and save the intent classifier (.pt)
-  run_generate_intent_examples.py    # Offline: generate intent training examples from corpus
   agent_loop/
     agent_loop.py            # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
     context.py               # SearchResult, SearchContext, AgentContext
@@ -50,6 +47,13 @@ tests/
   unit/
   regression/
   load/
+examples/
+  run_agentic_search.py          # CLI + importable entry point for all agent loop flows
+  run_single_turn_agent.py       # Minimal one-shot retrieval-assisted RAG smoke test
+  run_search_agent_loop.py       # Importable SearchAgentLoop wiring example
+  run_search_trace_workflow.py   # Deterministic think/search/information trace demo
+  run_generate_intent_examples.py # Offline: generate intent training examples
+  run_train_intent_classifier.py  # Offline: train and save the intent classifier
 ```
 
 ## Requirements
@@ -439,12 +443,12 @@ in metrics (which only catches malformed XML).
 
 ## Running the Agent
 
-`src/run_agentic_search.py` is the unified entry point.
+`examples/run_agentic_search.py` is the unified entry point.
 
 ### vLLM / server-backed inference
 
 ```bash
-python3 -m src.run_agentic_search \
+python3 -m examples.run_agentic_search \
     --mode search \
     --question "Compare dense vs sparse retrieval" \
     --model meta-llama/Llama-3.1-8B-Instruct \
@@ -548,7 +552,7 @@ Start with `PlainGenerationLoop` to confirm the local model loads and can
 generate text. This does not need the retrieval server.
 
 ```bash
-python3 -m src.run_agentic_search \
+python3 -m examples.run_agentic_search \
   --mode single \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
@@ -561,19 +565,19 @@ Then run `SingleTurnAgentLoop` for the smallest retrieval-assisted RAG path.
 Keep the retrieval server running first.
 
 ```bash
-python3 -m src.run_single_turn_agent
+python3 -m examples.run_single_turn_agent
 ```
 
 The script contains the minimal importable example for wiring
 `SingleTurnAgentLoop`, `SingleTurnAgentLoopConfig`, and `LocalServerManager`.
 Adjust the model, search URL, or token limits directly in
-`src/run_single_turn_agent.py` when testing variants.
+`examples/run_single_turn_agent.py` when testing variants.
 
 Finally, run `SearchAgentLoop` when you want the project-native search-agent
 trajectory used by the RL/SFT code.
 
 ```bash
-python3 -m src.run_agentic_search \
+python3 -m examples.run_agentic_search \
   --mode search \
   --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
@@ -616,7 +620,7 @@ router. The router chooses the generation model before loading the tokenizer or
 server manager, so the agent loops themselves do not need to change.
 
 ```bash
-python3 -m src.run_agentic_search \
+python3 -m examples.run_agentic_search \
   --mode search \
   --question "Recommend a dense retrieval setup for a small budget" \
   --model Qwen/Qwen2.5-1.5B-Instruct \
@@ -873,11 +877,11 @@ The training-facing trace follows a compact ReAct shape:
 ### Direct use
 
 For importable `SearchAgentLoop` wiring, use
-`examples/search_agent_loop_example.py`. The example builds the loop, runs one
+`examples/run_search_agent_loop.py`. The example builds the loop, runs one
 question, and returns `AgentLoopOutput`:
 
 ```python
-from examples.search_agent_loop_example import run_search_agent_loop_example
+from examples.run_search_agent_loop import run_search_agent_loop_example
 
 output = await run_search_agent_loop_example(
     tokenizer=tokenizer,
@@ -889,6 +893,16 @@ print(output.metrics)  # search_rounds, repeated_search_queries, rounds_used, ..
 
 The example module is covered by `tests/unit/test_readme_examples.py` with fake
 model and search backends so README-facing code stays runnable.
+
+For a deterministic screenshot-style trace with repeated
+`<think>` → `<search>` → `<information>` steps, run:
+
+```bash
+python3 -m examples.run_search_trace_workflow
+```
+
+That example uses scripted fake model/search backends to show the workflow
+shape without requiring a local LLM or retrieval server.
 
 ### Full-trace SFT
 

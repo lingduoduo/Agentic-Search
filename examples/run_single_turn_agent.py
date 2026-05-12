@@ -3,7 +3,7 @@ import asyncio
 from transformers import AutoTokenizer
 
 from src.agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
-from src.run_agentic_search import LocalServerManager
+from examples.run_agentic_search import LocalServerManager
 
 model = "Qwen/Qwen2.5-1.5B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(model, local_files_only=True)

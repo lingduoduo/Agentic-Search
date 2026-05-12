@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from examples.search_agent_loop_example import run_search_agent_loop_example
+from examples.run_search_agent_loop import run_search_agent_loop_example
+from examples.run_search_trace_workflow import run_workflow_demo
 from src.agent_loop import SearchResult
-from src.agent_loop.search_client import aiohttp
 
 
 class DummyTokenizer:
@@ -66,14 +66,6 @@ class FakeSearchClient:
 
 
 def test_search_agent_loop_readme_example_runs_with_fake_backends():
-    # SearchAgentLoop constructs a default SearchClient before the example swaps
-    # in the fake client. Avoid requiring aiohttp for this pure unit smoke test.
-    def client_timeout(total):
-        del total
-        return None
-
-    aiohttp.ClientTimeout = client_timeout
-
     tokenizer = DummyTokenizer()
     search_client = FakeSearchClient()
     server_manager = DummyServerManager(
@@ -103,3 +95,21 @@ def test_search_agent_loop_readme_example_runs_with_fake_backends():
     )
     assert output.metrics["search_rounds"] == 1.0
     assert search_client.calls == [["dense vs sparse retrieval"]]
+
+
+def test_search_trace_workflow_example_renders_screenshot_style_trace():
+    output, trace, search_client = asyncio.run(run_workflow_demo())
+
+    assert output.final_answer == "John William Henry II"
+    assert output.metrics["search_rounds"] == 3.0
+    assert search_client.calls == [
+        ["Jed Hoyer or John William Henry II"],
+        ["John William Henry II"],
+        ["Jed Hoyer birth year"],
+    ]
+    assert "Question: Who is older, Jed Hoyer or John William Henry II?" in trace
+    assert "Ground Truth: John William Henry II" in trace
+    assert "<think>I need to determine" in trace
+    assert "<search>John William Henry II</search>" in trace
+    assert "<information>" in trace
+    assert "<answer>John William Henry II</answer>" in trace

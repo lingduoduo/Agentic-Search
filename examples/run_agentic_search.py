@@ -25,7 +25,7 @@ Two server-manager implementations are provided:
 Quick start
 -----------
 # With a running vLLM server and Google search server:
-python3 -m src.run_agentic_search \\
+python3 -m examples.run_agentic_search \\
     --mode search \\
     --question "Compare dense vs sparse retrieval" \\
     --model meta-llama/Llama-3.1-8B-Instruct \\
@@ -33,7 +33,7 @@ python3 -m src.run_agentic_search \\
     --search_url http://localhost:8000/retrieve
 
 # Local model, single-turn:
-python3 -m src.run_agentic_search \\
+python3 -m examples.run_agentic_search \\
     --mode single \\
     --question "What is FAISS?" \\
     --model Qwen/Qwen2.5-1.5B-Instruct \\
@@ -797,6 +797,7 @@ async def run_search_agent(
     max_answer_rejections: int = 3,
     allow_internal_knowledge: bool = True,
     intent_pipeline: Any | None = None,
+    intent_prediction: Any | None = None,
     intent_min_confidence: float = 0.6,
 ) -> None:
     """Run the deep-research SearchAgentLoop and print results.
@@ -805,7 +806,7 @@ async def run_search_agent(
 
     Example::
 
-        from src.run_agentic_search import run_search_agent, VLLMServerManager
+        from examples.run_agentic_search import run_search_agent, VLLMServerManager
         from transformers import AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
@@ -827,15 +828,19 @@ async def run_search_agent(
 
     sampling_params = sampling_params or {"temperature": 0.7, "max_tokens": 512}
     effective_search_limit = max_search_limit or max_turns
-    if intent_pipeline is not None:
+    if intent_pipeline is not None or intent_prediction is not None:
+        if intent_prediction is None:
+            intent_prediction = intent_pipeline.predict_text(question)
+        from src.agent_loop.intent_classifier import resolve_search_settings
+
         (
             resolved_topk,
             effective_search_limit,
             require_evidence,
             allow_internal_knowledge,
             intent_metadata,
-        ) = intent_pipeline.resolve_search_settings(
-            question,
+        ) = resolve_search_settings(
+            intent_prediction,
             topk=topk,
             max_search_limit=effective_search_limit,
             require_evidence=require_evidence,
@@ -1126,7 +1131,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--intent_model",
         type=str,
         default=None,
-        help="Path to a pre-trained intent classifier (.pt file from run_train_intent_classifier.py). "
+        help="Path to a pre-trained intent classifier (.pt file from examples.run_train_intent_classifier). "
         "Preferred over --intent_examples — loads instantly with no retraining.",
     )
     parser.add_argument(
@@ -1168,7 +1173,7 @@ async def main() -> None:
     intent_pipeline = None
     intent_prediction = None
     if args.intent_model:
-        # Fast path: load a pre-trained model saved by run_train_intent_classifier.py
+        # Fast path: load a pre-trained model saved by examples.run_train_intent_classifier
         from src.agent_loop.intent_classifier import IntentPipeline
 
         print(f"Status  : loading intent model from {args.intent_model}")
@@ -1250,6 +1255,7 @@ async def main() -> None:
                 max_answer_rejections=args.max_answer_rejections,
                 allow_internal_knowledge=not args.require_search,
                 intent_pipeline=intent_pipeline,
+                intent_prediction=intent_prediction,
                 intent_min_confidence=args.intent_min_confidence,
             )
         elif args.mode == "tool":

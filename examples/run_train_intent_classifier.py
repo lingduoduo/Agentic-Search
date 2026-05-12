@@ -3,18 +3,18 @@
 Usage
 -----
 # Step 1 (once): generate training examples from the local corpus
-python3 -m src.run_generate_intent_examples \
+python3 -m examples.run_generate_intent_examples \
     --corpus data/corpus.jsonl \
     --vocabulary data/vocabulary_corpus.json \
     --output data/intent_examples.json
 
 # Step 2 (once): train and save the classifier
-python3 -m src.run_train_intent_classifier \
+python3 -m examples.run_train_intent_classifier \
     --examples data/intent_examples.json \
     --output models/intent_classifier.pt
 
 # Step 3 (every run): load the saved model — no retraining
-python3 -m src.run_agentic_search \
+python3 -m examples.run_agentic_search \
     --mode search \
     --question "Buy me a noise-cancelling headphone" \
     --model Qwen/Qwen2.5-1.5B-Instruct \
