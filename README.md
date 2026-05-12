@@ -10,8 +10,6 @@ A FastAPI codebase for search-backed retrieval services, multi-turn agentic rese
 - **End-to-end GRPO/PPO training loop**: rollout → reward → advantage → log probs → clipped loss → optimizer step
 - Async rollout with rollout-level concurrency (`N_prompts × G` parallel tasks) to overlap HTTP search I/O
 
-## How to Read This Repo
-
 This repo is organized around a progression from basic retrieval to trainable
 agentic search:
 
