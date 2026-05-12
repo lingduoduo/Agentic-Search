@@ -37,6 +37,33 @@ RAG and fine-tuning solve different problems here:
 In short: RAG teaches the system where to get knowledge; fine-tuning teaches
 the model how to behave while using that knowledge.
 
+### SFT vs RLHF / GRPO
+
+For fast iteration in this repo, SFT is usually the first move. It is cheaper,
+more deterministic, and easier to debug because it trains directly on known-good
+search traces. Use it to teach the model the workflow shape: XML actions,
+query style, evidence use, citation format, and stopping behavior.
+
+RLHF-style optimization, represented here by reward functions plus GRPO/PPO,
+is slower to iterate but more useful when the target behavior is hard to write
+as a single gold trace. Use it when there are tradeoffs: search more or answer
+now, cite enough but avoid bloated answers, explore subquestions without
+repeating queries, or optimize final answer quality under a search budget.
+
+As base models become stronger, the bottleneck shifts:
+
+- SFT's leverage is no longer teaching basic language ability. Its leverage is
+  turning a capable model into a reliable product-shaped agent that follows the
+  repo's protocol and tool workflow consistently.
+- RLHF / GRPO's leverage is no longer fixing simple formatting mistakes. Its
+  leverage is optimizing decisions where supervised labels are incomplete:
+  when to search, how much evidence is enough, which trajectory is better, and
+  how to trade quality against latency and cost.
+
+The practical path is: use SFT to establish the behavior scaffold quickly, then
+use GRPO/PPO rewards to improve the policy choices that only show up after the
+agent interacts with retrieval.
+
 ## Project Structure
 
 ```text
