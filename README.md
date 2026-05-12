@@ -53,6 +53,7 @@ examples/
   run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
   run_search_trace_workflow.py   # Deterministic think/search/information trace demo
   run_build_search_sft_example.py # Build SFT data from a deterministic search trace
+  run_grpo_training_pipeline.py  # Model-free reward / GRPO helper smoke test
   run_generate_intent_examples.py # Offline: generate intent training examples
   run_train_intent_classifier.py  # Offline: train and save the intent classifier
 ```
@@ -97,33 +98,25 @@ The full RL training loop is implemented in `src/llm_agent/generation.py` and `s
 10. async                  → async_run_grpo_training_step (N×G concurrent rollouts)
 ```
 
+For a quick, model-free smoke test of the reward and GRPO helper flow, run:
+
+```bash
+python3 -m examples.run_grpo_training_pipeline
+```
+
+The script builds deterministic `AgentLoopOutput` objects, scores them with
+`SearchRewardFunction`, computes group-relative advantages, and, when PyTorch
+is installed, also exercises trajectory packing plus PPO/GRPO policy loss.
+
 ### Step 1 — Trajectory output from `run_llm_loop`
 
-```python
-from src.llm_agent import LLMGenerationManager, GenerationConfig
+`LLMGenerationManager.run_llm_loop()` returns a final batch plus per-trajectory
+turn counts. The batch stores structured trajectory logs, rollout objects, and
+prompt-aligned token arrays for later reward and loss computation.
 
-manager = LLMGenerationManager(
-    tokenizer=tokenizer,
-    config=GenerationConfig(max_turns=3, max_search_rounds=3),
-    generation_backend=actor_backend,
-)
+Reference code: `src/llm_agent/generation.py`
 
-final_batch, trajectory_turns = manager.run_llm_loop(
-    gen_batch=gen_batch,
-    search_mode="local",   # "local" | "wiki" | "google" | "simulate"
-)
-
-# Per-trajectory structured log
-log = final_batch.non_tensor_batch["trajectory_logs"][0]
-print(log)                 # compact trace: "Step 1: search ... Step 2: answer ..."
-print(log.to_dict())       # dict for JSONL / wandb logging
-
-# Aligned token arrays (prompt + response length, same size)
-from src.llm_agent import trajectory_log_prob_pack
-traj = final_batch.non_tensor_batch["trajectories"][0]
-pack = trajectory_log_prob_pack(traj)
-# pack["tokens"], pack["attention_mask"], pack["response_mask"], pack["old_log_probs"]
-```
+Tests: `tests/unit/test_llm_agent_generation.py`
 
 ### Step 2 — SearchTool → FastAPI `/retrieve`
 
@@ -151,171 +144,50 @@ Inside the manager, set `search_mode="local"` and `retrieval_url="http://localho
 
 ### Step 3 — G=4 rollouts per prompt
 
-```python
-# Sequential (reproducible, RNG save/restore between rollouts)
-grouped = manager.run_prompt_rollout_group(
-    prompt_batch,
-    search_mode="local",
-    sampling_params={"temperature": 0.8, "top_p": 0.95},
-    num_rollouts=4,
-    base_seed=42,
-)
-# grouped[i].group_id  — shared across 4 rollouts
-# grouped[i].rollout_index  — 0, 1, 2, 3
-# grouped[i].final_output.trajectory_logs[0]  — per-rollout trace
+Use `run_prompt_rollout_group()` for reproducible sequential rollouts, or
+`async_run_prompt_rollout_group()` to overlap HTTP search I/O across
+`N_prompts × G` rollout tasks. Each rollout keeps the same `group_id` and a
+distinct `rollout_index`.
 
-# Async (N_prompts × G tasks concurrent — overlaps HTTP search I/O)
-import asyncio
-from src.llm_agent import async_run_prompt_rollout_group
-
-all_groups = asyncio.run(
-    async_run_prompt_rollout_group(
-        manager,
-        [single_batch_0, single_batch_1, single_batch_2],
-        search_mode="local",
-        sampling_params={"temperature": 0.8},
-        num_rollouts=4,
-        base_seed=0,
-        # 12 concurrent tasks: each (prompt_i, rollout_j) is one thread-pool task
-        # seed for (prompt i, rollout j) = base_seed + i*num_rollouts + j
-    )
-)
-# all_groups[i] == list[GroupedRolloutBatch] for prompt i, sorted by rollout_index
-```
+Reference tests: `tests/unit/test_llm_agent_generation.py`
 
 ### Step 4 — `reward_fn` scores each rollout
 
-```python
-from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-from src.agent_loop.reward import simple_sparse_correctness_reward
+`SearchRewardFunction` supports sparse final-answer reward, first-pass search
+penalty shaping, and second-pass shaping with citation/search-quality signals.
+Use batch judge helpers when an LLM judge would otherwise require one API call
+per rollout.
 
-# Phase 0 — strict sparse (only final answer correctness)
-reward_fn = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
+Runnable reference: `python3 -m examples.run_grpo_training_pipeline`
 
-# Phase 1 — recommended first-pass (correctness - 0.02 * num_searches)
-reward_fn = SearchRewardFunction(
-    SearchRewardConfig.simple_sparse_with_search_penalty(per_search_penalty=-0.02)
-)
-
-# Phase 2 — full shaping (citation support, unsupported-claim penalty, dup query)
-reward_fn = SearchRewardFunction(SearchRewardConfig.second_pass())
-
-# Score one rollout
-reward = reward_fn.compute(output, ground_truth=gt, judge_fn=simple_sparse_correctness_reward)
-
-# Batch judge (fewer LLM API calls for LLM-based scoring)
-from src.agent_loop.reward import compute_batch_sparse_token_rewards
-
-token_rewards = compute_batch_sparse_token_rewards(
-    outputs, ground_truths, judge_fn=simple_sparse_correctness_reward
-)
-
-# Full penalty breakdown per rollout
-components = reward_fn.reward_components(output, ground_truth=gt, judge_fn=simple_sparse_correctness_reward)
-# {"correctness": 1.0, "search_penalty": -0.04, "total": 0.96, ...}
-```
+Source: `src/agent_loop/reward.py`
 
 ### Step 5 — `compute_grpo_advantage`
 
-```python
-from src.llm_agent import assign_group_relative_advantages
+Group-relative advantages can be raw mean-centered or std-normalized. The
+default training path uses std-normalized advantages for stability; sparse
+outcome-only GRPO is still available through `GRPOAdvantageConfig`.
 
-# Mean-centering only (DeepSeek-R1 style)
-scored = assign_group_relative_advantages(
-    grouped,
-    rewards=[1.0, 0.7, 0.0, 0.0],
-    normalize=False,
-)
-# [0.575, 0.275, -0.425, -0.425]
-
-# Std-normalized (default, more stable)
-scored = assign_group_relative_advantages(
-    grouped,
-    rewards=[1.0, 0.7, 0.0, 0.0],
-    normalize=True,  # (reward - mean) / (std + 1e-8)
-)
-
-# Full pipeline: score + advantage in one call
-from src.llm_agent import score_group_rollout
-scored = score_group_rollout(
-    grouped,
-    ground_truth="Hopfield and Hinton",
-    judge_fn=simple_sparse_correctness_reward,
-    reward_fn=reward_fn,
-)
-```
+Source: `src/agent_loop/grpo.py` and `src/llm_agent/generation.py`
 
 ### Step 6 — Save JSONL training data
-
-```python
-from src.llm_agent import save_training_batch_jsonl
-
-# Write / overwrite
-n = save_training_batch_jsonl(scored_rollouts, "data/train.jsonl")
-
-# Append across training steps
-n = save_training_batch_jsonl(scored_rollouts, "data/train.jsonl", append=True)
-```
 
 Each JSONL record contains: `group_id`, `rollout_index`, `reward`, `advantage`,
 `reward_components`, `trajectory` (full `SearchTrajectoryLog.to_dict()`),
 `tokens`, `response_mask`, `old_log_probs` (all prompt+response aligned).
 
+Writer: `save_training_batch_jsonl()` in `src/llm_agent/generation.py`
+
 ### Step 7 — Offline `compute_log_probs`
 
-```python
-# Compute old_log_probs (frozen at rollout time)
-manager.compute_log_prob(training_batch, backend=rollout_backend, store_key="old_log_probs")
+Compute `old_log_probs` with the frozen rollout policy, `new_log_probs` with
+the current policy, and optionally `ref_log_probs` for KL anchoring.
 
-# Compute new_log_probs (current policy being trained)
-manager.compute_log_prob(training_batch, backend=train_backend, store_key="new_log_probs")
-
-# Optional: reference policy for KL penalty
-manager.compute_log_prob(training_batch, backend=ref_backend, store_key="ref_log_probs")
-
-# Extract aligned arrays from one trajectory
-from src.llm_agent import trajectory_log_prob_pack
-
-pack = trajectory_log_prob_pack(traj)
-# All 4 lists are the same length: len(prompt_token_ids) + len(response_token_ids)
-# old_log_probs: [0.0, ..., 0.0,  -0.5, -0.3, -1.2, ...]
-#                 ^^^^prompt^^^^   ^^^^^^^^^response^^^^^^^^^
-# response_mask: [0, ..., 0,       1,    1,    1,   0, ...]  (0 for <information>)
-```
-
-**Alignment rule**: `old_log_probs` is prepended with `len(prompt_token_ids)` zeros so
-it aligns with `tokens` and `attention_mask` without any slicing in the loss loop.
+Alignment rule: `old_log_probs` is prepended with `len(prompt_token_ids)` zeros
+so it aligns with `tokens` and `attention_mask` without slicing in the loss loop.
+`response_mask` is `0` for prompt and environment `<information>` tokens.
 
 ### Step 8 — GRPO loss
-
-```python
-from src.llm_agent import PPOPolicyLossConfig, compute_trajectory_policy_loss
-
-# Trajectory-level loss (no GPU batch, no tokenizer — pure Python/Torch)
-result = compute_trajectory_policy_loss(
-    new_log_probs=pack["new_log_probs"],
-    old_log_probs=pack["old_log_probs"],
-    advantages=pack["advantages"],
-    response_mask=pack["response_mask"],
-    ref_log_probs=pack.get("ref_log_probs"),   # optional KL anchor
-    clip_epsilon=0.2,
-    kl_beta=0.01,
-)
-# result["grpo_policy_loss"], ["kl_penalty"], ["total_loss"], ["clip_fraction"], ["mean_ratio"]
-
-# Batch-level loss with action-type weights and entropy bonus
-loss = manager.compute_policy_loss(
-    training_batch,
-    config=PPOPolicyLossConfig(
-        clip_epsilon=0.2,
-        kl_coefficient=0.01,
-        entropy_coefficient=0.001,        # prevents mode collapse
-        action_type_weights={"search": 1.5, "answer": 1.0},
-    ),
-)
-loss.backward()
-optimizer.step()
-```
 
 Formula:
 
@@ -330,36 +202,9 @@ total_loss    = L_clip + kl_penalty − entropy_bonus
 `response_mask` is `1` only for model-generated action tokens (`<search>`, `<plan>`,
 `<fetch>`, `<answer>`); `0` for prompt tokens and environment `<information>` observations.
 
+Source: `compute_trajectory_policy_loss()` and `PPOPolicyLossConfig`
+
 ### Step 9 — End-to-end on small model + small data
-
-```python
-result = manager.run_grpo_training_step(
-    prompt_batch,
-    search_mode="local",
-    sampling_params={"temperature": 0.8, "top_p": 0.95},
-    judge_fn=simple_sparse_correctness_reward,
-    num_rollouts=4,
-    reward_fn=SearchRewardFunction(
-        SearchRewardConfig.simple_sparse_with_search_penalty()
-    ),
-    old_backend=rollout_policy,    # frozen at rollout time
-    new_backend=actor_policy,      # being trained
-    ref_backend=reference_policy,  # optional KL anchor
-    loss_config=PPOPolicyLossConfig(clip_epsilon=0.2, kl_coefficient=0.01),
-    safety_config=GRPORolloutSafetyConfig(
-        allowed_actions=("search", "answer"),
-        max_search_rounds=3,
-        invalid_action_penalty=-0.2,
-        repeated_query_penalty=-0.1,
-    ),
-    optimizer=optimizer,
-)
-
-print(result.mean_reward)       # average reward across all rollouts this step
-print(result.mean_advantage)    # average advantage
-print(result.loss)              # scalar Torch tensor (already backpropped)
-print(result.optimizer_stepped) # True if optimizer.step() was called
-```
 
 What `run_grpo_training_step` does internally:
 
@@ -373,26 +218,7 @@ What `run_grpo_training_step` does internally:
 
 ### Step 10 — Async / distributed rollout
 
-```python
-import asyncio
-from src.llm_agent import async_run_grpo_training_step
-
-result = asyncio.run(
-    async_run_grpo_training_step(
-        manager,
-        prompt_batch,
-        search_mode="local",
-        sampling_params={"temperature": 0.8},
-        judge_fn=simple_sparse_correctness_reward,
-        num_rollouts=4,
-        reward_fn=reward_fn,
-        optimizer=optimizer,
-        max_workers=16,   # up to N_prompts × num_rollouts concurrent threads
-    )
-)
-```
-
-**Execution model** — `N_prompts × G` rollout tasks run concurrently in a `ThreadPoolExecutor`.
+Execution model: `N_prompts × G` rollout tasks run concurrently in a `ThreadPoolExecutor`.
 While rollout A waits for HTTP search results, rollouts B/C/D continue generating.
 Effective search wall-time drops from `G × search_latency` to roughly `max(per-rollout latency)`.
 
@@ -408,37 +234,14 @@ Learner          →  compute_policy_loss + optimizer.step (one central update)
 
 ### Safety constraints
 
-```python
-from src.llm_agent import GRPORolloutSafetyConfig, apply_rollout_safety_penalties
-from src.llm_agent import apply_safety_penalties_to_scored_rollouts
-
-config = GRPORolloutSafetyConfig(
-    max_search_rounds=3,       # force answer after 3 search rounds
-    max_total_rounds=6,        # soft cap on total agent turns
-    allowed_actions=("search", "answer"),   # <plan>/<fetch> = disallowed
-    invalid_action_penalty=-0.2,            # per malformed/disallowed XML tag
-    repeated_query_penalty=-0.1,            # per repeated search query
-    excess_search_penalty=-0.1,             # per round over max_search_rounds
-)
-
-# Per-rollout (uses AgentLoopOutput.metrics)
-adjusted_reward = apply_rollout_safety_penalties(reward, output, config=config)
-
-# Batch (also checks trajectory steps for disallowed tags, stores breakdown in reward_components)
-scored = apply_safety_penalties_to_scored_rollouts(
-    scored_rollouts,
-    config=config,
-    normalize_advantages=True,   # re-derive advantages after penalty adjustment
-)
-# scored[i].reward_components keys added:
-#   "invalid_action_penalty", "repeated_query_penalty",
-#   "excess_search_penalty", "disallowed_action_penalty"
-```
-
 The `allowed_actions` parser inspects `trajectory.steps` for valid-XML-but-disallowed tags
 (e.g. `<fetch>` or `<plan>` when only `["search", "answer"]` are permitted), applying
 `invalid_action_penalty` per disallowed tag. This is separate from `invalid_action_count`
 in metrics (which only catches malformed XML).
+
+Safety helpers add `invalid_action_penalty`, `repeated_query_penalty`,
+`excess_search_penalty`, and `disallowed_action_penalty` into
+`reward_components`, then can rederive group advantages after penalties.
 
 ---
 
@@ -656,29 +459,17 @@ model is not provided, the CLI falls back to `--model`.
 | `simple_sparse_with_search_penalty()` | `correctness − 0.02 × num_searches` | Phase 1 — recommended first-pass |
 | `second_pass()` | Phase 1 + citation support + unsupported-claim penalty + dup-query | Phase 2 — after Phase 1 converges |
 
-```python
-from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-from src.agent_loop.reward import simple_sparse_correctness_reward
+Runnable reference:
 
-reward_fn = SearchRewardFunction(
-    SearchRewardConfig.simple_sparse_with_search_penalty(per_search_penalty=-0.02)
-)
-reward = reward_fn.compute(output, ground_truth=gt, judge_fn=simple_sparse_correctness_reward)
+```bash
+python3 -m examples.run_grpo_training_pipeline
 ```
 
 ### GRPO advantage presets
 
-```python
-from src.agent_loop import GRPOAdvantageConfig
-
-# DeepSeek-R1 style: raw mean-centering
-config = GRPOAdvantageConfig.outcome_only()
-# advantage_i = reward_i − mean(group)
-
-# Std-normalized (more stable training)
-config = GRPOAdvantageConfig.std_normalized()
-# advantage_i = (reward_i − mean) / (std + ε)
-```
+Use `GRPOAdvantageConfig.outcome_only()` for raw mean-centering, or
+`GRPOAdvantageConfig.std_normalized()` for the default lower-variance
+normalization.
 
 ### Reward components
 
