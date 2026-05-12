@@ -20,7 +20,7 @@ agentic search:
 | Agentic Search | Let the model decide when to search, what to search, when evidence is sufficient, and when to answer | `SearchAgentLoop` |
 | Agentic Search + RL | Train better search behavior from full trajectories, rewards, and GRPO/PPO losses | `SearchRewardFunction`, `sft.py`, `grpo.py`, `src/llm_agent/generation.py` |
 
-RAG and fine-tuning solve different problems here:
+### RAG and fine-tuning solve different problems here:
 
 | Dimension | RAG | Fine-tuning |
 |-----------|-----|-------------|
