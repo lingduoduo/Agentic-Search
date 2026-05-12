@@ -50,8 +50,9 @@ tests/
 examples/
   run_agentic_search.py          # CLI + importable entry point for all agent loop flows
   run_single_turn_agent.py       # Minimal one-shot retrieval-assisted RAG smoke test
-  run_search_agent_loop.py       # Importable SearchAgentLoop wiring example
+  run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
   run_search_trace_workflow.py   # Deterministic think/search/information trace demo
+  run_build_search_sft_example.py # Build SFT data from a deterministic search trace
   run_generate_intent_examples.py # Offline: generate intent training examples
   run_train_intent_classifier.py  # Offline: train and save the intent classifier
 ```
@@ -876,23 +877,17 @@ The training-facing trace follows a compact ReAct shape:
 
 ### Direct use
 
-For importable `SearchAgentLoop` wiring, use
-`examples/run_search_agent_loop.py`. The example builds the loop, runs one
-question, and returns `AgentLoopOutput`:
+For importable `SearchAgentLoop` wiring, use the maintained example module
+instead of pasting setup code into the shell:
 
-```python
-from examples.run_search_agent_loop import run_search_agent_loop_example
-
-output = await run_search_agent_loop_example(
-    tokenizer=tokenizer,
-    server_manager=server_manager,
-)
-print(output.final_answer)
-print(output.metrics)  # search_rounds, repeated_search_queries, rounds_used, ...
+```bash
+python3 -m examples.run_search_agent_loop
 ```
 
-The example module is covered by `tests/unit/test_readme_examples.py` with fake
-model and search backends so README-facing code stays runnable.
+The module exposes `run_search_agent_loop_example(...)` for tests or notebooks
+and also runs as a deterministic CLI smoke test with fake model/search backends.
+It is covered by `tests/unit/test_readme_examples.py` so README-facing code
+stays runnable.
 
 For a deterministic screenshot-style trace with repeated
 `<think>` → `<search>` → `<information>` steps, run:
@@ -906,14 +901,10 @@ shape without requiring a local LLM or retrieval server.
 
 ### Full-trace SFT
 
-```python
-from src.agent_loop import build_search_sft_example
+Build an SFT training example from the same deterministic search trace:
 
-example = build_search_sft_example(
-    [{"role": "user", "content": "Compare dense vs sparse retrieval."}],
-    output,
-)
-print(example.completion)  # <plan>...<search>...<answer>...
+```bash
+python3 -m examples.run_build_search_sft_example
 ```
 
 ### Output fields (`AgentLoopOutput`)

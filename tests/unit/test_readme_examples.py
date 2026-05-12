@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+from examples.run_build_search_sft_example import run_demo as run_sft_demo
 from examples.run_search_agent_loop import run_search_agent_loop_example
 from examples.run_search_trace_workflow import run_workflow_demo
 from src.agent_loop import SearchResult
@@ -113,3 +114,17 @@ def test_search_trace_workflow_example_renders_screenshot_style_trace():
     assert "<search>John William Henry II</search>" in trace
     assert "<information>" in trace
     assert "<answer>John William Henry II</answer>" in trace
+
+
+def test_build_search_sft_example_script_uses_full_trace():
+    example = asyncio.run(run_sft_demo())
+
+    assert example.prompt_messages == [
+        {
+            "role": "user",
+            "content": "Who is older, Jed Hoyer or John William Henry II?",
+        }
+    ]
+    assert "<search>John William Henry II</search>" in example.completion
+    assert "<information>" not in example.completion
+    assert example.completion.endswith("<answer>John William Henry II</answer>")
