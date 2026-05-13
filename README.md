@@ -125,6 +125,7 @@ src/
     evaluation.py            # SearchResultEvaluator, SearchEvaluationConfig
     grpo.py                  # Prompt-group rollout sampling + within-group scoring helpers
     intent_classifier.py     # IntentPipeline: train / save / load + resolve_search_settings
+    intent_training.py       # Generate intent examples + train/save classifier utilities
     plain_generation_loop.py # PlainGenerationLoop (registered as "plain_generation")
     reward.py                # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
     search_agent_loop.py     # SearchAgentLoop (registered as "search_agent")
@@ -154,13 +155,12 @@ tests/
   load/
 examples/
   run_agentic_search.py          # CLI + importable entry point for all agent loop flows
-  run_single_turn_agent.py       # Minimal one-shot retrieval-assisted RAG smoke test
   run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
   run_search_trace_workflow.py   # Deterministic think/search/information trace demo
   run_build_search_sft_example.py # Build SFT data from a deterministic search trace
   run_grpo_training_pipeline.py  # Model-free reward / GRPO helper smoke test
-  run_generate_intent_examples.py # Offline: generate intent training examples
-  run_train_intent_classifier.py  # Offline: train and save the intent classifier
+  run_generate_intent_examples.py # Thin CLI wrapper for src.agent_loop.intent_training
+  run_train_intent_classifier.py  # Thin CLI wrapper for src.agent_loop.intent_training
 ```
 
 ## Requirements
@@ -470,20 +470,8 @@ python3 -m examples.run_agentic_search \
   --generation_timeout_seconds 30
 ```
 
-Then run `SingleTurnAgentLoop` for the smallest retrieval-assisted RAG path.
-Keep the retrieval server running first.
-
-```bash
-python3 -m examples.run_single_turn_agent
-```
-
-The script contains the minimal importable example for wiring
-`SingleTurnAgentLoop`, `SingleTurnAgentLoopConfig`, and `LocalServerManager`.
-Adjust the model, search URL, or token limits directly in
-`examples/run_single_turn_agent.py` when testing variants.
-
-Finally, run `SearchAgentLoop` when you want the project-native search-agent
-trajectory used by the RL/SFT code.
+Then run `SearchAgentLoop` when you want the project-native retrieval-assisted
+trajectory used by the RL/SFT code. Keep the retrieval server running first.
 
 ```bash
 python3 -m examples.run_agentic_search \

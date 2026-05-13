@@ -33,6 +33,8 @@ import argparse
 import time
 from pathlib import Path
 
+from src.agent_loop.intent_training import train_intent_classifier
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -59,27 +61,24 @@ def main() -> None:
     parser.add_argument("--hidden_dim", type=int, default=256)
     args = parser.parse_args()
 
-    from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
-
     print(f"Loading training examples from {args.examples} …")
-    data = load_training_data(args.examples)
-    if not data:
-        raise SystemExit(f"No valid examples found in {args.examples}")
-
-    label_counts: dict[str, int] = {}
-    for _, label in data:
-        label_counts[label] = label_counts.get(label, 0) + 1
-    print(f"  {len(data)} examples  |  labels: {label_counts}")
 
     print(f"Training for {args.epochs} epoch(s) …")
     t0 = time.perf_counter()
     try:
-        pipeline = IntentPipeline(
+        result = train_intent_classifier(
+            examples_path=Path(args.examples),
+            output_path=Path(args.output),
+            epochs=args.epochs,
+            lr=args.lr,
+            min_freq=args.min_freq,
             vocab_size=args.vocab_size,
             embedding_dim=args.embedding_dim,
             hidden_dim=args.hidden_dim,
         )
-        pipeline.train(data, epochs=args.epochs, lr=args.lr, min_freq=args.min_freq)
+        pipeline = result.pipeline
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     except ModuleNotFoundError as exc:
         print(
             f"Missing Python dependency {exc.name!r}. Install the project "
@@ -88,13 +87,11 @@ def main() -> None:
         )
         raise SystemExit(1) from exc
     elapsed = time.perf_counter() - t0
+    print(f"  {result.num_examples} examples  |  labels: {result.label_counts}")
     print(f"  training complete in {elapsed:.1f}s")
     print(f"  vocabulary size: {len(pipeline._vocab.token2idx)} tokens")
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    pipeline.save(str(output_path))
-    print(f"Saved → {output_path}")
+    print(f"Saved → {Path(args.output)}")
 
     # Quick smoke test
     samples = [

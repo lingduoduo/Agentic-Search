@@ -9,6 +9,11 @@ from src.agent_loop.intent_classifier import (
     IntentionClassificationPipeline,
     resolve_search_settings,
 )
+from src.agent_loop.intent_training import (
+    generate_intent_examples,
+    train_intent_classifier,
+    write_intent_examples,
+)
 from src.search.vocabulary import Vocabulary
 
 
@@ -136,3 +141,65 @@ def test_intent_pipeline_save_requires_training(tmp_path):
         assert "trained" in str(exc).lower()
     else:
         raise AssertionError("save() should require training first")
+
+
+def test_generate_intent_examples_from_corpus_and_vocabulary(tmp_path):
+    corpus_path = tmp_path / "corpus.jsonl"
+    corpus_path.write_text(
+        '{"id": 7, "title": "FAISS", "contents": "Dense vector search indexing."}\n',
+        encoding="utf-8",
+    )
+    vocabulary_path = tmp_path / "vocab.json"
+    vocabulary_path.write_text(
+        '{"vocabulary": {"token2idx": {"dense": 2, "vector": 3, "search": 4}}}',
+        encoding="utf-8",
+    )
+
+    examples = generate_intent_examples(
+        corpus_path=corpus_path,
+        vocabulary_path=vocabulary_path,
+    )
+
+    assert len(examples) == 8
+    assert {example["label"] for example in examples} == set(INTENT_LABELS)
+    assert all(example["source_doc_id"] == 7 for example in examples)
+
+
+def test_write_intent_examples_round_trip(tmp_path):
+    output_path = tmp_path / "intent_examples.json"
+    examples = [{"text": "What is FAISS?", "label": "qa"}]
+
+    write_intent_examples(examples, output_path)
+
+    assert '"What is FAISS?"' in output_path.read_text(encoding="utf-8")
+
+
+def test_train_intent_classifier_utility_saves_pipeline(tmp_path):
+    pytest.importorskip("torch")
+
+    examples_path = tmp_path / "intent_examples.json"
+    write_intent_examples(
+        [
+            {"text": "buy phone", "label": "purchase"},
+            {"text": "buy laptop", "label": "purchase"},
+            {"text": "what is faiss", "label": "qa"},
+            {"text": "how does search work", "label": "qa"},
+        ],
+        examples_path,
+    )
+    output_path = tmp_path / "intent.pt"
+
+    result = train_intent_classifier(
+        examples_path=examples_path,
+        output_path=output_path,
+        epochs=1,
+        min_freq=1,
+        vocab_size=128,
+        embedding_dim=16,
+        hidden_dim=32,
+    )
+
+    assert output_path.exists()
+    assert result.num_examples == 4
+    assert result.label_counts == {"purchase": 2, "qa": 2}
+    assert result.pipeline.is_trained is True

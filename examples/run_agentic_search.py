@@ -1131,7 +1131,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--intent_model",
         type=str,
         default=None,
-        help="Path to a pre-trained intent classifier (.pt file from examples.run_train_intent_classifier). "
+        help="Path to a pre-trained intent classifier (.pt file from src.agent_loop.intent_training.train_intent_classifier). "
         "Preferred over --intent_examples — loads instantly with no retraining.",
     )
     parser.add_argument(
@@ -1173,7 +1173,7 @@ async def main() -> None:
     intent_pipeline = None
     intent_prediction = None
     if args.intent_model:
-        # Fast path: load a pre-trained model saved by examples.run_train_intent_classifier
+        # Fast path: load a pre-trained model saved by src.agent_loop.intent_training.train_intent_classifier.
         from src.agent_loop.intent_classifier import IntentPipeline
 
         print(f"Status  : loading intent model from {args.intent_model}")

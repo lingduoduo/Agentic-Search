@@ -89,6 +89,11 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "load_intent_training_data": (".intent_classifier", "load_training_data"),
     "resolve_search_settings": (".intent_classifier", "resolve_search_settings"),
+    "IntentTrainingResult": (".intent_training", "IntentTrainingResult"),
+    "build_examples_for_document": (".intent_training", "build_examples_for_document"),
+    "generate_intent_examples": (".intent_training", "generate_intent_examples"),
+    "train_intent_classifier": (".intent_training", "train_intent_classifier"),
+    "write_intent_examples": (".intent_training", "write_intent_examples"),
 }
 
 
@@ -132,8 +137,13 @@ __all__ = [
     "INTENT_LABELS",
     "IntentPipeline",
     "IntentPrediction",
+    "IntentTrainingResult",
     "IntentionClassificationPipeline",
+    "build_examples_for_document",
+    "generate_intent_examples",
     "load_intent_training_data",
+    "train_intent_classifier",
+    "write_intent_examples",
     "GRPORolloutSample",
     "PromptGroupSamplingConfig",
     "resolve_search_settings",
