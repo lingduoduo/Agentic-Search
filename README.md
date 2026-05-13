@@ -60,7 +60,7 @@ repeating queries, or optimize final answer quality under a search budget.
 | Data shape | Full action traces from `build_search_sft_example()` | Groups of rollouts scored by `SearchRewardFunction` |
 | Debuggability | High: inspect the target trace directly | Medium: inspect rewards, advantages, and trajectory metrics |
 | Breakthrough point | Make a strong base model reliably follow the agent scaffold | Make the agent choose better trajectories than supervised examples cover |
-| Repo path | `examples.run_build_search_sft_example`, `src/agent_loop/sft.py` | `examples.run_grpo_training_pipeline`, `src/agent_loop/grpo.py`, `src/llm_agent/generation.py` |
+| Repo path | `examples.run_search_trace_workflow --sft`, `src/agent_loop/sft.py` | `examples.run_grpo_training_pipeline`, `src/agent_loop/grpo.py`, `src/llm_agent/generation.py` |
 
 As base models become stronger, the bottleneck shifts:
 
@@ -123,6 +123,7 @@ src/
     evaluation.py            # SearchResultEvaluator, SearchEvaluationConfig
     grpo.py                  # Prompt-group rollout sampling + within-group scoring helpers
     intent_classifier.py     # IntentPipeline: train / save / load + resolve_search_settings
+    intent_training.py       # Generate intent examples + train/save classifier utilities
     plain_generation_loop.py # PlainGenerationLoop (registered as "plain_generation")
     reward.py                # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
     search_agent_loop.py     # SearchAgentLoop (registered as "search_agent")
@@ -152,13 +153,10 @@ tests/
   load/
 examples/
   run_agentic_search.py          # CLI + importable entry point for all agent loop flows
-  run_single_turn_agent.py       # Minimal one-shot retrieval-assisted RAG smoke test
   run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
-  run_search_trace_workflow.py   # Deterministic think/search/information trace demo
-  run_build_search_sft_example.py # Build SFT data from a deterministic search trace
+  run_search_trace_workflow.py   # Deterministic trace demo + SFT example builder
   run_grpo_training_pipeline.py  # Model-free reward / GRPO helper smoke test
-  run_generate_intent_examples.py # Offline: generate intent training examples
-  run_train_intent_classifier.py  # Offline: train and save the intent classifier
+  run_intent_training.py     # Generate examples + train classifier CLI wrapper
 ```
 
 ## Requirements
@@ -468,20 +466,8 @@ python3 -m examples.run_agentic_search \
   --generation_timeout_seconds 30
 ```
 
-Then run `SingleTurnAgentLoop` for the smallest retrieval-assisted RAG path.
-Keep the retrieval server running first.
-
-```bash
-python3 -m examples.run_single_turn_agent
-```
-
-The script contains the minimal importable example for wiring
-`SingleTurnAgentLoop`, `SingleTurnAgentLoopConfig`, and `LocalServerManager`.
-Adjust the model, search URL, or token limits directly in
-`examples/run_single_turn_agent.py` when testing variants.
-
-Finally, run `SearchAgentLoop` when you want the project-native search-agent
-trajectory used by the RL/SFT code.
+Then run `SearchAgentLoop` when you want the project-native retrieval-assisted
+trajectory used by the RL/SFT code. Keep the retrieval server running first.
 
 ```bash
 python3 -m examples.run_agentic_search \
@@ -798,7 +784,7 @@ shape without requiring a local LLM or retrieval server.
 Build an SFT training example from the same deterministic search trace:
 
 ```bash
-python3 -m examples.run_build_search_sft_example
+python3 -m examples.run_search_trace_workflow --sft
 ```
 
 ### Output fields (`AgentLoopOutput`)

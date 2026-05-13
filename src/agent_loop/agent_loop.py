@@ -175,6 +175,24 @@ class AgentLoopBase:
             return self.tokenizer.decode(response_ids, skip_special_tokens=True)
         return ""
 
+    async def _generate_text(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        metrics: dict[str, float],
+        metric_name: str,
+        request_id: str,
+        sampling_params: dict[str, Any],
+    ) -> tuple[list[int], list[int], str]:
+        with simple_timer(metric_name, metrics):
+            prompt_ids = await self.build_prompt_ids(messages)
+            response_ids = await self.generate_response_ids(
+                request_id=request_id,
+                prompt_ids=prompt_ids,
+                sampling_params=sampling_params,
+            )
+        return prompt_ids, response_ids, self.decode_response_ids(response_ids)
+
     async def generate_rollout_step(
         self,
         prompt_ids: list[int],

@@ -14,11 +14,12 @@ be tested without loading an LLM or running a retrieval server.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import re
 from typing import Any
 
-from src.agent_loop import SearchResult
+from src.agent_loop import SearchResult, build_search_sft_example
 
 from .run_search_agent_loop import run_search_agent_loop_example
 
@@ -170,10 +171,34 @@ async def run_workflow_demo() -> tuple[Any, str, ScriptedSearchClient]:
     return output, format_search_trace(QUESTION, GROUND_TRUTH, output), search_client
 
 
+async def run_sft_demo():
+    output, _, _ = await run_workflow_demo()
+    return build_search_sft_example(
+        [{"role": "user", "content": QUESTION}],
+        output,
+    )
+
+
 def main() -> None:
-    output, trace, _ = asyncio.run(run_workflow_demo())
-    print(trace)
-    print("\nMetrics:", output.metrics)
+    parser = argparse.ArgumentParser(
+        description="Run the deterministic search trace workflow."
+    )
+    parser.add_argument(
+        "--sft",
+        action="store_true",
+        help="Print the SFT example built from the deterministic trace.",
+    )
+    args = parser.parse_args()
+
+    if args.sft:
+        example = asyncio.run(run_sft_demo())
+        print("Prompt:", example.prompt_messages)
+        print("\nCompletion:")
+        print(example.completion)
+    else:
+        output, trace, _ = asyncio.run(run_workflow_demo())
+        print(trace)
+        print("\nMetrics:", output.metrics)
 
 
 if __name__ == "__main__":

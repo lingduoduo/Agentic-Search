@@ -16,7 +16,6 @@ from .agent_loop import (
     AgentLoopConfig,
     AgentLoopOutput,
     register,
-    simple_timer,
 )
 
 
@@ -36,16 +35,13 @@ class PlainGenerationLoop(AgentLoopBase):
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = {}
         request_id = uuid4().hex
-
-        with simple_timer("generate_sequences", metrics):
-            prompt_ids = await self.build_prompt_ids(messages)
-            response_ids = await self.generate_response_ids(
-                request_id=request_id,
-                prompt_ids=prompt_ids,
-                sampling_params=sampling_params,
-            )
-
-        answer = self.decode_response_ids(response_ids)
+        prompt_ids, response_ids, answer = await self._generate_text(
+            messages,
+            metrics=metrics,
+            metric_name="generate_sequences",
+            request_id=request_id,
+            sampling_params=sampling_params,
+        )
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids,

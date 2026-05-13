@@ -90,6 +90,10 @@ class ToolParser(ABC):
     # Shared helpers
     # ------------------------------------------------------------------
 
+    async def _decode(self, response_ids: list[int]) -> str:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.tokenizer.decode, response_ids)
+
     @staticmethod
     def _normalise(data: dict[str, Any]) -> FunctionCall | None:
         """Convert a parsed dict to a FunctionCall, accepting name/args variants."""
@@ -123,8 +127,7 @@ class HermesToolParser(ToolParser):
     async def extract_tool_calls(
         self, response_ids: list[int]
     ) -> tuple[str, list[FunctionCall]]:
-        loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(None, self.tokenizer.decode, response_ids)
+        text = await self._decode(response_ids)
 
         if self._START not in text or self._END not in text:
             return text, []
@@ -164,8 +167,7 @@ class Llama3ToolParser(ToolParser):
     async def extract_tool_calls(
         self, response_ids: list[int]
     ) -> tuple[str, list[FunctionCall]]:
-        loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(None, self.tokenizer.decode, response_ids)
+        text = await self._decode(response_ids)
 
         # Variant A: <|python_tag|> blocks
         python_blocks = self._PYTHON_TAG_RE.findall(text)
@@ -230,8 +232,7 @@ class JSONToolParser(ToolParser):
     async def extract_tool_calls(
         self, response_ids: list[int]
     ) -> tuple[str, list[FunctionCall]]:
-        loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(None, self.tokenizer.decode, response_ids)
+        text = await self._decode(response_ids)
 
         calls: list[FunctionCall] = []
         consumed_spans: list[tuple[int, int]] = []
