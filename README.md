@@ -62,7 +62,7 @@ repeating queries, or optimize final answer quality under a search budget.
 | Data shape | Full action traces from `build_search_sft_example()` | Groups of rollouts scored by `SearchRewardFunction` |
 | Debuggability | High: inspect the target trace directly | Medium: inspect rewards, advantages, and trajectory metrics |
 | Breakthrough point | Make a strong base model reliably follow the agent scaffold | Make the agent choose better trajectories than supervised examples cover |
-| Repo path | `examples.run_build_search_sft_example`, `src/agent_loop/sft.py` | `examples.run_grpo_training_pipeline`, `src/agent_loop/grpo.py`, `src/llm_agent/generation.py` |
+| Repo path | `examples.run_search_trace_workflow --sft`, `src/agent_loop/sft.py` | `examples.run_grpo_training_pipeline`, `src/agent_loop/grpo.py`, `src/llm_agent/generation.py` |
 
 As base models become stronger, the bottleneck shifts:
 
@@ -156,8 +156,7 @@ tests/
 examples/
   run_agentic_search.py          # CLI + importable entry point for all agent loop flows
   run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
-  run_search_trace_workflow.py   # Deterministic think/search/information trace demo
-  run_build_search_sft_example.py # Build SFT data from a deterministic search trace
+  run_search_trace_workflow.py   # Deterministic trace demo + SFT example builder
   run_grpo_training_pipeline.py  # Model-free reward / GRPO helper smoke test
   run_generate_intent_examples.py # Thin CLI wrapper for src.agent_loop.intent_training
   run_train_intent_classifier.py  # Thin CLI wrapper for src.agent_loop.intent_training
@@ -788,7 +787,7 @@ shape without requiring a local LLM or retrieval server.
 Build an SFT training example from the same deterministic search trace:
 
 ```bash
-python3 -m examples.run_build_search_sft_example
+python3 -m examples.run_search_trace_workflow --sft
 ```
 
 ### Output fields (`AgentLoopOutput`)

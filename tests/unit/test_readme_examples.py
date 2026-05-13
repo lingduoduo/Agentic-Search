@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 
 from examples.run_grpo_training_pipeline import run_demo as run_grpo_demo
-from examples.run_build_search_sft_example import run_demo as run_sft_demo
 from examples.run_search_agent_loop import run_search_agent_loop_example
-from examples.run_search_trace_workflow import run_workflow_demo
+from examples.run_search_trace_workflow import run_sft_demo, run_workflow_demo
 from src.agent_loop import SearchResult
 
 
