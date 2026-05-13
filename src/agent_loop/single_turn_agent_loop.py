@@ -317,15 +317,13 @@ class SingleTurnAgentLoop(AgentLoopBase):
                     prompt_messages, agent_ctx
                 )
 
-        with simple_timer("generate_sequences", metrics):
-            prompt_ids = await self.build_prompt_ids(prompt_messages)
-            response_ids = await self.generate_response_ids(
-                request_id=request_id,
-                prompt_ids=prompt_ids,
-                sampling_params=sampling_params,
-            )
-
-        response_text = self.decode_response_ids(response_ids)
+        prompt_ids, response_ids, response_text = await self._generate_text(
+            prompt_messages,
+            metrics=metrics,
+            metric_name="generate_sequences",
+            request_id=request_id,
+            sampling_params=sampling_params,
+        )
         final_answer = _extract_answer_text(response_text) or response_text
         trajectory = prompt_messages + [{"role": "assistant", "content": response_text}]
 
@@ -353,14 +351,13 @@ class SingleTurnAgentLoop(AgentLoopBase):
         cfg = self.single_turn_config
 
         # Step 1: first generation — model decides to search or answer directly.
-        with simple_timer("generate_sequences", metrics):
-            prompt_ids = await self.build_prompt_ids(prompt_messages)
-            first_ids = await self.generate_response_ids(
-                request_id=request_id,
-                prompt_ids=prompt_ids,
-                sampling_params=sampling_params,
-            )
-        first_text = self.decode_response_ids(first_ids)
+        prompt_ids, first_ids, first_text = await self._generate_text(
+            prompt_messages,
+            metrics=metrics,
+            metric_name="generate_sequences",
+            request_id=request_id,
+            sampling_params=sampling_params,
+        )
         action = _parse_first_action(first_text)
 
         if action and action[0] == "search" and cfg.use_retrieval:
@@ -375,14 +372,13 @@ class SingleTurnAgentLoop(AgentLoopBase):
             obs_messages = self._build_tool_obs_messages(
                 prompt_messages, first_text, agent_ctx
             )
-            with simple_timer("generate_sequences_2", metrics):
-                prompt_ids_2 = await self.build_prompt_ids(obs_messages)
-                final_ids = await self.generate_response_ids(
-                    request_id=request_id,
-                    prompt_ids=prompt_ids_2,
-                    sampling_params=sampling_params,
-                )
-            final_text = self.decode_response_ids(final_ids)
+            _, final_ids, final_text = await self._generate_text(
+                obs_messages,
+                metrics=metrics,
+                metric_name="generate_sequences_2",
+                request_id=request_id,
+                sampling_params=sampling_params,
+            )
             final_answer = _extract_answer_text(final_text) or final_text
             trajectory = obs_messages + [{"role": "assistant", "content": final_text}]
             return self._make_output(

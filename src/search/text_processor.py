@@ -94,13 +94,7 @@ class TextProcessor:
     def preprocess_json(self, json_data: dict[str, Any]) -> list[str]:
         """Extract and clean `rec_texts` from a JSON payload."""
 
-        rec_texts = json_data.get("rec_texts", [])
-        processed_texts: list[str] = []
-        for text in rec_texts:
-            processed = self.preprocess(str(text))
-            if processed:
-                processed_texts.append(processed)
-        return processed_texts
+        return self._extract_text_values(json_data)
 
     def _extract_text_values(
         self,
