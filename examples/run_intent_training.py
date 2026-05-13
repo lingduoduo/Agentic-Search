@@ -1,30 +1,17 @@
-"""Train and save the intent classifier as a standalone offline step.
+"""Generate intent examples and train the intent classifier.
 
 Usage
 -----
-# Step 1 (once): generate training examples from the local corpus
-python3 -m examples.run_generate_intent_examples \
+# Step 1: generate training examples from the local corpus
+python3 -m examples.run_intent_training generate \
     --corpus data/corpus.jsonl \
     --vocabulary data/vocabulary_corpus.json \
     --output data/intent_examples.json
 
-# Step 2 (once): train and save the classifier
-python3 -m examples.run_train_intent_classifier \
+# Step 2: train and save the classifier
+python3 -m examples.run_intent_training train \
     --examples data/intent_examples.json \
     --output models/intent_classifier.pt
-
-# Step 3 (every run): load the saved model — no retraining
-python3 -m examples.run_agentic_search \
-    --mode search \
-    --question "Buy me a noise-cancelling headphone" \
-    --model Qwen/Qwen2.5-1.5B-Instruct \
-    --vllm_url http://localhost:8080 \
-    --search_url http://localhost:8000/retrieve \
-    --intent_model models/intent_classifier.pt
-
-Separating training from inference means the classifier is trained once
-on a curated dataset and reused across many agent runs without the startup
-cost of re-fitting the model on every invocation.
 """
 
 from __future__ import annotations
@@ -33,18 +20,44 @@ import argparse
 import time
 from pathlib import Path
 
-from src.agent_loop.intent_training import train_intent_classifier
+from src.agent_loop.intent_training import (
+    generate_intent_examples,
+    train_intent_classifier,
+    write_intent_examples,
+)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Train and save the intent classifier.",
+def _add_generate_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "generate",
+        help="Generate intent-training examples from a corpus and vocabulary.",
+    )
+    parser.add_argument(
+        "--corpus", default="data/corpus.jsonl", help="Path to corpus JSONL"
+    )
+    parser.add_argument(
+        "--vocabulary",
+        default="data/vocabulary_corpus.json",
+        help="Path to vocabulary metadata JSON",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/intent_examples.sample.json",
+        help="Path to output JSON examples",
+    )
+    parser.set_defaults(func=_run_generate)
+
+
+def _add_train_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "train",
+        help="Train and save the intent classifier.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--examples",
         required=True,
-        help="JSON file of intent-labelled training examples (from run_generate_intent_examples.py)",
+        help="JSON file of intent-labeled training examples.",
     )
     parser.add_argument(
         "--output",
@@ -59,11 +72,22 @@ def main() -> None:
     parser.add_argument("--vocab_size", type=int, default=5000)
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=256)
-    args = parser.parse_args()
+    parser.set_defaults(func=_run_train)
 
-    print(f"Loading training examples from {args.examples} …")
 
-    print(f"Training for {args.epochs} epoch(s) …")
+def _run_generate(args: argparse.Namespace) -> None:
+    examples = generate_intent_examples(
+        corpus_path=Path(args.corpus),
+        vocabulary_path=Path(args.vocabulary),
+    )
+    output_path = Path(args.output)
+    write_intent_examples(examples, output_path)
+    print(f"Wrote {len(examples)} examples to {output_path}")
+
+
+def _run_train(args: argparse.Namespace) -> None:
+    print(f"Loading training examples from {args.examples}")
+    print(f"Training for {args.epochs} epoch(s)")
     t0 = time.perf_counter()
     try:
         result = train_intent_classifier(
@@ -86,14 +110,13 @@ def main() -> None:
             "`python3 -m pip install -r requirements.txt`."
         )
         raise SystemExit(1) from exc
+
     elapsed = time.perf_counter() - t0
     print(f"  {result.num_examples} examples  |  labels: {result.label_counts}")
     print(f"  training complete in {elapsed:.1f}s")
     print(f"  vocabulary size: {len(pipeline._vocab.token2idx)} tokens")
+    print(f"Saved -> {Path(args.output)}")
 
-    print(f"Saved → {Path(args.output)}")
-
-    # Quick smoke test
     samples = [
         ("buy a noise-cancelling headphone", "purchase"),
         ("what is FAISS?", "qa"),
@@ -103,10 +126,22 @@ def main() -> None:
     print("\nSmoke test:")
     for text, expected in samples:
         pred = pipeline.predict_text(text)
-        match = "✓" if pred.intent == expected else "✗"
+        match = "ok" if pred.intent == expected else "mismatch"
         print(
-            f"  {match}  {text!r:45s}  → {pred.intent} ({pred.confidence:.2f})  [expected: {expected}]"
+            f"  {match:8s} {text!r:45s} -> {pred.intent} "
+            f"({pred.confidence:.2f}) [expected: {expected}]"
         )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Generate intent examples or train the intent classifier."
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    _add_generate_parser(subparsers)
+    _add_train_parser(subparsers)
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":

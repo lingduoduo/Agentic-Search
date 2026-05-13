@@ -158,8 +158,7 @@ examples/
   run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
   run_search_trace_workflow.py   # Deterministic trace demo + SFT example builder
   run_grpo_training_pipeline.py  # Model-free reward / GRPO helper smoke test
-  run_generate_intent_examples.py # Thin CLI wrapper for src.agent_loop.intent_training
-  run_train_intent_classifier.py  # Thin CLI wrapper for src.agent_loop.intent_training
+  run_intent_training.py     # Generate examples + train classifier CLI wrapper
 ```
 
 ## Requirements
