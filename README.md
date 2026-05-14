@@ -15,10 +15,10 @@ agentic search:
 
 | Stage | What it does | Main code path |
 |-------|--------------|----------------|
-| Simple search | Retrieve documents from a search or vector endpoint | `src/search/`, `/retrieve` |
+| Simple search | Retrieve documents from a search or vector endpoint | `src/retrieval/`, `src/tools/search.py`, `/retrieve` |
 | RAG | Retrieve evidence at inference time, inject it into the prompt, then answer | `SingleTurnAgentLoop` |
 | Agentic Search | Let the model decide when to search, what to search, when evidence is sufficient, and when to answer | `SearchAgentLoop` |
-| Agentic Search + RL | Train better search behavior from full trajectories, rewards, and GRPO/PPO losses | `SearchRewardFunction`, `sft.py`, `grpo.py`, `src/llm_agent/generation.py` |
+| Agentic Search + RL | Train better search behavior from full trajectories, rewards, and GRPO/PPO losses | `src/training/reward.py`, `src/training/sft.py`, `src/training/grpo.py`, `src/model/generation.py` |
 
 ### RAG and fine-tuning solve different problems here:
 
@@ -29,7 +29,7 @@ agentic search:
 | Update path | Re-index or update the corpus | Regenerate traces, train, evaluate, redeploy |
 | Failure mode | Bad retrieval, missing evidence, weak grounding | Overfitting, stale learned behavior, format drift |
 | Cost profile | More runtime latency from retrieval and longer prompts | More training cost, cheaper repeated inference if behavior improves |
-| Repo path | `src/search/`, `SingleTurnAgentLoop`, `SearchAgentLoop` observations | `sft.py`, `SearchRewardFunction`, `grpo.py`, `src/llm_agent/generation.py` |
+| Repo path | `src/retrieval/`, `src/tools/`, `SingleTurnAgentLoop`, `SearchAgentLoop` observations | `src/training/sft.py`, `SearchRewardFunction`, `src/training/grpo.py`, `src/model/generation.py` |
 
 Use RAG when the model needs facts it should not memorize. Use fine-tuning when
 the model already has enough capability but needs to behave consistently: when
@@ -60,7 +60,7 @@ repeating queries, or optimize final answer quality under a search budget.
 | Data shape | Full action traces from `build_search_sft_example()` | Groups of rollouts scored by `SearchRewardFunction` |
 | Debuggability | High: inspect the target trace directly | Medium: inspect rewards, advantages, and trajectory metrics |
 | Breakthrough point | Make a strong base model reliably follow the agent scaffold | Make the agent choose better trajectories than supervised examples cover |
-| Repo path | `examples.run_search_trace_workflow --sft`, `src/agent_loop/sft.py` | `examples.run_grpo_training_pipeline`, `src/agent_loop/grpo.py`, `src/llm_agent/generation.py` |
+| Repo path | `examples.run_search_trace_workflow --sft`, `src/training/sft.py` | `examples.run_grpo_training_pipeline`, `src/training/grpo.py`, `src/model/generation.py` |
 
 As base models become stronger, the bottleneck shifts:
 
@@ -118,35 +118,54 @@ change the outcome, not when every task uses the heaviest path by default.
 ```text
 src/
   agent_loop/
-    agent_loop.py            # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
-    context.py               # SearchResult, SearchContext, AgentContext
-    evaluation.py            # SearchResultEvaluator, SearchEvaluationConfig
-    grpo.py                  # Prompt-group rollout sampling + within-group scoring helpers
+    ...                      # Backward-compatible imports for agents, tools, training, and retrieval
+  agents/
+    base.py                  # AgentLoopBase, AgentLoopConfig, AgentLoopOutput
+    plain.py                 # PlainGenerationLoop (registered as "plain_generation")
+    search.py                # SearchAgentLoop (registered as "search_agent")
+    single_turn.py           # One-shot retrieval-assisted RAG loop
+    tool_calling.py          # ToolAgentLoop (registered as "tool_agent")
+  llm_agent/
+    ...                      # Backward-compatible imports for model generation helpers
+  model/
+    generation.py            # LLMGenerationManager — rollout, log probs, GRPO loss, async
     intent_classifier.py     # IntentPipeline: train / save / load + resolve_search_settings
     intent_training.py       # Generate intent examples + train/save classifier utilities
-    plain_generation_loop.py # PlainGenerationLoop (registered as "plain_generation")
-    reward.py                # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
-    search_agent_loop.py     # SearchAgentLoop (registered as "search_agent")
-    search_client.py         # async aiohttp client with session reuse for /retrieve and /fetch
-    single_turn_agent_loop.py # One-shot retrieval-assisted RAG loop
-    sft.py                   # Build supervised examples from full search-agent trajectories
-    tool.py                  # Tool, FunctionTool — tool abstraction and JSON schema
-    tool_agent_loop.py       # ToolAgentLoop (registered as "tool_agent")
-    tool_parser.py           # Hermes / Llama3 / JSON tool-call parsers
-  llm_agent/
-    generation.py            # LLMGenerationManager — rollout, log probs, GRPO loss, async
     tensor_helper.py         # TensorConfig, TensorHelper — padding and batch helpers
-  search/
-    search_app.py
-    google_search_server.py
+  retrieval/
+    client.py                # async aiohttp client with session reuse for /retrieve and /fetch
+    context.py               # SearchResult, SearchContext, AgentContext
+    dense_retriever.py       # DenseRetriever (CPU default to avoid VRAM contention)
     index_builder.py
     rerank.py
-    retrieval.py             # DenseRetriever (CPU default to avoid VRAM contention)
-    retrieval_rerank_server.py
-    retrieval_server.py      # FastAPI /retrieve — single-query + batch modes
-    serp_search_server.py
+    servers/
+      app.py                 # Shared FastAPI app factory
+      google.py              # Google Custom Search /retrieve server
+      rerank.py              # Rerank FastAPI server
+      retrieval.py           # Dense retrieval FastAPI server
+      retrieval_rerank.py    # Combined retrieval + rerank FastAPI server
+      serp.py                # SerpAPI /retrieve server
     text_processor.py        # config-driven cleanup / segmentation for structured text
     vocabulary.py
+  search/
+    ...                      # Backward-compatible imports for retrieval modules and servers
+  tools/
+    api.py                   # OpenAPI schema -> ToolAgentLoop API tools
+    base.py                  # Tool, FunctionTool — tool abstraction and JSON schema
+    parsers.py               # Hermes / Llama3 / JSON tool-call parsers
+    search.py                # Search provider router + FunctionTool builder
+  trainer/
+    ...                      # Backward-compatible imports for PPO training helpers
+  training/
+    data.py                  # Prompt datasets, dataloaders, and batch conversion helpers
+    evaluation.py            # SearchResultEvaluator, SearchEvaluationConfig
+    grpo.py                  # Prompt-group rollout sampling + within-group scoring helpers
+    ppo/
+      controller.py
+      core_algos.py
+      plot_rollouts.py
+    reward.py                # SearchRewardFunction, SearchRewardConfig — reward + GRPO advantages
+    sft.py                   # Build supervised examples from full search-agent trajectories
 tests/
   unit/
   regression/
@@ -156,7 +175,7 @@ examples/
   run_search_agent_loop.py       # CLI + importable SearchAgentLoop wiring example
   run_search_trace_workflow.py   # Deterministic trace demo + SFT example builder
   run_grpo_training_pipeline.py  # Model-free reward / GRPO helper smoke test
-  run_intent_training.py     # Generate examples + train classifier CLI wrapper
+  run_intent_training.py         # Generate examples + train classifier CLI wrapper
 ```
 
 ## Requirements
@@ -184,7 +203,13 @@ JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 on
 
 ## PPO / GRPO Training Pipeline
 
-The full RL training loop is implemented in `src/llm_agent/generation.py` and `src/agent_loop/`. The pipeline follows these 10 steps:
+The full RL training loop is implemented across `src/model/generation.py`,
+`src/agents/`, `src/retrieval/`, `src/tools/`, and `src/training/`. The
+legacy `src/llm_agent/`, `src/agent_loop/`, and `src/search/` packages remain
+as compatibility import layers, but new code and docs should prefer the
+current module layout.
+
+The pipeline follows these 10 steps:
 
 ```
 1. run_llm_loop()          → trajectory (RolloutTrajectory + SearchTrajectoryLog)
@@ -215,7 +240,7 @@ is installed, also exercises trajectory packing plus PPO/GRPO policy loss.
 turn counts. The batch stores structured trajectory logs, rollout objects, and
 prompt-aligned token arrays for later reward and loss computation.
 
-Reference code: `src/llm_agent/generation.py`
+Reference code: `src/model/generation.py`
 
 Tests: `tests/unit/test_llm_agent_generation.py`
 
@@ -226,7 +251,7 @@ The retrieval server runs separately from the trainer to avoid VRAM contention.
 
 ```bash
 # Start the retrieval server (CPU, 1 worker)
-python3 -m src.search.retrieval_server \
+python3 -m src.retrieval.servers.retrieval \
   --model_path intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -261,7 +286,7 @@ per rollout.
 
 Runnable reference: `python3 -m examples.run_grpo_training_pipeline`
 
-Source: `src/agent_loop/reward.py`
+Source: `src/training/reward.py`
 
 ### Step 5 — `compute_grpo_advantage`
 
@@ -269,7 +294,7 @@ Group-relative advantages can be raw mean-centered or std-normalized. The
 default training path uses std-normalized advantages for stability; sparse
 outcome-only GRPO is still available through `GRPOAdvantageConfig`.
 
-Source: `src/agent_loop/grpo.py` and `src/llm_agent/generation.py`
+Source: `src/training/grpo.py` and `src/model/generation.py`
 
 ### Step 6 — Save JSONL training data
 
@@ -277,7 +302,7 @@ Each JSONL record contains: `group_id`, `rollout_index`, `reward`, `advantage`,
 `reward_components`, `trajectory` (full `SearchTrajectoryLog.to_dict()`),
 `tokens`, `response_mask`, `old_log_probs` (all prompt+response aligned).
 
-Writer: `save_training_batch_jsonl()` in `src/llm_agent/generation.py`
+Writer: `save_training_batch_jsonl()` in `src/model/generation.py`
 
 ### Step 7 — Offline `compute_log_probs`
 
@@ -406,7 +431,7 @@ conda install -c conda-forge faiss-cpu
 ```
 
 ```bash
-python3 -m src.search.retrieval_server \
+python3 -m src.retrieval.servers.retrieval \
   --model_path BAAI/bge-base-en-v1.5 \
   --index_path indexes/bge_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -583,7 +608,7 @@ normalization.
 The retrieval server defaults to `device="cpu"` so it does not compete with the trainer for GPU memory.
 
 ```bash
-python3 -m src.search.retrieval_server \
+python3 -m src.retrieval.servers.retrieval \
   --model_path intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -608,14 +633,14 @@ Both request shapes are supported; the server normalises responses automatically
 
 ```bash
 # Dense (E5 / BGE)
-python3 -m src.search.index_builder \
+python3 -m src.retrieval.index_builder \
   --retrieval_method e5 \
   --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl \
   --save_dir indexes/
 
 # BM25 (requires Java)
-python3 -m src.search.index_builder \
+python3 -m src.retrieval.index_builder \
   --retrieval_method bm25 \
   --corpus_path data/corpus.jsonl \
   --save_dir indexes/
@@ -624,7 +649,7 @@ python3 -m src.search.index_builder \
 ### Retrieval + Rerank Server
 
 ```bash
-python3 -m src.search.retrieval_rerank_server \
+python3 -m src.retrieval.servers.retrieval_rerank \
   --retriever_model intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -637,18 +662,31 @@ python3 -m src.search.retrieval_rerank_server \
 ## Testing
 
 ```bash
-pip install pytest httpx
+pip install -r requirements.txt pytest httpx
 
 # All tests
-python3 -m pytest
+python3 -m pytest -v
 
 # Unit tests only (no server, no model weights required)
 python3 -m pytest tests/unit/ -v
 
-# By module
-python3 -m pytest tests/unit/test_llm_agent_generation.py -v
-python3 -m pytest tests/unit/test_reward.py -v
-python3 -m pytest tests/unit/test_grpo.py -v
+# Agent loops and tool calling
+python3 -m pytest tests/unit/test_agent_loop.py \
+  tests/unit/test_api_tools.py tests/unit/test_search_tools.py -v
+
+# Retrieval servers, clients, indexing, rerank, and text processing
+python3 -m pytest tests/unit/test_search_app.py tests/unit/test_retrieval_server.py \
+  tests/unit/test_search_client.py tests/unit/test_index_builder.py \
+  tests/unit/test_rerank.py tests/unit/test_vocabulary.py -v
+
+# Runnable examples and CLI helpers
+python3 -m pytest tests/unit/test_readme_examples.py \
+  tests/unit/test_run_agentic_search.py tests/unit/test_intent_classifier.py -v
+
+# Training, SFT, rewards, and GRPO/PPO helpers
+python3 -m pytest tests/unit/test_data.py tests/unit/test_sft.py \
+  tests/unit/test_reward.py tests/unit/test_grpo.py \
+  tests/unit/test_llm_agent_generation.py tests/unit/test_llm_agent_tensor_helper.py -v
 ```
 
 ### PPO / GRPO pipeline tests
@@ -705,6 +743,9 @@ python3 -m pytest tests/unit/test_llm_agent_generation.py \
 | `test_reward.py` | `normalize_answer_text`; `simple_sparse_correctness_reward`; `compute_batch_sparse_token_rewards`; `SearchRewardConfig` presets (`sparse_final_only`, `simple_sparse_with_search_penalty`, `second_pass`); `SearchRewardFunction.compute` full components; unsupported-claim penalty; `assign_grpo_outcome_token_advantages`; batch judge dispatch |
 | `test_grpo.py` | `build_grpo_sampling_params` temperature diversification; `score_prompt_group` reward + advantage; `score_prompt_batch` batching; `compute_batch_advantages` within-group normalisation, cross-group independence, single-sample groups |
 | `test_agent_loop.py` | `SearchAgentLoop` multi-turn; plan, parallel search, subquestions, fetch, gating; repeated-query dedup; search-round limit; cache and metrics |
+| `test_api_tools.py` | OpenAPI schema parsing; API provider registry; derived tool schemas; API invocation request routing |
+| `test_search_tools.py` | Search provider routing; tool-string formatting; detail fetch; `build_search_tool` |
+| `test_data.py` | Prompt dataset normalization, dataloader padding, prompt batch conversion |
 | `test_retrieval_server.py` | Single-query + batch-query request shapes; `--device` / `--workers` CLI flags |
 | `test_sft.py` | Full action-trace SFT example construction |
 | `test_search_client.py` | Session reuse; `results` / `result` response shape normalisation |
