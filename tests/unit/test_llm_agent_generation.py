@@ -2995,7 +2995,7 @@ def test_build_rollout_outputs_propagates_group_rollout_metadata():
 
 def _make_grouped_rollout(group_id, rollout_index, answer, temperature, seed):
     """Helper that builds a minimal GroupedRolloutBatch for testing."""
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
@@ -3072,7 +3072,7 @@ def _make_training_grouped_rollout(
     temperature=0.8,
     seed=0,
 ):
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
@@ -3839,7 +3839,7 @@ def test_grpo_rollout_safety_config_defaults():
 
 
 def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3854,7 +3854,7 @@ def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
 
 
 def test_apply_rollout_safety_penalties_invalid_action_deducted():
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3874,7 +3874,7 @@ def test_apply_rollout_safety_penalties_invalid_action_deducted():
 
 
 def test_apply_rollout_safety_penalties_repeated_query_deducted():
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3894,7 +3894,7 @@ def test_apply_rollout_safety_penalties_repeated_query_deducted():
 
 
 def test_apply_rollout_safety_penalties_excess_search_deducted():
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3913,7 +3913,7 @@ def test_apply_rollout_safety_penalties_excess_search_deducted():
 
 
 def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3933,7 +3933,7 @@ def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
 
 
 def test_apply_rollout_safety_penalties_all_violations_combined():
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3974,7 +3974,7 @@ def _make_scored_rollout_with_steps(
     step_tags=None,
 ):
     """Helper: builds ScoredGroupedRollout with controllable steps and metrics."""
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
     from src.agent_loop.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,

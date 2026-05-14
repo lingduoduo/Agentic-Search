@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from src.agent_loop.agent_loop import AgentLoopOutput
+    from src.agent_loop import AgentLoopOutput
 
 import torch
 
@@ -688,8 +688,8 @@ def score_group_rollout(
         advantage_config: Optional :class:`GRPOAdvantageConfig`.
         batch_judge_fn:   Optional batch judge for LLM-based scoring.
     """
-    from src.agent_loop.grpo import GRPORolloutSample, score_prompt_group
-    from src.agent_loop.reward import SearchRewardFunction
+    from src.training.grpo import GRPORolloutSample, score_prompt_group
+    from src.training.reward import SearchRewardFunction
 
     if not grouped_rollouts:
         return []
@@ -1149,7 +1149,7 @@ async def async_run_prompt_rollout_group(
     import asyncio
     import copy
 
-    from src.agent_loop.grpo import build_grpo_sampling_params
+    from src.training.grpo import build_grpo_sampling_params
 
     n_prompts = len(prompt_batches)
     if n_prompts == 0:
@@ -1257,7 +1257,7 @@ async def async_run_grpo_training_step(
 
 def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
     """Slice one prompt out of a PromptBatch, preserving batch structure."""
-    from src.agent_loop.data import PromptBatch
+    from src.training.data import PromptBatch
 
     return PromptBatch(
         input_ids=prompt_batch.input_ids[index : index + 1].clone(),
@@ -3210,7 +3210,7 @@ class LLMGenerationManager:
         generates its own search / reasoning / stopping / answer trajectory
         inside the loop.
         """
-        from src.agent_loop.data import prompt_batch_to_search_batch
+        from src.training.data import prompt_batch_to_search_batch
 
         gen_batch = prompt_batch_to_search_batch(prompt_batch)
         return self.run_llm_loop(
@@ -3254,7 +3254,7 @@ class LLMGenerationManager:
         metadata on the returned rollout batch so custom backends can consume
         them if needed.
         """
-        from src.agent_loop.grpo import build_grpo_sampling_params
+        from src.training.grpo import build_grpo_sampling_params
 
         if num_rollouts <= 0:
             raise ValueError("num_rollouts must be positive.")
@@ -3324,7 +3324,7 @@ class LLMGenerationManager:
             current_step:  Training step for curriculum scheduling.
             total_steps:   Total training steps for curriculum scheduling.
         """
-        from src.agent_loop.data import prompt_batch_to_search_batch
+        from src.training.data import prompt_batch_to_search_batch
 
         old_temperature = float(self.config.temperature)
         try:
@@ -3612,7 +3612,7 @@ class LLMGenerationManager:
             search_budget_exhausted_without_answer — 1.0 if timed out without answering
             subquestion_coverage_ratio            — 1.0 (not tracked in training loop)
         """
-        from src.agent_loop.agent_loop import AgentLoopOutput
+        from src.agent_loop import AgentLoopOutput
 
         pad_id: int = getattr(self.tokenizer, "pad_token_id", 0) or 0
         trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(

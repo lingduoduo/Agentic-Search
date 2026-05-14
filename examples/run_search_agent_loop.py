@@ -16,7 +16,7 @@ from src.agent_loop import (
     SearchAgentLoopConfig,
     SearchEvaluationConfig,
 )
-from src.agent_loop.search_client import aiohttp
+from src.retrieval.client import aiohttp
 
 
 async def run_search_agent_loop_example(

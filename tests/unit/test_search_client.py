@@ -1,10 +1,10 @@
-"""Unit tests for src.agent_loop.search_client."""
+"""Unit tests for src.retrieval.client."""
 
 from __future__ import annotations
 
 import asyncio
 
-from src.agent_loop.search_client import SearchClient, SearchClientConfig
+from src.agent_loop import SearchClient, SearchClientConfig
 
 
 class _FakeResponse:
@@ -51,7 +51,7 @@ def test_search_client_reuses_session_across_requests(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.agent_loop.search_client.aiohttp.ClientSession",
+        "src.retrieval.client.aiohttp.ClientSession",
         _session_factory,
     )
 

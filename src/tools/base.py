@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 
-@dataclass
+@dataclass(slots=True)
 class ToolSchema:
     """JSON Schema description of one generic function-calling tool."""
 
@@ -89,6 +89,7 @@ class FunctionTool(Tool):
         description: str = "",
         parameters: dict[str, Any] | None = None,
     ) -> None:
+        super().__init__()
         self._fn = fn
         self._name = name or fn.__name__
         self._schema = ToolSchema(

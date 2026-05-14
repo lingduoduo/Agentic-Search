@@ -2,14 +2,12 @@
 
 import pytest
 
-from src.agent_loop.intent_classifier import (
+from src.agent_loop import (
     INTENT_LABELS,
     IntentPipeline,
     IntentPrediction,
     IntentionClassificationPipeline,
     resolve_search_settings,
-)
-from src.agent_loop.intent_training import (
     generate_intent_examples,
     train_intent_classifier,
     write_intent_examples,

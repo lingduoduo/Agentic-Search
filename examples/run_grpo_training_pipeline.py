@@ -15,7 +15,7 @@ from src.agent_loop import (
     SearchRewardConfig,
     SearchRewardFunction,
 )
-from src.agent_loop.reward import simple_sparse_correctness_reward
+from src.agent_loop import simple_sparse_correctness_reward
 
 
 GROUND_TRUTH = "John William Henry II"
