@@ -1324,7 +1324,7 @@ def test_kl_controllers_update_expected_values():
 
 
 def test_local_grpo_controller_assigns_group_advantages():
-    from src.trainer.ppo import LocalGRPOController, RolloutResult
+    from src.agent_loop import LocalGRPOController, RolloutResult
 
     group = [
         RolloutResult(prompt_id=0, rollout_id=0, trajectory=None, reward=1.0),

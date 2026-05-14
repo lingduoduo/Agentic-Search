@@ -161,9 +161,9 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "save_training_batch_jsonl": (".generation", "save_training_batch_jsonl"),
     "score_group_rollout": (".generation", "score_group_rollout"),
     "trajectory_log_prob_pack": (".generation", "trajectory_log_prob_pack"),
-    # trainer.ppo.controller — also torch-heavy.
-    "LocalGRPOController": ("..trainer.ppo.controller", "LocalGRPOController"),
-    "RolloutResult": ("..trainer.ppo.controller", "RolloutResult"),
+    # training.ppo.controller — also torch-heavy.
+    "LocalGRPOController": ("..training.ppo.controller", "LocalGRPOController"),
+    "RolloutResult": ("..training.ppo.controller", "RolloutResult"),
     # model.tensor_helper
     "TensorConfig": (".tensor_helper", "TensorConfig"),
     "TensorHelper": (".tensor_helper", "TensorHelper"),
