@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.agent_loop import (
+from src import (
     PromptOnlyDataset,
     build_prompt_dataloader,
     build_prompt_messages,

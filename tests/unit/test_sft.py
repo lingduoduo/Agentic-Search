@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 
-from src.agent_loop import (
+from src import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
     SearchEvaluationConfig,
     build_search_sft_example,
 )
-from src.agent_loop import SearchResult
+from src import SearchResult
 
 
 class DummyTokenizer:
@@ -137,7 +137,7 @@ def test_build_search_sft_example_can_include_environment_messages():
         {"role": "user", "content": "<information>Evidence</information>"},
         {"role": "assistant", "content": "<answer>Done</answer>"},
     ]
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
 
     output = AgentLoopOutput(
         prompt_ids=[],

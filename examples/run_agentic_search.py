@@ -766,7 +766,7 @@ async def run_single_turn(
     search_url: str = "http://localhost:8000/retrieve",
     topk: int = 5,
 ) -> None:
-    from src.agent_loop import PlainGenerationLoop, PlainGenerationLoopConfig
+    from src import PlainGenerationLoop, PlainGenerationLoopConfig
 
     del search_url, topk
 
@@ -820,7 +820,7 @@ async def run_search_agent(
             max_turns=8,
         )
     """
-    from src.agent_loop import (
+    from src import (
         SearchAgentLoop,
         SearchAgentLoopConfig,
         SearchEvaluationConfig,
@@ -831,7 +831,7 @@ async def run_search_agent(
     if intent_pipeline is not None or intent_prediction is not None:
         if intent_prediction is None:
             intent_prediction = intent_pipeline.predict_text(question)
-        from src.agent_loop.intent_classifier import resolve_search_settings
+        from src.model.intent_classifier import resolve_search_settings
 
         (
             resolved_topk,
@@ -902,7 +902,7 @@ async def run_tool_agent(
 
     Can be called directly as a library function or via the CLI.
     """
-    from src.agent_loop import (
+    from src import (
         FunctionTool,
         ToolAgentLoop,
         ToolAgentLoopConfig,
@@ -1131,7 +1131,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--intent_model",
         type=str,
         default=None,
-        help="Path to a pre-trained intent classifier (.pt file from src.agent_loop.intent_training.train_intent_classifier). "
+        help="Path to a pre-trained intent classifier (.pt file from src.model.intent_training.train_intent_classifier). "
         "Preferred over --intent_examples — loads instantly with no retraining.",
     )
     parser.add_argument(
@@ -1173,8 +1173,8 @@ async def main() -> None:
     intent_pipeline = None
     intent_prediction = None
     if args.intent_model:
-        # Fast path: load a pre-trained model saved by src.agent_loop.intent_training.train_intent_classifier.
-        from src.agent_loop.intent_classifier import IntentPipeline
+        # Fast path: load a pre-trained model saved by src.model.intent_training.train_intent_classifier.
+        from src.model.intent_classifier import IntentPipeline
 
         print(f"Status  : loading intent model from {args.intent_model}")
         intent_pipeline = IntentPipeline.load(args.intent_model)
@@ -1183,7 +1183,7 @@ async def main() -> None:
         )
     elif args.intent_examples:
         # Slow path: train from scratch on the fly (use --intent_model for production)
-        from src.agent_loop.intent_classifier import IntentPipeline, load_training_data
+        from src.model.intent_classifier import IntentPipeline, load_training_data
 
         print(f"Status  : training intent classifier from {args.intent_examples}")
         training_data = load_training_data(args.intent_examples)

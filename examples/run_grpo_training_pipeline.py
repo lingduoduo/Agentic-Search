@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.agent_loop import (
+from src import (
     AgentLoopOutput,
     SearchRewardConfig,
     SearchRewardFunction,
 )
-from src.agent_loop import simple_sparse_correctness_reward
+from src import simple_sparse_correctness_reward
 
 
 GROUND_TRUTH = "John William Henry II"
@@ -67,7 +67,7 @@ def _score_with_optional_grpo_helpers(
     reward_fn: SearchRewardFunction,
 ) -> tuple[list[float], list[float], list[dict[str, float]], str]:
     try:
-        from src.agent_loop import (
+        from src import (
             GRPOAdvantageConfig,
             GRPORolloutSample,
             score_prompt_group,
@@ -112,7 +112,7 @@ def _score_with_optional_grpo_helpers(
 
 def _optional_policy_loss() -> dict[str, Any]:
     try:
-        from src.agent_loop import (
+        from src import (
             compute_trajectory_policy_loss,
             trajectory_log_prob_pack,
         )

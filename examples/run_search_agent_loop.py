@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from src.agent_loop import (
+from src import (
     SearchResult,
     SearchAgentLoop,
     SearchAgentLoopConfig,

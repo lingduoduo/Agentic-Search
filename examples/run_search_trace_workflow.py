@@ -19,7 +19,7 @@ import asyncio
 import re
 from typing import Any
 
-from src.agent_loop import SearchResult, build_search_sft_example
+from src import SearchResult, build_search_sft_example
 
 from .run_search_agent_loop import run_search_agent_loop_example
 

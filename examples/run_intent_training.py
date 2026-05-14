@@ -20,7 +20,7 @@ import argparse
 import time
 from pathlib import Path
 
-from src.agent_loop.intent_training import (
+from src.model.intent_training import (
     generate_intent_examples,
     train_intent_classifier,
     write_intent_examples,

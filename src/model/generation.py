@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
 
 import torch
 
@@ -3612,7 +3612,7 @@ class LLMGenerationManager:
             search_budget_exhausted_without_answer — 1.0 if timed out without answering
             subquestion_coverage_ratio            — 1.0 (not tracked in training loop)
         """
-        from src.agent_loop import AgentLoopOutput
+        from src import AgentLoopOutput
 
         pad_id: int = getattr(self.tokenizer, "pad_token_id", 0) or 0
         trajectories: list[RolloutTrajectory] = batch.non_tensor_batch.get(
