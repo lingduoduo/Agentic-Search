@@ -106,10 +106,9 @@ class ToolAgentLoop(AgentLoopBase):
             loop=loop,
         )
         self.tool_config = cfg
-        self.tools: dict[str, Tool] = {t.name: t for t in (tools or [])}
-        self.tool_schemas: list[dict[str, Any]] = [
-            t.schema.to_dict() for t in (tools or [])
-        ]
+        _tools = tools or []
+        self.tools: dict[str, Tool] = {t.name: t for t in _tools}
+        self.tool_schemas: list[dict[str, Any]] = [t.schema.to_dict() for t in _tools]
         self.tool_parser: ToolParser = ToolParser.get_tool_parser(
             cfg.tool_parser_format, tokenizer
         )
@@ -205,7 +204,7 @@ class ToolAgentLoop(AgentLoopBase):
                     request_id=f"{request_id}_{assistant_turns}",
                 )
 
-            prompt_ids = list(prompt_ids) + list(response_ids)
+            prompt_ids = prompt_ids + response_ids
             response_mask.extend([1] * len(response_ids))
             assistant_turns += 1
 
@@ -243,8 +242,8 @@ class ToolAgentLoop(AgentLoopBase):
             # ── re-tokenise tool responses and append ─────────────────────
             tool_response_ids: list[int] = await event_loop.run_in_executor(
                 None,
-                lambda resp=list(tool_responses): self.tokenizer.apply_chat_template(
-                    resp, add_generation_prompt=True, tokenize=True
+                lambda: self.tokenizer.apply_chat_template(
+                    list(tool_responses), add_generation_prompt=True, tokenize=True
                 ),
             )
             # Strip the template prefix to avoid re-including the system prompt tokens.
@@ -253,13 +252,14 @@ class ToolAgentLoop(AgentLoopBase):
             if len(response_mask) + len(tool_response_ids) >= self.response_length:
                 break
 
-            prompt_ids = list(prompt_ids) + list(tool_response_ids)
+            prompt_ids = prompt_ids + tool_response_ids
             response_mask.extend([0] * len(tool_response_ids))
             user_turns += 1
 
         # Split accumulated prompt_ids back into prompt / response portions.
-        final_response_ids = prompt_ids[-len(response_mask) :]
-        final_prompt_ids = prompt_ids[: len(prompt_ids) - len(response_mask)]
+        n = len(prompt_ids) - len(response_mask)
+        final_prompt_ids = prompt_ids[:n]
+        final_response_ids = prompt_ids[n:]
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
