@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.agent_loop import (
+from src import (
     INTENT_LABELS,
     IntentPipeline,
     IntentPrediction,

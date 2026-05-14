@@ -218,7 +218,7 @@ def prompt_batch_to_search_batch(
     Intermediate reasoning or tool traces are intentionally absent.
     """
 
-    from src.agent_loop import SearchBatch
+    from src import SearchBatch
 
     search_batch = SearchBatch.from_dict(
         {

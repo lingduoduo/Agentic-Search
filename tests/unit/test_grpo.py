@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from src.agent_loop import (
+from src import (
     AgentLoopBase,
     AgentLoopOutput,
     GRPOAdvantageConfig,
@@ -362,7 +362,7 @@ def test_grpo_advantage_config_std_normalized_preset():
 
 def test_score_prompt_group_batch_judge_fn_called_once_not_per_rollout():
     """With batch_judge_fn, the judge is called once per group, not once per rollout."""
-    from src.agent_loop import score_prompt_group
+    from src import score_prompt_group
 
     call_count = {"n": 0}
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from src.agent_loop import SearchClient, SearchClientConfig
+from src import SearchClient, SearchClientConfig
 
 
 class _FakeResponse:

@@ -15,8 +15,8 @@ Supported tool-call formats are controlled by ``ToolAgentLoopConfig.tool_parser_
 
 Usage::
 
-    from src.agent_loop import ToolAgentLoop, ToolAgentLoopConfig
-    from src.agent_loop import FunctionTool
+    from src import ToolAgentLoop, ToolAgentLoopConfig
+    from src import FunctionTool
 
     @FunctionTool.from_fn(description="Search the web", parameters={...})
     async def search(query: str) -> str:

@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.agent_loop import build_prompt_dataloader  # noqa: E402
+from src import build_prompt_dataloader  # noqa: E402
 from src.model.generation import (  # noqa: E402
     AgentLoopState,
     AdaptiveKLController,
@@ -1324,7 +1324,7 @@ def test_kl_controllers_update_expected_values():
 
 
 def test_local_grpo_controller_assigns_group_advantages():
-    from src.agent_loop import LocalGRPOController, RolloutResult
+    from src import LocalGRPOController, RolloutResult
 
     group = [
         RolloutResult(prompt_id=0, rollout_id=0, trajectory=None, reward=1.0),
@@ -2995,7 +2995,7 @@ def test_build_rollout_outputs_propagates_group_rollout_metadata():
 
 def _make_grouped_rollout(group_id, rollout_index, answer, temperature, seed):
     """Helper that builds a minimal GroupedRolloutBatch for testing."""
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
@@ -3072,7 +3072,7 @@ def _make_training_grouped_rollout(
     temperature=0.8,
     seed=0,
 ):
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
@@ -3174,7 +3174,7 @@ def _make_training_grouped_rollout(
 
 
 def test_score_group_rollout_assigns_reward_and_advantage_per_rollout():
-    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src import SearchRewardConfig, SearchRewardFunction
     from src.model.generation import score_group_rollout
 
     grouped = [
@@ -3405,7 +3405,7 @@ def test_collate_scored_rollouts_for_training_builds_sparse_advantages():
 
 
 def test_run_grpo_training_step_stitches_rollout_reward_advantage_and_loss():
-    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src import SearchRewardConfig, SearchRewardFunction
 
     tokenizer = DummyTokenizer()
     actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)
@@ -3488,7 +3488,7 @@ def test_run_grpo_training_step_stitches_rollout_reward_advantage_and_loss():
 
 
 def test_run_grpo_training_step_applies_safety_penalties_before_advantage():
-    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src import SearchRewardConfig, SearchRewardFunction
     from src.model.generation import GRPORolloutSafetyConfig
 
     tokenizer = DummyTokenizer()
@@ -3839,7 +3839,7 @@ def test_grpo_rollout_safety_config_defaults():
 
 
 def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3854,7 +3854,7 @@ def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
 
 
 def test_apply_rollout_safety_penalties_invalid_action_deducted():
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3874,7 +3874,7 @@ def test_apply_rollout_safety_penalties_invalid_action_deducted():
 
 
 def test_apply_rollout_safety_penalties_repeated_query_deducted():
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3894,7 +3894,7 @@ def test_apply_rollout_safety_penalties_repeated_query_deducted():
 
 
 def test_apply_rollout_safety_penalties_excess_search_deducted():
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3913,7 +3913,7 @@ def test_apply_rollout_safety_penalties_excess_search_deducted():
 
 
 def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3933,7 +3933,7 @@ def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
 
 
 def test_apply_rollout_safety_penalties_all_violations_combined():
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
@@ -3974,7 +3974,7 @@ def _make_scored_rollout_with_steps(
     step_tags=None,
 ):
     """Helper: builds ScoredGroupedRollout with controllable steps and metrics."""
-    from src.agent_loop import AgentLoopOutput
+    from src import AgentLoopOutput
     from src.model.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
@@ -4537,7 +4537,7 @@ def test_async_run_prompt_rollout_group_results_sorted_by_rollout_index():
 
 def test_async_run_grpo_training_step_parallelizes_rollouts_then_updates_once():
     import asyncio
-    from src.agent_loop import SearchRewardConfig, SearchRewardFunction
+    from src import SearchRewardConfig, SearchRewardFunction
     from src.model.generation import async_run_grpo_training_step
 
     tokenizer = DummyTokenizer()

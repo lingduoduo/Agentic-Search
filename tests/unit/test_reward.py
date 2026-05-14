@@ -6,14 +6,14 @@ import asyncio
 
 import pytest
 
-from src.agent_loop import (
+from src import (
     AgentLoopOutput,
     SearchAgentLoop,
     SearchAgentLoopConfig,
     SearchRewardConfig,
     SearchRewardFunction,
 )
-from src.agent_loop import (
+from src import (
     AgentContext,
     SearchResult,
     normalize_answer_text,

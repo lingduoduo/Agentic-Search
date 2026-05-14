@@ -82,7 +82,7 @@ class LocalGRPOController:
         safety_config: Any,
     ) -> tuple[Any, Any, bool]:
         """Return (advantage_config, safety_config, normalize_advantages)."""
-        from src.agent_loop import GRPOAdvantageConfig
+        from src import GRPOAdvantageConfig
         from src.model.generation import GRPORolloutSafetyConfig
 
         resolved_adv = advantage_config or GRPOAdvantageConfig(

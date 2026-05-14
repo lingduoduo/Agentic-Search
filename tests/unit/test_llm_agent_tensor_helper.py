@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.agent_loop import TensorConfig, TensorHelper  # noqa: E402
+from src import TensorConfig, TensorHelper  # noqa: E402
 
 
 def _helper() -> TensorHelper:
