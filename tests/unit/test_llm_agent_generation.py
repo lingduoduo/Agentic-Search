@@ -1,11 +1,11 @@
-"""Unit tests for src.agent_loop.generation."""
+"""Unit tests for src.model.generation."""
 
 import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
 from src.agent_loop import build_prompt_dataloader  # noqa: E402
-from src.agent_loop.generation import (  # noqa: E402
+from src.model.generation import (  # noqa: E402
     AgentLoopState,
     AdaptiveKLController,
     FixedKLController,
@@ -214,7 +214,7 @@ def test_execute_predictions_rejects_misaligned_search_results():
 
 
 def test_build_react_observation_wraps_search_result_in_information_tags():
-    from src.agent_loop.generation import PolicyAction, build_react_observation
+    from src.model.generation import PolicyAction, build_react_observation
 
     action = PolicyAction(tag="search", content="2024 physics nobel prize", raw_text="")
     obs = build_react_observation(
@@ -227,14 +227,14 @@ def test_build_react_observation_wraps_search_result_in_information_tags():
 
 
 def test_build_react_observation_returns_empty_for_answer():
-    from src.agent_loop.generation import PolicyAction, build_react_observation
+    from src.model.generation import PolicyAction, build_react_observation
 
     action = PolicyAction(tag="answer", content="Watson and Watt", raw_text="")
     assert build_react_observation(action) == ""
 
 
 def test_build_react_observation_returns_think_feedback():
-    from src.agent_loop.generation import PolicyAction, build_react_observation
+    from src.model.generation import PolicyAction, build_react_observation
 
     action = PolicyAction(tag="think", content="outline", raw_text="")
     obs = build_react_observation(action)
@@ -372,7 +372,7 @@ def test_build_fetch_tool_calls_splits_urls_from_model_output():
 
 
 def test_search_returns_fallback_for_unknown_mode():
-    from src.agent_loop.generation import SearchToolCall
+    from src.model.generation import SearchToolCall
 
     manager = _manager()
     tc = SearchToolCall(
@@ -384,7 +384,7 @@ def test_search_returns_fallback_for_unknown_mode():
 
 
 def test_parse_api_item_supports_nested_document_shape():
-    from src.agent_loop.generation import _parse_api_item
+    from src.model.generation import _parse_api_item
 
     doc = _parse_api_item(
         {"document": {"title": "T", "contents": '"T"\nBody text', "url": "https://x"}}
@@ -395,7 +395,7 @@ def test_parse_api_item_supports_nested_document_shape():
 
 
 def test_parse_api_item_supports_flat_snippet_shape():
-    from src.agent_loop.generation import _parse_api_item
+    from src.model.generation import _parse_api_item
 
     doc = _parse_api_item(
         {
@@ -410,7 +410,7 @@ def test_parse_api_item_supports_flat_snippet_shape():
 
 
 def test_documents_from_retrieve_payload_supports_standard_post_retrieve_shape():
-    from src.agent_loop.generation import _documents_from_retrieve_payload
+    from src.model.generation import _documents_from_retrieve_payload
 
     docs = _documents_from_retrieve_payload(
         {
@@ -437,7 +437,7 @@ def test_documents_from_retrieve_payload_supports_standard_post_retrieve_shape()
 
 
 def test_documents_from_retrieve_payload_supports_direct_row_list():
-    from src.agent_loop.generation import _documents_from_retrieve_payload
+    from src.model.generation import _documents_from_retrieve_payload
 
     docs = _documents_from_retrieve_payload(
         [
@@ -481,7 +481,7 @@ def test_passages2string_formats_structured_retrieval_results():
 
 
 def test_documents_per_query_from_payload_parses_multi_query_response():
-    from src.agent_loop.generation import _documents_per_query_from_payload
+    from src.model.generation import _documents_per_query_from_payload
 
     payload = {
         "result": [
@@ -496,7 +496,7 @@ def test_documents_per_query_from_payload_parses_multi_query_response():
 
 
 def test_documents_per_query_from_payload_pads_missing_queries():
-    from src.agent_loop.generation import _documents_per_query_from_payload
+    from src.model.generation import _documents_per_query_from_payload
 
     payload = {"result": [[{"document": {"title": "A", "contents": ""}, "score": 0.9}]]}
     per_query = _documents_per_query_from_payload(payload, n_queries=3)
@@ -574,7 +574,7 @@ def test_batch_search_uses_parallel_threads_for_non_endpoint_modes():
 
 
 def test_safe_truncate_observation_preserves_close_tag_on_long_information_block():
-    from src.agent_loop.generation import LLMGenerationManager
+    from src.model.generation import LLMGenerationManager
 
     long_content = "word " * 200  # 1000 chars
     obs = f"\n\n<information>{long_content}</information>\n\n"
@@ -587,14 +587,14 @@ def test_safe_truncate_observation_preserves_close_tag_on_long_information_block
 
 
 def test_safe_truncate_observation_does_not_modify_short_observations():
-    from src.agent_loop.generation import LLMGenerationManager
+    from src.model.generation import LLMGenerationManager
 
     obs = "\n\n<information>short result</information>\n\n"
     assert LLMGenerationManager._safe_truncate_observation(obs, max_chars=500) == obs
 
 
 def test_safe_truncate_observation_hard_cuts_unknown_format():
-    from src.agent_loop.generation import LLMGenerationManager
+    from src.model.generation import LLMGenerationManager
 
     obs = "plain text that is very long " * 20
     truncated = LLMGenerationManager._safe_truncate_observation(obs, max_chars=50)
@@ -853,7 +853,7 @@ def test_old_log_probs_aligned_with_tokens_and_response_mask():
 
 
 def test_trajectory_log_prob_pack_returns_aligned_arrays():
-    from src.agent_loop.generation import trajectory_log_prob_pack
+    from src.model.generation import trajectory_log_prob_pack
 
     traj = RolloutTrajectory(
         batch_index=0,
@@ -887,7 +887,7 @@ def test_trajectory_log_prob_pack_returns_aligned_arrays():
 
 
 def test_trajectory_log_prob_pack_falls_back_to_zeros_when_log_probs_none():
-    from src.agent_loop.generation import trajectory_log_prob_pack
+    from src.model.generation import trajectory_log_prob_pack
 
     traj = RolloutTrajectory(
         batch_index=0,
@@ -916,7 +916,7 @@ def test_trajectory_log_prob_pack_falls_back_to_zeros_when_log_probs_none():
 
 def test_compute_trajectory_policy_loss_matches_grpo_formula():
     """ratio=exp(new-old), loss=-mean(min(r*A, clip(r)*A)*mask)."""
-    from src.agent_loop.generation import compute_trajectory_policy_loss
+    from src.model.generation import compute_trajectory_policy_loss
 
     # 5-element aligned arrays: 2 prompt zeros + 3 response positions
     new_lp = [0.0, 0.0, -0.5, -0.5, -0.5]
@@ -945,7 +945,7 @@ def test_compute_trajectory_policy_loss_matches_grpo_formula():
 
 
 def test_compute_trajectory_policy_loss_negative_advantage_penalises_above_clip():
-    from src.agent_loop.generation import compute_trajectory_policy_loss
+    from src.model.generation import compute_trajectory_policy_loss
     import math
 
     # ratio > 1 + eps with A < 0 → should be clipped
@@ -970,7 +970,7 @@ def test_compute_trajectory_policy_loss_negative_advantage_penalises_above_clip(
 
 
 def test_compute_trajectory_policy_loss_kl_penalty_fires_with_ref_log_probs():
-    from src.agent_loop.generation import compute_trajectory_policy_loss
+    from src.model.generation import compute_trajectory_policy_loss
 
     # ref = old = new → KL = 0; use ref != new to get non-zero KL
     new_lp = [0.0, 0.0, -0.5, -0.5]
@@ -1001,7 +1001,7 @@ def test_compute_trajectory_policy_loss_kl_penalty_fires_with_ref_log_probs():
 
 
 def test_compute_trajectory_policy_loss_kl_uses_old_when_ref_absent():
-    from src.agent_loop.generation import compute_trajectory_policy_loss
+    from src.model.generation import compute_trajectory_policy_loss
 
     new_lp = [0.0, 0.0, -0.5]
     old_lp = [0.0, 0.0, -0.5]  # identical → KL = 0
@@ -1020,7 +1020,7 @@ def test_compute_trajectory_policy_loss_kl_uses_old_when_ref_absent():
 
 
 def test_compute_trajectory_policy_loss_length_mismatch_raises():
-    from src.agent_loop.generation import compute_trajectory_policy_loss
+    from src.model.generation import compute_trajectory_policy_loss
 
     with pytest.raises(ValueError, match="same length"):
         compute_trajectory_policy_loss(
@@ -1033,7 +1033,7 @@ def test_compute_trajectory_policy_loss_length_mismatch_raises():
 
 def test_compute_trajectory_policy_loss_with_trajectory_log_prob_pack():
     """End-to-end: pack + loss computes without error."""
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         compute_trajectory_policy_loss,
         trajectory_log_prob_pack,
     )
@@ -1526,7 +1526,7 @@ def _make_trajectory(
     finished_without_answer: bool,
     steps=None,
 ):
-    from src.agent_loop.generation import RolloutTrajectory
+    from src.model.generation import RolloutTrajectory
 
     return RolloutTrajectory(
         batch_index=0,
@@ -1568,7 +1568,7 @@ def test_build_rollout_outputs_maps_trajectory_fields():
 
 
 def test_build_rollout_outputs_computes_per_trajectory_search_repetitions():
-    from src.agent_loop.generation import ReActStep
+    from src.model.generation import ReActStep
 
     manager = _manager_with_log_prob()
     steps = [
@@ -1619,7 +1619,7 @@ def test_build_rollout_outputs_computes_per_trajectory_search_repetitions():
 
 
 def test_build_rollout_outputs_counts_fetch_steps():
-    from src.agent_loop.generation import ReActStep
+    from src.model.generation import ReActStep
 
     manager = _manager_with_log_prob()
     steps = [
@@ -1748,7 +1748,7 @@ def test_apply_step_result_does_not_record_steps_for_inactive_trajectories():
     ghost ReActStep entries.  _apply_step_result uses a participating_mask
     snapshot; _build_rollout_trajectories filters None placeholders.
     """
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         AgentLoopState,
         AgentLoopStepResult,
         PolicyAction,
@@ -1816,7 +1816,7 @@ def test_apply_step_result_does_not_record_steps_for_inactive_trajectories():
 
 def test_build_rollout_trajectories_filters_none_steps():
     """None placeholders from inactive turns must not appear in traj.steps."""
-    from src.agent_loop.generation import ReActStep
+    from src.model.generation import ReActStep
 
     manager = _manager_with_log_prob()
 
@@ -2419,7 +2419,7 @@ def test_run_llm_loop_records_printable_search_trajectory_logs():
 
 
 def _make_two_step_log():
-    from src.agent_loop.generation import SearchStep, SearchTrajectoryLog
+    from src.model.generation import SearchStep, SearchTrajectoryLog
 
     return SearchTrajectoryLog(
         batch_index=0,
@@ -2450,7 +2450,7 @@ def _make_two_step_log():
 
 
 def test_format_search_trajectory_log_compact_omits_state_and_model_output():
-    from src.agent_loop.generation import format_search_trajectory_log
+    from src.model.generation import format_search_trajectory_log
 
     log = _make_two_step_log()
     rendered = format_search_trajectory_log(log, reward=1.0)
@@ -2467,7 +2467,7 @@ def test_format_search_trajectory_log_compact_omits_state_and_model_output():
 
 
 def test_format_search_trajectory_log_verbose_includes_state_and_model_output():
-    from src.agent_loop.generation import format_search_trajectory_log
+    from src.model.generation import format_search_trajectory_log
 
     log = _make_two_step_log()
     rendered = format_search_trajectory_log(log, verbose=True)
@@ -2477,7 +2477,7 @@ def test_format_search_trajectory_log_verbose_includes_state_and_model_output():
 
 
 def test_format_search_trajectory_log_truncates_long_observation_in_compact_mode():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         SearchStep,
         SearchTrajectoryLog,
         format_search_trajectory_log,
@@ -2507,7 +2507,7 @@ def test_format_search_trajectory_log_truncates_long_observation_in_compact_mode
 
 
 def test_format_search_trajectory_log_verbose_does_not_truncate_observation():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         SearchStep,
         SearchTrajectoryLog,
         format_search_trajectory_log,
@@ -2537,7 +2537,7 @@ def test_format_search_trajectory_log_verbose_does_not_truncate_observation():
 
 
 def test_search_trajectory_log_str_returns_compact_format():
-    from src.agent_loop.generation import format_search_trajectory_log
+    from src.model.generation import format_search_trajectory_log
 
     log = _make_two_step_log()
     assert str(log) == format_search_trajectory_log(log)
@@ -2560,7 +2560,7 @@ def test_search_trajectory_log_to_dict_serializes_all_steps():
 
 
 def test_format_trajectory_batch_joins_multiple_logs_with_separator():
-    from src.agent_loop.generation import format_trajectory_batch
+    from src.model.generation import format_trajectory_batch
 
     log1 = _make_two_step_log()
     log2 = _make_two_step_log()
@@ -2573,7 +2573,7 @@ def test_format_trajectory_batch_joins_multiple_logs_with_separator():
 
 
 def test_format_trajectory_batch_empty_list_returns_empty_string():
-    from src.agent_loop.generation import format_trajectory_batch
+    from src.model.generation import format_trajectory_batch
 
     assert format_trajectory_batch([]) == ""
 
@@ -2996,7 +2996,7 @@ def test_build_rollout_outputs_propagates_group_rollout_metadata():
 def _make_grouped_rollout(group_id, rollout_index, answer, temperature, seed):
     """Helper that builds a minimal GroupedRolloutBatch for testing."""
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
         SearchStep,
@@ -3073,7 +3073,7 @@ def _make_training_grouped_rollout(
     seed=0,
 ):
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
         RolloutTrajectory,
@@ -3175,7 +3175,7 @@ def _make_training_grouped_rollout(
 
 def test_score_group_rollout_assigns_reward_and_advantage_per_rollout():
     from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-    from src.agent_loop.generation import score_group_rollout
+    from src.model.generation import score_group_rollout
 
     grouped = [
         _make_grouped_rollout("g1", 0, "Hopfield and Hinton", 0.8, 0),  # correct
@@ -3200,13 +3200,13 @@ def test_score_group_rollout_assigns_reward_and_advantage_per_rollout():
 
 
 def test_score_group_rollout_empty_input_returns_empty():
-    from src.agent_loop.generation import score_group_rollout
+    from src.model.generation import score_group_rollout
 
     assert score_group_rollout([], ground_truth="x", judge_fn=lambda a, g: 1.0) == []
 
 
 def test_assign_group_relative_advantages_centers_rewards_by_group_mean():
-    from src.agent_loop.generation import assign_group_relative_advantages
+    from src.model.generation import assign_group_relative_advantages
 
     grouped = [
         _make_grouped_rollout("g1", 0, "traj 1", 0.8, 0),
@@ -3230,7 +3230,7 @@ def test_assign_group_relative_advantages_centers_rewards_by_group_mean():
 
 def test_assign_group_relative_advantages_std_normalized():
     import math
-    from src.agent_loop.generation import assign_group_relative_advantages
+    from src.model.generation import assign_group_relative_advantages
 
     grouped = [
         _make_grouped_rollout("g1", 0, "traj 1", 0.8, 0),
@@ -3257,7 +3257,7 @@ def test_assign_group_relative_advantages_std_normalized():
 
 
 def test_assign_group_relative_advantages_all_equal_rewards_gives_zero_advantages():
-    from src.agent_loop.generation import assign_group_relative_advantages
+    from src.model.generation import assign_group_relative_advantages
 
     grouped = [_make_grouped_rollout("g1", i, "answer", 0.8, i) for i in range(4)]
     # All zero rewards → std=0 → all advantages 0.0 in both modes
@@ -3269,7 +3269,7 @@ def test_assign_group_relative_advantages_all_equal_rewards_gives_zero_advantage
 
 
 def test_assign_group_relative_advantages_single_rollout_gives_zero_advantage():
-    from src.agent_loop.generation import assign_group_relative_advantages
+    from src.model.generation import assign_group_relative_advantages
 
     grouped = [_make_grouped_rollout("g1", 0, "answer", 0.8, 0)]
     for normalize in (True, False):
@@ -3280,7 +3280,7 @@ def test_assign_group_relative_advantages_single_rollout_gives_zero_advantage():
 
 
 def test_format_scored_group_rollout_matches_format_group_rollout():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         assign_group_relative_advantages,
         format_scored_group_rollout,
     )
@@ -3303,7 +3303,7 @@ def test_format_scored_group_rollout_matches_format_group_rollout():
 
 
 def test_assign_group_relative_advantages_preserves_rollout_identity():
-    from src.agent_loop.generation import assign_group_relative_advantages
+    from src.model.generation import assign_group_relative_advantages
 
     grouped = [
         _make_grouped_rollout("g42", 0, "answer A", 0.8, 0),
@@ -3328,7 +3328,7 @@ def test_assign_group_relative_advantages_preserves_rollout_identity():
 
 
 def test_assign_group_relative_advantages_rejects_length_mismatch():
-    from src.agent_loop.generation import assign_group_relative_advantages
+    from src.model.generation import assign_group_relative_advantages
 
     grouped = [_make_grouped_rollout("g1", 0, "answer", 0.8, 0)]
 
@@ -3344,7 +3344,7 @@ def test_assign_group_relative_advantages_rejects_length_mismatch():
 
 
 def test_collate_scored_rollouts_for_training_builds_sparse_advantages():
-    from src.agent_loop.generation import ScoredGroupedRollout
+    from src.model.generation import ScoredGroupedRollout
 
     manager = _manager()
     rollout_a = _make_training_grouped_rollout(
@@ -3489,7 +3489,7 @@ def test_run_grpo_training_step_stitches_rollout_reward_advantage_and_loss():
 
 def test_run_grpo_training_step_applies_safety_penalties_before_advantage():
     from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-    from src.agent_loop.generation import GRPORolloutSafetyConfig
+    from src.model.generation import GRPORolloutSafetyConfig
 
     tokenizer = DummyTokenizer()
     actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)
@@ -3559,7 +3559,7 @@ def test_run_grpo_training_step_applies_safety_penalties_before_advantage():
 
 
 def test_format_group_rollout_shows_all_rollout_indices_and_group_id():
-    from src.agent_loop.generation import format_group_rollout
+    from src.model.generation import format_group_rollout
 
     grouped = [
         _make_grouped_rollout("grp-abc", 0, "answer A", 0.8, 0),
@@ -3577,7 +3577,7 @@ def test_format_group_rollout_shows_all_rollout_indices_and_group_id():
 
 
 def test_format_group_rollout_shows_rewards_and_advantages():
-    from src.agent_loop.generation import format_group_rollout
+    from src.model.generation import format_group_rollout
 
     grouped = [
         _make_grouped_rollout("g1", 0, "right", 0.8, 0),
@@ -3593,13 +3593,13 @@ def test_format_group_rollout_shows_rewards_and_advantages():
 
 
 def test_format_group_rollout_empty_returns_empty_string():
-    from src.agent_loop.generation import format_group_rollout
+    from src.model.generation import format_group_rollout
 
     assert format_group_rollout([]) == ""
 
 
 def test_make_continuation_decision_continues_when_active_and_budget_available():
-    from src.agent_loop.generation import AgentLoopState
+    from src.model.generation import AgentLoopState
 
     manager = _manager_with_log_prob()
     state = AgentLoopState(
@@ -3631,7 +3631,7 @@ def test_make_continuation_decision_continues_when_active_and_budget_available()
 
 
 def test_make_continuation_decision_forces_answer_when_context_nearly_full():
-    from src.agent_loop.generation import AgentLoopState
+    from src.model.generation import AgentLoopState
 
     manager = LLMGenerationManager(
         tokenizer=DummyTokenizer(),
@@ -3679,7 +3679,7 @@ def test_make_continuation_decision_forces_answer_when_context_nearly_full():
 
 
 def test_make_continuation_decision_stops_when_all_done():
-    from src.agent_loop.generation import AgentLoopState
+    from src.model.generation import AgentLoopState
 
     manager = _manager_with_log_prob()
     state = AgentLoopState(
@@ -3710,7 +3710,7 @@ def test_make_continuation_decision_stops_when_all_done():
 
 
 def test_make_continuation_decision_records_history_in_meta_info():
-    from src.agent_loop.generation import AgentLoopState
+    from src.model.generation import AgentLoopState
 
     manager = _manager_with_log_prob()
     state = AgentLoopState(
@@ -3812,7 +3812,7 @@ def _make_scored_rollout(
     group_id, rollout_index, *, reward, advantage, reward_components=None
 ):
     """Helper that builds a minimal ScoredGroupedRollout for testing."""
-    from src.agent_loop.generation import ScoredGroupedRollout
+    from src.model.generation import ScoredGroupedRollout
 
     grb = _make_grouped_rollout(group_id, rollout_index, "answer", 0.8, 0)
     return ScoredGroupedRollout(
@@ -3827,7 +3827,7 @@ def _make_scored_rollout(
 
 
 def test_grpo_rollout_safety_config_defaults():
-    from src.agent_loop.generation import GRPORolloutSafetyConfig
+    from src.model.generation import GRPORolloutSafetyConfig
 
     cfg = GRPORolloutSafetyConfig()
     assert cfg.max_search_rounds == 3
@@ -3840,7 +3840,7 @@ def test_grpo_rollout_safety_config_defaults():
 
 def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
     )
@@ -3855,7 +3855,7 @@ def test_apply_rollout_safety_penalties_no_violations_returns_original_reward():
 
 def test_apply_rollout_safety_penalties_invalid_action_deducted():
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
     )
@@ -3875,7 +3875,7 @@ def test_apply_rollout_safety_penalties_invalid_action_deducted():
 
 def test_apply_rollout_safety_penalties_repeated_query_deducted():
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
     )
@@ -3895,7 +3895,7 @@ def test_apply_rollout_safety_penalties_repeated_query_deducted():
 
 def test_apply_rollout_safety_penalties_excess_search_deducted():
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
     )
@@ -3914,7 +3914,7 @@ def test_apply_rollout_safety_penalties_excess_search_deducted():
 
 def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
     )
@@ -3934,7 +3934,7 @@ def test_apply_rollout_safety_penalties_no_excess_when_at_limit():
 
 def test_apply_rollout_safety_penalties_all_violations_combined():
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_rollout_safety_penalties,
     )
@@ -3975,7 +3975,7 @@ def _make_scored_rollout_with_steps(
 ):
     """Helper: builds ScoredGroupedRollout with controllable steps and metrics."""
     from src.agent_loop import AgentLoopOutput
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         FinalGenBatchOutput,
         GroupedRolloutBatch,
         ReActStep,
@@ -4060,7 +4060,7 @@ def _make_scored_rollout_with_steps(
 
 
 def test_apply_safety_penalties_to_scored_rollouts_empty_returns_empty():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_safety_penalties_to_scored_rollouts,
     )
@@ -4072,7 +4072,7 @@ def test_apply_safety_penalties_to_scored_rollouts_empty_returns_empty():
 
 
 def test_apply_safety_penalties_to_scored_rollouts_none_reward_components_no_crash():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_safety_penalties_to_scored_rollouts,
     )
@@ -4088,7 +4088,7 @@ def test_apply_safety_penalties_to_scored_rollouts_none_reward_components_no_cra
 
 
 def test_apply_safety_penalties_to_scored_rollouts_empty_rollout_outputs_no_crash():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         FinalGenBatchOutput,
         GRPORolloutSafetyConfig,
         ScoredGroupedRollout,
@@ -4126,7 +4126,7 @@ def test_apply_safety_penalties_to_scored_rollouts_empty_rollout_outputs_no_cras
 
 
 def test_apply_safety_penalties_to_scored_rollouts_disallowed_tag_deducted():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_safety_penalties_to_scored_rollouts,
     )
@@ -4148,7 +4148,7 @@ def test_apply_safety_penalties_to_scored_rollouts_disallowed_tag_deducted():
 
 
 def test_apply_safety_penalties_to_scored_rollouts_allowed_tags_no_penalty():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_safety_penalties_to_scored_rollouts,
     )
@@ -4165,7 +4165,7 @@ def test_apply_safety_penalties_to_scored_rollouts_allowed_tags_no_penalty():
 
 
 def test_apply_safety_penalties_to_scored_rollouts_metric_penalties_in_components():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_safety_penalties_to_scored_rollouts,
     )
@@ -4189,7 +4189,7 @@ def test_apply_safety_penalties_to_scored_rollouts_metric_penalties_in_component
 
 
 def test_apply_safety_penalties_to_scored_rollouts_recomputes_advantages():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         apply_safety_penalties_to_scored_rollouts,
     )
@@ -4216,7 +4216,7 @@ def test_apply_safety_penalties_to_scored_rollouts_recomputes_advantages():
 
 
 def test_apply_safety_penalties_to_scored_rollouts_preserves_existing_components():
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GRPORolloutSafetyConfig,
         ScoredGroupedRollout,
         apply_safety_penalties_to_scored_rollouts,
@@ -4246,7 +4246,7 @@ def test_apply_safety_penalties_to_scored_rollouts_preserves_existing_components
 
 def test_save_training_batch_jsonl_writes_one_record_per_rollout(tmp_path):
     import json
-    from src.agent_loop.generation import save_training_batch_jsonl
+    from src.model.generation import save_training_batch_jsonl
 
     scored = [
         _make_scored_rollout("g1", 0, reward=1.0, advantage=0.5),
@@ -4267,7 +4267,7 @@ def test_save_training_batch_jsonl_writes_one_record_per_rollout(tmp_path):
 
 def test_save_training_batch_jsonl_record_has_trajectory_field(tmp_path):
     import json
-    from src.agent_loop.generation import save_training_batch_jsonl
+    from src.model.generation import save_training_batch_jsonl
 
     scored = [_make_scored_rollout("g2", 0, reward=0.8, advantage=0.3)]
     path = tmp_path / "out.jsonl"
@@ -4280,7 +4280,7 @@ def test_save_training_batch_jsonl_record_has_trajectory_field(tmp_path):
 
 def test_save_training_batch_jsonl_reward_components_serialised(tmp_path):
     import json
-    from src.agent_loop.generation import save_training_batch_jsonl
+    from src.model.generation import save_training_batch_jsonl
 
     scored = [
         _make_scored_rollout(
@@ -4300,7 +4300,7 @@ def test_save_training_batch_jsonl_reward_components_serialised(tmp_path):
 
 
 def test_save_training_batch_jsonl_append_accumulates_records(tmp_path):
-    from src.agent_loop.generation import save_training_batch_jsonl
+    from src.model.generation import save_training_batch_jsonl
 
     scored = [_make_scored_rollout("g4", 0, reward=1.0, advantage=0.5)]
     path = tmp_path / "train.jsonl"
@@ -4312,7 +4312,7 @@ def test_save_training_batch_jsonl_append_accumulates_records(tmp_path):
 
 
 def test_save_training_batch_jsonl_overwrite_replaces_existing(tmp_path):
-    from src.agent_loop.generation import save_training_batch_jsonl
+    from src.model.generation import save_training_batch_jsonl
 
     scored = [_make_scored_rollout("g5", 0, reward=1.0, advantage=0.5)]
     path = tmp_path / "train.jsonl"
@@ -4329,7 +4329,7 @@ def test_save_training_batch_jsonl_overwrite_replaces_existing(tmp_path):
 
 def test_async_run_prompt_rollout_group_returns_one_list_per_prompt():
     import asyncio
-    from src.agent_loop.generation import async_run_prompt_rollout_group
+    from src.model.generation import async_run_prompt_rollout_group
 
     class _FakeManager:
         # New API: async_run_prompt_rollout_group fans out at rollout level,
@@ -4345,7 +4345,7 @@ def test_async_run_prompt_rollout_group_returns_one_list_per_prompt():
             current_step,
             total_steps,
         ):
-            from src.agent_loop.generation import GroupedRolloutBatch
+            from src.model.generation import GroupedRolloutBatch
 
             grb = _make_grouped_rollout(
                 f"g{prompt_batch}", rollout_index, "ans", 0.8, 0
@@ -4379,7 +4379,7 @@ def test_async_run_prompt_rollout_group_returns_one_list_per_prompt():
 
 def test_async_run_prompt_rollout_group_empty_returns_empty():
     import asyncio
-    from src.agent_loop.generation import async_run_prompt_rollout_group
+    from src.model.generation import async_run_prompt_rollout_group
 
     class _FakeManager:
         def _run_one_rollout(self, *args, **kwargs):
@@ -4400,7 +4400,7 @@ def test_async_run_prompt_rollout_group_empty_returns_empty():
 def test_async_run_prompt_rollout_group_fans_out_all_rollouts():
     """N_prompts × N_rollouts tasks are submitted, not N_prompts tasks."""
     import asyncio
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GroupedRolloutBatch,
         async_run_prompt_rollout_group,
     )
@@ -4446,7 +4446,7 @@ def test_async_run_prompt_rollout_group_fans_out_all_rollouts():
 def test_async_run_prompt_rollout_group_per_rollout_seeds():
     """Each (prompt i, rollout j) receives seed = base_seed + i*num_rollouts + j."""
     import asyncio
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GroupedRolloutBatch,
         async_run_prompt_rollout_group,
     )
@@ -4499,7 +4499,7 @@ def test_async_run_prompt_rollout_group_per_rollout_seeds():
 def test_async_run_prompt_rollout_group_results_sorted_by_rollout_index():
     """Results within each prompt group are sorted by rollout_index."""
     import asyncio
-    from src.agent_loop.generation import (
+    from src.model.generation import (
         GroupedRolloutBatch,
         async_run_prompt_rollout_group,
     )
@@ -4538,7 +4538,7 @@ def test_async_run_prompt_rollout_group_results_sorted_by_rollout_index():
 def test_async_run_grpo_training_step_parallelizes_rollouts_then_updates_once():
     import asyncio
     from src.agent_loop import SearchRewardConfig, SearchRewardFunction
-    from src.agent_loop.generation import async_run_grpo_training_step
+    from src.model.generation import async_run_grpo_training_step
 
     tokenizer = DummyTokenizer()
     actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)
@@ -4606,7 +4606,7 @@ def test_async_run_grpo_training_step_parallelizes_rollouts_then_updates_once():
         question = prompt_batch.questions[0]
         call_order.append(question)
         grb = prompt_to_group[question][rollout_index]
-        from src.agent_loop.generation import GroupedRolloutBatch
+        from src.model.generation import GroupedRolloutBatch
 
         return GroupedRolloutBatch(
             group_id=group_id,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from src.agent_loop.search_tools import (
+from src.tools.search import (
     SearchPage,
     build_search_tool,
     format_search_pages,
@@ -81,7 +81,7 @@ def test_google_custom_search_maps_results_and_pagination(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.agent_loop.search_tools.aiohttp.ClientSession",
+        "src.tools.search.aiohttp.ClientSession",
         _session_factory,
     )
 
@@ -117,7 +117,7 @@ def test_serpapi_search_accepts_serp_api_key_env_alias(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.agent_loop.search_tools.aiohttp.ClientSession",
+        "src.tools.search.aiohttp.ClientSession",
         _session_factory,
     )
 
@@ -135,7 +135,7 @@ def test_search_for_list_and_tool_string_use_retrieval_client(monkeypatch):
         return [SearchPage(title="FAISS", summary="Vector search", url="https://faiss")]
 
     monkeypatch.setattr(
-        "src.agent_loop.search_tools.retrieval_search",
+        "src.tools.search.retrieval_search",
         lambda query, **kwargs: _fake_retrieval_search(query=query, **kwargs),
     )
 
@@ -156,7 +156,7 @@ def test_build_search_tool_wraps_formatted_search(monkeypatch):
         return "formatted"
 
     monkeypatch.setattr(
-        "src.agent_loop.search_tools.search_for_tool_string",
+        "src.tools.search.search_for_tool_string",
         _fake_search_for_tool_string,
     )
 
@@ -178,8 +178,8 @@ def test_search_for_detail_fetches_pages_concurrently(monkeypatch):
         assert kwargs["max_length"] == 20
         return "content"
 
-    monkeypatch.setattr("src.agent_loop.search_tools.search_tool", _fake_search_tool)
-    monkeypatch.setattr("src.agent_loop.search_tools.fetch_url", _fake_fetch_url)
+    monkeypatch.setattr("src.tools.search.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
 
     detail = asyncio.run(search_for_detail("query", chunk_size=20))
 
