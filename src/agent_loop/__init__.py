@@ -11,7 +11,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-from .agent_loop import (
+from ..agents.base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
@@ -21,27 +21,43 @@ from .agent_loop import (
     register,
     simple_timer,
 )
-from .context import AgentContext, SearchContext, SearchResult
-from .evaluation import (
+from ..retrieval.context import AgentContext, SearchContext, SearchResult
+from ..training.evaluation import (
     QueryEvaluation,
     SearchEvaluationConfig,
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from .plain_generation_loop import PlainGenerationLoop, PlainGenerationLoopConfig
-from .search_agent_loop import (
+from ..agents.plain import PlainGenerationLoop, PlainGenerationLoopConfig
+from ..agents.search import (
     SearchAgentLoop,
     SearchAgentLoopConfig,
     SearchRoundResult,
     SearchToolCall,
     build_search_agent_instruction,
 )
-from .search_client import SearchClient, SearchClientConfig
-from .sft import SFTExample, build_search_sft_example
-from .single_turn_agent_loop import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
-from .tool import FunctionTool, Tool, ToolSchema
-from .tool_agent_loop import ToolAgentLoop, ToolAgentLoopConfig
-from .tool_parser import (
+from ..retrieval.client import SearchClient, SearchClientConfig
+from ..training.sft import SFTExample, build_search_sft_example
+from ..agents.single_turn import SingleTurnAgentLoop, SingleTurnAgentLoopConfig
+from ..agents.state import (
+    AgentState,
+    PerformanceMetrics,
+    Plan,
+    PlanStep,
+    RetrievedDocument,
+    RouteDecision,
+    TaskNode,
+    TaskStatus,
+    TaskType,
+    ToolCall,
+    ToolExecutionResult,
+    ToolResult,
+    ToolType,
+    UserRequest,
+)
+from ..tools.base import FunctionTool, Tool, ToolSchema
+from ..agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+from ..tools.parsers import (
     FunctionCall,
     HermesToolParser,
     JSONToolParser,
@@ -50,53 +66,66 @@ from .tool_parser import (
 )
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
-    # data.py imports torch; keep it out of lightweight runtime imports.
-    "DEFAULT_TOOL_SYSTEM_PROMPT": (".data", "DEFAULT_TOOL_SYSTEM_PROMPT"),
-    "PromptBatch": (".data", "PromptBatch"),
-    "PromptOnlyDataset": (".data", "PromptOnlyDataset"),
-    "PromptSample": (".data", "PromptSample"),
-    "PromptTrainingExample": (".data", "PromptTrainingExample"),
-    "build_prompt_dataloader": (".data", "build_prompt_dataloader"),
-    "build_prompt_ids_from_messages": (".data", "build_prompt_ids_from_messages"),
-    "build_prompt_messages": (".data", "build_prompt_messages"),
-    "collate_prompt_batch": (".data", "collate_prompt_batch"),
-    "normalize_prompt_training_example": (".data", "normalize_prompt_training_example"),
-    "prompt_batch_to_search_batch": (".data", "prompt_batch_to_search_batch"),
-    # grpo.py depends on data.py and reward.py.
-    "GRPOAdvantageConfig": (".grpo", "GRPOAdvantageConfig"),
-    "GRPORolloutSample": (".grpo", "GRPORolloutSample"),
-    "PromptGroupSamplingConfig": (".grpo", "PromptGroupSamplingConfig"),
-    "ScoredGRPORollout": (".grpo", "ScoredGRPORollout"),
-    "build_grpo_sampling_params": (".grpo", "build_grpo_sampling_params"),
-    "compute_grpo_outcome_advantage": (".grpo", "compute_grpo_outcome_advantage"),
-    "sample_prompt_group": (".grpo", "sample_prompt_group"),
-    "score_prompt_group": (".grpo", "score_prompt_group"),
+    # training.data imports torch; keep it out of lightweight runtime imports.
+    "DEFAULT_TOOL_SYSTEM_PROMPT": ("..training.data", "DEFAULT_TOOL_SYSTEM_PROMPT"),
+    "PromptBatch": ("..training.data", "PromptBatch"),
+    "PromptOnlyDataset": ("..training.data", "PromptOnlyDataset"),
+    "PromptSample": ("..training.data", "PromptSample"),
+    "PromptTrainingExample": ("..training.data", "PromptTrainingExample"),
+    "build_prompt_dataloader": ("..training.data", "build_prompt_dataloader"),
+    "build_prompt_ids_from_messages": (
+        "..training.data",
+        "build_prompt_ids_from_messages",
+    ),
+    "build_prompt_messages": ("..training.data", "build_prompt_messages"),
+    "collate_prompt_batch": ("..training.data", "collate_prompt_batch"),
+    "normalize_prompt_training_example": (
+        "..training.data",
+        "normalize_prompt_training_example",
+    ),
+    "prompt_batch_to_search_batch": ("..training.data", "prompt_batch_to_search_batch"),
+    # training.grpo depends on training.data and training.reward.
+    "GRPOAdvantageConfig": ("..training.grpo", "GRPOAdvantageConfig"),
+    "GRPORolloutSample": ("..training.grpo", "GRPORolloutSample"),
+    "PromptGroupSamplingConfig": ("..training.grpo", "PromptGroupSamplingConfig"),
+    "ScoredGRPORollout": ("..training.grpo", "ScoredGRPORollout"),
+    "build_grpo_sampling_params": ("..training.grpo", "build_grpo_sampling_params"),
+    "compute_grpo_outcome_advantage": (
+        "..training.grpo",
+        "compute_grpo_outcome_advantage",
+    ),
+    "sample_prompt_group": ("..training.grpo", "sample_prompt_group"),
+    "score_prompt_group": ("..training.grpo", "score_prompt_group"),
     # Reward is light today, but lazy keeps the public surface grouped.
-    "BatchJudgeFn": (".reward", "BatchJudgeFn"),
-    "JudgeFn": (".reward", "JudgeFn"),
-    "SearchRewardConfig": (".reward", "SearchRewardConfig"),
-    "SearchRewardFunction": (".reward", "SearchRewardFunction"),
-    "normalize_answer_text": (".reward", "normalize_answer_text"),
-    "simple_sparse_correctness_reward": (".reward", "simple_sparse_correctness_reward"),
-    # Intent model imports torch only when trained/loaded, but it is not needed
-    # for plain local generation.
-    "INTENT_LABELS": (".intent_classifier", "INTENT_LABELS"),
-    "IntentPipeline": (".intent_classifier", "IntentPipeline"),
-    "IntentPrediction": (".intent_classifier", "IntentPrediction"),
+    "BatchJudgeFn": ("..training.reward", "BatchJudgeFn"),
+    "JudgeFn": ("..training.reward", "JudgeFn"),
+    "SearchRewardConfig": ("..training.reward", "SearchRewardConfig"),
+    "SearchRewardFunction": ("..training.reward", "SearchRewardFunction"),
+    "normalize_answer_text": ("..training.reward", "normalize_answer_text"),
+    "simple_sparse_correctness_reward": (
+        "..training.reward",
+        "simple_sparse_correctness_reward",
+    ),
+    # model.intent_classifier imports torch only when trained/loaded.
+    "INTENT_LABELS": ("..model.intent_classifier", "INTENT_LABELS"),
+    "IntentPipeline": ("..model.intent_classifier", "IntentPipeline"),
+    "IntentPrediction": ("..model.intent_classifier", "IntentPrediction"),
     "IntentionClassificationPipeline": (
-        ".intent_classifier",
+        "..model.intent_classifier",
         "IntentionClassificationPipeline",
     ),
-    "load_intent_training_data": (".intent_classifier", "load_training_data"),
-    "resolve_search_settings": (".intent_classifier", "resolve_search_settings"),
-    "IntentTrainingResult": (".intent_training", "IntentTrainingResult"),
-    "build_examples_for_document": (".intent_training", "build_examples_for_document"),
-    "generate_intent_examples": (".intent_training", "generate_intent_examples"),
-    "train_intent_classifier": (".intent_training", "train_intent_classifier"),
-    "write_intent_examples": (".intent_training", "write_intent_examples"),
+    "load_intent_training_data": ("..model.intent_classifier", "load_training_data"),
+    "resolve_search_settings": ("..model.intent_classifier", "resolve_search_settings"),
+    "IntentTrainingResult": ("..model.intent_training", "IntentTrainingResult"),
+    "build_examples_for_document": (
+        "..model.intent_training",
+        "build_examples_for_document",
+    ),
+    "generate_intent_examples": ("..model.intent_training", "generate_intent_examples"),
+    "train_intent_classifier": ("..model.intent_training", "train_intent_classifier"),
+    "write_intent_examples": ("..model.intent_training", "write_intent_examples"),
     # model.generation symbols — torch-heavy, lazy to keep the lightweight path clean.
-    # Note: SearchToolCall is intentionally excluded; it is already exported from
-    # agents.search and refers to a different class.
+    # Note: SearchToolCall is excluded; it is already exported from agents.search.
     "ActorRolloutStep": (".generation", "ActorRolloutStep"),
     "ContinuationDecision": (".generation", "ContinuationDecision"),
     "FinalGenBatchOutput": (".generation", "FinalGenBatchOutput"),
@@ -169,8 +198,12 @@ __all__ = [
     "AgentLoopBase",
     "AgentLoopConfig",
     "AgentLoopOutput",
+    "AgentState",
     "PlainGenerationLoop",
     "PlainGenerationLoopConfig",
+    "PerformanceMetrics",
+    "Plan",
+    "PlanStep",
     "RolloutStep",
     "build_search_agent_instruction",
     "collate_prompt_batch",
@@ -199,6 +232,8 @@ __all__ = [
     "PromptSample",
     "PromptTrainingExample",
     "QueryEvaluation",
+    "RetrievedDocument",
+    "RouteDecision",
     "SearchAgentLoop",
     "SearchAgentLoopConfig",
     "SearchRoundResult",
@@ -214,14 +249,22 @@ __all__ = [
     "ScoredGRPORollout",
     "SingleTurnAgentLoop",
     "SingleTurnAgentLoopConfig",
+    "TaskNode",
+    "TaskStatus",
+    "TaskType",
     "build_search_sft_example",
     "sample_prompt_group",
     "score_prompt_group",
     "Tool",
+    "ToolCall",
     "ToolAgentLoop",
     "ToolAgentLoopConfig",
+    "ToolExecutionResult",
     "ToolParser",
+    "ToolResult",
     "ToolSchema",
+    "ToolType",
+    "UserRequest",
     "get_registered_agent_loop",
     "list_registered_agent_loops",
     "register",

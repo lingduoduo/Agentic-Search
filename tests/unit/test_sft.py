@@ -10,7 +10,7 @@ from src.agent_loop import (
     SearchEvaluationConfig,
     build_search_sft_example,
 )
-from src.agent_loop.context import SearchResult
+from src.agent_loop import SearchResult
 
 
 class DummyTokenizer:

@@ -33,7 +33,7 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class FunctionCall:
     """A single tool invocation parsed from an LLM response."""
 

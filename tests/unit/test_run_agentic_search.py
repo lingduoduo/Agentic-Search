@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent_loop.agent_loop import AgentLoopBase
-from src.agent_loop.intent_classifier import IntentPrediction
+from src.agent_loop import AgentLoopBase, IntentPrediction
 from examples.run_agentic_search import (
     _build_sampling_params,
     _has_accelerate,

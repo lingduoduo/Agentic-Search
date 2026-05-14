@@ -1317,7 +1317,7 @@ def test_search_agent_loop_search_decision_with_searches_fires_search_not_decisi
 
 
 def test_search_client_config_derives_fetch_url_from_retrieve_url():
-    from src.agent_loop.search_client import SearchClientConfig
+    from src.agent_loop import SearchClientConfig
 
     cases = [
         ("http://localhost:8000/retrieve", "http://localhost:8000/fetch"),

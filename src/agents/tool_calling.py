@@ -16,7 +16,7 @@ Supported tool-call formats are controlled by ``ToolAgentLoopConfig.tool_parser_
 Usage::
 
     from src.agent_loop import ToolAgentLoop, ToolAgentLoopConfig
-    from src.agent_loop.tool import FunctionTool
+    from src.agent_loop import FunctionTool
 
     @FunctionTool.from_fn(description="Search the web", parameters={...})
     async def search(query: str) -> str:
@@ -34,8 +34,10 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -49,6 +51,7 @@ from .base import (
 )
 from ..tools.base import Tool
 from ..tools.parsers import FunctionCall, ToolParser
+from .state import PerformanceMetrics, TaskStatus, ToolExecutionResult
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
@@ -158,25 +161,40 @@ class ToolAgentLoop(AgentLoopBase):
         half = limit // 2
         return text[:half] + "...(truncated)..." + text[-half:]
 
-    async def _call_tool(self, tool_call: FunctionCall) -> dict[str, str] | Exception:
-        """Execute one tool call and return a ``{"role": "tool", "content": ...}`` dict."""
+    async def _call_tool(self, tool_call: FunctionCall) -> ToolExecutionResult:
+        """Execute one tool call and return a structured execution result."""
         tool = instance_id = None
+        start = time.perf_counter()
+        status = TaskStatus.FAILED
+        result: Any = None
+        error_code: str | None = None
+        error_message: str | None = None
+        elapsed = 0.0
         try:
             tool = self.tools[tool_call.name]
-            args = tool_call.parsed_arguments()
             instance_id = await tool.create()
-            response_text, _, _ = await tool.execute(instance_id, args)
+            result, _, _ = await tool.execute(instance_id, tool_call.parsed_arguments())
+            elapsed = time.perf_counter() - start
+            status = TaskStatus.COMPLETED
         except Exception as exc:
+            elapsed = time.perf_counter() - start
             logger.exception("Error executing tool %r: %s", tool_call.name, exc)
-            return exc
+            error_code = type(exc).__name__
+            error_message = str(exc)
         finally:
             if tool is not None and instance_id is not None:
                 await tool.release(instance_id)
-
-        return {
-            "role": "tool",
-            "content": self._truncate_tool_response(response_text),
-        }
+        return ToolExecutionResult(
+            tool_name=tool_call.name,
+            status=status,
+            result=result,
+            performance=PerformanceMetrics(
+                execution_time=elapsed,
+                success_rate=1.0 if status is TaskStatus.COMPLETED else 0.0,
+            ),
+            error_code=error_code,
+            error_message=error_message,
+        )
 
     async def run(
         self,
@@ -192,8 +210,11 @@ class ToolAgentLoop(AgentLoopBase):
             lambda: self._build_prompt_ids_with_tools_sync(messages),
         )
         response_mask: list[int] = []
+        working_messages: list[dict[str, Any]] = list(messages)
+        tool_results: list[ToolExecutionResult] = []
         user_turns = 0
         assistant_turns = 0
+        final_answer: str | None = None
 
         while True:
             # ── generate ─────────────────────────────────────────────────
@@ -223,21 +244,37 @@ class ToolAgentLoop(AgentLoopBase):
                 break
 
             # ── parse tool calls ──────────────────────────────────────────
-            _, tool_calls = await self.tool_parser.extract_tool_calls(response_ids)
+            assistant_content, tool_calls = await self.tool_parser.extract_tool_calls(
+                response_ids
+            )
+            working_messages.append({"role": "assistant", "content": assistant_content})
+            final_answer = assistant_content
             if not tool_calls:
                 break
 
             # ── execute tools in parallel ─────────────────────────────────
             with simple_timer("tool_calls", metrics):
-                tool_responses = await asyncio.gather(
+                tool_execution_results = await asyncio.gather(
                     *[
                         self._call_tool(tc)
                         for tc in tool_calls[: self.tool_config.max_parallel_calls]
                     ]
                 )
+            tool_results.extend(tool_execution_results)
 
-            if any(isinstance(r, Exception) for r in tool_responses):
+            if any(
+                r.status is not TaskStatus.COMPLETED for r in tool_execution_results
+            ):
                 break
+
+            tool_responses = [
+                {
+                    "role": "tool",
+                    "content": self._truncate_tool_response(str(result.result)),
+                }
+                for result in tool_execution_results
+            ]
+            working_messages.extend(tool_responses)
 
             # ── re-tokenise tool responses and append ─────────────────────
             tool_response_ids: list[int] = await event_loop.run_in_executor(
@@ -268,4 +305,10 @@ class ToolAgentLoop(AgentLoopBase):
             num_turns=user_turns + assistant_turns + 1,
             metrics=metrics,
             request_id=request_id,
+            trajectory_messages=working_messages,
+            action_trace="\n".join(
+                json.dumps(r.to_dict(), default=str) for r in tool_results
+            )
+            or None,
+            final_answer=final_answer,
         )
