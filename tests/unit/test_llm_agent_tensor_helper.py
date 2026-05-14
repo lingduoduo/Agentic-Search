@@ -1,10 +1,10 @@
-"""Unit tests for src.llm_agent.tensor_helper."""
+"""Unit tests for src.agent_loop.tensor_helper."""
 
 import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src.llm_agent.tensor_helper import TensorConfig, TensorHelper  # noqa: E402
+from src.agent_loop.tensor_helper import TensorConfig, TensorHelper  # noqa: E402
 
 
 def _helper() -> TensorHelper:

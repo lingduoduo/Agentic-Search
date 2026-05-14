@@ -112,11 +112,11 @@ def _score_with_optional_grpo_helpers(
 
 def _optional_policy_loss() -> dict[str, Any]:
     try:
-        from src.llm_agent import (
+        from src.agent_loop import (
             compute_trajectory_policy_loss,
             trajectory_log_prob_pack,
         )
-        from src.llm_agent.generation import RolloutTrajectory
+        from src.agent_loop.generation import RolloutTrajectory
     except ModuleNotFoundError as exc:
         if exc.name == "torch":
             return {"skipped": "torch is not installed"}
