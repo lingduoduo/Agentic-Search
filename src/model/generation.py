@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 import torch
 
-from src.trainer.ppo.core_algos import (
+from src.training.ppo.core_algos import (
     LOG_RATIO_CLAMP as _LOG_RATIO_CLAMP,
     AdaptiveKLController as AdaptiveKLController,
     FixedKLController as FixedKLController,
@@ -1230,7 +1230,7 @@ async def async_run_grpo_training_step(
     ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
     search I/O, then performs one learner-side update.
     """
-    from src.trainer.ppo.controller import LocalGRPOController
+    from src.training.ppo.controller import LocalGRPOController
 
     return await LocalGRPOController(
         manager, num_rollouts=num_rollouts, max_workers=max_workers
@@ -3566,7 +3566,7 @@ class LLMGenerationManager:
         Kept as the public compatibility entrypoint; orchestration lives in the
         local PPO controller layer.
         """
-        from src.trainer.ppo.controller import LocalGRPOController
+        from src.training.ppo.controller import LocalGRPOController
 
         return LocalGRPOController(self, num_rollouts=num_rollouts).training_step(
             prompt_batch,
