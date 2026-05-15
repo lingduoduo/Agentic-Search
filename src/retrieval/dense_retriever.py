@@ -20,6 +20,7 @@ from .index_builder import (
     load_model,
     prepare_texts,
     resolve_pooling_method,
+    set_hnsw_ef_search,
     _require_faiss,
     _require_torch,
 )
@@ -37,6 +38,7 @@ class DenseRetrieverConfig:
     use_fp16: bool = False
     pooling_method: str | None = None
     faiss_gpu: bool = False
+    hnsw_ef_search: int | None = None
     # Default to CPU so the retrieval service never competes with the trainer
     # for GPU memory.  Set to "cuda" (or "cuda:N") only when the retrieval
     # server is deployed on a dedicated GPU that the trainer does not use.
@@ -55,6 +57,8 @@ class DenseRetrieverConfig:
             raise ValueError("topk must be at least 1.")
         if self.query_batch_size < 1:
             raise ValueError("query_batch_size must be at least 1.")
+        if self.hnsw_ef_search is not None and self.hnsw_ef_search < 1:
+            raise ValueError("hnsw_ef_search must be at least 1.")
 
     @classmethod
     def for_e5_base_v2(
@@ -108,6 +112,8 @@ class DenseRetriever:
             device=self.device,
         )
         self.index = faiss.read_index(config.index_path)
+        if config.hnsw_ef_search is not None:
+            set_hnsw_ef_search(self.index, config.hnsw_ef_search)
         if config.faiss_gpu:
             if (
                 not hasattr(faiss, "GpuMultipleClonerOptions")
@@ -204,6 +210,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_fp16", default=False, action="store_true")
     parser.add_argument("--pooling_method", type=str, default=None)
     parser.add_argument("--faiss_gpu", default=False, action="store_true")
+    parser.add_argument(
+        "--hnsw_ef_search",
+        type=int,
+        default=None,
+        help="Optional FAISS HNSW efSearch value for CPU ANN retrieval.",
+    )
     return parser.parse_args()
 
 
@@ -221,6 +233,7 @@ def main() -> None:
             use_fp16=args.use_fp16,
             pooling_method=args.pooling_method,
             faiss_gpu=args.faiss_gpu,
+            hnsw_ef_search=args.hnsw_ef_search,
         )
     )
     print(json.dumps(retriever.retrieve(args.queries), indent=2, ensure_ascii=False))

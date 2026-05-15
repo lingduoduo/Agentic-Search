@@ -204,6 +204,28 @@ def load_corpus(corpus_path: str) -> _Corpus:
     return _Corpus(rows)
 
 
+def set_hnsw_ef_construction(faiss_index: Any, value: int) -> None:
+    hnsw = getattr(faiss_index, "hnsw", None)
+    if hnsw is None:
+        raise ValueError(
+            "hnsw_ef_construction can only be used with HNSW FAISS indexes."
+        )
+    hnsw.efConstruction = value
+
+
+def set_hnsw_ef_search(faiss_index: Any, value: int) -> None:
+    """Set the HNSW efSearch parameter on a FAISS HNSW index.
+
+    efSearch controls the recall/latency trade-off at query time.
+    Higher values improve recall at the cost of slower searches.
+    Typical range: 16–512.
+    """
+    hnsw = getattr(faiss_index, "hnsw", None)
+    if hnsw is None:
+        raise ValueError("hnsw_ef_search can only be used with HNSW FAISS indexes.")
+    hnsw.efSearch = value
+
+
 @dataclass(frozen=True)
 class IndexBuilderConfig:
     retrieval_method: str
@@ -215,6 +237,8 @@ class IndexBuilderConfig:
     use_fp16: bool = False
     pooling_method: str = "mean"
     faiss_type: str = "Flat"
+    hnsw_ef_construction: int | None = None
+    hnsw_ef_search: int | None = None
     embedding_path: str | None = None
     save_embedding: bool = False
     faiss_gpu: bool = False
@@ -246,6 +270,10 @@ class IndexBuilderConfig:
             raise ValueError("keyword_limit must be at least 1.")
         if self.vocab_max_length < 1:
             raise ValueError("vocab_max_length must be at least 1.")
+        if self.hnsw_ef_construction is not None and self.hnsw_ef_construction < 1:
+            raise ValueError("hnsw_ef_construction must be at least 1.")
+        if self.hnsw_ef_search is not None and self.hnsw_ef_search < 1:
+            raise ValueError("hnsw_ef_search must be at least 1.")
 
 
 class IndexBuilder:
@@ -263,6 +291,7 @@ class IndexBuilder:
         self.use_fp16 = config.use_fp16
         self.pooling_method = config.pooling_method
         self.faiss_type = config.faiss_type
+        self.hnsw_ef_construction = config.hnsw_ef_construction
         self.embedding_path = config.embedding_path
         self.save_embedding = config.save_embedding
         self.faiss_gpu = config.faiss_gpu
@@ -411,7 +440,7 @@ class IndexBuilder:
     ):
         tqdm = _require_tqdm()
 
-        effective_batch_size = batch_size or self.batch_size
+        effective_batch_size = batch_size if batch_size is not None else self.batch_size
         for start_idx in tqdm(
             range(0, len(self.corpus), effective_batch_size),
             desc="Inference embeddings",
@@ -492,6 +521,14 @@ class IndexBuilder:
         faiss = _require_faiss()
         torch = _require_torch()
 
+        is_hnsw = "HNSW" in self.faiss_type.upper()
+        if self.faiss_gpu and is_hnsw:
+            raise ValueError(
+                "faiss_gpu=True is not compatible with HNSW indexes. "
+                "FAISS cannot GPU-shard HNSW indexes. "
+                "Use faiss_type='Flat' or an IVF variant for GPU indexing."
+            )
+
         if self.index_save_path.exists():
             warnings.warn(
                 f"{self.index_save_path} already exists and will be overwritten.",
@@ -515,9 +552,12 @@ class IndexBuilder:
             del self.corpus
 
         dim = all_embeddings.shape[-1]
+
         faiss_index = faiss.index_factory(
             dim, self.faiss_type, faiss.METRIC_INNER_PRODUCT
         )
+        if self.hnsw_ef_construction is not None:
+            set_hnsw_ef_construction(faiss_index, self.hnsw_ef_construction)
 
         if self.faiss_gpu:
             if not hasattr(faiss, "GpuMultipleClonerOptions") or self.gpu_num == 0:
@@ -535,6 +575,9 @@ class IndexBuilder:
 
         if self.faiss_gpu:
             faiss_index = faiss.index_gpu_to_cpu(faiss_index)
+
+        if self.hnsw_ef_search is not None:
+            set_hnsw_ef_search(faiss_index, self.hnsw_ef_search)
 
         faiss.write_index(faiss_index, str(self.index_save_path))
 
@@ -561,6 +604,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_fp16", default=False, action="store_true")
     parser.add_argument("--pooling_method", type=str, default=None)
     parser.add_argument("--faiss_type", type=str, default="Flat")
+    parser.add_argument(
+        "--hnsw_ef_construction",
+        type=int,
+        default=None,
+        help=(
+            "HNSW efConstruction: controls index build quality. "
+            "Higher values improve recall but slow down indexing. "
+            "Use with --faiss_type HNSW64."
+        ),
+    )
+    parser.add_argument(
+        "--hnsw_ef_search",
+        type=int,
+        default=None,
+        help=(
+            "HNSW efSearch: controls recall vs. latency at query time. "
+            "Higher values improve recall but slow down search. "
+            "Stored in the index file and used by the retrieval server."
+        ),
+    )
     parser.add_argument("--embedding_path", type=str, default=None)
     parser.add_argument("--save_embedding", action="store_true", default=False)
     parser.add_argument("--faiss_gpu", default=False, action="store_true")
@@ -600,6 +663,8 @@ def main() -> None:
             args.retrieval_method, args.pooling_method
         ),
         faiss_type=args.faiss_type,
+        hnsw_ef_construction=args.hnsw_ef_construction,
+        hnsw_ef_search=args.hnsw_ef_search,
         embedding_path=args.embedding_path,
         save_embedding=args.save_embedding,
         faiss_gpu=args.faiss_gpu,
