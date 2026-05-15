@@ -190,6 +190,16 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
     "RolloutResult": (".training.ppo.controller", "RolloutResult"),
+    # training.ppo.reward_manager
+    "PPORewardManager": (".training.ppo.reward_manager", "PPORewardManager"),
+    "qa_exact_match_score": (
+        ".training.ppo.reward_manager",
+        "qa_exact_match_score",
+    ),
+    "select_reward_score_fn": (
+        ".training.ppo.reward_manager",
+        "select_reward_score_fn",
+    ),
     # model.tensor_helper
     "TensorConfig": (".model.tensor_helper", "TensorConfig"),
     "TensorHelper": (".model.tensor_helper", "TensorHelper"),
