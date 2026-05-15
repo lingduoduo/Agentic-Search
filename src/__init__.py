@@ -50,6 +50,8 @@ from .retrieval.client import SearchClientConfig as SearchClientConfig
 from .retrieval.context import AgentContext as AgentContext
 from .retrieval.context import SearchContext as SearchContext
 from .retrieval.context import SearchResult as SearchResult
+from .retrieval.sparse_retriever import SparseRetriever as SparseRetriever
+from .retrieval.sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig
 from .tools.base import FunctionTool as FunctionTool
 from .tools.base import Tool as Tool
 from .tools.base import ToolSchema as ToolSchema
@@ -166,6 +168,14 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "compute_trajectory_policy_loss": (
         ".model.generation",
         "compute_trajectory_policy_loss",
+    ),
+    "compute_reinforce_policy_loss": (
+        ".training.ppo.core_algos",
+        "compute_reinforce_policy_loss",
+    ),
+    "compute_reinforce_policy_loss_core": (
+        ".training.ppo.core_algos",
+        "compute_reinforce_policy_loss_core",
     ),
     "format_group_rollout": (".model.generation", "format_group_rollout"),
     "format_scored_group_rollout": (".model.generation", "format_scored_group_rollout"),

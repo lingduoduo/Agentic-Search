@@ -1,14 +1,65 @@
 # Agentic-Search-GRPO
 
-A FastAPI codebase for search-backed retrieval services, multi-turn agentic research loops, full-trace SFT targets, and end-to-end GRPO/PPO RL training.
+A unified codebase for search-backed retrieval systems, multi-turn agentic
+research workflows, full-trace supervised fine-tuning (SFT), and end-to-end
+reinforcement learning (RL) training with PPO/GRPO-style optimization.
 
-- Google Custom Search and SerpAPI search servers
-- Dense (FAISS) and sparse (BM25) retrieval with optional reranking
-- `SearchAgentLoop`: plan → adaptive search decision → subquestions → parallel queries → evidence evaluation → fetch → cited answer
-- `SearchRewardFunction`: strategy-aware reward signal + GRPO within-group advantage normalisation
-- Full action-trace SFT support: train on `<plan> ... <answer>`, not only the final answer
-- **End-to-end GRPO/PPO training loop**: rollout → reward → advantage → log probs → clipped loss → optimizer step
-- Async rollout with rollout-level concurrency (`N_prompts × G` parallel tasks) to overlap HTTP search I/O
+## Core Features
+
+- Support for local sparse retrievers such as BM25.
+- Support for local dense retrievers with both flat indexing and ANN indexing,
+  including FAISS index factory configurations.
+- Integration with external web search providers such as Google Custom Search,
+  Bing Search, Brave Search, and SerpAPI.
+- Support for off-the-shelf intent classifiers and neural rerankers.
+- Support for multiple RL algorithms, including PPO, GRPO, and REINFORCE.
+- Support for multiple LLM families, including Llama 3 and Qwen 2.5.
+
+## Retrieval & Search Infrastructure
+
+- Google Custom Search, Bing, Brave, and SerpAPI-backed search providers.
+- Hybrid retrieval pipelines combining sparse retrieval (BM25), dense retrieval
+  (FAISS), and optional neural reranking.
+
+## Agentic Search Framework
+
+`SearchAgentLoop` supports:
+
+- Planning.
+- Adaptive search decisions.
+- Sub-question decomposition.
+- Parallel query execution.
+- Evidence evaluation.
+- Document fetching.
+- Citation-grounded answer generation.
+
+## Training & Optimization
+
+`SearchRewardFunction` provides strategy-aware reward shaping and GRPO
+within-group advantage normalization.
+
+Full action-trace SFT support lets you train on complete trajectories such as:
+
+```text
+<plan> -> <search> -> <evidence> -> <answer>
+```
+
+instead of training only on final responses.
+
+The end-to-end PPO/GRPO RL training pipeline covers rollout generation, reward
+computation, advantage estimation, log-probability extraction, clipped policy
+optimization, and optimizer updates.
+
+## Systems & Scalability
+
+Asynchronous rollout execution supports rollout-level concurrency:
+
+```text
+N_prompts x G parallel tasks
+```
+
+This overlaps HTTP search latency and retrieval I/O, improving throughput for
+large-scale RL training and evaluation workloads.
 
 This repo is organized around a progression from basic retrieval to trainable
 agentic search:
@@ -18,7 +69,7 @@ agentic search:
 | Simple search | Retrieve documents from a search or vector endpoint | `src/retrieval/`, `src/tools/search.py`, `/retrieve` |
 | RAG | Retrieve evidence at inference time, inject it into the prompt, then answer | `SingleTurnAgentLoop` |
 | Agentic Search | Let the model decide when to search, what to search, when evidence is sufficient, and when to answer | `SearchAgentLoop` |
-| Agentic Search + RL | Train better search behavior from full trajectories, rewards, and GRPO/PPO losses | `src/training/reward.py`, `src/training/sft.py`, `src/training/grpo.py`, `src/model/generation.py` |
+| Agentic Search + RL | Train better search behavior from full trajectories, rewards, and PPO/GRPO/REINFORCE losses | `src/training/reward.py`, `src/training/sft.py`, `src/training/grpo.py`, `src/training/ppo/core_algos.py`, `src/model/generation.py` |
 
 ### RAG and fine-tuning solve different problems here:
 
@@ -46,7 +97,7 @@ more deterministic, and easier to debug because it trains directly on known-good
 search traces. Use it to teach the model the workflow shape: XML actions,
 query style, evidence use, citation format, and stopping behavior.
 
-RLHF-style optimization, represented here by reward functions plus GRPO/PPO,
+RLHF-style optimization, represented here by reward functions plus PPO/GRPO/REINFORCE,
 is slower to iterate but more useful when the target behavior is hard to write
 as a single gold trace. Use it when there are tradeoffs: search more or answer
 now, cite enough but avoid bloated answers, explore subquestions without
@@ -73,7 +124,7 @@ As base models become stronger, the bottleneck shifts:
   how to trade quality against latency and cost.
 
 The practical path is: use SFT to establish the behavior scaffold quickly, then
-use GRPO/PPO rewards to improve the policy choices that only show up after the
+use PPO/GRPO rewards to improve the policy choices that only show up after the
 agent interacts with retrieval.
 
 ### Lowering Inference Cost
@@ -128,7 +179,7 @@ src/
   llm_agent/
     ...                      # Backward-compatible imports for model generation helpers
   model/
-    generation.py            # LLMGenerationManager — rollout, log probs, GRPO loss, async
+    generation.py            # LLMGenerationManager — rollout, log probs, policy loss, async
     intent_classifier.py     # IntentPipeline: train / save / load + resolve_search_settings
     intent_training.py       # Generate intent examples + train/save classifier utilities
     tensor_helper.py         # TensorConfig, TensorHelper — padding and batch helpers
@@ -138,11 +189,12 @@ src/
     dense_retriever.py       # DenseRetriever (CPU default to avoid VRAM contention)
     index_builder.py
     rerank.py
+    sparse_retriever.py      # SparseRetriever for local BM25 / Pyserini indexes
     servers/
       app.py                 # Shared FastAPI app factory
       google.py              # Google Custom Search /retrieve server
       rerank.py              # Rerank FastAPI server
-      retrieval.py           # Dense retrieval FastAPI server
+      retrieval.py           # Local dense or sparse retrieval FastAPI server
       retrieval_rerank.py    # Combined retrieval + rerank FastAPI server
       serp.py                # SerpAPI /retrieve server
     text_processor.py        # config-driven cleanup / segmentation for structured text
@@ -181,8 +233,8 @@ examples/
 ## Requirements
 
 - Python 3.10+
-- API keys (only needed for the corresponding server): `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`, `SERP_API_KEY`
-- Java 11+ (arm64 on Apple Silicon) for BM25 indexing via pyserini
+- API keys, only for the providers you use: `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`, `BING_SEARCH_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERP_API_KEY`
+- Java 11+ (arm64 on Apple Silicon) for BM25 indexing and querying via Pyserini
 
 ```bash
 pip install -r requirements.txt
@@ -195,13 +247,15 @@ Copy `.env.example` to `.env` — servers load it automatically at startup.
 ```
 GOOGLE_API_KEY=...
 GOOGLE_CSE_ID=...
+BING_SEARCH_API_KEY=...
+BRAVE_SEARCH_API_KEY=...
 SERP_API_KEY=...
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home  # BM25 only
 ```
 
 ---
 
-## PPO / GRPO Training Pipeline
+## PPO / GRPO / REINFORCE Training Pipeline
 
 The full RL training loop is implemented across `src/model/generation.py`,
 `src/agents/`, `src/retrieval/`, `src/tools/`, and `src/training/`. The
@@ -219,7 +273,7 @@ The pipeline follows these 10 steps:
 5. compute_grpo_advantage  → assign_group_relative_advantages
 6. save_training_batch_jsonl → JSONL training data
 7. compute_log_probs       → trajectory_log_prob_pack (prompt-aligned)
-8. GRPO loss               → compute_trajectory_policy_loss / compute_policy_loss
+8. Policy loss             → compute_trajectory_policy_loss / compute_policy_loss / compute_reinforce_policy_loss
 9. run_grpo_training_step  → end-to-end on small model + small data
 10. async                  → async_run_grpo_training_step (N×G concurrent rollouts)
 ```
@@ -313,7 +367,7 @@ Alignment rule: `old_log_probs` is prepended with `len(prompt_token_ids)` zeros
 so it aligns with `tokens` and `attention_mask` without slicing in the loss loop.
 `response_mask` is `0` for prompt and environment `<information>` tokens.
 
-### Step 8 — GRPO loss
+### Step 8 — Policy loss
 
 Formula:
 
@@ -327,8 +381,11 @@ total_loss    = L_clip + kl_penalty − entropy_bonus
 
 `response_mask` is `1` only for model-generated action tokens (`<search>`, `<plan>`,
 `<fetch>`, `<answer>`); `0` for prompt tokens and environment `<information>` observations.
+For simpler unclipped policy-gradient updates, `compute_reinforce_policy_loss()`
+uses the same aligned token lists with reward-minus-baseline advantages.
 
-Source: `compute_trajectory_policy_loss()` and `PPOPolicyLossConfig`
+Source: `compute_trajectory_policy_loss()`, `compute_reinforce_policy_loss()`,
+and `PPOPolicyLossConfig`
 
 ### Step 9 — End-to-end on small model + small data
 
@@ -603,17 +660,26 @@ normalization.
 
 ## Infrastructure
 
-### Dense Retrieval Server
+### Local Retrieval Server
 
-The retrieval server defaults to `device="cpu"` so it does not compete with the trainer for GPU memory.
+The same `/retrieve` service can serve dense FAISS indexes or sparse BM25 indexes.
+Dense retrieval defaults to `device="cpu"` so it does not compete with the trainer for GPU memory.
 
 ```bash
+# Dense FAISS retrieval
 python3 -m src.retrieval.servers.retrieval \
   --model_path intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
   --retrieval_method e5 \
   --device cpu \
+  --workers 1
+
+# Sparse BM25 retrieval
+python3 -m src.retrieval.servers.retrieval \
+  --index_path indexes/bm25 \
+  --corpus_path data/corpus.jsonl \
+  --retrieval_method bm25 \
   --workers 1
 
 # Trainer-friendly single-query
@@ -632,11 +698,13 @@ Both request shapes are supported; the server normalises responses automatically
 ### Building an Index
 
 ```bash
-# Dense (E5 / BGE)
+# Dense FAISS (E5 / BGE). Use --faiss_type Flat for exact search or pass
+# another FAISS index factory string such as IVF*,Flat or HNSW*,Flat for ANN.
 python3 -m src.retrieval.index_builder \
   --retrieval_method e5 \
   --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl \
+  --faiss_type Flat \
   --save_dir indexes/
 
 # BM25 (requires Java)
@@ -644,6 +712,22 @@ python3 -m src.retrieval.index_builder \
   --retrieval_method bm25 \
   --corpus_path data/corpus.jsonl \
   --save_dir indexes/
+```
+
+### Web Search Providers
+
+`src.tools.search` exposes a provider router for `retrieval`, `google`, `bing`,
+`brave`, and `serpapi`. Missing API keys return structured tool errors instead
+of crashing the caller.
+
+```python
+from src.tools.search import search_for_tool_string
+
+text = await search_for_tool_string(
+    "agentic search with retrieval",
+    provider="brave",
+    page_size=5,
+)
 ```
 
 ### Retrieval + Rerank Server
@@ -683,22 +767,25 @@ python3 -m pytest tests/unit/test_search_app.py tests/unit/test_retrieval_server
 python3 -m pytest tests/unit/test_readme_examples.py \
   tests/unit/test_run_agentic_search.py tests/unit/test_intent_classifier.py -v
 
-# Training, SFT, rewards, and GRPO/PPO helpers
+# Training, SFT, rewards, and PPO/GRPO/REINFORCE helpers
 python3 -m pytest tests/unit/test_data.py tests/unit/test_sft.py \
   tests/unit/test_reward.py tests/unit/test_grpo.py \
   tests/unit/test_llm_agent_generation.py tests/unit/test_llm_agent_tensor_helper.py -v
 ```
 
-### PPO / GRPO pipeline tests
+### PPO / GRPO / REINFORCE pipeline tests
 
 ```bash
 # Trajectory output and log-prob alignment
 python3 -m pytest tests/unit/test_llm_agent_generation.py \
   -k "trajectory_log_prob or compute_log_prob or log_probs_alignment" -v
 
-# Policy loss (clipped surrogate, KL penalty, entropy bonus)
+# Policy loss (clipped surrogate, KL penalty, entropy bonus, REINFORCE)
 python3 -m pytest tests/unit/test_llm_agent_generation.py \
   -k "compute_trajectory_policy_loss or compute_policy_loss" -v
+
+python3 -m pytest tests/unit/test_grpo.py \
+  -k "reinforce" -v
 
 # GRPO advantage computation
 python3 -m pytest tests/unit/test_llm_agent_generation.py \
@@ -862,7 +949,8 @@ python3 -m examples.run_search_trace_workflow --sft
 
 ## Notes
 
-- Google Custom Search and SerpAPI usage are subject to their respective quota and billing rules.
+- Google Custom Search, Bing, Brave, and SerpAPI usage are subject to their respective quota and billing rules.
 - Some result pages may block scraping or return little usable text.
 - Empty or invalid queries return empty result lists.
 - `DenseRetriever` defaults to `device="cpu"` to avoid competing with the trainer GPU — set `--device cuda` only on a dedicated retrieval node.
+- `SparseRetriever` uses Pyserini/Lucene BM25 indexes, so Java must be available when serving BM25 locally.

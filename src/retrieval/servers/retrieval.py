@@ -1,4 +1,4 @@
-"""FastAPI server for dense retrieval over a local FAISS index."""
+"""FastAPI server for local dense or sparse retrieval indexes."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from ..dense_retriever import DenseRetriever, DenseRetrieverConfig
+from ..sparse_retriever import SparseRetriever, SparseRetrieverConfig
 from .app import create_base_app
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ DEFAULT_PORT = 8000
 class RetrievalServerConfig:
     """Runtime configuration for the standalone retrieval service."""
 
-    retriever: DenseRetrieverConfig
+    retriever: DenseRetrieverConfig | SparseRetrieverConfig
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
 
@@ -67,7 +68,7 @@ def _flatten_document_row(row: dict) -> dict[str, object]:
 
 
 def _retrieve_rows(
-    retriever: DenseRetriever,
+    retriever: DenseRetriever | SparseRetriever,
     queries: list[str],
     *,
     topk: int,
@@ -88,14 +89,33 @@ def _retrieve_rows(
     return rows
 
 
-def create_app(config: DenseRetrieverConfig | RetrievalServerConfig):
+def _build_retriever(
+    config: DenseRetrieverConfig | SparseRetrieverConfig,
+) -> DenseRetriever | SparseRetriever:
+    if isinstance(config, SparseRetrieverConfig):
+        return SparseRetriever(config)
+    if config.retrieval_method.lower() == "bm25":
+        return SparseRetriever(
+            SparseRetrieverConfig(
+                index_path=config.index_path,
+                corpus_path=config.corpus_path,
+                retrieval_method=config.retrieval_method,
+                topk=config.topk,
+            )
+        )
+    return DenseRetriever(config)
+
+
+def create_app(
+    config: DenseRetrieverConfig | SparseRetrieverConfig | RetrievalServerConfig,
+):
     server_config = (
         config
         if isinstance(config, RetrievalServerConfig)
         else RetrievalServerConfig(config)
     )
-    retriever = DenseRetriever(server_config.retriever)
-    app = create_base_app("Dense Retrieval Server")
+    retriever = _build_retriever(server_config.retriever)
+    app = create_base_app("Local Retrieval Server")
 
     @app.post("/retrieve")
     def retrieve_endpoint(request: RetrieveRequest) -> dict[str, object]:
@@ -141,7 +161,7 @@ def create_app(config: DenseRetrieverConfig | RetrievalServerConfig):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Launch the local dense retriever server."
+        description="Launch the local dense or sparse retriever server."
     )
     parser.add_argument(
         "--index_path", type=str, required=True, help="Corpus index file."
@@ -158,8 +178,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model_path",
         type=str,
-        required=True,
-        help="Path or HF id for the retriever model.",
+        default=None,
+        help="Path or HF id for the dense retriever model. Not required for BM25.",
     )
     parser.add_argument("--max_length", type=int, default=180)
     parser.add_argument("--use_fp16", action="store_true", default=False)
@@ -197,19 +217,31 @@ def main() -> None:
 
     load_dotenv(override=True)
     args = parse_args()
+    retrieval_method = args.retrieval_method.lower()
+    if retrieval_method == "bm25":
+        retriever_config = SparseRetrieverConfig(
+            index_path=args.index_path,
+            corpus_path=args.corpus_path,
+            retrieval_method=retrieval_method,
+            topk=args.topk,
+        )
+    else:
+        if not args.model_path:
+            raise ValueError("--model_path is required for dense retrieval methods.")
+        retriever_config = DenseRetrieverConfig(
+            model_path=args.model_path,
+            index_path=args.index_path,
+            corpus_path=args.corpus_path,
+            retrieval_method=args.retrieval_method,
+            topk=args.topk,
+            max_length=args.max_length,
+            use_fp16=args.use_fp16,
+            pooling_method=args.pooling_method,
+            device=args.device,
+        )
     app = create_app(
         RetrievalServerConfig(
-            retriever=DenseRetrieverConfig(
-                model_path=args.model_path,
-                index_path=args.index_path,
-                corpus_path=args.corpus_path,
-                retrieval_method=args.retrieval_method,
-                topk=args.topk,
-                max_length=args.max_length,
-                use_fp16=args.use_fp16,
-                pooling_method=args.pooling_method,
-                device=args.device,
-            ),
+            retriever=retriever_config,
             host=args.host,
             port=args.port,
         )

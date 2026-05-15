@@ -11,9 +11,11 @@ from ..retrieval.context import SearchResult
 from ..retrieval.client import SearchClient, SearchClientConfig, aiohttp
 from .base import FunctionTool
 
-SearchProvider = Literal["retrieval", "google", "serpapi"]
+SearchProvider = Literal["retrieval", "google", "bing", "brave", "serpapi"]
 
 GOOGLE_SEARCH_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
+BING_SEARCH_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -129,6 +131,96 @@ async def serpapi_search(
     return pages[:page_size]
 
 
+async def _web_search(
+    query: str,
+    *,
+    page: int,
+    page_size: int,
+    endpoint: str,
+    headers: dict[str, str],
+    timeout_seconds: int,
+    outer_key: str,
+    inner_key: str,
+    title_key: str,
+    summary_key: str,
+) -> list[SearchPage]:
+    try:
+        data = await _get_json(
+            endpoint,
+            params={"q": query, "count": page_size, "offset": (page - 1) * page_size},
+            headers=headers,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as exc:
+        return [SearchPage(error=str(exc))]
+    return [
+        SearchPage(
+            title=item.get(title_key, ""),
+            summary=item.get(summary_key, ""),
+            url=item.get("url", ""),
+        )
+        for item in data.get(outer_key, {}).get(inner_key, [])
+    ]
+
+
+async def bing_search(
+    query: str,
+    *,
+    page: int = 1,
+    page_size: int = 5,
+    api_key: str | None = None,
+    endpoint: str | None = None,
+    timeout_seconds: int = 15,
+) -> list[SearchPage]:
+    """Search Bing Web Search and return normalized pages."""
+
+    api_key = api_key or os.getenv("BING_SEARCH_API_KEY") or os.getenv("BING_API_KEY")
+    if not api_key:
+        return [SearchPage(error="BING_SEARCH_API_KEY or BING_API_KEY is required.")]
+    return await _web_search(
+        query,
+        page=page,
+        page_size=page_size,
+        endpoint=endpoint or os.getenv("BING_SEARCH_ENDPOINT") or BING_SEARCH_ENDPOINT,
+        headers={"Ocp-Apim-Subscription-Key": api_key},
+        timeout_seconds=timeout_seconds,
+        outer_key="webPages",
+        inner_key="value",
+        title_key="name",
+        summary_key="snippet",
+    )
+
+
+async def brave_search(
+    query: str,
+    *,
+    page: int = 1,
+    page_size: int = 5,
+    api_key: str | None = None,
+    endpoint: str | None = None,
+    timeout_seconds: int = 15,
+) -> list[SearchPage]:
+    """Search Brave Search and return normalized pages."""
+
+    api_key = api_key or os.getenv("BRAVE_SEARCH_API_KEY") or os.getenv("BRAVE_API_KEY")
+    if not api_key:
+        return [SearchPage(error="BRAVE_SEARCH_API_KEY or BRAVE_API_KEY is required.")]
+    return await _web_search(
+        query,
+        page=page,
+        page_size=page_size,
+        endpoint=endpoint
+        or os.getenv("BRAVE_SEARCH_ENDPOINT")
+        or BRAVE_SEARCH_ENDPOINT,
+        headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+        timeout_seconds=timeout_seconds,
+        outer_key="web",
+        inner_key="results",
+        title_key="title",
+        summary_key="description",
+    )
+
+
 async def retrieval_search(
     query: str,
     *,
@@ -189,6 +281,20 @@ async def search_tool(
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
+    if provider == "bing":
+        return await bing_search(
+            query,
+            page=page,
+            page_size=page_size,
+            timeout_seconds=timeout_seconds,
+        )
+    if provider == "brave":
+        return await brave_search(
+            query,
+            page=page,
+            page_size=page_size,
+            timeout_seconds=timeout_seconds,
+        )
     if provider == "serpapi":
         return await serpapi_search(
             query,
@@ -196,7 +302,9 @@ async def search_tool(
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
-    raise ValueError("provider must be 'retrieval', 'google', or 'serpapi'")
+    raise ValueError(
+        "provider must be 'retrieval', 'google', 'bing', 'brave', or 'serpapi'"
+    )
 
 
 async def search_for_list(
@@ -349,10 +457,11 @@ async def _get_json(
     *,
     params: dict[str, Any],
     timeout_seconds: int,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, params=params) as response:
+        async with session.get(url, params=params, headers=headers) as response:
             response.raise_for_status()
             return await response.json()
 
