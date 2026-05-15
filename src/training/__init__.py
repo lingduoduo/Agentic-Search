@@ -1,5 +1,6 @@
 from .grpo import PromptGroupSamplingConfig as PromptGroupSamplingConfig
 from .grpo import score_prompt_group as score_prompt_group
+from .ppo import PPORewardManager as PPORewardManager
 from .reward import BatchJudgeFn as BatchJudgeFn
 from .reward import JudgeFn as JudgeFn
 from .reward import SearchRewardFunction as SearchRewardFunction

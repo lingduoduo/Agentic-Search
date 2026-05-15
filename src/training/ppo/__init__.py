@@ -19,12 +19,18 @@ from .core_algos import (
     masked_whiten,
 )
 from .controller import LocalGRPOController, RolloutResult
+from .reward_manager import (
+    PPORewardManager,
+    qa_exact_match_score,
+    select_reward_score_fn,
+)
 
 __all__ = [
     "AdaptiveKLController",
     "FixedKLController",
     "LocalGRPOController",
     "PPOPolicyLossConfig",
+    "PPORewardManager",
     "RolloutResult",
     "clip_by_value",
     "compute_entropy_loss",
@@ -39,4 +45,6 @@ __all__ = [
     "kl_penalty",
     "masked_mean",
     "masked_whiten",
+    "qa_exact_match_score",
+    "select_reward_score_fn",
 ]

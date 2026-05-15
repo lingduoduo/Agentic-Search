@@ -278,6 +278,12 @@ The pipeline follows these 10 steps:
 10. async                  → async_run_grpo_training_step (N×G concurrent rollouts)
 ```
 
+For PPO-style token rewards, `PPORewardManager` can consume a rollout batch,
+reuse existing `rm_scores` when present, or decode prompt + response tokens and
+place a dataset-specific scalar reward on the final valid response token. This
+matches the sparse terminal-reward convention used by PPO trainers while
+keeping reward scoring framework-independent.
+
 For a quick, model-free smoke test of the reward and GRPO helper flow, run:
 
 ```bash
