@@ -281,6 +281,8 @@ python3 -m pytest tests/unit/test_reward.py tests/unit/test_grpo.py tests/unit/t
 ## Notes
 
 - Dense retrieval defaults to CPU to avoid competing with trainer GPU memory.
+- Set dense retrieval to `--device cuda` only on a dedicated retrieval node.
+- Empty or invalid queries return empty result lists.
 - Some web pages block scraping or return little usable text.
 - Google Custom Search, Bing, Brave, and SerpAPI are subject to their own quota
   and billing rules.
