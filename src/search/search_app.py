@@ -1,1 +1,7 @@
-from ..retrieval.servers.app import *  # noqa: F401, F403
+"""Compatibility alias for :mod:`src.retrieval.servers.app`."""
+
+from __future__ import annotations
+
+from ._compat import alias_module
+
+alias_module(__name__, "src.retrieval.servers.app")
