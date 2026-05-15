@@ -80,7 +80,7 @@ def _bm25_server_config() -> RetrievalServerConfig:
 
 def test_retrieve_single_query_returns_trainer_friendly_shape(monkeypatch):
     monkeypatch.setattr(
-        "src.search.retrieval_server.DenseRetriever",
+        "src.retrieval.DenseRetriever",
         _FakeDenseRetriever,
     )
     client = TestClient(create_app(_server_config()))
@@ -107,7 +107,7 @@ def test_retrieve_batch_queries_keeps_legacy_result_shape(monkeypatch):
         return retriever
 
     monkeypatch.setattr(
-        "src.search.retrieval_server.DenseRetriever",
+        "src.retrieval.DenseRetriever",
         _factory,
     )
     client = TestClient(create_app(_server_config()))
@@ -133,7 +133,7 @@ def test_retrieve_single_query_with_scores_preserves_score_information(monkeypat
         return retriever
 
     monkeypatch.setattr(
-        "src.search.retrieval_server.DenseRetriever",
+        "src.retrieval.DenseRetriever",
         _factory,
     )
     client = TestClient(create_app(_server_config()))
@@ -162,8 +162,8 @@ def test_bm25_config_uses_sparse_retriever(monkeypatch):
         sparse_calls.append(config)
         return _FakeSparseRetriever(config)
 
-    monkeypatch.setattr("src.search.retrieval_server.DenseRetriever", _dense_factory)
-    monkeypatch.setattr("src.search.retrieval_server.SparseRetriever", _sparse_factory)
+    monkeypatch.setattr("src.retrieval.DenseRetriever", _dense_factory)
+    monkeypatch.setattr("src.retrieval.SparseRetriever", _sparse_factory)
 
     client = TestClient(create_app(_bm25_server_config()))
     response = client.post("/retrieve", json={"queries": ["bm25 query"], "topk": 2})
@@ -310,8 +310,6 @@ def test_parse_args_allows_bm25_without_model_path():
 
 
 def test_health_endpoint_returns_ok(monkeypatch):
-    monkeypatch.setattr(
-        "src.search.retrieval_server.DenseRetriever", _FakeDenseRetriever
-    )
+    monkeypatch.setattr("src.retrieval.DenseRetriever", _FakeDenseRetriever)
     client = TestClient(create_app(_server_config()))
     assert client.get("/health").json() == {"status": "ok"}
