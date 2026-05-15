@@ -737,13 +737,13 @@ python3 -m src.retrieval.index_builder \
 
 ### Web Search Providers
 
-`src.tools.search` exposes a provider router for `retrieval`, `google`, `bing`,
+`src.tools.search` exposes a provider router for `retrieval`, `google`,
 and `serpapi`. Missing API keys return structured tool errors instead
 of crashing the caller.
 
 The repo also includes standalone online search servers for SerpAPI and Google
 Custom Search. SerpAPI is the recommended backend for large RL training runs
-because it can route to multiple engines such as Google, Bing, and Baidu, while
+because it can route to multiple engines such as Google, SerpAPI, while
 Google Custom Search has a hard monthly quota.
 
 ```bash
@@ -772,7 +772,7 @@ from src.tools.search import search_for_tool_string
 
 text = await search_for_tool_string(
     "agentic search with retrieval",
-    provider="bing",
+    provider="google",
     page_size=5,
 )
 ```
@@ -1008,7 +1008,7 @@ python3 -m examples.run_search_trace_workflow --sft
 
 ## Notes
 
-- Google Custom Search, Bing, and SerpAPI usage are subject to their respective quota and billing rules.
+- Google Custom Search, and SerpAPI usage are subject to their respective quota and billing rules.
 - Some result pages may block scraping or return little usable text.
 - Empty or invalid queries return empty result lists.
 - `DenseRetriever` defaults to `device="cpu"` to avoid competing with the trainer GPU — set `--device cuda` only on a dedicated retrieval node.
