@@ -11,6 +11,7 @@ import uvicorn
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+from .. import build_retriever
 from ..dense_retriever import DenseRetriever, DenseRetrieverConfig
 from ..sparse_retriever import SparseRetriever, SparseRetrieverConfig
 from .app import create_base_app
@@ -80,23 +81,6 @@ def _retrieve_rows(
     return [[item["document"] for item in row] for row in rows]
 
 
-def _build_retriever(
-    config: DenseRetrieverConfig | SparseRetrieverConfig,
-) -> DenseRetriever | SparseRetriever:
-    if isinstance(config, SparseRetrieverConfig):
-        return SparseRetriever(config)
-    if config.retrieval_method.lower() == "bm25":
-        return SparseRetriever(
-            SparseRetrieverConfig(
-                index_path=config.index_path,
-                corpus_path=config.corpus_path,
-                retrieval_method=config.retrieval_method,
-                topk=config.topk,
-            )
-        )
-    return DenseRetriever(config)
-
-
 def create_app(
     config: DenseRetrieverConfig | SparseRetrieverConfig | RetrievalServerConfig,
 ):
@@ -105,7 +89,7 @@ def create_app(
         if isinstance(config, RetrievalServerConfig)
         else RetrievalServerConfig(config)
     )
-    retriever = _build_retriever(server_config.retriever)
+    retriever = build_retriever(server_config.retriever)
     app = create_base_app("Local Retrieval Server")
 
     @app.post("/retrieve")

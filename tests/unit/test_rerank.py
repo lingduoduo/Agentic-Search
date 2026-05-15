@@ -198,3 +198,13 @@ class TestSentenceTransformerRerankerRerank:
         )
         reranker.rerank(["q"], [[_doc("a"), _doc("b")]])
         mock_model.predict.assert_called_once()
+
+    def test_model_predict_wrong_score_count_raises(self):
+        mock_model = MagicMock()
+        mock_model.predict.return_value = np.array([0.5])
+        reranker = SentenceTransformerReranker(
+            model=mock_model, batch_size=8, device="cpu"
+        )
+
+        with pytest.raises(ValueError, match="wrong number of scores"):
+            reranker.rerank(["q"], [[_doc("a"), _doc("b")]])

@@ -738,7 +738,19 @@ python3 -m src.retrieval.servers.retrieval_rerank \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
   --retrieval_method e5 \
-  --retrieval_topk 10 --rerank_topk 3
+  --retrieval_topk 10 \
+  --retrieval_query_batch_size 128 \
+  --rerank_topk 3
+```
+
+For local BM25 retrieval with the same reranking layer, use
+`--retrieval_method bm25` and omit `--retriever_model`. The service retrieves
+each request in one batched backend call, then reranks all candidate
+query-document pairs with the configured cross-encoder batch size. Responses
+include rerank scores by default:
+
+```json
+{"result": [[{"document": {"contents": "\"Title\"\nBody"}, "score": 0.91}]]}
 ```
 
 ---

@@ -75,8 +75,15 @@ class SentenceTransformerReranker:
         torch = _require_torch()
         scores = self.model.predict(pairs, batch_size=self.batch_size)
         if isinstance(scores, torch.Tensor) or isinstance(scores, np.ndarray):
-            return scores.tolist()
-        return list(scores)
+            predicted = scores.tolist()
+        else:
+            predicted = list(scores)
+        if len(predicted) != len(pairs):
+            raise ValueError(
+                "Reranker returned the wrong number of scores: "
+                f"expected {len(pairs)}, got {len(predicted)}."
+            )
+        return predicted
 
     def rerank(
         self,
