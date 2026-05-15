@@ -14,7 +14,6 @@ from typing import Any
 import aiohttp
 import bs4
 import uvicorn
-from googleapiclient.discovery import build
 
 from .app import create_search_app, format_document
 
@@ -33,6 +32,17 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
 ]
+
+
+def _require_google_build():
+    try:
+        from googleapiclient.discovery import build
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-api-python-client is required for Google Custom Search. "
+            "Install it with `pip install google-api-python-client`."
+        ) from exc
+    return build
 
 
 @dataclass(frozen=True)
@@ -119,7 +129,10 @@ class OnlineSearchEngine:
     def __init__(self, config: OnlineSearchConfig):
         config.validate()
         self.config = config
-        self._service = build("customsearch", "v1", developerKey=self.config.api_key)
+        google_build = _require_google_build()
+        self._service = google_build(
+            "customsearch", "v1", developerKey=self.config.api_key
+        )
 
     def collect_context(self, snippet: str, document: str) -> str:
         normalized_document = document.replace("\r", "")

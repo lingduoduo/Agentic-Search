@@ -698,14 +698,30 @@ Both request shapes are supported; the server normalises responses automatically
 ### Building an Index
 
 ```bash
-# Dense FAISS (E5 / BGE). Use --faiss_type Flat for exact search or pass
-# another FAISS index factory string such as IVF*,Flat or HNSW*,Flat for ANN.
+# Dense FAISS (E5 / BGE). Use --faiss_type Flat for exact search.
 python3 -m src.retrieval.index_builder \
   --retrieval_method e5 \
   --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl \
   --faiss_type Flat \
   --save_dir indexes/
+
+# CPU ANN indexing with HNSW64. This is faster than Flat search on large
+# corpora, but approximate, so recall can be lower when top_k is small.
+python3 -m src.retrieval.index_builder \
+  --retrieval_method e5 \
+  --model_path intfloat/e5-base-v2 \
+  --corpus_path data/corpus.jsonl \
+  --faiss_type HNSW64 \
+  --hnsw_ef_construction 200 \
+  --save_dir indexes/
+
+python3 -m src.retrieval.servers.retrieval \
+  --retrieval_method e5 \
+  --model_path intfloat/e5-base-v2 \
+  --index_path indexes/e5_HNSW64.index \
+  --corpus_path data/corpus.jsonl \
+  --hnsw_ef_search 128
 
 # BM25 (requires Java)
 python3 -m src.retrieval.index_builder \
@@ -719,6 +735,32 @@ python3 -m src.retrieval.index_builder \
 `src.tools.search` exposes a provider router for `retrieval`, `google`, `bing`,
 and `serpapi`. Missing API keys return structured tool errors instead
 of crashing the caller.
+
+The repo also includes standalone online search servers for SerpAPI and Google
+Custom Search. SerpAPI is the recommended backend for large RL training runs
+because it can route to multiple engines such as Google, Bing, and Baidu, while
+Google Custom Search has a hard monthly quota.
+
+```bash
+# SerpAPI online search server
+export SERP_SEARCH_URL="https://serpapi.com/search"
+export SERP_API_KEY="..."  # https://serpapi.com/
+
+python3 -m src.search.serp_search_server \
+  --search_url "$SERP_SEARCH_URL" \
+  --topk 3 \
+  --serp_api_key "$SERP_API_KEY"
+
+# Google Custom Search server
+export GOOGLE_API_KEY="..."  # https://developers.google.com/custom-search/v1/overview
+export GOOGLE_CSE_ID="..."   # Google Custom Search Engine ID
+
+python3 -m src.search.google_search_server \
+  --api_key "$GOOGLE_API_KEY" \
+  --topk 5 \
+  --cse_id "$GOOGLE_CSE_ID" \
+  --snippet_only
+```
 
 ```python
 from src.tools.search import search_for_tool_string

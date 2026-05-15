@@ -100,6 +100,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retrieval_pooling_method", type=str, default=None)
     parser.add_argument("--faiss_gpu", action="store_true", default=False)
     parser.add_argument(
+        "--hnsw_ef_search",
+        type=int,
+        default=None,
+        help="Optional FAISS HNSW efSearch value for CPU ANN retrieval.",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="cpu",
@@ -152,6 +158,7 @@ def main() -> None:
             use_fp16=args.retrieval_use_fp16,
             pooling_method=args.retrieval_pooling_method,
             faiss_gpu=args.faiss_gpu,
+            hnsw_ef_search=args.hnsw_ef_search,
             device=args.device,
         )
     app = create_app(

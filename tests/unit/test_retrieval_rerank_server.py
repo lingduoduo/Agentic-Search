@@ -198,6 +198,8 @@ def test_retrieval_rerank_parse_args_exposes_batch_and_device_flags():
         "--device",
         "cuda:1",
         "--faiss_gpu",
+        "--hnsw_ef_search",
+        "128",
     ]
     try:
         args = parse_args()
@@ -207,3 +209,4 @@ def test_retrieval_rerank_parse_args_exposes_batch_and_device_flags():
     assert args.retrieval_query_batch_size == 64
     assert args.device == "cuda:1"
     assert args.faiss_gpu is True
+    assert args.hnsw_ef_search == 128
