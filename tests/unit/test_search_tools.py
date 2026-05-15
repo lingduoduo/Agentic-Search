@@ -6,6 +6,7 @@ import asyncio
 
 from src.tools.search import (
     SearchPage,
+    bing_search,
     build_search_tool,
     format_search_pages,
     google_custom_search,
@@ -126,6 +127,38 @@ def test_serpapi_search_accepts_serp_api_key_env_alias(monkeypatch):
     assert pages[0].title == "Answer"
     assert pages[1].title == "Organic"
     assert calls[0][1]["params"]["api_key"] == "serp-key"
+
+
+def test_bing_search_maps_results_and_auth_header(monkeypatch):
+    calls = []
+    monkeypatch.setenv("BING_SEARCH_API_KEY", "bing-key")
+
+    def _session_factory(*, timeout):
+        return _FakeSession(
+            timeout=timeout,
+            calls=calls,
+            payload={
+                "webPages": {
+                    "value": [
+                        {
+                            "name": "Bing Result",
+                            "snippet": "Bing summary",
+                            "url": "https://bing.test",
+                        }
+                    ]
+                }
+            },
+        )
+
+    monkeypatch.setattr("src.tools.search.aiohttp.ClientSession", _session_factory)
+
+    pages = asyncio.run(bing_search("agentic search", page=2, page_size=4))
+
+    assert pages == [
+        SearchPage(title="Bing Result", summary="Bing summary", url="https://bing.test")
+    ]
+    assert calls[0][1]["params"]["offset"] == 4
+    assert calls[0][1]["headers"]["Ocp-Apim-Subscription-Key"] == "bing-key"
 
 
 def test_search_for_list_and_tool_string_use_retrieval_client(monkeypatch):

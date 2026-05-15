@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from src.search.retrieval import DenseRetrieverConfig
+from src.retrieval.sparse_retriever import SparseRetrieverConfig
 from src.search.retrieval_server import RetrievalServerConfig, create_app
 
 
@@ -46,6 +47,10 @@ class _FakeDenseRetriever:
         ]
 
 
+class _FakeSparseRetriever(_FakeDenseRetriever):
+    pass
+
+
 def _server_config() -> RetrievalServerConfig:
     return RetrievalServerConfig(
         retriever=DenseRetrieverConfig(
@@ -53,6 +58,17 @@ def _server_config() -> RetrievalServerConfig:
             index_path="/fake/index.faiss",
             corpus_path="/fake/corpus.jsonl",
             retrieval_method="e5",
+            topk=5,
+        )
+    )
+
+
+def _bm25_server_config() -> RetrievalServerConfig:
+    return RetrievalServerConfig(
+        retriever=SparseRetrieverConfig(
+            index_path="/fake/bm25",
+            corpus_path="/fake/corpus.jsonl",
+            retrieval_method="bm25",
             topk=5,
         )
     )
@@ -114,6 +130,30 @@ def test_retrieve_single_query_with_scores_preserves_score_information(monkeypat
     assert data["result"][0][0]["score"] == 0.9
 
 
+def test_bm25_config_uses_sparse_retriever(monkeypatch):
+    dense_calls = []
+    sparse_calls = []
+
+    def _dense_factory(config):
+        dense_calls.append(config)
+        return _FakeDenseRetriever(config)
+
+    def _sparse_factory(config):
+        sparse_calls.append(config)
+        return _FakeSparseRetriever(config)
+
+    monkeypatch.setattr("src.search.retrieval_server.DenseRetriever", _dense_factory)
+    monkeypatch.setattr("src.search.retrieval_server.SparseRetriever", _sparse_factory)
+
+    client = TestClient(create_app(_bm25_server_config()))
+    response = client.post("/retrieve", json={"queries": ["bm25 query"], "topk": 2})
+
+    assert response.status_code == 200
+    assert dense_calls == []
+    assert len(sparse_calls) == 1
+    assert response.json()["result"][0][0]["title"] == "Title 0"
+
+
 def test_dense_retriever_config_defaults_device_to_cpu():
     """CPU default is the whole point: retrieval service must not steal trainer VRAM."""
     cfg = DenseRetrieverConfig(
@@ -167,6 +207,30 @@ def test_parse_args_device_defaults_to_cpu():
 
     assert args.device == "cpu"
     assert args.workers == 1
+
+
+def test_parse_args_allows_bm25_without_model_path():
+    """BM25 retrieval should not require a dense embedding model."""
+    import sys
+    from src.search.retrieval_server import parse_args
+
+    saved = sys.argv
+    sys.argv = [
+        "retrieval_server",
+        "--index_path",
+        "/idx/bm25",
+        "--corpus_path",
+        "/corpus",
+        "--retrieval_method",
+        "bm25",
+    ]
+    try:
+        args = parse_args()
+    finally:
+        sys.argv = saved
+
+    assert args.model_path is None
+    assert args.retrieval_method == "bm25"
 
 
 def test_health_endpoint_returns_ok(monkeypatch):

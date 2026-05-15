@@ -156,6 +156,16 @@ def compute_ppo_policy_loss_core(
     return pg_loss, pg_clipfrac, ppo_kl, surrogate
 
 
+def compute_reinforce_policy_loss_core(
+    log_prob: torch.Tensor,
+    advantages: torch.Tensor,
+    eos_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Unclipped REINFORCE policy-gradient loss over masked response tokens."""
+
+    return -masked_mean(log_prob * advantages, eos_mask)
+
+
 def compute_entropy_loss(logits: torch.Tensor, eos_mask: torch.Tensor) -> torch.Tensor:
     """Masked mean policy entropy."""
     return masked_mean(entropy_from_logits(logits), eos_mask)
@@ -301,4 +311,34 @@ def compute_trajectory_policy_loss(
         "total_loss": grpo_policy_loss + kl_penalty_val,
         "clip_fraction": clip_fraction,
         "mean_ratio": float((ratio * mask).sum() / normalizer),
+    }
+
+
+def compute_reinforce_policy_loss(
+    *,
+    log_probs: list[float],
+    rewards: list[float],
+    response_mask: list[int],
+    baseline: float = 0.0,
+) -> dict[str, float]:
+    """Compute a trajectory-level REINFORCE loss from aligned token lists."""
+
+    n = len(log_probs)
+    if not (len(rewards) == len(response_mask) == n):
+        raise ValueError(
+            "log_probs, rewards, and response_mask must all have the same length, "
+            f"got lengths {n}, {len(rewards)}, {len(response_mask)}."
+        )
+
+    log_prob_tensor = torch.tensor(log_probs, dtype=torch.float32)
+    reward_tensor = torch.tensor(rewards, dtype=torch.float32)
+    mask = torch.tensor(response_mask, dtype=torch.float32)
+    advantages = reward_tensor - float(baseline)
+    normalizer = max(float(mask.sum()), 1.0)
+    loss = float(-((log_prob_tensor * advantages * mask).sum() / normalizer))
+    return {
+        "reinforce_policy_loss": loss,
+        "total_loss": loss,
+        "mean_reward": float((reward_tensor * mask).sum() / normalizer),
+        "mean_advantage": float((advantages * mask).sum() / normalizer),
     }

@@ -8,3 +8,5 @@ from .vocabulary import Vocabulary as Vocabulary
 from .rerank import get_reranker as get_reranker
 from .dense_retriever import DenseRetriever as DenseRetriever
 from .dense_retriever import DenseRetrieverConfig as DenseRetrieverConfig
+from .sparse_retriever import SparseRetriever as SparseRetriever
+from .sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig

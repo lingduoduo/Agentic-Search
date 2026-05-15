@@ -299,6 +299,34 @@ def test_grpo_advantage_config_outcome_only_preset_uses_terminal_reward():
     assert cfg.reward_component == "terminal_reward"
 
 
+def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
+    from src.training.ppo import compute_reinforce_policy_loss
+
+    result = compute_reinforce_policy_loss(
+        log_probs=[-0.2, -0.4, -0.8],
+        rewards=[1.0, 0.5, 2.0],
+        response_mask=[1, 0, 1],
+        baseline=0.5,
+    )
+
+    expected = -((-0.2 * 0.5) + (-0.8 * 1.5)) / 2
+    assert result["reinforce_policy_loss"] == pytest.approx(expected)
+    assert result["total_loss"] == pytest.approx(expected)
+    assert result["mean_reward"] == pytest.approx(1.5)
+    assert result["mean_advantage"] == pytest.approx(1.0)
+
+
+def test_compute_reinforce_policy_loss_rejects_length_mismatch():
+    from src.training.ppo import compute_reinforce_policy_loss
+
+    with pytest.raises(ValueError, match="same length"):
+        compute_reinforce_policy_loss(
+            log_probs=[-0.2],
+            rewards=[1.0, 0.5],
+            response_mask=[1],
+        )
+
+
 def test_score_prompt_group_rejects_unknown_advantage_mode():
     samples = asyncio.run(
         sample_prompt_group(
