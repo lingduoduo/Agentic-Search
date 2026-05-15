@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from src.search.retrieval import DenseRetrieverConfig
@@ -12,9 +14,11 @@ from src.search.retrieval_server import RetrievalServerConfig, create_app
 class _FakeDenseRetriever:
     def __init__(self, config):
         self.config = config
+        self.retrieve_calls = []
+        self.batch_search_calls = []
 
     def retrieve(self, queries, topk=None):
-        del topk
+        self.retrieve_calls.append((list(queries), topk))
         return [
             [
                 {
@@ -32,7 +36,7 @@ class _FakeDenseRetriever:
         ]
 
     def batch_search(self, queries, num=None, return_score=False):
-        del num, return_score
+        self.batch_search_calls.append((list(queries), num, return_score))
         return [
             [
                 {
@@ -95,9 +99,16 @@ def test_retrieve_single_query_returns_trainer_friendly_shape(monkeypatch):
 
 
 def test_retrieve_batch_queries_keeps_legacy_result_shape(monkeypatch):
+    retrievers = []
+
+    def _factory(config):
+        retriever = _FakeDenseRetriever(config)
+        retrievers.append(retriever)
+        return retriever
+
     monkeypatch.setattr(
         "src.search.retrieval_server.DenseRetriever",
-        _FakeDenseRetriever,
+        _factory,
     )
     client = TestClient(create_app(_server_config()))
 
@@ -110,12 +121,20 @@ def test_retrieve_batch_queries_keeps_legacy_result_shape(monkeypatch):
     assert len(data["results"]) == 2
     assert len(data["result"]) == 2
     assert data["result"][1][1]["title"] == "Title 1"
+    assert retrievers[0].retrieve_calls == [(["q1", "q2"], 4)]
 
 
 def test_retrieve_single_query_with_scores_preserves_score_information(monkeypatch):
+    retrievers = []
+
+    def _factory(config):
+        retriever = _FakeDenseRetriever(config)
+        retrievers.append(retriever)
+        return retriever
+
     monkeypatch.setattr(
         "src.search.retrieval_server.DenseRetriever",
-        _FakeDenseRetriever,
+        _factory,
     )
     client = TestClient(create_app(_server_config()))
 
@@ -128,6 +147,7 @@ def test_retrieve_single_query_with_scores_preserves_score_information(monkeypat
     data = response.json()
     assert data["results"][0]["score"] == 0.9
     assert data["result"][0][0]["score"] == 0.9
+    assert retrievers[0].retrieve_calls == [(["faiss index"], 2)]
 
 
 def test_bm25_config_uses_sparse_retriever(monkeypatch):
@@ -163,6 +183,60 @@ def test_dense_retriever_config_defaults_device_to_cpu():
         retrieval_method="e5",
     )
     assert cfg.device == "cpu"
+    assert cfg.query_batch_size == 128
+    assert cfg.faiss_gpu is False
+
+
+def test_dense_retriever_config_rejects_zero_query_batch_size():
+    from src.search.retrieval import DenseRetrieverConfig
+
+    cfg = DenseRetrieverConfig(
+        model_path="/m",
+        index_path="/i",
+        corpus_path="/c",
+        retrieval_method="e5",
+        query_batch_size=0,
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="query_batch_size"):
+        cfg.validate()
+
+
+def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
+    import numpy as np
+    from src.search.retrieval import DenseRetriever
+
+    class _FakeIndex:
+        def search(self, embeddings, k):
+            return (
+                np.ones((embeddings.shape[0], k), dtype=np.float32),
+                np.zeros((embeddings.shape[0], k), dtype=np.int64),
+            )
+
+    retriever = DenseRetriever.__new__(DenseRetriever)
+    retriever.config = SimpleNamespace(
+        topk=1,
+        query_batch_size=2,
+        retrieval_method="contriever",
+    )
+    retriever.index = _FakeIndex()
+    retriever.corpus = [{"id": "doc-0", "contents": "body"}]
+    calls = []
+
+    def _encode_queries(queries):
+        calls.append(list(queries))
+        return np.ones((len(queries), 2), dtype=np.float32)
+
+    retriever.encode_queries = _encode_queries
+
+    rows = retriever.retrieve(["alpha", " ", "beta", "gamma"], topk=1)
+
+    assert calls == [["alpha", "beta"], ["gamma"]]
+    assert rows[1] == []
+    assert rows[0][0]["document"]["id"] == "doc-0"
+    assert rows[2][0]["score"] == 1.0
 
 
 def test_dense_retriever_config_for_e5_base_v2_sets_e5_method_and_cpu():
@@ -207,6 +281,8 @@ def test_parse_args_device_defaults_to_cpu():
 
     assert args.device == "cpu"
     assert args.workers == 1
+    assert args.query_batch_size == 128
+    assert args.faiss_gpu is False
 
 
 def test_parse_args_allows_bm25_without_model_path():

@@ -33,8 +33,10 @@ class DenseRetrieverConfig:
     retrieval_method: str
     topk: int = 5
     max_length: int = 180
+    query_batch_size: int = 128
     use_fp16: bool = False
     pooling_method: str | None = None
+    faiss_gpu: bool = False
     # Default to CPU so the retrieval service never competes with the trainer
     # for GPU memory.  Set to "cuda" (or "cuda:N") only when the retrieval
     # server is deployed on a dedicated GPU that the trainer does not use.
@@ -51,6 +53,8 @@ class DenseRetrieverConfig:
             raise ValueError("retrieval_method is required.")
         if self.topk < 1:
             raise ValueError("topk must be at least 1.")
+        if self.query_batch_size < 1:
+            raise ValueError("query_batch_size must be at least 1.")
 
     @classmethod
     def for_e5_base_v2(
@@ -104,6 +108,18 @@ class DenseRetriever:
             device=self.device,
         )
         self.index = faiss.read_index(config.index_path)
+        if config.faiss_gpu:
+            if (
+                not hasattr(faiss, "GpuMultipleClonerOptions")
+                or not getattr(faiss, "get_num_gpus", lambda: 0)()
+            ):
+                raise RuntimeError(
+                    "faiss_gpu was requested, but GPU FAISS support is not available."
+                )
+            clone_options = faiss.GpuMultipleClonerOptions()
+            clone_options.useFloat16 = True
+            clone_options.shard = True
+            self.index = faiss.index_cpu_to_all_gpus(self.index, clone_options)
         self.corpus = load_corpus(config.corpus_path)
 
     def encode_queries(self, queries: list[str]) -> np.ndarray:
@@ -127,29 +143,34 @@ class DenseRetriever:
     def retrieve(
         self, queries: list[str], topk: int | None = None
     ) -> list[list[dict[str, Any]]]:
+        resolved_topk = topk if topk is not None else self.config.topk
         clean_queries = [query.strip() for query in queries]
-        query_embeddings = self.encode_queries(clean_queries)
-        if query_embeddings.size == 0:
-            return [[] for _ in clean_queries]
+        results: list[list[dict[str, Any]]] = [[] for _ in clean_queries]
+        non_empty = [
+            (index, query) for index, query in enumerate(clean_queries) if query
+        ]
+        for start in range(0, len(non_empty), self.config.query_batch_size):
+            query_batch = non_empty[start : start + self.config.query_batch_size]
+            batch_embeddings = self.encode_queries([query for _, query in query_batch])
+            if batch_embeddings.size == 0:
+                continue
+            scores, indices = self.index.search(batch_embeddings, resolved_topk)
+            for (query_index, _), row_scores, row_indices in zip(
+                query_batch, scores, indices
+            ):
+                query_results: list[dict[str, Any]] = []
+                for score, idx in zip(row_scores, row_indices):
+                    if idx < 0:
+                        continue
+                    query_results.append(
+                        {
+                            "document": self.corpus[int(idx)],
+                            "score": float(score),
+                        }
+                    )
+                results[query_index] = query_results
 
-        scores, indices = self.index.search(query_embeddings, topk or self.config.topk)
-        filled_results: list[list[dict[str, Any]]] = []
-        for row_scores, row_indices in zip(scores, indices):
-            query_results: list[dict[str, Any]] = []
-            for score, idx in zip(row_scores, row_indices):
-                if idx < 0:
-                    continue
-                item = self.corpus[int(idx)]
-                query_results.append(
-                    {
-                        "document": item,
-                        "score": float(score),
-                    }
-                )
-            filled_results.append(query_results)
-
-        filled_iter = iter(filled_results)
-        return [[] if not query else next(filled_iter) for query in clean_queries]
+        return results
 
     def batch_search(
         self,
@@ -163,8 +184,10 @@ class DenseRetriever:
         results = self.retrieve(query_list, topk=num)
         if not return_score:
             return [[item["document"] for item in row] for row in results]
-        scores = [[float(item["score"]) for item in row] for row in results]
-        documents = [[item["document"] for item in row] for row in results]
+        documents, scores = [], []
+        for row in results:
+            documents.append([item["document"] for item in row])
+            scores.append([float(item["score"]) for item in row])
         return documents, scores
 
 
@@ -177,8 +200,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--queries", nargs="+", required=True)
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--max_length", type=int, default=180)
+    parser.add_argument("--query_batch_size", type=int, default=128)
     parser.add_argument("--use_fp16", default=False, action="store_true")
     parser.add_argument("--pooling_method", type=str, default=None)
+    parser.add_argument("--faiss_gpu", default=False, action="store_true")
     return parser.parse_args()
 
 
@@ -192,8 +217,10 @@ def main() -> None:
             retrieval_method=args.retrieval_method,
             topk=args.topk,
             max_length=args.max_length,
+            query_batch_size=args.query_batch_size,
             use_fp16=args.use_fp16,
             pooling_method=args.pooling_method,
+            faiss_gpu=args.faiss_gpu,
         )
     )
     print(json.dumps(retriever.retrieve(args.queries), indent=2, ensure_ascii=False))
