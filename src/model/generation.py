@@ -678,7 +678,7 @@ def score_group_rollout(
     Each rollout's ``rollout_outputs[0]`` is the ``AgentLoopOutput`` for the
     (single-prompt) trajectory.  Multi-prompt batches keep only the first
     output per rollout — for multi-prompt groups use :func:`score_prompt_batch`
-    from ``src.agent_loop.grpo`` directly.
+    from ``src`` directly.
 
     Args:
         grouped_rollouts: List returned by ``run_prompt_rollout_group``.
@@ -1133,7 +1133,7 @@ async def async_run_prompt_rollout_group(
         prompt_batches:  One single-prompt batch per prompt to roll out.
         search_mode:     Forwarded to :meth:`~LLMGenerationManager._run_one_rollout`.
         sampling_params: Base sampling params; diversified by
-                         :func:`~src.agent_loop.grpo.build_grpo_sampling_params`.
+                         :func:`~src.build_grpo_sampling_params`.
         num_rollouts:    Trajectories per prompt.
         base_seed:       Unique seed for (prompt i, rollout j) =
                          ``base_seed + i * num_rollouts + j``.
@@ -3091,7 +3091,7 @@ class LLMGenerationManager:
         ``response_mask`` / ``old_log_probs`` alignment for policy-gradient updates.
 
         Contrast with the one-shot retrieval path in
-        ``src/agent_loop/single_turn_agent_loop.py``:
+        ``src/agents/single_turn.py``:
 
         +-----------------------------+----------------------------------------+
         | ``SingleTurnAgentLoop``     | ``LLMGenerationManager.run_llm_loop``  |

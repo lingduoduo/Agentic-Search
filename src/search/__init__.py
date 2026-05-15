@@ -31,47 +31,38 @@ __all__ = [
     "TextProcessor",
 ]
 
+_LAZY_EXPORTS: dict[str, str] = {
+    "OnlineSearchConfig": ".google_search_server",
+    "OnlineSearchEngine": ".google_search_server",
+    "SerpSearchConfig": ".serp_search_server",
+    "SerpSearchEngine": ".serp_search_server",
+    "IndexBuilder": ".index_builder",
+    "IndexBuilderConfig": ".index_builder",
+    "DenseRetriever": ".retrieval",
+    "DenseRetrieverConfig": ".retrieval",
+    "RetrievalServerConfig": ".retrieval_server",
+    "RerankerConfig": ".rerank",
+    "RetrievalRerankConfig": ".retrieval_rerank_server",
+    "create_base_app": ".search_app",
+    "TextProcessor": ".text_processor",
+    "Vocabulary": ".vocabulary",
+    "SOS_token": ".vocabulary",
+    "EOS_token": ".vocabulary",
+    "MAX_LENGTH": ".vocabulary",
+    "normalize_text": ".vocabulary",
+    "normalize_document": ".vocabulary",
+    "tokenize_text": ".vocabulary",
+    "tokenize_document": ".vocabulary",
+    "build_vocabulary_from_sequences": ".vocabulary",
+    "extract_keywords": ".vocabulary",
+}
+
 
 def __getattr__(name: str) -> Any:
-    if name in {"OnlineSearchConfig", "OnlineSearchEngine"}:
-        module = import_module(".google_search_server", __name__)
-        return getattr(module, name)
-    if name in {"SerpSearchConfig", "SerpSearchEngine"}:
-        module = import_module(".serp_search_server", __name__)
-        return getattr(module, name)
-    if name in {"IndexBuilder", "IndexBuilderConfig"}:
-        module = import_module(".index_builder", __name__)
-        return getattr(module, name)
-    if name in {"DenseRetriever", "DenseRetrieverConfig"}:
-        module = import_module(".retrieval", __name__)
-        return getattr(module, name)
-    if name == "RetrievalServerConfig":
-        module = import_module(".retrieval_server", __name__)
-        return getattr(module, name)
-    if name == "RerankerConfig":
-        module = import_module(".rerank", __name__)
-        return getattr(module, name)
-    if name == "RetrievalRerankConfig":
-        module = import_module(".retrieval_rerank_server", __name__)
-        return getattr(module, name)
-    if name == "create_base_app":
-        module = import_module(".search_app", __name__)
-        return getattr(module, name)
-    if name == "TextProcessor":
-        module = import_module(".text_processor", __name__)
-        return getattr(module, name)
-    if name in {
-        "Vocabulary",
-        "SOS_token",
-        "EOS_token",
-        "MAX_LENGTH",
-        "normalize_text",
-        "normalize_document",
-        "tokenize_text",
-        "tokenize_document",
-        "build_vocabulary_from_sequences",
-        "extract_keywords",
-    }:
-        module = import_module(".vocabulary", __name__)
-        return getattr(module, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    try:
+        module_path = _LAZY_EXPORTS[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_path, __name__), name)
+    globals()[name] = value
+    return value

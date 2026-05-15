@@ -106,7 +106,7 @@ def _score_with_optional_grpo_helpers(
         [rollout.reward for rollout in scored],
         [rollout.advantage for rollout in scored],
         [rollout.reward_components for rollout in scored],
-        "src.agent_loop.score_prompt_group",
+        "src.score_prompt_group",
     )
 
 
