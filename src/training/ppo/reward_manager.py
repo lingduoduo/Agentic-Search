@@ -29,12 +29,15 @@ DEFAULT_QA_DATA_SOURCES = frozenset(
     }
 )
 
+_RE_ARTICLES = re.compile(r"\b(a|an|the)\b")
+_RE_NON_ALNUM = re.compile(r"[^a-z0-9\s]")
+_RE_ANSWER_TAG = re.compile(r"<answer>.*?</answer>", re.DOTALL)
+
 
 def normalize_qa_answer(text: str) -> str:
-    """Normalize QA answers for exact-match style reward scoring."""
     text = text.lower()
-    text = re.sub(r"\b(a|an|the)\b", " ", text)
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = _RE_ARTICLES.sub(" ", text)
+    text = _RE_NON_ALNUM.sub(" ", text)
     return " ".join(text.split())
 
 
@@ -46,8 +49,6 @@ def qa_exact_match_score(
     """Return exact-match reward for normalized QA answers.
 
     ``format_score`` is added when the completion contains an ``<answer>`` tag.
-    This mirrors the small format bonus used by some PPO reward managers while
-    keeping the default behavior purely answer based.
     """
     normalized_solution = normalize_qa_answer(solution_str)
     normalized_truth = normalize_qa_answer(ground_truth)
@@ -55,16 +56,15 @@ def qa_exact_match_score(
         score = 0.0
     else:
         score = 1.0 if normalized_truth in normalized_solution else 0.0
-    if format_score and re.search(r"<answer>.*?</answer>", solution_str, re.DOTALL):
-        score += float(format_score)
-    return float(score)
+    if format_score and _RE_ANSWER_TAG.search(solution_str):
+        score += format_score
+    return score
 
 
 def select_reward_score_fn(
     data_source: str,
     registry: Mapping[str, RewardScoreFn] | None = None,
 ) -> RewardScoreFn:
-    """Resolve the scoring function for a dataset/source name."""
     if registry and data_source in registry:
         return registry[data_source]
     if data_source in DEFAULT_QA_DATA_SOURCES:
@@ -100,7 +100,10 @@ def _ground_truth_at(non_tensor_batch: Mapping[str, Any], index: int) -> str:
         values = non_tensor_batch.get(key)
         if values is None:
             continue
-        value = _as_list(values, index + 1, "")[index]
+        if isinstance(values, (list, tuple)):
+            value = values[index] if index < len(values) else ""
+        else:
+            value = values
         if isinstance(value, (list, tuple)):
             return str(value[0]) if value else ""
         return str(value)
@@ -144,6 +147,7 @@ class PPORewardManager:
 
         reward_tensor = torch.zeros_like(responses, dtype=torch.float32)
         printed_by_source: dict[str, int] = defaultdict(int)
+        score_fn_cache: dict[str, RewardScoreFn] = {}
         data_sources = _as_list(
             non_tensor_batch.get("data_source"),
             len(responses),
@@ -171,13 +175,16 @@ class PPORewardManager:
             sequence_str = self.tokenizer.decode(sequence_ids)
 
             data_source = str(data_sources[index] or self.default_data_source)
-            score_fn = select_reward_score_fn(data_source, self.score_fns)
-            score = score_fn(
+            if data_source not in score_fn_cache:
+                score_fn_cache[data_source] = select_reward_score_fn(
+                    data_source, self.score_fns
+                )
+            score = score_fn_cache[data_source](
                 sequence_str,
                 _ground_truth_at(non_tensor_batch, index),
                 self.format_score,
             )
-            reward_tensor[index, valid_response_length - 1] = float(score)
+            reward_tensor[index, valid_response_length - 1] = score
 
             if printed_by_source[data_source] < self.num_examine:
                 printed_by_source[data_source] += 1
