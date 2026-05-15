@@ -10,14 +10,14 @@ reinforcement learning (RL) training with PPO/GRPO-style optimization.
 - Support for local dense retrievers with both flat indexing and ANN indexing,
   including FAISS index factory configurations.
 - Integration with external web search providers such as Google Custom Search,
-  Bing Search, Brave Search, and SerpAPI.
+  Bing Search, and SerpAPI.
 - Support for off-the-shelf intent classifiers and neural rerankers.
 - Support for multiple RL algorithms, including PPO, GRPO, and REINFORCE.
 - Support for multiple LLM families, including Llama 3 and Qwen 2.5.
 
 ## Retrieval & Search Infrastructure
 
-- Google Custom Search, Bing, Brave, and SerpAPI-backed search providers.
+- Google Custom Search, Bing, and SerpAPI-backed search providers.
 - Hybrid retrieval pipelines combining sparse retrieval (BM25), dense retrieval
   (FAISS), and optional neural reranking.
 
@@ -717,7 +717,7 @@ python3 -m src.retrieval.index_builder \
 ### Web Search Providers
 
 `src.tools.search` exposes a provider router for `retrieval`, `google`, `bing`,
-`brave`, and `serpapi`. Missing API keys return structured tool errors instead
+and `serpapi`. Missing API keys return structured tool errors instead
 of crashing the caller.
 
 ```python
@@ -725,7 +725,7 @@ from src.tools.search import search_for_tool_string
 
 text = await search_for_tool_string(
     "agentic search with retrieval",
-    provider="brave",
+    provider="bing",
     page_size=5,
 )
 ```
@@ -949,7 +949,7 @@ python3 -m examples.run_search_trace_workflow --sft
 
 ## Notes
 
-- Google Custom Search, Bing, Brave, and SerpAPI usage are subject to their respective quota and billing rules.
+- Google Custom Search, Bing, and SerpAPI usage are subject to their respective quota and billing rules.
 - Some result pages may block scraping or return little usable text.
 - Empty or invalid queries return empty result lists.
 - `DenseRetriever` defaults to `device="cpu"` to avoid competing with the trainer GPU — set `--device cuda` only on a dedicated retrieval node.

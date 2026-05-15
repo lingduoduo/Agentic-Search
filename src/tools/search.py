@@ -11,11 +11,10 @@ from ..retrieval.context import SearchResult
 from ..retrieval.client import SearchClient, SearchClientConfig, aiohttp
 from .base import FunctionTool
 
-SearchProvider = Literal["retrieval", "google", "bing", "brave", "serpapi"]
+SearchProvider = Literal["retrieval", "google", "bing", "serpapi"]
 
 GOOGLE_SEARCH_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
 BING_SEARCH_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
-BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -191,36 +190,6 @@ async def bing_search(
     )
 
 
-async def brave_search(
-    query: str,
-    *,
-    page: int = 1,
-    page_size: int = 5,
-    api_key: str | None = None,
-    endpoint: str | None = None,
-    timeout_seconds: int = 15,
-) -> list[SearchPage]:
-    """Search Brave Search and return normalized pages."""
-
-    api_key = api_key or os.getenv("BRAVE_SEARCH_API_KEY") or os.getenv("BRAVE_API_KEY")
-    if not api_key:
-        return [SearchPage(error="BRAVE_SEARCH_API_KEY or BRAVE_API_KEY is required.")]
-    return await _web_search(
-        query,
-        page=page,
-        page_size=page_size,
-        endpoint=endpoint
-        or os.getenv("BRAVE_SEARCH_ENDPOINT")
-        or BRAVE_SEARCH_ENDPOINT,
-        headers={"Accept": "application/json", "X-Subscription-Token": api_key},
-        timeout_seconds=timeout_seconds,
-        outer_key="web",
-        inner_key="results",
-        title_key="title",
-        summary_key="description",
-    )
-
-
 async def retrieval_search(
     query: str,
     *,
@@ -288,13 +257,6 @@ async def search_tool(
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
-    if provider == "brave":
-        return await brave_search(
-            query,
-            page=page,
-            page_size=page_size,
-            timeout_seconds=timeout_seconds,
-        )
     if provider == "serpapi":
         return await serpapi_search(
             query,
@@ -302,9 +264,7 @@ async def search_tool(
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
-    raise ValueError(
-        "provider must be 'retrieval', 'google', 'bing', 'brave', or 'serpapi'"
-    )
+    raise ValueError("provider must be 'retrieval', 'google', 'bing', or 'serpapi'")
 
 
 async def search_for_list(
