@@ -16,7 +16,7 @@ reinforcement learning (RL) training with PPO/GRPO-style optimization.
 
 ## Retrieval & Search Infrastructure
 
-- Google Custom Search, Bing, and SerpAPI-backed search providers.
+- Google Custom Search, and SerpAPI-backed search providers.
 - Hybrid retrieval pipelines combining sparse retrieval (BM25), dense retrieval
   (FAISS), and optional neural reranking.
 
