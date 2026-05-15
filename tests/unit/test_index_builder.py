@@ -299,3 +299,75 @@ class TestIndexBuilderInternals:
             [11.0, 11.5],
             [20.0, 20.5],
         ]
+
+    def test_encode_all_to_memmap_streams_batches_to_disk(self, monkeypatch, tmp_path):
+        np = pytest.importorskip("numpy")
+        builder = IndexBuilder.__new__(IndexBuilder)
+        builder.batch_size = 2
+        builder.gpu_num = 0
+        builder.device = "cpu"
+        builder.max_length = 32
+        builder.pooling_method = "mean"
+        builder.retrieval_method = "contriever"
+        builder.embedding_save_path = tmp_path / "embeddings.memmap"
+        builder.corpus = _Corpus(
+            [
+                {"contents": "doc one"},
+                {"contents": "doc two"},
+                {"contents": "doc three"},
+            ]
+        )
+
+        monkeypatch.setattr("src.search.index_builder._require_torch", lambda: object())
+        monkeypatch.setattr(
+            "src.search.index_builder._require_tqdm", lambda: (lambda seq, **_: seq)
+        )
+
+        calls: list[list[str]] = []
+
+        def fake_encode_batch(*args, **kwargs):
+            texts = args[2]
+            calls.append(list(texts))
+            base = len(calls) * 10
+            return np.array(
+                [[base + index, base + index + 0.5] for index in range(len(texts))],
+                dtype="float32",
+            )
+
+        monkeypatch.setattr("src.search.index_builder._encode_batch", fake_encode_batch)
+
+        embeddings = builder.encode_all_to_memmap(encoder=object(), tokenizer=object())
+
+        assert calls == [["doc one", "doc two"], ["doc three"]]
+        assert isinstance(embeddings, np.memmap)
+        assert embeddings.tolist() == [
+            [10.0, 10.5],
+            [11.0, 11.5],
+            [20.0, 20.5],
+        ]
+        assert builder.embedding_save_path.stat().st_size == 3 * 2 * 4
+
+    def test_load_embedding_infers_hidden_size_from_file(self, tmp_path):
+        np = pytest.importorskip("numpy")
+        embedding_path = tmp_path / "precomputed.memmap"
+        expected = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=np.float32,
+        )
+        expected.tofile(embedding_path)
+
+        builder = IndexBuilder.__new__(IndexBuilder)
+        loaded = builder._load_embedding(str(embedding_path), corpus_size=2)
+
+        assert isinstance(loaded, np.memmap)
+        assert loaded.shape == (2, 3)
+        assert loaded.tolist() == expected.tolist()
+
+    def test_load_embedding_rejects_misaligned_file_size(self, tmp_path):
+        embedding_path = tmp_path / "broken.memmap"
+        embedding_path.write_bytes(b"12345")
+
+        builder = IndexBuilder.__new__(IndexBuilder)
+
+        with pytest.raises(ValueError, match="not divisible"):
+            builder._load_embedding(str(embedding_path), corpus_size=2)
