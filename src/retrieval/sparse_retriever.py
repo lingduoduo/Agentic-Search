@@ -44,33 +44,42 @@ class SparseRetriever:
         self.config = config
         lucene_searcher = _require_lucene_searcher()
         self.searcher = lucene_searcher(config.index_path)
-        self.corpus = load_corpus(config.corpus_path)
-        self._corpus_by_id = {}
-        for index in range(len(self.corpus)):
-            item = self.corpus[index]
+        self._corpus_by_id: dict[str, dict[str, Any]] | None = None
+
+    def _ensure_corpus_by_id(self) -> dict[str, dict[str, Any]]:
+        if self._corpus_by_id is not None:
+            return self._corpus_by_id
+
+        corpus = load_corpus(self.config.corpus_path)
+        corpus_by_id: dict[str, dict[str, Any]] = {}
+        for index in range(len(corpus)):
+            item = corpus[index]
             item_id = item.get("id")
             if item_id is not None:
-                self._corpus_by_id[str(item_id)] = item
+                corpus_by_id[str(item_id)] = item
+        self._corpus_by_id = corpus_by_id
+        return corpus_by_id
 
     def _document_for_hit(self, hit: Any) -> dict[str, Any]:
-        corpus_item = self._corpus_by_id.get(str(hit.docid))
+        raw_doc = self.searcher.doc(hit.docid)
+        raw = raw_doc.raw() if raw_doc is not None else ""
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return {"id": hit.docid, "contents": raw}
+            if isinstance(parsed, dict):
+                return parsed
+
+        corpus_item = self._ensure_corpus_by_id().get(str(hit.docid))
         if corpus_item is not None:
             return corpus_item
-
-        raw_doc = self.searcher.doc(hit.docid)
-        raw = raw_doc.raw() if raw_doc is not None else "{}"
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return {"id": hit.docid, "contents": raw}
-        if isinstance(parsed, dict):
-            return parsed
-        return {"id": hit.docid, "contents": str(parsed)}
+        return {"id": hit.docid, "contents": ""}
 
     def retrieve(
         self, queries: list[str], topk: int | None = None
     ) -> list[list[dict[str, Any]]]:
-        resolved_topk = topk or self.config.topk
+        resolved_topk = topk if topk is not None else self.config.topk
         rows: list[list[dict[str, Any]]] = []
         for query in queries:
             clean_query = query.strip()

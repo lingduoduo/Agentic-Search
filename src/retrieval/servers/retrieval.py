@@ -74,19 +74,10 @@ def _retrieve_rows(
     topk: int,
     return_scores: bool,
 ) -> list[list[dict]]:
-    """Retrieve each query independently for local-server reliability."""
-    rows: list[list[dict]] = []
-    for query in queries:
-        if return_scores:
-            query_rows = retriever.retrieve([query], topk=topk)
-        else:
-            query_rows = retriever.batch_search(
-                [query],
-                num=topk,
-                return_score=False,
-            )
-        rows.append(query_rows[0] if query_rows else [])
-    return rows
+    rows = retriever.retrieve(queries, topk=topk)
+    if return_scores:
+        return rows
+    return [[item["document"] for item in row] for row in rows]
 
 
 def _build_retriever(
@@ -182,8 +173,10 @@ def parse_args() -> argparse.Namespace:
         help="Path or HF id for the dense retriever model. Not required for BM25.",
     )
     parser.add_argument("--max_length", type=int, default=180)
+    parser.add_argument("--query_batch_size", type=int, default=128)
     parser.add_argument("--use_fp16", action="store_true", default=False)
     parser.add_argument("--pooling_method", type=str, default=None)
+    parser.add_argument("--faiss_gpu", action="store_true", default=False)
     parser.add_argument(
         "--device",
         type=str,
@@ -235,9 +228,11 @@ def main() -> None:
             retrieval_method=args.retrieval_method,
             topk=args.topk,
             max_length=args.max_length,
+            query_batch_size=args.query_batch_size,
             use_fp16=args.use_fp16,
             pooling_method=args.pooling_method,
             device=args.device,
+            faiss_gpu=args.faiss_gpu,
         )
     app = create_app(
         RetrievalServerConfig(
