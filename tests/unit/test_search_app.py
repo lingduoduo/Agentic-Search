@@ -134,3 +134,9 @@ class TestCreateSearchApp:
         assert response.status_code == 200
         assert response.json()["result"] == ["page1"]
         engine.fetch_urls.assert_called_once_with(["https://example.com"])
+
+
+def test_google_search_server_import_does_not_require_google_client():
+    from src.search import google_search_server
+
+    assert google_search_server.DEFAULT_TOPK >= 1

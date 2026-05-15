@@ -204,6 +204,23 @@ def test_dense_retriever_config_rejects_zero_query_batch_size():
         cfg.validate()
 
 
+def test_dense_retriever_config_rejects_zero_hnsw_ef_search():
+    from src.search.retrieval import DenseRetrieverConfig
+
+    cfg = DenseRetrieverConfig(
+        model_path="/m",
+        index_path="/i",
+        corpus_path="/c",
+        retrieval_method="e5",
+        hnsw_ef_search=0,
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="hnsw_ef_search"):
+        cfg.validate()
+
+
 def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
     import numpy as np
     from src.search.retrieval import DenseRetriever
@@ -283,6 +300,7 @@ def test_parse_args_device_defaults_to_cpu():
     assert args.workers == 1
     assert args.query_batch_size == 128
     assert args.faiss_gpu is False
+    assert args.hnsw_ef_search is None
 
 
 def test_parse_args_allows_bm25_without_model_path():
