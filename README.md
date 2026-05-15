@@ -9,8 +9,7 @@ reinforcement learning (RL) training with PPO/GRPO-style optimization.
 - Support for local sparse retrievers such as BM25.
 - Support for local dense retrievers with both flat indexing and ANN indexing,
   including FAISS index factory configurations.
-- Integration with external web search providers such as Google Custom Search,
-  Bing Search, and SerpAPI.
+- Integration with external web search providers such as Google Custom Search, and SerpAPI.
 - Support for off-the-shelf intent classifiers and neural rerankers.
 - Support for multiple RL algorithms, including PPO, GRPO, and REINFORCE.
 - Support for multiple LLM families, including Llama 3 and Qwen 2.5.
