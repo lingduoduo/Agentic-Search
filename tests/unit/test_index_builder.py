@@ -8,6 +8,8 @@ from src.search.index_builder import (
     _Corpus,
     prepare_texts,
     resolve_pooling_method,
+    set_hnsw_ef_construction,
+    set_hnsw_ef_search,
 )
 
 
@@ -79,6 +81,10 @@ class TestIndexBuilderConfigValidate:
     def test_zero_vocab_max_length_raises(self):
         with pytest.raises(ValueError, match="vocab_max_length"):
             _config(vocab_max_length=0).validate()
+
+    def test_zero_hnsw_ef_construction_raises(self):
+        with pytest.raises(ValueError, match="hnsw_ef_construction"):
+            _config(faiss_type="HNSW64", hnsw_ef_construction=0).validate()
 
     def test_config_is_frozen(self):
         config = _config()
@@ -236,6 +242,58 @@ class TestPooling:
 
 
 class TestIndexBuilderInternals:
+    def test_set_hnsw_ef_construction_updates_hnsw_index(self):
+        class _FakeHnsw:
+            efConstruction = 40
+
+        class _FakeIndex:
+            hnsw = _FakeHnsw()
+
+        index = _FakeIndex()
+
+        set_hnsw_ef_construction(index, 200)
+
+        assert index.hnsw.efConstruction == 200
+
+    def test_set_hnsw_ef_construction_rejects_flat_index(self):
+        with pytest.raises(ValueError, match="HNSW"):
+            set_hnsw_ef_construction(object(), 200)
+
+    def test_set_hnsw_ef_search_updates_hnsw_index(self):
+        class _FakeHnsw:
+            efSearch = 16
+
+        class _FakeIndex:
+            hnsw = _FakeHnsw()
+
+        index = _FakeIndex()
+        set_hnsw_ef_search(index, 128)
+        assert index.hnsw.efSearch == 128
+
+    def test_set_hnsw_ef_search_rejects_flat_index(self):
+        with pytest.raises(ValueError, match="HNSW"):
+            set_hnsw_ef_search(object(), 128)
+
+    def test_hnsw_ef_search_zero_fails_validation(self):
+        with pytest.raises(ValueError, match="hnsw_ef_search"):
+            _config(faiss_type="HNSW64", hnsw_ef_search=0).validate()
+
+    def test_hnsw_ef_search_positive_passes_validation(self):
+        _config(faiss_type="HNSW64", hnsw_ef_search=64).validate()
+
+    def test_faiss_gpu_with_hnsw_raises_in_build_dense_index(self, monkeypatch):
+        monkeypatch.setattr("src.search.index_builder._require_faiss", lambda: object())
+        monkeypatch.setattr("src.search.index_builder._require_torch", lambda: object())
+        builder = IndexBuilder.__new__(IndexBuilder)
+        builder.faiss_type = "HNSW64"
+        builder.faiss_gpu = True
+        builder.gpu_num = 1
+        builder.embedding_path = None
+        builder.index_save_path = type("P", (), {"exists": lambda self: False})()
+
+        with pytest.raises(ValueError, match="HNSW"):
+            builder.build_dense_index()
+
     def test_build_vocabulary_metadata_uses_single_normalized_pass(self):
         builder = IndexBuilder.__new__(IndexBuilder)
         builder.corpus = _Corpus(
