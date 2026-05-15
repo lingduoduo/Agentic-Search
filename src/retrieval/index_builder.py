@@ -387,35 +387,56 @@ class IndexBuilder:
                 check=True,
             )
 
-    def _load_embedding(
-        self, embedding_path: str, corpus_size: int, hidden_size: int
-    ) -> np.memmap:
+    def _load_embedding(self, embedding_path: str, corpus_size: int) -> np.memmap:
+        if corpus_size < 1:
+            raise ValueError("Cannot infer embedding dimensions for an empty corpus.")
+
+        embedding_bytes = Path(embedding_path).stat().st_size
+        row_bytes = np.dtype(np.float32).itemsize * corpus_size
+        if embedding_bytes % row_bytes != 0:
+            raise ValueError(
+                "Embedding file size is not divisible by corpus size and float32 size."
+            )
+
+        hidden_size = embedding_bytes // row_bytes
+        if hidden_size < 1:
+            raise ValueError("Embedding file does not contain any float32 vectors.")
+
         return np.memmap(embedding_path, mode="r", dtype=np.float32).reshape(
             corpus_size, hidden_size
         )
 
-    def _save_embedding(self, all_embeddings: np.ndarray) -> None:
+    def _iter_encoded_batches(
+        self, encoder: Any, tokenizer: Any, batch_size: int | None = None
+    ):
         tqdm = _require_tqdm()
-        memmap = np.memmap(
-            self.embedding_save_path,
-            shape=all_embeddings.shape,
-            mode="w+",
-            dtype=all_embeddings.dtype,
-        )
-        save_batch_size = 10000
-        for start in tqdm(
-            range(0, all_embeddings.shape[0], save_batch_size),
-            leave=False,
-            desc="Saving embeddings",
+
+        effective_batch_size = batch_size or self.batch_size
+        for start_idx in tqdm(
+            range(0, len(self.corpus), effective_batch_size),
+            desc="Inference embeddings",
         ):
-            stop = min(start + save_batch_size, all_embeddings.shape[0])
-            memmap[start:stop] = all_embeddings[start:stop]
-        memmap.flush()
+            yield (
+                start_idx,
+                _encode_batch(
+                    encoder,
+                    tokenizer,
+                    prepare_texts(
+                        self.corpus[start_idx : start_idx + effective_batch_size][
+                            "contents"
+                        ],
+                        self.retrieval_method,
+                        is_query=False,
+                    ),
+                    self.retrieval_method,
+                    self.max_length,
+                    self.pooling_method,
+                    self.device,
+                ),
+            )
 
     def encode_all(self, encoder: Any, tokenizer: Any) -> np.ndarray:
         torch = _require_torch()
-        tqdm = _require_tqdm()
-
         batch_size = self.batch_size
         if self.gpu_num > 1 and self.device.startswith("cuda"):
             encoder = torch.nn.DataParallel(encoder)
@@ -423,22 +444,9 @@ class IndexBuilder:
 
         all_embeddings: np.ndarray | None = None
         write_index = 0
-        for start_idx in tqdm(
-            range(0, len(self.corpus), batch_size), desc="Inference embeddings"
+        for _, batch_embeddings in self._iter_encoded_batches(
+            encoder, tokenizer, batch_size=batch_size
         ):
-            batch_embeddings = _encode_batch(
-                encoder,
-                tokenizer,
-                prepare_texts(
-                    self.corpus[start_idx : start_idx + batch_size]["contents"],
-                    self.retrieval_method,
-                    is_query=False,
-                ),
-                self.retrieval_method,
-                self.max_length,
-                self.pooling_method,
-                self.device,
-            )
             if all_embeddings is None:
                 all_embeddings = np.empty(
                     (len(self.corpus), batch_embeddings.shape[1]),
@@ -452,6 +460,34 @@ class IndexBuilder:
             return np.empty((0, 0), dtype=np.float32)
         return all_embeddings
 
+    def encode_all_to_memmap(self, encoder: Any, tokenizer: Any) -> np.memmap:
+        torch = _require_torch()
+        batch_size = self.batch_size
+        if self.gpu_num > 1 and self.device.startswith("cuda"):
+            encoder = torch.nn.DataParallel(encoder)
+            batch_size *= self.gpu_num
+
+        memmap: np.memmap | None = None
+        write_index = 0
+        for _, batch_embeddings in self._iter_encoded_batches(
+            encoder, tokenizer, batch_size=batch_size
+        ):
+            if memmap is None:
+                memmap = np.memmap(
+                    self.embedding_save_path,
+                    shape=(len(self.corpus), batch_embeddings.shape[1]),
+                    mode="w+",
+                    dtype=batch_embeddings.dtype,
+                )
+            stop_index = write_index + batch_embeddings.shape[0]
+            memmap[write_index:stop_index] = batch_embeddings
+            write_index = stop_index
+
+        if memmap is None:
+            raise ValueError("Cannot build a dense index for an empty corpus.")
+        memmap.flush()
+        return memmap
+
     def build_dense_index(self) -> None:
         faiss = _require_faiss()
         torch = _require_torch()
@@ -462,23 +498,20 @@ class IndexBuilder:
                 UserWarning,
             )
 
-        encoder, tokenizer = load_model(
-            model_path=self.model_path or "",
-            use_fp16=self.use_fp16,
-            device=self.device,
-        )
-
         if self.embedding_path is not None:
-            hidden_size = encoder.config.hidden_size
             corpus_size = len(self.corpus)
-            all_embeddings = self._load_embedding(
-                self.embedding_path, corpus_size, hidden_size
-            )
+            all_embeddings = self._load_embedding(self.embedding_path, corpus_size)
         else:
+            encoder, tokenizer = load_model(
+                model_path=self.model_path or "",
+                use_fp16=self.use_fp16,
+                device=self.device,
+            )
             with torch.no_grad():
-                all_embeddings = self.encode_all(encoder, tokenizer)
-            if self.save_embedding:
-                self._save_embedding(all_embeddings)
+                if self.save_embedding:
+                    all_embeddings = self.encode_all_to_memmap(encoder, tokenizer)
+                else:
+                    all_embeddings = self.encode_all(encoder, tokenizer)
             del self.corpus
 
         dim = all_embeddings.shape[-1]
