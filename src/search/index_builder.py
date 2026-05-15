@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
+from ._compat import alias_module
 
-from ..retrieval import index_builder as _impl
-
-sys.modules[__name__] = _impl
+alias_module(__name__, "src.retrieval.index_builder")

@@ -25,8 +25,10 @@ pyserini
 google-api-python-client
 
 # Notes:
-# - `uvicorn` is only needed for FastAPI server entry points under `src/search/*_server.py`.
-#   It is not used by the local single-turn / search / tool CLI path in `src/run_agentic_search.py`.
+# - `uvicorn` is only needed for FastAPI server entry points under
+#   `src/retrieval/servers/`.
+#   It is not used by the local single-turn / search / tool CLI path in
+#   `examples/run_agentic_search.py`.
 # - On macOS Apple Silicon, local Hugging Face causal-LM inference is safest on CPU in this repo.
 #   The MPS backend can segfault for some models / torch / transformers combinations.
 # faiss-cpu: install via conda to avoid OpenMP conflict with PyTorch on macOS:
