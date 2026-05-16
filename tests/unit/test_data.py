@@ -6,7 +6,12 @@ from src import (
     PromptOnlyDataset,
     build_prompt_dataloader,
     build_prompt_messages,
+    build_search_qa_messages,
+    build_search_qa_prompt,
+    build_search_qa_record,
+    make_search_qa_map_fn,
     normalize_prompt_training_example,
+    normalize_question_text,
     prompt_batch_to_search_batch,
 )
 
@@ -32,6 +37,110 @@ def test_normalize_prompt_training_example_extracts_known_fields():
     assert example.ground_truth == "John Hopfield and Geoffrey Hinton."
     assert example.tools == ["search"]
     assert example.metadata == {"source": "demo"}
+
+
+def test_normalize_question_text_cleans_whitespace_and_question_mark():
+    assert normalize_question_text("  Who   wrote Dune.  ") == "Who wrote Dune?"
+    assert normalize_question_text("What is FAISS?") == "What is FAISS?"
+
+
+def test_normalize_prompt_training_example_accepts_golden_answer_aliases():
+    example = normalize_prompt_training_example(
+        {
+            "question": "who wrote dune",
+            "golden_answers": ["Frank Herbert", "frank herbert", "F. Herbert"],
+            "source": "nq",
+        }
+    )
+
+    assert example.question == "who wrote dune?"
+    assert example.ground_truth == "Frank Herbert"
+    assert example.metadata["answer_aliases"] == ["Frank Herbert", "F. Herbert"]
+    assert example.metadata["source"] == "nq"
+
+
+def test_build_search_qa_prompt_contains_agent_search_contract():
+    assert build_search_qa_prompt("who wrote dune") == "who wrote dune?"
+
+
+def test_build_search_qa_messages_reuses_search_agent_contract():
+    messages = build_search_qa_messages("who wrote dune")
+
+    assert messages[0]["role"] == "system"
+    assert "<think>" in messages[0]["content"]
+    assert "<search>" in messages[0]["content"]
+    assert "<information>" in messages[0]["content"]
+    assert "<answer>" in messages[0]["content"]
+    assert "Never write or fabricate this block" in messages[0]["content"]
+    assert messages[1] == {"role": "user", "content": "who wrote dune?"}
+
+
+def test_build_search_qa_record_preserves_aliases_and_reward_target():
+    record = build_search_qa_record(
+        {
+            "question": " who wrote dune ",
+            "golden_answers": ["Frank Herbert", "F. Herbert"],
+            "difficulty": "easy",
+        },
+        split="train",
+        index=7,
+        data_source="nq",
+    )
+
+    assert record["data_source"] == "nq"
+    assert record["question"] == "who wrote dune?"
+    assert record["ground_truth"] == "Frank Herbert"
+    assert record["golden_answers"] == ["Frank Herbert", "F. Herbert"]
+    assert record["reward_model"]["ground_truth"] == {
+        "target": ["Frank Herbert", "F. Herbert"]
+    }
+    assert record["prompt"][0]["role"] == "system"
+    assert "<search>" in record["prompt"][0]["content"]
+    assert record["prompt"][1] == {"role": "user", "content": "who wrote dune?"}
+    assert record["extra_info"] == {
+        "difficulty": "easy",
+        "split": "train",
+        "index": 7,
+    }
+
+
+def test_make_search_qa_map_fn_matches_dataset_map_signature():
+    process_fn = make_search_qa_map_fn(
+        "test",
+        data_source="nq",
+        ability="fact-reasoning",
+    )
+
+    record = process_fn(
+        {"question": " where is the louvre ", "golden_answers": ["Paris"]},
+        3,
+    )
+
+    assert record["data_source"] == "nq"
+    assert record["question"] == "where is the louvre?"
+    assert record["reward_model"]["ground_truth"] == {"target": ["Paris"]}
+    assert record["extra_info"] == {"split": "test", "index": 3}
+
+
+def test_prompt_only_dataset_uses_stored_search_qa_prompt():
+    record = build_search_qa_record(
+        {"question": "who wrote dune", "golden_answers": ["Frank Herbert"]},
+        data_source="nq",
+    )
+    dataset = PromptOnlyDataset(
+        [record],
+        tokenizer=_TokenizerWithEncode(),
+        prompt_length=4096,
+    )
+
+    sample = dataset[0]
+
+    assert sample.question == "who wrote dune?"
+    assert sample.messages[0]["role"] == "system"
+    assert sample.messages[0]["content"] == record["prompt"][0]["content"].strip()
+    assert sample.messages[1] == {"role": "user", "content": "who wrote dune?"}
+    assert sample.ground_truth == "Frank Herbert"
+    assert sample.tools == ["search"]
 
 
 def test_build_prompt_messages_keeps_prompt_only_and_lists_tools():

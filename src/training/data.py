@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Callable, Mapping, Sequence
 
 import torch
@@ -12,6 +13,165 @@ DEFAULT_TOOL_SYSTEM_PROMPT = (
     "You are a tool-using assistant. "
     "Use tools when they help, and answer directly when the question is already solved."
 )
+
+
+def normalize_question_text(question: Any) -> str:
+    """Normalize raw QA questions into stable, searchable prompts."""
+
+    normalized = re.sub(r"\s+", " ", str(question or "")).strip()
+    if not normalized:
+        raise ValueError("Training example is missing a non-empty `question`.")
+    if normalized[-1] != "?":
+        normalized = normalized.rstrip(".!;:") + "?"
+    return normalized
+
+
+def normalize_answer_aliases(answers: Any) -> list[str]:
+    """Return de-duplicated answer aliases, preserving source order."""
+
+    if answers is None:
+        return []
+    if isinstance(answers, str):
+        candidates = [answers]
+    elif isinstance(answers, Sequence):
+        candidates = [str(answer) for answer in answers]
+    else:
+        candidates = [str(answers)]
+
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for answer in candidates:
+        alias = re.sub(r"\s+", " ", answer).strip()
+        if not alias:
+            continue
+        key = alias.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        aliases.append(alias)
+    return aliases
+
+
+def extract_answer_aliases(example: Mapping[str, Any]) -> list[str]:
+    """Extract answer aliases from common QA dataset field names."""
+
+    for key in ("golden_answers", "answers", "answer_aliases", "ground_truth"):
+        aliases = normalize_answer_aliases(example.get(key))
+        if aliases:
+            return aliases
+    answer = str(example.get("answer", "")).strip()
+    return normalize_answer_aliases(answer)
+
+
+def build_search_qa_prompt(question: str, *, template_type: str = "base") -> str:
+    """Normalize a QA question for search-agent datasets."""
+
+    if template_type != "base":
+        raise NotImplementedError(f"Unsupported QA prompt template: {template_type}")
+    return normalize_question_text(question)
+
+
+def build_search_qa_messages(
+    question: str,
+    *,
+    template_type: str = "base",
+    system_prompt: str | None = None,
+    max_search_limit: int = 5,
+    max_url_fetch: int = 3,
+) -> list[dict[str, str]]:
+    """Build QA messages using the same prompt contract as SearchAgentLoop."""
+
+    if template_type != "base":
+        raise NotImplementedError(f"Unsupported QA prompt template: {template_type}")
+    if system_prompt is None:
+        from src.agents.search import build_search_agent_instruction
+
+        system_prompt = build_search_agent_instruction(
+            max_search_limit=max_search_limit,
+            max_url_fetch=max_url_fetch,
+        )
+    return [
+        {"role": "system", "content": system_prompt.strip()},
+        {"role": "user", "content": normalize_question_text(question)},
+    ]
+
+
+def build_search_qa_record(
+    example: Mapping[str, Any],
+    *,
+    split: str | None = None,
+    index: int | None = None,
+    data_source: str = "qa",
+    ability: str = "fact-reasoning",
+    template_type: str = "base",
+) -> dict[str, Any]:
+    """Convert a raw QA row into a rollout/reward-ready training record.
+
+    The output mirrors the lightweight structure used by VERL-style pipelines
+    while keeping fields directly consumable by this repo's PromptOnlyDataset.
+    """
+
+    question = normalize_question_text(example.get("question", ""))
+    answer_aliases = extract_answer_aliases(example)
+    if not answer_aliases:
+        raise ValueError("Training example is missing non-empty answer aliases.")
+
+    extra_info = {
+        key: value
+        for key, value in dict(example).items()
+        if key
+        not in {
+            "question",
+            "ground_truth",
+            "golden_answers",
+            "answers",
+            "answer_aliases",
+            "answer",
+            "prompt",
+        }
+    }
+    if split is not None:
+        extra_info["split"] = split
+    if index is not None:
+        extra_info["index"] = index
+
+    prompt = build_search_qa_messages(question, template_type=template_type)
+    return {
+        "data_source": data_source,
+        "question": question,
+        "ground_truth": answer_aliases[0],
+        "golden_answers": answer_aliases,
+        "prompt": prompt,
+        "ability": ability,
+        "reward_model": {
+            "style": "rule",
+            "ground_truth": {"target": answer_aliases},
+        },
+        "tools": ["search"],
+        "extra_info": extra_info,
+    }
+
+
+def make_search_qa_map_fn(
+    split: str,
+    *,
+    data_source: str = "qa",
+    ability: str = "fact-reasoning",
+    template_type: str = "base",
+) -> Callable[[Mapping[str, Any], int], dict[str, Any]]:
+    """Return a datasets.map function for QA-to-search-agent records."""
+
+    def process_fn(example: Mapping[str, Any], index: int) -> dict[str, Any]:
+        return build_search_qa_record(
+            example,
+            split=split,
+            index=index,
+            data_source=data_source,
+            ability=ability,
+            template_type=template_type,
+        )
+
+    return process_fn
 
 
 @dataclass(frozen=True)
@@ -58,17 +218,36 @@ def normalize_prompt_training_example(
     if isinstance(example, PromptTrainingExample):
         return example
 
-    question = str(example.get("question", "")).strip()
-    ground_truth = str(example.get("ground_truth", "")).strip()
+    qa_style_record = any(
+        key in example
+        for key in ("golden_answers", "answers", "answer_aliases", "answer", "prompt")
+    )
+    if qa_style_record:
+        question = normalize_question_text(example.get("question", ""))
+    else:
+        question = re.sub(r"\s+", " ", str(example.get("question", ""))).strip()
+        if not question:
+            raise ValueError("Training example is missing a non-empty `question`.")
+    answer_aliases = extract_answer_aliases(example)
+    ground_truth = answer_aliases[0] if answer_aliases else ""
     tools = [str(tool) for tool in example.get("tools", [])]
     metadata = {
         key: value
         for key, value in dict(example).items()
-        if key not in {"question", "ground_truth", "tools"}
+        if key
+        not in {
+            "question",
+            "ground_truth",
+            "golden_answers",
+            "answers",
+            "answer_aliases",
+            "answer",
+            "tools",
+        }
     }
+    if len(answer_aliases) > 1:
+        metadata.setdefault("answer_aliases", answer_aliases)
 
-    if not question:
-        raise ValueError("Training example is missing a non-empty `question`.")
     if not ground_truth:
         raise ValueError("Training example is missing a non-empty `ground_truth`.")
 
@@ -101,6 +280,29 @@ def build_prompt_messages(
         messages.append({"role": "system", "content": content})
     messages.append({"role": "user", "content": question})
     return messages
+
+
+def normalize_prompt_messages(prompt: Any) -> list[dict[str, str]]:
+    """Normalize stored prompt fields into chat messages."""
+
+    if isinstance(prompt, str):
+        content = prompt.strip()
+        if not content:
+            raise ValueError("Stored prompt string is empty.")
+        return [{"role": "user", "content": content}]
+    if isinstance(prompt, Sequence):
+        messages: list[dict[str, str]] = []
+        for message in prompt:
+            if not isinstance(message, Mapping):
+                raise ValueError("Stored prompt messages must be mappings.")
+            role = str(message.get("role", "user")).strip() or "user"
+            content = str(message.get("content", "")).strip()
+            if not content:
+                continue
+            messages.append({"role": role, "content": content})
+        if messages:
+            return messages
+    raise ValueError("Stored prompt must be a string or non-empty message list.")
 
 
 def build_prompt_ids_from_messages(
@@ -143,19 +345,22 @@ class PromptOnlyDataset(Dataset[PromptSample]):
         ]
         self.tokenizer = tokenizer
         self.prompt_length = prompt_length
-        self.prompt_builder = prompt_builder or (
-            lambda example: build_prompt_messages(
-                example.question,
-                tools=example.tools,
-            )
-        )
+        self.prompt_builder = prompt_builder
 
     def __len__(self) -> int:
         return len(self.examples)
 
     def __getitem__(self, index: int) -> PromptSample:
         example = self.examples[index]
-        messages = list(self.prompt_builder(example))
+        if self.prompt_builder is not None:
+            messages = list(self.prompt_builder(example))
+        elif "prompt" in example.metadata:
+            messages = normalize_prompt_messages(example.metadata["prompt"])
+        else:
+            messages = build_prompt_messages(
+                example.question,
+                tools=example.tools,
+            )
         prompt_ids = build_prompt_ids_from_messages(
             self.tokenizer,
             messages,

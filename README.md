@@ -78,6 +78,15 @@ Run the reward and GRPO helper smoke test:
 python3 -m examples.run_grpo_training_pipeline
 ```
 
+Prepare NQ/FlashRAG-style question-answer pairs for search-agent training:
+
+```bash
+python3 -m examples.prepare_search_qa_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq \
+  --local_dir data/nq_search
+```
+
 ## Run An Agent
 
 `examples/run_agentic_search.py` is the main CLI.
@@ -221,6 +230,7 @@ Useful entry points:
 |------|-------------------|
 | Deterministic trace | `python3 -m examples.run_search_trace_workflow` |
 | SFT record from trace | `python3 -m examples.run_search_trace_workflow --sft` |
+| QA parquet preparation | `python3 -m examples.prepare_search_qa_dataset` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Reward function | `src/training/reward.py` |
 | GRPO helpers | `src/training/grpo.py` |
