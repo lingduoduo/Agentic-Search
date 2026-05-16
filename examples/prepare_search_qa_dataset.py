@@ -87,10 +87,11 @@ def convert_split(dataset: Any, *, split: str, args: argparse.Namespace) -> Any:
 def preview_records(converted: Any, *, split: str, limit: int) -> None:
     print(f"\n[{split}] converted preview")
     for row in converted.select(range(min(limit, len(converted)))):
+        reward_target = row["reward_model"]["ground_truth"]["target"]
         preview = {
-            "question": row["question"],
-            "golden_answers": row["golden_answers"],
-            "reward_target": row["reward_model"]["ground_truth"]["target"],
+            "question": row["prompt"][-1]["content"],
+            "golden_answers": reward_target,
+            "reward_target": reward_target,
             "prompt_roles": [message["role"] for message in row["prompt"]],
             "extra_info": row["extra_info"],
         }
