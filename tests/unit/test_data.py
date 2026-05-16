@@ -7,11 +7,14 @@ import json
 from examples.prepare_search_qa_dataset import preview_records
 from src import (
     PromptOnlyDataset,
+    build_search_rag_record,
     build_prompt_dataloader,
     build_prompt_messages,
     build_search_qa_messages,
     build_search_qa_prompt,
     build_search_qa_record,
+    format_rag_reference,
+    make_search_rag_map_fn,
     make_search_qa_map_fn,
     normalize_prompt_training_example,
     normalize_question_text,
@@ -130,6 +133,67 @@ def test_make_search_qa_map_fn_matches_dataset_map_signature():
     assert record["prompt"] == [{"role": "user", "content": "where is the louvre?"}]
     assert record["reward_model"]["ground_truth"] == {"target": ["Paris"]}
     assert record["extra_info"] == {"split": "test", "index": 3}
+
+
+def test_format_rag_reference_uses_numbered_docs():
+    text = format_rag_reference(
+        [
+            {"id": "d1", "contents": "Dune\nDune was written by Frank Herbert."},
+            {"id": "d2", "title": "Louvre", "contents": "Located in Paris."},
+        ]
+    )
+
+    assert "Doc 1(Title: Dune) Dune was written by Frank Herbert." in text
+    assert "Doc 2(Title: Louvre) Located in Paris." in text
+
+
+def test_build_search_rag_record_uses_compact_shape_with_context():
+    record = build_search_rag_record(
+        {"question": "who wrote dune", "golden_answers": ["Frank Herbert"]},
+        context="Doc 1(Title: Dune) Dune was written by Frank Herbert.",
+        split="train",
+        index=4,
+        data_source="nq",
+    )
+
+    assert set(record) == {
+        "data_source",
+        "prompt",
+        "ability",
+        "reward_model",
+        "extra_info",
+    }
+    assert record["prompt"][0]["role"] == "user"
+    assert "Question: who wrote dune?" in record["prompt"][0]["content"]
+    assert "Context:\nDoc 1(Title: Dune)" in record["prompt"][0]["content"]
+    assert record["reward_model"]["ground_truth"] == {"target": ["Frank Herbert"]}
+    assert record["extra_info"] == {"split": "train", "index": 4}
+
+
+def test_make_search_rag_map_fn_uses_cached_doc_ids():
+    process_fn = make_search_rag_map_fn(
+        "test",
+        retrieval_cache={
+            "who wrote dune": [{"id": "d1"}, {"id": "d2"}],
+        },
+        corpus={
+            "d1": {"id": "d1", "contents": "Dune\nFrank Herbert wrote Dune."},
+            "d2": {"id": "d2", "contents": "Novel\nDune is a novel."},
+        },
+        topk=1,
+        data_source="nq",
+    )
+
+    record = process_fn(
+        {"question": "who wrote dune", "golden_answers": ["Frank Herbert"]},
+        2,
+    )
+
+    assert record["data_source"] == "nq"
+    assert "Doc 1(Title: Dune)" in record["prompt"][0]["content"]
+    assert "Novel" not in record["prompt"][0]["content"]
+    assert record["reward_model"]["ground_truth"] == {"target": ["Frank Herbert"]}
+    assert record["extra_info"] == {"split": "test", "index": 2}
 
 
 def test_preview_records_prints_question_answer_audit_lines(capsys):

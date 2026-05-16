@@ -166,6 +166,93 @@ def build_search_qa_record(
     }
 
 
+def format_rag_reference(retrieval_result: Sequence[Mapping[str, Any]]) -> str:
+    """Format retrieved documents as numbered context references."""
+
+    references: list[str] = []
+    for index, doc_item in enumerate(retrieval_result, start=1):
+        content = str(doc_item.get("contents", "")).strip()
+        title = str(doc_item.get("title", "")).strip()
+        text = content
+        if content:
+            lines = content.splitlines()
+            if not title and lines:
+                title = lines[0].strip()
+                text = "\n".join(lines[1:]).strip()
+        if not title:
+            title = str(doc_item.get("id", f"Doc {index}")).strip()
+        references.append(f"Doc {index}(Title: {title}) {text}".strip())
+    return "\n".join(references)
+
+
+def build_search_rag_prompt(
+    question: str,
+    context: str,
+    *,
+    template_type: str = "base",
+) -> str:
+    """Build a compact RAG prompt with fixed question/context sections."""
+
+    if template_type != "base":
+        raise NotImplementedError(f"Unsupported RAG prompt template: {template_type}")
+    return (
+        "Answer the given question with the potentially useful context.\n"
+        "Reason in <think></think> and return the final answer in "
+        "<answer></answer>.\n"
+        f"Question: {normalize_question_text(question)}\n"
+        f"Context:\n{context.strip()}\n"
+    )
+
+
+def build_search_rag_record(
+    example: Mapping[str, Any],
+    *,
+    context: str | None = None,
+    split: str | None = None,
+    index: int | None = None,
+    data_source: str = "qa",
+    ability: str = "fact-reasoning",
+    template_type: str = "base",
+) -> dict[str, Any]:
+    """Convert a QA row plus retrieval context into a compact RAG record."""
+
+    question = normalize_question_text(example.get("question", ""))
+    answer_aliases = extract_answer_aliases(example)
+    if not answer_aliases:
+        raise ValueError("Training example is missing non-empty answer aliases.")
+    resolved_context = str(
+        context if context is not None else example.get("context", "")
+    )
+    if not resolved_context.strip():
+        raise ValueError("RAG training example is missing non-empty `context`.")
+
+    extra_info: dict[str, Any] = {}
+    if split is not None:
+        extra_info["split"] = split
+    if index is not None:
+        extra_info["index"] = index
+
+    return {
+        "data_source": data_source,
+        "prompt": [
+            {
+                "role": "user",
+                "content": build_search_rag_prompt(
+                    question,
+                    resolved_context,
+                    template_type=template_type,
+                ),
+            }
+        ],
+        "ability": ability,
+        "reward_model": {
+            "style": "rule",
+            "ground_truth": {"target": answer_aliases},
+        },
+        "extra_info": extra_info,
+    }
+
+
 def make_search_qa_map_fn(
     split: str,
     *,
@@ -178,6 +265,45 @@ def make_search_qa_map_fn(
     def process_fn(example: Mapping[str, Any], index: int) -> dict[str, Any]:
         return build_search_qa_record(
             example,
+            split=split,
+            index=index,
+            data_source=data_source,
+            ability=ability,
+            template_type=template_type,
+        )
+
+    return process_fn
+
+
+def make_search_rag_map_fn(
+    split: str,
+    *,
+    retrieval_cache: Mapping[str, Sequence[Mapping[str, Any]]],
+    corpus: Mapping[str, Mapping[str, Any]],
+    topk: int = 3,
+    data_source: str = "qa",
+    ability: str = "fact-reasoning",
+    template_type: str = "base",
+) -> Callable[[Mapping[str, Any], int], dict[str, Any]]:
+    """Return a datasets.map function for QA plus cached retrieval context."""
+
+    if topk < 1:
+        raise ValueError("topk must be at least 1.")
+
+    def process_fn(example: Mapping[str, Any], index: int) -> dict[str, Any]:
+        question = str(example.get("question", "")).strip()
+        if question not in retrieval_cache:
+            raise KeyError(f"Missing retrieval cache entry for question: {question}")
+        retrieval_docs: list[Mapping[str, Any]] = []
+        for hit in retrieval_cache[question][:topk]:
+            doc_id = str(hit.get("id", ""))
+            if doc_id not in corpus:
+                raise KeyError(f"Missing corpus document for retrieval id: {doc_id}")
+            retrieval_docs.append(corpus[doc_id])
+
+        return build_search_rag_record(
+            example,
+            context=format_rag_reference(retrieval_docs),
             split=split,
             index=index,
             data_source=data_source,

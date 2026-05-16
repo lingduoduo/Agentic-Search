@@ -114,6 +114,35 @@ python3 -m examples.prepare_search_qa_dataset \
   --local_dir data/nq_search_debug
 ```
 
+Prepare RAG-style NQ records from cached retrieval results:
+
+```bash
+python3 -m examples.prepare_search_rag_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq \
+  --corpus_path data/wiki-18.jsonl \
+  --train_retrieval_cache data/nq_train_retrieval_cache.json \
+  --test_retrieval_cache data/nq_test_retrieval_cache.json \
+  --topk 3 \
+  --local_dir data/nq_rag
+```
+
+Preview the RAG prompt/context shape before writing parquet:
+
+```bash
+python3 -m examples.prepare_search_rag_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq \
+  --corpus_path data/wiki-18.jsonl \
+  --train_retrieval_cache data/nq_train_retrieval_cache.json \
+  --test_retrieval_cache data/nq_test_retrieval_cache.json \
+  --splits test \
+  --topk 3 \
+  --max_examples 20 \
+  --preview \
+  --preview_rows 5
+```
+
 ## Run An Agent
 
 `examples/run_agentic_search.py` is the main CLI.
