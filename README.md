@@ -87,6 +87,33 @@ python3 -m examples.prepare_search_qa_dataset \
   --local_dir data/nq_search
 ```
 
+Inspect converted question/answer pairs before writing parquet:
+
+```bash
+python3 -m examples.prepare_search_qa_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq \
+  --splits test \
+  --max_examples 20 \
+  --preview \
+  --preview_rows 5
+```
+
+If this command fails with a `pyarrow` extension error, refresh dependencies
+with `python -m pip install -r requirements.txt`; this repo pins a
+`datasets`-compatible `pyarrow` range.
+
+Create a tiny local parquet slice for a dry run:
+
+```bash
+python3 -m examples.prepare_search_qa_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq \
+  --splits test \
+  --max_examples 100 \
+  --local_dir data/nq_search_debug
+```
+
 ## Run An Agent
 
 `examples/run_agentic_search.py` is the main CLI.

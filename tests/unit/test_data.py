@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+
+from examples.prepare_search_qa_dataset import preview_records
 from src import (
     PromptOnlyDataset,
     build_prompt_dataloader,
@@ -21,6 +24,11 @@ class _TokenizerWithEncode:
 
     def encode(self, text: str) -> list[int]:
         return [ord(char) for char in text]
+
+
+class _MiniDataset(list):
+    def select(self, indexes):
+        return _MiniDataset([self[index] for index in indexes])
 
 
 def test_normalize_prompt_training_example_extracts_known_fields():
@@ -120,6 +128,30 @@ def test_make_search_qa_map_fn_matches_dataset_map_signature():
     assert record["question"] == "where is the louvre?"
     assert record["reward_model"]["ground_truth"] == {"target": ["Paris"]}
     assert record["extra_info"] == {"split": "test", "index": 3}
+
+
+def test_preview_records_prints_question_answer_audit_lines(capsys):
+    rows = _MiniDataset(
+        [
+            build_search_qa_record(
+                {"question": "who wrote dune", "golden_answers": ["Frank Herbert"]},
+                split="test",
+                index=0,
+                data_source="nq",
+            )
+        ]
+    )
+
+    preview_records(rows, split="test", limit=1)
+
+    output_lines = capsys.readouterr().out.strip().splitlines()
+    preview = json.loads(output_lines[-1])
+    assert output_lines[0] == "[test] converted preview"
+    assert preview["question"] == "who wrote dune?"
+    assert preview["golden_answers"] == ["Frank Herbert"]
+    assert preview["reward_target"] == ["Frank Herbert"]
+    assert preview["prompt_roles"] == ["system", "user"]
+    assert preview["extra_info"] == {"split": "test", "index": 0}
 
 
 def test_prompt_only_dataset_uses_stored_search_qa_prompt():
