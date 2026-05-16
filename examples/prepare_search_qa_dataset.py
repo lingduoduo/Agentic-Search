@@ -10,6 +10,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data_source", default="nq")
     parser.add_argument("--ability", default="fact-reasoning")
     parser.add_argument(
+        "--max_examples",
+        type=int,
+        default=None,
+        help="Optional number of rows to convert per split for inspection runs.",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Print converted question/answer pairs and skip parquet writing.",
+    )
+    parser.add_argument(
+        "--preview_rows",
+        type=int,
+        default=5,
+        help="Number of converted rows to print when --preview is set.",
+    )
+    parser.add_argument(
         "--splits",
         nargs="+",
         default=["train", "test"],
@@ -45,6 +63,13 @@ def parse_args() -> argparse.Namespace:
 
 def convert_split(dataset: Any, *, split: str, args: argparse.Namespace) -> Any:
     split_dataset = dataset[split]
+    if args.max_examples is not None:
+        if args.max_examples <= 0:
+            raise ValueError("--max_examples must be positive when provided.")
+        split_dataset = split_dataset.select(
+            range(min(args.max_examples, len(split_dataset)))
+        )
+
     process_fn = make_search_qa_map_fn(
         split,
         data_source=args.data_source,
@@ -59,12 +84,34 @@ def convert_split(dataset: Any, *, split: str, args: argparse.Namespace) -> Any:
     )
 
 
-def main() -> None:
-    import datasets
+def preview_records(converted: Any, *, split: str, limit: int) -> None:
+    print(f"\n[{split}] converted preview")
+    for row in converted.select(range(min(limit, len(converted)))):
+        preview = {
+            "question": row["question"],
+            "golden_answers": row["golden_answers"],
+            "reward_target": row["reward_model"]["ground_truth"]["target"],
+            "prompt_roles": [message["role"] for message in row["prompt"]],
+            "extra_info": row["extra_info"],
+        }
+        print(json.dumps(preview, ensure_ascii=False))
 
+
+def main() -> None:
     args = parse_args()
     output_dir = Path(args.local_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.preview:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import datasets
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to import Hugging Face datasets. If you see a pyarrow "
+            "extension error, reinstall project requirements so the pyarrow "
+            "version matches datasets, for example: "
+            "`python -m pip install -r requirements.txt`."
+        ) from exc
 
     dataset = datasets.load_dataset(args.dataset_name, args.dataset_config)
     for split in args.splits:
@@ -72,7 +119,10 @@ def main() -> None:
             available = ", ".join(dataset.keys())
             raise ValueError(f"Split {split!r} not found. Available: {available}")
         converted = convert_split(dataset, split=split, args=args)
-        converted.to_parquet(output_dir / f"{split}.parquet")
+        if args.preview:
+            preview_records(converted, split=split, limit=args.preview_rows)
+        else:
+            converted.to_parquet(output_dir / f"{split}.parquet")
 
 
 if __name__ == "__main__":
