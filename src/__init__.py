@@ -81,10 +81,13 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "build_prompt_ids_from_messages",
     ),
     "build_prompt_messages": (".training.data", "build_prompt_messages"),
+    "build_search_rag_record": (".training.data", "build_search_rag_record"),
     "build_search_qa_messages": (".training.data", "build_search_qa_messages"),
     "build_search_qa_prompt": (".training.data", "build_search_qa_prompt"),
     "build_search_qa_record": (".training.data", "build_search_qa_record"),
     "collate_prompt_batch": (".training.data", "collate_prompt_batch"),
+    "format_rag_reference": (".training.data", "format_rag_reference"),
+    "make_search_rag_map_fn": (".training.data", "make_search_rag_map_fn"),
     "make_search_qa_map_fn": (".training.data", "make_search_qa_map_fn"),
     "normalize_prompt_training_example": (
         ".training.data",
