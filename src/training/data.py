@@ -120,6 +120,29 @@ def build_search_qa_messages(
     ]
 
 
+def _build_record(
+    prompt_content: str,
+    answer_aliases: list[str],
+    *,
+    split: str | None,
+    index: int | None,
+    data_source: str,
+    ability: str,
+) -> dict[str, Any]:
+    extra_info: dict[str, Any] = {}
+    if split is not None:
+        extra_info["split"] = split
+    if index is not None:
+        extra_info["index"] = index
+    return {
+        "data_source": data_source,
+        "prompt": [{"role": "user", "content": prompt_content}],
+        "ability": ability,
+        "reward_model": {"style": "rule", "ground_truth": {"target": answer_aliases}},
+        "extra_info": extra_info,
+    }
+
+
 def build_search_qa_record(
     example: Mapping[str, Any],
     *,
@@ -129,41 +152,20 @@ def build_search_qa_record(
     ability: str = "fact-reasoning",
     template_type: str = "base",
 ) -> dict[str, Any]:
-    """Convert a raw QA row into a rollout/reward-ready training record.
-
-    The output mirrors the lightweight structure used by VERL-style pipelines
-    while keeping fields directly consumable by this repo's PromptOnlyDataset.
-    """
+    """Convert a raw QA row into a rollout/reward-ready training record."""
 
     question = normalize_question_text(example.get("question", ""))
     answer_aliases = extract_answer_aliases(example)
     if not answer_aliases:
         raise ValueError("Training example is missing non-empty answer aliases.")
-
-    extra_info: dict[str, Any] = {}
-    if split is not None:
-        extra_info["split"] = split
-    if index is not None:
-        extra_info["index"] = index
-
-    return {
-        "data_source": data_source,
-        "prompt": [
-            {
-                "role": "user",
-                "content": build_search_qa_prompt(
-                    question,
-                    template_type=template_type,
-                ),
-            }
-        ],
-        "ability": ability,
-        "reward_model": {
-            "style": "rule",
-            "ground_truth": {"target": answer_aliases},
-        },
-        "extra_info": extra_info,
-    }
+    return _build_record(
+        build_search_qa_prompt(question, template_type=template_type),
+        answer_aliases,
+        split=split,
+        index=index,
+        data_source=data_source,
+        ability=ability,
+    )
 
 
 def format_rag_reference(retrieval_result: Sequence[Mapping[str, Any]]) -> str:
@@ -225,32 +227,16 @@ def build_search_rag_record(
     )
     if not resolved_context.strip():
         raise ValueError("RAG training example is missing non-empty `context`.")
-
-    extra_info: dict[str, Any] = {}
-    if split is not None:
-        extra_info["split"] = split
-    if index is not None:
-        extra_info["index"] = index
-
-    return {
-        "data_source": data_source,
-        "prompt": [
-            {
-                "role": "user",
-                "content": build_search_rag_prompt(
-                    question,
-                    resolved_context,
-                    template_type=template_type,
-                ),
-            }
-        ],
-        "ability": ability,
-        "reward_model": {
-            "style": "rule",
-            "ground_truth": {"target": answer_aliases},
-        },
-        "extra_info": extra_info,
-    }
+    return _build_record(
+        build_search_rag_prompt(
+            question, resolved_context, template_type=template_type
+        ),
+        answer_aliases,
+        split=split,
+        index=index,
+        data_source=data_source,
+        ability=ability,
+    )
 
 
 def make_search_qa_map_fn(
