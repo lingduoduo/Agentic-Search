@@ -61,6 +61,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_split(dataset: Any, requested: str) -> str:
+    """Return the best available split, falling back test → dev → train."""
+    for candidate in [requested, "test", "dev", "train"]:
+        if candidate in dataset:
+            if candidate != requested:
+                print(f"Split {requested!r} not found; using {candidate!r}")
+            return candidate
+    raise ValueError(f"No usable split found. Available: {', '.join(dataset.keys())}")
+
+
 def convert_split(dataset: Any, *, split: str, args: argparse.Namespace) -> Any:
     split_dataset = dataset[split]
     if args.max_examples is not None:
@@ -116,12 +126,10 @@ def main() -> None:
 
     dataset = datasets.load_dataset(args.dataset_name, args.dataset_config)
     for split in args.splits:
-        if split not in dataset:
-            available = ", ".join(dataset.keys())
-            raise ValueError(f"Split {split!r} not found. Available: {available}")
-        converted = convert_split(dataset, split=split, args=args)
+        resolved = resolve_split(dataset, split)
+        converted = convert_split(dataset, split=resolved, args=args)
         if args.preview:
-            preview_records(converted, split=split, limit=args.preview_rows)
+            preview_records(converted, split=resolved, limit=args.preview_rows)
         else:
             converted.to_parquet(output_dir / f"{split}.parquet")
 

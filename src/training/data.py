@@ -31,24 +31,15 @@ def normalize_answer_aliases(answers: Any) -> list[str]:
 
     if answers is None:
         return []
-    if isinstance(answers, str):
-        candidates = [answers]
-    elif isinstance(answers, Sequence):
-        candidates = [str(answer) for answer in answers]
-    else:
-        candidates = [str(answers)]
-
-    aliases: list[str] = []
+    if isinstance(answers, str) or not isinstance(answers, Sequence):
+        answers = [answers]
     seen: set[str] = set()
-    for answer in candidates:
-        alias = re.sub(r"\s+", " ", answer).strip()
-        if not alias:
-            continue
-        key = alias.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        aliases.append(alias)
+    aliases: list[str] = []
+    for answer in answers:
+        alias = re.sub(r"\s+", " ", str(answer)).strip()
+        if alias and (key := alias.casefold()) not in seen:
+            seen.add(key)
+            aliases.append(alias)
     return aliases
 
 
@@ -66,8 +57,7 @@ def extract_answer_aliases(example: Mapping[str, Any]) -> list[str]:
             aliases = normalize_answer_aliases(ground_truth.get("target"))
             if aliases:
                 return aliases
-    answer = str(example.get("answer", "")).strip()
-    return normalize_answer_aliases(answer)
+    return normalize_answer_aliases(example.get("answer"))
 
 
 def extract_question_text(example: Mapping[str, Any]) -> str:
@@ -82,8 +72,7 @@ def extract_question_text(example: Mapping[str, Any]) -> str:
         for message in reversed(messages):
             if message.get("role") == "user" and message.get("content"):
                 return message["content"]
-        if messages:
-            return messages[-1]["content"]
+        return messages[-1]["content"]
     return ""
 
 
@@ -154,12 +143,13 @@ def build_search_qa_record(
 ) -> dict[str, Any]:
     """Convert a raw QA row into a rollout/reward-ready training record."""
 
-    question = normalize_question_text(example.get("question", ""))
     answer_aliases = extract_answer_aliases(example)
     if not answer_aliases:
         raise ValueError("Training example is missing non-empty answer aliases.")
     return _build_record(
-        build_search_qa_prompt(question, template_type=template_type),
+        build_search_qa_prompt(
+            example.get("question", ""), template_type=template_type
+        ),
         answer_aliases,
         split=split,
         index=index,
@@ -218,7 +208,6 @@ def build_search_rag_record(
 ) -> dict[str, Any]:
     """Convert a QA row plus retrieval context into a compact RAG record."""
 
-    question = normalize_question_text(example.get("question", ""))
     answer_aliases = extract_answer_aliases(example)
     if not answer_aliases:
         raise ValueError("Training example is missing non-empty answer aliases.")
@@ -229,7 +218,7 @@ def build_search_rag_record(
         raise ValueError("RAG training example is missing non-empty `context`.")
     return _build_record(
         build_search_rag_prompt(
-            question, resolved_context, template_type=template_type
+            example.get("question", ""), resolved_context, template_type=template_type
         ),
         answer_aliases,
         split=split,
