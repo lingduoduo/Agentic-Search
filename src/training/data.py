@@ -59,8 +59,32 @@ def extract_answer_aliases(example: Mapping[str, Any]) -> list[str]:
         aliases = normalize_answer_aliases(example.get(key))
         if aliases:
             return aliases
+    reward_model = example.get("reward_model")
+    if isinstance(reward_model, Mapping):
+        ground_truth = reward_model.get("ground_truth")
+        if isinstance(ground_truth, Mapping):
+            aliases = normalize_answer_aliases(ground_truth.get("target"))
+            if aliases:
+                return aliases
     answer = str(example.get("answer", "")).strip()
     return normalize_answer_aliases(answer)
+
+
+def extract_question_text(example: Mapping[str, Any]) -> str:
+    """Extract a question from either a direct field or a prompt message."""
+
+    question = str(example.get("question", "")).strip()
+    if question:
+        return question
+    prompt = example.get("prompt")
+    if prompt is not None:
+        messages = normalize_prompt_messages(prompt)
+        for message in reversed(messages):
+            if message.get("role") == "user" and message.get("content"):
+                return message["content"]
+        if messages:
+            return messages[-1]["content"]
+    return ""
 
 
 def build_search_qa_prompt(question: str, *, template_type: str = "base") -> str:
@@ -116,38 +140,28 @@ def build_search_qa_record(
     if not answer_aliases:
         raise ValueError("Training example is missing non-empty answer aliases.")
 
-    extra_info = {
-        key: value
-        for key, value in dict(example).items()
-        if key
-        not in {
-            "question",
-            "ground_truth",
-            "golden_answers",
-            "answers",
-            "answer_aliases",
-            "answer",
-            "prompt",
-        }
-    }
+    extra_info: dict[str, Any] = {}
     if split is not None:
         extra_info["split"] = split
     if index is not None:
         extra_info["index"] = index
 
-    prompt = build_search_qa_messages(question, template_type=template_type)
     return {
         "data_source": data_source,
-        "question": question,
-        "ground_truth": answer_aliases[0],
-        "golden_answers": answer_aliases,
-        "prompt": prompt,
+        "prompt": [
+            {
+                "role": "user",
+                "content": build_search_qa_prompt(
+                    question,
+                    template_type=template_type,
+                ),
+            }
+        ],
         "ability": ability,
         "reward_model": {
             "style": "rule",
             "ground_truth": {"target": answer_aliases},
         },
-        "tools": ["search"],
         "extra_info": extra_info,
     }
 
@@ -223,7 +237,7 @@ def normalize_prompt_training_example(
         for key in ("golden_answers", "answers", "answer_aliases", "answer", "prompt")
     )
     if qa_style_record:
-        question = normalize_question_text(example.get("question", ""))
+        question = normalize_question_text(extract_question_text(example))
     else:
         question = re.sub(r"\s+", " ", str(example.get("question", ""))).strip()
         if not question:

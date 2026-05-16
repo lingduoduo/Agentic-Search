@@ -96,17 +96,19 @@ def test_build_search_qa_record_preserves_aliases_and_reward_target():
     )
 
     assert record["data_source"] == "nq"
-    assert record["question"] == "who wrote dune?"
-    assert record["ground_truth"] == "Frank Herbert"
-    assert record["golden_answers"] == ["Frank Herbert", "F. Herbert"]
+    assert set(record) == {
+        "data_source",
+        "prompt",
+        "ability",
+        "reward_model",
+        "extra_info",
+    }
+    assert record["prompt"] == [{"role": "user", "content": "who wrote dune?"}]
+    assert record["ability"] == "fact-reasoning"
     assert record["reward_model"]["ground_truth"] == {
         "target": ["Frank Herbert", "F. Herbert"]
     }
-    assert record["prompt"][0]["role"] == "system"
-    assert "<search>" in record["prompt"][0]["content"]
-    assert record["prompt"][1] == {"role": "user", "content": "who wrote dune?"}
     assert record["extra_info"] == {
-        "difficulty": "easy",
         "split": "train",
         "index": 7,
     }
@@ -125,7 +127,7 @@ def test_make_search_qa_map_fn_matches_dataset_map_signature():
     )
 
     assert record["data_source"] == "nq"
-    assert record["question"] == "where is the louvre?"
+    assert record["prompt"] == [{"role": "user", "content": "where is the louvre?"}]
     assert record["reward_model"]["ground_truth"] == {"target": ["Paris"]}
     assert record["extra_info"] == {"split": "test", "index": 3}
 
@@ -150,7 +152,7 @@ def test_preview_records_prints_question_answer_audit_lines(capsys):
     assert preview["question"] == "who wrote dune?"
     assert preview["golden_answers"] == ["Frank Herbert"]
     assert preview["reward_target"] == ["Frank Herbert"]
-    assert preview["prompt_roles"] == ["system", "user"]
+    assert preview["prompt_roles"] == ["user"]
     assert preview["extra_info"] == {"split": "test", "index": 0}
 
 
@@ -168,11 +170,9 @@ def test_prompt_only_dataset_uses_stored_search_qa_prompt():
     sample = dataset[0]
 
     assert sample.question == "who wrote dune?"
-    assert sample.messages[0]["role"] == "system"
-    assert sample.messages[0]["content"] == record["prompt"][0]["content"].strip()
-    assert sample.messages[1] == {"role": "user", "content": "who wrote dune?"}
+    assert sample.messages == [{"role": "user", "content": "who wrote dune?"}]
     assert sample.ground_truth == "Frank Herbert"
-    assert sample.tools == ["search"]
+    assert sample.tools == []
 
 
 def test_build_prompt_messages_keeps_prompt_only_and_lists_tools():
