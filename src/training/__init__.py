@@ -8,4 +8,9 @@ from .sft import SFTExample as SFTExample
 from .sft import build_search_sft_example as build_search_sft_example
 from .data import PromptBatch as PromptBatch
 from .data import PromptTrainingExample as PromptTrainingExample
+from .data import build_search_qa_messages as build_search_qa_messages
+from .data import build_search_qa_record as build_search_qa_record
+from .data import build_search_qa_prompt as build_search_qa_prompt
+from .data import make_search_qa_map_fn as make_search_qa_map_fn
+from .data import normalize_question_text as normalize_question_text
 from .evaluation import SearchEvaluationConfig as SearchEvaluationConfig

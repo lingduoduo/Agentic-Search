@@ -81,11 +81,16 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "build_prompt_ids_from_messages",
     ),
     "build_prompt_messages": (".training.data", "build_prompt_messages"),
+    "build_search_qa_messages": (".training.data", "build_search_qa_messages"),
+    "build_search_qa_prompt": (".training.data", "build_search_qa_prompt"),
+    "build_search_qa_record": (".training.data", "build_search_qa_record"),
     "collate_prompt_batch": (".training.data", "collate_prompt_batch"),
+    "make_search_qa_map_fn": (".training.data", "make_search_qa_map_fn"),
     "normalize_prompt_training_example": (
         ".training.data",
         "normalize_prompt_training_example",
     ),
+    "normalize_question_text": (".training.data", "normalize_question_text"),
     "prompt_batch_to_search_batch": (".training.data", "prompt_batch_to_search_batch"),
     # training.grpo
     "GRPOAdvantageConfig": (".training.grpo", "GRPOAdvantageConfig"),
