@@ -1389,8 +1389,8 @@ class Retriever(Protocol):
 
     Implementations: EndpointRetriever (BM25 / dense / hybrid / RAG),
     GoogleRetriever (SerpAPI), SimulateRetriever (LLM-simulated training).
-    Adding Tavily, Bing, or any other backend only requires implementing
-    this one method — no changes to the dispatch logic.
+    Adding any new backend only requires implementing this one method —
+    no changes to the dispatch logic.
     """
 
     def retrieve(self, query: str, topk: int) -> list[RetrievedDocument]:
@@ -4160,8 +4160,8 @@ class LLMGenerationManager:
     ) -> Retriever:
         """Return the backend Retriever for this search mode.
 
-        Adding a new backend (Tavily, Bing, …) only requires adding one
-        branch here and implementing the Retriever protocol.
+        Adding a new backend only requires adding one branch here and
+        implementing the Retriever protocol.
         """
         cfg = self.config
         if search_mode == "google":

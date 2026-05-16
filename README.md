@@ -23,7 +23,7 @@ reward helpers.
 
 - Local dense retrieval with FAISS-compatible indexes.
 - Local sparse retrieval with BM25/Pyserini.
-- Optional web search through Google Custom Search, Bing, Brave, and SerpAPI.
+- Optional web search through Google Custom Search and SerpAPI.
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`,
   `<information>`, `<fetch>`, and `<answer>` actions.
 - One-shot generation, one-shot RAG, full search-agent, and generic tool-agent
@@ -236,8 +236,7 @@ python3 -m src.retrieval.index_builder \
 
 ## Web Search
 
-`src.tools.search` routes calls to `retrieval`, `google`, `bing`, `brave`, or
-`serpapi`. Missing API keys return structured tool errors.
+`src.tools.search` routes calls to `retrieval`, `google`, or `serpapi`. Missing API keys return structured tool errors.
 
 Standalone web-search servers are available under `src.retrieval.servers`:
 
@@ -350,6 +349,5 @@ python3 -m pytest tests/unit/test_reward.py tests/unit/test_grpo.py tests/unit/t
 - Set dense retrieval to `--device cuda` only on a dedicated retrieval node.
 - Empty or invalid queries return empty result lists.
 - Some web pages block scraping or return little usable text.
-- Google Custom Search, Bing, Brave, and SerpAPI are subject to their own quota
-  and billing rules.
+- Google Custom Search and SerpAPI are subject to their own quota and billing rules.
 - BM25 serving requires Java because Pyserini uses Lucene.
