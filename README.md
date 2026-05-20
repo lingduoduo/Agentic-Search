@@ -21,16 +21,27 @@ reward helpers.
 
 ## Features
 
-- Local dense retrieval with FAISS-compatible indexes.
+- Local dense retrieval with FAISS-compatible indexes (E5, BGE, and custom embedders).
 - Local sparse retrieval with BM25/Pyserini.
 - Optional web search through Google Custom Search and SerpAPI.
+- Retrieval + cross-encoder reranking pipeline.
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`,
   `<information>`, `<fetch>`, and `<answer>` actions.
+- `SingleTurnAgentLoop` for parse-and-dispatch single-action flows.
 - One-shot generation, one-shot RAG, full search-agent, and generic tool-agent
   loops.
-- Reward shaping and group-relative advantage helpers for PPO, GRPO, and
-  REINFORCE-style experiments.
-- Intent classifier utilities for query routing and model routing.
+- Hermes, Llama-3, and JSON tool-call parsers.
+- OpenAPI-based `ApiToolRegistry` for dynamic tool loading.
+- Composite reward shaping (`SearchRewardFunction`) with format, search-use,
+  answer-length, and exact-match components.
+- Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style
+  experiments.
+- PPO core algorithms: clipped policy loss, value loss, entropy, KL penalty,
+  adaptive and fixed KL controllers.
+- Intent classifier (`IntentPipeline`) for query routing and model routing.
+- Intent-driven model routing: pick fast/balanced/reasoning model by intent.
+- Training data builders for search-QA and RAG parquet datasets.
+- SFT example builder from search traces.
 
 ## Install
 
@@ -52,8 +63,6 @@ Optional environment variables:
 ```bash
 GOOGLE_API_KEY=...
 GOOGLE_CSE_ID=...
-BING_SEARCH_API_KEY=...
-BRAVE_SEARCH_API_KEY=...
 SERP_API_KEY=...
 JAVA_HOME=/path/to/java
 ```
@@ -333,6 +342,211 @@ Default routes:
 
 If confidence is too low or a route model is missing, the CLI falls back to
 `--model`.
+
+## Module Reference
+
+### Agent Loops (`src/agents/`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `AgentLoopBase` | Abstract base all loops inherit from; exposes `run()` |
+| `AgentLoopConfig` | Shared config dataclass (max tokens, temperature, etc.) |
+| `AgentLoopOutput` | Return value of `run()`: steps, final answer, metrics |
+| `RolloutStep` | Single turn record: role, text, token ids, action mask |
+| `PlainGenerationLoop` | One-shot generation, no search |
+| `SearchAgentLoop` | Multi-turn XML trace loop (`<think>/<search>/<answer>`) |
+| `SearchAgentLoopConfig` | Adds topk, max search limit, search URL, fetch URL |
+| `SingleTurnAgentLoop` | Parse first action from generation, dispatch tool call |
+| `ToolAgentLoop` | Generic tool-calling loop with `ToolParser` |
+| `AgentState` | Full state: `TaskNode` graph, `Plan`, `RouteDecision`, metrics |
+| `register` / `get_registered_agent_loop` | Decorator-based loop registry |
+| `build_search_agent_instruction` | Build the system-prompt instruction string |
+
+### Retrieval (`src/retrieval/`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `DenseRetriever` | FAISS-backed dense retrieval; supports E5, BGE, custom encoders |
+| `DenseRetrieverConfig` | Model path, index path, device, topk, batch size |
+| `SparseRetriever` | Pyserini BM25 retriever |
+| `SparseRetrieverConfig` | Index path, topk, language |
+| `SentenceTransformerReranker` | Cross-encoder reranker via `sentence-transformers` |
+| `RerankerConfig` | Model name, device, batch size |
+| `get_reranker` | Factory: returns a configured `SentenceTransformerReranker` |
+| `SearchClient` | Async HTTP client for the retrieval server (`/retrieve`) |
+| `SearchClientConfig` | Base URL, timeout, retry settings |
+| `SearchResult` | Single retrieved document: id, title, contents, score |
+| `SearchContext` | Ordered list of `SearchResult`s for one query |
+| `AgentContext` | Per-turn context accumulator across search rounds |
+| `Vocabulary` | Freq-filtered token vocabulary with `build` / `encode` |
+| `TextProcessor` | Tokenization, stopword filtering, field extraction |
+| `normalize_text` / `tokenize_text` | Fast text normalisation and word tokenisation |
+| `normalize_document` / `tokenize_document` | Document-level normalisation |
+| `extract_keywords` | TF-style keyword extraction from document fields |
+| `build_vocabulary_from_sequences` | Build a `Vocabulary` from a token sequence list |
+
+#### Retrieval Servers (`src/retrieval/servers/`)
+
+| Module | Server |
+|--------|--------|
+| `retrieval` | Dense (E5/BGE) or sparse (BM25) retrieval; `/retrieve`, `/health` |
+| `retrieval_rerank` | Retrieval + cross-encoder rerank in one server |
+| `rerank` | Standalone rerank endpoint |
+| `google` | Google Custom Search proxy server |
+| `serp` | SerpAPI proxy server |
+
+### Tools (`src/tools/`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `Tool` / `FunctionTool` | Abstract tool base; `FunctionTool` wraps a plain callable |
+| `ToolSchema` | JSON-schema definition attached to a tool |
+| `SearchPage` | Search result page: url, title, snippet, contents |
+| `build_search_tool` | Build a `FunctionTool` that calls retrieval, Google, or SerpAPI |
+| `format_search_pages` | Render a list of `SearchPage`s to text for the model |
+| `HermesToolParser` | Parse Hermes-format `<tool_call>` XML |
+| `Llama3ToolParser` | Parse Llama-3 `<\|python_tag\|>` tool calls |
+| `JSONToolParser` | Parse bare JSON tool call blobs |
+| `FunctionCall` | Parsed tool call: name + arguments dict |
+| `ApiToolRegistry` | Load tools from an OpenAPI 3.x schema string |
+| `ApiRequestTool` | Auto-generated tool that executes one OpenAPI operation |
+| `parse_openapi_schema` | Parse an OpenAPI 3.x YAML/JSON string into `OpenAPISchema` |
+
+### Model (`src/model/`)
+
+#### Generation (`src/model/generation.py`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `LLMGenerationManager` | Orchestrates batched GRPO rollouts: sample → score → pack |
+| `GenerationConfig` | vLLM sampling params + retrieval URLs + safety config |
+| `EndpointRetriever` | HTTP retrieval via `/retrieve` endpoint |
+| `SimulateRetriever` | Deterministic fake retriever for tests |
+| `GoogleRetriever` | Google Custom Search retriever |
+| `EndpointFetcher` | Fetch a URL via the retrieval server's fetch endpoint |
+| `ask_llm` | Low-level single-prompt vLLM call |
+| `search_simulate` | Run a full search-agent trace with any retriever |
+| `score_group_rollout` | Score a group of rollouts with a reward function |
+| `assign_group_relative_advantages` | Compute GRPO advantages for a scored group |
+| `apply_rollout_safety_penalties` | Penalise length, repetition, and format violations |
+| `apply_safety_penalties_to_scored_rollouts` | Batch version of the above |
+| `trajectory_log_prob_pack` | Pack token logprobs into training tensors |
+| `format_search_trajectory_log` | Render a `SearchTrajectoryLog` to human-readable text |
+| `format_trajectory_batch` | Render a batch of trajectories |
+| `save_training_batch_jsonl` | Write a scored rollout batch to JSONL |
+| `RolloutTrajectory` | Full trajectory: prompt, steps, final answer, reward |
+| `SearchTrajectoryLog` | Per-query search turn log with documents and scores |
+| `ActorRolloutStep` | One generation step: tokens, logprobs, action mask |
+| `ReActStep` | ReAct observation-action pair |
+| `GroupedRolloutBatch` | G rollouts for one prompt (GRPO group) |
+| `ScoredGroupedRollout` | `GroupedRolloutBatch` with rewards and advantages |
+| `GRPORolloutSafetyConfig` | Thresholds for safety penalties |
+
+#### Intent Classifier (`src/model/intent_classifier.py`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `IntentPipeline` | Trainable feedforward classifier; `train`, `predict`, `save`, `load` |
+| `IntentPrediction` | `(intent, confidence)` result dataclass |
+| `INTENT_LABELS` | `["purchase", "navigate", "qa", "recommendation"]` |
+| `resolve_search_settings` | Map a prediction to adjusted topk / evidence / internal-knowledge flags |
+| `load_training_data` | Load a JSON examples file into `(token_list, label)` pairs |
+
+#### Intent Training (`src/model/intent_training.py`)
+
+| Function | Description |
+|----------|-------------|
+| `train_intent_classifier` | Train an `IntentPipeline` from an examples file and save it |
+| `generate_intent_examples` | Generate intent-labelled examples from a JSONL corpus |
+| `write_intent_examples` | Write examples list to a pretty JSON file |
+| `load_corpus` | Load a JSONL corpus into a list of document dicts |
+| `load_vocabulary_tokens` | Load top-N tokens from a vocabulary metadata file |
+
+#### Tensor Helper (`src/model/tensor_helper.py`)
+
+| Class | Description |
+|-------|-------------|
+| `TensorHelper` | Pad, pack, and mask token sequences for PPO/GRPO training |
+| `TensorConfig` | Padding token id, max sequence length, device |
+
+### Training (`src/training/`)
+
+#### Reward (`src/training/reward.py`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `SearchRewardFunction` | Composite reward: format + search-use + length + exact-match |
+| `SearchRewardConfig` | Weights for each reward component |
+| `simple_sparse_correctness_reward` | Fast token-overlap correctness reward |
+| `normalize_answer_text` | Lowercase, strip articles and punctuation |
+
+#### Evaluation (`src/training/evaluation.py`)
+
+| Class | Description |
+|-------|-------------|
+| `SearchResultEvaluator` | Evaluate retrieval quality across a batch of queries |
+| `SearchEvaluationConfig` | Relevance threshold, topk, exact-match mode |
+| `QueryEvaluation` | Per-query evaluation: precision, recall, hit |
+| `SearchRoundEvaluation` | Per-search-round aggregate metrics |
+
+#### GRPO (`src/training/grpo.py`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `score_prompt_group` | Score G rollouts for one prompt, return `ScoredGRPORollout` |
+| `score_prompt_batch` | Score a full batch of prompt groups |
+| `compute_grpo_outcome_advantage` | Normalise rewards to group-relative advantages |
+| `build_grpo_sampling_params` | Build vLLM sampling params for G samples per prompt |
+| `GRPORolloutSample` | One rollout sample: tokens, logprobs, reward |
+| `ScoredGRPORollout` | Rollout with advantage assigned |
+| `PromptGroupSamplingConfig` | Group size, temperature, top-p |
+
+#### SFT (`src/training/sft.py`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `SFTExample` | Prompt + completion pair with action mask |
+| `build_search_sft_example` | Build an `SFTExample` from a search-agent trace |
+
+#### Data (`src/training/data.py`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `PromptOnlyDataset` | PyTorch `Dataset` over tokenised prompt records |
+| `PromptBatch` | Collated batch of padded prompt tensors |
+| `build_prompt_dataloader` | Build a `DataLoader` from a parquet dataset |
+| `build_search_qa_record` | Build a search-QA prompt/answer training record |
+| `build_search_rag_record` | Build a RAG prompt/answer training record |
+| `build_search_qa_prompt` | Format a question into a search-agent prompt string |
+| `build_search_qa_messages` | Format as an OpenAI-style messages list |
+| `build_search_rag_prompt` | Inject retrieved context into a RAG prompt |
+| `format_rag_reference` | Format a retrieval result list as a reference block |
+| `make_search_qa_map_fn` | HuggingFace `datasets` map function for QA records |
+| `make_search_rag_map_fn` | HuggingFace `datasets` map function for RAG records |
+| `normalize_question_text` | Normalise raw question fields |
+| `normalize_answer_aliases` | Normalise answer alias lists |
+| `collate_prompt_batch` | DataLoader collate function for `PromptSample`s |
+| `prompt_batch_to_search_batch` | Convert a `PromptBatch` to a `SearchBatch` |
+
+#### PPO (`src/training/ppo/`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `compute_ppo_policy_loss_core` | Clipped PPO surrogate loss |
+| `compute_reinforce_policy_loss` | REINFORCE policy gradient loss |
+| `compute_trajectory_policy_loss` | Full trajectory loss with KL and entropy terms |
+| `compute_grpo_outcome_advantage` | GRPO outcome-level advantage normalisation |
+| `compute_rewards` | Apply KL penalty to per-token reward signal |
+| `compute_value_loss` | Clipped value function loss |
+| `kl_penalty` | Per-token KL divergence penalty (k1–k3 estimators) |
+| `entropy_from_logits` | Per-token entropy from raw logits |
+| `masked_mean` / `masked_whiten` | Masked tensor statistics for variable-length sequences |
+| `clip_by_value` | Symmetric value clipping |
+| `AdaptiveKLController` | PID-style KL coefficient adapter |
+| `FixedKLController` | Constant KL coefficient |
+| `PPORewardManager` | Assign per-sample rewards during PPO rollout collection |
+| `LocalGRPOController` | In-process GRPO rollout loop with reward assignment |
+| `PPOPolicyLossConfig` | Clip epsilon, entropy coefficient, KL coefficient |
 
 ## Tests
 
