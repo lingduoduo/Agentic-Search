@@ -1,12 +1,4 @@
-"""Intent classification utilities for routing search behavior.
-
-Public surface
---------------
-INTENT_LABELS       — canonical list of supported intent strings
-IntentPrediction    — (intent, confidence) result
-IntentPipeline      — train, predict, and resolve search settings
-load_training_data  — load a JSON examples file into (tokens, label) pairs
-"""
+"""Intent classification utilities for query routing."""
 
 from __future__ import annotations
 
@@ -23,14 +15,7 @@ class IntentPrediction:
     confidence: float
 
 
-# ---------------------------------------------------------------------------
-# Neural model (private — users go through IntentPipeline)
-# ---------------------------------------------------------------------------
-
-
 class _IntentClassifier:
-    """Small feedforward classifier over averaged token embeddings."""
-
     def __init__(
         self,
         vocab_size: int,
@@ -112,23 +97,7 @@ class _IntentClassifier:
         ]
 
 
-# ---------------------------------------------------------------------------
-# Public pipeline
-# ---------------------------------------------------------------------------
-
-
 class IntentPipeline:
-    """Trainable intent classification pipeline.
-
-    Typical usage::
-
-        pipeline = IntentPipeline()
-        data = load_training_data("data/intent_examples.json")
-        pipeline.train(data)
-        pred = pipeline.predict_text("What is FAISS?")
-        # pred.intent == "qa", pred.confidence ≈ 0.85
-    """
-
     def __init__(
         self,
         vocab_size: int = 5000,
@@ -170,16 +139,7 @@ class IntentPipeline:
 
         return self.predict(tokenize_text(text))
 
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
     def save(self, path: str) -> None:
-        """Save the trained pipeline to *path* (.pt file).
-
-        Stores the vocabulary mappings, model weights, and the hyperparameters
-        needed to reconstruct the architecture on load.
-        """
         import torch
 
         if not self.is_trained:
@@ -204,7 +164,6 @@ class IntentPipeline:
 
     @classmethod
     def load(cls, path: str) -> "IntentPipeline":
-        """Load a previously saved pipeline from *path*."""
         import torch
         from src.retrieval.vocabulary import Vocabulary
 
@@ -220,43 +179,15 @@ class IntentPipeline:
             embedding_dim=cfg["embedding_dim"],
             hidden_dim=cfg["hidden_dim"],
         )
-        # Restore vocabulary
         vocab = Vocabulary()
         vocab.token2idx = checkpoint["vocab"]["token2idx"]
         vocab.token2cnt = checkpoint["vocab"]["token2cnt"]
         vocab.idx2token = checkpoint["vocab"]["idx2token"]
         pipeline._vocab = vocab
-        # Restore model weights
         pipeline._model._net.load_state_dict(checkpoint["model_state"])
         pipeline._model._net.eval()
         pipeline.is_trained = True
         return pipeline
-
-    def resolve_search_settings(
-        self,
-        question: str,
-        *,
-        topk: int,
-        max_search_limit: int,
-        require_evidence: bool,
-        allow_internal_knowledge: bool,
-        min_confidence: float = 0.6,
-    ) -> tuple[int, int, bool, bool, dict[str, Any]]:
-        """Predict the intent for *question* and return adjusted search settings."""
-        pred = self.predict_text(question)
-        return resolve_search_settings(
-            pred,
-            topk=topk,
-            max_search_limit=max_search_limit,
-            require_evidence=require_evidence,
-            allow_internal_knowledge=allow_internal_knowledge,
-            min_confidence=min_confidence,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Module-level routing helper (testable without a trained pipeline)
-# ---------------------------------------------------------------------------
 
 
 def resolve_search_settings(
@@ -268,10 +199,6 @@ def resolve_search_settings(
     allow_internal_knowledge: bool,
     min_confidence: float = 0.6,
 ) -> tuple[int, int, bool, bool, dict[str, Any]]:
-    """Map an IntentPrediction to adjusted search settings.
-
-    Returns (topk, max_search_limit, require_evidence, allow_internal, metadata).
-    """
     meta: dict[str, Any] = {
         "intent_routing_used": True,
         "predicted_intent": prediction.intent,
@@ -295,24 +222,10 @@ def resolve_search_settings(
     return t, s, r, a, meta
 
 
-# ---------------------------------------------------------------------------
-# Backward-compatible aliases
-# ---------------------------------------------------------------------------
-
 IntentionClassificationPipeline = IntentPipeline
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
-
 def load_training_data(path: str) -> list[tuple[list[str], str]]:
-    """Load a JSON examples file into (token_list, intent_label) pairs.
-
-    Accepts items with either a ``text`` / ``question`` field and a
-    ``label`` / ``intent`` field.
-    """
     from src.retrieval.vocabulary import tokenize_text
 
     try:
