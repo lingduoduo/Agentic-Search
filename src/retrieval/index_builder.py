@@ -371,7 +371,7 @@ class IndexBuilder:
                 max_length=self.vocab_max_length,
             )
             if tokens:
-                vocabulary.add_tokens(" ".join(tokens))
+                vocabulary.add_token_sequence(tokens)
             token_counts = Counter(tokens)
             corpus_entries.append(
                 {

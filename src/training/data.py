@@ -13,12 +13,13 @@ DEFAULT_TOOL_SYSTEM_PROMPT = (
     "You are a tool-using assistant. "
     "Use tools when they help, and answer directly when the question is already solved."
 )
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 def normalize_question_text(question: Any) -> str:
     """Normalize raw QA questions into stable, searchable prompts."""
 
-    normalized = re.sub(r"\s+", " ", str(question or "")).strip()
+    normalized = _WHITESPACE_PATTERN.sub(" ", str(question or "")).strip()
     if not normalized:
         raise ValueError("Training example is missing a non-empty `question`.")
     if normalized[-1] != "?":
@@ -36,7 +37,7 @@ def normalize_answer_aliases(answers: Any) -> list[str]:
     seen: set[str] = set()
     aliases: list[str] = []
     for answer in answers:
-        alias = re.sub(r"\s+", " ", str(answer)).strip()
+        alias = _WHITESPACE_PATTERN.sub(" ", str(answer)).strip()
         if alias and (key := alias.casefold()) not in seen:
             seen.add(key)
             aliases.append(alias)
@@ -340,7 +341,9 @@ def normalize_prompt_training_example(
     if qa_style_record:
         question = normalize_question_text(extract_question_text(example))
     else:
-        question = re.sub(r"\s+", " ", str(example.get("question", ""))).strip()
+        question = _WHITESPACE_PATTERN.sub(
+            " ", str(example.get("question", ""))
+        ).strip()
         if not question:
             raise ValueError("Training example is missing a non-empty `question`.")
     answer_aliases = extract_answer_aliases(example)

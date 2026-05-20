@@ -13,12 +13,13 @@ from ..retrieval.context import AgentContext
 # Type aliases for judge callables.
 JudgeFn = Callable[[str, str], float]
 BatchJudgeFn = Callable[[list[str], list[str]], list[float]]
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 def normalize_answer_text(text: str) -> str:
     """Normalize an answer string for simple sparse-reward matching."""
     lowered = text.strip().lower()
-    lowered = re.sub(r"\s+", " ", lowered)
+    lowered = _WHITESPACE_PATTERN.sub(" ", lowered)
     return lowered
 
 

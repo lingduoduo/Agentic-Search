@@ -13,6 +13,8 @@ SOS_token = 0
 EOS_token = 1
 MAX_LENGTH = 20
 _TEXT_PROCESSOR = TextProcessor()
+_NON_WORD_PATTERN = re.compile(r"[^\w\s]")
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class Vocabulary:
@@ -30,7 +32,12 @@ class Vocabulary:
     def add_tokens(self, seq: str) -> None:
         """Split a sequence on whitespace and add each token."""
 
-        for token in seq.split():
+        self.add_token_sequence(seq.split())
+
+    def add_token_sequence(self, tokens: Iterable[str]) -> None:
+        """Add an existing token sequence without an extra join/split cycle."""
+
+        for token in tokens:
             self.create_vocab(token)
 
     def create_vocab(self, token: str) -> None:
@@ -106,8 +113,8 @@ def normalize_text(text: str, *, keep_non_ascii: bool = False) -> str:
     if not keep_non_ascii:
         normalized = unicodedata.normalize("NFD", normalized)
         normalized = normalized.encode("ascii", errors="ignore").decode("utf-8")
-    normalized = re.sub(r"[^\w\s]", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
+    normalized = _NON_WORD_PATTERN.sub(" ", normalized)
+    return _WHITESPACE_PATTERN.sub(" ", normalized).strip()
 
 
 def tokenize_text(
@@ -174,7 +181,7 @@ def build_vocabulary_from_sequences(
             max_length=max_length,
         )
         if tokens:
-            vocabulary.add_tokens(" ".join(tokens))
+            vocabulary.add_token_sequence(tokens)
     return vocabulary
 
 

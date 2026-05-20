@@ -26,6 +26,8 @@ DEFAULT_CONFIG = {
     }
 }
 
+_WHITESPACE_PATTERN = re.compile(r"\s+")
+
 
 class TextProcessor:
     """Normalize and segment plain text or document-like payloads."""
@@ -76,10 +78,10 @@ class TextProcessor:
 
         text = str(text or "")
         if self._is_rule_enabled(0, default=True):
-            text = re.sub(r"\s+", " ", text).strip()
+            text = _WHITESPACE_PATTERN.sub(" ", text).strip()
         if self._is_rule_enabled(1, default=True):
             text = self._url_email_pattern.sub("", text)
-            text = re.sub(r"\s+", " ", text).strip()
+            text = _WHITESPACE_PATTERN.sub(" ", text).strip()
         return text
 
     def segment(self, text: str) -> list[str]:
