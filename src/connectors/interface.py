@@ -309,15 +309,15 @@ class HierarchyConnector(BaseConnector[CT]):
         raise NotImplementedError
 
 
-def batched(
-    items: Iterable[Document | HierarchyNode | SlimDocument],
-    batch_size: int,
-) -> Iterator[list[Document | HierarchyNode | SlimDocument]]:
+_BT = TypeVar("_BT")
+
+
+def batched(items: Iterable[_BT], batch_size: int) -> Iterator[list[_BT]]:
     """Yield connector outputs in stable, non-empty batches."""
 
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero.")
-    batch: list[Document | HierarchyNode | SlimDocument] = []
+    batch: list[_BT] = []
     for item in items:
         batch.append(item)
         if len(batch) >= batch_size:

@@ -14,6 +14,7 @@ from src.connectors import (
     ConnectorCheckpoint,
     ConnectorFailure,
     Document,
+    HierarchyNode,
     InMemoryConnector,
     LocalFileConnector,
     LoadConnector,
@@ -25,6 +26,10 @@ from src.connectors import (
     SlimDocument,
     StaticCredentialsProvider,
     batched,
+)
+from src.retrieval.index_builder import (
+    dump_connector_to_jsonl,
+    load_corpus_from_connector,
 )
 from src.tools.search import SearchPage
 
@@ -387,3 +392,39 @@ def test_search_connector_async_variant_inside_event_loop(monkeypatch):
     docs = asyncio.run(_run())
 
     assert docs[0].id == "https://a.test"
+
+
+def test_load_corpus_from_connector_skips_hierarchy_nodes():
+    class MixedConnector(LoadConnector):
+        def load_from_state(self):
+            yield [
+                Document(id="d1", contents="alpha", title="A"),
+                HierarchyNode(id="h1", name="folder"),
+                Document(id="d2", contents="beta", title="B"),
+            ]
+
+    corpus = load_corpus_from_connector(MixedConnector())
+
+    assert len(corpus) == 2
+    assert corpus[0]["id"] == "d1"
+    assert corpus[0]["contents"] == "alpha"
+    assert corpus[1]["title"] == "B"
+    assert corpus["id"] == ["d1", "d2"]
+
+
+def test_dump_connector_to_jsonl_writes_documents(tmp_path):
+    class SimpleConnector(LoadConnector):
+        def load_from_state(self):
+            yield [
+                Document(id="x", contents="hello", title="X"),
+                HierarchyNode(id="h1", name="folder"),
+                Document(id="y", contents="world", title=None),
+            ]
+
+    out = tmp_path / "corpus.jsonl"
+    dump_connector_to_jsonl(SimpleConnector(), out)
+
+    lines = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(lines) == 2
+    assert lines[0] == {"id": "x", "title": "X", "contents": "hello"}
+    assert lines[1] == {"id": "y", "title": None, "contents": "world"}
