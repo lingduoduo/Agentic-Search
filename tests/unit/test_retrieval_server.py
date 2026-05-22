@@ -256,6 +256,40 @@ def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
     assert rows[2][0]["score"] == 1.0
 
 
+def test_dense_retriever_deduplicates_queries_within_batch():
+    import numpy as np
+    from src.search.retrieval import DenseRetriever
+
+    class _FakeIndex:
+        def search(self, embeddings, k):
+            return (
+                np.ones((embeddings.shape[0], k), dtype=np.float32),
+                np.zeros((embeddings.shape[0], k), dtype=np.int64),
+            )
+
+    retriever = DenseRetriever.__new__(DenseRetriever)
+    retriever.config = SimpleNamespace(
+        topk=1,
+        query_batch_size=3,
+        retrieval_method="contriever",
+    )
+    retriever.index = _FakeIndex()
+    retriever.corpus = [{"id": "doc-0", "contents": "body"}]
+    calls = []
+
+    def _encode_queries(queries):
+        calls.append(list(queries))
+        return np.ones((len(queries), 2), dtype=np.float32)
+
+    retriever.encode_queries = _encode_queries
+
+    rows = retriever.retrieve(["alpha", " ", "alpha", "gamma"], topk=1)
+
+    assert calls == [["alpha", "gamma"]]
+    assert rows[1] == []
+    assert len(rows[0]) == len(rows[2]) == len(rows[3]) == 1
+
+
 def test_dense_retriever_config_for_e5_base_v2_sets_e5_method_and_cpu():
     from src.search.retrieval import DenseRetrieverConfig
 

@@ -162,6 +162,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pooling_method", type=str, default=None)
     parser.add_argument("--faiss_gpu", action="store_true", default=False)
     parser.add_argument(
+        "--normalize_query_embeddings", action="store_true", default=False
+    )
+    parser.add_argument("--query_prefix", type=str, default=None)
+    parser.add_argument("--passage_prefix", type=str, default=None)
+    parser.add_argument(
         "--hnsw_ef_search",
         type=int,
         default=None,
@@ -223,6 +228,9 @@ def main() -> None:
             pooling_method=args.pooling_method,
             device=args.device,
             faiss_gpu=args.faiss_gpu,
+            normalize_query_embeddings=args.normalize_query_embeddings,
+            query_prefix=args.query_prefix,
+            passage_prefix=args.passage_prefix,
             hnsw_ef_search=args.hnsw_ef_search,
         )
     app = create_app(
