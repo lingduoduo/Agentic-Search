@@ -5,8 +5,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
+import re
+import time
 from collections import Counter
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 
 try:
@@ -21,15 +25,23 @@ import sys
 import warnings
 from multiprocessing import cpu_count
 from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
-# Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
 import numpy as np
 
+from ..connectors.models import ConnectorFailure
+from ..connectors.models import Document
+from .indexing_heartbeat import IndexingHeartbeatInterface
+from .models import ChunkingConfig
+from .models import EmbeddedChunk
+from .models import EmbeddingConfig
+from .models import IndexChunk
+from .models import IndexingPipelineConfig
+from .models import IndexingPipelineResult
+from .models import IndexWriterConfig
 from .vocabulary import (
     MAX_LENGTH as DEFAULT_VOCAB_MAX_LENGTH,
     Vocabulary,
@@ -37,10 +49,32 @@ from .vocabulary import (
     tokenize_text,
 )
 
-from ..connectors.models import Document
+# Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "ChunkingConfig",
+    "EmbeddedChunk",
+    "EmbeddingConfig",
+    "IndexChunk",
+    "IndexingPipelineConfig",
+    "IndexingPipelineResult",
+    "IndexWriterConfig",
+    "chunk_document",
+    "chunk_documents",
+    "deterministic_embedding_fn",
+    "embed_chunks",
+    "embed_chunks_with_failure_handling",
+    "generate_large_chunks",
+    "prepare_texts",
+    "run_indexing_pipeline",
+    "write_faiss_index",
+]
 
 MODEL2POOLING = {
     "e5": "mean",
@@ -50,6 +84,11 @@ MODEL2POOLING = {
 }
 
 EmbeddingFn = Callable[[list[str]], np.ndarray]
+
+RETURN_SEPARATOR = "\n\n"
+SECTION_SEPARATOR = "\n\n---\n\n"
+MAX_METADATA_PERCENTAGE = 0.25
+CHUNK_MIN_CONTENT = 16
 
 
 def _require_torch():
@@ -77,22 +116,40 @@ def _require_tqdm():
 
 
 def prepare_texts(
-    texts: list[str], retrieval_method: str, *, is_query: bool
+    texts: list[str],
+    retrieval_method: str,
+    *,
+    is_query: bool,
+    query_prefix: str | None = None,
+    passage_prefix: str | None = None,
 ) -> list[str]:
     normalized_method = retrieval_method.lower()
     prepared = list(texts)
 
-    if "e5" in normalized_method:
+    explicit_prefix = query_prefix if is_query else passage_prefix
+    if explicit_prefix:
+        prepared = [_apply_text_prefix(text, explicit_prefix) for text in prepared]
+    elif "e5" in normalized_method:
         prefix = "query" if is_query else "passage"
-        prepared = [f"{prefix}: {text}" for text in prepared]
+        prepared = [_apply_text_prefix(text, f"{prefix}:") for text in prepared]
 
-    if "bge" in normalized_method and is_query:
+    if "bge" in normalized_method and is_query and not explicit_prefix:
         prepared = [
             f"Represent this sentence for searching relevant passages: {text}"
             for text in prepared
         ]
 
     return prepared
+
+
+def _apply_text_prefix(text: str, prefix: str) -> str:
+    normalized_prefix = prefix.strip()
+    if not normalized_prefix:
+        return text
+    if text.startswith(normalized_prefix):
+        return text
+    separator = "" if normalized_prefix.endswith(("\n", " ")) else " "
+    return f"{normalized_prefix}{separator}{text}"
 
 
 def load_model(
@@ -322,116 +379,58 @@ def write_dense_faiss_index(
     faiss.write_index(faiss_index, str(index_path))
 
 
-@dataclass(frozen=True)
-class ChunkingConfig:
-    """Controls document chunking."""
-
-    chunk_size: int = 900
-    chunk_overlap: int = 120
-    include_title: bool = True
-
-    def validate(self) -> None:
-        if self.chunk_size < 1:
-            raise ValueError("chunk_size must be at least 1.")
-        if self.chunk_overlap < 0:
-            raise ValueError("chunk_overlap must be non-negative.")
-        if self.chunk_overlap >= self.chunk_size:
-            raise ValueError("chunk_overlap must be smaller than chunk_size.")
-
-
-@dataclass(frozen=True)
-class EmbeddingConfig:
-    """Controls embedding preparation and batching."""
-
-    retrieval_method: str = "contriever"
-    batch_size: int = 64
-
-    def validate(self) -> None:
-        if not self.retrieval_method.strip():
-            raise ValueError("retrieval_method is required.")
-        if self.batch_size < 1:
-            raise ValueError("batch_size must be at least 1.")
-
-
-@dataclass(frozen=True)
-class IndexWriterConfig:
-    """Controls files written by the indexing pipeline."""
-
-    save_dir: str | Path
-    write_faiss: bool = False
-    faiss_type: str = "Flat"
-    hnsw_ef_construction: int | None = None
-    hnsw_ef_search: int | None = None
-    corpus_filename: str = "corpus.jsonl"
-    embedding_filename: str = "embeddings.memmap"
-    index_filename: str = "dense_Flat.index"
-
-    def validate(self) -> None:
-        if not str(self.save_dir):
-            raise ValueError("save_dir is required.")
-        if self.hnsw_ef_construction is not None and self.hnsw_ef_construction < 1:
-            raise ValueError("hnsw_ef_construction must be at least 1.")
-        if self.hnsw_ef_search is not None and self.hnsw_ef_search < 1:
-            raise ValueError("hnsw_ef_search must be at least 1.")
-
-
-@dataclass(frozen=True)
-class IndexingPipelineConfig:
-    chunking: ChunkingConfig
-    embedding: EmbeddingConfig
-    writer: IndexWriterConfig
-
-    def validate(self) -> None:
-        self.chunking.validate()
-        self.embedding.validate()
-        self.writer.validate()
-
-
-@dataclass(frozen=True)
-class IndexChunk:
-    """One chunk ready for embedding."""
-
-    id: str
-    document_id: str
-    chunk_id: int
-    text: str
-    title: str | None = None
-    url: str | None = None
-    metadata: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class EmbeddedChunk:
-    """One chunk plus its embedding vector."""
-
-    chunk: IndexChunk
-    embedding: np.ndarray
-
-
-@dataclass(frozen=True)
-class IndexingPipelineResult:
-    total_documents: int
-    total_chunks: int
-    corpus_path: Path
-    embedding_path: Path
-    index_path: Path | None = None
-
-
 def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChunk]:
-    """Split one document into overlapping text chunks."""
+    """Split one document into token-budgeted chunks ready for indexing."""
 
     config.validate()
     text = document.contents.strip()
     if not text:
         return []
 
-    chunk_texts = _split_text(text, config.chunk_size, config.chunk_overlap)
+    title_prefix = ""
+    title_tokens = 0
+    if config.include_title and document.title:
+        title = _extract_blurb(document.title, config.blurb_size)
+        title_prefix = f"{title}{RETURN_SEPARATOR}" if title else ""
+        title_tokens = _token_count(title_prefix)
+
+    metadata_suffix_semantic = ""
+    metadata_suffix_keyword = ""
+    metadata_tokens = 0
+    if config.include_metadata:
+        metadata_suffix_semantic, metadata_suffix_keyword = _metadata_suffix_for_index(
+            document.metadata,
+            include_separator=True,
+        )
+        metadata_tokens = _token_count(metadata_suffix_semantic)
+        if metadata_tokens >= config.chunk_size * config.max_metadata_percentage:
+            metadata_suffix_semantic = ""
+            metadata_tokens = 0
+
+    content_token_limit = config.chunk_size - title_tokens - metadata_tokens
+    if content_token_limit <= config.min_content_tokens:
+        metadata_suffix_semantic = ""
+        metadata_tokens = 0
+        content_token_limit = config.chunk_size - title_tokens
+
+    if content_token_limit <= config.min_content_tokens:
+        title_prefix = ""
+        content_token_limit = config.chunk_size
+
+    chunk_texts = _split_text(text, content_token_limit, config.chunk_overlap)
     chunks: list[IndexChunk] = []
     for chunk_id, chunk_text in enumerate(chunk_texts):
-        if config.include_title and document.title:
-            index_text = f"{document.title}\n{chunk_text}"
-        else:
-            index_text = chunk_text
+        index_text = (
+            f"{title_prefix}{chunk_text}{metadata_suffix_semantic}"
+            if title_prefix or metadata_suffix_semantic
+            else chunk_text
+        )
+        metadata = {
+            **document.metadata,
+            "permissions": document.permissions,
+        }
+        if metadata_suffix_keyword:
+            metadata["metadata_keyword"] = metadata_suffix_keyword
         chunks.append(
             IndexChunk(
                 id=f"{document.id}::chunk-{chunk_id}",
@@ -440,24 +439,32 @@ def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChun
                 text=index_text,
                 title=document.title,
                 url=document.url,
-                metadata={
-                    **document.metadata,
-                    "permissions": document.permissions,
-                },
+                metadata=metadata,
+                blurb=_extract_blurb(chunk_text, config.blurb_size),
+                metadata_suffix_semantic=metadata_suffix_semantic,
+                metadata_suffix_keyword=metadata_suffix_keyword,
             )
         )
+
+    if config.enable_large_chunks:
+        chunks.extend(generate_large_chunks(chunks, config.large_chunk_ratio))
     return chunks
 
 
 def chunk_documents(
     documents: Iterable[Document],
     config: ChunkingConfig,
+    *,
+    callback: IndexingHeartbeatInterface | None = None,
 ) -> list[IndexChunk]:
     """Chunk all non-empty documents."""
 
     chunks: list[IndexChunk] = []
     for document in documents:
-        chunks.extend(chunk_document(document, config))
+        _raise_if_indexing_stopped(callback, "chunk_documents")
+        document_chunks = chunk_document(document, config)
+        chunks.extend(document_chunks)
+        _report_indexing_progress(callback, "chunk_documents", len(document_chunks))
     return chunks
 
 
@@ -466,30 +473,180 @@ def embed_chunks(
     *,
     embedding_fn: EmbeddingFn,
     config: EmbeddingConfig,
+    callback: IndexingHeartbeatInterface | None = None,
 ) -> list[EmbeddedChunk]:
     """Embed chunks in batches using model-specific text preparation."""
 
     config.validate()
+    if config.isolate_failures:
+        embedded, failures = embed_chunks_with_failure_handling(
+            chunks,
+            embedding_fn=embedding_fn,
+            config=config,
+            callback=callback,
+        )
+        if failures:
+            failed_docs = ", ".join(
+                failure.document_id or "<unknown>" for failure in failures
+            )
+            raise RuntimeError(f"Failed to embed chunks for documents: {failed_docs}")
+        return embedded
+
     embedded: list[EmbeddedChunk] = []
+    title_embedding_cache: dict[str, np.ndarray] = {}
     for batch in _batched(list(chunks), config.batch_size):
-        prepared_texts = prepare_texts(
+        _raise_if_indexing_stopped(callback, "embed_chunks")
+        vectors = _embed_texts(
             [chunk.text for chunk in batch],
-            config.retrieval_method,
+            embedding_fn=embedding_fn,
+            config=config,
             is_query=False,
         )
-        vectors = embedding_fn(prepared_texts)
-        if not isinstance(vectors, np.ndarray):
-            vectors = np.asarray(vectors, dtype=np.float32)
-        if vectors.ndim != 2 or vectors.shape[0] != len(batch):
-            raise ValueError(
-                "embedding_fn must return a 2D array with one row per input text."
-            )
-        vectors = vectors.astype(np.float32, copy=False)
         embedded.extend(
-            EmbeddedChunk(chunk=chunk, embedding=vectors[index])
+            EmbeddedChunk(
+                chunk=chunk,
+                embedding=vectors[index],
+                title_embedding=_get_title_embedding(
+                    chunk,
+                    title_embedding_cache,
+                    embedding_fn=embedding_fn,
+                    config=config,
+                ),
+            )
             for index, chunk in enumerate(batch)
         )
+        _report_indexing_progress(callback, "embed_chunks", len(batch))
     return embedded
+
+
+def embed_chunks_with_failure_handling(
+    chunks: Sequence[IndexChunk],
+    *,
+    embedding_fn: EmbeddingFn,
+    config: EmbeddingConfig,
+    callback: IndexingHeartbeatInterface | None = None,
+) -> tuple[list[EmbeddedChunk], list[ConnectorFailure]]:
+    """Embed a batch, then isolate failures document-by-document if needed."""
+
+    try:
+        fallback_config = replace(config, isolate_failures=False)
+        return (
+            embed_chunks(
+                chunks,
+                embedding_fn=embedding_fn,
+                config=fallback_config,
+                callback=callback,
+            ),
+            [],
+        )
+    except Exception:
+        logger.exception("Failed to embed chunk batch. Trying individual documents.")
+        if config.failure_retry_seconds:
+            time.sleep(config.failure_retry_seconds)
+
+    embedded_chunks: list[EmbeddedChunk] = []
+    failures: list[ConnectorFailure] = []
+    chunks_by_doc: dict[str, list[IndexChunk]] = defaultdict(list)
+    for chunk in chunks:
+        chunks_by_doc[chunk.document_id].append(chunk)
+
+    fallback_config = replace(config, isolate_failures=False)
+    for document_id, document_chunks in chunks_by_doc.items():
+        _raise_if_indexing_stopped(callback, "embed_chunks_with_failure_handling")
+        try:
+            embedded_chunks.extend(
+                embed_chunks(
+                    document_chunks,
+                    embedding_fn=embedding_fn,
+                    config=fallback_config,
+                    callback=callback,
+                )
+            )
+        except Exception as exc:
+            logger.exception("Failed to embed chunks for document '%s'", document_id)
+            failures.append(
+                ConnectorFailure(
+                    document_id=document_id,
+                    message=str(exc),
+                    exception_type=type(exc).__name__,
+                    metadata={
+                        "chunk_ids": [chunk.id for chunk in document_chunks],
+                    },
+                )
+            )
+
+    return embedded_chunks, failures
+
+
+def _embed_texts(
+    texts: Sequence[str],
+    *,
+    embedding_fn: EmbeddingFn,
+    config: EmbeddingConfig,
+    is_query: bool,
+) -> np.ndarray:
+    prepared_texts = prepare_texts(
+        list(texts),
+        config.retrieval_method,
+        is_query=is_query,
+        query_prefix=config.query_prefix,
+        passage_prefix=config.passage_prefix,
+    )
+    vectors = embedding_fn(prepared_texts)
+    return _coerce_embedding_matrix(
+        vectors,
+        expected_rows=len(prepared_texts),
+        normalize=config.normalize_embeddings,
+    )
+
+
+def _get_title_embedding(
+    chunk: IndexChunk,
+    cache: dict[str, np.ndarray],
+    *,
+    embedding_fn: EmbeddingFn,
+    config: EmbeddingConfig,
+) -> np.ndarray | None:
+    if not config.embed_titles or not chunk.title:
+        return None
+    title = chunk.title.strip()
+    if not title:
+        return None
+    if title not in cache:
+        cache[title] = _embed_texts(
+            [title],
+            embedding_fn=embedding_fn,
+            config=config,
+            is_query=False,
+        )[0]
+    return cache[title]
+
+
+def _coerce_embedding_matrix(
+    vectors: Any,
+    *,
+    expected_rows: int,
+    normalize: bool,
+) -> np.ndarray:
+    if not isinstance(vectors, np.ndarray):
+        vectors = np.asarray(vectors, dtype=np.float32)
+    if vectors.ndim != 2 or vectors.shape[0] != expected_rows:
+        raise ValueError(
+            "embedding_fn must return a 2D array with one row per input text."
+        )
+    vectors = vectors.astype(np.float32, copy=False)
+    if normalize:
+        vectors = _normalize_embedding_rows(vectors)
+    return vectors
+
+
+def _normalize_embedding_rows(vectors: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    return np.divide(
+        vectors,
+        np.maximum(norms, np.finfo(np.float32).eps),
+        out=np.zeros_like(vectors, dtype=np.float32),
+    )
 
 
 def write_corpus_jsonl(chunks: Sequence[IndexChunk], path: str | Path) -> Path:
@@ -570,12 +727,14 @@ def run_indexing_pipeline(
     *,
     config: IndexingPipelineConfig,
     embedding_fn: EmbeddingFn,
+    callback: IndexingHeartbeatInterface | None = None,
 ) -> IndexingPipelineResult:
     """Chunk, embed, and write index artifacts for connector documents."""
 
     config.validate()
     docs = list(documents)
-    chunks = chunk_documents(docs, config.chunking)
+    _raise_if_indexing_stopped(callback, "run_indexing_pipeline")
+    chunks = chunk_documents(docs, config.chunking, callback=callback)
     if not chunks:
         raise ValueError("No non-empty chunks were produced.")
 
@@ -584,16 +743,22 @@ def run_indexing_pipeline(
     embedding_path = save_dir / config.writer.embedding_filename
     index_path = save_dir / config.writer.index_filename
 
+    _raise_if_indexing_stopped(callback, "write_corpus_jsonl")
     write_corpus_jsonl(chunks, corpus_path)
+    _report_indexing_progress(callback, "write_corpus_jsonl", len(chunks))
     embedded_chunks = embed_chunks(
         chunks,
         embedding_fn=embedding_fn,
         config=config.embedding,
+        callback=callback,
     )
+    _raise_if_indexing_stopped(callback, "write_embeddings_memmap")
     write_embeddings_memmap(embedded_chunks, embedding_path)
+    _report_indexing_progress(callback, "write_embeddings_memmap", len(embedded_chunks))
 
     written_index_path = None
     if config.writer.write_faiss:
+        _raise_if_indexing_stopped(callback, "write_faiss_index")
         written_index_path = write_faiss_index(
             embedded_chunks,
             index_path,
@@ -601,6 +766,7 @@ def run_indexing_pipeline(
             hnsw_ef_construction=config.writer.hnsw_ef_construction,
             hnsw_ef_search=config.writer.hnsw_ef_search,
         )
+        _report_indexing_progress(callback, "write_faiss_index", len(embedded_chunks))
 
     return IndexingPipelineResult(
         total_documents=len(docs),
@@ -609,6 +775,23 @@ def run_indexing_pipeline(
         embedding_path=embedding_path,
         index_path=written_index_path,
     )
+
+
+def _raise_if_indexing_stopped(
+    callback: IndexingHeartbeatInterface | None,
+    tag: str,
+) -> None:
+    if callback and callback.should_stop():
+        raise RuntimeError(f"{tag}: stop signal detected")
+
+
+def _report_indexing_progress(
+    callback: IndexingHeartbeatInterface | None,
+    tag: str,
+    amount: int,
+) -> None:
+    if callback:
+        callback.progress(tag, amount)
 
 
 def deterministic_embedding_fn(dim: int = 8) -> EmbeddingFn:
@@ -631,17 +814,176 @@ def deterministic_embedding_fn(dim: int = 8) -> EmbeddingFn:
     return embed
 
 
+def _metadata_suffix_for_index(
+    metadata: dict[str, Any],
+    *,
+    include_separator: bool = False,
+) -> tuple[str, str]:
+    """Render metadata for semantic and keyword indexing."""
+
+    if not metadata:
+        return "", ""
+
+    semantic_lines = ["Metadata:"]
+    keyword_values: list[str] = []
+    for key, value in metadata.items():
+        if value is None or key == "permissions":
+            continue
+
+        values = value if isinstance(value, list) else [value]
+        value_strings = [str(item).strip() for item in values if str(item).strip()]
+        if not value_strings:
+            continue
+
+        keyword_values.extend(value_strings)
+        semantic_lines.append(f"\t{key} - {', '.join(value_strings)}")
+
+    if len(semantic_lines) == 1:
+        return "", ""
+
+    semantic = "\n".join(semantic_lines)
+    keyword = " ".join(keyword_values)
+    if include_separator:
+        semantic = f"{RETURN_SEPARATOR}{semantic}"
+        keyword = f"{RETURN_SEPARATOR}{keyword}" if keyword else ""
+    return semantic, keyword
+
+
+def _tokenize_for_chunking(text: str) -> list[str]:
+    return re.findall(r"\S+", text)
+
+
+def _token_count(text: str) -> int:
+    return len(_tokenize_for_chunking(text))
+
+
+def _extract_blurb(text: str, blurb_size: int) -> str:
+    chunks = _split_text(text.strip(), blurb_size, 0)
+    return chunks[0] if chunks else ""
+
+
 def _split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Split text on sentence boundaries, falling back to token windows."""
+
+    sentences = _split_sentences(text)
+    if not sentences:
+        return []
+    return _pack_sentences(sentences, chunk_size, chunk_overlap)
+
+
+def _split_sentences(text: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return []
+    return [
+        part.strip()
+        for part in re.split(r"(?<=[.!?。！？])\s+", normalized)
+        if part.strip()
+    ]
+
+
+def _pack_sentences(
+    sentences: Sequence[str],
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    current_tokens = 0
+
+    for sentence in sentences:
+        sentence_tokens = _token_count(sentence)
+        if sentence_tokens > chunk_size:
+            if current:
+                chunks.append(" ".join(current).strip())
+                current = []
+                current_tokens = 0
+            chunks.extend(_split_token_window(sentence, chunk_size, chunk_overlap))
+            continue
+
+        would_exceed = current and current_tokens + sentence_tokens > chunk_size
+        if would_exceed:
+            chunks.append(" ".join(current).strip())
+            current = _overlap_tail(current, chunk_overlap)
+            current_tokens = _token_count(" ".join(current))
+            if current and current_tokens + sentence_tokens > chunk_size:
+                current = []
+                current_tokens = 0
+
+        current.append(sentence)
+        current_tokens += sentence_tokens
+
+    if current:
+        chunks.append(" ".join(current).strip())
+
+    return [chunk for chunk in chunks if chunk]
+
+
+def _split_token_window(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    tokens = _tokenize_for_chunking(text)
     chunks: list[str] = []
     start = 0
-    while start < len(text):
-        chunk = text[start : start + chunk_size].strip()
+    step = chunk_size - chunk_overlap
+    while start < len(tokens):
+        chunk = " ".join(tokens[start : start + chunk_size]).strip()
         if chunk:
             chunks.append(chunk)
-        if start + chunk_size >= len(text):
+        if start + chunk_size >= len(tokens):
             break
-        start += chunk_size - chunk_overlap
+        start += step
     return chunks
+
+
+def _overlap_tail(sentences: Sequence[str], chunk_overlap: int) -> list[str]:
+    if chunk_overlap <= 0:
+        return []
+
+    selected: list[str] = []
+    selected_tokens = 0
+    for sentence in reversed(sentences):
+        sentence_tokens = _token_count(sentence)
+        if selected and selected_tokens + sentence_tokens > chunk_overlap:
+            break
+        if sentence_tokens > chunk_overlap:
+            tail = _tokenize_for_chunking(sentence)[-chunk_overlap:]
+            return [" ".join(tail)]
+        selected.insert(0, sentence)
+        selected_tokens += sentence_tokens
+    return selected
+
+
+def _combine_index_chunks(
+    chunks: Sequence[IndexChunk], large_chunk_id: int
+) -> IndexChunk:
+    combined_text = SECTION_SEPARATOR.join(chunk.text for chunk in chunks)
+    reference_ids = [chunk.chunk_id for chunk in chunks]
+    first = chunks[0]
+    return IndexChunk(
+        id=f"{first.document_id}::large-chunk-{large_chunk_id}",
+        document_id=first.document_id,
+        chunk_id=first.chunk_id,
+        text=combined_text,
+        title=first.title,
+        url=first.url,
+        metadata=dict(first.metadata or {}),
+        blurb=first.blurb,
+        large_chunk_reference_ids=reference_ids,
+        large_chunk_id=large_chunk_id,
+    )
+
+
+def generate_large_chunks(
+    chunks: Sequence[IndexChunk],
+    large_chunk_ratio: int,
+) -> list[IndexChunk]:
+    """Generate grouped chunks for callers that want multi-pass indexing."""
+
+    large_chunks: list[IndexChunk] = []
+    for large_chunk_id, start in enumerate(range(0, len(chunks), large_chunk_ratio)):
+        group = chunks[start : start + large_chunk_ratio]
+        if len(group) > 1:
+            large_chunks.append(_combine_index_chunks(group, large_chunk_id))
+    return large_chunks
 
 
 def _batched(items: list[IndexChunk], batch_size: int) -> Iterable[list[IndexChunk]]:

@@ -146,6 +146,24 @@ class TestPrepareTexts:
         result = prepare_texts(["text"], "E5-LARGE", is_query=False)
         assert result[0].startswith("passage: ")
 
+    def test_explicit_prefix_overrides_model_default(self):
+        result = prepare_texts(
+            ["text"],
+            "e5",
+            is_query=False,
+            passage_prefix="Represent document:",
+        )
+        assert result == ["Represent document: text"]
+
+    def test_explicit_prefix_is_not_duplicated(self):
+        result = prepare_texts(
+            ["query: already prefixed"],
+            "e5",
+            is_query=True,
+            query_prefix="query:",
+        )
+        assert result == ["query: already prefixed"]
+
 
 # ---------------------------------------------------------------------------
 # resolve_pooling_method

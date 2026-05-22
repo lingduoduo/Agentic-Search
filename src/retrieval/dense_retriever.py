@@ -8,22 +8,23 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-# Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS
-# when both libraries bundle their own libomp.
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
 import numpy as np
 
 from .index_builder import (
     _encode_batch,
+    _normalize_embedding_rows,
+    _require_faiss,
+    _require_torch,
     load_corpus,
     load_model,
     prepare_texts,
     resolve_pooling_method,
     set_hnsw_ef_search,
-    _require_faiss,
-    _require_torch,
 )
+
+# Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS
+# when both libraries bundle their own libomp.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,9 @@ class DenseRetrieverConfig:
     pooling_method: str | None = None
     faiss_gpu: bool = False
     hnsw_ef_search: int | None = None
+    normalize_query_embeddings: bool = False
+    query_prefix: str | None = None
+    passage_prefix: str | None = None
     # Default to CPU so the retrieval service never competes with the trainer
     # for GPU memory.  Set to "cuda" (or "cuda:N") only when the retrieval
     # server is deployed on a dedicated GPU that the trainer does not use.
@@ -134,9 +138,15 @@ class DenseRetriever:
         if not non_empty:
             return np.empty((0, 0), dtype=np.float32)
 
-        texts = prepare_texts(non_empty, self.config.retrieval_method, is_query=True)
+        texts = prepare_texts(
+            non_empty,
+            self.config.retrieval_method,
+            is_query=True,
+            query_prefix=self.config.query_prefix,
+            passage_prefix=self.config.passage_prefix,
+        )
         with torch.no_grad():
-            return _encode_batch(
+            embeddings = _encode_batch(
                 self.model,
                 self.tokenizer,
                 texts,
@@ -145,6 +155,34 @@ class DenseRetriever:
                 self.pooling_method,
                 self.device,
             )
+        if self.config.normalize_query_embeddings:
+            embeddings = _normalize_embedding_rows(embeddings)
+        return embeddings
+
+    def _encode_query_batch(
+        self,
+        query_batch: list[tuple[int, str]],
+    ) -> tuple[list[int], np.ndarray]:
+        """Encode unique queries once while preserving result row order."""
+
+        unique_queries: list[str] = []
+        query_to_unique_index: dict[str, int] = {}
+        row_to_unique_index: list[int] = []
+        for _, query in query_batch:
+            unique_index = query_to_unique_index.get(query)
+            if unique_index is None:
+                unique_index = len(unique_queries)
+                query_to_unique_index[query] = unique_index
+                unique_queries.append(query)
+            row_to_unique_index.append(unique_index)
+
+        unique_embeddings = self.encode_queries(unique_queries)
+        if unique_embeddings.shape[0] != len(unique_queries):
+            raise ValueError("encode_queries returned an unexpected number of rows.")
+        return (
+            [query_index for query_index, _ in query_batch],
+            unique_embeddings[row_to_unique_index],
+        )
 
     def retrieve(
         self, queries: list[str], topk: int | None = None
@@ -157,12 +195,12 @@ class DenseRetriever:
         ]
         for start in range(0, len(non_empty), self.config.query_batch_size):
             query_batch = non_empty[start : start + self.config.query_batch_size]
-            batch_embeddings = self.encode_queries([query for _, query in query_batch])
+            query_indices, batch_embeddings = self._encode_query_batch(query_batch)
             if batch_embeddings.size == 0:
                 continue
             scores, indices = self.index.search(batch_embeddings, resolved_topk)
-            for (query_index, _), row_scores, row_indices in zip(
-                query_batch, scores, indices
+            for query_index, row_scores, row_indices in zip(
+                query_indices, scores, indices
             ):
                 query_results: list[dict[str, Any]] = []
                 for score, idx in zip(row_scores, row_indices):
@@ -211,6 +249,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pooling_method", type=str, default=None)
     parser.add_argument("--faiss_gpu", default=False, action="store_true")
     parser.add_argument(
+        "--normalize_query_embeddings", default=False, action="store_true"
+    )
+    parser.add_argument("--query_prefix", type=str, default=None)
+    parser.add_argument("--passage_prefix", type=str, default=None)
+    parser.add_argument(
         "--hnsw_ef_search",
         type=int,
         default=None,
@@ -233,6 +276,9 @@ def main() -> None:
             use_fp16=args.use_fp16,
             pooling_method=args.pooling_method,
             faiss_gpu=args.faiss_gpu,
+            normalize_query_embeddings=args.normalize_query_embeddings,
+            query_prefix=args.query_prefix,
+            passage_prefix=args.passage_prefix,
             hnsw_ef_search=args.hnsw_ef_search,
         )
     )
