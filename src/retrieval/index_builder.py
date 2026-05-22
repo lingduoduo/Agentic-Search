@@ -204,6 +204,42 @@ def load_corpus(corpus_path: str) -> _Corpus:
     return _Corpus(rows)
 
 
+def load_corpus_from_connector(connector: Any) -> _Corpus:
+    """Build a _Corpus from any LoadConnector, skipping HierarchyNodes."""
+    from ..connectors.models import Document
+
+    rows: list[dict] = []
+    for batch in connector.load_from_state():
+        for item in batch:
+            if isinstance(item, Document):
+                rows.append(
+                    {"id": item.id, "title": item.title, "contents": item.contents}
+                )
+    return _Corpus(rows)
+
+
+def dump_connector_to_jsonl(connector: Any, path: "Path | str") -> None:
+    """Write connector documents to a JSONL file suitable for BM25/pyserini indexing."""
+    from ..connectors.models import Document
+
+    dest = Path(path)
+    with dest.open("w", encoding="utf-8") as fh:
+        for batch in connector.load_from_state():
+            for item in batch:
+                if isinstance(item, Document):
+                    fh.write(
+                        json.dumps(
+                            {
+                                "id": item.id,
+                                "title": item.title,
+                                "contents": item.contents,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    fh.write("\n")
+
+
 def set_hnsw_ef_construction(faiss_index: Any, value: int) -> None:
     hnsw = getattr(faiss_index, "hnsw", None)
     if hnsw is None:

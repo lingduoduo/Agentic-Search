@@ -31,9 +31,6 @@ METADATA_KEYS = {
     "doc_updated_at",
     "file_display_name",
     "link",
-    "primary_owners",
-    "secondary_owners",
-    "source_type",
     "title",
 }
 
@@ -250,9 +247,6 @@ class LocalFileConnector(LoadConnector):
         custom_metadata = {
             key: value for key, value in metadata.items() if key not in METADATA_KEYS
         }
-        for owner_key in ("primary_owners", "secondary_owners", "source_type"):
-            if owner_key in metadata:
-                custom_metadata[owner_key] = metadata[owner_key]
 
         return {
             "document_id": str(metadata.get("document_id") or fallback_id),

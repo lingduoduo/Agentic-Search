@@ -52,17 +52,26 @@ from .connectors import (
 )
 from .connectors import ConnectorCheckpoint as ConnectorCheckpoint
 from .connectors import ConnectorFailure as ConnectorFailure
+from .connectors import CredentialsConnector as CredentialsConnector
+from .connectors import (
+    CredentialsProviderInterface as CredentialsProviderInterface,
+)
 from .connectors import Document as Document
+from .connectors import EventConnector as EventConnector
+from .connectors import HierarchyConnector as HierarchyConnector
+from .connectors import HierarchyNode as HierarchyNode
 from .connectors import InMemoryConnector as InMemoryConnector
 from .connectors import LoadConnector as LoadConnector
 from .connectors import LocalFileConnector as LocalFileConnector
 from .connectors import OAuthConnector as OAuthConnector
 from .connectors import PollConnector as PollConnector
+from .connectors import Resolver as Resolver
 from .connectors import SearchConnector as SearchConnector
 from .connectors import SlimConnector as SlimConnector
 from .connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
 from .connectors import SlimDocument as SlimDocument
 from .connectors import StaticCredentialsProvider as StaticCredentialsProvider
+from .connectors import batched as batched
 from .retrieval.client import SearchClient as SearchClient
 from .retrieval.client import SearchClientConfig as SearchClientConfig
 from .retrieval.context import AgentContext as AgentContext

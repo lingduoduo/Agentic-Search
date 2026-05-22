@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
-from dataclasses import dataclass, field
-from dataclasses import fields
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any
 
 
@@ -69,7 +67,7 @@ class ConnectorCheckpoint:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ConnectorCheckpoint":
         """Build a checkpoint, ignoring unknown keys for forward compatibility."""
-        field_names = {field.name for field in fields(cls)}
+        field_names = {f.name for f in fields(cls)}
         return cls(**{key: value for key, value in data.items() if key in field_names})
 
     @classmethod
