@@ -2,6 +2,11 @@
 
 from .basic import InMemoryConnector as InMemoryConnector
 from .basic import LocalFileConnector as LocalFileConnector
+from .basic import LocalFilePollConnector as LocalFilePollConnector
+from .basic import LocalFileSlimConnector as LocalFileSlimConnector
+from .basic import (
+    LocalFileSlimConnectorWithPermSync as LocalFileSlimConnectorWithPermSync,
+)
 from .basic import SearchConnector as SearchConnector
 from .interface import BaseConnector as BaseConnector
 from .interface import CheckpointOutput as CheckpointOutput

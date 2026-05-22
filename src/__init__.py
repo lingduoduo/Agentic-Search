@@ -63,6 +63,11 @@ from .connectors import HierarchyNode as HierarchyNode
 from .connectors import InMemoryConnector as InMemoryConnector
 from .connectors import LoadConnector as LoadConnector
 from .connectors import LocalFileConnector as LocalFileConnector
+from .connectors import LocalFilePollConnector as LocalFilePollConnector
+from .connectors import LocalFileSlimConnector as LocalFileSlimConnector
+from .connectors import (
+    LocalFileSlimConnectorWithPermSync as LocalFileSlimConnectorWithPermSync,
+)
 from .connectors import OAuthConnector as OAuthConnector
 from .connectors import PollConnector as PollConnector
 from .connectors import Resolver as Resolver
