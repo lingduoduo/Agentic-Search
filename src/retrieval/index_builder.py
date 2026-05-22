@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
 
 try:
     import orjson as _orjson
@@ -35,6 +37,8 @@ from .vocabulary import (
     tokenize_text,
 )
 
+from ..connectors.models import Document
+
 if TYPE_CHECKING:
     pass
 
@@ -44,6 +48,8 @@ MODEL2POOLING = {
     "contriever": "mean",
     "jina": "mean",
 }
+
+EmbeddingFn = Callable[[list[str]], np.ndarray]
 
 
 def _require_torch():
@@ -262,6 +268,387 @@ def set_hnsw_ef_search(faiss_index: Any, value: int) -> None:
     hnsw.efSearch = value
 
 
+def write_dense_faiss_index(
+    embeddings: np.ndarray,
+    index_path: str | Path,
+    *,
+    faiss_type: str = "Flat",
+    hnsw_ef_construction: int | None = None,
+    hnsw_ef_search: int | None = None,
+    faiss_gpu: bool = False,
+    gpu_num: int = 0,
+) -> None:
+    """Build and write a FAISS index from float32 embeddings."""
+
+    if embeddings.size == 0:
+        raise ValueError("Cannot build a dense index for empty embeddings.")
+
+    faiss = _require_faiss()
+    is_hnsw = "HNSW" in faiss_type.upper()
+    if faiss_gpu and is_hnsw:
+        raise ValueError(
+            "faiss_gpu=True is not compatible with HNSW indexes. "
+            "FAISS cannot GPU-shard HNSW indexes. "
+            "Use faiss_type='Flat' or an IVF variant for GPU indexing."
+        )
+
+    embeddings = np.asarray(embeddings, dtype=np.float32)
+    faiss_index = faiss.index_factory(
+        embeddings.shape[-1], faiss_type, faiss.METRIC_INNER_PRODUCT
+    )
+    if hnsw_ef_construction is not None:
+        set_hnsw_ef_construction(faiss_index, hnsw_ef_construction)
+
+    if faiss_gpu:
+        if not hasattr(faiss, "GpuMultipleClonerOptions") or gpu_num == 0:
+            raise RuntimeError(
+                "faiss_gpu was requested, but GPU FAISS support is not available."
+            )
+        clone_options = faiss.GpuMultipleClonerOptions()
+        clone_options.useFloat16 = True
+        clone_options.shard = True
+        faiss_index = faiss.index_cpu_to_all_gpus(faiss_index, clone_options)
+
+    if not faiss_index.is_trained:
+        faiss_index.train(embeddings)
+    faiss_index.add(embeddings)
+
+    if faiss_gpu:
+        faiss_index = faiss.index_gpu_to_cpu(faiss_index)
+
+    if hnsw_ef_search is not None:
+        set_hnsw_ef_search(faiss_index, hnsw_ef_search)
+
+    faiss.write_index(faiss_index, str(index_path))
+
+
+@dataclass(frozen=True)
+class ChunkingConfig:
+    """Controls document chunking."""
+
+    chunk_size: int = 900
+    chunk_overlap: int = 120
+    include_title: bool = True
+
+    def validate(self) -> None:
+        if self.chunk_size < 1:
+            raise ValueError("chunk_size must be at least 1.")
+        if self.chunk_overlap < 0:
+            raise ValueError("chunk_overlap must be non-negative.")
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size.")
+
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    """Controls embedding preparation and batching."""
+
+    retrieval_method: str = "contriever"
+    batch_size: int = 64
+
+    def validate(self) -> None:
+        if not self.retrieval_method.strip():
+            raise ValueError("retrieval_method is required.")
+        if self.batch_size < 1:
+            raise ValueError("batch_size must be at least 1.")
+
+
+@dataclass(frozen=True)
+class IndexWriterConfig:
+    """Controls files written by the indexing pipeline."""
+
+    save_dir: str | Path
+    write_faiss: bool = False
+    faiss_type: str = "Flat"
+    hnsw_ef_construction: int | None = None
+    hnsw_ef_search: int | None = None
+    corpus_filename: str = "corpus.jsonl"
+    embedding_filename: str = "embeddings.memmap"
+    index_filename: str = "dense_Flat.index"
+
+    def validate(self) -> None:
+        if not str(self.save_dir):
+            raise ValueError("save_dir is required.")
+        if self.hnsw_ef_construction is not None and self.hnsw_ef_construction < 1:
+            raise ValueError("hnsw_ef_construction must be at least 1.")
+        if self.hnsw_ef_search is not None and self.hnsw_ef_search < 1:
+            raise ValueError("hnsw_ef_search must be at least 1.")
+
+
+@dataclass(frozen=True)
+class IndexingPipelineConfig:
+    chunking: ChunkingConfig
+    embedding: EmbeddingConfig
+    writer: IndexWriterConfig
+
+    def validate(self) -> None:
+        self.chunking.validate()
+        self.embedding.validate()
+        self.writer.validate()
+
+
+@dataclass(frozen=True)
+class IndexChunk:
+    """One chunk ready for embedding."""
+
+    id: str
+    document_id: str
+    chunk_id: int
+    text: str
+    title: str | None = None
+    url: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddedChunk:
+    """One chunk plus its embedding vector."""
+
+    chunk: IndexChunk
+    embedding: np.ndarray
+
+
+@dataclass(frozen=True)
+class IndexingPipelineResult:
+    total_documents: int
+    total_chunks: int
+    corpus_path: Path
+    embedding_path: Path
+    index_path: Path | None = None
+
+
+def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChunk]:
+    """Split one document into overlapping text chunks."""
+
+    config.validate()
+    text = document.contents.strip()
+    if not text:
+        return []
+
+    chunk_texts = _split_text(text, config.chunk_size, config.chunk_overlap)
+    chunks: list[IndexChunk] = []
+    for chunk_id, chunk_text in enumerate(chunk_texts):
+        if config.include_title and document.title:
+            index_text = f"{document.title}\n{chunk_text}"
+        else:
+            index_text = chunk_text
+        chunks.append(
+            IndexChunk(
+                id=f"{document.id}::chunk-{chunk_id}",
+                document_id=document.id,
+                chunk_id=chunk_id,
+                text=index_text,
+                title=document.title,
+                url=document.url,
+                metadata={
+                    **document.metadata,
+                    "permissions": document.permissions,
+                },
+            )
+        )
+    return chunks
+
+
+def chunk_documents(
+    documents: Iterable[Document],
+    config: ChunkingConfig,
+) -> list[IndexChunk]:
+    """Chunk all non-empty documents."""
+
+    chunks: list[IndexChunk] = []
+    for document in documents:
+        chunks.extend(chunk_document(document, config))
+    return chunks
+
+
+def embed_chunks(
+    chunks: Sequence[IndexChunk],
+    *,
+    embedding_fn: EmbeddingFn,
+    config: EmbeddingConfig,
+) -> list[EmbeddedChunk]:
+    """Embed chunks in batches using model-specific text preparation."""
+
+    config.validate()
+    embedded: list[EmbeddedChunk] = []
+    for batch in _batched(list(chunks), config.batch_size):
+        prepared_texts = prepare_texts(
+            [chunk.text for chunk in batch],
+            config.retrieval_method,
+            is_query=False,
+        )
+        vectors = embedding_fn(prepared_texts)
+        if not isinstance(vectors, np.ndarray):
+            vectors = np.asarray(vectors, dtype=np.float32)
+        if vectors.ndim != 2 or vectors.shape[0] != len(batch):
+            raise ValueError(
+                "embedding_fn must return a 2D array with one row per input text."
+            )
+        vectors = vectors.astype(np.float32, copy=False)
+        embedded.extend(
+            EmbeddedChunk(chunk=chunk, embedding=vectors[index])
+            for index, chunk in enumerate(batch)
+        )
+    return embedded
+
+
+def write_corpus_jsonl(chunks: Sequence[IndexChunk], path: str | Path) -> Path:
+    """Write chunk corpus JSONL compatible with IndexBuilder/retrievers."""
+
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("w", encoding="utf-8") as fh:
+        for chunk in chunks:
+            fh.write(
+                json.dumps(
+                    {
+                        "id": chunk.id,
+                        "document_id": chunk.document_id,
+                        "chunk_id": chunk.chunk_id,
+                        "title": chunk.title,
+                        "url": chunk.url,
+                        "contents": chunk.text,
+                        "metadata": chunk.metadata or {},
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            fh.write("\n")
+    return dest
+
+
+def write_embeddings_memmap(
+    embedded_chunks: Sequence[EmbeddedChunk],
+    path: str | Path,
+) -> Path:
+    """Write chunk embeddings as float32 memmap rows."""
+
+    if not embedded_chunks:
+        raise ValueError("Cannot write embeddings for an empty chunk list.")
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    embeddings = np.vstack([item.embedding for item in embedded_chunks]).astype(
+        np.float32,
+        copy=False,
+    )
+    memmap = np.memmap(dest, mode="w+", dtype=np.float32, shape=embeddings.shape)
+    memmap[:] = embeddings
+    memmap.flush()
+    return dest
+
+
+def write_faiss_index(
+    embedded_chunks: Sequence[EmbeddedChunk],
+    path: str | Path,
+    *,
+    faiss_type: str = "Flat",
+    hnsw_ef_construction: int | None = None,
+    hnsw_ef_search: int | None = None,
+) -> Path:
+    """Write a FAISS index from embedded chunks."""
+
+    if not embedded_chunks:
+        raise ValueError("Cannot write a FAISS index for an empty chunk list.")
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    embeddings = np.vstack([item.embedding for item in embedded_chunks]).astype(
+        np.float32,
+        copy=False,
+    )
+    write_dense_faiss_index(
+        embeddings,
+        dest,
+        faiss_type=faiss_type,
+        hnsw_ef_construction=hnsw_ef_construction,
+        hnsw_ef_search=hnsw_ef_search,
+    )
+    return dest
+
+
+def run_indexing_pipeline(
+    documents: Iterable[Document],
+    *,
+    config: IndexingPipelineConfig,
+    embedding_fn: EmbeddingFn,
+) -> IndexingPipelineResult:
+    """Chunk, embed, and write index artifacts for connector documents."""
+
+    config.validate()
+    docs = list(documents)
+    chunks = chunk_documents(docs, config.chunking)
+    if not chunks:
+        raise ValueError("No non-empty chunks were produced.")
+
+    save_dir = Path(config.writer.save_dir)
+    corpus_path = save_dir / config.writer.corpus_filename
+    embedding_path = save_dir / config.writer.embedding_filename
+    index_path = save_dir / config.writer.index_filename
+
+    write_corpus_jsonl(chunks, corpus_path)
+    embedded_chunks = embed_chunks(
+        chunks,
+        embedding_fn=embedding_fn,
+        config=config.embedding,
+    )
+    write_embeddings_memmap(embedded_chunks, embedding_path)
+
+    written_index_path = None
+    if config.writer.write_faiss:
+        written_index_path = write_faiss_index(
+            embedded_chunks,
+            index_path,
+            faiss_type=config.writer.faiss_type,
+            hnsw_ef_construction=config.writer.hnsw_ef_construction,
+            hnsw_ef_search=config.writer.hnsw_ef_search,
+        )
+
+    return IndexingPipelineResult(
+        total_documents=len(docs),
+        total_chunks=len(chunks),
+        corpus_path=corpus_path,
+        embedding_path=embedding_path,
+        index_path=written_index_path,
+    )
+
+
+def deterministic_embedding_fn(dim: int = 8) -> EmbeddingFn:
+    """Return a deterministic embedding function useful for demos and tests."""
+
+    if dim < 1:
+        raise ValueError("dim must be at least 1.")
+
+    def embed(texts: list[str]) -> np.ndarray:
+        vectors = np.zeros((len(texts), dim), dtype=np.float32)
+        for row, text in enumerate(texts):
+            digest = hashlib.sha256(text.encode("utf-8")).digest()
+            for col in range(dim):
+                vectors[row, col] = digest[col] / 255.0
+            norm = np.linalg.norm(vectors[row])
+            if norm > 0:
+                vectors[row] /= norm
+        return vectors
+
+    return embed
+
+
+def _split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        chunk = text[start : start + chunk_size].strip()
+        if chunk:
+            chunks.append(chunk)
+        if start + chunk_size >= len(text):
+            break
+        start += chunk_size - chunk_overlap
+    return chunks
+
+
+def _batched(items: list[IndexChunk], batch_size: int) -> Iterable[list[IndexChunk]]:
+    for start in range(0, len(items), batch_size):
+        yield items[start : start + batch_size]
+
+
 @dataclass(frozen=True)
 class IndexBuilderConfig:
     retrieval_method: str
@@ -328,6 +715,7 @@ class IndexBuilder:
         self.pooling_method = config.pooling_method
         self.faiss_type = config.faiss_type
         self.hnsw_ef_construction = config.hnsw_ef_construction
+        self.hnsw_ef_search = config.hnsw_ef_search
         self.embedding_path = config.embedding_path
         self.save_embedding = config.save_embedding
         self.faiss_gpu = config.faiss_gpu
@@ -554,9 +942,6 @@ class IndexBuilder:
         return memmap
 
     def build_dense_index(self) -> None:
-        faiss = _require_faiss()
-        torch = _require_torch()
-
         is_hnsw = "HNSW" in self.faiss_type.upper()
         if self.faiss_gpu and is_hnsw:
             raise ValueError(
@@ -564,6 +949,8 @@ class IndexBuilder:
                 "FAISS cannot GPU-shard HNSW indexes. "
                 "Use faiss_type='Flat' or an IVF variant for GPU indexing."
             )
+
+        torch = _require_torch()
 
         if self.index_save_path.exists():
             warnings.warn(
@@ -587,35 +974,15 @@ class IndexBuilder:
                     all_embeddings = self.encode_all(encoder, tokenizer)
             del self.corpus
 
-        dim = all_embeddings.shape[-1]
-
-        faiss_index = faiss.index_factory(
-            dim, self.faiss_type, faiss.METRIC_INNER_PRODUCT
+        write_dense_faiss_index(
+            all_embeddings,
+            self.index_save_path,
+            faiss_type=self.faiss_type,
+            hnsw_ef_construction=self.hnsw_ef_construction,
+            hnsw_ef_search=self.hnsw_ef_search,
+            faiss_gpu=self.faiss_gpu,
+            gpu_num=self.gpu_num,
         )
-        if self.hnsw_ef_construction is not None:
-            set_hnsw_ef_construction(faiss_index, self.hnsw_ef_construction)
-
-        if self.faiss_gpu:
-            if not hasattr(faiss, "GpuMultipleClonerOptions") or self.gpu_num == 0:
-                raise RuntimeError(
-                    "faiss_gpu was requested, but GPU FAISS support is not available."
-                )
-            clone_options = faiss.GpuMultipleClonerOptions()
-            clone_options.useFloat16 = True
-            clone_options.shard = True
-            faiss_index = faiss.index_cpu_to_all_gpus(faiss_index, clone_options)
-
-        if not faiss_index.is_trained:
-            faiss_index.train(all_embeddings)
-        faiss_index.add(all_embeddings)
-
-        if self.faiss_gpu:
-            faiss_index = faiss.index_gpu_to_cpu(faiss_index)
-
-        if self.hnsw_ef_search is not None:
-            set_hnsw_ef_search(faiss_index, self.hnsw_ef_search)
-
-        faiss.write_index(faiss_index, str(self.index_save_path))
 
 
 def resolve_pooling_method(retrieval_method: str, pooling_method: str | None) -> str:
