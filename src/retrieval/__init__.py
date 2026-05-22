@@ -42,17 +42,23 @@ from .models import SwitchoverType as SwitchoverType
 from .models import UpdatableChunkData as UpdatableChunkData
 from .sparse_retriever import SparseRetriever as SparseRetriever
 from .sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig
+from .hybrid_retriever import HybridRetriever as HybridRetriever
+from .hybrid_retriever import HybridRetrieverConfig as HybridRetrieverConfig
+from .hybrid_retriever import combine_retrieval_results as combine_retrieval_results
 
 
 def build_retriever(
-    config: DenseRetrieverConfig | SparseRetrieverConfig,
-) -> DenseRetriever | SparseRetriever:
+    config: DenseRetrieverConfig | SparseRetrieverConfig | HybridRetrieverConfig,
+) -> DenseRetriever | SparseRetriever | HybridRetriever:
     """Instantiate the right retriever from a config object.
 
-    Routes SparseRetrieverConfig (or any DenseRetrieverConfig whose
-    retrieval_method is 'bm25') to SparseRetriever; everything else to
-    DenseRetriever.
+    HybridRetrieverConfig → HybridRetriever (fused dense + BM25).
+    SparseRetrieverConfig → SparseRetriever.
+    DenseRetrieverConfig with retrieval_method='bm25' → SparseRetriever.
+    Anything else → DenseRetriever.
     """
+    if isinstance(config, HybridRetrieverConfig):
+        return HybridRetriever(config)
     if isinstance(config, SparseRetrieverConfig):
         return SparseRetriever(config)
     if config.retrieval_method.lower() == "bm25":
