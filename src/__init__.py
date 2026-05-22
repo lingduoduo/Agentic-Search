@@ -45,6 +45,24 @@ from .agents.state import ToolType as ToolType
 from .agents.state import UserRequest as UserRequest
 from .agents.tool_calling import ToolAgentLoop as ToolAgentLoop
 from .agents.tool_calling import ToolAgentLoopConfig as ToolAgentLoopConfig
+from .connectors import BaseConnector as BaseConnector
+from .connectors import CheckpointedConnector as CheckpointedConnector
+from .connectors import (
+    CheckpointedConnectorWithPermSync as CheckpointedConnectorWithPermSync,
+)
+from .connectors import ConnectorCheckpoint as ConnectorCheckpoint
+from .connectors import ConnectorFailure as ConnectorFailure
+from .connectors import Document as Document
+from .connectors import InMemoryConnector as InMemoryConnector
+from .connectors import LoadConnector as LoadConnector
+from .connectors import LocalFileConnector as LocalFileConnector
+from .connectors import OAuthConnector as OAuthConnector
+from .connectors import PollConnector as PollConnector
+from .connectors import SearchConnector as SearchConnector
+from .connectors import SlimConnector as SlimConnector
+from .connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
+from .connectors import SlimDocument as SlimDocument
+from .connectors import StaticCredentialsProvider as StaticCredentialsProvider
 from .retrieval.client import SearchClient as SearchClient
 from .retrieval.client import SearchClientConfig as SearchClientConfig
 from .retrieval.context import AgentContext as AgentContext

@@ -412,6 +412,23 @@ If confidence is too low or a route model is missing, the CLI falls back to
 | `ApiRequestTool` | Auto-generated tool that executes one OpenAPI operation |
 | `parse_openapi_schema` | Parse an OpenAPI 3.x YAML/JSON string into `OpenAPISchema` |
 
+### Connectors (`src/connectors/`)
+
+| Class / function | Description |
+|-----------------|-------------|
+| `Document` / `SlimDocument` | Native document containers emitted by connectors |
+| `BaseConnector` / `LoadConnector` | Connector interfaces for shared behavior and full-state document loading |
+| `PollConnector` | Incremental sync by time window |
+| `CheckpointedConnector` | Incremental sync that returns a persisted checkpoint |
+| `CheckpointedConnectorWithPermSync` | Checkpointed sync with document permission metadata |
+| `SlimConnector` | Pull only document ids for pruning or expired document deletion |
+| `SlimConnectorWithPermSync` | Pull document ids plus permission metadata |
+| `OAuthConnector` | OAuth authorization-code connector contract |
+| `InMemoryConnector` | Load documents from Python objects or dictionaries |
+| `LocalFileConnector` | Load UTF-8 text files from paths, directories, or glob patterns |
+| `SearchConnector` | Load search results as documents through retrieval, Google, or SerpAPI |
+| `StaticCredentialsProvider` | Simple in-memory provider for connector credentials |
+
 ### Model (`src/model/`)
 
 #### Generation (`src/model/generation.py`)

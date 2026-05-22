@@ -1,0 +1,333 @@
+"""Concrete connector implementations for common local sources."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Iterable, Iterator
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from ..tools.search import SearchProvider, search_tool
+from .interface import LoadConnector, NormalizationResult, batched
+from .models import Document, HierarchyNode
+
+DEFAULT_FILE_BATCH_SIZE = 32
+TEXT_FILE_EXTENSIONS = {
+    ".csv",
+    ".json",
+    ".jsonl",
+    ".log",
+    ".md",
+    ".rst",
+    ".tsv",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
+METADATA_KEYS = {
+    "document_id",
+    "doc_updated_at",
+    "file_display_name",
+    "link",
+    "primary_owners",
+    "secondary_owners",
+    "source_type",
+    "title",
+}
+
+
+class InMemoryConnector(LoadConnector):
+    """Load documents from an in-memory iterable."""
+
+    def __init__(
+        self,
+        documents: Iterable[Document | dict[str, Any]],
+        *,
+        batch_size: int = 32,
+    ) -> None:
+        self.documents = [self._coerce_document(document) for document in documents]
+        self.batch_size = batch_size
+
+    def load_from_state(self) -> Iterator[list[Document | HierarchyNode]]:
+        yield from batched(self.documents, self.batch_size)  # type: ignore[misc]
+
+    @staticmethod
+    def _coerce_document(document: Document | dict[str, Any]) -> Document:
+        if isinstance(document, Document):
+            return document
+        return Document(
+            id=str(document["id"]),
+            contents=str(document.get("contents", "")),
+            title=document.get("title"),
+            url=document.get("url"),
+            metadata=dict(document.get("metadata") or {}),
+            permissions=dict(document.get("permissions") or {}),
+        )
+
+
+class LocalFileConnector(LoadConnector):
+    """Load local UTF-8 text files from paths, directories, or glob patterns."""
+
+    def __init__(
+        self,
+        paths: Iterable[str | Path] | None = None,
+        *,
+        file_locations: Iterable[str | Path] | None = None,
+        file_names: Iterable[str] | None = None,
+        root: str | Path | None = None,
+        glob: bool = True,
+        encoding: str = "utf-8",
+        metadata: dict[str, Any] | None = None,
+        metadata_path: str | Path | None = None,
+        allowed_extensions: Iterable[str] | None = None,
+        batch_size: int = DEFAULT_FILE_BATCH_SIZE,
+    ) -> None:
+        raw_paths = paths if paths is not None else file_locations
+        self.paths = [Path(path) for path in raw_paths or []]
+        self.file_names = list(file_names or [])
+        self.root = Path(root).expanduser().resolve() if root else None
+        self.glob = glob
+        self.encoding = encoding
+        self.metadata = metadata or {}
+        self.metadata_path = Path(metadata_path) if metadata_path else None
+        self.allowed_extensions = {
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in (allowed_extensions or TEXT_FILE_EXTENSIONS)
+        }
+        self.batch_size = batch_size
+        self.pdf_pass: str | None = None
+
+    def validate_connector_settings(self) -> None:
+        if not self.paths:
+            raise ValueError("LocalFileConnector requires at least one path.")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be greater than zero.")
+
+        if self.metadata_path and not self.metadata_path.exists():
+            raise ValueError(f"metadata_path does not exist: {self.metadata_path}")
+
+    def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
+        self.pdf_pass = credentials.get("pdf_password")
+        return None
+
+    def load_from_state(self) -> Iterator[list[Document | HierarchyNode]]:
+        self.validate_connector_settings()
+        metadata_by_name = self._load_metadata_by_name()
+        yield from batched(
+            self._iter_documents(metadata_by_name),
+            self.batch_size,
+        )  # type: ignore[misc]
+
+    @classmethod
+    def normalize_url(cls, url: str) -> NormalizationResult:
+        if not url.startswith("file://"):
+            return NormalizationResult(normalized_url=None, use_default=True)
+        return NormalizationResult(normalized_url=str(Path(url[7:]).resolve()))
+
+    def _iter_documents(self, metadata_by_name: dict[str, Any]) -> Iterator[Document]:
+        for index, path in enumerate(self._iter_files()):
+            if path.suffix.lower() not in self.allowed_extensions:
+                continue
+            text = path.read_text(encoding=self.encoding)
+            if not text.strip():
+                continue
+            resolved = path.resolve()
+            fallback_name = (
+                self.file_names[index] if index < len(self.file_names) else path.name
+            )
+            file_metadata = self._metadata_for_file(
+                display_name=fallback_name,
+                path=path,
+                metadata_by_name=metadata_by_name,
+            )
+            processed = self._process_metadata(
+                metadata=file_metadata,
+                fallback_name=fallback_name,
+                fallback_id=str(resolved),
+                fallback_url=resolved.as_uri(),
+            )
+            yield Document(
+                id=processed["document_id"],
+                title=processed["title"],
+                url=processed["link"],
+                contents=text,
+                metadata={
+                    "source": "local_file",
+                    "path": str(resolved),
+                    "suffix": path.suffix,
+                    "display_name": processed["file_display_name"],
+                    "doc_updated_at": processed["doc_updated_at"],
+                    **processed["custom_metadata"],
+                },
+            )
+
+    def _iter_files(self) -> Iterator[Path]:
+        seen: set[Path] = set()
+        for raw_path in self.paths:
+            base = (
+                (self.root / raw_path)
+                if self.root and not raw_path.is_absolute()
+                else raw_path
+            )
+            candidates = self._expand_path(base)
+            for candidate in candidates:
+                resolved = candidate.expanduser().resolve()
+                if resolved in seen or not resolved.is_file():
+                    continue
+                seen.add(resolved)
+                yield resolved
+
+    def _expand_path(self, path: Path) -> Iterator[Path]:
+        text = str(path)
+        if self.glob and any(char in text for char in "*?[]"):
+            parent = path.parent if str(path.parent) else Path(".")
+            yield from parent.glob(path.name)
+        elif path.is_dir():
+            yield from path.rglob("*")
+        else:
+            yield path
+
+    def _load_metadata_by_name(self) -> dict[str, Any]:
+        loaded: dict[str, Any] = {}
+        if self.metadata_path:
+            raw = self.metadata_path.read_text(encoding=self.encoding)
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                loaded.update(
+                    {
+                        str(item["filename"]): item
+                        for item in parsed
+                        if isinstance(item, dict) and "filename" in item
+                    }
+                )
+            elif isinstance(parsed, dict):
+                loaded.update(parsed)
+            else:
+                raise ValueError("metadata_path must contain a JSON object or list.")
+        loaded.update(self.metadata)
+        return loaded
+
+    def _metadata_for_file(
+        self,
+        *,
+        display_name: str,
+        path: Path,
+        metadata_by_name: dict[str, Any],
+    ) -> dict[str, Any]:
+        candidates = (
+            display_name,
+            path.name,
+            str(path),
+            str(path.resolve()),
+        )
+        for candidate in candidates:
+            value = metadata_by_name.get(candidate)
+            if isinstance(value, dict):
+                return dict(value)
+        return {}
+
+    def _process_metadata(
+        self,
+        *,
+        metadata: dict[str, Any],
+        fallback_name: str,
+        fallback_id: str,
+        fallback_url: str,
+    ) -> dict[str, Any]:
+        file_display_name = str(metadata.get("file_display_name") or fallback_name)
+        title = str(metadata.get("title") or file_display_name)
+        link = str(metadata.get("link") or fallback_url)
+        updated = metadata.get("doc_updated_at")
+        if isinstance(updated, datetime):
+            doc_updated_at = updated.astimezone(timezone.utc).isoformat()
+        elif updated:
+            doc_updated_at = str(updated)
+        else:
+            doc_updated_at = datetime.now(timezone.utc).isoformat()
+
+        custom_metadata = {
+            key: value for key, value in metadata.items() if key not in METADATA_KEYS
+        }
+        for owner_key in ("primary_owners", "secondary_owners", "source_type"):
+            if owner_key in metadata:
+                custom_metadata[owner_key] = metadata[owner_key]
+
+        return {
+            "document_id": str(metadata.get("document_id") or fallback_id),
+            "doc_updated_at": doc_updated_at,
+            "file_display_name": file_display_name,
+            "link": link,
+            "title": title,
+            "custom_metadata": custom_metadata,
+        }
+
+
+class SearchConnector(LoadConnector):
+    """Load search results as documents using the existing search providers."""
+
+    def __init__(
+        self,
+        queries: Iterable[str],
+        *,
+        provider: SearchProvider = "retrieval",
+        search_url: str = "http://localhost:8000/retrieve",
+        page_size: int = 5,
+        batch_size: int = 32,
+    ) -> None:
+        self.queries = list(queries)
+        self.provider = provider
+        self.search_url = search_url
+        self.page_size = page_size
+        self.batch_size = batch_size
+
+    def validate_connector_settings(self) -> None:
+        if not self.queries:
+            raise ValueError("SearchConnector requires at least one query.")
+        if self.page_size <= 0:
+            raise ValueError("page_size must be greater than zero.")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be greater than zero.")
+
+    def load_from_state(self) -> Iterator[list[Document | HierarchyNode]]:
+        self.validate_connector_settings()
+        yield from batched(self._iter_documents_sync(), self.batch_size)  # type: ignore[misc]
+
+    async def aload_from_state(self) -> list[Document]:
+        """Async variant for callers already running inside an event loop."""
+
+        self.validate_connector_settings()
+        documents: list[Document] = []
+        for query in self.queries:
+            pages = await search_tool(
+                query,
+                provider=self.provider,
+                search_url=self.search_url,
+                page_size=self.page_size,
+            )
+            for index, page in enumerate(pages, 1):
+                if page.error:
+                    continue
+                doc_id = page.url or f"search:{query}:{index}"
+                documents.append(
+                    Document(
+                        id=doc_id,
+                        title=page.title,
+                        url=page.url,
+                        contents=page.summary,
+                        metadata={"source": self.provider, "query": query},
+                    )
+                )
+        return documents
+
+    def _iter_documents_sync(self) -> Iterator[Document]:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            yield from asyncio.run(self.aload_from_state())
+            return
+        raise RuntimeError(
+            "SearchConnector.load_from_state() cannot run inside an active event "
+            "loop; use await SearchConnector.aload_from_state() instead."
+        )
