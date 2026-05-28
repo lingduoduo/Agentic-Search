@@ -67,6 +67,22 @@ SERP_API_KEY=...
 JAVA_HOME=/path/to/java
 ```
 
+## Web Search Provider Admin API
+
+The repo also includes a lightweight FastAPI admin surface for configuring web
+search providers without adding a database dependency:
+
+```python
+from src.server.web_search import create_app
+
+app = create_app()
+```
+
+It exposes `/health` plus `/admin/web-search/search-providers` and
+`/admin/web-search/content-providers` routes for listing, upserting, activating,
+deactivating, deleting, and validation-testing provider settings. Validation
+tests are local by default; pass `"live": true` to make a real provider request.
+
 ## Quick Start
 
 Run a deterministic search-agent trace with fake model/search backends:
