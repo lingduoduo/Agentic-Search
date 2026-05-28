@@ -269,7 +269,8 @@ generation.
 Serve the lightweight browser UI for search and agent answers:
 
 ```bash
-python -m uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
+pip install -e .
+uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
 Open `http://127.0.0.1:7860`, point the retrieval URL at a running
