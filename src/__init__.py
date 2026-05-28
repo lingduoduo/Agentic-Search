@@ -77,6 +77,15 @@ from .connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
 from .connectors import SlimDocument as SlimDocument
 from .connectors import StaticCredentialsProvider as StaticCredentialsProvider
 from .connectors import batched as batched
+from .db import AgenticSearchStore as AgenticSearchStore
+from .db import ChatMessageRecord as ChatMessageRecord
+from .db import ChatSessionRecord as ChatSessionRecord
+from .db import ConnectorConfig as ConnectorConfig
+from .db import DocumentPermission as DocumentPermission
+from .db import GroupRecord as GroupRecord
+from .db import IndexAttemptRecord as IndexAttemptRecord
+from .db import StoredDocument as StoredDocument
+from .db import UserRecord as UserRecord
 from .retrieval.client import SearchClient as SearchClient
 from .retrieval.client import SearchClientConfig as SearchClientConfig
 from .retrieval.context import AgentContext as AgentContext
