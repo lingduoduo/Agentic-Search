@@ -1,4 +1,4 @@
-"""Unit tests for src.search.retrieval_server."""
+"""Unit tests for src.retrieval.dense_retriever_server."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from src.search.retrieval import DenseRetrieverConfig
+from src.retrieval.dense_retriever import DenseRetrieverConfig
 from src.retrieval.sparse_retriever import SparseRetrieverConfig
-from src.servers.retrieval_servers.retrieval import RetrievalServerConfig, create_app
+from src.servers.retrieval.retrieval import RetrievalServerConfig, create_app
 
 
 class _FakeDenseRetriever:
@@ -188,7 +188,7 @@ def test_dense_retriever_config_defaults_device_to_cpu():
 
 
 def test_dense_retriever_config_rejects_zero_query_batch_size():
-    from src.search.retrieval import DenseRetrieverConfig
+    from src.retrieval.dense_retriever import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig(
         model_path="/m",
@@ -205,7 +205,7 @@ def test_dense_retriever_config_rejects_zero_query_batch_size():
 
 
 def test_dense_retriever_config_rejects_zero_hnsw_ef_search():
-    from src.search.retrieval import DenseRetrieverConfig
+    from src.retrieval.dense_retriever import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig(
         model_path="/m",
@@ -223,7 +223,7 @@ def test_dense_retriever_config_rejects_zero_hnsw_ef_search():
 
 def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
     import numpy as np
-    from src.search.retrieval import DenseRetriever
+    from src.retrieval.dense_retriever import DenseRetriever
 
     class _FakeIndex:
         def search(self, embeddings, k):
@@ -258,7 +258,7 @@ def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
 
 def test_dense_retriever_deduplicates_queries_within_batch():
     import numpy as np
-    from src.search.retrieval import DenseRetriever
+    from src.retrieval.dense_retriever import DenseRetriever
 
     class _FakeIndex:
         def search(self, embeddings, k):
@@ -291,7 +291,7 @@ def test_dense_retriever_deduplicates_queries_within_batch():
 
 
 def test_dense_retriever_config_for_e5_base_v2_sets_e5_method_and_cpu():
-    from src.search.retrieval import DenseRetrieverConfig
+    from src.retrieval.dense_retriever import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig.for_e5_base_v2(index_path="/idx", corpus_path="/corpus")
     assert cfg.retrieval_method == "e5"
@@ -300,7 +300,7 @@ def test_dense_retriever_config_for_e5_base_v2_sets_e5_method_and_cpu():
 
 
 def test_dense_retriever_config_for_e5_base_v2_accepts_custom_device():
-    from src.search.retrieval import DenseRetrieverConfig
+    from src.retrieval.dense_retriever import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig.for_e5_base_v2(
         index_path="/idx", corpus_path="/corpus", device="cuda:1"
@@ -311,7 +311,7 @@ def test_dense_retriever_config_for_e5_base_v2_accepts_custom_device():
 def test_parse_args_device_defaults_to_cpu():
     """Ensure the CLI default keeps retrieval on CPU even without explicit flag."""
     import sys
-    from src.servers.retrieval_servers.retrieval import parse_args
+    from src.servers.retrieval.retrieval import parse_args
 
     saved = sys.argv
     sys.argv = [
@@ -340,7 +340,7 @@ def test_parse_args_device_defaults_to_cpu():
 def test_parse_args_allows_bm25_without_model_path():
     """BM25 retrieval should not require a dense embedding model."""
     import sys
-    from src.servers.retrieval_servers.retrieval import parse_args
+    from src.servers.retrieval.retrieval import parse_args
 
     saved = sys.argv
     sys.argv = [

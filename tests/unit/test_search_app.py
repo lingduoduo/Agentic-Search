@@ -1,9 +1,9 @@
-"""Unit tests for src/search/search_app.py."""
+"""Unit tests for src/servers/retrieval/app.py."""
 
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
-from src.servers.retrieval_servers.app import (
+from src.servers.retrieval.app import (
     create_base_app,
     create_search_app,
     format_document,
@@ -137,6 +137,6 @@ class TestCreateSearchApp:
 
 
 def test_google_search_server_import_does_not_require_google_client():
-    from src.servers.retrieval_servers import google as google_search_server
+    from src.servers.retrieval import google as google_search_server
 
     assert google_search_server.DEFAULT_TOPK >= 1

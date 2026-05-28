@@ -6,10 +6,10 @@ output changes the test fails — prompting deliberate review before merging.
 
 import pytest
 
-from src.search.index_builder import prepare_texts, resolve_pooling_method
-from src.search.rerank import passage_to_string, string_to_document
-from src.search.search_app import format_document
-from src.search.vocabulary import extract_keywords, normalize_text, tokenize_text
+from src.retrieval.index_builder import prepare_texts, resolve_pooling_method
+from src.retrieval.rerank import passage_to_string, string_to_document
+from src.servers.retrieval.app import format_document
+from src.retrieval.vocabulary import extract_keywords, normalize_text, tokenize_text
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from src.search.search_app import create_base_app, create_search_app
+from src.servers.retrieval.app import create_base_app, create_search_app
 
 pytestmark = pytest.mark.load
 

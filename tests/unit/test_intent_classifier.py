@@ -12,7 +12,7 @@ from src import (
     train_intent_classifier,
     write_intent_examples,
 )
-from src.search.vocabulary import Vocabulary
+from src.retrieval.vocabulary import Vocabulary
 
 
 def test_vocabulary_build_and_encode_support_sequence_training():

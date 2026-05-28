@@ -70,6 +70,7 @@ __all__ = [
     "deterministic_embedding_fn",
     "embed_chunks",
     "embed_chunks_with_failure_handling",
+    "filter_indexable_documents",
     "generate_large_chunks",
     "prepare_texts",
     "run_indexing_pipeline",
@@ -425,6 +426,7 @@ def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChun
             if title_prefix or metadata_suffix_semantic
             else chunk_text
         )
+        mini_chunk_texts = _make_mini_chunk_texts(chunk_text, config)
         metadata = {
             **document.metadata,
             "permissions": document.permissions,
@@ -443,6 +445,7 @@ def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChun
                 blurb=_extract_blurb(chunk_text, config.blurb_size),
                 metadata_suffix_semantic=metadata_suffix_semantic,
                 metadata_suffix_keyword=metadata_suffix_keyword,
+                mini_chunk_texts=mini_chunk_texts,
             )
         )
 
@@ -466,6 +469,53 @@ def chunk_documents(
         chunks.extend(document_chunks)
         _report_indexing_progress(callback, "chunk_documents", len(document_chunks))
     return chunks
+
+
+def filter_indexable_documents(
+    documents: Iterable[Document],
+    *,
+    max_document_chars: int | None = None,
+) -> tuple[list[Document], list[ConnectorFailure]]:
+    """Drop documents that cannot produce useful chunks and report why."""
+
+    filtered: list[Document] = []
+    failures: list[ConnectorFailure] = []
+    for document in documents:
+        title = document.title or ""
+        contents = document.contents or ""
+        if not title.strip() and not contents.strip():
+            failures.append(
+                ConnectorFailure(
+                    document_id=document.id,
+                    message="Document has neither title nor contents.",
+                    exception_type=None,
+                    metadata={"url": document.url} if document.url else {},
+                )
+            )
+            continue
+
+        char_count = len(title) + len(contents)
+        if max_document_chars is not None and char_count > max_document_chars:
+            failures.append(
+                ConnectorFailure(
+                    document_id=document.id,
+                    message=(
+                        f"Document is too large to index "
+                        f"({char_count:,} chars, max={max_document_chars:,})."
+                    ),
+                    exception_type=None,
+                    metadata={
+                        "url": document.url,
+                        "char_count": char_count,
+                        "max_document_chars": max_document_chars,
+                    },
+                )
+            )
+            continue
+
+        filtered.append(document)
+
+    return filtered, failures
 
 
 def embed_chunks(
@@ -496,24 +546,13 @@ def embed_chunks(
     title_embedding_cache: dict[str, np.ndarray] = {}
     for batch in _batched(list(chunks), config.batch_size):
         _raise_if_indexing_stopped(callback, "embed_chunks")
-        vectors = _embed_texts(
-            [chunk.text for chunk in batch],
-            embedding_fn=embedding_fn,
-            config=config,
-            is_query=False,
-        )
         embedded.extend(
-            EmbeddedChunk(
-                chunk=chunk,
-                embedding=vectors[index],
-                title_embedding=_get_title_embedding(
-                    chunk,
-                    title_embedding_cache,
-                    embedding_fn=embedding_fn,
-                    config=config,
-                ),
+            _embed_chunk_batch(
+                batch,
+                embedding_fn=embedding_fn,
+                config=config,
+                title_embedding_cache=title_embedding_cache,
             )
-            for index, chunk in enumerate(batch)
         )
         _report_indexing_progress(callback, "embed_chunks", len(batch))
     return embedded
@@ -622,6 +661,49 @@ def _get_title_embedding(
     return cache[title]
 
 
+def _embed_chunk_batch(
+    chunks: Sequence[IndexChunk],
+    *,
+    embedding_fn: EmbeddingFn,
+    config: EmbeddingConfig,
+    title_embedding_cache: dict[str, np.ndarray],
+) -> list[EmbeddedChunk]:
+    flat_texts: list[str] = []
+    text_counts: list[int] = []
+    for chunk in chunks:
+        texts = [chunk.text, *(chunk.mini_chunk_texts or [])]
+        flat_texts.extend(texts)
+        text_counts.append(len(texts))
+
+    vectors = _embed_texts(
+        flat_texts,
+        embedding_fn=embedding_fn,
+        config=config,
+        is_query=False,
+    )
+
+    embedded: list[EmbeddedChunk] = []
+    vector_index = 0
+    for chunk, text_count in zip(chunks, text_counts):
+        chunk_vectors = vectors[vector_index : vector_index + text_count]
+        embedded.append(
+            EmbeddedChunk(
+                chunk=chunk,
+                embedding=chunk_vectors[0],
+                title_embedding=_get_title_embedding(
+                    chunk,
+                    title_embedding_cache,
+                    embedding_fn=embedding_fn,
+                    config=config,
+                ),
+                mini_chunk_embeddings=[vector.copy() for vector in chunk_vectors[1:]],
+            )
+        )
+        vector_index += text_count
+
+    return embedded
+
+
 def _coerce_embedding_matrix(
     vectors: Any,
     *,
@@ -666,6 +748,7 @@ def write_corpus_jsonl(chunks: Sequence[IndexChunk], path: str | Path) -> Path:
                         "url": chunk.url,
                         "contents": chunk.text,
                         "metadata": chunk.metadata or {},
+                        "mini_chunk_texts": chunk.mini_chunk_texts or [],
                     },
                     ensure_ascii=False,
                 )
@@ -733,8 +816,12 @@ def run_indexing_pipeline(
 
     config.validate()
     docs = list(documents)
+    indexable_docs, failures = filter_indexable_documents(
+        docs,
+        max_document_chars=config.chunking.max_document_chars,
+    )
     _raise_if_indexing_stopped(callback, "run_indexing_pipeline")
-    chunks = chunk_documents(docs, config.chunking, callback=callback)
+    chunks = chunk_documents(indexable_docs, config.chunking, callback=callback)
     if not chunks:
         raise ValueError("No non-empty chunks were produced.")
 
@@ -774,6 +861,7 @@ def run_indexing_pipeline(
         corpus_path=corpus_path,
         embedding_path=embedding_path,
         index_path=written_index_path,
+        failures=failures,
     )
 
 
@@ -860,6 +948,18 @@ def _token_count(text: str) -> int:
 def _extract_blurb(text: str, blurb_size: int) -> str:
     chunks = _split_text(text.strip(), blurb_size, 0)
     return chunks[0] if chunks else ""
+
+
+def _make_mini_chunk_texts(
+    chunk_text: str,
+    config: ChunkingConfig,
+) -> list[str] | None:
+    if not config.enable_mini_chunks:
+        return None
+    mini_chunks = _split_text(chunk_text, config.mini_chunk_size, 0)
+    if len(mini_chunks) <= 1 and (not mini_chunks or mini_chunks[0] == chunk_text):
+        return None
+    return mini_chunks
 
 
 def _split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

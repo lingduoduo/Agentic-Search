@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from ..connectors.models import ConnectorFailure
 from ..connectors.models import Document
 
 MAX_METADATA_PERCENTAGE = 0.25
@@ -68,6 +69,9 @@ class ChunkingConfig:
     blurb_size: int = 48
     enable_large_chunks: bool = False
     large_chunk_ratio: int = 4
+    enable_mini_chunks: bool = False
+    mini_chunk_size: int = 128
+    max_document_chars: int | None = None
     max_metadata_percentage: float = MAX_METADATA_PERCENTAGE
     min_content_tokens: int = CHUNK_MIN_CONTENT
 
@@ -82,6 +86,10 @@ class ChunkingConfig:
             raise ValueError("blurb_size must be at least 1.")
         if self.large_chunk_ratio < 2:
             raise ValueError("large_chunk_ratio must be at least 2.")
+        if self.mini_chunk_size < 1:
+            raise ValueError("mini_chunk_size must be at least 1.")
+        if self.max_document_chars is not None and self.max_document_chars < 1:
+            raise ValueError("max_document_chars must be at least 1.")
         if not 0 <= self.max_metadata_percentage <= 1:
             raise ValueError("max_metadata_percentage must be between 0 and 1.")
         if self.min_content_tokens < 1:
@@ -250,6 +258,7 @@ class IndexingPipelineResult:
     corpus_path: Path
     embedding_path: Path
     index_path: Path | None = None
+    failures: list[ConnectorFailure] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

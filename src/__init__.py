@@ -227,19 +227,64 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "save_training_batch_jsonl": (".model.generation", "save_training_batch_jsonl"),
     "score_group_rollout": (".model.generation", "score_group_rollout"),
     "trajectory_log_prob_pack": (".model.generation", "trajectory_log_prob_pack"),
-    # servers.retrieval_servers
-    "OnlineSearchConfig": (".servers.retrieval_servers.google", "OnlineSearchConfig"),
-    "OnlineSearchEngine": (".servers.retrieval_servers.google", "OnlineSearchEngine"),
-    "SerpSearchConfig": (".servers.retrieval_servers.serp", "SerpSearchConfig"),
-    "SerpSearchEngine": (".servers.retrieval_servers.serp", "SerpSearchEngine"),
+    # servers.retrieval
+    "OnlineSearchConfig": (".servers.retrieval.google", "OnlineSearchConfig"),
+    "OnlineSearchEngine": (".servers.retrieval.google", "OnlineSearchEngine"),
+    "SerpSearchConfig": (".servers.retrieval.serp", "SerpSearchConfig"),
+    "SerpSearchEngine": (".servers.retrieval.serp", "SerpSearchEngine"),
     "RetrievalServerConfig": (
-        ".servers.retrieval_servers.retrieval",
+        ".servers.retrieval.retrieval",
         "RetrievalServerConfig",
     ),
     "RetrievalRerankConfig": (
-        ".servers.retrieval_servers.retrieval_rerank",
+        ".servers.retrieval.retrieval_rerank",
         "RetrievalRerankConfig",
     ),
+    "RerankerConfig": (".retrieval.rerank", "RerankerConfig"),
+    "create_base_app": (".servers.retrieval.app", "create_base_app"),
+    "create_search_app": (".servers.retrieval.app", "create_search_app"),
+    "format_document": (".servers.retrieval.app", "format_document"),
+    # retrieval.index_builder
+    "IndexBuilder": (".retrieval.index_builder", "IndexBuilder"),
+    "IndexBuilderConfig": (".retrieval.index_builder", "IndexBuilderConfig"),
+    "prepare_texts": (".retrieval.index_builder", "prepare_texts"),
+    "resolve_pooling_method": (
+        ".retrieval.index_builder",
+        "resolve_pooling_method",
+    ),
+    "pooling": (".retrieval.index_builder", "pooling"),
+    "set_hnsw_ef_construction": (
+        ".retrieval.index_builder",
+        "set_hnsw_ef_construction",
+    ),
+    "set_hnsw_ef_search": (".retrieval.index_builder", "set_hnsw_ef_search"),
+    # retrieval.dense_retriever
+    "DenseRetriever": (".retrieval.dense_retriever", "DenseRetriever"),
+    "DenseRetrieverConfig": (
+        ".retrieval.dense_retriever",
+        "DenseRetrieverConfig",
+    ),
+    # retrieval.rerank
+    "SentenceTransformerReranker": (
+        ".retrieval.rerank",
+        "SentenceTransformerReranker",
+    ),
+    "get_reranker": (".retrieval.rerank", "get_reranker"),
+    "passage_to_string": (".retrieval.rerank", "passage_to_string"),
+    "string_to_document": (".retrieval.rerank", "string_to_document"),
+    # retrieval.vocabulary
+    "SOS_token": (".retrieval.vocabulary", "SOS_token"),
+    "EOS_token": (".retrieval.vocabulary", "EOS_token"),
+    "MAX_LENGTH": (".retrieval.vocabulary", "MAX_LENGTH"),
+    "normalize_text": (".retrieval.vocabulary", "normalize_text"),
+    "normalize_document": (".retrieval.vocabulary", "normalize_document"),
+    "tokenize_text": (".retrieval.vocabulary", "tokenize_text"),
+    "tokenize_document": (".retrieval.vocabulary", "tokenize_document"),
+    "build_vocabulary_from_sequences": (
+        ".retrieval.vocabulary",
+        "build_vocabulary_from_sequences",
+    ),
+    "extract_keywords": (".retrieval.vocabulary", "extract_keywords"),
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
     "RolloutResult": (".training.ppo.controller", "RolloutResult"),
