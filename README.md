@@ -220,6 +220,25 @@ The facade includes `Chunker`, `DefaultIndexingEmbedder`, `ChunkBatchStore`,
 `embed_and_stream`, document prefiltering, mini-chunk support, and vector-write
 retry helpers.
 
+## Search Context
+
+`src.context` contains small, repo-native helpers for retrieval-grounded chat:
+
+```python
+from src import SearchResult, build_context_bundle, build_answer_prompt
+
+context = build_context_bundle(
+    "What is FAISS?",
+    [SearchResult(title="FAISS", contents='"FAISS"\nA vector search library.')],
+)
+prompt = build_answer_prompt("What is FAISS?", context)
+```
+
+It includes normalized context documents, citation extraction, retrieval prompt
+builders, answer prompt builders, LLM protocol types, and an
+`answer_with_retrieval` pipeline for connecting a `/retrieve` service to answer
+generation.
+
 ## Local Retrieval
 
 Start a dense retrieval server:
