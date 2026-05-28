@@ -264,6 +264,32 @@ builders, answer prompt builders, LLM protocol types, and an
 `answer_with_retrieval` pipeline for connecting a `/retrieve` service to answer
 generation.
 
+## Web Search Experience
+
+Serve the lightweight browser UI for search and agent answers:
+
+```bash
+uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+Open `http://127.0.0.1:7860`, point the retrieval URL at a running
+`/retrieve` service, and ask a question. The app shows the generated answer,
+citations, source cards, and session history. The JSON API is available at
+`POST /api/agent` and persists chat state with `AgenticSearchStore`.
+
+The TypeScript frontend lives in `web/` and is typed against the FastAPI JSON
+outputs:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+During development Vite proxies `/api/*` to the FastAPI server on port `7860`.
+For production, run `npm run build`; `src.servers.web.app` serves `web/dist`
+when that bundle exists and falls back to its built-in HTML otherwise.
+
 ## Local Retrieval
 
 Start a dense retrieval server:
