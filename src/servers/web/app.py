@@ -184,7 +184,17 @@ def create_web_app(
             )
         except Exception as exc:
             logger.exception("Agent search failed: %s", exc)
-            raise HTTPException(status_code=502, detail="Agent search failed") from exc
+            search_url = request.search_url or settings.search_url
+            detail = (
+                (
+                    f"Cannot reach retrieval server at {search_url}. "
+                    "Start it with: python3 -m src.servers.retrieval.retrieval "
+                    "--retrieval_method bm25"
+                )
+                if "connect" in str(exc).lower() or "retriev" in str(exc).lower()
+                else "Agent search failed"
+            )
+            raise HTTPException(status_code=502, detail=detail) from exc
 
         db.add_chat_message(
             session_id,

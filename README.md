@@ -266,25 +266,44 @@ generation.
 
 ## Web Search Experience
 
-Serve the lightweight browser UI for search and agent answers:
+Serve the lightweight browser UI for search and agent answers.
+Three processes must be running at the same time:
+
+**Terminal 1 — retrieval server:**
+
+For a quick local demo (no index or Java required):
 
 ```bash
+python3 -m src.servers.retrieval.demo --corpus_path data/corpus.jsonl
+```
+
+For production BM25 (requires `pyserini` and Java), see [Build Indexes](#build-indexes) then:
+
+```bash
+python3 -m src.servers.retrieval.retrieval \
+  --retrieval_method bm25 \
+  --index_path indexes/bm25 \
+  --corpus_path data/corpus.jsonl
+```
+
+**Terminal 2 — web backend** (run from the repo root):
+
+```bash
+pip install -e .   # one-time, installs src as a package
 uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
-Open `http://127.0.0.1:7860`, point the retrieval URL at a running
-`/retrieve` service, and ask a question. The app shows the generated answer,
-citations, source cards, and session history. The JSON API is available at
-`POST /api/agent` and persists chat state with `AgenticSearchStore`.
-
-The TypeScript frontend lives in `web/` and is typed against the FastAPI JSON
-outputs:
+**Terminal 3 — frontend**:
 
 ```bash
 cd web
 npm install
 npm run dev
 ```
+
+Open `http://127.0.0.1:5173` and ask a question. The app shows the generated answer,
+citations, source cards, and session history. The JSON API is available at
+`POST /api/agent` and persists chat state with `AgenticSearchStore`.
 
 During development Vite proxies `/api/*` to the FastAPI server on port `7860`.
 For production, run `npm run build`; `src.servers.web.app` serves `web/dist`
