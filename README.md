@@ -269,7 +269,7 @@ generation.
 Serve the lightweight browser UI for search and agent answers:
 
 ```bash
-PYTHONPATH=. uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
+python -m uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
 Open `http://127.0.0.1:7860`, point the retrieval URL at a running
