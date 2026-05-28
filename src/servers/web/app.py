@@ -12,15 +12,21 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.auth import AuthenticatedUser
+from src.auth import user_from_headers
+from src.configs import AppSettings
+from src.configs import Tier
+from src.configs import is_path_allowed_for_tier
+from src.configs import load_app_settings
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
-from src.context.preprocessing.access_filters import build_user_only_filters
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
+from src.context.preprocessing.access_filters import build_user_only_filters
 from src.db import AgenticSearchStore
-from src.auth import user_from_headers
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -36,6 +42,18 @@ class SearchExperienceSettings:
     search_url: str = "http://localhost:8000/retrieve"
     top_k: int = 5
     db_path: str | Path = ":memory:"
+
+    @classmethod
+    def from_app_settings(
+        cls,
+        settings: AppSettings | None = None,
+    ) -> "SearchExperienceSettings":
+        app_settings = settings or load_app_settings()
+        return cls(
+            search_url=app_settings.services.retrieval_url,
+            top_k=app_settings.services.web_top_k,
+            db_path=app_settings.services.web_db_path,
+        )
 
 
 class SessionCreateRequest(BaseModel):
@@ -84,6 +102,7 @@ class AgentExperienceResponse(BaseModel):
 def create_web_app(
     settings: SearchExperienceSettings | None = None,
     *,
+    app_settings: AppSettings | None = None,
     store: AgenticSearchStore | None = None,
     llm: LLMClient | None = None,
 ) -> FastAPI:
@@ -94,7 +113,8 @@ def create_web_app(
     through `AgenticSearchStore`, which defaults to an in-memory SQLite DB.
     """
 
-    settings = settings or SearchExperienceSettings()
+    resolved = app_settings or load_app_settings()
+    settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
     db = store or AgenticSearchStore(settings.db_path)
 
@@ -107,6 +127,8 @@ def create_web_app(
                 db.close()
 
     app = FastAPI(title="Agentic Search Web", lifespan=lifespan)
+    if resolved.license_enforcement_enabled:
+        app.add_middleware(_LicenseMiddleware, tier=Tier.FREE)
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
@@ -174,7 +196,7 @@ def create_web_app(
 
         auth_user = _optional_user_from_request(http_request)
         user_id = request.user_id or (auth_user.id if auth_user else None)
-        session_request = request.copy(update={"user_id": user_id})
+        session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request)
         history = [
             ChatMessage(role=message.role, content=message.content)
@@ -246,6 +268,17 @@ def _ensure_session(
     return session.id
 
 
+def _copy_agent_request(
+    request: AgentExperienceRequest,
+    *,
+    user_id: str | None,
+) -> AgentExperienceRequest:
+    model_copy = getattr(request, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(update={"user_id": user_id})
+    return request.copy(update={"user_id": user_id})
+
+
 def _response_from_result(
     session_id: str,
     result: AnswerGenerationResult,
@@ -272,11 +305,23 @@ def _document_view(document: ContextDocument) -> SourceDocumentView:
     )
 
 
-def _optional_user_from_request(request: Request):
-    try:
-        return user_from_headers(request.headers)
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+def _optional_user_from_request(request: Request) -> AuthenticatedUser | None:
+    return user_from_headers(request.headers)
+
+
+class _LicenseMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: FastAPI, *, tier: Tier) -> None:
+        super().__init__(app)
+        self.tier = tier
+
+    async def dispatch(self, request: Request, call_next):
+        if not is_path_allowed_for_tier(request.url.path, self.tier):
+            return Response(
+                content='{"detail":"Feature not available on current tier."}',
+                status_code=403,
+                media_type="application/json",
+            )
+        return await call_next(request)
 
 
 def _frontend_dist_path() -> Path | None:
