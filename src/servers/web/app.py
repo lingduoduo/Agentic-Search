@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.context import ChatMessage
@@ -104,6 +105,7 @@ def create_web_app(
                 db.close()
 
     app = FastAPI(title="Agentic Search Web", lifespan=lifespan)
+    frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
     def healthcheck() -> dict[str, str]:
@@ -111,6 +113,8 @@ def create_web_app(
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
+        if frontend_dist:
+            return (frontend_dist / "index.html").read_text(encoding="utf-8")
         return APP_HTML
 
     @app.get("/assets/app.css")
@@ -120,6 +124,13 @@ def create_web_app(
     @app.get("/assets/app.js")
     def javascript() -> Response:
         return Response(APP_JS, media_type="application/javascript")
+
+    if frontend_dist:
+        app.mount(
+            "/assets",
+            StaticFiles(directory=frontend_dist / "assets"),
+            name="frontend-assets",
+        )
 
     @app.post("/api/sessions")
     def create_session(request: SessionCreateRequest) -> ChatSessionView:
@@ -232,6 +243,13 @@ def _document_view(document: ContextDocument) -> SourceDocumentView:
         score=document.score,
         metadata=document.metadata,
     )
+
+
+def _frontend_dist_path() -> Path | None:
+    dist = Path(__file__).resolve().parents[3] / "web" / "dist"
+    if (dist / "index.html").exists() and (dist / "assets").is_dir():
+        return dist
+    return None
 
 
 app = create_web_app()
