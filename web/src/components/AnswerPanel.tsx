@@ -12,9 +12,13 @@ export function AnswerPanel({ answer, citations }: AnswerPanelProps) {
     );
   }
 
+  const paragraphs = answer.split(/\n\n+/).filter(Boolean);
+
   return (
     <article className="answer-panel">
-      <p>{answer}</p>
+      {paragraphs.map((para, i) => (
+        <p key={i}>{para}</p>
+      ))}
       {citations.length > 0 && (
         <div className="citation-row" aria-label="Citations">
           {citations.map((citation) => (

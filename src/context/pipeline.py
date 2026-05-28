@@ -75,5 +75,5 @@ def synthesize_answer_from_context(question: str, context: SearchContextBundle) 
     snippets = []
     for document in context.documents[:3]:
         content = " ".join(document.content.split())
-        snippets.append(f"{document.citation} {content}")
-    return " ".join(snippets)
+        snippets.append(f"{document.citation} {document.title}\n{content}")
+    return "\n\n".join(snippets)

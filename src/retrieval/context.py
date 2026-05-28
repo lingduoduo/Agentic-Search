@@ -37,7 +37,7 @@ class SearchResult:
             score = 0.0
 
         if isinstance(doc, dict):
-            contents = doc.get("contents", str(doc))
+            contents = doc.get("contents") or doc.get("text") or str(doc)
             title = doc.get("title")
             url = doc.get("url")
         else:
