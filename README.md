@@ -269,16 +269,17 @@ generation.
 Serve the lightweight browser UI for search and agent answers.
 Three processes must be running at the same time:
 
-**Terminal 1 — retrieval server** (build the BM25 index once, then start the server):
+**Terminal 1 — retrieval server:**
+
+For a quick local demo (no index or Java required):
 
 ```bash
-# Build the index (one-time)
-python3 -m src.retrieval.index_builder \
-  --retrieval_method bm25 \
-  --corpus_path data/corpus.jsonl \
-  --save_dir indexes/
+python3 -m src.servers.retrieval.demo --corpus_path data/corpus.jsonl
+```
 
-# Start the server
+For production BM25 (requires `pyserini` and Java), see [Build Indexes](#build-indexes) then:
+
+```bash
 python3 -m src.servers.retrieval.retrieval \
   --retrieval_method bm25 \
   --index_path indexes/bm25 \
