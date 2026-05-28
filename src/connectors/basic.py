@@ -8,6 +8,7 @@ import os
 from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any
 
 from ..tools.search import SearchProvider, search_tool
@@ -44,6 +45,23 @@ METADATA_KEYS = {
     "link",
     "title",
 }
+
+
+def _normalize_extensions(extensions: Iterable[str]) -> frozenset[str]:
+    return frozenset(
+        ext.lower() if ext.startswith(".") else f".{ext.lower()}" for ext in extensions
+    )
+
+
+def _expand_path(path: Path, *, glob: bool = True) -> Iterator[Path]:
+    text = str(path)
+    if glob and any(char in text for char in "*?[]"):
+        parent = path.parent if str(path.parent) else Path(".")
+        yield from parent.glob(path.name)
+    elif path.is_dir():
+        yield from path.rglob("*")
+    else:
+        yield path
 
 
 class InMemoryConnector(LoadConnector):
@@ -100,10 +118,9 @@ class LocalFileConnector(LoadConnector):
         self.encoding = encoding
         self.metadata = metadata or {}
         self.metadata_path = Path(metadata_path) if metadata_path else None
-        self.allowed_extensions = {
-            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
-            for ext in (allowed_extensions or TEXT_FILE_EXTENSIONS)
-        }
+        self.allowed_extensions = _normalize_extensions(
+            allowed_extensions or TEXT_FILE_EXTENSIONS
+        )
         self.batch_size = batch_size
         self.pdf_pass: str | None = None
 
@@ -194,23 +211,12 @@ class LocalFileConnector(LoadConnector):
                 if self.root and not raw_path.is_absolute()
                 else raw_path
             )
-            candidates = self._expand_path(base)
-            for candidate in candidates:
+            for candidate in _expand_path(base, glob=self.glob):
                 resolved = candidate.expanduser().resolve()
                 if resolved in seen or not resolved.is_file():
                     continue
                 seen.add(resolved)
                 yield resolved
-
-    def _expand_path(self, path: Path) -> Iterator[Path]:
-        text = str(path)
-        if self.glob and any(char in text for char in "*?[]"):
-            parent = path.parent if str(path.parent) else Path(".")
-            yield from parent.glob(path.name)
-        elif path.is_dir():
-            yield from path.rglob("*")
-        else:
-            yield path
 
     def _load_metadata_by_name(self) -> dict[str, Any]:
         loaded: dict[str, Any] = {}
@@ -389,10 +395,9 @@ class LocalFileSlimConnector(SlimConnector):
         batch_size: int = DEFAULT_FILE_BATCH_SIZE,
     ) -> None:
         self.paths = [Path(path) for path in paths or []]
-        self.allowed_extensions = {
-            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
-            for ext in (allowed_extensions or TEXT_FILE_EXTENSIONS)
-        }
+        self.allowed_extensions = _normalize_extensions(
+            allowed_extensions or TEXT_FILE_EXTENSIONS
+        )
         self.batch_size = batch_size
 
     def validate_connector_settings(self) -> None:
@@ -424,44 +429,36 @@ class LocalFileSlimConnector(SlimConnector):
     ) -> Iterator[SlimDocument]:
         seen: set[Path] = set()
         for raw_path in self.paths:
-            for candidate in self._expand_path(raw_path):
+            for candidate in _expand_path(raw_path):
                 resolved = candidate.expanduser().resolve()
-                if resolved in seen or not resolved.is_file():
+                if resolved in seen:
+                    continue
+                try:
+                    st = resolved.stat()
+                except OSError:
+                    continue
+                if not S_ISREG(st.st_mode):
                     continue
                 if resolved.suffix.lower() not in self.allowed_extensions:
                     continue
-                try:
-                    stat = resolved.stat()
-                except OSError:
+                if start is not None and st.st_mtime < start:
                     continue
-                if start is not None and stat.st_mtime < start:
-                    continue
-                if end is not None and stat.st_mtime > end:
+                if end is not None and st.st_mtime > end:
                     continue
                 seen.add(resolved)
                 yield SlimDocument(
                     id=str(resolved),
                     metadata={
                         "path": str(resolved),
-                        "mtime": stat.st_mtime,
-                        "size": stat.st_size,
+                        "mtime": st.st_mtime,
+                        "size": st.st_size,
                     },
                     permissions=(
-                        self._permissions_for_path(resolved, stat)
+                        self._permissions_for_path(resolved, st)
                         if _include_permissions
                         else {}
                     ),
                 )
-
-    def _expand_path(self, path: Path) -> Iterator[Path]:
-        text = str(path)
-        if any(char in text for char in "*?[]"):
-            parent = path.parent if str(path.parent) else Path(".")
-            yield from parent.glob(path.name)
-        elif path.is_dir():
-            yield from path.rglob("*")
-        else:
-            yield path
 
 
 class LocalFileSlimConnectorWithPermSync(

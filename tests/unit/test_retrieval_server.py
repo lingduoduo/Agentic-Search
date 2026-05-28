@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.search.retrieval import DenseRetrieverConfig
 from src.retrieval.sparse_retriever import SparseRetrieverConfig
-from src.search.retrieval_server import RetrievalServerConfig, create_app
+from src.servers.retrieval_servers.retrieval import RetrievalServerConfig, create_app
 
 
 class _FakeDenseRetriever:
@@ -311,7 +311,7 @@ def test_dense_retriever_config_for_e5_base_v2_accepts_custom_device():
 def test_parse_args_device_defaults_to_cpu():
     """Ensure the CLI default keeps retrieval on CPU even without explicit flag."""
     import sys
-    from src.search.retrieval_server import parse_args
+    from src.servers.retrieval_servers.retrieval import parse_args
 
     saved = sys.argv
     sys.argv = [
@@ -340,7 +340,7 @@ def test_parse_args_device_defaults_to_cpu():
 def test_parse_args_allows_bm25_without_model_path():
     """BM25 retrieval should not require a dense embedding model."""
     import sys
-    from src.search.retrieval_server import parse_args
+    from src.servers.retrieval_servers.retrieval import parse_args
 
     saved = sys.argv
     sys.argv = [

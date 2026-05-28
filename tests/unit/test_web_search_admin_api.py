@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.server.web_search import WebSearchProviderStore
-from src.server.web_search import create_app
+from src.servers.web_search import WebSearchProviderStore
+from src.servers.web_search import create_app
 
 
 def _client() -> TestClient:
