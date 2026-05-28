@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
-from typing import TypeVar
+import os
 
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_HOST = "0.0.0.0"
+DEFAULT_PORT = 8080
 
 T = TypeVar("T")
 
@@ -75,3 +81,33 @@ def create_search_app(title: str, engine: T) -> FastAPI:
             return {"result": results}
 
     return app
+
+
+def add_host_port_args(
+    parser: argparse.ArgumentParser,
+    host_env: str,
+    port_env: str,
+    default_host: str = DEFAULT_HOST,
+    default_port: int = DEFAULT_PORT,
+) -> argparse.ArgumentParser:
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.getenv(host_env, default_host),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv(port_env, str(default_port))),
+    )
+    return parser
+
+
+def load_environment(override: bool = True) -> None:
+    from dotenv import load_dotenv
+
+    load_dotenv(override=override)
+
+
+def run_uvicorn_app(app: FastAPI, host: str, port: int, workers: int = 1) -> None:
+    uvicorn.run(app, host=host, port=port, workers=workers)

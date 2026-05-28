@@ -6,12 +6,15 @@ import argparse
 import logging
 import os
 
-import uvicorn
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from src.retrieval.rerank import RerankerConfig, get_reranker, passage_to_string
-from .app import create_base_app
+from .app import (
+    add_host_port_args,
+    create_base_app,
+    run_uvicorn_app,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +69,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--rerank_topk", type=int, default=3)
-    parser.add_argument(
-        "--host", type=str, default=os.getenv("RERANK_SERVER_HOST", DEFAULT_HOST)
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.getenv("RERANK_SERVER_PORT", str(DEFAULT_PORT))),
-    )
+    add_host_port_args(parser, "RERANK_SERVER_HOST", "RERANK_SERVER_PORT")
     return parser.parse_args()
 
 
@@ -86,7 +82,7 @@ def main() -> None:
             rerank_topk=args.rerank_topk,
         )
     )
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

@@ -9,9 +9,14 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
-import uvicorn
 
-from .app import create_search_app, format_document
+from .app import (
+    add_host_port_args,
+    create_search_app,
+    format_document,
+    load_environment,
+    run_uvicorn_app,
+)
 
 DEFAULT_SERP_URL = "https://serpapi.com/search"
 DEFAULT_SERP_ENGINE = "google"
@@ -124,21 +129,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--serp_engine", type=str, default=os.getenv("SERP_ENGINE", DEFAULT_SERP_ENGINE)
     )
-    parser.add_argument(
-        "--host", type=str, default=os.getenv("SERP_SEARCH_HOST", DEFAULT_HOST)
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.getenv("SERP_SEARCH_PORT", str(DEFAULT_PORT))),
-    )
+    add_host_port_args(parser, "SERP_SEARCH_HOST", "SERP_SEARCH_PORT")
     return parser.parse_args()
 
 
 def main() -> None:
-    from dotenv import load_dotenv
-
-    load_dotenv(override=True)
+    load_environment()
     args = parse_args()
     config = SerpSearchConfig(
         search_url=args.search_url,
@@ -147,7 +143,7 @@ def main() -> None:
         serp_engine=args.serp_engine,
     )
     app = create_app(config)
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

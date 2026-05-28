@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from dataclasses import dataclass
 
-import uvicorn
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from src.retrieval import build_retriever
 from src.retrieval.dense_retriever import DenseRetriever, DenseRetrieverConfig
 from src.retrieval.sparse_retriever import SparseRetriever, SparseRetrieverConfig
-from .app import create_base_app
+from .app import (
+    add_host_port_args,
+    create_base_app,
+    load_environment,
+    run_uvicorn_app,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,21 +192,12 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of uvicorn worker processes (production multi-process serving).",
     )
-    parser.add_argument(
-        "--host", type=str, default=os.getenv("RETRIEVAL_SERVER_HOST", DEFAULT_HOST)
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.getenv("RETRIEVAL_SERVER_PORT", str(DEFAULT_PORT))),
-    )
+    add_host_port_args(parser, "RETRIEVAL_SERVER_HOST", "RETRIEVAL_SERVER_PORT")
     return parser.parse_args()
 
 
 def main() -> None:
-    from dotenv import load_dotenv
-
-    load_dotenv(override=True)
+    load_environment()
     args = parse_args()
     retrieval_method = args.retrieval_method.lower()
     if retrieval_method == "bm25":
@@ -240,7 +234,7 @@ def main() -> None:
             port=args.port,
         )
     )
-    uvicorn.run(app, host=args.host, port=args.port, workers=args.workers)
+    run_uvicorn_app(app, host=args.host, port=args.port, workers=args.workers)
 
 
 if __name__ == "__main__":
