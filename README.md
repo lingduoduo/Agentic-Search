@@ -269,11 +269,19 @@ generation.
 Serve the lightweight browser UI for search and agent answers.
 Three processes must be running at the same time:
 
-**Terminal 1 — retrieval server** (see [Local Retrieval](#local-retrieval) for index setup):
+**Terminal 1 — retrieval server** (build the BM25 index once, then start the server):
 
 ```bash
+# Build the index (one-time)
+python3 -m src.retrieval.index_builder \
+  --retrieval_method bm25 \
+  --corpus_path data/corpus.jsonl \
+  --save_dir indexes/
+
+# Start the server
 python3 -m src.servers.retrieval.retrieval \
   --retrieval_method bm25 \
+  --index_path indexes/bm25 \
   --corpus_path data/corpus.jsonl
 ```
 
