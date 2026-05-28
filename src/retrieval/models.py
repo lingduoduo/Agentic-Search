@@ -6,7 +6,16 @@ import contextlib
 from collections.abc import Generator
 from dataclasses import dataclass
 from dataclasses import field
-from enum import StrEnum
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):  # type: ignore[no-redef]
+        pass
+
+
 from pathlib import Path
 from typing import Any, Protocol
 

@@ -12,10 +12,19 @@ from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
-import bs4
-import uvicorn
 
-from .app import create_search_app, format_document
+try:
+    import bs4
+except ImportError:  # pragma: no cover - optional dependency
+    bs4 = None
+
+from .app import (
+    add_host_port_args,
+    create_search_app,
+    format_document,
+    load_environment,
+    run_uvicorn_app,
+)
 
 try:
     import chardet
@@ -324,21 +333,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="If set, only return snippets; otherwise, return fetched page context.",
     )
-    parser.add_argument(
-        "--host", type=str, default=os.getenv("GOOGLE_SEARCH_HOST", DEFAULT_HOST)
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.getenv("GOOGLE_SEARCH_PORT", str(DEFAULT_PORT))),
-    )
+    add_host_port_args(parser, "GOOGLE_SEARCH_HOST", "GOOGLE_SEARCH_PORT")
     return parser.parse_args()
 
 
 def main() -> None:
-    from dotenv import load_dotenv
-
-    load_dotenv(override=True)
+    load_environment()
     args = parse_args()
     config = OnlineSearchConfig(
         api_key=args.api_key,
@@ -347,7 +347,7 @@ def main() -> None:
         snippet_only=args.snippet_only,
     )
     app = create_app(config)
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
