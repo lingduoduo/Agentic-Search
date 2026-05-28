@@ -252,4 +252,28 @@ def _frontend_dist_path() -> Path | None:
     return None
 
 
+def main() -> None:
+    import argparse
+    import os
+
+    import uvicorn
+    from dotenv import load_dotenv
+
+    load_dotenv(override=True)
+
+    parser = argparse.ArgumentParser(description="Agentic Search web server")
+    parser.add_argument("--host", type=str, default=os.getenv("WEB_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("WEB_PORT", "7860")))
+    parser.add_argument("--workers", type=int, default=1)
+    args = parser.parse_args()
+
+    settings = SearchExperienceSettings()
+    app = create_web_app(settings)
+    uvicorn.run(app, host=args.host, port=args.port, workers=args.workers)
+
+
+if __name__ == "__main__":
+    main()
+
+
 app = create_web_app()
