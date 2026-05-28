@@ -11,9 +11,9 @@ import uvicorn
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from .. import build_retriever
-from ..dense_retriever import DenseRetriever, DenseRetrieverConfig
-from ..sparse_retriever import SparseRetriever, SparseRetrieverConfig
+from src.retrieval import build_retriever
+from src.retrieval.dense_retriever import DenseRetriever, DenseRetrieverConfig
+from src.retrieval.sparse_retriever import SparseRetriever, SparseRetrieverConfig
 from .app import create_base_app
 
 logger = logging.getLogger(__name__)

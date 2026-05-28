@@ -10,7 +10,7 @@ import uvicorn
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from ..rerank import RerankerConfig, get_reranker, passage_to_string
+from src.retrieval.rerank import RerankerConfig, get_reranker, passage_to_string
 from .app import create_base_app
 
 logger = logging.getLogger(__name__)

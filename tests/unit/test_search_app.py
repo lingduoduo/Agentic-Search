@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
-from src.search.search_app import (
+from src.servers.retrieval_servers.app import (
     create_base_app,
     create_search_app,
     format_document,
@@ -137,6 +137,6 @@ class TestCreateSearchApp:
 
 
 def test_google_search_server_import_does_not_require_google_client():
-    from src.search import google_search_server
+    from src.servers.retrieval_servers import google as google_search_server
 
     assert google_search_server.DEFAULT_TOPK >= 1

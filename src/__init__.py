@@ -227,6 +227,19 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "save_training_batch_jsonl": (".model.generation", "save_training_batch_jsonl"),
     "score_group_rollout": (".model.generation", "score_group_rollout"),
     "trajectory_log_prob_pack": (".model.generation", "trajectory_log_prob_pack"),
+    # servers.retrieval_servers
+    "OnlineSearchConfig": (".servers.retrieval_servers.google", "OnlineSearchConfig"),
+    "OnlineSearchEngine": (".servers.retrieval_servers.google", "OnlineSearchEngine"),
+    "SerpSearchConfig": (".servers.retrieval_servers.serp", "SerpSearchConfig"),
+    "SerpSearchEngine": (".servers.retrieval_servers.serp", "SerpSearchEngine"),
+    "RetrievalServerConfig": (
+        ".servers.retrieval_servers.retrieval",
+        "RetrievalServerConfig",
+    ),
+    "RetrievalRerankConfig": (
+        ".servers.retrieval_servers.retrieval_rerank",
+        "RetrievalRerankConfig",
+    ),
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
     "RolloutResult": (".training.ppo.controller", "RolloutResult"),
