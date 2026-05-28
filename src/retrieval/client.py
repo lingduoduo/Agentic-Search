@@ -111,7 +111,11 @@ class SearchClient:
         Raises RuntimeError after max_retries exhausted.
         Uses exponential backoff between retries.
         """
-        payload = {"queries": queries, "topk": topk or self.config.topk}
+        payload = {
+            "queries": queries,
+            "topk": topk or self.config.topk,
+            "return_scores": True,
+        }
         data = await self._post_json(self.config.url, payload, "retrieve")
         rows = data.get("result", data.get("results", []))
         if rows and isinstance(rows[0], dict):
