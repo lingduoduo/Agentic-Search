@@ -220,6 +220,31 @@ The facade includes `Chunker`, `DefaultIndexingEmbedder`, `ChunkBatchStore`,
 `embed_and_stream`, document prefiltering, mini-chunk support, and vector-write
 retry helpers.
 
+## Metadata Store
+
+`src.db` provides a lightweight SQLite store for local connector and retrieval
+metadata:
+
+```python
+from src import AgenticSearchStore, ConnectorConfig, StoredDocument
+
+with AgenticSearchStore("agentic-search.sqlite3") as store:
+    connector = store.upsert_connector(
+        ConnectorConfig(id="local", name="Local files", source="local_file")
+    )
+    store.upsert_document(
+        StoredDocument(
+            id="doc-1",
+            title="Example",
+            contents="hello world",
+            connector_id=connector.id,
+        )
+    )
+```
+
+The store tracks connector configs, documents, users, groups, document
+permissions, chat/session state, indexing attempts, and related JSON metadata.
+
 ## Search Context
 
 `src.context` contains small, repo-native helpers for retrieval-grounded chat:
