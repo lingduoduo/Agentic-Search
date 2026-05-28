@@ -1,0 +1,195 @@
+"""Small auth helpers for Agentic Search services.
+
+The repo does not depend on a full identity provider, but several server paths
+need a consistent way to represent the caller and pass it into ACL filters.  The
+JWT helpers below intentionally use only the Python standard library so local
+examples and tests do not need an extra auth package.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import os
+import time
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import Any, Mapping
+
+AUTH_SECRET_ENV = "AGENTIC_SEARCH_AUTH_SECRET"
+DEFAULT_AUTH_SECRET = "agentic-search-dev-secret"
+JWT_ALGORITHM = "HS256"
+
+
+@dataclass(frozen=True)
+class AuthenticatedUser:
+    """Caller identity used by web/API handlers and access filters."""
+
+    id: str
+    email: str | None = None
+    group_ids: frozenset[str] = frozenset()
+    tenant_id: str | None = None
+    is_anonymous: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict, hash=False, compare=False)
+
+
+def get_auth_secret(secret: str | None = None) -> str:
+    return secret or os.getenv(AUTH_SECRET_ENV, DEFAULT_AUTH_SECRET)
+
+
+def generate_user_jwt_token(
+    *,
+    user_id: str,
+    email: str | None = None,
+    group_ids: Iterable[str] | None = None,
+    tenant_id: str | None = None,
+    expires_in_seconds: int | None = None,
+    secret: str | None = None,
+) -> str:
+    """Create a signed HS256 token for local API clients and tests."""
+
+    now = int(time.time())
+    payload: dict[str, Any] = {
+        "sub": user_id,
+        "iat": now,
+    }
+    if email:
+        payload["email"] = email
+    if group_ids:
+        payload["groups"] = sorted(set(group_ids))
+    if tenant_id:
+        payload["tenant_id"] = tenant_id
+    if expires_in_seconds is not None:
+        payload["exp"] = now + expires_in_seconds
+    return _encode_jwt(payload, get_auth_secret(secret))
+
+
+def decode_user_jwt_token(token: str, *, secret: str | None = None) -> dict[str, Any]:
+    """Verify and decode a local HS256 JWT."""
+
+    payload = _decode_jwt(token, get_auth_secret(secret))
+    expires_at = payload.get("exp")
+    if expires_at is not None and int(expires_at) < int(time.time()):
+        raise ValueError("JWT has expired.")
+    return payload
+
+
+def user_from_jwt_token(
+    token: str,
+    *,
+    secret: str | None = None,
+) -> AuthenticatedUser:
+    payload = decode_user_jwt_token(token, secret=secret)
+    user_id = str(payload.get("sub") or payload.get("user_id") or "")
+    if not user_id:
+        raise ValueError("JWT subject is required.")
+    groups = payload.get("groups") or payload.get("group_ids") or []
+    return AuthenticatedUser(
+        id=user_id,
+        email=payload.get("email"),
+        group_ids=frozenset(str(group) for group in groups),
+        tenant_id=payload.get("tenant_id"),
+        is_anonymous=False,
+        metadata={k: v for k, v in payload.items() if k not in _REGISTERED_CLAIMS},
+    )
+
+
+def anonymous_user(tenant_id: str | None = None) -> AuthenticatedUser:
+    return AuthenticatedUser(id="anonymous", tenant_id=tenant_id, is_anonymous=True)
+
+
+def extract_bearer_token(headers: Mapping[str, str]) -> str | None:
+    authorization = headers.get("Authorization") or headers.get("authorization")
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return token.strip()
+
+
+def user_from_headers(headers: Mapping[str, str]) -> AuthenticatedUser | None:
+    token = extract_bearer_token(headers)
+    if not token:
+        return None
+    try:
+        return user_from_jwt_token(token)
+    except ValueError:
+        return None
+
+
+_REGISTERED_CLAIMS = {
+    "sub",
+    "user_id",
+    "email",
+    "groups",
+    "group_ids",
+    "tenant_id",
+    "iat",
+    "exp",
+}
+
+
+def _encode_jwt(payload: dict[str, Any], secret: str) -> str:
+    header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
+    signing_input = ".".join(
+        [
+            _b64url_json(header),
+            _b64url_json(payload),
+        ]
+    )
+    signature = _sign(signing_input.encode("ascii"), secret)
+    return f"{signing_input}.{_b64url_encode(signature)}"
+
+
+def _decode_jwt(token: str, secret: str) -> dict[str, Any]:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("JWT must have three segments.")
+    encoded_header, encoded_payload, encoded_signature = parts
+    header = json.loads(_b64url_decode(encoded_header))
+    if header.get("alg") != JWT_ALGORITHM:
+        raise ValueError(f"Unsupported JWT algorithm: {header.get('alg')!r}.")
+
+    signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
+    expected = _sign(signing_input, secret)
+    actual = _b64url_decode(encoded_signature)
+    if not hmac.compare_digest(expected, actual):
+        raise ValueError("JWT signature is invalid.")
+    payload = json.loads(_b64url_decode(encoded_payload))
+    if not isinstance(payload, dict):
+        raise ValueError("JWT payload must be an object.")
+    return payload
+
+
+def _sign(data: bytes, secret: str) -> bytes:
+    return hmac.new(secret.encode("utf-8"), data, hashlib.sha256).digest()
+
+
+def _b64url_json(data: dict[str, Any]) -> str:
+    raw = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return _b64url_encode(raw)
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(data: str) -> bytes:
+    padded = data + "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(padded.encode("ascii"))
+
+
+__all__ = [
+    "AUTH_SECRET_ENV",
+    "AuthenticatedUser",
+    "anonymous_user",
+    "decode_user_jwt_token",
+    "extract_bearer_token",
+    "generate_user_jwt_token",
+    "get_auth_secret",
+    "user_from_headers",
+    "user_from_jwt_token",
+]

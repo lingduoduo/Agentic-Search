@@ -140,3 +140,53 @@ def test_google_search_server_import_does_not_require_google_client():
     from src.servers.retrieval import google as google_search_server
 
     assert google_search_server.DEFAULT_TOPK >= 1
+
+
+def test_local_retrieval_server_applies_acl_filters(monkeypatch):
+    from src.servers.retrieval import retrieval as retrieval_server
+
+    class FakeRetriever:
+        config = type("Config", (), {"topk": 5})()
+
+        def retrieve(self, queries, topk=None):
+            del queries, topk
+            return [
+                [
+                    {
+                        "document": {
+                            "title": "Public",
+                            "contents": '"Public"\nAllowed',
+                            "metadata": {"acl": ["public"]},
+                        },
+                        "score": 1.0,
+                    },
+                    {
+                        "document": {
+                            "title": "Private",
+                            "contents": '"Private"\nHidden',
+                            "metadata": {"acl": ["group:ops"]},
+                        },
+                        "score": 0.5,
+                    },
+                ]
+            ]
+
+    monkeypatch.setattr(
+        retrieval_server,
+        "build_retriever",
+        lambda config: FakeRetriever(),
+    )
+
+    client = TestClient(retrieval_server.create_app(FakeRetriever.config))
+    response = client.post(
+        "/retrieve",
+        json={
+            "queries": ["policy"],
+            "return_scores": True,
+            "filters": {"access_acl": ["public"]},
+        },
+    )
+
+    assert response.status_code == 200
+    row = response.json()["result"][0]
+    assert [item["document"]["title"] for item in row] == ["Public"]

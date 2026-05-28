@@ -8,6 +8,7 @@ from .models import ChatMessage
 from .models import LLMClient
 from .models import LLMResponse
 from .models import SearchContextBundle
+from .models import SearchFilters
 from .models import SearchRequest
 from .prompts import build_chat_prompt
 from .retrieval.search_runner import build_search_context
@@ -19,9 +20,10 @@ async def retrieve_context(
     *,
     search_url: str = "http://localhost:8000/retrieve",
     top_k: int = 5,
+    filters: SearchFilters | None = None,
 ) -> SearchContextBundle:
     return await build_search_context(
-        SearchRequest(query=question, top_k=top_k),
+        SearchRequest(query=question, top_k=top_k, filters=filters),
         search_url=search_url,
     )
 
@@ -57,8 +59,14 @@ async def answer_with_retrieval(
     chat_history: list[ChatMessage] | None = None,
     search_url: str = "http://localhost:8000/retrieve",
     top_k: int = 5,
+    filters: SearchFilters | None = None,
 ) -> AnswerGenerationResult:
-    context = await retrieve_context(question, search_url=search_url, top_k=top_k)
+    context = await retrieve_context(
+        question,
+        search_url=search_url,
+        top_k=top_k,
+        filters=filters,
+    )
     return generate_answer(
         AnswerGenerationRequest(
             question=question,

@@ -37,18 +37,23 @@ class SearchFilters:
     source_types: list[str] | None = None
     document_sets: list[str] | None = None
     tags: dict[str, str] | None = None
+    access_acl: list[str] | None = None
     time_cutoff: datetime | None = None
 
     def matches(self, metadata: dict[str, object] | None) -> bool:
         if not metadata:
-            return not (self.source_types or self.document_sets or self.tags)
+            return not (
+                self.source_types
+                or self.document_sets
+                or self.tags
+                or self.access_acl
+                or self.time_cutoff
+            )
         if self.source_types and metadata.get("source_type") not in self.source_types:
             return False
         if self.document_sets:
-            doc_sets = metadata.get("document_sets")
-            if isinstance(doc_sets, str):
-                doc_sets = [doc_sets]
-            if not set(self.document_sets).intersection(set(doc_sets or [])):
+            doc_sets = metadata.get("document_sets", metadata.get("document_set"))
+            if not set(self.document_sets).intersection(_metadata_values(doc_sets)):
                 return False
         if self.tags:
             tags = metadata.get("tags", metadata)
@@ -57,7 +62,33 @@ class SearchFilters:
             for key, value in self.tags.items():
                 if tags.get(key) != value:
                     return False
+        if self.access_acl:
+            acl_values = _metadata_values(metadata.get("acl"))
+            tags = metadata.get("tags")
+            if isinstance(tags, dict):
+                acl_values.update(_metadata_values(tags.get("acl")))
+            if not acl_values.intersection(set(self.access_acl)):
+                return False
+        if self.time_cutoff:
+            updated_at = metadata.get("updated_at")
+            if isinstance(updated_at, datetime):
+                if updated_at < self.time_cutoff:
+                    return False
         return True
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {}
+        if self.source_types:
+            payload["source_types"] = self.source_types
+        if self.document_sets:
+            payload["document_sets"] = self.document_sets
+        if self.tags:
+            payload["tags"] = self.tags
+        if self.access_acl:
+            payload["access_acl"] = self.access_acl
+        if self.time_cutoff:
+            payload["time_cutoff"] = self.time_cutoff.isoformat()
+        return payload
 
 
 @dataclass(frozen=True)
@@ -98,7 +129,7 @@ class ContextDocument:
             content=content,
             url=result.url,
             score=result.score,
-            metadata=metadata or {},
+            metadata=metadata or result.metadata,
         )
 
     @property
@@ -168,3 +199,13 @@ def split_title_and_content(result: SearchResult) -> tuple[str, str]:
     title = result.title or first_line.strip().strip('"')
     body = rest.strip() or content
     return title, body
+
+
+def _metadata_values(value: object) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {part.strip() for part in value.split(",") if part.strip()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return {str(part).strip() for part in value if str(part).strip()}
+    return {str(value)}

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -16,9 +16,11 @@ from pydantic import BaseModel, Field
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
+from src.context.preprocessing.access_filters import build_user_only_filters
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.db import AgenticSearchStore
+from src.auth import user_from_headers
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -162,12 +164,18 @@ def create_web_app(
         )
 
     @app.post("/api/agent")
-    async def run_agent(request: AgentExperienceRequest) -> AgentExperienceResponse:
+    async def run_agent(
+        request: AgentExperienceRequest,
+        http_request: Request,
+    ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:
             raise HTTPException(status_code=422, detail="query is required")
 
-        session_id = _ensure_session(db, request)
+        auth_user = _optional_user_from_request(http_request)
+        user_id = request.user_id or (auth_user.id if auth_user else None)
+        session_request = request.copy(update={"user_id": user_id})
+        session_id = _ensure_session(db, session_request)
         history = [
             ChatMessage(role=message.role, content=message.content)
             for message in db.list_chat_messages(session_id)
@@ -181,6 +189,15 @@ def create_web_app(
                 chat_history=history,
                 search_url=request.search_url or settings.search_url,
                 top_k=request.top_k or settings.top_k,
+                filters=(
+                    build_user_only_filters(
+                        auth_user.id,
+                        email=auth_user.email,
+                        group_ids=auth_user.group_ids,
+                    )
+                    if auth_user
+                    else (build_user_only_filters(user_id) if user_id else None)
+                ),
             )
         except Exception as exc:
             logger.exception("Agent search failed: %s", exc)
@@ -253,6 +270,13 @@ def _document_view(document: ContextDocument) -> SourceDocumentView:
         score=document.score,
         metadata=document.metadata,
     )
+
+
+def _optional_user_from_request(request: Request):
+    try:
+        return user_from_headers(request.headers)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 def _frontend_dist_path() -> Path | None:
