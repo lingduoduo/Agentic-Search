@@ -54,7 +54,9 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         chat_history: list[ChatMessage] | None = None,
         search_url: str,
         top_k: int,
+        filters=None,
     ) -> AnswerGenerationResult:
+        assert filters is None
         assert question == "How do I deploy?"
         assert chat_history == []
         assert search_url == "http://search.test/retrieve"
@@ -102,7 +104,9 @@ def test_agent_endpoint_reuses_existing_session_history(monkeypatch, tmp_path):
         chat_history: list[ChatMessage] | None = None,
         search_url: str,
         top_k: int,
+        filters=None,
     ) -> AnswerGenerationResult:
+        del filters
         observed_history.extend(chat_history or [])
         return _answer_result(question)
 

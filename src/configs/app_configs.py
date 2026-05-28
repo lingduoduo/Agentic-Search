@@ -1,0 +1,274 @@
+"""Typed environment configuration for Agentic Search.
+
+The repo mostly passes explicit dataclass configs into individual components.
+This module adds one small shared layer for values that naturally come from the
+process environment: service URLs, default ports, auth secrets, and permission
+sync cadence.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Mapping
+
+EnvMapping = Mapping[str, str]
+
+DEFAULT_RETRIEVAL_URL = "http://localhost:8000/retrieve"
+DEFAULT_FETCH_URL = "http://localhost:8000/fetch"
+DEFAULT_WEB_DB_PATH = ":memory:"
+DEFAULT_AUTH_SECRET = "agentic-search-dev-secret"
+
+
+@dataclass(frozen=True)
+class ServiceSettings:
+    """Network and persistence defaults for local services."""
+
+    retrieval_url: str = DEFAULT_RETRIEVAL_URL
+    fetch_url: str | None = None
+    web_db_path: str | Path = DEFAULT_WEB_DB_PATH
+    web_top_k: int = 5
+    retrieval_host: str = "0.0.0.0"
+    retrieval_port: int = 8000
+    web_host: str = "0.0.0.0"
+    web_port: int = 8080
+
+
+@dataclass(frozen=True)
+class AuthSettings:
+    """Authentication-related process settings."""
+
+    secret: str = DEFAULT_AUTH_SECRET
+    jwt_public_key_url: str | None = None
+    super_users: tuple[str, ...] = ()
+    super_api_key: str | None = None
+
+
+@dataclass(frozen=True)
+class PermissionSyncSettings:
+    """Connector permission sync cadence, in seconds."""
+
+    default_doc_sync_frequency: int = 5 * 60
+    num_workers: int = 2
+    doc_sync_frequency_by_source: dict[str, int] = field(
+        default_factory=dict, hash=False, compare=False
+    )
+    group_sync_frequency_by_source: dict[str, int] = field(
+        default_factory=dict, hash=False, compare=False
+    )
+    anonymous_access_is_public_by_source: dict[str, bool] = field(
+        default_factory=dict, hash=False, compare=False
+    )
+
+    def doc_sync_frequency(self, source: str) -> int:
+        return self.doc_sync_frequency_by_source.get(
+            source.lower(),
+            self.default_doc_sync_frequency,
+        )
+
+    def group_sync_frequency(self, source: str) -> int | None:
+        return self.group_sync_frequency_by_source.get(source.lower())
+
+    def anonymous_access_is_public(self, source: str) -> bool:
+        return self.anonymous_access_is_public_by_source.get(source.lower(), False)
+
+
+@dataclass(frozen=True)
+class TelemetrySettings:
+    posthog_api_key: str | None = None
+    posthog_host: str = "https://us.i.posthog.com"
+    posthog_debug_logs_enabled: bool = False
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    """Top-level process settings for Agentic Search."""
+
+    services: ServiceSettings = field(default_factory=ServiceSettings)
+    auth: AuthSettings = field(default_factory=AuthSettings)
+    permissions: PermissionSyncSettings = field(default_factory=PermissionSyncSettings)
+    telemetry: TelemetrySettings = field(default_factory=TelemetrySettings)
+    license_enforcement_enabled: bool = False
+    cloud_data_plane_url: str | None = None
+
+
+def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
+    """Load settings from an environment mapping.
+
+    Passing an explicit mapping makes tests deterministic and keeps import-time
+    configuration side-effect free.
+    """
+
+    source = env or os.environ
+    return AppSettings(
+        services=ServiceSettings(
+            retrieval_url=get_env_str(
+                source, "AGENTIC_SEARCH_RETRIEVAL_URL", DEFAULT_RETRIEVAL_URL
+            ),
+            fetch_url=get_env_str(source, "AGENTIC_SEARCH_FETCH_URL", None),
+            web_db_path=get_env_str(
+                source, "AGENTIC_SEARCH_WEB_DB_PATH", DEFAULT_WEB_DB_PATH
+            ),
+            web_top_k=get_env_int(source, "AGENTIC_SEARCH_WEB_TOP_K", 5),
+            retrieval_host=get_env_str(
+                source, "AGENTIC_SEARCH_RETRIEVAL_HOST", "0.0.0.0"
+            ),
+            retrieval_port=get_env_int(source, "AGENTIC_SEARCH_RETRIEVAL_PORT", 8000),
+            web_host=get_env_str(source, "AGENTIC_SEARCH_WEB_HOST", "0.0.0.0"),
+            web_port=get_env_int(source, "AGENTIC_SEARCH_WEB_PORT", 8080),
+        ),
+        auth=AuthSettings(
+            secret=get_env_str(
+                source, "AGENTIC_SEARCH_AUTH_SECRET", DEFAULT_AUTH_SECRET
+            ),
+            jwt_public_key_url=get_env_str(
+                source, "AGENTIC_SEARCH_JWT_PUBLIC_KEY_URL", None
+            ),
+            super_users=tuple(get_env_json_list(source, "AGENTIC_SEARCH_SUPER_USERS")),
+            super_api_key=get_env_str(source, "AGENTIC_SEARCH_SUPER_API_KEY", None),
+        ),
+        permissions=load_permission_sync_settings(source),
+        telemetry=TelemetrySettings(
+            posthog_api_key=get_env_str(source, "POSTHOG_API_KEY", None),
+            posthog_host=get_env_str(
+                source, "POSTHOG_HOST", "https://us.i.posthog.com"
+            ),
+            posthog_debug_logs_enabled=get_env_bool(
+                source, "POSTHOG_DEBUG_LOGS_ENABLED", False
+            ),
+        ),
+        license_enforcement_enabled=get_env_bool(
+            source, "AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED", False
+        ),
+        cloud_data_plane_url=get_env_str(
+            source, "AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL", None
+        ),
+    )
+
+
+def load_permission_sync_settings(
+    env: EnvMapping | None = None,
+) -> PermissionSyncSettings:
+    source = env or os.environ
+    return PermissionSyncSettings(
+        default_doc_sync_frequency=get_env_int(
+            source,
+            "AGENTIC_SEARCH_DEFAULT_PERMISSION_DOC_SYNC_FREQUENCY",
+            get_env_int(source, "DEFAULT_PERMISSION_DOC_SYNC_FREQUENCY", 5 * 60),
+        ),
+        num_workers=get_env_int(
+            source,
+            "AGENTIC_SEARCH_NUM_PERMISSION_WORKERS",
+            get_env_int(source, "NUM_PERMISSION_WORKERS", 2),
+        ),
+        doc_sync_frequency_by_source={
+            "confluence": get_env_int(
+                source, "CONFLUENCE_PERMISSION_DOC_SYNC_FREQUENCY", 30 * 60
+            ),
+            "jira": get_env_int(source, "JIRA_PERMISSION_DOC_SYNC_FREQUENCY", 30 * 60),
+            "github": get_env_int(
+                source, "GITHUB_PERMISSION_DOC_SYNC_FREQUENCY", 5 * 60
+            ),
+            "slack": get_env_int(source, "SLACK_PERMISSION_DOC_SYNC_FREQUENCY", 5 * 60),
+            "teams": get_env_int(source, "TEAMS_PERMISSION_DOC_SYNC_FREQUENCY", 5 * 60),
+            "sharepoint": get_env_int(
+                source, "SHAREPOINT_PERMISSION_DOC_SYNC_FREQUENCY", 30 * 60
+            ),
+        },
+        group_sync_frequency_by_source={
+            "confluence": get_env_int(
+                source, "CONFLUENCE_PERMISSION_GROUP_SYNC_FREQUENCY", 30 * 60
+            ),
+            "jira": get_env_int(
+                source, "JIRA_PERMISSION_GROUP_SYNC_FREQUENCY", 30 * 60
+            ),
+            "google_drive": get_env_int(
+                source, "GOOGLE_DRIVE_PERMISSION_GROUP_SYNC_FREQUENCY", 5 * 60
+            ),
+            "github": get_env_int(
+                source, "GITHUB_PERMISSION_GROUP_SYNC_FREQUENCY", 5 * 60
+            ),
+            "sharepoint": get_env_int(
+                source, "SHAREPOINT_PERMISSION_GROUP_SYNC_FREQUENCY", 5 * 60
+            ),
+        },
+        anonymous_access_is_public_by_source={
+            "confluence": get_env_bool(
+                source, "CONFLUENCE_ANONYMOUS_ACCESS_IS_PUBLIC", False
+            ),
+        },
+    )
+
+
+def get_env_str(env: EnvMapping, name: str, default: str | None = None) -> str | None:
+    value = env.get(name)
+    if value is None or value == "":
+        return default
+    return value
+
+
+def get_env_int(env: EnvMapping, name: str, default: int) -> int:
+    value = env.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer.") from exc
+
+
+def get_env_float(env: EnvMapping, name: str, default: float) -> float:
+    value = env.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a float.") from exc
+
+
+def get_env_bool(env: EnvMapping, name: str, default: bool = False) -> bool:
+    value = env.get(name)
+    if value is None or value == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean.")
+
+
+def get_env_json_list(env: EnvMapping, name: str) -> list[str]:
+    value = env.get(name)
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} must be a JSON list.") from exc
+    if not isinstance(parsed, list):
+        raise ValueError(f"{name} must be a JSON list.")
+    return [str(item) for item in parsed]
+
+
+__all__ = [
+    "AppSettings",
+    "AuthSettings",
+    "DEFAULT_AUTH_SECRET",
+    "DEFAULT_FETCH_URL",
+    "DEFAULT_RETRIEVAL_URL",
+    "DEFAULT_WEB_DB_PATH",
+    "PermissionSyncSettings",
+    "ServiceSettings",
+    "TelemetrySettings",
+    "get_env_bool",
+    "get_env_float",
+    "get_env_int",
+    "get_env_json_list",
+    "get_env_str",
+    "load_app_settings",
+    "load_permission_sync_settings",
+]

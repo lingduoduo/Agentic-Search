@@ -18,8 +18,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from src.configs import load_app_settings
+
 AUTH_SECRET_ENV = "AGENTIC_SEARCH_AUTH_SECRET"
-DEFAULT_AUTH_SECRET = "agentic-search-dev-secret"
 JWT_ALGORITHM = "HS256"
 
 
@@ -36,7 +37,7 @@ class AuthenticatedUser:
 
 
 def get_auth_secret(secret: str | None = None) -> str:
-    return secret or os.getenv(AUTH_SECRET_ENV, DEFAULT_AUTH_SECRET)
+    return secret or os.getenv(AUTH_SECRET_ENV) or load_app_settings().auth.secret
 
 
 def generate_user_jwt_token(
