@@ -16,8 +16,9 @@ reward helpers.
 | SFT, rewards, PPO, and GRPO helpers | `src/training/` |
 | Runnable examples | `examples/` |
 
-`src/search/` is a compatibility layer for older imports. New code should use
-`src/retrieval/` and `src/retrieval/servers/` directly.
+Common public classes and helpers are exported from top-level `src`. Retrieval
+implementation details live in `src/retrieval/`; FastAPI services live in
+`src/servers/`.
 
 ## Features
 
@@ -200,12 +201,31 @@ python3 -m examples.run_agentic_search \
   --search_url http://localhost:8000/retrieve
 ```
 
+## Indexing Helpers
+
+The repo-native indexing pipeline lives in `src/retrieval/index_builder.py`.
+For a server-style facade, use `src.servers.indexing`:
+
+```python
+from src.connectors import Document
+from src.servers.indexing import index_document_batch
+
+result = index_document_batch(
+    [Document(id="doc-1", title="Example", contents="hello world")],
+    save_dir="indexes/example",
+)
+```
+
+The facade includes `Chunker`, `DefaultIndexingEmbedder`, `ChunkBatchStore`,
+`embed_and_stream`, document prefiltering, mini-chunk support, and vector-write
+retry helpers.
+
 ## Local Retrieval
 
 Start a dense retrieval server:
 
 ```bash
-python3 -m src.retrieval.servers.retrieval \
+python3 -m src.servers.retrieval.retrieval \
   --model_path intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -218,7 +238,7 @@ python3 -m src.retrieval.servers.retrieval \
 Start a sparse BM25 server:
 
 ```bash
-python3 -m src.retrieval.servers.retrieval \
+python3 -m src.servers.retrieval.retrieval \
   --index_path indexes/bm25 \
   --corpus_path data/corpus.jsonl \
   --retrieval_method bm25 \
@@ -263,15 +283,15 @@ python3 -m src.retrieval.index_builder \
 
 `src.tools.search` routes calls to `retrieval`, `google`, or `serpapi`. Missing API keys return structured tool errors.
 
-Standalone web-search servers are available under `src.retrieval.servers`:
+Standalone web-search servers are available under `src.servers.retrieval`:
 
 ```bash
-python3 -m src.retrieval.servers.serp \
+python3 -m src.servers.retrieval.serp \
   --search_url "https://serpapi.com/search" \
   --topk 3 \
   --serp_api_key "$SERP_API_KEY"
 
-python3 -m src.retrieval.servers.google \
+python3 -m src.servers.retrieval.google \
   --api_key "$GOOGLE_API_KEY" \
   --topk 5 \
   --cse_id "$GOOGLE_CSE_ID" \
@@ -281,7 +301,7 @@ python3 -m src.retrieval.servers.google \
 ## Retrieval Plus Rerank
 
 ```bash
-python3 -m src.retrieval.servers.retrieval_rerank \
+python3 -m src.servers.retrieval.retrieval_rerank \
   --retriever_model intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \

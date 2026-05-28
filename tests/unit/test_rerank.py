@@ -1,10 +1,10 @@
-"""Unit tests for src/search/rerank.py."""
+"""Unit tests for src/retrieval/rerank.py."""
 
 import numpy as np
 import pytest
 from unittest.mock import MagicMock
 
-from src.search.rerank import (
+from src.retrieval.rerank import (
     RerankerConfig,
     SentenceTransformerReranker,
     passage_to_string,
@@ -39,7 +39,7 @@ def _make_reranker(scores: list[float]) -> SentenceTransformerReranker:
 def _patch_rerank_torch(monkeypatch):
     """Patch _require_torch inside rerank so tests don't need a real torch install."""
     mock_torch = _make_mock_torch()
-    monkeypatch.setattr("src.search.rerank._require_torch", lambda: mock_torch)
+    monkeypatch.setattr("src.retrieval.rerank._require_torch", lambda: mock_torch)
 
 
 # ---------------------------------------------------------------------------

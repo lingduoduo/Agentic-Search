@@ -1,6 +1,6 @@
-"""Unit tests for src/search/vocabulary.py."""
+"""Unit tests for src/retrieval/vocabulary.py."""
 
-from src.search.vocabulary import (
+from src.retrieval.vocabulary import (
     EOS_token,
     SOS_token,
     Vocabulary,
@@ -11,7 +11,7 @@ from src.search.vocabulary import (
     tokenize_document,
     tokenize_text,
 )
-from src.search.text_processor import TextProcessor
+from src.retrieval.text_processor import TextProcessor
 
 
 class TestVocabulary:

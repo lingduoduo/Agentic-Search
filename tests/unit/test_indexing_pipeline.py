@@ -18,6 +18,7 @@ from src.retrieval.index_builder import (
     deterministic_embedding_fn,
     embed_chunks,
     embed_chunks_with_failure_handling,
+    filter_indexable_documents,
     run_indexing_pipeline,
     write_faiss_index,
 )
@@ -121,6 +122,31 @@ def test_chunk_document_can_emit_large_chunks():
     assert "\n\n---\n\n" in chunks[-1].text
 
 
+def test_chunk_document_can_emit_mini_chunks_for_multipass_indexing():
+    document = Document(
+        id="doc",
+        contents="one two three four five six seven eight",
+    )
+
+    chunks = chunk_document(
+        document,
+        ChunkingConfig(
+            chunk_size=8,
+            chunk_overlap=0,
+            include_title=False,
+            include_metadata=False,
+            enable_mini_chunks=True,
+            mini_chunk_size=3,
+        ),
+    )
+
+    assert chunks[0].mini_chunk_texts == [
+        "one two three",
+        "four five six",
+        "seven eight",
+    ]
+
+
 def test_embed_chunks_uses_index_builder_text_preparation():
     chunks = chunk_document(
         Document(id="doc", title=None, contents="alpha beta"),
@@ -140,6 +166,44 @@ def test_embed_chunks_uses_index_builder_text_preparation():
 
     assert seen_texts == ["passage: alpha beta"]
     assert embedded[0].embedding.tolist() == [1.0, 1.0, 1.0]
+
+
+def test_embed_chunks_maps_mini_chunk_embeddings():
+    chunks = chunk_document(
+        Document(id="doc", title=None, contents="alpha beta gamma delta epsilon"),
+        ChunkingConfig(
+            chunk_size=5,
+            chunk_overlap=0,
+            include_title=False,
+            include_metadata=False,
+            enable_mini_chunks=True,
+            mini_chunk_size=2,
+        ),
+    )
+    seen_texts = []
+
+    def fake_embed(texts):
+        seen_texts.extend(texts)
+        return np.array(
+            [[float(index), float(index + 10)] for index, _ in enumerate(texts)],
+            dtype=np.float32,
+        )
+
+    embedded = embed_chunks(
+        chunks,
+        embedding_fn=fake_embed,
+        config=EmbeddingConfig(retrieval_method="contriever", batch_size=1),
+    )
+
+    assert seen_texts == [
+        "alpha beta gamma delta epsilon",
+        "alpha beta",
+        "gamma delta",
+        "epsilon",
+    ]
+    np.testing.assert_allclose(embedded[0].embedding, [0.0, 10.0])
+    assert len(embedded[0].mini_chunk_embeddings) == 3
+    np.testing.assert_allclose(embedded[0].mini_chunk_embeddings[1], [2.0, 12.0])
 
 
 def test_embed_chunks_can_cache_title_embeddings_and_normalize():
@@ -210,6 +274,22 @@ def test_embed_chunks_rejects_mismatched_embedding_rows():
         )
 
 
+def test_filter_indexable_documents_reports_empty_and_oversized_docs():
+    kept, failures = filter_indexable_documents(
+        [
+            Document(id="empty", title=" ", contents=" "),
+            Document(id="large", title="Title", contents="x" * 20, url="https://l"),
+            Document(id="ok", title="OK", contents="small"),
+        ],
+        max_document_chars=10,
+    )
+
+    assert [document.id for document in kept] == ["ok"]
+    assert [failure.document_id for failure in failures] == ["empty", "large"]
+    assert failures[0].message == "Document has neither title nor contents."
+    assert failures[1].metadata["char_count"] == 25
+
+
 def test_run_indexing_pipeline_writes_corpus_and_embeddings(tmp_path):
     documents = [
         Document(id="one", title="One", contents="alpha beta"),
@@ -234,11 +314,38 @@ def test_run_indexing_pipeline_writes_corpus_and_embeddings(tmp_path):
         for line in result.corpus_path.read_text(encoding="utf-8").splitlines()
     ]
     assert [row["id"] for row in rows] == ["one::chunk-0", "two::chunk-0"]
+    assert rows[0]["mini_chunk_texts"] == []
     embeddings = np.memmap(result.embedding_path, mode="r", dtype=np.float32).reshape(
         2, 4
     )
     assert embeddings.shape == (2, 4)
     assert result.index_path is None
+
+
+def test_run_indexing_pipeline_returns_prefilter_failures(tmp_path):
+    documents = [
+        Document(id="ok", title="OK", contents="alpha"),
+        Document(id="large", title=None, contents="x" * 20),
+    ]
+    config = IndexingPipelineConfig(
+        chunking=ChunkingConfig(
+            chunk_size=100,
+            chunk_overlap=0,
+            max_document_chars=10,
+        ),
+        embedding=EmbeddingConfig(retrieval_method="contriever", batch_size=2),
+        writer=IndexWriterConfig(save_dir=tmp_path),
+    )
+
+    result = run_indexing_pipeline(
+        documents,
+        config=config,
+        embedding_fn=deterministic_embedding_fn(dim=4),
+    )
+
+    assert result.total_documents == 2
+    assert result.total_chunks == 1
+    assert [failure.document_id for failure in result.failures] == ["large"]
 
 
 def test_run_indexing_pipeline_reports_heartbeat_progress(tmp_path):
