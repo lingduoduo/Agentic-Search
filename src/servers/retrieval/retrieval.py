@@ -40,6 +40,7 @@ class RetrieveRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1)
     topk: int | None = Field(default=None, ge=1)
     return_scores: bool = False
+    filters: dict[str, object] | None = None
 
     def resolved_queries(self) -> list[str]:
         if self.query is not None:
@@ -106,6 +107,15 @@ def create_app(
                 topk=topk,
                 return_scores=request.return_scores,
             )
+            if request.filters:
+                rows = [
+                    [
+                        item
+                        for item in row
+                        if _matches_request_filters(item, request.filters or {})
+                    ]
+                    for row in rows
+                ]
 
             if request.is_single_query():
                 single_rows = rows[0] if rows else []
@@ -135,6 +145,63 @@ def create_app(
             ) from exc
 
     return app
+
+
+def _matches_request_filters(item: dict, filters: dict[str, object]) -> bool:
+    document = item.get("document", item)
+    if not isinstance(document, dict):
+        return False
+    metadata = dict(document.get("metadata") or {})
+    for key in (
+        "source_type",
+        "document_sets",
+        "document_set",
+        "tags",
+        "acl",
+        "updated_at",
+    ):
+        if key in document and key not in metadata:
+            metadata[key] = document[key]
+
+    source_types = filters.get("source_types")
+    if source_types and metadata.get("source_type") not in _as_values(source_types):
+        return False
+
+    document_sets = filters.get("document_sets")
+    if document_sets:
+        values = _as_values(metadata.get("document_sets", metadata.get("document_set")))
+        if not values.intersection(_as_values(document_sets)):
+            return False
+
+    tags = filters.get("tags")
+    if isinstance(tags, dict) and tags:
+        metadata_tags = metadata.get("tags", metadata)
+        if not isinstance(metadata_tags, dict):
+            return False
+        for key, value in tags.items():
+            if metadata_tags.get(key) != value:
+                return False
+
+    access_acl = filters.get("access_acl")
+    if access_acl:
+        acl = _as_values(metadata.get("acl"))
+        metadata_tags = metadata.get("tags")
+        if isinstance(metadata_tags, dict):
+            acl.update(_as_values(metadata_tags.get("acl")))
+        if not acl.intersection(_as_values(access_acl)):
+            return False
+
+    return True
+
+
+def _as_values(value: object) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {part.strip() for part in value.split(",") if part.strip()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return {str(part).strip() for part in value if str(part).strip()}
+    return {str(value)}
 
 
 def parse_args() -> argparse.Namespace:

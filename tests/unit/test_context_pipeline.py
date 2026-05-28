@@ -11,6 +11,7 @@ from src.context import AnswerStyle
 from src.context import ChatMessage
 from src.context import LLMResponse
 from src.context import SearchRequest
+from src.context import SearchFilters
 from src.context import build_answer_prompt
 from src.context import build_context_bundle
 from src.context import extract_citations
@@ -107,6 +108,14 @@ def test_combine_search_results_deduplicates_by_url_and_content():
     assert [result.score for result in combined] == [0.9, 0.2]
 
 
+def test_search_filters_match_access_acl_metadata():
+    filters = SearchFilters(access_acl=["public", "group:eng"])
+
+    assert filters.matches({"acl": ["group:eng"]})
+    assert filters.matches({"tags": {"acl": "public,user:alice"}})
+    assert not filters.matches({"acl": ["group:finance"]})
+
+
 def test_run_search_uses_retrieval_client(monkeypatch):
     class FakeClient:
         def __init__(self, config):
@@ -125,6 +134,46 @@ def test_run_search_uses_retrieval_client(monkeypatch):
     rows = asyncio.run(run_search(SearchRequest(query="faiss", top_k=2)))
 
     assert rows[0].title == "FAISS"
+
+
+def test_run_search_sends_filters_to_retrieval_client(monkeypatch):
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        async def retrieve_one(self, query, topk=None, filters=None):
+            assert query == "faiss"
+            assert topk == 2
+            assert filters == {"access_acl": ["public"]}
+            return [
+                SearchResult(
+                    title="Visible",
+                    contents='"Visible"\nAllowed',
+                    metadata={"acl": ["public"]},
+                ),
+                SearchResult(
+                    title="Blocked",
+                    contents='"Blocked"\nHidden',
+                    metadata={"acl": ["user:alice"]},
+                ),
+            ]
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("src.context.retrieval.search_runner.SearchClient", FakeClient)
+
+    rows = asyncio.run(
+        run_search(
+            SearchRequest(
+                query="faiss",
+                top_k=2,
+                filters=SearchFilters(access_acl=["public"]),
+            )
+        )
+    )
+
+    assert [row.title for row in rows] == ["Visible"]
 
 
 def test_context_helpers_are_exported_from_top_level_src():

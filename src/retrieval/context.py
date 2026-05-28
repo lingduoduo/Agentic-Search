@@ -17,6 +17,7 @@ class SearchResult:
     score: float = 0.0
     title: str | None = None
     url: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_api_item(cls, item: dict[str, Any]) -> "SearchResult":
@@ -36,16 +37,40 @@ class SearchResult:
             doc = item
             score = 0.0
 
+        metadata: dict[str, Any] = {}
         if isinstance(doc, dict):
             contents = doc.get("contents") or doc.get("text") or str(doc)
             title = doc.get("title")
             url = doc.get("url")
+            raw_metadata = doc.get("metadata")
+            if isinstance(raw_metadata, dict):
+                metadata.update(raw_metadata)
+            for key in (
+                "id",
+                "doc_id",
+                "document_id",
+                "chunk_id",
+                "source_type",
+                "document_sets",
+                "document_set",
+                "tags",
+                "acl",
+                "updated_at",
+            ):
+                if key in doc and key not in metadata:
+                    metadata[key] = doc[key]
         else:
             contents = str(doc)
             title = None
             url = None
 
-        return cls(contents=contents, score=score, title=title, url=url)
+        return cls(
+            contents=contents,
+            score=score,
+            title=title,
+            url=url,
+            metadata=metadata,
+        )
 
 
 @dataclass

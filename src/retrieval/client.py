@@ -105,6 +105,7 @@ class SearchClient:
         self,
         queries: list[str],
         topk: int | None = None,
+        filters: dict | None = None,
     ) -> list[list[SearchResult]]:
         """Return one list of SearchResult per query.
 
@@ -116,6 +117,8 @@ class SearchClient:
             "topk": topk or self.config.topk,
             "return_scores": True,
         }
+        if filters:
+            payload["filters"] = filters
         data = await self._post_json(self.config.url, payload, "retrieve")
         rows = data.get("result", data.get("results", []))
         if rows and isinstance(rows[0], dict):
@@ -126,9 +129,10 @@ class SearchClient:
         self,
         query: str,
         topk: int | None = None,
+        filters: dict | None = None,
     ) -> list[SearchResult]:
         """Convenience wrapper for a single query."""
-        results = await self.retrieve([query], topk=topk)
+        results = await self.retrieve([query], topk=topk, filters=filters)
         return results[0] if results else []
 
     async def fetch_urls(

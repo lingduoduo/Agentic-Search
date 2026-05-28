@@ -33,6 +33,13 @@ async def run_search(
             )
         )
         try:
+            if request.filters:
+                results = await client.retrieve_one(
+                    request.query,
+                    topk=request.top_k,
+                    filters=request.filters.to_payload(),
+                )
+                return _apply_filters(results, request.filters)
             return await client.retrieve_one(request.query, topk=request.top_k)
         finally:
             await client.aclose()
@@ -52,7 +59,7 @@ async def run_search(
     else:
         raise ValueError(f"Unsupported search provider: {request.provider}")
 
-    return [
+    results = [
         SearchResult(
             title=page.title,
             contents=f'"{page.title}"\n{page.summary}' if page.title else page.summary,
@@ -61,6 +68,7 @@ async def run_search(
         for page in pages
         if not page.error
     ]
+    return _apply_filters(results, request.filters)
 
 
 async def build_search_context(
@@ -80,7 +88,7 @@ async def build_search_context(
     )
     return build_context_bundle(
         request.query,
-        results,
+        _apply_filters(results, request.filters),
         max_documents=request.top_k,
     )
 
@@ -94,3 +102,12 @@ def combine_search_results(result_sets: list[list[SearchResult]]) -> list[Search
             if previous is None or result.score > previous.score:
                 unique[key] = result
     return sorted(unique.values(), key=lambda result: result.score, reverse=True)
+
+
+def _apply_filters(
+    results: list[SearchResult],
+    filters,
+) -> list[SearchResult]:
+    if filters is None:
+        return results
+    return [result for result in results if filters.matches(result.metadata)]
