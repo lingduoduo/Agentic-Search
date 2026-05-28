@@ -267,15 +267,24 @@ generation.
 ## Web Search Experience
 
 Serve the lightweight browser UI for search and agent answers.
+Three processes must be running at the same time:
 
-**Terminal 1 — backend** (run from the repo root):
+**Terminal 1 — retrieval server** (see [Local Retrieval](#local-retrieval) for index setup):
+
+```bash
+python3 -m src.servers.retrieval.retrieval \
+  --retrieval_method bm25 \
+  --corpus_path data/corpus.jsonl
+```
+
+**Terminal 2 — web backend** (run from the repo root):
 
 ```bash
 pip install -e .   # one-time, installs src as a package
 uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
-**Terminal 2 — frontend**:
+**Terminal 3 — frontend**:
 
 ```bash
 cd web
@@ -283,8 +292,7 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`, point the retrieval URL at a running
-`/retrieve` service, and ask a question. The app shows the generated answer,
+Open `http://127.0.0.1:5173` and ask a question. The app shows the generated answer,
 citations, source cards, and session history. The JSON API is available at
 `POST /api/agent` and persists chat state with `AgenticSearchStore`.
 
