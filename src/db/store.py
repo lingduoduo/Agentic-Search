@@ -1086,3 +1086,116 @@ class AgenticSearchStore:
             "SELECT data FROM usage_reports WHERE report_name = ?", (report_name,)
         ).fetchone()
         return bytes(row["data"]) if row else None
+
+    # ------------------------------------------------------------------
+    # Token rate limits
+    # ------------------------------------------------------------------
+
+    def _ensure_token_rate_limits_table(self) -> None:
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS token_rate_limits (
+                id TEXT PRIMARY KEY,
+                scope TEXT NOT NULL,
+                scope_id TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                token_budget INTEGER NOT NULL,
+                period_hours INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.commit()
+
+    def insert_token_rate_limit(
+        self,
+        scope: str,
+        token_budget: int,
+        period_hours: int,
+        enabled: bool = True,
+        scope_id: str | None = None,
+    ) -> dict[str, object]:
+        """Insert a new token rate limit record and return it as a dict."""
+        self._ensure_token_rate_limits_table()
+        now = _now()
+        record_id = _new_id("trl")
+        self._conn.execute(
+            """
+            INSERT INTO token_rate_limits
+                (id, scope, scope_id, enabled, token_budget, period_hours, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                scope,
+                scope_id,
+                int(enabled),
+                token_budget,
+                period_hours,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+        return {
+            "id": record_id,
+            "scope": scope,
+            "scope_id": scope_id,
+            "enabled": enabled,
+            "token_budget": token_budget,
+            "period_hours": period_hours,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def get_token_rate_limits(
+        self,
+        scope: str,
+        scope_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Return token rate limit records matching *scope* and optional *scope_id*."""
+        self._ensure_token_rate_limits_table()
+        if scope_id is None:
+            rows = self._conn.execute(
+                "SELECT * FROM token_rate_limits WHERE scope = ? AND scope_id IS NULL ORDER BY created_at",
+                (scope,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM token_rate_limits WHERE scope = ? AND scope_id = ? ORDER BY created_at",
+                (scope, scope_id),
+            ).fetchall()
+        return [self._row_to_rate_limit(r) for r in rows]
+
+    def get_all_group_token_rate_limits(self) -> list[dict[str, object]]:
+        """Return all group-scoped rate limits joined with their group name."""
+        self._ensure_token_rate_limits_table()
+        rows = self._conn.execute(
+            """
+            SELECT trl.*, g.name AS group_name
+            FROM token_rate_limits trl
+            LEFT JOIN groups g ON g.id = trl.scope_id
+            WHERE trl.scope = 'group'
+            ORDER BY g.name, trl.created_at
+            """
+        ).fetchall()
+        result = []
+        for r in rows:
+            record = self._row_to_rate_limit(r)
+            record["group_name"] = r["group_name"]
+            result.append(record)
+        return result
+
+    @staticmethod
+    def _row_to_rate_limit(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": row["id"],
+            "scope": row["scope"],
+            "scope_id": row["scope_id"],
+            "enabled": bool(row["enabled"]),
+            "token_budget": row["token_budget"],
+            "period_hours": row["period_hours"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
