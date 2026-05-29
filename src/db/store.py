@@ -357,6 +357,25 @@ class AgenticSearchStore:
         self._conn.commit()
         return self.get_group(group.id) or GroupRecord(id=group.id, name=group.name)
 
+    def list_groups(self) -> list[GroupRecord]:
+        """Return all groups ordered by name."""
+        rows = self._conn.execute("SELECT * FROM groups ORDER BY name").fetchall()
+        return [self._row_to_group(row) for row in rows]
+
+    def delete_group(self, group_id: str) -> bool:
+        """Delete *group_id* and its memberships. Returns True if it existed."""
+        cursor = self._conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def remove_user_from_group(self, user_id: str, group_id: str) -> None:
+        """Remove *user_id* from *group_id*. No-op if the membership doesn't exist."""
+        self._conn.execute(
+            "DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
+            (group_id, user_id),
+        )
+        self._conn.commit()
+
     def add_user_to_group(self, user_id: str, group_id: str) -> None:
         self._conn.execute(
             """
