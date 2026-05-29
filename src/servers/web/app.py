@@ -34,6 +34,8 @@ from src.servers.auth_check import check_router_auth
 from src.servers.documents.cc_pair import create_documents_router
 from src.servers.query_and_chat.query_backend import basic_router as query_basic_router
 from src.servers.query_and_chat.search_backend import create_search_router
+from src.servers.enterprise_settings.api import create_enterprise_settings_routers
+from src.servers.evals.api import create_evals_router
 from src.servers.tenants.api import router as tenants_router
 from src.servers.user_group.api import create_user_group_router
 from src.servers.seeding import seed_db
@@ -157,6 +159,10 @@ def create_web_app(
     app.include_router(create_user_group_router(db, resolved))
     app.include_router(query_basic_router)
     app.include_router(tenants_router)
+    ee_admin_router, ee_basic_router = create_enterprise_settings_routers(resolved)
+    app.include_router(ee_admin_router)
+    app.include_router(ee_basic_router)
+    app.include_router(create_evals_router(resolved, search_url=settings.search_url))
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
