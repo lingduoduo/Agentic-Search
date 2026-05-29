@@ -1,24 +1,35 @@
 # Agentic Search
 
-Agentic Search is a compact playground for retrieval-backed agents and
-search-policy training. It includes local dense and sparse retrieval, web search
-tooling, multi-turn XML search traces, SFT example building, and PPO/GRPO-style
-reward helpers.
+Agentic Search is a retrieval-backed agent and search-policy platform. It
+combines a full-featured FastAPI server layer (admin APIs, SCIM provisioning,
+billing proxy, OAuth connectors, query history, usage reporting) with local
+dense/sparse retrieval, multi-turn agent traces, SFT data builders, and
+PPO/GRPO reward helpers.
 
 ## What Is Here
 
 | Area | Main modules |
 |------|--------------|
+| **FastAPI server layer** | `src/servers/` |
+| **Admin APIs** | `analytics`, `billing`, `evals`, `license`, `manage`, `query_history`, `reporting`, `settings`, `token_rate_limits` |
+| **Auth & access** | `src/servers/_auth.py`, `src/servers/middleware/` |
+| **Connectors API** | `src/servers/documents/`, `src/servers/oauth/` |
+| **Identity provisioning** | `src/servers/scim/` |
+| **User & group management** | `src/servers/user_group/`, `src/servers/tenants/` |
+| **Search & chat** | `src/servers/query_and_chat/`, `src/servers/web/` |
+| **Retrieval servers** | `src/servers/retrieval/`, `src/servers/web_search/` |
+| **Indexing pipeline** | `src/servers/indexing/` |
 | Agent loops | `src/agents/` |
-| Retrieval and search servers | `src/retrieval/` |
+| Retrieval and search engines | `src/retrieval/` |
 | Tool schemas and search tools | `src/tools/` |
 | Model generation and intent routing | `src/model/` |
 | SFT, rewards, PPO, and GRPO helpers | `src/training/` |
 | Runnable examples | `examples/` |
 
-Common public classes and helpers are exported from top-level `src`. Retrieval
-implementation details live in `src/retrieval/`; FastAPI services live in
-`src/servers/`.
+The FastAPI application is assembled in `src/servers/web/app.py`. Every feature
+area is a self-contained router factory registered via `_register_routers()`.
+The SQLite-backed `AgenticSearchStore` (`src/db/`) is the single persistence
+layer — no Postgres, Redis, or Celery required for local deployments.
 
 ## Features
 
@@ -68,18 +79,282 @@ SERP_API_KEY=...
 JAVA_HOME=/path/to/java
 ```
 
+## Server Architecture
+
+The full web application is a single FastAPI instance created by
+`src.servers.web.app.create_web_app()`. Router factories are grouped by feature
+area and registered in `_register_routers()`.
+
+```python
+from src.servers.web.app import create_web_app
+from src.db import AgenticSearchStore
+
+store = AgenticSearchStore("agentic-search.sqlite3")
+app   = create_web_app(store=store)
+```
+
+All state lives in `AgenticSearchStore` — a SQLite-backed repository for
+connectors, documents, users, groups, chat sessions, SCIM tokens, usage reports,
+rate-limit rules, and more. No external database is required.
+
+### Middleware Stack
+
+| Middleware | Module | Purpose |
+|-----------|--------|---------|
+| Tenant tracking | `src/servers/middleware/tenant_tracking.py` | Sets tenant context from request headers |
+| License enforcement | `src/servers/middleware/license_enforcement.py` | Returns 402 for gated paths when license is invalid |
+| Tier gate | `src/servers/middleware/tier_gate.py` | Returns 402 for paths that require a higher plan tier |
+
+### Admin Auth
+
+Every router factory that needs admin-only endpoints calls
+`make_require_admin(app_settings)` from `src/servers/_auth.py`. It returns a
+FastAPI dependency that checks `Authorization: Bearer <jwt>` against
+`AppSettings.auth.super_users`.
+
+```python
+from src.servers._auth import make_require_admin
+_require_admin = make_require_admin(app_settings)
+
+@router.get("/admin/my-endpoint")
+def my_endpoint(_: AuthenticatedUser = Depends(_require_admin)):
+    ...
+```
+
+### API Routers
+
+#### Analytics — `src/servers/analytics/`
+
+`create_analytics_router(store, app_settings)` — admin-only daily aggregates.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /analytics/query` | Daily session + message counts for a date window |
+| `GET /analytics/user` | Daily distinct active user counts |
+
+#### Billing — `src/servers/billing/`
+
+`create_billing_router(app_settings)` — Stripe proxy with in-memory circuit breaker.
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /admin/billing/create-checkout-session` | Start a Stripe checkout session |
+| `POST /admin/billing/create-customer-portal-session` | Open the Stripe billing portal |
+| `GET  /admin/billing/billing-information` | Current subscription status |
+| `POST /admin/billing/seats/update` | Change seat count |
+| `POST /admin/billing/end-trial` | End trial early (cloud only) |
+| `GET  /admin/billing/stripe-publishable-key` | Cached Stripe publishable key |
+| `POST /admin/billing/reset-connection` | Clear circuit breaker |
+
+Configure with `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL`, `STRIPE_PUBLISHABLE_KEY_OVERRIDE`, and `WEB_DOMAIN`.
+
+#### Documents — `src/servers/documents/`
+
+`create_documents_router(store, app_settings)` — connector-credential pair management.
+
+#### Enterprise Settings — `src/servers/enterprise_settings/`
+
+`create_enterprise_settings_routers(app_settings)` — branding, logo, analytics script.
+
+| Endpoints | Description |
+|-----------|-------------|
+| `GET/PUT /enterprise-settings` | Branding / UI configuration |
+| `PUT /admin/enterprise-settings/logo` | Upload custom logo |
+| `GET/PUT /admin/enterprise-settings/custom-analytics-script` | Custom analytics JS |
+| `GET/POST /admin/enterprise-settings/scim/token` | SCIM bearer-token management |
+
+#### Evals — `src/servers/evals/`
+
+`create_evals_router(app_settings, search_url)` — synchronous search quality evaluation.
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /evals/eval_run` | Run a search eval synchronously, return structured results |
+| `POST /evals/eval_run_ack` | Fire-and-forget background eval |
+
+#### Features / Hooks — `src/servers/features/hooks/`
+
+`create_hooks_router(store, app_settings)` — admin CRUD for outbound webhooks with SSRF protection and live reachability checks.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET  /admin/hooks/specs` | List all available hook-point specs |
+| `GET  /admin/hooks` | List configured hooks |
+| `POST /admin/hooks` | Create hook (validates endpoint reachability) |
+| `GET  /admin/hooks/{id}` | Get hook |
+| `PATCH /admin/hooks/{id}` | Update hook |
+| `DELETE /admin/hooks/{id}` | Delete hook |
+| `POST /admin/hooks/{id}/activate` | Re-activate and re-validate |
+| `POST /admin/hooks/{id}/deactivate` | Deactivate |
+| `POST /admin/hooks/{id}/validate` | Test reachability |
+| `GET  /admin/hooks/{id}/logs` | Execution logs |
+
+Hooks fire at `HookPoint.QUERY_PROCESSING` and `HookPoint.ANSWER_GENERATED`.
+
+#### License — `src/servers/license/`
+
+`create_license_router(app_settings)` — file-backed RSA-signed license management.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET    /license` | Current license status and expiry stage |
+| `GET    /license/seats` | Seat usage from stored license |
+| `POST   /license/upload` | Upload a `.lic` file (air-gapped) |
+| `POST   /license/claim` | Claim license from cloud data plane |
+| `POST   /license/refresh` | Re-verify stored license |
+| `DELETE /license` | Delete stored license |
+
+License files are stored at `$AGENTIC_SEARCH_DATA_DIR/license.dat`.
+
+#### Manage (Standard Answers) — `src/servers/manage/`
+
+`create_manage_router(store, app_settings)` — keyword → answer mappings with categories.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET/POST /manage/admin/standard-answer` | List / create standard answers |
+| `PATCH    /manage/admin/standard-answer/{id}` | Update a standard answer |
+| `DELETE   /manage/admin/standard-answer/{id}` | Delete a standard answer |
+| `GET/POST /manage/admin/standard-answer/category` | List / create categories |
+| `PATCH    /manage/admin/standard-answer/category/{id}` | Update a category |
+
+#### OAuth — `src/servers/oauth/`
+
+`create_oauth_router(app_settings)` — OAuth 2.0 URL generation for connector authorization.
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /oauth/prepare-authorization-request` | Generate OAuth URL for Slack, Confluence, or Google Drive |
+| `POST /oauth/connector/{connector}/callback` | OAuth callback stub (501 — credential DB not yet implemented) |
+
+Session state is stored in-memory (10-minute TTL). Configure connector credentials via `OAUTH_SLACK_CLIENT_ID`, `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID`, `OAUTH_GOOGLE_DRIVE_CLIENT_ID`.
+
+#### Query and Chat — `src/servers/query_and_chat/`
+
+`create_search_router(store, search_url)` and `basic_router` — search and chat APIs.
+
+#### Query History — `src/servers/query_history/`
+
+`create_query_history_router(store, app_settings)` — admin access to chat session history.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /admin/chat-sessions` | Sessions for a specific user |
+| `GET /admin/chat-session-history` | Paginated history with time / feedback filters |
+| `GET /admin/chat-session-history/{id}` | Full message list for one session |
+| `GET /admin/query-history/export` | Stream CSV of all Q&A pairs (synchronous) |
+
+#### Reporting (Usage Export) — `src/servers/reporting/`
+
+`create_reporting_router(store, app_settings)` — ZIP reports with chat messages and users CSVs.
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /admin/usage-report` | Generate and store a ZIP usage report |
+| `GET  /admin/usage-report` | List all stored reports |
+| `GET  /admin/usage-report/{name}` | Stream the ZIP for a report |
+
+Reports are stored as BLOBs in the SQLite store.
+
+#### SCIM 2.0 — `src/servers/scim/`
+
+`create_scim_router(store)` — RFC 7644 user and group provisioning for Okta, Entra ID, and other IdPs.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET  /scim/v2/ServiceProviderConfig` | SCIM capability advertisement (no auth) |
+| `GET  /scim/v2/ResourceTypes` | Resource type list (no auth) |
+| `GET  /scim/v2/Schemas` | Schema definitions (no auth) |
+| `GET/POST/PUT/PATCH/DELETE /scim/v2/Users` | User CRUD with SCIM filtering |
+| `GET/POST/PUT/PATCH/DELETE /scim/v2/Groups` | Group CRUD |
+| `POST /scim/v2/tokens` | Create a SCIM bearer token |
+| `GET  /scim/v2/tokens` | List tokens |
+| `DELETE /scim/v2/tokens/{id}` | Revoke a token |
+
+Tokens are SHA-256 hashed and stored in SQLite. The `ScimDAL` provides all SCIM
+queries through `AgenticSearchStore`. Providers `OktaProvider` and `EntraProvider`
+handle IdP-specific PATCH quirks.
+
+#### Settings — `src/servers/settings/`
+
+`create_settings_router(app_settings)` — license-aware application status for the UI.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /settings` | Returns `{ee_features_enabled, tier, application_status, license_enforcement_enabled}` |
+
+#### Token Rate Limits — `src/servers/token_rate_limits/`
+
+`create_token_rate_limits_router(store, app_settings)` — configurable token budget rules per user or group.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET  /admin/token-rate-limits/users` | Global user-scoped limits |
+| `POST /admin/token-rate-limits/users` | Create a global limit |
+| `GET  /admin/token-rate-limits/user-groups` | All group-scoped limits keyed by group name |
+| `GET  /admin/token-rate-limits/user-group/{id}` | Limits for one group |
+| `POST /admin/token-rate-limits/user-group/{id}` | Create a group limit |
+
+#### Tenants — `src/servers/tenants/`
+
+Multi-tenant scaffolding: provisioning, billing, schema management, team membership, and user invitation APIs.
+
+#### User Groups — `src/servers/user_group/`
+
+`create_user_group_router(store, app_settings)` — group CRUD with document-permission integration.
+
+### Configuration
+
+All settings are loaded from environment variables via `src/configs/AppSettings`:
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `AGENTIC_SEARCH_AUTH_SECRET` | `agentic-search-dev-secret` | JWT signing secret |
+| `AGENTIC_SEARCH_SUPER_USERS` | `[]` | JSON list of admin user IDs or emails |
+| `AGENTIC_SEARCH_WEB_DB_PATH` | `:memory:` | SQLite path (`:memory:` for ephemeral) |
+| `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8000/retrieve` | Retrieval server URL |
+| `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL` | — | Cloud data plane for billing proxy |
+| `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
+| `AGENTIC_SEARCH_DATA_DIR` | `~/.local/share/agentic_search` | License file directory |
+| `WEB_DOMAIN` | `http://localhost:8080` | External URL for OAuth redirects |
+| `STRIPE_PUBLISHABLE_KEY_OVERRIDE` | — | Override for local Stripe testing |
+| `DEV_MODE` | `false` | Use `redirectmeto.com` for OAuth callbacks |
+| `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
+| `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
+| `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
+
+### Database Store
+
+`AgenticSearchStore` (`src/db/`) is a single SQLite repository. All tables are
+created at init time — no migrations needed:
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User identity records |
+| `groups` / `group_members` | Groups and membership |
+| `connector_configs` | Connector configurations |
+| `documents` / `document_permissions` | Document content and ACLs |
+| `chat_sessions` / `chat_messages` | Conversation state |
+| `hooks` | Webhook configurations |
+| `index_attempts` | Indexing job records |
+| `usage_reports` | ZIP usage report BLOBs |
+| `token_rate_limits` | Rate-limit rules |
+| `standard_answers` / `standard_answer_categories` | Keyword → answer mappings |
+| `scim_tokens` / `scim_user_mappings` / `scim_group_mappings` | SCIM provisioning state |
+| `user_is_active` | SCIM-managed user active flags |
+
 ## Web Search Provider Admin API
 
 The repo also includes a lightweight FastAPI admin surface for configuring web
 search providers without adding a database dependency:
 
 ```python
-from src.server.web_search import create_app
+from src.servers.web_search.api import create_web_search_router
 
-app = create_app()
+router = create_web_search_router()
 ```
 
-It exposes `/health` plus `/admin/web-search/search-providers` and
+It exposes `/admin/web-search/search-providers` and
 `/admin/web-search/content-providers` routes for listing, upserting, activating,
 deactivating, deleting, and validation-testing provider settings. Validation
 tests are local by default; pass `"live": true` to make a real provider request.
@@ -692,11 +967,59 @@ If confidence is too low or a route model is missing, the CLI falls back to
 
 ## Tests
 
+### Unit Tests
+
 ```bash
-python3 -m pytest -v
+# Full unit suite
 python3 -m pytest tests/unit/ -v
-python3 -m pytest tests/unit/test_readme_examples.py tests/unit/test_run_agentic_search.py -v
+
+# Server-focused tests
+python3 -m pytest tests/unit/servers/ -v
+
+# Specific server areas
+python3 -m pytest tests/unit/servers/server/billing/ -v
+python3 -m pytest tests/unit/servers/server/features/hooks/ -v
+python3 -m pytest tests/unit/servers/server/middleware/ -v
+python3 -m pytest tests/unit/servers/server/settings/ -v
+python3 -m pytest tests/unit/servers/utils/ -v          # license, tier, expiry
+
+# ML / training tests
 python3 -m pytest tests/unit/test_reward.py tests/unit/test_grpo.py tests/unit/test_llm_agent_generation.py -v
+```
+
+The server unit tests cover:
+
+| Test area | What is tested |
+|-----------|----------------|
+| `server/billing/` | Circuit breaker state, endpoint responses, service layer HTTP mocks |
+| `server/features/hooks/` | SSRF safety, endpoint validation, `HookValidateStatus` |
+| `server/license/` | PEM stripping, `_strip_pem` boundary cases |
+| `server/middleware/` | Path allowlist, license enforcement, tier gating |
+| `server/settings/` | `_load_license_status`, `/settings` endpoint |
+| `utils/test_license_utils.py` | RSA signature verification with real key pairs |
+| `utils/test_license_expiry.py` | 18 parametrized `ExpiryWarningStage` boundary points |
+| `utils/test_tier.py` | `get_tier` + `tier_at_least` matrix |
+
+### Integration Tests
+
+Integration tests run against a live server at `API_SERVER_URL`
+(default `http://localhost:8080`). Start the web backend first, then:
+
+```bash
+# Key server integration areas
+python3 -m pytest tests/integration/tests/scim/ -v
+python3 -m pytest tests/integration/tests/query_history/ -v
+python3 -m pytest tests/integration/tests/reporting/ -v
+python3 -m pytest tests/integration/tests/search/ -v
+
+# Full suite
+python3 -m pytest tests/integration/ -v
+```
+
+Configure the target server:
+
+```bash
+API_SERVER_HOST=localhost API_SERVER_PORT=8080 python3 -m pytest tests/integration/
 ```
 
 ## Notes
