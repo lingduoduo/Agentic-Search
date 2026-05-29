@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
 from src.auth import AuthenticatedUser
 from src.auth import user_from_headers
 from src.configs import AppSettings
@@ -24,36 +25,36 @@ from src.context.models import ContextDocument
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.db import AgenticSearchStore
 from src.hooks import HookPoint
+from src.hooks import HookRegistry
+from src.hooks import HookSoftFailed
+from src.hooks import execute_hook
 from src.servers.analytics.api import create_analytics_router
 from src.servers.auth_check import PUBLIC_ENDPOINT_SPECS
 from src.servers.auth_check import check_router_auth
+from src.servers.billing.api import create_billing_router
 from src.servers.documents.cc_pair import create_documents_router
-from src.servers.query_and_chat.query_backend import basic_router as query_basic_router
-from src.servers.query_and_chat.search_backend import create_search_router
 from src.servers.enterprise_settings.api import create_enterprise_settings_routers
+from src.servers.evals.api import create_evals_router
 from src.servers.features.hooks.api import create_hooks_router
 from src.servers.license.api import create_license_router
+from src.servers.manage.standard_answer import create_manage_router
 from src.servers.middleware.license_enforcement import (
     add_license_enforcement_middleware,
 )
 from src.servers.middleware.tenant_tracking import add_api_server_tenant_id_middleware
 from src.servers.middleware.tier_gate import add_tier_gate_middleware
-from src.servers.evals.api import create_evals_router
-from src.servers.billing.api import create_billing_router
-from src.servers.manage.standard_answer import create_manage_router
 from src.servers.oauth.api import create_oauth_router
+from src.servers.query_and_chat.query_backend import basic_router as query_basic_router
+from src.servers.query_and_chat.search_backend import create_search_router
 from src.servers.query_history.api import create_query_history_router
-from src.servers.reporting.usage_export_api import create_reporting_router
+from src.servers.reporting.api import create_reporting_router
 from src.servers.scim.api import create_scim_router
 from src.servers.scim.api import register_scim_exception_handlers
-from src.servers.settings.api import create_settings_router
-from src.servers.token_rate_limits.api import create_token_rate_limits_router
-from src.servers.tenants.api import router as tenants_router
-from src.servers.user_group.api import create_user_group_router
 from src.servers.seeding import seed_db
-from src.hooks import HookRegistry
-from src.hooks import HookSoftFailed
-from src.hooks import execute_hook
+from src.servers.settings.api import create_settings_router
+from src.servers.tenants.api import router as tenants_router
+from src.servers.token_rate_limits.api import create_token_rate_limits_router
+from src.servers.user_group.api import create_user_group_router
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -132,6 +133,52 @@ class QueryProcessingHookResponse(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+def _register_routers(
+    app: FastAPI,
+    db: AgenticSearchStore,
+    settings: AppSettings,
+    search_url: str,
+) -> None:
+    """Attach all API routers and exception handlers to *app*."""
+
+    # --- Core search & chat ---
+    app.include_router(create_search_router(db, search_url=search_url))
+    app.include_router(query_basic_router)
+    app.include_router(create_query_history_router(db, settings))
+
+    # --- Documents & connectors ---
+    app.include_router(create_documents_router(db, settings))
+
+    # --- Users & groups ---
+    app.include_router(create_user_group_router(db, settings))
+    app.include_router(tenants_router)
+
+    # --- Admin: enterprise settings, evals, hooks ---
+    ee_admin_router, ee_basic_router = create_enterprise_settings_routers(settings)
+    app.include_router(ee_admin_router)
+    app.include_router(ee_basic_router)
+    app.include_router(create_evals_router(settings, search_url=search_url))
+    app.include_router(create_hooks_router(db, settings))
+
+    # --- Admin: license, billing ---
+    app.include_router(create_license_router(settings))
+    app.include_router(create_billing_router(settings))
+
+    # --- Admin: rate limits, standard answers, reporting ---
+    app.include_router(create_token_rate_limits_router(db, settings))
+    app.include_router(create_manage_router(db, settings))
+    app.include_router(create_reporting_router(db, settings))
+
+    # --- Admin: OAuth, settings, SCIM ---
+    app.include_router(create_oauth_router(settings))
+    app.include_router(create_settings_router(settings))
+    app.include_router(create_scim_router(db))
+    register_scim_exception_handlers(app)
+
+    # --- Analytics ---
+    app.include_router(create_analytics_router(db, settings))
+
+
 def create_web_app(
     settings: SearchExperienceSettings | None = None,
     *,
@@ -146,7 +193,6 @@ def create_web_app(
     runs the repo's retrieval-grounded answer pipeline. Chat state is persisted
     through `AgenticSearchStore`, which defaults to an in-memory SQLite DB.
     """
-
     resolved = app_settings or load_app_settings()
     settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
@@ -166,27 +212,9 @@ def create_web_app(
     add_api_server_tenant_id_middleware(app, resolved)
     add_license_enforcement_middleware(app, resolved)
     add_tier_gate_middleware(app, resolved)
-    app.include_router(create_analytics_router(db, resolved))
-    app.include_router(create_search_router(db, search_url=settings.search_url))
-    app.include_router(create_documents_router(db, resolved))
-    app.include_router(create_user_group_router(db, resolved))
-    app.include_router(query_basic_router)
-    app.include_router(tenants_router)
-    ee_admin_router, ee_basic_router = create_enterprise_settings_routers(resolved)
-    app.include_router(ee_admin_router)
-    app.include_router(ee_basic_router)
-    app.include_router(create_evals_router(resolved, search_url=settings.search_url))
-    app.include_router(create_license_router(resolved))
-    app.include_router(create_hooks_router(db, resolved))
-    app.include_router(create_query_history_router(db, resolved))
-    app.include_router(create_reporting_router(db, resolved))
-    app.include_router(create_token_rate_limits_router(db, resolved))
-    app.include_router(create_billing_router(resolved))
-    app.include_router(create_manage_router(db, resolved))
-    app.include_router(create_oauth_router(resolved))
-    app.include_router(create_settings_router(resolved))
-    app.include_router(create_scim_router(db))
-    register_scim_exception_handlers(app)
+
+    _register_routers(app, db, resolved, search_url=settings.search_url)
+
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
