@@ -15,10 +15,10 @@ from datetime import datetime
 from datetime import timezone
 
 from src.db import AgenticSearchStore
-from src.servers.reporting.usage_export_models import ChatMessageSkeleton
-from src.servers.reporting.usage_export_models import FlowType
-from src.servers.reporting.usage_export_models import UsageReportMetadata
-from src.servers.reporting.usage_export_models import UserSkeleton
+from src.servers.reporting.models import ChatMessageSkeleton
+from src.servers.reporting.models import FlowType
+from src.servers.reporting.models import UsageReportMetadata
+from src.servers.reporting.models import UserSkeleton
 
 
 def _generate_chat_messages_csv(

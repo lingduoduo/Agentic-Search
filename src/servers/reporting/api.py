@@ -20,8 +20,8 @@ from src.auth import AuthenticatedUser
 from src.auth import user_from_headers
 from src.configs import AppSettings
 from src.db import AgenticSearchStore
-from src.servers.reporting.usage_export_generation import create_new_usage_report
-from src.servers.reporting.usage_export_models import UsageReportMetadata
+from src.servers.reporting.generation import create_new_usage_report
+from src.servers.reporting.models import UsageReportMetadata
 
 
 class GenerateUsageReportParams(BaseModel):
