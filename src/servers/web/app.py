@@ -40,8 +40,13 @@ from src.servers.middleware.tenant_tracking import add_api_server_tenant_id_midd
 from src.servers.middleware.tier_gate import add_tier_gate_middleware
 from src.servers.evals.api import create_evals_router
 from src.servers.billing.api import create_billing_router
+from src.servers.manage.standard_answer import create_manage_router
+from src.servers.oauth.api import create_oauth_router
 from src.servers.query_history.api import create_query_history_router
 from src.servers.reporting.usage_export_api import create_reporting_router
+from src.servers.scim.api import create_scim_router
+from src.servers.scim.api import register_scim_exception_handlers
+from src.servers.settings.api import create_settings_router
 from src.servers.token_rate_limits.api import create_token_rate_limits_router
 from src.servers.tenants.api import router as tenants_router
 from src.servers.user_group.api import create_user_group_router
@@ -177,6 +182,11 @@ def create_web_app(
     app.include_router(create_reporting_router(db, resolved))
     app.include_router(create_token_rate_limits_router(db, resolved))
     app.include_router(create_billing_router(resolved))
+    app.include_router(create_manage_router(db, resolved))
+    app.include_router(create_oauth_router(resolved))
+    app.include_router(create_settings_router(resolved))
+    app.include_router(create_scim_router(db))
+    register_scim_exception_handlers(app)
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
