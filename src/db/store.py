@@ -966,3 +966,123 @@ class AgenticSearchStore:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
+
+    # ------------------------------------------------------------------
+    # Query history helpers
+    # ------------------------------------------------------------------
+
+    def get_paginated_chat_sessions(
+        self,
+        page_num: int,
+        page_size: int,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> list[ChatSessionRecord]:
+        """Return a single page of chat sessions ordered by creation time descending."""
+        clauses: list[str] = []
+        params: list[object] = []
+        if start_time:
+            clauses.append("created_at >= ?")
+            params.append(start_time)
+        if end_time:
+            clauses.append("created_at <= ?")
+            params.append(end_time)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.extend([page_size, page_num * page_size])
+        rows = self._conn.execute(
+            f"SELECT * FROM chat_sessions {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            tuple(params),
+        ).fetchall()
+        return [self._row_to_chat_session(row) for row in rows]
+
+    def get_chat_sessions_count(
+        self,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> int:
+        """Return total number of chat sessions matching the given time filter."""
+        clauses: list[str] = []
+        params: list[object] = []
+        if start_time:
+            clauses.append("created_at >= ?")
+            params.append(start_time)
+        if end_time:
+            clauses.append("created_at <= ?")
+            params.append(end_time)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        row = self._conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM chat_sessions {where}", tuple(params)
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def list_all_users(self) -> list[UserRecord]:
+        """Return every user record ordered by created_at."""
+        rows = self._conn.execute("SELECT * FROM users ORDER BY created_at").fetchall()
+        return [self._row_to_user(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Usage report storage
+    # ------------------------------------------------------------------
+
+    def _ensure_usage_reports_table(self) -> None:
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS usage_reports (
+                report_name TEXT PRIMARY KEY,
+                requestor_id TEXT,
+                time_created TEXT NOT NULL,
+                period_from TEXT,
+                period_to TEXT,
+                data BLOB NOT NULL
+            )
+            """
+        )
+        self._conn.commit()
+
+    def save_usage_report(
+        self,
+        report_name: str,
+        data: bytes,
+        requestor_id: str | None = None,
+        period_from: str | None = None,
+        period_to: str | None = None,
+    ) -> None:
+        """Persist a usage report ZIP as a BLOB alongside its metadata."""
+        self._ensure_usage_reports_table()
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO usage_reports
+                (report_name, requestor_id, time_created, period_from, period_to, data)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (report_name, requestor_id, _now(), period_from, period_to, data),
+        )
+        self._conn.commit()
+
+    def get_all_usage_reports(self) -> list[dict[str, str | None]]:
+        """Return metadata rows for all stored usage reports."""
+        self._ensure_usage_reports_table()
+        rows = self._conn.execute(
+            """
+            SELECT report_name, requestor_id, time_created, period_from, period_to
+            FROM usage_reports ORDER BY time_created DESC
+            """
+        ).fetchall()
+        return [
+            {
+                "report_name": row["report_name"],
+                "requestor_id": row["requestor_id"],
+                "time_created": row["time_created"],
+                "period_from": row["period_from"],
+                "period_to": row["period_to"],
+            }
+            for row in rows
+        ]
+
+    def get_usage_report_data(self, report_name: str) -> bytes | None:
+        """Return the raw ZIP bytes for *report_name*, or None if not found."""
+        self._ensure_usage_reports_table()
+        row = self._conn.execute(
+            "SELECT data FROM usage_reports WHERE report_name = ?", (report_name,)
+        ).fetchone()
+        return bytes(row["data"]) if row else None

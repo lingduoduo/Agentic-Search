@@ -39,6 +39,8 @@ from src.servers.middleware.license_enforcement import (
 from src.servers.middleware.tenant_tracking import add_api_server_tenant_id_middleware
 from src.servers.middleware.tier_gate import add_tier_gate_middleware
 from src.servers.evals.api import create_evals_router
+from src.servers.query_history.api import create_query_history_router
+from src.servers.reporting.usage_export_api import create_reporting_router
 from src.servers.tenants.api import router as tenants_router
 from src.servers.user_group.api import create_user_group_router
 from src.servers.seeding import seed_db
@@ -169,6 +171,8 @@ def create_web_app(
     app.include_router(create_evals_router(resolved, search_url=settings.search_url))
     app.include_router(create_license_router(resolved))
     app.include_router(create_hooks_router(db, resolved))
+    app.include_router(create_query_history_router(db, resolved))
+    app.include_router(create_reporting_router(db, resolved))
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
