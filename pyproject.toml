@@ -14,6 +14,7 @@ include = ["src*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with -m 'not slow')",
     "load: marks tests as load/performance tests",
