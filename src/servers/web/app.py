@@ -28,6 +28,7 @@ from src.context.models import ContextDocument
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.db import AgenticSearchStore
 from src.hooks import HookPoint
+from src.servers.analytics.api import create_analytics_router
 from src.hooks import HookRegistry
 from src.hooks import HookSoftFailed
 from src.hooks import execute_hook
@@ -140,6 +141,7 @@ def create_web_app(
     app = FastAPI(title="Agentic Search Web", lifespan=lifespan)
     if resolved.license_enforcement_enabled:
         app.add_middleware(_LicenseMiddleware, tier=Tier.FREE)
+    app.include_router(create_analytics_router(db, resolved))
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")

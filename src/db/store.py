@@ -670,6 +670,56 @@ class AgenticSearchStore:
         ).fetchone()
         return str(row["created_at"]) if row else default
 
+    def query_session_analytics(
+        self,
+        start: str,
+        end: str,
+    ) -> list[tuple[str, int, int]]:
+        """Return ``(day, session_count, message_count)`` rows between start and end.
+
+        ``start`` and ``end`` must be UTC ISO-format strings (as produced by
+        ``_now()``). The interval is ``[start, end)``.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT
+                date(s.created_at) AS day,
+                COUNT(DISTINCT s.id) AS sessions,
+                COUNT(m.id) AS messages
+            FROM chat_sessions s
+            LEFT JOIN chat_messages m ON m.session_id = s.id
+            WHERE s.created_at >= ? AND s.created_at < ?
+            GROUP BY day
+            ORDER BY day
+            """,
+            (start, end),
+        ).fetchall()
+        return [(row["day"], row["sessions"], row["messages"]) for row in rows]
+
+    def user_session_analytics(
+        self,
+        start: str,
+        end: str,
+    ) -> list[tuple[str, int]]:
+        """Return ``(day, unique_active_users)`` rows between start and end.
+
+        Only sessions with a non-NULL ``user_id`` are counted.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT
+                date(created_at) AS day,
+                COUNT(DISTINCT user_id) AS active_users
+            FROM chat_sessions
+            WHERE created_at >= ? AND created_at < ?
+              AND user_id IS NOT NULL
+            GROUP BY day
+            ORDER BY day
+            """,
+            (start, end),
+        ).fetchall()
+        return [(row["day"], row["active_users"]) for row in rows]
+
     def _row_to_connector(self, row: sqlite3.Row) -> ConnectorConfig:
         return ConnectorConfig(
             id=row["id"],
