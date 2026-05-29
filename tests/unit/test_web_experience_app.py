@@ -8,6 +8,9 @@ from src.context.models import ContextDocument
 from src.context.models import PromptBundle
 from src.context.models import SearchContextBundle
 from src.db import AgenticSearchStore
+from src.hooks import HookConfig
+from src.hooks import HookPoint
+from src.hooks import HookRegistry
 from src.servers.web.app import SearchExperienceSettings
 from src.servers.web.app import create_web_app
 
@@ -129,3 +132,59 @@ def test_agent_endpoint_reuses_existing_session_history(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert [message.role for message in observed_history] == ["user", "assistant"]
+
+
+def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
+    class FakeHookResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"query": "rewritten deploy question", "metadata": {"source": "hook"}}'
+
+    async def fake_answer_with_retrieval(
+        question: str,
+        *,
+        llm=None,
+        chat_history: list[ChatMessage] | None = None,
+        search_url: str,
+        top_k: int,
+        filters=None,
+    ) -> AnswerGenerationResult:
+        del llm, chat_history, search_url, top_k, filters
+        assert question == "rewritten deploy question"
+        return _answer_result(question)
+
+    monkeypatch.setattr(
+        "src.servers.web.app.answer_with_retrieval",
+        fake_answer_with_retrieval,
+    )
+    monkeypatch.setattr(
+        "src.hooks.executor.urllib.request.urlopen",
+        lambda request, timeout: FakeHookResponse(),
+    )
+    registry = HookRegistry(
+        [
+            HookConfig(
+                hook_point=HookPoint.QUERY_PROCESSING,
+                endpoint_url="https://hooks.test/query",
+            )
+        ]
+    )
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "state.sqlite3"),
+        hook_registry=registry,
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/agent", json={"query": "How do I deploy?"})
+
+    assert response.status_code == 200
+    session = client.get(f"/api/sessions/{response.json()['session_id']}").json()
+    assert session["messages"][0]["content"] == "rewritten deploy question"
+    assert registry.execution_log[-1].is_success is True

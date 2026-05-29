@@ -321,6 +321,21 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".context",
         "synthesize_answer_from_context",
     ),
+    # feature_flags
+    "EnvFeatureFlagProvider": (".feature_flags", "EnvFeatureFlagProvider"),
+    "NoOpFeatureFlagProvider": (".feature_flags", "NoOpFeatureFlagProvider"),
+    "StaticFeatureFlagProvider": (".feature_flags", "StaticFeatureFlagProvider"),
+    "get_feature_flag_provider": (".feature_flags", "get_feature_flag_provider"),
+    "is_feature_enabled": (".feature_flags", "is_feature_enabled"),
+    # hooks
+    "HookConfig": (".hooks", "HookConfig"),
+    "HookExecutionError": (".hooks", "HookExecutionError"),
+    "HookFailStrategy": (".hooks", "HookFailStrategy"),
+    "HookPoint": (".hooks", "HookPoint"),
+    "HookRegistry": (".hooks", "HookRegistry"),
+    "HookSkipped": (".hooks", "HookSkipped"),
+    "HookSoftFailed": (".hooks", "HookSoftFailed"),
+    "execute_hook": (".hooks", "execute_hook"),
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
     "RolloutResult": (".training.ppo.controller", "RolloutResult"),
