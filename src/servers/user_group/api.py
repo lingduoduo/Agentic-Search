@@ -32,6 +32,7 @@ from src.servers.user_group.models import UserGroupCreate
 from src.servers.user_group.models import UserGroupRename
 from src.servers.user_group.models import UserGroupUpdate
 from src.servers.user_group.models import UserGroupView
+from src.servers._auth import make_require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +45,7 @@ def create_user_group_router(
 
     router = APIRouter(prefix="/manage", tags=["user-groups"])
 
-    def _require_admin(request: Request) -> AuthenticatedUser:
-        user = user_from_headers(request.headers)
-        if user is None or user.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        super_users = app_settings.auth.super_users
-        if user.id not in super_users and (
-            user.email is None or user.email not in super_users
-        ):
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        return user
+    _require_admin = make_require_admin(app_settings)
 
     def _require_user(request: Request) -> AuthenticatedUser:
         user = user_from_headers(request.headers)

@@ -19,15 +19,14 @@ import uuid
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from src.auth import AuthenticatedUser
-from src.auth import user_from_headers
 from src.configs import AppSettings
 from src.servers.oauth.confluence_cloud import ConfluenceCloudOAuth
 from src.servers.oauth.google_drive import GoogleDriveOAuth
 from src.servers.oauth.slack import SlackOAuth
+from src.servers._auth import make_require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,13 @@ _SUPPORTED_CONNECTORS = {"slack", "confluence", "google_drive"}
 
 
 def _store_session(uuid_str: str, session_json: str) -> None:
+    now = time.monotonic()
     with _session_lock:
-        _sessions[uuid_str] = (session_json, time.monotonic() + _OAUTH_SESSION_TTL)
+        # Purge expired entries to prevent unbounded growth
+        expired = [k for k, (_, exp) in _sessions.items() if exp <= now]
+        for k in expired:
+            del _sessions[k]
+        _sessions[uuid_str] = (session_json, now + _OAUTH_SESSION_TTL)
 
 
 def _pop_session(uuid_str: str) -> str | None:
@@ -58,16 +62,7 @@ def create_oauth_router(app_settings: AppSettings) -> APIRouter:
 
     router = APIRouter(prefix="/oauth", tags=["oauth"])
 
-    def _require_admin(request: Request) -> AuthenticatedUser:
-        user = user_from_headers(request.headers)
-        if user is None or user.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        super_users = app_settings.auth.super_users
-        if user.id not in super_users and (
-            user.email is None or user.email not in super_users
-        ):
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        return user
+    _require_admin = make_require_admin(app_settings)
 
     dev_mode = getattr(app_settings, "dev_mode", False)
     web_domain = app_settings.web_domain

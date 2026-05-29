@@ -168,6 +168,84 @@ class AgenticSearchStore:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS usage_reports (
+                report_name TEXT PRIMARY KEY,
+                requestor_id TEXT,
+                time_created TEXT NOT NULL,
+                period_from TEXT,
+                period_to TEXT,
+                data BLOB NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS token_rate_limits (
+                id TEXT PRIMARY KEY,
+                scope TEXT NOT NULL,
+                scope_id TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                token_budget INTEGER NOT NULL,
+                period_hours INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS standard_answer_categories (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS standard_answers (
+                id TEXT PRIMARY KEY,
+                keyword TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                match_regex INTEGER NOT NULL DEFAULT 0,
+                match_any_keywords INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS standard_answer_category_links (
+                answer_id TEXT NOT NULL,
+                category_id TEXT NOT NULL,
+                PRIMARY KEY (answer_id, category_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS scim_tokens (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_display TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_used_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS scim_user_mappings (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL UNIQUE,
+                external_id TEXT,
+                scim_username TEXT,
+                department TEXT,
+                manager TEXT,
+                given_name TEXT,
+                family_name TEXT,
+                scim_emails_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS scim_group_mappings (
+                id TEXT PRIMARY KEY,
+                group_id TEXT NOT NULL UNIQUE,
+                external_id TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_is_active (
+                user_id TEXT PRIMARY KEY,
+                is_active INTEGER NOT NULL DEFAULT 1
+            );
             """
         )
         self._conn.commit()
@@ -1020,24 +1098,59 @@ class AgenticSearchStore:
         rows = self._conn.execute("SELECT * FROM users ORDER BY created_at").fetchall()
         return [self._row_to_user(row) for row in rows]
 
+    def get_user_by_email(self, email: str) -> UserRecord | None:
+        """Look up a user by email (case-insensitive)."""
+        row = self._conn.execute(
+            "SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)
+        ).fetchone()
+        return self._row_to_user(row) if row else None
+
+    def get_users_by_ids(self, user_ids: list[str]) -> dict[str, UserRecord]:
+        """Return a {user_id: UserRecord} map for the given IDs in one query."""
+        if not user_ids:
+            return {}
+        placeholders = ", ".join("?" * len(user_ids))
+        rows = self._conn.execute(
+            f"SELECT * FROM users WHERE id IN ({placeholders})", tuple(user_ids)
+        ).fetchall()
+        return {row["id"]: self._row_to_user(row) for row in rows}
+
+    def get_users_emails_batch(self, user_ids: list[str]) -> dict[str, str | None]:
+        """Return {user_id: email} for a batch of user IDs in one query."""
+        if not user_ids:
+            return {}
+        placeholders = ", ".join("?" * len(user_ids))
+        rows = self._conn.execute(
+            f"SELECT id, email FROM users WHERE id IN ({placeholders})",
+            tuple(user_ids),
+        ).fetchall()
+        return {row["id"]: row["email"] for row in rows}
+
+    def get_groups_for_users_batch(
+        self, user_ids: list[str]
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Return {user_id: [(group_id, group_name)]} for all users in one JOIN query."""
+        if not user_ids:
+            return {uid: [] for uid in user_ids}
+        placeholders = ", ".join("?" * len(user_ids))
+        rows = self._conn.execute(
+            f"""
+            SELECT gm.user_id, g.id AS group_id, g.name AS group_name
+            FROM groups g
+            JOIN group_members gm ON gm.group_id = g.id
+            WHERE gm.user_id IN ({placeholders})
+            ORDER BY gm.user_id, g.name
+            """,
+            tuple(user_ids),
+        ).fetchall()
+        result: dict[str, list[tuple[str, str]]] = {uid: [] for uid in user_ids}
+        for row in rows:
+            result[row["user_id"]].append((row["group_id"], row["group_name"]))
+        return result
+
     # ------------------------------------------------------------------
     # Usage report storage
     # ------------------------------------------------------------------
-
-    def _ensure_usage_reports_table(self) -> None:
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS usage_reports (
-                report_name TEXT PRIMARY KEY,
-                requestor_id TEXT,
-                time_created TEXT NOT NULL,
-                period_from TEXT,
-                period_to TEXT,
-                data BLOB NOT NULL
-            )
-            """
-        )
-        self._conn.commit()
 
     def save_usage_report(
         self,
@@ -1048,7 +1161,6 @@ class AgenticSearchStore:
         period_to: str | None = None,
     ) -> None:
         """Persist a usage report ZIP as a BLOB alongside its metadata."""
-        self._ensure_usage_reports_table()
         self._conn.execute(
             """
             INSERT OR REPLACE INTO usage_reports
@@ -1061,7 +1173,6 @@ class AgenticSearchStore:
 
     def get_all_usage_reports(self) -> list[dict[str, str | None]]:
         """Return metadata rows for all stored usage reports."""
-        self._ensure_usage_reports_table()
         rows = self._conn.execute(
             """
             SELECT report_name, requestor_id, time_created, period_from, period_to
@@ -1081,7 +1192,6 @@ class AgenticSearchStore:
 
     def get_usage_report_data(self, report_name: str) -> bytes | None:
         """Return the raw ZIP bytes for *report_name*, or None if not found."""
-        self._ensure_usage_reports_table()
         row = self._conn.execute(
             "SELECT data FROM usage_reports WHERE report_name = ?", (report_name,)
         ).fetchone()
@@ -1090,23 +1200,6 @@ class AgenticSearchStore:
     # ------------------------------------------------------------------
     # Token rate limits
     # ------------------------------------------------------------------
-
-    def _ensure_token_rate_limits_table(self) -> None:
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS token_rate_limits (
-                id TEXT PRIMARY KEY,
-                scope TEXT NOT NULL,
-                scope_id TEXT,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                token_budget INTEGER NOT NULL,
-                period_hours INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        self._conn.commit()
 
     def insert_token_rate_limit(
         self,
@@ -1117,7 +1210,6 @@ class AgenticSearchStore:
         scope_id: str | None = None,
     ) -> dict[str, object]:
         """Insert a new token rate limit record and return it as a dict."""
-        self._ensure_token_rate_limits_table()
         now = _now()
         record_id = _new_id("trl")
         self._conn.execute(
@@ -1155,7 +1247,6 @@ class AgenticSearchStore:
         scope_id: str | None = None,
     ) -> list[dict[str, object]]:
         """Return token rate limit records matching *scope* and optional *scope_id*."""
-        self._ensure_token_rate_limits_table()
         if scope_id is None:
             rows = self._conn.execute(
                 "SELECT * FROM token_rate_limits WHERE scope = ? AND scope_id IS NULL ORDER BY created_at",
@@ -1170,7 +1261,6 @@ class AgenticSearchStore:
 
     def get_all_group_token_rate_limits(self) -> list[dict[str, object]]:
         """Return all group-scoped rate limits joined with their group name."""
-        self._ensure_token_rate_limits_table()
         rows = self._conn.execute(
             """
             SELECT trl.*, g.name AS group_name
@@ -1204,34 +1294,7 @@ class AgenticSearchStore:
     # Standard answers (manage module)
     # ------------------------------------------------------------------
 
-    def _ensure_standard_answer_tables(self) -> None:
-        self._conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS standard_answer_categories (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS standard_answers (
-                id TEXT PRIMARY KEY,
-                keyword TEXT NOT NULL,
-                answer TEXT NOT NULL,
-                match_regex INTEGER NOT NULL DEFAULT 0,
-                match_any_keywords INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS standard_answer_category_links (
-                answer_id TEXT NOT NULL,
-                category_id TEXT NOT NULL,
-                PRIMARY KEY (answer_id, category_id)
-            );
-            """
-        )
-        self._conn.commit()
-
     def insert_standard_answer_category(self, name: str) -> dict[str, str]:
-        self._ensure_standard_answer_tables()
         now = _now()
         rec_id = _new_id("sac")
         self._conn.execute(
@@ -1242,7 +1305,6 @@ class AgenticSearchStore:
         return {"id": rec_id, "name": name, "created_at": now}
 
     def fetch_standard_answer_categories(self) -> list[dict[str, str]]:
-        self._ensure_standard_answer_tables()
         rows = self._conn.execute(
             "SELECT * FROM standard_answer_categories ORDER BY name"
         ).fetchall()
@@ -1252,7 +1314,6 @@ class AgenticSearchStore:
         ]
 
     def fetch_standard_answer_category(self, category_id: str) -> dict[str, str] | None:
-        self._ensure_standard_answer_tables()
         row = self._conn.execute(
             "SELECT * FROM standard_answer_categories WHERE id = ?", (category_id,)
         ).fetchone()
@@ -1265,7 +1326,6 @@ class AgenticSearchStore:
     def update_standard_answer_category(
         self, category_id: str, name: str
     ) -> dict[str, str]:
-        self._ensure_standard_answer_tables()
         row = self._conn.execute(
             "SELECT * FROM standard_answer_categories WHERE id = ?", (category_id,)
         ).fetchone()
@@ -1287,7 +1347,6 @@ class AgenticSearchStore:
         match_regex: bool = False,
         match_any_keywords: bool = False,
     ) -> dict[str, object]:
-        self._ensure_standard_answer_tables()
         now = _now()
         rec_id = _new_id("sa")
         self._conn.execute(
@@ -1315,14 +1374,35 @@ class AgenticSearchStore:
         return self._fetch_standard_answer(rec_id)  # type: ignore[return-value]
 
     def fetch_standard_answers(self) -> list[dict[str, object]]:
-        self._ensure_standard_answer_tables()
         rows = self._conn.execute(
             "SELECT * FROM standard_answers ORDER BY created_at DESC"
         ).fetchall()
-        return [self._fetch_standard_answer(r["id"]) for r in rows]  # type: ignore[misc]
+        if not rows:
+            return []
+        answer_ids = [r["id"] for r in rows]
+        placeholders = ", ".join("?" * len(answer_ids))
+        link_rows = self._conn.execute(
+            f"SELECT answer_id, category_id FROM standard_answer_category_links WHERE answer_id IN ({placeholders})",
+            tuple(answer_ids),
+        ).fetchall()
+        links: dict[str, list[str]] = {}
+        for lr in link_rows:
+            links.setdefault(lr["answer_id"], []).append(lr["category_id"])
+        return [
+            {
+                "id": r["id"],
+                "keyword": r["keyword"],
+                "answer": r["answer"],
+                "match_regex": bool(r["match_regex"]),
+                "match_any_keywords": bool(r["match_any_keywords"]),
+                "categories": links.get(r["id"], []),
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
 
     def fetch_standard_answer(self, answer_id: str) -> dict[str, object] | None:
-        self._ensure_standard_answer_tables()
         return self._fetch_standard_answer(answer_id)
 
     def _fetch_standard_answer(self, answer_id: str) -> dict[str, object] | None:
@@ -1355,7 +1435,6 @@ class AgenticSearchStore:
         match_regex: bool = False,
         match_any_keywords: bool = False,
     ) -> dict[str, object]:
-        self._ensure_standard_answer_tables()
         now = _now()
         self._conn.execute(
             """
@@ -1385,7 +1464,6 @@ class AgenticSearchStore:
         return self._fetch_standard_answer(answer_id)  # type: ignore[return-value]
 
     def remove_standard_answer(self, answer_id: str) -> None:
-        self._ensure_standard_answer_tables()
         self._conn.execute(
             "DELETE FROM standard_answer_category_links WHERE answer_id = ?",
             (answer_id,),
@@ -1397,47 +1475,7 @@ class AgenticSearchStore:
     # SCIM token storage
     # ------------------------------------------------------------------
 
-    def _ensure_scim_tables(self) -> None:
-        self._conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS scim_tokens (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                token_hash TEXT NOT NULL UNIQUE,
-                token_display TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                last_used_at TEXT
-            );
-            CREATE TABLE IF NOT EXISTS scim_user_mappings (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL UNIQUE,
-                external_id TEXT,
-                scim_username TEXT,
-                department TEXT,
-                manager TEXT,
-                given_name TEXT,
-                family_name TEXT,
-                scim_emails_json TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS scim_group_mappings (
-                id TEXT PRIMARY KEY,
-                group_id TEXT NOT NULL UNIQUE,
-                external_id TEXT,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS user_is_active (
-                user_id TEXT PRIMARY KEY,
-                is_active INTEGER NOT NULL DEFAULT 1
-            );
-            """
-        )
-        self._conn.commit()
-
     def get_scim_token_by_hash(self, token_hash: str) -> dict[str, object] | None:
-        self._ensure_scim_tables()
         row = self._conn.execute(
             "SELECT * FROM scim_tokens WHERE token_hash = ?", (token_hash,)
         ).fetchone()
@@ -1446,7 +1484,6 @@ class AgenticSearchStore:
     def create_scim_token(
         self, name: str, token_hash: str, token_display: str
     ) -> dict[str, object]:
-        self._ensure_scim_tables()
         now = _now()
         rec_id = _new_id("sctok")
         self._conn.execute(
@@ -1468,21 +1505,18 @@ class AgenticSearchStore:
         }
 
     def update_scim_token_last_used(self, token_id: str) -> None:
-        self._ensure_scim_tables()
         self._conn.execute(
             "UPDATE scim_tokens SET last_used_at = ? WHERE id = ?", (_now(), token_id)
         )
         self._conn.commit()
 
     def list_scim_tokens(self) -> list[dict[str, object]]:
-        self._ensure_scim_tables()
         rows = self._conn.execute(
             "SELECT * FROM scim_tokens ORDER BY created_at DESC"
         ).fetchall()
         return [self._row_to_scim_token(r) for r in rows]
 
     def revoke_scim_token(self, token_id: str) -> bool:
-        self._ensure_scim_tables()
         cur = self._conn.execute(
             "UPDATE scim_tokens SET is_active = 0 WHERE id = ?", (token_id,)
         )
@@ -1502,11 +1536,26 @@ class AgenticSearchStore:
         }
 
     def get_scim_user_mapping(self, user_id: str) -> dict[str, object] | None:
-        self._ensure_scim_tables()
         row = self._conn.execute(
             "SELECT * FROM scim_user_mappings WHERE user_id = ?", (user_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return self._row_to_scim_user_mapping(row) if row else None
+
+    @staticmethod
+    def _row_to_scim_user_mapping(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "external_id": row["external_id"],
+            "scim_username": row["scim_username"],
+            "department": row["department"],
+            "manager": row["manager"],
+            "given_name": row["given_name"],
+            "family_name": row["family_name"],
+            "scim_emails_json": row["scim_emails_json"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
 
     def create_scim_user_mapping(
         self,
@@ -1519,7 +1568,6 @@ class AgenticSearchStore:
         family_name: str | None = None,
         scim_emails_json: str | None = None,
     ) -> None:
-        self._ensure_scim_tables()
         now = _now()
         rec_id = _new_id("scum")
         self._conn.execute(
@@ -1556,7 +1604,6 @@ class AgenticSearchStore:
         family_name: str | None = None,
         scim_emails_json: str | None = None,
     ) -> None:
-        self._ensure_scim_tables()
         now = _now()
         existing = self._conn.execute(
             "SELECT id FROM scim_user_mappings WHERE user_id = ?", (user_id,)
@@ -1607,23 +1654,29 @@ class AgenticSearchStore:
         self._conn.commit()
 
     def delete_scim_user_mapping(self, user_id: str) -> None:
-        self._ensure_scim_tables()
         self._conn.execute(
             "DELETE FROM scim_user_mappings WHERE user_id = ?", (user_id,)
         )
         self._conn.commit()
 
     def get_scim_group_mapping(self, group_id: str) -> dict[str, object] | None:
-        self._ensure_scim_tables()
         row = self._conn.execute(
             "SELECT * FROM scim_group_mappings WHERE group_id = ?", (group_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return self._row_to_scim_group_mapping(row) if row else None
+
+    @staticmethod
+    def _row_to_scim_group_mapping(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": row["id"],
+            "group_id": row["group_id"],
+            "external_id": row["external_id"],
+            "created_at": row["created_at"],
+        }
 
     def create_scim_group_mapping(
         self, group_id: str, external_id: str | None = None
     ) -> None:
-        self._ensure_scim_tables()
         rec_id = _new_id("scgm")
         self._conn.execute(
             "INSERT OR IGNORE INTO scim_group_mappings (id, group_id, external_id, created_at) VALUES (?, ?, ?, ?)",
@@ -1632,7 +1685,6 @@ class AgenticSearchStore:
         self._conn.commit()
 
     def upsert_scim_group_mapping(self, group_id: str, external_id: str | None) -> None:
-        self._ensure_scim_tables()
         existing = self._conn.execute(
             "SELECT id FROM scim_group_mappings WHERE group_id = ?", (group_id,)
         ).fetchone()
@@ -1649,7 +1701,6 @@ class AgenticSearchStore:
         self._conn.commit()
 
     def delete_scim_group_mapping(self, group_id: str) -> None:
-        self._ensure_scim_tables()
         self._conn.execute(
             "DELETE FROM scim_group_mappings WHERE group_id = ?", (group_id,)
         )
@@ -1657,7 +1708,6 @@ class AgenticSearchStore:
 
     def set_user_active(self, user_id: str, is_active: bool) -> None:
         """Set the is_active flag for a user (used by SCIM provisioning)."""
-        self._ensure_scim_tables()
         self._conn.execute(
             "INSERT OR REPLACE INTO user_is_active (user_id, is_active) VALUES (?, ?)",
             (user_id, int(is_active)),
@@ -1666,7 +1716,6 @@ class AgenticSearchStore:
 
     def get_user_active(self, user_id: str) -> bool:
         """Return the is_active flag for a user (defaults to True)."""
-        self._ensure_scim_tables()
         row = self._conn.execute(
             "SELECT is_active FROM user_is_active WHERE user_id = ?", (user_id,)
         ).fetchone()

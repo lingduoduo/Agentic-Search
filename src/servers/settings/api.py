@@ -8,8 +8,6 @@ project's file-backed license store (src/utils/license.py).
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -18,6 +16,7 @@ from src.configs import AppSettings
 from src.configs import Tier
 from src.utils.license import ApplicationStatus
 from src.utils.license import get_license_status
+from src.utils.license import load_stored_license
 from src.utils.license import verify_license_signature
 from src.utils.license_expiry import get_grace_period_end
 from src.utils.tier import get_tier
@@ -34,16 +33,6 @@ class Settings(BaseModel):
     license_enforcement_enabled: bool = False
 
 
-def _license_dat_path() -> Path:
-    data_dir = Path(
-        os.environ.get(
-            "AGENTIC_SEARCH_DATA_DIR",
-            Path.home() / ".local/share/agentic_search",
-        )
-    )
-    return data_dir / "license.dat"
-
-
 def _load_license_status(
     app_settings: AppSettings,
 ) -> tuple[ApplicationStatus | None, bool, str]:
@@ -53,15 +42,14 @@ def _load_license_status(
         ee_on = current_tier == Tier.ENTERPRISE
         return None, ee_on, current_tier.value
 
-    path = _license_dat_path()
-    if not path.exists():
-        return ApplicationStatus.GATED_ACCESS, False, Tier.COMMUNITY.value
+    license_data = load_stored_license()
+    if not license_data:
+        return ApplicationStatus.GATED_ACCESS, False, Tier.FREE.value
 
     try:
-        license_data = path.read_text().strip()
         payload = verify_license_signature(license_data)
     except (ValueError, Exception):
-        return ApplicationStatus.GATED_ACCESS, False, Tier.COMMUNITY.value
+        return ApplicationStatus.GATED_ACCESS, False, Tier.FREE.value
 
     grace_end = get_grace_period_end(payload.expires_at)
     status = get_license_status(payload, grace_end)

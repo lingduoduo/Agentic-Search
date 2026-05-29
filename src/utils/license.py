@@ -161,11 +161,32 @@ def is_license_valid(payload: LicensePayload) -> bool:
     return datetime.now(timezone.utc) <= payload.expires_at
 
 
+def load_stored_license() -> str | None:
+    """Return the raw license string from the data directory, or None.
+
+    Reads ``$AGENTIC_SEARCH_DATA_DIR/license.dat`` (defaults to
+    ``~/.local/share/agentic_search/license.dat``). Centralised here so
+    billing and settings modules do not each re-implement the path logic.
+    """
+    import os
+    from pathlib import Path
+
+    data_dir = Path(
+        os.environ.get(
+            "AGENTIC_SEARCH_DATA_DIR",
+            Path.home() / ".local/share/agentic_search",
+        )
+    )
+    path = data_dir / "license.dat"
+    return path.read_text().strip() if path.exists() else None
+
+
 __all__ = [
     "ApplicationStatus",
     "LicenseData",
     "LicensePayload",
     "get_license_status",
     "is_license_valid",
+    "load_stored_license",
     "verify_license_signature",
 ]

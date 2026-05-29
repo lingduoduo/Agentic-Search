@@ -79,25 +79,23 @@ class ScimDAL:
         """Return paginated users with their SCIM mappings."""
         user_records = self._store.list_all_users()
         rows = [
-            {
-                "id": u.id,
-                "email": u.email or "",
-                "name": u.name,
-                "is_active": self._store.get_user_active(u.id),
-            }
-            for u in user_records
+            {"id": u.id, "email": u.email or "", "name": u.name} for u in user_records
         ]
         attr_map = {"username": "email", "email": "email"}
         rows = _apply_filter(rows, scim_filter, attr_map)
         total = len(rows)
         page = rows[start_index - 1 : start_index - 1 + count]
 
+        # Batch-load is_active and mappings for the page only
+        page_ids = [r["id"] for r in page]
+        active_map = {uid: self._store.get_user_active(uid) for uid in page_ids}
+
         results: list[tuple[ScimUser, dict | None]] = []
         for r in page:
             user = ScimUser(
                 id=r["id"],
                 email=r["email"],
-                is_active=bool(r["is_active"]),
+                is_active=active_map.get(r["id"], True),
                 personal_name=r.get("name"),
             )
             mapping = self._store.get_scim_user_mapping(r["id"])
@@ -116,15 +114,15 @@ class ScimDAL:
         )
 
     def get_user_by_email(self, email: str) -> ScimUser | None:
-        for u in self._store.list_all_users():
-            if (u.email or "").lower() == email.lower():
-                return ScimUser(
-                    id=u.id,
-                    email=u.email or "",
-                    is_active=self._store.get_user_active(u.id),
-                    personal_name=u.name,
-                )
-        return None
+        rec = self._store.get_user_by_email(email)
+        if not rec:
+            return None
+        return ScimUser(
+            id=rec.id,
+            email=rec.email or "",
+            is_active=self._store.get_user_active(rec.id),
+            personal_name=rec.name,
+        )
 
     def add_user(self, user: ScimUser) -> None:
         from src.db.models import UserRecord
@@ -209,15 +207,12 @@ class ScimDAL:
     def get_users_groups_batch(
         self, user_ids: list[str]
     ) -> dict[str, list[tuple[str, str | None]]]:
-        return {uid: self.get_user_groups(uid) for uid in user_ids}
+        return self._store.get_groups_for_users_batch(user_ids)
 
     def validate_member_ids(self, user_ids: list[str]) -> list[str]:
-        """Return IDs that do not exist in the store."""
-        missing = []
-        for uid in user_ids:
-            if self._store.get_user(uid) is None:
-                missing.append(uid)
-        return missing
+        """Return IDs that do not exist in the store (single batch query)."""
+        found = set(self._store.get_users_by_ids(user_ids))
+        return [uid for uid in user_ids if uid not in found]
 
     # ------------------------------------------------------------------
     # Group operations
@@ -255,15 +250,12 @@ class ScimDAL:
         return None
 
     def get_group_members(self, group_id: str) -> list[tuple[str, str | None]]:
-        """Return (user_id, email) pairs for a group."""
+        """Return (user_id, email) pairs for a group (single batch query)."""
         rec = self._store.get_group(group_id)
         if not rec:
             return []
-        results = []
-        for uid in rec.user_ids:
-            u = self._store.get_user(uid)
-            results.append((uid, u.email if u else None))
-        return results
+        emails = self._store.get_users_emails_batch(rec.user_ids)
+        return [(uid, emails.get(uid)) for uid in rec.user_ids]
 
     def get_group_mapping(self, group_id: str) -> dict | None:
         return self._store.get_scim_group_mapping(group_id)

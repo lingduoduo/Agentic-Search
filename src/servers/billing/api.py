@@ -14,20 +14,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Request
 from pydantic import BaseModel
 
 from src.auth import AuthenticatedUser
-from src.auth import user_from_headers
 from src.configs import AppSettings
+from src.utils.license import load_stored_license
 from src.servers.billing.models import BillingInformationResponse
 from src.servers.billing.models import CreateCheckoutSessionRequest
 from src.servers.billing.models import CreateCheckoutSessionResponse
@@ -45,6 +42,7 @@ from src.servers.billing.service import (
 from src.servers.billing.service import end_trial as _end_trial
 from src.servers.billing.service import get_billing_information as _get_billing
 from src.servers.billing.service import update_seat_count as _update_seats
+from src.servers._auth import make_require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -76,26 +74,6 @@ def _close_billing_circuit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# License file helpers (mirrors logic in license/api.py)
-# ---------------------------------------------------------------------------
-
-
-def _license_dat_path() -> Path:
-    data_dir = Path(
-        os.environ.get(
-            "AGENTIC_SEARCH_DATA_DIR",
-            Path.home() / ".local/share/agentic_search",
-        )
-    )
-    return data_dir / "license.dat"
-
-
-def _load_license_data() -> str | None:
-    path = _license_dat_path()
-    return path.read_text().strip() if path.exists() else None
-
-
-# ---------------------------------------------------------------------------
 # Stripe publishable key cache
 # ---------------------------------------------------------------------------
 
@@ -113,16 +91,7 @@ def create_billing_router(app_settings: AppSettings) -> APIRouter:
 
     router = APIRouter(prefix="/admin/billing", tags=["billing"])
 
-    def _require_admin(request: Request) -> AuthenticatedUser:
-        user = user_from_headers(request.headers)
-        if user is None or user.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        super_users = app_settings.auth.super_users
-        if user.id not in super_users and (
-            user.email is None or user.email not in super_users
-        ):
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        return user
+    _require_admin = make_require_admin(app_settings)
 
     def _require_proxy_url() -> str:
         """Return the billing proxy base URL or raise 501."""
@@ -144,7 +113,7 @@ def create_billing_router(app_settings: AppSettings) -> APIRouter:
     ) -> CreateCheckoutSessionResponse:
         """Create a Stripe checkout session for a new subscription or renewal."""
         proxy_url = _require_proxy_url()
-        license_data = _load_license_data()
+        license_data = load_stored_license()
         billing_period = request.billing_period if request else "monthly"
         seats = request.seats if request else None
         email = request.email if request else None
@@ -166,7 +135,7 @@ def create_billing_router(app_settings: AppSettings) -> APIRouter:
     ) -> CreateCustomerPortalSessionResponse:
         """Create a Stripe customer portal session."""
         proxy_url = _require_proxy_url()
-        license_data = _load_license_data()
+        license_data = load_stored_license()
         if not license_data:
             raise HTTPException(status_code=400, detail="No license found.")
         return_url = (
@@ -185,7 +154,7 @@ def create_billing_router(app_settings: AppSettings) -> APIRouter:
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> BillingInformationResponse | SubscriptionStatusResponse:
         """Return subscription status and billing details."""
-        license_data = _load_license_data()
+        license_data = load_stored_license()
         if not license_data:
             return SubscriptionStatusResponse(subscribed=False)
 
@@ -209,7 +178,7 @@ def create_billing_router(app_settings: AppSettings) -> APIRouter:
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> SeatUpdateResponse:
         """Update the seat count for the current subscription."""
-        license_data = _load_license_data()
+        license_data = load_stored_license()
         if not license_data:
             raise HTTPException(status_code=400, detail="No license found.")
         proxy_url = _require_proxy_url()

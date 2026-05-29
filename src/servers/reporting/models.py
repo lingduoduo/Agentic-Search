@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from enum import Enum
-
 from pydantic import BaseModel
 
-
-class FlowType(str, Enum):
-    CHAT = "chat"
-    SLACK = "slack"
+from src.servers.query_history.models import SessionType as FlowType
 
 
 class ChatMessageSkeleton(BaseModel):
@@ -17,12 +12,6 @@ class ChatMessageSkeleton(BaseModel):
     flow_type: FlowType
     time_sent: str
     number_of_tokens: int
-
-
-class UserSkeleton(BaseModel):
-    user_id: str
-    email: str | None
-    is_active: bool
 
 
 class UsageReportMetadata(BaseModel):
@@ -37,5 +26,4 @@ __all__ = [
     "ChatMessageSkeleton",
     "FlowType",
     "UsageReportMetadata",
-    "UserSkeleton",
 ]
