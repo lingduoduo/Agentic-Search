@@ -18,7 +18,6 @@ from src.db import AgenticSearchStore
 from src.servers.reporting.models import ChatMessageSkeleton
 from src.servers.reporting.models import FlowType
 from src.servers.reporting.models import UsageReportMetadata
-from src.servers.reporting.models import UserSkeleton
 
 
 def _generate_chat_messages_csv(
@@ -91,18 +90,7 @@ def _generate_users_csv(store: AgenticSearchStore) -> bytes:
     writer = csv.DictWriter(buf, fieldnames=["user_id", "email", "is_active"])
     writer.writeheader()
     for user in store.list_all_users():
-        skeleton = UserSkeleton(
-            user_id=user.id,
-            email=user.email,
-            is_active=True,
-        )
-        writer.writerow(
-            {
-                "user_id": skeleton.user_id,
-                "email": skeleton.email,
-                "is_active": skeleton.is_active,
-            }
-        )
+        writer.writerow({"user_id": user.id, "email": user.email, "is_active": True})
     return buf.getvalue().encode()
 
 

@@ -21,12 +21,10 @@ import logging
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Request
 from fastapi import Response
 from fastapi import UploadFile
 
 from src.auth import AuthenticatedUser
-from src.auth import user_from_headers
 from src.configs import AppSettings
 from src.configs import Tier
 from src.servers.enterprise_settings.models import AnalyticsScriptUpload
@@ -39,6 +37,7 @@ from src.servers.enterprise_settings.store import store_settings
 from src.servers.enterprise_settings.store import upload_logo
 from src.utils.tier import get_tier
 from src.utils.tier import tier_at_least
+from src.servers._auth import make_require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +54,7 @@ def create_enterprise_settings_routers(
         prefix="/enterprise-settings", tags=["enterprise-settings"]
     )
 
-    def _require_admin(request: Request) -> AuthenticatedUser:
-        user = user_from_headers(request.headers)
-        if user is None or user.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        super_users = app_settings.auth.super_users
-        if user.id not in super_users and (
-            user.email is None or user.email not in super_users
-        ):
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        return user
+    _require_admin = make_require_admin(app_settings)
 
     # ---------------------------------------------------------------------------
     # Settings read / write

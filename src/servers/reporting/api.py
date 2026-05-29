@@ -12,16 +12,15 @@ import io
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.auth import AuthenticatedUser
-from src.auth import user_from_headers
 from src.configs import AppSettings
 from src.db import AgenticSearchStore
 from src.servers.reporting.generation import create_new_usage_report
 from src.servers.reporting.models import UsageReportMetadata
+from src.servers._auth import make_require_admin
 
 
 class GenerateUsageReportParams(BaseModel):
@@ -37,16 +36,7 @@ def create_reporting_router(
 
     router = APIRouter(prefix="/admin", tags=["reporting"])
 
-    def _require_admin(request: Request) -> AuthenticatedUser:
-        user = user_from_headers(request.headers)
-        if user is None or user.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        super_users = app_settings.auth.super_users
-        if user.id not in super_users and (
-            user.email is None or user.email not in super_users
-        ):
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        return user
+    _require_admin = make_require_admin(app_settings)
 
     @router.post("/usage-report", status_code=201)
     def generate_report(

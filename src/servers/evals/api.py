@@ -16,16 +16,14 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Request
 from pydantic import BaseModel
 from pydantic import Field
 
 from src.auth import AuthenticatedUser
-from src.auth import user_from_headers
 from src.configs import AppSettings
 from src.context.models import SearchFilters
 from src.search.process_search_query import run_expanded_search
+from src.servers._auth import make_require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +79,7 @@ def create_evals_router(
 
     router = APIRouter(prefix="/evals", tags=["evals"])
 
-    def _require_admin(request: Request) -> AuthenticatedUser:
-        user = user_from_headers(request.headers)
-        if user is None or user.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        super_users = app_settings.auth.super_users
-        if user.id not in super_users and (
-            user.email is None or user.email not in super_users
-        ):
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        return user
+    _require_admin = make_require_admin(app_settings)
 
     @router.post("/eval_run", response_model=EvalRunResult)
     async def eval_run(

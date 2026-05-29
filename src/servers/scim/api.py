@@ -190,12 +190,10 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
 
     scim_router = APIRouter(prefix="/scim/v2", tags=["SCIM"])
     _verify_token = make_verify_scim_token(store)
+    dal = ScimDAL(store)
 
     def _auth(request: Request) -> dict:
         return _verify_token(request)
-
-    def _dal() -> ScimDAL:
-        return ScimDAL(store)
 
     provider = get_default_provider()
 
@@ -243,7 +241,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         count: int = Query(100, ge=0, le=500),
         _token: dict = Depends(_auth),
     ) -> ScimListResponse | ScimJSONResponse:
-        dal = _dal()
         try:
             scim_filter = parse_scim_filter(filter)
         except ValueError as e:
@@ -280,7 +277,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         excludedAttributes: str | None = None,
         _token: dict = Depends(_auth),
     ) -> ScimUserResource | ScimJSONResponse:
-        dal = _dal()
         user = dal.get_user(user_id)
         if not user:
             return _scim_error_response(404, f"User {user_id} not found")
@@ -302,7 +298,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         user_resource: ScimUserResource,
         _token: dict = Depends(_auth),
     ) -> ScimUserResource | ScimJSONResponse:
-        dal = _dal()
         email = user_resource.userName.strip()
         external_id = user_resource.externalId
         scim_username = user_resource.userName.strip()
@@ -356,7 +351,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         user_resource: ScimUserResource,
         _token: dict = Depends(_auth),
     ) -> ScimUserResource | ScimJSONResponse:
-        dal = _dal()
         user = dal.get_user(user_id)
         if not user:
             return _scim_error_response(404, f"User {user_id} not found")
@@ -388,7 +382,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         patch_request: ScimPatchRequest,
         _token: dict = Depends(_auth),
     ) -> ScimUserResource | ScimJSONResponse:
-        dal = _dal()
         user = dal.get_user(user_id)
         if not user:
             return _scim_error_response(404, f"User {user_id} not found")
@@ -454,7 +447,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         user_id: str,
         _token: dict = Depends(_auth),
     ) -> Response | ScimJSONResponse:
-        dal = _dal()
         user = dal.get_user(user_id)
         if not user:
             return _scim_error_response(404, f"User {user_id} not found")
@@ -476,7 +468,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         count: int = Query(100, ge=0, le=500),
         _token: dict = Depends(_auth),
     ) -> ScimListResponse | ScimJSONResponse:
-        dal = _dal()
         try:
             scim_filter = parse_scim_filter(filter)
         except ValueError as e:
@@ -505,7 +496,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         excludedAttributes: str | None = None,
         _token: dict = Depends(_auth),
     ) -> ScimJSONResponse:
-        dal = _dal()
         group = dal.get_group(group_id)
         if not group:
             return _scim_error_response(404, f"Group {group_id} not found")
@@ -525,7 +515,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         group_resource: ScimGroupResource,
         _token: dict = Depends(_auth),
     ) -> ScimJSONResponse:
-        dal = _dal()
         if group_resource.displayName in _RESERVED_GROUP_NAMES:
             return _scim_error_response(
                 409, f"'{group_resource.displayName}' is a reserved group name."
@@ -555,7 +544,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         group_resource: ScimGroupResource,
         _token: dict = Depends(_auth),
     ) -> ScimJSONResponse:
-        dal = _dal()
         group = dal.get_group(group_id)
         if not group:
             return _scim_error_response(404, f"Group {group_id} not found")
@@ -584,7 +572,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         patch_request: ScimPatchRequest,
         _token: dict = Depends(_auth),
     ) -> ScimJSONResponse:
-        dal = _dal()
         group = dal.get_group(group_id)
         if not group:
             return _scim_error_response(404, f"Group {group_id} not found")
@@ -629,7 +616,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         group_id: str,
         _token: dict = Depends(_auth),
     ) -> Response | ScimJSONResponse:
-        dal = _dal()
         group = dal.get_group(group_id)
         if not group:
             return _scim_error_response(404, f"Group {group_id} not found")
@@ -647,7 +633,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
 
     @scim_router.post("/tokens", status_code=201)
     def create_token(req: ScimTokenCreate) -> ScimTokenCreatedResponse:
-        dal = _dal()
         raw, hashed, display = generate_scim_token()
         token = dal.create_token(
             name=req.name, token_hash=hashed, token_display=display
@@ -664,7 +649,6 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
 
     @scim_router.get("/tokens")
     def list_tokens() -> list[ScimTokenResponse]:
-        dal = _dal()
         return [
             ScimTokenResponse(
                 id=int(hash(t["id"])) & 0x7FFFFFFF,
@@ -679,7 +663,7 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
 
     @scim_router.delete("/tokens/{token_id}", status_code=204)
     def revoke_token(token_id: str) -> Response:
-        _dal().revoke_token(token_id)
+        dal.revoke_token(token_id)
         return Response(status_code=204)
 
     return scim_router
