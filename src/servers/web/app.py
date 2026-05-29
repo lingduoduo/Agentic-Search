@@ -31,6 +31,9 @@ from src.hooks import HookPoint
 from src.servers.analytics.api import create_analytics_router
 from src.servers.auth_check import PUBLIC_ENDPOINT_SPECS
 from src.servers.auth_check import check_router_auth
+from src.servers.documents.cc_pair import create_documents_router
+from src.servers.query_and_chat.query_backend import basic_router as query_basic_router
+from src.servers.query_and_chat.search_backend import create_search_router
 from src.servers.seeding import seed_db
 from src.hooks import HookRegistry
 from src.hooks import HookSoftFailed
@@ -147,6 +150,9 @@ def create_web_app(
     if resolved.license_enforcement_enabled:
         app.add_middleware(_LicenseMiddleware, tier=Tier.FREE)
     app.include_router(create_analytics_router(db, resolved))
+    app.include_router(create_search_router(db, search_url=settings.search_url))
+    app.include_router(create_documents_router(db, resolved))
+    app.include_router(query_basic_router)
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")

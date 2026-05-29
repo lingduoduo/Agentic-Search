@@ -670,6 +670,45 @@ class AgenticSearchStore:
         ).fetchone()
         return str(row["created_at"]) if row else default
 
+    def list_sessions_for_user(
+        self,
+        user_id: str,
+        *,
+        limit: int = 100,
+        filter_days: int | None = None,
+    ) -> list[ChatSessionRecord]:
+        """Return up to *limit* sessions for *user_id*, newest first.
+
+        If *filter_days* is given only sessions created in the last N days
+        are returned.
+        """
+        if filter_days is not None:
+            from datetime import datetime, timedelta, timezone
+
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=filter_days)
+            ).isoformat()
+            rows = self._conn.execute(
+                """
+                SELECT * FROM chat_sessions
+                WHERE user_id = ? AND created_at >= ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, cutoff, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                """
+                SELECT * FROM chat_sessions
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [self._row_to_chat_session(row) for row in rows]
+
     def query_session_analytics(
         self,
         start: str,
