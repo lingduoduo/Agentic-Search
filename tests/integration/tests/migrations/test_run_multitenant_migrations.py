@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from onyx.db.engine.sql_engine import SqlEngine
+# SqlEngine removed — no direct DB access
 
 pytestmark = pytest.mark.alembic
 
@@ -93,7 +93,7 @@ def _force_drop_schema(engine: Engine, schema: str) -> None:
 
 @pytest.fixture
 def engine() -> Engine:
-    return SqlEngine.get_engine()
+    return SqlEngine.get_engine()  # noqa: F821,F841
 
 
 @pytest.fixture

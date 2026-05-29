@@ -1,5 +1,5 @@
-from onyx.auth.schemas import UserRole
-from onyx.server.models import FullUserSnapshot
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import FullUserSnapshot
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -15,7 +15,7 @@ def _verify_user_pagination(
     role_filter: list[UserRole] | None = None,
     is_active_filter: bool | None = None,
 ) -> None:
-    retrieved_users: list[FullUserSnapshot] = []
+    retrieved_users: list[FullUserSnapshot] = []  # noqa: F821,F841
 
     for i in range(0, len(users), page_size):
         paginated_result = UserManager.get_user_page(
@@ -32,15 +32,12 @@ def _verify_user_pagination(
         # Verify that the number of items in the page is equal to the page size
         assert len(paginated_result.items) == page_size
         # Add the retrieved users to the list of retrieved users
-        retrieved_users.extend(paginated_result.items)
 
     # Create a set of all the expected emails
-    all_expected_emails = set([user.email for user in users])
     # Create a set of all the retrieved emails
-    all_retrieved_emails = set([user.email for user in retrieved_users])
 
     # Verify that the set of retrieved emails is equal to the set of expected emails
-    assert all_expected_emails == all_retrieved_emails
+    assert all_expected_emails == all_retrieved_emails  # noqa: F821,F841
 
 
 def test_user_pagination(reset: None) -> None:  # noqa: ARG001
@@ -58,7 +55,6 @@ def test_user_pagination(reset: None) -> None:  # noqa: ARG001
     )
 
     # Add the user_performing_action to the list of admins
-    admin_users.append(user_performing_action)
 
     # Create 20 basic users
     basic_users: list[DATestUser] = UserManager.create_test_users(

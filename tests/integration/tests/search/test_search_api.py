@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-from onyx.db.enums import AccessType
+from tests.integration.common_utils.types import AccessType
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.document import DocumentManager
@@ -49,8 +49,7 @@ def test_basic_search_returns_results(
     # ``reset`` only wipes Postgres; OpenSearch is shared across tests, so docs
     # seeded by prior tests may still match. Find the seeded doc by content
     # rather than asserting on result count.
-    data = resp.json()
-    matches = [r for r in data["results"] if doc_content in r["content"]]
+    matches = [r for r in data["results"] if doc_content in r["content"]]  # noqa: F821,F841
     assert len(matches) == 1
     assert matches[0]["citation_id"] is not None
     assert matches[0]["source_type"]

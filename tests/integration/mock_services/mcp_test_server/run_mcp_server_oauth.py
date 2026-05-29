@@ -121,22 +121,20 @@ class WWWAuthenticateMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Let FastMCP/verifier run first
-        response = await call_next(request)
 
         # If unauthenticated or invalid token, attach RFC-compliant challenge header
-        if response.status_code == 401:
+        if response.status_code == 401:  # noqa: F821,F841
             # RFC 9728: include resource_metadata param pointing to PRM URL.
             # RFC 6750: include error + error_description when appropriate.
             challenge = f'Bearer resource_metadata="{PRM_URL}", error="invalid_token", error_description="Authentication required"'
             # Don't clobber if already present; append or set.
-            if "www-authenticate" in response.headers:
-                response.headers["www-authenticate"] += ", " + challenge
+            if "www-authenticate" in response.headers:  # noqa: F821,F841
+                response.headers["www-authenticate"] += ", " + challenge  # noqa: F821,F841
             else:
-                response.headers["www-authenticate"] = challenge
+                response.headers["www-authenticate"] = challenge  # noqa: F821,F841
             # Helpful cache headers
-            response.headers.setdefault("cache-control", "no-store")
-            response.headers.setdefault("pragma", "no-cache")
-        return response
+            response.headers.setdefault("pragma", "no-cache")  # noqa: F821,F841
+        return response  # noqa: F821,F841
 
 
 if __name__ == "__main__":
@@ -206,7 +204,6 @@ if __name__ == "__main__":
 
     # 3) Mount MCP apps
     # Streamable HTTP transport (recommended for modern MCP clients)
-    app.mount("/", mcp_app)
     # SSE transport (some clients still use this)
     # app.mount("/sse", mcp.sse_app()) # TODO: v2
 

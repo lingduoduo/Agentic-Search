@@ -3,8 +3,13 @@ from collections.abc import Generator
 
 import pytest
 
-from onyx.connectors.slack.models import ChannelType
-from tests.integration.connector_job_tests.slack.slack_api_utils import SlackManager
+
+class ChannelType:
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+
+from tests.integration.connector_job_tests.slack.slack_api_utils import SlackManager  # noqa: E402
 
 SLACK_ADMIN_EMAIL = os.environ.get("SLACK_ADMIN_EMAIL", "evan@onyx.app")
 SLACK_TEST_USER_1_EMAIL = os.environ.get("SLACK_TEST_USER_1_EMAIL", "evan+1@onyx.app")

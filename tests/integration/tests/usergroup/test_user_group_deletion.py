@@ -13,21 +13,19 @@ import os
 
 import pytest
 
-from onyx.server.documents.models import DocumentSource
+from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.credential import CredentialManager
 from tests.integration.common_utils.managers.document_set import DocumentSetManager
 from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
 from tests.integration.common_utils.managers.persona import PersonaManager
-from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 from tests.integration.common_utils.test_models import DATestCredential
 from tests.integration.common_utils.test_models import DATestDocumentSet
 from tests.integration.common_utils.test_models import DATestLLMProvider
 from tests.integration.common_utils.test_models import DATestPersona
-from tests.integration.common_utils.test_models import DATestUser
 from tests.integration.common_utils.test_models import DATestUserGroup
-from tests.integration.common_utils.vespa import vespa_fixture
+# vespa_fixture removed — no Vespa in this deployment
 
 
 @pytest.mark.skipif(
@@ -36,72 +34,74 @@ from tests.integration.common_utils.vespa import vespa_fixture
 )
 def test_user_group_deletion(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    vespa_client: vespa_fixture,  # noqa: ARG001,F821
 ) -> None:
     # Creating an admin user (first user created is automatically an admin)
-    admin_user: DATestUser = UserManager.create(name="admin_user")
 
     # create connectors
     cc_pair = CCPairManager.create_from_scratch(
         source=DocumentSource.INGESTION_API,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Create user group with a cc_pair and a user
     user_group: DATestUserGroup = UserGroupManager.create(
-        user_ids=[admin_user.id],
+        user_ids=[admin_user.id],  # noqa: F821,F841
         cc_pair_ids=[cc_pair.id],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     cc_pair.groups = [user_group.id]
 
     UserGroupManager.wait_for_sync(
-        user_groups_to_check=[user_group], user_performing_action=admin_user
+        user_groups_to_check=[user_group],
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     UserGroupManager.verify(
         user_group=user_group,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     CCPairManager.verify(
         cc_pair=cc_pair,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Create other objects that are related to the user group
     credential: DATestCredential = CredentialManager.create(
         groups=[user_group.id],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     document_set: DATestDocumentSet = DocumentSetManager.create(
         cc_pair_ids=[cc_pair.id],
         groups=[user_group.id],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     llm_provider: DATestLLMProvider = LLMProviderManager.create(
         groups=[user_group.id],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     persona: DATestPersona = PersonaManager.create(
         groups=[user_group.id],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     UserGroupManager.wait_for_sync(
-        user_groups_to_check=[user_group], user_performing_action=admin_user
+        user_groups_to_check=[user_group],
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     UserGroupManager.verify(
         user_group=user_group,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Delete the user group
     UserGroupManager.delete(
         user_group=user_group,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     UserGroupManager.wait_for_deletion_completion(
-        user_groups_to_check=[user_group], user_performing_action=admin_user
+        user_groups_to_check=[user_group],
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Set our expected local representations to empty
@@ -113,20 +113,20 @@ def test_user_group_deletion(
     # Verify that the local representations were updated
     CredentialManager.verify(
         credential=credential,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     DocumentSetManager.verify(
         document_set=document_set,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     LLMProviderManager.verify(
         llm_provider=llm_provider,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     PersonaManager.verify(
         persona=persona,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )

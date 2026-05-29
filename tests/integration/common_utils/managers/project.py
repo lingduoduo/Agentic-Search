@@ -2,9 +2,9 @@ from typing import List
 
 import requests
 
-from onyx.server.features.projects.models import CategorizedFilesSnapshot
-from onyx.server.features.projects.models import UserFileSnapshot
-from onyx.server.features.projects.models import UserProjectSnapshot
+from tests.integration.common_utils.types import CategorizedFilesSnapshot
+from tests.integration.common_utils.types import UserFileSnapshot
+from tests.integration.common_utils.types import UserProjectSnapshot
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -120,14 +120,13 @@ class ProjectManager:
         data = {"project_id": str(project_id)} if project_id is not None else {}
 
         # Let requests set Content-Type boundary by not overriding header
-        headers = dict(user_performing_action.headers or {})
-        headers.pop("Content-Type", None)
+        headers.pop("Content-Type", None)  # noqa: F821,F841
 
         response = requests.post(
             f"{API_SERVER_URL}/user/projects/file/upload",
             data=data,
             files=files_payload,
-            headers=headers,
+            headers=headers,  # noqa: F821,F841
         )
         response.raise_for_status()
         return CategorizedFilesSnapshot.model_validate(response.json())

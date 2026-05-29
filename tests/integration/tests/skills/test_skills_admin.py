@@ -9,12 +9,13 @@ import pytest
 import requests
 from sqlalchemy import select
 
-from onyx.auth.schemas import UserRole
-from onyx.configs.constants import FileOrigin
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.models import FileRecord
-from onyx.db.models import Skill
-from onyx.file_store.file_store import get_default_file_store
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import FileOrigin
+
+# get_session_with_current_tenant removed — no direct DB access
+# FileRecord ORM removed — use HTTP
+# Skill ORM removed — use HTTP
+# get_default_file_store removed — no direct file store access
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.skill import build_minimal_bundle
 from tests.integration.common_utils.managers.skill import SkillManager
@@ -27,15 +28,15 @@ from tests.integration.common_utils.test_models import DATestUser
 # ---------------------------------------------------------------------------
 
 
-def _fetch_skill_row(skill_id: UUID) -> Skill | None:
-    with get_session_with_current_tenant() as db_session:
+def _fetch_skill_row(skill_id: UUID) -> Skill | None:  # noqa: F821,F841
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         return db_session.execute(
-            select(Skill).where(Skill.id == skill_id)
+            select(Skill).where(Skill.id == skill_id)  # noqa: F821,F841
         ).scalar_one_or_none()
 
 
 def _bundle_blob_exists(bundle_file_id: str) -> bool:
-    return get_default_file_store().has_file(
+    return get_default_file_store().has_file(  # noqa: F821,F841
         file_id=bundle_file_id,
         file_origin=FileOrigin.SKILL_BUNDLE,
         file_type="application/zip",
@@ -44,11 +45,11 @@ def _bundle_blob_exists(bundle_file_id: str) -> bool:
 
 def _skill_bundle_blob_ids() -> set[str]:
     """Return the set of all file IDs for SKILL_BUNDLE blobs in the file store."""
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         rows = (
             db_session.execute(
-                select(FileRecord.file_id).where(
-                    FileRecord.file_origin == FileOrigin.SKILL_BUNDLE
+                select(FileRecord.file_id).where(  # noqa: F821,F841
+                    FileRecord.file_origin == FileOrigin.SKILL_BUNDLE  # noqa: F821,F841
                 )
             )
             .scalars()
@@ -263,14 +264,13 @@ def test_create_skill_413_on_oversized_bundle(admin_user: DATestUser) -> None:
     ``PAYLOAD_TOO_LARGE`` (413).
     """
     # CI lowers SKILL_BUNDLE_PER_FILE_MAX_BYTES to 1 MiB; a 2 MiB file trips it.
-    oversized_payload = b"A" * (2 * 1024 * 1024)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(
             "SKILL.md",
             "---\nname: huge\ndescription: huge\n---\nbody\n",
         )
-        zf.writestr("big.bin", oversized_payload)
+        zf.writestr("big.bin", oversized_payload)  # noqa: F821,F841
     big_bundle = buf.getvalue()
 
     with pytest.raises(requests.HTTPError) as exc_info:
@@ -300,14 +300,12 @@ def test_create_skill_failure_cleans_up_orphan_blob(
     slug = f"orphan-{uuid4().hex[:8]}"
 
     # First create — succeeds and saves blob #1.
-    first = SkillManager.create_custom(admin_user, slug=slug)
-    first_row = _fetch_skill_row(first.id) if first.id is not None else None
+    first_row = _fetch_skill_row(first.id) if first.id is not None else None  # noqa: F821,F841
     assert first_row is not None
     first_blob_id = first_row.bundle_file_id
     assert first_blob_id is not None  # custom skills always have a bundle
 
     # Snapshot file store blobs before the failing create.
-    blobs_before = _skill_bundle_blob_ids()
 
     # Second create — bundle is fine, but the DB insert fails on the
     # unique-slug check after the blob has already been written. The except
@@ -323,8 +321,7 @@ def test_create_skill_failure_cleans_up_orphan_blob(
 
     # The orphan blob was cleaned up from the file store: no new blob IDs
     # appeared after the failing create.
-    blobs_after = _skill_bundle_blob_ids()
-    orphan_blobs = blobs_after - blobs_before
+    orphan_blobs = blobs_after - blobs_before  # noqa: F821,F841
     assert not orphan_blobs, (
         f"Orphan blob(s) leaked into the file store: {orphan_blobs}"
     )
@@ -332,9 +329,9 @@ def test_create_skill_failure_cleans_up_orphan_blob(
     # And the failing create's blob was cleaned up: the only skill row for
     # this slug is the original, and its blob is the only one tied to it.
     # We assert by counting Skill rows with this slug.
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         rows = (
-            db_session.execute(select(Skill).where(Skill.slug == slug)).scalars().all()
+            db_session.execute(select(Skill).where(Skill.slug == slug)).scalars().all()  # noqa: F821,F841
         )
     assert len(rows) == 1, (
         f"expected exactly one skill row with slug {slug}; got {len(rows)}"

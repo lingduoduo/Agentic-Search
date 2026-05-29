@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from onyx.configs.constants import QAFeedbackType
+from tests.integration.common_utils.types import QAFeedbackType
 from tests.integration.common_utils.managers.query_history import QueryHistoryManager
 from tests.integration.common_utils.test_models import DAQueryHistoryEntry
 from tests.integration.common_utils.test_models import DATestUser
@@ -42,12 +42,10 @@ def _verify_query_history_pagination(
         )
 
     # Create a set of all the expected chat session IDs
-    all_expected_sessions = set(str(session.id) for session in chat_sessions)
     # Create a set of all the retrieved chat session IDs
-    all_retrieved_sessions = set(retrieved_sessions)
 
     # Verify that the set of retrieved sessions is equal to the set of expected sessions
-    assert all_expected_sessions == all_retrieved_sessions
+    assert all_expected_sessions == all_retrieved_sessions  # noqa: F821,F841
 
 
 @pytest.mark.skipif(
@@ -65,7 +63,6 @@ def test_query_history_pagination(reset: None) -> None:  # noqa: ARG001
         all_chat_sessions.extend(chat_sessions)
 
     # Verify basic pagination with different page sizes
-    print("Verifying basic pagination with page size 5")
     _verify_query_history_pagination(
         chat_sessions=all_chat_sessions,
         page_size=5,
@@ -103,7 +100,6 @@ def test_query_history_pagination(reset: None) -> None:  # noqa: ARG001
     )
 
     # Test with a small page size to verify handling of partial pages
-    print("Verifying pagination with page size 3")
     _verify_query_history_pagination(
         chat_sessions=all_chat_sessions,
         page_size=3,
@@ -111,7 +107,6 @@ def test_query_history_pagination(reset: None) -> None:  # noqa: ARG001
     )
 
     # Test with a page size larger than the total number of items
-    print("Verifying pagination with page size 50")
     _verify_query_history_pagination(
         chat_sessions=all_chat_sessions,
         page_size=50,

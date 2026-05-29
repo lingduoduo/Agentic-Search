@@ -2,11 +2,11 @@ from typing import Any
 
 import requests
 
-from onyx.db.enums import ExternalAppType
-from onyx.server.features.build.api.models import ExternalAppAdminResponse
-from onyx.server.features.build.api.models import ExternalAppUserResponse
-from onyx.server.features.build.api.models import UpsertExternalAppRequest
-from onyx.server.features.build.api.models import UpsertUserCredentialsRequest
+from tests.integration.common_utils.types import ExternalAppType
+from tests.integration.common_utils.types import ExternalAppAdminResponse
+from tests.integration.common_utils.types import ExternalAppUserResponse
+from tests.integration.common_utils.types import UpsertExternalAppRequest
+from tests.integration.common_utils.types import UpsertUserCredentialsRequest
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 

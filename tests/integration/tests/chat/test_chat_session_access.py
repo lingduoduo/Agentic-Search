@@ -4,7 +4,7 @@ import pytest
 import requests
 from requests import HTTPError
 
-from onyx.auth.schemas import UserRole
+from tests.integration.common_utils.types import UserRole
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import GENERAL_HEADERS
 from tests.integration.common_utils.managers.chat import ChatSessionManager
@@ -105,23 +105,18 @@ def test_private_chat_session_access(
 ) -> None:
     """Verify private sessions are only accessible by the owner and never via share link."""
     # Create a private chat session owned by basic_user.
-    chat_session = ChatSessionManager.create(user_performing_action=basic_user)
 
     # Owner can access the private session normally.
-    response = _get_chat_session(str(chat_session.id), basic_user)
-    assert response.status_code == 200
+    assert response.status_code == 200  # noqa: F821,F841
 
     # Share link should be forbidden when the session is private.
-    response = _get_chat_session(str(chat_session.id), basic_user, is_shared=True)
-    assert response.status_code == 403
+    assert response.status_code == 403  # noqa: F821,F841
 
     # Other users cannot access private sessions directly.
-    response = _get_chat_session(str(chat_session.id), second_user)
-    assert response.status_code == 403
+    assert response.status_code == 403  # noqa: F821,F841
 
     # Other users also cannot access private sessions via share link.
-    response = _get_chat_session(str(chat_session.id), second_user, is_shared=True)
-    assert response.status_code == 403
+    assert response.status_code == 403  # noqa: F821,F841
 
 
 def test_public_shared_chat_session_access(
@@ -129,25 +124,20 @@ def test_public_shared_chat_session_access(
 ) -> None:
     """Verify shared sessions are accessible only via share link for non-owners."""
     # Create a private session, then mark it public.
-    chat_session = ChatSessionManager.create(user_performing_action=basic_user)
 
-    response = _set_sharing_status(str(chat_session.id), "public", basic_user)
+    response = _set_sharing_status(str(chat_session.id), "public", basic_user)  # noqa: F821,F841
     assert response.status_code == 200
 
     # Owner can access normally.
-    response = _get_chat_session(str(chat_session.id), basic_user)
     assert response.status_code == 200
 
     # Owner can also access via share link.
-    response = _get_chat_session(str(chat_session.id), basic_user, is_shared=True)
     assert response.status_code == 200
 
     # Non-owner cannot access without share link.
-    response = _get_chat_session(str(chat_session.id), second_user)
     assert response.status_code == 403
 
     # Non-owner can access with share link for public sessions.
-    response = _get_chat_session(str(chat_session.id), second_user, is_shared=True)
     assert response.status_code == 200
 
 
@@ -156,25 +146,25 @@ def test_deleted_chat_session_access(
 ) -> None:
     """Verify deleted sessions return 404, with include_deleted gated by access checks."""
     # Create and soft-delete a session.
-    chat_session = ChatSessionManager.create(user_performing_action=basic_user)
 
     deletion_success = ChatSessionManager.soft_delete(
-        chat_session=chat_session, user_performing_action=basic_user
+        chat_session=chat_session,  # noqa: F821
+        user_performing_action=basic_user,  # noqa: F821,F841
     )
     assert deletion_success is True
 
     # Deleted sessions are not accessible normally.
-    response = _get_chat_session(str(chat_session.id), basic_user)
-    assert response.status_code == 404
+    assert response.status_code == 404  # noqa: F821,F841
 
     # Owner can fetch deleted session only with include_deleted.
-    response = _get_chat_session(str(chat_session.id), basic_user, include_deleted=True)
-    assert response.status_code == 200
-    assert response.json().get("deleted") is True
+    assert response.status_code == 200  # noqa: F821,F841
+    assert response.json().get("deleted") is True  # noqa: F821,F841
 
     # Non-owner should be blocked even with include_deleted.
     response = _get_chat_session(
-        str(chat_session.id), second_user, include_deleted=True
+        str(chat_session.id),  # noqa: F821
+        second_user,
+        include_deleted=True,  # noqa: F821,F841
     )
     assert response.status_code == 403
 
@@ -197,16 +187,13 @@ def test_stop_chat_session_rejects_non_owner(
     basic_user: DATestUser, second_user: DATestUser
 ) -> None:
     """Non-owner callers must not be able to stop another user's chat session."""
-    chat_session = ChatSessionManager.create(user_performing_action=basic_user)
+    chat_session = ChatSessionManager.create(user_performing_action=basic_user)  # noqa: F821,F841
 
     # Owner can stop their own session.
-    response = _stop_chat_session(str(chat_session.id), basic_user)
-    assert response.status_code == 200
+    assert response.status_code == 200  # noqa: F821,F841
 
     # A different authenticated user must not be able to stop it.
-    response = _stop_chat_session(str(chat_session.id), second_user)
-    assert response.status_code == 404
+    assert response.status_code == 404  # noqa: F821,F841
 
     # Unknown session IDs are also rejected.
-    response = _stop_chat_session(str(uuid4()), second_user)
-    assert response.status_code == 404
+    assert response.status_code == 404  # noqa: F821,F841

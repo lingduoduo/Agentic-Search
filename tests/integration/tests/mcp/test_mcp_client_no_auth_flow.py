@@ -9,13 +9,27 @@ from pathlib import Path
 import pytest
 import requests
 
-from onyx.db.enums import MCPAuthenticationPerformer
-from onyx.db.enums import MCPAuthenticationType
-from onyx.db.enums import MCPTransport
-from tests.integration.common_utils.constants import API_SERVER_URL
-from tests.integration.common_utils.managers.persona import PersonaManager
-from tests.integration.common_utils.test_models import DATestLLMProvider
-from tests.integration.common_utils.test_models import DATestUser
+
+class MCPAuthenticationPerformer:
+    USER = "user"
+    SERVER = "server"
+
+
+class MCPAuthenticationType:
+    NONE = "none"
+    API_KEY = "api_key"
+    OAUTH = "oauth"
+
+
+class MCPTransport:
+    SSE = "sse"
+    STDIO = "stdio"
+
+
+from tests.integration.common_utils.constants import API_SERVER_URL  # noqa: E402
+from tests.integration.common_utils.managers.persona import PersonaManager  # noqa: E402
+from tests.integration.common_utils.test_models import DATestLLMProvider  # noqa: E402
+from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
 # TODO: update mcp client tests to use constants in common_utils/constants.py
 # NOTE: the tests for client should be independent of the Onyx MCP server

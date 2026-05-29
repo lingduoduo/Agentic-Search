@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime
 from datetime import timezone
 
-from onyx.configs.constants import DocumentSource
-from onyx.connectors.models import ConnectorFailure
-from onyx.connectors.models import Document
-from onyx.connectors.models import DocumentFailure
-from onyx.connectors.models import TextSection
+from tests.integration.common_utils.types import DocumentSource
+# ConnectorFailure removed — use dict
+# Document model not used — replaced with dict
+# Document model not used — replaced with dictFailure
+# TextSection removed — use dict
 
 
 def create_test_document(
@@ -15,7 +15,7 @@ def create_test_document(
     link: str = "http://example.com",
     source: DocumentSource = DocumentSource.MOCK_CONNECTOR,
     metadata: dict | None = None,
-) -> Document:
+) -> Document:  # noqa: F821,F841
     """Create a test document with the given parameters.
 
     Args:
@@ -26,9 +26,9 @@ def create_test_document(
         metadata: Optional metadata dictionary. Defaults to empty dict.
     """
     doc_id = doc_id or f"test-doc-{uuid.uuid4()}"
-    return Document(
+    return Document(  # noqa: F821,F841
         id=doc_id,
-        sections=[TextSection(text=text, link=link)],
+        sections=[TextSection(text=text, link=link)],  # noqa: F821,F841
         source=source,
         semantic_identifier=doc_id,
         doc_updated_at=datetime.now(timezone.utc),
@@ -40,7 +40,7 @@ def create_test_document_failure(
     doc_id: str,
     failure_message: str = "Simulated failure",
     document_link: str | None = None,
-) -> ConnectorFailure:
+) -> ConnectorFailure:  # noqa: F821,F841
     """Create a test document failure with the given parameters.
 
     Args:
@@ -48,8 +48,8 @@ def create_test_document_failure(
         failure_message: The failure message. Defaults to "Simulated failure".
         document_link: Optional link to the failed document.
     """
-    return ConnectorFailure(
-        failed_document=DocumentFailure(
+    return ConnectorFailure(  # noqa: F821,F841
+        failed_document=DocumentFailure(  # noqa: F821,F841
             document_id=doc_id,
             document_link=document_link,
         ),

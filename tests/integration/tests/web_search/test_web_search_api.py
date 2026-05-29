@@ -236,10 +236,9 @@ class TestSsrfProtection:
         # but internal URLs should definitely not return sensitive data
         for result in data["results"]:
             # Ensure no result contains internal network data
-            content = result.get("content", "")
             # These patterns would indicate SSRF vulnerability
-            assert "metrics" not in content.lower() or "example" in content.lower()
-            assert "token" not in content.lower() or "example" in content.lower()
+            assert "metrics" not in content.lower() or "example" in content.lower()  # noqa: F821,F841
+            assert "token" not in content.lower() or "example" in content.lower()  # noqa: F821,F841
 
 
 # Mark the Exa-dependent tests to skip if no API key

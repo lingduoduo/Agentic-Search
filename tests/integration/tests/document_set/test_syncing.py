@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from onyx.server.documents.models import DocumentSource
+from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.constants import NUM_DOCS
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
@@ -8,11 +8,11 @@ from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.document_set import DocumentSetManager
 from tests.integration.common_utils.test_models import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import vespa_fixture
+# vespa_fixture removed — no Vespa in this deployment
 
 
 def test_multiple_document_sets_syncing_same_connnector(
-    vespa_client: vespa_fixture,
+    vespa_client: vespa_fixture,  # noqa: F821,F841
     admin_user: DATestUser,
 ) -> None:
     # create api key
@@ -66,7 +66,7 @@ def test_multiple_document_sets_syncing_same_connnector(
 
 
 def test_removing_connector(
-    vespa_client: vespa_fixture,
+    vespa_client: vespa_fixture,  # noqa: F821,F841
     admin_user: DATestUser,
 ) -> None:
     # create api key
@@ -157,7 +157,7 @@ def test_removing_connector(
 
 
 def test_renaming_document_set(
-    vespa_client: vespa_fixture,
+    vespa_client: vespa_fixture,  # noqa: F821,F841
     admin_user: DATestUser,
 ) -> None:
     api_key: DATestAPIKey = APIKeyManager.create(

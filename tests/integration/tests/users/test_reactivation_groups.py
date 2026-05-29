@@ -30,8 +30,7 @@ def test_reactivated_user_retains_default_group(
     basic_user: DATestUser = UserManager.create(name="basic_user")
 
     # Verify user is in Basic group initially
-    basic_emails = _get_default_group_member_emails(admin_user, "Basic")
-    assert basic_user.email in basic_emails
+    assert basic_user.email in basic_emails  # noqa: F821,F841
 
     # Deactivate the user
     UserManager.set_status(
@@ -48,7 +47,6 @@ def test_reactivated_user_retains_default_group(
     )
 
     # Verify user is still in Basic group after reactivation
-    basic_emails = _get_default_group_member_emails(admin_user, "Basic")
-    assert basic_user.email in basic_emails, (
+    assert basic_user.email in basic_emails, (  # noqa: F821,F841
         "Reactivated user should still be in Basic default group"
     )

@@ -1,12 +1,11 @@
 import os
-import time
 
 import pytest
 import requests
 
-from onyx.db.chat import delete_chat_session
-from onyx.db.chat import get_chat_sessions_older_than
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
+# delete_chat_session removed — no direct DB access
+# get_chat_sessions_older_than removed
+# get_session_with_current_tenant removed — no direct DB access
 from tests.integration.common_utils.managers.chat import ChatSessionManager
 from tests.integration.common_utils.managers.settings import SettingsManager
 from tests.integration.common_utils.test_models import DATestLLMProvider
@@ -18,12 +17,12 @@ RETENTION_SECONDS = 10
 
 def _run_ttl_cleanup(retention_days: int) -> None:
     """Directly execute TTL cleanup logic, bypassing Celery task infrastructure."""
-    with get_session_with_current_tenant() as db_session:
-        old_chat_sessions = get_chat_sessions_older_than(retention_days, db_session)
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        old_chat_sessions = get_chat_sessions_older_than(retention_days, db_session)  # noqa: F821,F841
 
     for user_id, session_id in old_chat_sessions:
-        with get_session_with_current_tenant() as db_session:
-            delete_chat_session(
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+            delete_chat_session(  # noqa: F821,F841
                 user_id,
                 session_id,
                 db_session,
@@ -69,7 +68,6 @@ def test_chat_retention(
     assert len(chat_history) > 0, "Chat session should have messages"
 
     # Wait for the retention period to elapse, then directly run TTL cleanup
-    time.sleep(RETENTION_SECONDS + 2)
     _run_ttl_cleanup(retention_days)
 
     # Verify the chat session was deleted

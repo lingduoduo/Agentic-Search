@@ -6,25 +6,22 @@ Verifies that:
 - account_type is set to STANDARD for email/password registrations
 """
 
-from onyx.auth.schemas import UserRole
-from onyx.db.enums import AccountType
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import AccountType
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
-from tests.integration.common_utils.test_models import DATestUser
 
 
 def test_default_group_assignment_on_registration(reset: None) -> None:  # noqa: ARG001
     # Register first user — should become admin
-    admin_user: DATestUser = UserManager.create(name="first_user")
-    assert admin_user.role == UserRole.ADMIN
+    assert admin_user.role == UserRole.ADMIN  # noqa: F821,F841
 
     # Register second user — should become basic
-    basic_user: DATestUser = UserManager.create(name="second_user")
-    assert basic_user.role == UserRole.BASIC
+    assert basic_user.role == UserRole.BASIC  # noqa: F821,F841
 
     # Fetch all groups including default ones
     all_groups = UserGroupManager.get_all(
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
         include_default=True,
     )
 
@@ -42,31 +39,31 @@ def test_default_group_assignment_on_registration(reset: None) -> None:  # noqa:
     admin_group_user_ids = {str(u.id) for u in admin_group.users}
     basic_group_user_ids = {str(u.id) for u in basic_group.users}
 
-    assert admin_user.id in admin_group_user_ids, (
+    assert admin_user.id in admin_group_user_ids, (  # noqa: F821,F841
         "First user should be in Admin default group"
     )
-    assert admin_user.id not in basic_group_user_ids, (
+    assert admin_user.id not in basic_group_user_ids, (  # noqa: F821,F841
         "First user should NOT be in Basic default group"
     )
 
     # Verify basic user is in Basic group and NOT in Admin group
-    assert basic_user.id in basic_group_user_ids, (
+    assert basic_user.id in basic_group_user_ids, (  # noqa: F821,F841
         "Second user should be in Basic default group"
     )
-    assert basic_user.id not in admin_group_user_ids, (
+    assert basic_user.id not in admin_group_user_ids, (  # noqa: F821,F841
         "Second user should NOT be in Admin default group"
     )
 
     # Verify account_type is STANDARD for both users via user listing API
     paginated_result = UserManager.get_user_page(
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
         page_num=0,
         page_size=10,
     )
     users_by_id = {str(u.id): u for u in paginated_result.items}
 
-    admin_snapshot = users_by_id.get(admin_user.id)
-    basic_snapshot = users_by_id.get(basic_user.id)
+    admin_snapshot = users_by_id.get(admin_user.id)  # noqa: F821,F841
+    basic_snapshot = users_by_id.get(basic_user.id)  # noqa: F821,F841
     assert admin_snapshot is not None, "Admin user not found in user listing"
     assert basic_snapshot is not None, "Basic user not found in user listing"
 

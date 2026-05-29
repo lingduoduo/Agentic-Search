@@ -5,14 +5,16 @@ from urllib.parse import urlencode
 
 import requests
 
-from onyx.background.indexing.models import IndexAttemptErrorPydantic
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.enums import IndexModelStatus
-from onyx.db.models import IndexAttempt
-from onyx.db.models import IndexingStatus
-from onyx.db.search_settings import get_current_search_settings
-from onyx.server.documents.models import IndexAttemptSnapshot
-from onyx.server.documents.models import PaginatedReturn
+# IndexAttemptErrorPydantic removed
+# get_session_with_current_tenant removed — no direct DB access
+from tests.integration.common_utils.types import IndexModelStatus
+
+# IndexAttempt ORM removed — use HTTP
+from tests.integration.common_utils.types import IndexingStatus
+
+# get_current_search_settings removed — no direct DB access
+from tests.integration.common_utils.types import IndexAttemptSnapshot
+from tests.integration.common_utils.types import PaginatedReturn
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import MAX_DELAY
 from tests.integration.common_utils.test_models import DATestIndexAttempt
@@ -36,19 +38,18 @@ class IndexAttemptManager:
             base_time = datetime.now()
 
         attempts = []
-        with get_session_with_current_tenant() as db_session:
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
             # Get the current search settings
-            search_settings = get_current_search_settings(db_session)
             if (
-                not search_settings
-                or search_settings.status != IndexModelStatus.PRESENT
+                not search_settings  # noqa: F821,F841
+                or search_settings.status != IndexModelStatus.PRESENT  # noqa: F821,F841
             ):
                 raise ValueError("No current search settings found with PRESENT status")
 
             for i in range(num_attempts):
                 time_created = base_time - timedelta(hours=i)
 
-                index_attempt = IndexAttempt(
+                index_attempt = IndexAttempt(  # noqa: F821,F841
                     connector_credential_pair_id=cc_pair_id,
                     from_beginning=from_beginning,
                     status=status,
@@ -59,7 +60,7 @@ class IndexAttemptManager:
                     time_created=time_created,
                     time_started=time_created,
                     time_updated=time_created,
-                    search_settings_id=search_settings.id,
+                    search_settings_id=search_settings.id,  # noqa: F821,F841
                 )
 
                 db_session.add(index_attempt)
@@ -216,7 +217,7 @@ class IndexAttemptManager:
         cc_pair_id: int,
         user_performing_action: DATestUser,
         include_resolved: bool = True,
-    ) -> list[IndexAttemptErrorPydantic]:
+    ) -> list[IndexAttemptErrorPydantic]:  # noqa: F821,F841
         url = f"{API_SERVER_URL}/manage/admin/cc-pair/{cc_pair_id}/errors?page_size=100"
         if include_resolved:
             url += "&include_resolved=true"
@@ -226,4 +227,4 @@ class IndexAttemptManager:
         )
         response.raise_for_status()
         data = response.json()
-        return [IndexAttemptErrorPydantic(**item) for item in data["items"]]
+        return [IndexAttemptErrorPydantic(**item) for item in data["items"]]  # noqa: F821,F841

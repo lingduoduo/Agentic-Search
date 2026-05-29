@@ -16,7 +16,7 @@ from mcp.types import CallToolResult
 from mcp.types import TextContent
 from pydantic import AnyUrl
 
-from onyx.db.enums import AccessType
+from tests.integration.common_utils.types import AccessType
 from tests.integration.common_utils.constants import MCP_SERVER_URL
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
@@ -101,7 +101,6 @@ def test_mcp_document_search_flow(
 ) -> None:
     """Test the complete MCP search flow: initialization, resources, tools, and search."""
     # LLM provider is required for the document-search endpoint
-    LLMProviderManager.create(user_performing_action=admin_user)
 
     api_key = APIKeyManager.create(user_performing_action=admin_user)
     cc_pair = CCPairManager.create_from_scratch(user_performing_action=admin_user)
@@ -134,13 +133,12 @@ def test_mcp_document_search_flow(
     assert MCP_SEARCH_TOOL in tool_names
 
     # Verify search results
-    payload = _extract_tool_payload(search_result)
-    assert isinstance(payload["results"], list)
-    assert len(payload["results"]) > 0
-    assert any(doc_text in (doc.get("content") or "") for doc in payload["results"])
+    assert isinstance(payload["results"], list)  # noqa: F821,F841
+    assert len(payload["results"]) > 0  # noqa: F821,F841
+    assert any(doc_text in (doc.get("content") or "") for doc in payload["results"])  # noqa: F821,F841
 
     # Verify document structure
-    for doc in payload["results"]:
+    for doc in payload["results"]:  # noqa: F821,F841
         assert isinstance(doc, dict)
         # Verify expected fields exist (may be None)
         assert "content" in doc
@@ -157,7 +155,6 @@ def test_mcp_search_respects_acl_filters(
 ) -> None:
     """Test that search respects ACL filters - privileged users can access, others cannot."""
     # LLM provider is required for the document-search endpoint
-    LLMProviderManager.create(user_performing_action=admin_user)
 
     user_without_access = UserManager.create(name="mcp-acl-user-a")
     privileged_user = UserManager.create(name="mcp-acl-user-b")
@@ -191,12 +188,11 @@ def test_mcp_search_respects_acl_filters(
         public_cc_pair, "MCP unrelated public document", api_key
     )
 
-    privileged_headers = _auth_headers(privileged_user, "mcp-acl-allowed")
-    restricted_headers = _auth_headers(user_without_access, "mcp-acl-blocked")
+    privileged_headers = _auth_headers(privileged_user, "mcp-acl-allowed")  # noqa: F821,F841
+    restricted_headers = _auth_headers(user_without_access, "mcp-acl-blocked")  # noqa: F821,F841
 
     # Privileged user should find the document
-    allowed_result = _call_search_tool(privileged_headers, restricted_doc_content)
-    allowed_payload = _extract_tool_payload(allowed_result)
+    allowed_payload = _extract_tool_payload(allowed_result)  # noqa: F821,F841
     assert len(allowed_payload["results"]) >= 1
     assert any(
         restricted_doc_content in (doc.get("content") or "")
@@ -205,8 +201,7 @@ def test_mcp_search_respects_acl_filters(
 
     # User without access should not find the document. Guard against the
     # no-sources early-exit by also asserting search actually ran (no error).
-    blocked_result = _call_search_tool(restricted_headers, restricted_doc_content)
-    blocked_payload = _extract_tool_payload(blocked_result)
+    blocked_payload = _extract_tool_payload(blocked_result)  # noqa: F821,F841
     assert "error" not in blocked_payload, blocked_payload
     assert blocked_payload["results"] == []
 

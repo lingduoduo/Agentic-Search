@@ -24,7 +24,7 @@ from uuid import uuid4
 import pytest
 import requests
 
-from onyx.db.enums import SharingScope
+from tests.integration.common_utils.types import SharingScope
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.build_session import BuildSessionManager
 from tests.integration.common_utils.managers.user import UserManager
@@ -98,7 +98,6 @@ def test_proxy_requires_auth_when_private(admin_user: DATestUser) -> None:
     session = _create_session(admin_user)
     session_id = UUID(session["id"])
     # Default scope is PRIVATE; assert + be explicit anyway.
-    _set_scope(admin_user, session_id, SharingScope.PRIVATE)
 
     response = _unauth_get(session_id, allow_redirects=False)
 
@@ -133,8 +132,7 @@ def test_proxy_allows_org_user_when_public_org(
 
     assert response.status_code != 401
     # Not a redirect to login either.
-    location = response.headers.get("location", "")
-    assert "/auth/login" not in location
+    assert "/auth/login" not in location  # noqa: F821,F841
 
 
 def test_proxy_blocks_other_tenant_when_public_org(

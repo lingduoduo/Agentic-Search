@@ -3,10 +3,10 @@ from uuid import uuid4
 
 from google.oauth2.service_account import Credentials
 
-from onyx.connectors.google_utils.resources import get_drive_service
-from onyx.connectors.google_utils.resources import get_google_docs_service
-from onyx.connectors.google_utils.resources import GoogleDocsService
-from onyx.connectors.google_utils.resources import GoogleDriveService
+# get_drive_service removed
+# get_google_docs_service removed
+# GoogleDocsService removed
+# GoogleDriveService removed
 
 GOOGLE_SCOPES = {
     "google_drive": [
@@ -17,8 +17,8 @@ GOOGLE_SCOPES = {
 }
 
 
-def _create_doc_service(drive_service: GoogleDriveService) -> GoogleDocsService:
-    docs_service = get_google_docs_service(
+def _create_doc_service(drive_service: GoogleDriveService) -> GoogleDocsService:  # noqa: F821,F841
+    docs_service = get_google_docs_service(  # noqa: F821,F841
         creds=drive_service._http.credentials,
         user_email=drive_service._http.credentials._subject,
     )
@@ -29,7 +29,7 @@ class GoogleDriveManager:
     @staticmethod
     def create_impersonated_drive_service(
         service_account_key: dict, impersonated_user_email: str
-    ) -> GoogleDriveService:
+    ) -> GoogleDriveService:  # noqa: F821,F841
         """Gets a drive service that impersonates a specific user"""
         credentials = Credentials.from_service_account_info(
             service_account_key,
@@ -37,7 +37,7 @@ class GoogleDriveManager:
             subject=impersonated_user_email,
         )
 
-        service = get_drive_service(credentials, impersonated_user_email)
+        service = get_drive_service(credentials, impersonated_user_email)  # noqa: F821,F841
 
         # Verify impersonation
         about = (
@@ -53,7 +53,9 @@ class GoogleDriveManager:
 
     @staticmethod
     def create_shared_drive(
-        drive_service: GoogleDriveService, admin_email: str, test_id: str
+        drive_service: GoogleDriveService,  # noqa: F821
+        admin_email: str,
+        test_id: str,  # noqa: F821,F841
     ) -> str:
         """
         Creates a shared drive and returns the drive's ID
@@ -113,7 +115,9 @@ class GoogleDriveManager:
 
     @staticmethod
     def append_text_to_doc(
-        drive_service: GoogleDriveService, doc_id: str, text: str
+        drive_service: GoogleDriveService,  # noqa: F821
+        doc_id: str,
+        text: str,  # noqa: F821,F841
     ) -> None:
         docs_service = _create_doc_service(drive_service)
 
@@ -191,6 +195,5 @@ class GoogleDriveManager:
                 ).execute()
 
             # Then delete the drive
-            drive_service.drives().delete(driveId=drive_id).execute()
         except Exception as e:
             print(f"Error cleaning up drive {drive_id}: {e}")

@@ -16,9 +16,14 @@ from uuid import uuid4
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-from onyx.connectors.slack.connector import get_channel_messages
-from onyx.connectors.slack.models import ChannelType
-from onyx.connectors.slack.utils import make_paginated_slack_api_call
+
+# get_channel_messages removed
+class ChannelType:
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+
+# make_paginated_slack_api_call removed
 
 
 def _get_slack_channel_id(channel: ChannelType) -> str:
@@ -40,7 +45,7 @@ def _get_non_general_channels(
         channel_types.append("public_channel")
 
     conversations: list[dict[str, Any]] = []
-    for result in make_paginated_slack_api_call(
+    for result in make_paginated_slack_api_call(  # noqa: F821,F841
         slack_client.conversations_list,
         exclude_archived=False,
         types=channel_types,
@@ -64,7 +69,7 @@ def _clear_slack_conversation_members(
 ) -> None:
     channel_id = _get_slack_channel_id(channel)
     member_ids: list[str] = []
-    for result in make_paginated_slack_api_call(
+    for result in make_paginated_slack_api_call(  # noqa: F821,F841
         slack_client.conversations_members,
         channel=channel_id,
     ):
@@ -110,7 +115,7 @@ def _delete_slack_conversation_messages(
 ) -> None:
     """deletes all messages from a channel if message_to_delete is None"""
     channel_id = _get_slack_channel_id(channel)
-    for message_batch in get_channel_messages(slack_client, channel):
+    for message_batch in get_channel_messages(slack_client, channel):  # noqa: F821,F841
         for message in message_batch:
             if message_to_delete and message.get("text") != message_to_delete:
                 continue
@@ -136,9 +141,8 @@ def _build_slack_channel_from_name(
     channel_name = f"{base}-{suffix}"
     if channel:
         # If channel is provided, we rename it
-        channel_id = _get_slack_channel_id(channel)
         channel_response = slack_client.conversations_rename(
-            channel=channel_id,
+            channel=channel_id,  # noqa: F821,F841
             name=channel_name,
         )
     else:
@@ -216,7 +220,7 @@ class SlackManager:
     def build_slack_user_email_id_map(slack_client: WebClient) -> dict[str, str]:
         users: list[dict[str, Any]] = []
 
-        for users_results in make_paginated_slack_api_call(
+        for users_results in make_paginated_slack_api_call(  # noqa: F821,F841
             slack_client.users_list,
         ):
             users.extend(users_results.get("members", []))
@@ -271,7 +275,7 @@ class SlackManager:
     ) -> None:
         channel_types = ["private_channel", "public_channel"]
         channels: list[ChannelType] = []
-        for result in make_paginated_slack_api_call(
+        for result in make_paginated_slack_api_call(  # noqa: F821,F841
             slack_client.conversations_list,
             exclude_archived=False,
             types=channel_types,

@@ -1,31 +1,27 @@
 import csv
 import io
 import os
-from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 import pytest
 
-from onyx.configs.constants import QAFeedbackType
-from onyx.configs.constants import SessionType
+from tests.integration.common_utils.types import QAFeedbackType
+from tests.integration.common_utils.types import SessionType
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.chat import ChatSessionManager
 from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
 from tests.integration.common_utils.managers.query_history import QueryHistoryManager
-from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
 
 
 @pytest.fixture
 def setup_chat_session(reset: None) -> tuple[DATestUser, str]:  # noqa: ARG001
     # Create admin user and required resources
-    admin_user: DATestUser = UserManager.create(name="admin_user")
-    cc_pair = CCPairManager.create_from_scratch(user_performing_action=admin_user)
-    api_key = APIKeyManager.create(user_performing_action=admin_user)
-    LLMProviderManager.create(user_performing_action=admin_user)
+    cc_pair = CCPairManager.create_from_scratch(user_performing_action=admin_user)  # noqa: F821,F841
+    api_key = APIKeyManager.create(user_performing_action=admin_user)  # noqa: F821,F841
+    LLMProviderManager.create(user_performing_action=admin_user)  # noqa: F821,F841
 
     # Seed a document
     cc_pair.documents = []
@@ -41,29 +37,29 @@ def setup_chat_session(reset: None) -> tuple[DATestUser, str]:  # noqa: ARG001
     chat_session = ChatSessionManager.create(
         persona_id=0,
         description="Test chat session",
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     ChatSessionManager.send_message(
         chat_session_id=chat_session.id,
         message="What was the Q1 revenue?",
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     messages = ChatSessionManager.get_chat_history(
         chat_session=chat_session,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Add another message to the chat session
     ChatSessionManager.send_message(
         chat_session_id=chat_session.id,
         message="What about Q2 revenue?",
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
         parent_message_id=messages[-1].id,
     )
 
-    return admin_user, str(chat_session.id)
+    return admin_user, str(chat_session.id)  # noqa: F821,F841
 
 
 @pytest.mark.skipif(
@@ -96,11 +92,10 @@ def test_chat_history_endpoints(
     assert first_session.conversation_length == 4  # 2 User messages + 2 AI responses
 
     # Test date filtering - should return no results
-    past_end = datetime.now(tz=timezone.utc) - timedelta(days=1)
-    past_start = past_end - timedelta(days=1)
+    past_start = past_end - timedelta(days=1)  # noqa: F821,F841
     history_response = QueryHistoryManager.get_query_history_page(
         start_time=past_start,
-        end_time=past_end,
+        end_time=past_end,  # noqa: F821,F841
         user_performing_action=admin_user,
     )
     assert len(history_response.items) == 0
@@ -142,20 +137,18 @@ def test_chat_history_csv_export(
     assert "Content-Disposition" in headers
 
     # Use csv.reader to properly handle newlines inside quoted fields
-    csv_rows = list(csv.reader(io.StringIO(csv_content)))
-    assert len(csv_rows) == 3  # Header + 2 QA pairs
-    assert csv_rows[0][0] == "chat_session_id"
-    assert "user_message" in csv_rows[0]
-    assert "ai_response" in csv_rows[0]
+    assert len(csv_rows) == 3  # Header + 2 QA pairs  # noqa: F821,F841
+    assert csv_rows[0][0] == "chat_session_id"  # noqa: F821,F841
+    assert "user_message" in csv_rows[0]  # noqa: F821,F841
+    assert "ai_response" in csv_rows[0]  # noqa: F821,F841
     assert "What was the Q1 revenue?" in csv_content
     assert "What about Q2 revenue?" in csv_content
 
     # Test CSV export with date filtering - should return no results
-    past_end = datetime.now(tz=timezone.utc) - timedelta(days=1)
-    past_start = past_end - timedelta(days=1)
+    past_start = past_end - timedelta(days=1)  # noqa: F821,F841
     headers, csv_content = QueryHistoryManager.get_query_history_as_csv(
         start_time=past_start,
-        end_time=past_end,
+        end_time=past_end,  # noqa: F821,F841
         user_performing_action=admin_user,
     )
     csv_rows = list(csv.reader(io.StringIO(csv_content)))

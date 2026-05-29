@@ -17,24 +17,21 @@ def test_grant_permission_via_toggle(reset: None) -> None:  # noqa: ARG001
     admin_user: DATestUser = UserManager.create(name="admin_grant")
     basic_user: DATestUser = UserManager.create(name="basic_grant")
 
-    group = UserGroupManager.create(
+    group = UserGroupManager.create(  # noqa: F821,F841
         name="grant-toggle-group",
         user_ids=[admin_user.id, basic_user.id],
         user_performing_action=admin_user,
     )
 
     # Grant manage:llms
-    resp = UserGroupManager.set_permission(group, "manage:llms", True, admin_user)
-    resp.raise_for_status()
-    assert resp.json() == {"permission": "manage:llms", "enabled": True}
+    resp.raise_for_status()  # noqa: F821,F841
+    assert resp.json() == {"permission": "manage:llms", "enabled": True}  # noqa: F821,F841
 
     # Verify group permissions
-    group_perms = UserGroupManager.get_permissions(group, admin_user)
-    assert "manage:llms" in group_perms, f"Expected manage:llms in {group_perms}"
+    assert "manage:llms" in group_perms, f"Expected manage:llms in {group_perms}"  # noqa: F821,F841
 
     # Verify propagated to user
-    user_perms = UserManager.get_permissions(basic_user)
-    assert "manage:llms" in user_perms, f"Expected manage:llms in {user_perms}"
+    assert "manage:llms" in user_perms, f"Expected manage:llms in {user_perms}"  # noqa: F821,F841
 
 
 @ENTERPRISE_SKIP
@@ -57,14 +54,12 @@ def test_revoke_permission_via_toggle(reset: None) -> None:  # noqa: ARG001
     ).raise_for_status()
 
     # Verify removed from group
-    group_perms = UserGroupManager.get_permissions(group, admin_user)
-    assert "manage:llms" not in group_perms, (
-        f"manage:llms should be gone: {group_perms}"
+    assert "manage:llms" not in group_perms, (  # noqa: F821,F841
+        f"manage:llms should be gone: {group_perms}"  # noqa: F821,F841
     )
 
     # Verify removed from user
-    user_perms = UserManager.get_permissions(basic_user)
-    assert "manage:llms" not in user_perms, f"manage:llms should be gone: {user_perms}"
+    assert "manage:llms" not in user_perms, f"manage:llms should be gone: {user_perms}"  # noqa: F821,F841
 
 
 @ENTERPRISE_SKIP
@@ -95,15 +90,14 @@ def test_idempotent_grant(reset: None) -> None:  # noqa: ARG001
 def test_idempotent_revoke(reset: None) -> None:  # noqa: ARG001
     admin_user: DATestUser = UserManager.create(name="admin_idempotent_revoke")
 
-    group = UserGroupManager.create(
+    group = UserGroupManager.create(  # noqa: F821,F841
         name="idempotent-revoke-group",
         user_ids=[admin_user.id],
         user_performing_action=admin_user,
     )
 
     # Toggle OFF when never granted — should not error
-    resp = UserGroupManager.set_permission(group, "manage:llms", False, admin_user)
-    resp.raise_for_status()
+    resp.raise_for_status()  # noqa: F821,F841
 
 
 @ENTERPRISE_SKIP

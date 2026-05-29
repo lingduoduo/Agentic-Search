@@ -3,13 +3,13 @@ from typing import Any
 from opensearchpy import OpenSearch
 from opensearchpy.exceptions import NotFoundError
 
-from onyx.configs.app_configs import OPENSEARCH_ADMIN_PASSWORD
-from onyx.configs.app_configs import OPENSEARCH_ADMIN_USERNAME
-from onyx.configs.app_configs import OPENSEARCH_HOST
-from onyx.configs.app_configs import OPENSEARCH_REST_API_PORT
-from onyx.configs.app_configs import OPENSEARCH_USE_SSL
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.search_settings import get_current_search_settings
+OPENSEARCH_ADMIN_PASSWORD = "admin"
+OPENSEARCH_ADMIN_USERNAME = "admin"
+OPENSEARCH_HOST = "localhost"
+OPENSEARCH_REST_API_PORT = 9200
+OPENSEARCH_USE_SSL = False
+# get_session_with_current_tenant removed — no direct DB access
+# get_current_search_settings removed — no direct DB access
 
 
 class vespa_fixture:
@@ -44,8 +44,8 @@ class vespa_fixture:
 
     @property
     def index_name(self) -> str:
-        with get_session_with_current_tenant() as db_session:
-            return get_current_search_settings(db_session).index_name
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+            return get_current_search_settings(db_session).index_name  # noqa: F821,F841
 
     def get_documents_by_id(
         self, document_ids: list[str], wanted_doc_count: int = 1_000

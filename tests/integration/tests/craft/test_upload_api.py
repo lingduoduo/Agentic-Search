@@ -44,10 +44,9 @@ def test_upload_endpoint_201(admin_user: DATestUser) -> None:
 def test_upload_endpoint_requires_auth(admin_user: DATestUser) -> None:
     """POST with no auth token returns 401 (or 403)."""
     # admin_user is just used to ensure a session exists; we then strip auth.
-    session_id = _create_session_id(admin_user)
 
     response = requests.post(
-        _upload_url(session_id),
+        _upload_url(session_id),  # noqa: F821,F841
         files={"file": ("hello.txt", b"hello", "application/octet-stream")},
         headers={},
         cookies=None,
@@ -85,13 +84,12 @@ def test_upload_over_per_file_cap_returns_400(admin_user: DATestUser) -> None:
     session_id = _create_session_id(admin_user)
 
     # CI lowers BUILD_MAX_UPLOAD_FILE_SIZE_MB to 2; a 3 MiB payload trips it.
-    oversized = b"\x00" * (3 * 1024 * 1024)
     headers = {
         k: v for k, v in admin_user.headers.items() if k.lower() != "content-type"
     }
     response = requests.post(
         _upload_url(session_id),
-        files={"file": ("big.txt", oversized, "application/octet-stream")},
+        files={"file": ("big.txt", oversized, "application/octet-stream")},  # noqa: F821,F841
         headers=headers,
         cookies=admin_user.cookies,
     )

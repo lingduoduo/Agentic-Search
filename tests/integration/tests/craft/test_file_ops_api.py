@@ -7,7 +7,6 @@ download_artifact / download_directory / pptx-preview / export-docx).
 
 from __future__ import annotations
 
-from urllib.parse import quote
 from uuid import UUID
 
 import pytest
@@ -206,9 +205,8 @@ def test_delete_file_rejects_shell_metachars(
     session_id = _create_session_id(admin_user)
     # Embed the metacharacter into an otherwise innocuous path. URL-encode so
     # that special chars (e.g. ``;``, ``&``, ``$``) survive routing intact.
-    encoded = quote(f"attachments/foo{metachar}bar.txt", safe="/")
     response = requests.delete(
-        f"{API_SERVER_URL}/build/sessions/{session_id}/files/{encoded}",
+        f"{API_SERVER_URL}/build/sessions/{session_id}/files/{encoded}",  # noqa: F821,F841
         headers=admin_user.headers,
         cookies=admin_user.cookies,
     )
@@ -360,9 +358,8 @@ def test_export_docx_rejects_non_md(admin_user: DATestUser) -> None:
     session_id = _create_session_id(admin_user)
     # Seed an actual .txt file so the endpoint reaches the extension check
     # rather than short-circuiting on "file not found".
-    seed_path = _seed_file(admin_user, session_id, name="notes.txt")
     response = requests.get(
-        _export_docx_url(session_id, seed_path),
+        _export_docx_url(session_id, seed_path),  # noqa: F821,F841
         headers=admin_user.headers,
         cookies=admin_user.cookies,
     )

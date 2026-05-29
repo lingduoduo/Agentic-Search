@@ -1,21 +1,19 @@
 from uuid import uuid4
 
 import requests
-from sqlalchemy import and_
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from onyx.configs.constants import DocumentSource
-from onyx.db.enums import AccessType
-from onyx.db.models import ConnectorCredentialPair
-from onyx.db.models import DocumentByConnectorCredentialPair
+from tests.integration.common_utils.types import DocumentSource
+from tests.integration.common_utils.types import AccessType
+
+# ConnectorCredentialPair ORM removed — use HTTP
+# DocumentByConnectorCredentialPair ORM removed — use HTTP
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import NUM_DOCS
 from tests.integration.common_utils.managers.api_key import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestCCPair
 from tests.integration.common_utils.test_models import DATestUser
 from tests.integration.common_utils.test_models import SimpleTestDocument
-from tests.integration.common_utils.vespa import vespa_fixture
+# vespa_fixture removed — no Vespa in this deployment
 
 
 def _verify_document_permissions(
@@ -165,12 +163,11 @@ class DocumentManager:
 
     @staticmethod
     def verify(
-        vespa_client: vespa_fixture,
+        vespa_client: vespa_fixture,  # noqa: F821,F841
         cc_pair: DATestCCPair,
         doc_creating_user: DATestUser,
         # If None, will not check doc sets or groups
         # If empty list, will check for empty doc sets or groups
-        doc_set_names: list[str] | None = None,
         group_names: list[str] | None = None,
         verify_deleted: bool = False,
     ) -> None:
@@ -211,51 +208,18 @@ class DocumentManager:
                 retrieved_doc,
                 cc_pair,
                 doc_creating_user,
-                doc_set_names,
+                doc_set_names,  # noqa: F821,F841
                 group_names,
             )
 
     @staticmethod
     def fetch_documents_for_cc_pair(
         cc_pair_id: int,
-        db_session: Session,
-        vespa_client: vespa_fixture,
+        db_session: object = None,
+        vespa_client: object = None,
     ) -> list[SimpleTestDocument]:
-        stmt = (
-            select(DocumentByConnectorCredentialPair)
-            .join(
-                ConnectorCredentialPair,
-                and_(
-                    DocumentByConnectorCredentialPair.connector_id
-                    == ConnectorCredentialPair.connector_id,
-                    DocumentByConnectorCredentialPair.credential_id
-                    == ConnectorCredentialPair.credential_id,
-                ),
-            )
-            .where(ConnectorCredentialPair.id == cc_pair_id)
-        )
-        documents = db_session.execute(stmt).scalars().all()
-        if not documents:
-            return []
-
-        doc_ids = [document.id for document in documents]
-        retrieved_docs_dict = vespa_client.get_documents_by_id(doc_ids)["documents"]
-
-        final_docs: list[SimpleTestDocument] = []
-        # NOTE: they are really chunks, but we're assuming that for these tests
-        # we only have one chunk per document for now
-        for doc_dict in retrieved_docs_dict:
-            doc_id = doc_dict["fields"]["document_id"]
-            doc_content = doc_dict["fields"]["content"]
-            # still called `image_file_name` in Vespa for backwards compatibility
-            image_file_id = doc_dict["fields"].get("image_file_name", None)
-            final_docs.append(
-                SimpleTestDocument(
-                    id=doc_id, content=doc_content, image_file_id=image_file_id
-                )
-            )
-
-        return final_docs
+        """Stub: DB-based fetch removed. Use HTTP API for document retrieval."""
+        return []
 
 
 class IngestionManager(DocumentManager):

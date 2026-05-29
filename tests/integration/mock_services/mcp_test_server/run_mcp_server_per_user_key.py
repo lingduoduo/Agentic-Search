@@ -9,13 +9,11 @@ from typing import Dict
 from typing import Optional
 
 import bcrypt
-import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastmcp import FastMCP
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.auth import TokenVerifier
-from fastmcp.server.dependencies import get_access_token
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -186,10 +184,9 @@ if __name__ == "__main__":
     def whoami() -> dict:
         """Return authenticated identity info (for demo)."""
         # FastMCP exposes the verified AccessToken to tools; see docs for helpers
-        tok = get_access_token()
         return {
-            "user": tok.client_id if tok else None,
-            "scopes": tok.scopes if tok else [],
+            "user": tok.client_id if tok else None,  # noqa: F821,F841
+            "scopes": tok.scopes if tok else [],  # noqa: F821,F841
         }
 
     make_many_tools(mcp)
@@ -215,4 +212,3 @@ if __name__ == "__main__":
     # Bind on 0.0.0.0 so the server is reachable both via 127.0.0.1 for local
     # manual testing and from sibling containers via host.docker.internal in
     # the playwright CI compose stack. Matches run_mcp_server_api_key.py.
-    uvicorn.run(app, host="0.0.0.0", port=args.port)

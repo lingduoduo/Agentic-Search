@@ -1,4 +1,3 @@
-import io
 import mimetypes
 from typing import cast
 from typing import IO
@@ -7,8 +6,8 @@ from typing import Tuple
 
 import requests
 
-from onyx.file_store.models import FileDescriptor
-from onyx.server.documents.models import FileUploadResponse
+from tests.integration.common_utils.types import FileDescriptor
+from tests.integration.common_utils.types import FileUploadResponse
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -82,23 +81,18 @@ class FileManager:
         with open(file_path, "rb") as f:
             file_content = f.read()
 
-        # Create a file-like object
-        file_obj = io.BytesIO(file_content)
-
         # The 'files' form field expects a list of files
-        files = [("files", (file_name, file_obj, content_type))]
+        files = [("files", (file_name, file_content, content_type))]
 
         # Use the user's headers but without Content-Type
-        # as requests will set the correct multipart/form-data Content-Type for us
-        headers = user_performing_action.headers.copy()
-        if "Content-Type" in headers:
-            del headers["Content-Type"]
+        req_headers = dict(user_performing_action.headers)
+        req_headers.pop("Content-Type", None)
 
         # Make the request
         response = requests.post(
             f"{API_SERVER_URL}/manage/admin/connector/file/upload",
             files=files,
-            headers=headers,
+            headers=req_headers,
         )
 
         if not response.ok:

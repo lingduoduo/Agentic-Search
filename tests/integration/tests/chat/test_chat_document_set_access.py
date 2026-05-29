@@ -16,18 +16,19 @@ from uuid import UUID
 import pytest
 import requests
 
-from onyx.configs.constants import DocumentSource
-from onyx.tools.constants import SEARCH_TOOL_ID
-from tests.integration.common_utils.constants import API_SERVER_URL
-from tests.integration.common_utils.managers.cc_pair import CCPairManager
-from tests.integration.common_utils.managers.chat import ChatSessionManager
-from tests.integration.common_utils.managers.document_set import DocumentSetManager
-from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
-from tests.integration.common_utils.managers.persona import PersonaManager
-from tests.integration.common_utils.managers.tool import ToolManager
-from tests.integration.common_utils.managers.user import UserManager
-from tests.integration.common_utils.managers.user_group import UserGroupManager
-from tests.integration.common_utils.test_models import DATestUser
+from tests.integration.common_utils.types import DocumentSource
+
+SEARCH_TOOL_ID = "run_search"
+from tests.integration.common_utils.constants import API_SERVER_URL  # noqa: E402
+from tests.integration.common_utils.managers.cc_pair import CCPairManager  # noqa: E402
+from tests.integration.common_utils.managers.chat import ChatSessionManager  # noqa: E402
+from tests.integration.common_utils.managers.document_set import DocumentSetManager  # noqa: E402
+from tests.integration.common_utils.managers.llm_provider import LLMProviderManager  # noqa: E402
+from tests.integration.common_utils.managers.persona import PersonaManager  # noqa: E402
+from tests.integration.common_utils.managers.tool import ToolManager  # noqa: E402
+from tests.integration.common_utils.managers.user import UserManager  # noqa: E402
+from tests.integration.common_utils.managers.user_group import UserGroupManager  # noqa: E402
+from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ENABLE_PAID_ENTERPRISE_EDITION_FEATURES", "").lower() != "true",

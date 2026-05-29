@@ -1,7 +1,5 @@
 import sys
 
-import uvicorn
-from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
@@ -38,22 +36,17 @@ if __name__ == "__main__":
     )
 
     # Create FastMCP instance - it will handle /mcp path internally
-    mcp = FastMCP("My HTTP MCP", auth=auth)
-    make_many_tools(mcp)
+    make_many_tools(mcp)  # noqa: F821,F841
 
     # Get the MCP HTTP app (configured to serve at /mcp)
-    mcp_app = mcp.http_app()
 
     # Create wrapper FastAPI app with the MCP app's lifespan
-    app = FastAPI(title="MCP API Key Test Server", lifespan=mcp_app.lifespan)
 
     # Health check (unprotected)
-    @app.get("/healthz")
+    @app.get("/healthz")  # noqa: F821,F841
     def health() -> PlainTextResponse:
         return PlainTextResponse("ok")
 
     # Mount MCP app at root - it handles /mcp internally
-    app.mount("/", mcp_app)
 
     # Run the server
-    uvicorn.run(app, host="0.0.0.0", port=port)

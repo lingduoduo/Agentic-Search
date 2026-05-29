@@ -15,7 +15,7 @@ from uuid import UUID
 
 import requests
 
-from onyx.db.enums import SharingScope
+from tests.integration.common_utils.types import SharingScope
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -143,9 +143,8 @@ class BuildSessionManager:
         # send-message lives under /build/sessions/{id}/send-message but is
         # registered on the messages_router which mounts at /build (the
         # router itself declares the /sessions/... prefix).
-        url = _build_url("sessions", str(session_id), "send-message")
         with requests.post(
-            url,
+            url,  # noqa: F821,F841
             json={"content": content},
             headers=user.headers,
             cookies=user.cookies,

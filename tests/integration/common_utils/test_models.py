@@ -7,17 +7,17 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import Field
 
-from onyx.auth.schemas import UserRole
-from onyx.configs.constants import MessageType
-from onyx.configs.constants import QAFeedbackType
-from onyx.context.search.models import SavedSearchDoc
-from onyx.context.search.models import SearchDoc
-from onyx.db.enums import AccessType
-from onyx.server.documents.models import DocumentSource
-from onyx.server.documents.models import IndexAttemptSnapshot
-from onyx.server.documents.models import IndexingStatus
-from onyx.server.documents.models import InputType
-from onyx.server.query_and_chat.streaming_models import GeneratedImage
+from tests.integration.common_utils.types import AccessType
+from tests.integration.common_utils.types import DocumentSource
+from tests.integration.common_utils.types import GeneratedImage
+from tests.integration.common_utils.types import IndexAttemptSnapshot
+from tests.integration.common_utils.types import IndexingStatus
+from tests.integration.common_utils.types import InputType
+from tests.integration.common_utils.types import MessageType
+from tests.integration.common_utils.types import QAFeedbackType
+from tests.integration.common_utils.types import SavedSearchDoc
+from tests.integration.common_utils.types import SearchDoc
+from tests.integration.common_utils.types import UserRole
 
 """
 These data models are used to represent the data on the testing side of things.

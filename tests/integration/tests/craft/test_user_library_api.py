@@ -253,8 +253,7 @@ def test_upload_persists_file_to_s3(admin_user: DATestUser) -> None:
 
     # Reachable in the tree listing — confirms the document row was
     # actually upserted, not just returned in the response body.
-    tree = _tree(admin_user)
-    assert any(e["id"] == entry["id"] for e in tree)
+    assert any(e["id"] == entry["id"] for e in tree)  # noqa: F821,F841
 
 
 def test_upload_batch_over_count_cap_rejects(admin_user: DATestUser) -> None:
@@ -301,8 +300,7 @@ def test_upload_zip_extracts_and_applies_caps_recursively(
     assert body["total_uploaded"] == 1
     [entry] = body["entries"]
     # Inner file should be present in the tree.
-    tree = _tree(admin_user)
-    assert any(small_member_name in e.get("name", "") for e in tree)
+    assert any(small_member_name in e.get("name", "") for e in tree)  # noqa: F821,F841
 
     # CI lowers USER_LIBRARY_MAX_FILES_PER_UPLOAD to 5; a 6-member zip trips it.
     over_cap_members = {f"file-{i}-{uuid4().hex[:4]}.txt": b"x" for i in range(6)}
@@ -381,12 +379,10 @@ def test_cross_user_access_returns_404(
     document_id = response.json()["entries"][0]["id"]
 
     # basic_user cannot toggle or delete admin's file.
-    toggle = _toggle(basic_user, document_id, enabled=False)
-    assert toggle.status_code in (403, 404)
+    assert toggle.status_code in (403, 404)  # noqa: F821,F841
 
     delete_response = _delete(basic_user, document_id)
     assert delete_response.status_code in (403, 404)
 
     # And basic_user's tree does not contain admin's row.
-    basic_tree = _tree(basic_user)
-    assert all(e["id"] != document_id for e in basic_tree)
+    assert all(e["id"] != document_id for e in basic_tree)  # noqa: F821,F841

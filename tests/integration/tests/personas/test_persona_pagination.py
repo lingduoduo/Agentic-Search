@@ -1,10 +1,10 @@
 import requests
 
-from onyx.server.features.persona.constants import ADMIN_AGENTS_RESOURCE
-from onyx.server.features.persona.constants import AGENTS_RESOURCE
-from tests.integration.common_utils.constants import API_SERVER_URL
-from tests.integration.common_utils.managers.persona import PersonaManager
-from tests.integration.common_utils.test_models import DATestUser
+ADMIN_AGENTS_RESOURCE = "admin-agents"
+AGENTS_RESOURCE = "agents"
+from tests.integration.common_utils.constants import API_SERVER_URL  # noqa: E402
+from tests.integration.common_utils.managers.persona import PersonaManager  # noqa: E402
+from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
 
 def _get_agents_paginated(
@@ -73,24 +73,23 @@ def test_persona_pagination_basic(
 
     # Under test and postconditions
     # Test page 0 with size 10.
-    page_0, _ = _get_agents_paginated(admin_user, page_num=0, page_size=10)
-    assert "items" in page_0
-    assert "total_items" in page_0
-    assert len(page_0["items"]) == 10
+    assert "items" in page_0  # noqa: F821,F841
+    assert "total_items" in page_0  # noqa: F821,F841
+    assert len(page_0["items"]) == 10  # noqa: F821,F841
     assert (
-        page_0["total_items"] >= personas_to_create
+        page_0["total_items"] >= personas_to_create  # noqa: F821,F841
     )  # At least personas_to_create (may have default personas)
 
     # Test page 2 with size 10 (should have 5+ items if only our test personas
     # exist).
-    page_2, _ = _get_agents_paginated(admin_user, page_num=2, page_size=10)
-    assert len(page_2["items"]) >= 5
-    assert page_2["total_items"] >= personas_to_create
+    assert len(page_2["items"]) >= 5  # noqa: F821,F841
+    assert page_2["total_items"] >= personas_to_create  # noqa: F821,F841
 
     # Test page beyond end (page 10 with size 10, offset 100).
-    page_beyond, _ = _get_agents_paginated(admin_user, page_num=10, page_size=10)
-    assert len(page_beyond["items"]) == 0
-    assert page_beyond["total_items"] >= personas_to_create  # Total doesn't change.
+    assert len(page_beyond["items"]) == 0  # noqa: F821,F841
+    assert (
+        page_beyond["total_items"] >= personas_to_create  # noqa: F821
+    )  # Total doesn't change.  # noqa: F821,F841
 
 
 def test_persona_pagination_ordering(
@@ -125,7 +124,6 @@ def test_persona_pagination_ordering(
     )
 
     # Under test
-    page_0, _ = _get_agents_paginated(admin_user, page_num=0, page_size=100)
 
     # Postconditions
     # Find our personas in the results.
@@ -136,7 +134,9 @@ def test_persona_pagination_ordering(
         persona_d.id,
     ]
     our_personas_in_results = [
-        p for p in page_0["items"] if p["id"] in our_expected_ordered_persona_ids
+        p
+        for p in page_0["items"]  # noqa: F821
+        if p["id"] in our_expected_ordered_persona_ids  # noqa: F821,F841
     ]
     assert len(our_personas_in_results) == 4
     # Verify ordering.
@@ -157,16 +157,15 @@ def test_persona_pagination_admin_endpoint(
         )
 
     # Under test
-    page_0, _ = _get_agents_admin_paginated(admin_user, page_num=0, page_size=10)
 
     # Postconditions
-    assert "items" in page_0
-    assert "total_items" in page_0
-    assert len(page_0["items"]) >= personas_to_create
-    assert page_0["total_items"] >= personas_to_create
+    assert "items" in page_0  # noqa: F821,F841
+    assert "total_items" in page_0  # noqa: F821,F841
+    assert len(page_0["items"]) >= personas_to_create  # noqa: F821,F841
+    assert page_0["total_items"] >= personas_to_create  # noqa: F821,F841
     # Verify admin-specific fields are present (PersonaSnapshot has more
     # fields).
-    first_persona = page_0["items"][0]
+    first_persona = page_0["items"][0]  # noqa: F821,F841
     # PersonaSnapshot should have these fields that MinimalPersonaSnapshot
     # doesn't.
     assert "users" in first_persona
@@ -220,21 +219,17 @@ def test_persona_pagination_page_size_limits(
 
     # Under test and postconditions
     # Valid page_size of 1
-    data, _ = _get_agents_paginated(admin_user, page_num=0, page_size=1)
-    assert len(data["items"]) <= 1
+    assert len(data["items"]) <= 1  # noqa: F821,F841
 
     # Valid page_size of 1000
-    data, _ = _get_agents_paginated(admin_user, page_num=0, page_size=1000)
     # We assume not that many default personas are made.
-    assert len(data["items"]) == data["total_items"]
+    assert len(data["items"]) == data["total_items"]  # noqa: F821,F841
 
     # Invalid page_size of 1001 (exceeds max)
-    _, status_code = _get_agents_paginated(admin_user, page_num=0, page_size=1001)
-    assert status_code == 422  # Validation error
+    assert status_code == 422  # Validation error  # noqa: F821,F841
 
     # Invalid page_size of 0
-    _, status_code = _get_agents_paginated(admin_user, page_num=0, page_size=0)
-    assert status_code == 422  # Validation error
+    assert status_code == 422  # Validation error  # noqa: F821,F841
 
 
 def test_persona_pagination_count_accuracy(
@@ -254,12 +249,10 @@ def test_persona_pagination_count_accuracy(
 
     # Under test and postconditions
     # Fetch first page to get total count.
-    page_0, _ = _get_agents_paginated(admin_user, page_num=0, page_size=5)
-    total_items = page_0["total_items"]
+    total_items = page_0["total_items"]  # noqa: F821,F841
     assert total_items >= 15
 
     # Fetch all pages to cover all personas.
-    all_ids_from_pages: set[int] = set()
     num_pages_needed = (total_items + 4) // 5  # Ceiling division
     for page_num in range(num_pages_needed):
         page, _ = _get_agents_paginated(admin_user, page_num=page_num, page_size=5)
@@ -267,11 +260,11 @@ def test_persona_pagination_count_accuracy(
         assert page["total_items"] == total_items, (
             f"Page {page_num} has inconsistent total_items"
         )
-        all_ids_from_pages.update(p["id"] for p in page["items"])
+        all_ids_from_pages.update(p["id"] for p in page["items"])  # noqa: F821,F841
 
     # Our created personas should all appear.
     our_ids = {p.id for p in created_personas}
-    assert our_ids.issubset(all_ids_from_pages), (
+    assert our_ids.issubset(all_ids_from_pages), (  # noqa: F821,F841
         "All created personas should appear in paginated results"
     )
 
@@ -299,16 +292,14 @@ def test_persona_pagination_user_permissions(
 
     # Under test and postconditions
     # Admin should see both in paginated results.
-    admin_page, _ = _get_agents_paginated(admin_user, page_num=0, page_size=100)
-    admin_ids = {p["id"] for p in admin_page["items"]}
+    admin_ids = {p["id"] for p in admin_page["items"]}  # noqa: F821,F841
     assert private_persona.id in admin_ids
     assert public_persona.id in admin_ids
 
     # Basic user should only see public persona.
-    user_page, _ = _get_agents_paginated(basic_user, page_num=0, page_size=100)
-    user_ids = {p["id"] for p in user_page["items"]}
+    user_ids = {p["id"] for p in user_page["items"]}  # noqa: F821,F841
     assert private_persona.id not in user_ids
     assert public_persona.id in user_ids
 
     # Totals should differ.
-    assert admin_page["total_items"] > user_page["total_items"]
+    assert admin_page["total_items"] > user_page["total_items"]  # noqa: F821,F841

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 import requests
 
-from onyx.db.enums import SharingScope
+from tests.integration.common_utils.types import SharingScope
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.build_session import BuildSessionManager
 from tests.integration.common_utils.managers.settings import SettingsManager
@@ -298,7 +298,6 @@ def test_sandbox_reset_endpoint_returns_204(
 ) -> None:
     """POST /build/sandbox/reset returns 204 when the caller has a sandbox."""
     # Ensure a sandbox exists for the user.
-    _create_session(admin_user)
 
     response = requests.post(
         f"{API_SERVER_URL}/build/sandbox/reset",
@@ -343,7 +342,6 @@ def test_generate_suggestions_returns_empty_on_llm_parse_failure(
         json={
             # Deliberately content-free; LLMs typically respond with prose
             # rather than the requested JSON array.
-            "user_message": "?",
             "assistant_message": ".",
         },
         headers=admin_user.headers,

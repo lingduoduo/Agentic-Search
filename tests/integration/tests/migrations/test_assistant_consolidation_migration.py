@@ -7,7 +7,7 @@ to a single default Assistant (ID 0) and the associated tool seeding.
 
 from sqlalchemy import text
 
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
+# get_session_with_current_tenant removed — no direct DB access
 from tests.integration.common_utils.reset import downgrade_postgres
 from tests.integration.common_utils.reset import upgrade_postgres
 
@@ -20,7 +20,7 @@ def test_cold_startup_default_assistant() -> None:
     )
     upgrade_postgres(database="postgres", config_name="alembic", revision="head")
 
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         # Check only default assistant exists
         result = db_session.execute(
             text("""

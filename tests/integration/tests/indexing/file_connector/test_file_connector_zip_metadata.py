@@ -5,18 +5,19 @@ from datetime import timezone
 
 import pytest
 
-from onyx.connectors.models import InputType
-from onyx.db.document import get_documents_for_cc_pair
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.enums import AccessType
-from onyx.server.documents.models import DocumentSource
+from tests.integration.common_utils.types import InputType
+
+# get_documents_for_cc_pair removed
+# get_session_with_current_tenant removed — no direct DB access
+from tests.integration.common_utils.types import AccessType
+from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.connector import ConnectorManager
 from tests.integration.common_utils.managers.credential import CredentialManager
 from tests.integration.common_utils.managers.file import FileManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import vespa_fixture
+# vespa_fixture removed — no Vespa in this deployment
 
 # This is a placeholder - you'll need to create this zip file with actual test files
 TEST_FILES_BASE = "tests/integration/tests/indexing/file_connector/test_files"
@@ -34,7 +35,7 @@ TEST_METADATA_FILE = f"{TEST_FILES_BASE}/.onyx_metadata.json"
 )
 def test_zip_metadata_handling(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    vespa_client: vespa_fixture,  # noqa: ARG001,F821
     zip_path: str,
     has_metadata: bool,
 ) -> None:
@@ -100,8 +101,8 @@ def test_zip_metadata_handling(
     )
 
     # Get the indexed documents
-    with get_session_with_current_tenant() as db_session:
-        documents = get_documents_for_cc_pair(db_session, cc_pair.id)
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        documents = get_documents_for_cc_pair(db_session, cc_pair.id)  # noqa: F821,F841
 
     # Expected metadata from the .onyx_metadata.json file
     with open(TEST_METADATA_FILE, "r") as f:

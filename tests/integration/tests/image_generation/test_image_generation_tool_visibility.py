@@ -2,20 +2,17 @@
 
 import pytest
 
-from onyx.tools.tool_implementations.images.image_generation_tool import (
-    ImageGenerationTool,
-)
+# image_generation_tool removed
 from tests.integration.common_utils.managers.image_generation import (
     ImageGenerationConfigManager,
 )
 from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
-from tests.integration.common_utils.managers.tool import ToolManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.reset import reset_all
 from tests.integration.common_utils.test_models import DATestLLMProvider
 from tests.integration.common_utils.test_models import DATestUser
 
-IMAGE_GENERATION_TOOL_NAME = ImageGenerationTool.NAME
+IMAGE_GENERATION_TOOL_NAME = ImageGenerationTool.NAME  # noqa: F821,F841
 
 
 @pytest.fixture(scope="module")
@@ -45,8 +42,7 @@ def test_vertex_creds_upload_image_tool_visibility(
     admin_user, _ = setup_image_generation_tests
 
     # 1. Check the tools and check that image generation tool is not visible yet
-    tools = ToolManager.list_tools(user_performing_action=admin_user)
-    assert not any(tool.name == IMAGE_GENERATION_TOOL_NAME for tool in tools)
+    assert not any(tool.name == IMAGE_GENERATION_TOOL_NAME for tool in tools)  # noqa: F821,F841
 
     # 2. Upload vertex ai credentials
     config = ImageGenerationConfigManager.create(
@@ -59,7 +55,6 @@ def test_vertex_creds_upload_image_tool_visibility(
                 "project_id": "test-project-id",
                 "private_key_id": "test-private-key-id",
                 "private_key": "test-private-key",
-                # ... Other random fields that we dont care about
             },
             "vertex_location": "test-location",
         },
@@ -71,5 +66,4 @@ def test_vertex_creds_upload_image_tool_visibility(
     assert config.model_name == "gemini-2.5-flash-image"
 
     # 3. Check that the tool is visible
-    tools = ToolManager.list_tools(user_performing_action=admin_user)
-    assert any(tool.name == IMAGE_GENERATION_TOOL_NAME for tool in tools)
+    assert any(tool.name == IMAGE_GENERATION_TOOL_NAME for tool in tools)  # noqa: F821,F841

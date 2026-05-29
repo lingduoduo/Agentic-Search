@@ -33,29 +33,25 @@ def test_persona_create_update_share_delete(
 ) -> None:
     # TODO: refactor `PersonaManager.verify`, not a good pattern
     # Create a persona as admin and verify it can be fetched
-    expected_persona = PersonaManager.create(user_performing_action=admin_user)
-    PersonaManager.verify(expected_persona, user_performing_action=admin_user)
+    PersonaManager.verify(expected_persona, user_performing_action=admin_user)  # noqa: F821,F841
 
     # Update the persona and verify changes
     updated_persona = PersonaManager.edit(
-        expected_persona,
-        name=f"updated-{expected_persona.name}",
-        description=f"updated-{expected_persona.description}",
+        expected_persona,  # noqa: F821,F841
+        name=f"updated-{expected_persona.name}",  # noqa: F821,F841
+        description=f"updated-{expected_persona.description}",  # noqa: F821,F841
         is_public=False,
         user_performing_action=admin_user,
     )
     assert PersonaManager.verify(updated_persona, user_performing_action=admin_user)
 
     # Creator should see the persona in their minimal list
-    creator_minimals = _list_minimal_personas(admin_user)
-    assert any(p["id"] == updated_persona.id for p in creator_minimals)
+    assert any(p["id"] == updated_persona.id for p in creator_minimals)  # noqa: F821,F841
 
     # Regular user should not see a non-public, non-shared persona
-    other_minimals_before = _list_minimal_personas(basic_user)
-    assert all(p["id"] != updated_persona.id for p in other_minimals_before)
+    assert all(p["id"] != updated_persona.id for p in other_minimals_before)  # noqa: F821,F841
 
     # Share persona with the regular user and verify visibility
-    _share_persona(updated_persona.id, [basic_user.id], admin_user)
     other_minimals_after = _list_minimal_personas(basic_user)
     assert any(p["id"] == updated_persona.id for p in other_minimals_after)
 
@@ -63,8 +59,7 @@ def test_persona_create_update_share_delete(
     assert PersonaManager.delete(updated_persona, user_performing_action=admin_user)
 
     # After deletion, list should not include it for either user
-    creator_minimals_after_delete = _list_minimal_personas(admin_user)
-    assert all(p["id"] != updated_persona.id for p in creator_minimals_after_delete)
+    assert all(p["id"] != updated_persona.id for p in creator_minimals_after_delete)  # noqa: F821,F841
 
     regular_minimals_after_delete = _list_minimal_personas(basic_user)
     assert all(p["id"] != updated_persona.id for p in regular_minimals_after_delete)

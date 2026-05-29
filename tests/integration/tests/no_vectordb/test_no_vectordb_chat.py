@@ -13,13 +13,12 @@ import time
 
 import requests
 
-from onyx.db.enums import UserFileStatus
+from tests.integration.common_utils.types import UserFileStatus
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.chat import ChatSessionManager
 from tests.integration.common_utils.managers.file import FileManager
 from tests.integration.common_utils.managers.persona import PersonaManager
 from tests.integration.common_utils.managers.project import ProjectManager
-from tests.integration.common_utils.managers.tool import ToolManager
 from tests.integration.common_utils.test_models import DATestLLMProvider
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -136,9 +135,9 @@ def test_persona_with_user_files_chat(
             continue
 
     # Find the FileReaderTool ID from available tools
-    tools = ToolManager.list_tools(user_performing_action=admin_user)
     file_reader_tool = next(
-        (t for t in tools if t.in_code_tool_id == FILE_READER_TOOL_ID), None
+        (t for t in tools if t.in_code_tool_id == FILE_READER_TOOL_ID),  # noqa: F821
+        None,  # noqa: F821,F841
     )
     assert file_reader_tool is not None, (
         "FileReaderTool should be registered as a built-in tool"

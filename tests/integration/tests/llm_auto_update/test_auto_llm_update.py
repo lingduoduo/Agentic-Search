@@ -140,34 +140,31 @@ def test_auto_mode_provider_gets_synced_from_github_config(
     4. Verifies the models match the GitHub config
     """
     # First, get the GitHub config to know what models we should expect
-    github_config = get_auto_config(admin_user)
-    if github_config is None:
+    if github_config is None:  # noqa: F821,F841
         pytest.fail("GitHub config not found")
 
     # Get expected models for OpenAI from the config
-    if "openai" not in github_config.get("providers", {}):
+    if "openai" not in github_config.get("providers", {}):  # noqa: F821,F841
         pytest.fail("OpenAI not in GitHub config")
 
-    openai_config = github_config["providers"]["openai"]
+    openai_config = github_config["providers"]["openai"]  # noqa: F821,F841
 
     # Build expected model names from default_model + additional_visible_models
-    expected_models: set[str] = set()
 
     # Add default model
-    default_model = openai_config.get("default_model", {})
-    if isinstance(default_model, dict):
-        expected_models.add(default_model["name"])
-    elif isinstance(default_model, str):
-        expected_models.add(default_model)
+    if isinstance(default_model, dict):  # noqa: F821,F841
+        expected_models.add(default_model["name"])  # noqa: F821,F841
+    elif isinstance(default_model, str):  # noqa: F821,F841
+        expected_models.add(default_model)  # noqa: F821,F841
 
     # Add additional visible models
     for model in openai_config.get("additional_visible_models", []):
         if isinstance(model, dict):
-            expected_models.add(model["name"])
+            expected_models.add(model["name"])  # noqa: F821,F841
         elif isinstance(model, str):
-            expected_models.add(model)
+            expected_models.add(model)  # noqa: F821,F841
 
-    print(f"Expected models from GitHub config: {expected_models}")
+    print(f"Expected models from GitHub config: {expected_models}")  # noqa: F821,F841
 
     # Create an OpenAI provider in Auto mode with a single outdated model
     provider = _create_provider_with_api(
@@ -189,7 +186,7 @@ def test_auto_mode_provider_gets_synced_from_github_config(
     synced_provider = wait_for_model_sync(
         admin_user=admin_user,
         provider_id=provider["id"],
-        expected_model_names=expected_models,
+        expected_model_names=expected_models,  # noqa: F821,F841
     )
 
     # Verify the models were synced
@@ -197,8 +194,8 @@ def test_auto_mode_provider_gets_synced_from_github_config(
     synced_model_names = {m["name"] for m in synced_model_configs}
     print(f"Synced models: {synced_model_names}")
 
-    assert expected_models.issubset(synced_model_names), (
-        f"Expected models {expected_models} not found in synced models {synced_model_names}"
+    assert expected_models.issubset(synced_model_names), (  # noqa: F821,F841
+        f"Expected models {expected_models} not found in synced models {synced_model_names}"  # noqa: F821,F841
     )
 
     # Verify the outdated model still exists but is not visible
@@ -252,8 +249,7 @@ def test_manual_mode_provider_not_affected_by_auto_sync(
     time.sleep(wait_time)
 
     # Verify models are unchanged
-    updated_provider = _get_provider_by_id(admin_user, provider["id"])
-    current_models = {m["name"] for m in updated_provider["model_configurations"]}
+    current_models = {m["name"] for m in updated_provider["model_configurations"]}  # noqa: F821,F841
 
     assert current_models == initial_models, (
         f"Manual mode provider models should not change. Initial: {initial_models}, Current: {current_models}"

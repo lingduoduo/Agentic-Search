@@ -2,8 +2,8 @@ import os
 from datetime import datetime
 from datetime import timezone
 
-from onyx.connectors.models import InputType
-from onyx.server.documents.models import DocumentSource
+from tests.integration.common_utils.types import InputType
+from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
@@ -11,21 +11,21 @@ from tests.integration.common_utils.test_models import DATestUser
 
 def test_connector_creation(reset: None) -> None:  # noqa: ARG001
     # Creating an admin user (first user created is automatically an admin)
-    admin_user: DATestUser = UserManager.create(name="admin_user")
 
     # create connectors
     cc_pair_1 = CCPairManager.create_from_scratch(
         source=DocumentSource.INGESTION_API,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     cc_pair_info = CCPairManager.get_single(
-        cc_pair_1.id, user_performing_action=admin_user
+        cc_pair_1.id,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     assert cc_pair_info
     assert cc_pair_info.creator
-    assert str(cc_pair_info.creator) == admin_user.id
-    assert cc_pair_info.creator_email == admin_user.email
+    assert str(cc_pair_info.creator) == admin_user.id  # noqa: F821,F841
+    assert cc_pair_info.creator_email == admin_user.email  # noqa: F821,F841
 
 
 def test_overlapping_connector_creation(reset: None) -> None:  # noqa: ARG001
@@ -48,7 +48,6 @@ def test_overlapping_connector_creation(reset: None) -> None:  # noqa: ARG001
 
     # store the time before we create the connector so that we know after
     # when the indexing should have started
-    now = datetime.now(timezone.utc)
 
     # create connector
     cc_pair_1 = CCPairManager.create_from_scratch(
@@ -60,7 +59,10 @@ def test_overlapping_connector_creation(reset: None) -> None:  # noqa: ARG001
     )
 
     CCPairManager.wait_for_indexing_completion(
-        cc_pair_1, now, timeout=300, user_performing_action=admin_user
+        cc_pair_1,
+        now,  # noqa: F821
+        timeout=300,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     now = datetime.now(timezone.utc)
@@ -107,7 +109,6 @@ def test_connector_pause_while_indexing(reset: None) -> None:  # noqa: ARG001
 
     # store the time before we create the connector so that we know after
     # when the indexing should have started
-    datetime.now(timezone.utc)
 
     # create connector
     cc_pair_1 = CCPairManager.create_from_scratch(

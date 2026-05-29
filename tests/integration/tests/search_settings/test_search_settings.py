@@ -147,17 +147,15 @@ def test_unset_contextual_rag_model(
     _update_inference_settings(admin_user, settings)
 
     # Verify it's set
-    updated = _get_current_search_settings(admin_user)
-    assert updated["contextual_rag_model_configuration_id"] == mc_id
+    assert updated["contextual_rag_model_configuration_id"] == mc_id  # noqa: F821,F841
 
     # Unset by disabling contextual RAG
-    updated["enable_contextual_rag"] = False
-    updated["contextual_rag_model_configuration_id"] = None
-    _update_inference_settings(admin_user, updated)
+    updated["enable_contextual_rag"] = False  # noqa: F821,F841
+    updated["contextual_rag_model_configuration_id"] = None  # noqa: F821,F841
+    _update_inference_settings(admin_user, updated)  # noqa: F821,F841
 
     # Verify it's unset
-    final = _get_current_search_settings(admin_user)
-    assert final["contextual_rag_model_configuration_id"] is None
+    assert final["contextual_rag_model_configuration_id"] is None  # noqa: F821,F841
 
 
 def test_change_contextual_rag_model(

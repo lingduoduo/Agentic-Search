@@ -1,7 +1,7 @@
 import requests
 
-from ee.onyx.server.query_and_chat.models import SearchFullResponse
-from ee.onyx.server.query_and_chat.models import SendSearchQueryRequest
+from tests.integration.common_utils.types import SearchFullResponse
+from tests.integration.common_utils.types import SendSearchQueryRequest
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 

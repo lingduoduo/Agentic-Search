@@ -6,8 +6,8 @@ This test verifies that forcing a tool use works through the complete API flow.
 import pytest
 from sqlalchemy import select
 
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.models import Tool
+# get_session_with_current_tenant removed — no direct DB access
+# Tool ORM removed — use HTTP
 from tests.integration.common_utils.managers.chat import ChatSessionManager
 from tests.integration.common_utils.test_models import DATestImageGenerationConfig
 from tests.integration.common_utils.test_models import DATestUser
@@ -18,22 +18,21 @@ def test_force_tool_use(
     basic_user: DATestUser,
     image_generation_config: DATestImageGenerationConfig,  # noqa: ARG001
 ) -> None:
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         image_generation_tool = db_session.execute(
-            select(Tool).where(Tool.in_code_tool_id == "ImageGenerationTool")
+            select(Tool).where(Tool.in_code_tool_id == "ImageGenerationTool")  # noqa: F821,F841
         ).scalar_one_or_none()
         assert image_generation_tool is not None, "ImageGenerationTool must exist"
         image_generation_tool_id = image_generation_tool.id
 
     # Create a chat session
-    chat_session = ChatSessionManager.create(user_performing_action=basic_user)
 
     # Send a simple message that wouldn't normally trigger image generation
     # but force the image generation tool to be used
     message = "hi"
 
     analyzed_response = ChatSessionManager.send_message(
-        chat_session_id=chat_session.id,
+        chat_session_id=chat_session.id,  # noqa: F821,F841
         message=message,
         user_performing_action=basic_user,
         forced_tool_ids=[image_generation_tool_id],

@@ -19,24 +19,25 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from onyx.configs.app_configs import POSTGRES_HOST
-from onyx.configs.app_configs import POSTGRES_PASSWORD
-from onyx.configs.app_configs import POSTGRES_PORT
-from onyx.configs.app_configs import POSTGRES_USER
-from onyx.db.engine.sql_engine import build_connection_string
-from onyx.db.engine.sql_engine import SYNC_DB_API
+from tests.integration.common_utils.types import POSTGRES_HOST
+from tests.integration.common_utils.types import POSTGRES_PASSWORD
+from tests.integration.common_utils.types import POSTGRES_PORT
+from tests.integration.common_utils.types import POSTGRES_USER
+
+# build_connection_string removed
+# SYNC_DB_API removed
 from shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
 
 
 def _create_sync_engine() -> Engine:
     """Create a synchronous SQLAlchemy engine for pytest-alembic."""
-    conn_str = build_connection_string(
+    conn_str = build_connection_string(  # noqa: F821,F841
         db="postgres",
         user=POSTGRES_USER,
         password=POSTGRES_PASSWORD,
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,
-        db_api=SYNC_DB_API,
+        db_api=SYNC_DB_API,  # noqa: F821,F841
     )
     return create_engine(conn_str)
 

@@ -5,9 +5,9 @@ from datetime import timezone
 import jwt
 import requests
 
-from onyx.server.manage.models import AllUsersResponse
-from onyx.server.models import FullUserSnapshot
-from onyx.server.models import InvitedUserSnapshot
+from tests.integration.common_utils.types import AllUsersResponse
+from tests.integration.common_utils.types import FullUserSnapshot
+from tests.integration.common_utils.types import InvitedUserSnapshot
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 
