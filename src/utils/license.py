@@ -12,12 +12,15 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from pydantic import BaseModel
+
+try:
+    from cryptography.exceptions import InvalidSignature
+except ModuleNotFoundError:
+
+    class InvalidSignature(Exception):  # type: ignore[no-redef]
+        pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,15 @@ class LicenseData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _get_public_key() -> RSAPublicKey:
+def _get_public_key() -> Any:
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+    except ModuleNotFoundError as exc:
+        raise ValueError(
+            "License signature verification requires the cryptography package."
+        ) from exc
+
     key_pem = os.environ.get("LICENSE_PUBLIC_KEY_PEM")
     if not key_pem:
         if not _LICENSE_PUBLIC_KEY_PATH.exists():
@@ -87,6 +98,9 @@ def verify_license_signature(license_data: str) -> LicensePayload:
     Raises ``ValueError`` on any validation or signature failure.
     """
     try:
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+
         decoded: dict[str, Any] = json.loads(base64.b64decode(license_data))
         license_obj = LicenseData(**decoded)
 

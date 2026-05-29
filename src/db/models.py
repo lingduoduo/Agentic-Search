@@ -98,6 +98,24 @@ class ChatMessageRecord:
 
 
 @dataclass(slots=True)
+class HookRecord:
+    """Persisted configuration for an outbound webhook."""
+
+    id: str
+    name: str
+    hook_point: str
+    endpoint_url: str
+    api_key: str | None = None
+    fail_strategy: str = "soft"
+    timeout_seconds: float = 5.0
+    is_active: bool = True
+    is_reachable: bool | None = None
+    creator_id: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(slots=True)
 class IndexAttemptRecord:
     """Status and counters for a connector indexing attempt."""
 
