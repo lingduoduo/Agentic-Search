@@ -12,12 +12,12 @@ from src.context.models import LLMResponse
 from src.context.models import SearchFilters
 from src.context.models import SearchRequest
 from src.context.retrieval.search_runner import run_search
-from src.prompts.query_expansion import KEYWORD_EXPANSION_PROMPT
 from src.prompts.query_expansion import QUERY_TYPE_PROMPT
 from src.prompts.search_flow_classification import CHAT_CLASS
-from src.prompts.search_flow_classification import SEARCH_CHAT_PROMPT
 from src.prompts.search_flow_classification import SEARCH_CLASS
 from src.retrieval.context import SearchResult
+from src.secondary_llm_flows import classify_is_search_flow
+from src.secondary_llm_flows import expand_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -41,21 +41,6 @@ def _llm_text(response: LLMResponse | str) -> str:
     return response if isinstance(response, str) else response.content
 
 
-def expand_keywords(user_query: str, llm: LLMClient) -> list[str]:
-    """Call the LLM to generate BM25-style keyword query expansions.
-
-    Returns expansion queries only — the original query is not included.
-    Returns an empty list when expansion fails or produces nothing new.
-    """
-    prompt = KEYWORD_EXPANSION_PROMPT.format(user_query=user_query)
-    text = _llm_text(llm.complete([ChatMessage(role="user", content=prompt)]))
-    return [
-        line.strip()
-        for line in text.strip().splitlines()
-        if line.strip() and line.strip() != user_query
-    ]
-
-
 def classify_query_type(user_query: str, llm: LLMClient) -> str:
     """Return ``'keyword'`` or ``'semantic'`` for the query."""
     prompt = QUERY_TYPE_PROMPT.format(user_query=user_query)
@@ -65,9 +50,7 @@ def classify_query_type(user_query: str, llm: LLMClient) -> str:
 
 def classify_search_flow(user_query: str, llm: LLMClient) -> str:
     """Return ``'search'`` or ``'chat'`` for the query."""
-    prompt = SEARCH_CHAT_PROMPT.format(user_query=user_query)
-    text = _llm_text(llm.complete([ChatMessage(role="user", content=prompt)])).lower()
-    return SEARCH_CLASS if SEARCH_CLASS in text else CHAT_CLASS
+    return SEARCH_CLASS if classify_is_search_flow(user_query, llm) else CHAT_CLASS
 
 
 def weighted_reciprocal_rank_fusion(
@@ -115,17 +98,12 @@ async def run_expanded_search(
     """
     keyword_expansions: list[str] = []
     if llm is not None and expand:
-        try:
-            keyword_expansions = expand_keywords(query, llm)
-            if keyword_expansions:
-                logger.debug(
-                    "Query expansion produced %d keyword queries for: %r",
-                    len(keyword_expansions),
-                    query,
-                )
-        except Exception as exc:
-            logger.warning(
-                "Query expansion failed (%s); using original query only.", exc
+        keyword_expansions = expand_keywords(query, llm)
+        if keyword_expansions:
+            logger.debug(
+                "Query expansion produced %d keyword queries for: %r",
+                len(keyword_expansions),
+                query,
             )
 
     all_queries = [query] + keyword_expansions
