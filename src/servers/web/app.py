@@ -12,13 +12,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from src.auth import AuthenticatedUser
 from src.auth import user_from_headers
 from src.configs import AppSettings
-from src.configs import Tier
-from src.configs import is_path_allowed_for_tier
 from src.configs import load_app_settings
 from src.context import ChatMessage
 from src.context import LLMClient
@@ -35,6 +31,13 @@ from src.servers.documents.cc_pair import create_documents_router
 from src.servers.query_and_chat.query_backend import basic_router as query_basic_router
 from src.servers.query_and_chat.search_backend import create_search_router
 from src.servers.enterprise_settings.api import create_enterprise_settings_routers
+from src.servers.features.hooks.api import create_hooks_router
+from src.servers.license.api import create_license_router
+from src.servers.middleware.license_enforcement import (
+    add_license_enforcement_middleware,
+)
+from src.servers.middleware.tenant_tracking import add_api_server_tenant_id_middleware
+from src.servers.middleware.tier_gate import add_tier_gate_middleware
 from src.servers.evals.api import create_evals_router
 from src.servers.tenants.api import router as tenants_router
 from src.servers.user_group.api import create_user_group_router
@@ -151,8 +154,9 @@ def create_web_app(
                 db.close()
 
     app = FastAPI(title="Agentic Search Web", lifespan=lifespan)
-    if resolved.license_enforcement_enabled:
-        app.add_middleware(_LicenseMiddleware, tier=Tier.FREE)
+    add_api_server_tenant_id_middleware(app, resolved)
+    add_license_enforcement_middleware(app, resolved)
+    add_tier_gate_middleware(app, resolved)
     app.include_router(create_analytics_router(db, resolved))
     app.include_router(create_search_router(db, search_url=settings.search_url))
     app.include_router(create_documents_router(db, resolved))
@@ -163,6 +167,8 @@ def create_web_app(
     app.include_router(ee_admin_router)
     app.include_router(ee_basic_router)
     app.include_router(create_evals_router(resolved, search_url=settings.search_url))
+    app.include_router(create_license_router(resolved))
+    app.include_router(create_hooks_router(db, resolved))
     frontend_dist = _frontend_dist_path()
 
     @app.get("/health")
@@ -361,21 +367,6 @@ def _document_view(document: ContextDocument) -> SourceDocumentView:
 
 def _optional_user_from_request(request: Request) -> AuthenticatedUser | None:
     return user_from_headers(request.headers)
-
-
-class _LicenseMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: FastAPI, *, tier: Tier) -> None:
-        super().__init__(app)
-        self.tier = tier
-
-    async def dispatch(self, request: Request, call_next):
-        if not is_path_allowed_for_tier(request.url.path, self.tier):
-            return Response(
-                content='{"detail":"Feature not available on current tier."}',
-                status_code=403,
-                media_type="application/json",
-            )
-        return await call_next(request)
 
 
 def _frontend_dist_path() -> Path | None:

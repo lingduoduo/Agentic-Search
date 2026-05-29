@@ -15,6 +15,7 @@ from .models import (
     ConnectorConfig,
     DocumentPermission,
     GroupRecord,
+    HookRecord,
     IndexAttemptRecord,
     IndexAttemptStatus,
     StoredDocument,
@@ -139,6 +140,21 @@ class AgenticSearchStore:
                 content TEXT NOT NULL,
                 metadata_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS hooks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                hook_point TEXT NOT NULL,
+                endpoint_url TEXT NOT NULL,
+                api_key TEXT,
+                fail_strategy TEXT NOT NULL DEFAULT 'soft',
+                timeout_seconds REAL NOT NULL DEFAULT 5.0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                is_reachable INTEGER,
+                creator_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS index_attempts (
@@ -777,6 +793,84 @@ class AgenticSearchStore:
             (start, end),
         ).fetchall()
         return [(row["day"], row["active_users"]) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Hooks
+    # ------------------------------------------------------------------
+
+    def upsert_hook(self, hook: HookRecord) -> HookRecord:
+        now = _now()
+        created_at = hook.created_at or self._created_at("hooks", hook.id, now)
+        self._conn.execute(
+            """
+            INSERT INTO hooks (
+                id, name, hook_point, endpoint_url, api_key,
+                fail_strategy, timeout_seconds, is_active, is_reachable,
+                creator_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                hook_point = excluded.hook_point,
+                endpoint_url = excluded.endpoint_url,
+                api_key = excluded.api_key,
+                fail_strategy = excluded.fail_strategy,
+                timeout_seconds = excluded.timeout_seconds,
+                is_active = excluded.is_active,
+                is_reachable = excluded.is_reachable,
+                creator_id = excluded.creator_id,
+                updated_at = excluded.updated_at
+            """,
+            (
+                hook.id,
+                hook.name,
+                hook.hook_point,
+                hook.endpoint_url,
+                hook.api_key,
+                hook.fail_strategy,
+                hook.timeout_seconds,
+                int(hook.is_active),
+                None if hook.is_reachable is None else int(hook.is_reachable),
+                hook.creator_id,
+                created_at,
+                now,
+            ),
+        )
+        self._conn.commit()
+        return self.get_hook(hook.id) or hook
+
+    def get_hook(self, hook_id: str) -> HookRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM hooks WHERE id = ?", (hook_id,)
+        ).fetchone()
+        return self._row_to_hook(row) if row else None
+
+    def list_hooks(self) -> list[HookRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM hooks ORDER BY created_at DESC, id"
+        ).fetchall()
+        return [self._row_to_hook(row) for row in rows]
+
+    def delete_hook(self, hook_id: str) -> bool:
+        cursor = self._conn.execute("DELETE FROM hooks WHERE id = ?", (hook_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def _row_to_hook(self, row: sqlite3.Row) -> HookRecord:
+        is_reachable_raw = row["is_reachable"]
+        return HookRecord(
+            id=row["id"],
+            name=row["name"],
+            hook_point=row["hook_point"],
+            endpoint_url=row["endpoint_url"],
+            api_key=row["api_key"],
+            fail_strategy=row["fail_strategy"],
+            timeout_seconds=float(row["timeout_seconds"]),
+            is_active=bool(row["is_active"]),
+            is_reachable=(None if is_reachable_raw is None else bool(is_reachable_raw)),
+            creator_id=row["creator_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
     def _row_to_connector(self, row: sqlite3.Row) -> ConnectorConfig:
         return ConnectorConfig(

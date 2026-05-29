@@ -19,6 +19,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 
 from src.auth import AuthenticatedUser
 from src.auth import user_from_headers
@@ -155,17 +156,22 @@ def create_user_group_router(
             store.remove_user_from_group(user_id, group_id)
         return UserGroupView.from_record(store.get_group(group_id))  # type: ignore[arg-type]
 
-    @router.delete("/admin/user-group/{group_id}", status_code=204)
+    @router.delete(
+        "/admin/user-group/{group_id}",
+        status_code=204,
+        response_class=Response,
+    )
     def delete_user_group(
         group_id: str,
         _: AuthenticatedUser = Depends(_require_admin),
-    ) -> None:
+    ) -> Response:
         """Delete a group and all its memberships."""
         if not store.delete_group(group_id):
             raise HTTPException(
                 status_code=404, detail=f"Group {group_id!r} not found."
             )
         logger.info("Deleted group %s.", group_id)
+        return Response(status_code=204)
 
     @router.get("/user-groups")
     def list_my_groups(

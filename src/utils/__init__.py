@@ -1,49 +1,47 @@
-"""Utility helpers for Agentic Search."""
+"""Utility helpers for Agentic Search.
 
-from .encryption import decrypt_bytes_to_string
-from .encryption import encrypt_string_to_bytes
-from .encryption import verify_encryption
-from .license import ApplicationStatus
-from .license import LicenseData
-from .license import LicensePayload
-from .license import get_license_status
-from .license import is_license_valid
-from .license import verify_license_signature
-from .license_expiry import ExpiryWarningStage
-from .license_expiry import get_expiry_warning_stage
-from .license_expiry import get_grace_days_remaining
-from .license_expiry import get_grace_period_end
-from .license_notifications import notify_admins_for_stage
-from .posthog_client import alias_user
-from .posthog_client import build_posthog_client
-from .posthog_client import get_anon_id_from_request
-from .posthog_client import parse_posthog_cookie
-from .telemetry import event_telemetry
-from .telemetry import identify_user
-from .tier import get_tier
-from .tier import tier_at_least
+Exports are loaded lazily so importing one utility module does not require every
+optional dependency used by the package.
+"""
 
-__all__ = [
-    "ApplicationStatus",
-    "ExpiryWarningStage",
-    "LicenseData",
-    "LicensePayload",
-    "alias_user",
-    "build_posthog_client",
-    "decrypt_bytes_to_string",
-    "encrypt_string_to_bytes",
-    "event_telemetry",
-    "get_anon_id_from_request",
-    "get_expiry_warning_stage",
-    "get_grace_days_remaining",
-    "get_grace_period_end",
-    "get_license_status",
-    "get_tier",
-    "identify_user",
-    "is_license_valid",
-    "notify_admins_for_stage",
-    "parse_posthog_cookie",
-    "tier_at_least",
-    "verify_encryption",
-    "verify_license_signature",
-]
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "decrypt_bytes_to_string": (".encryption", "decrypt_bytes_to_string"),
+    "encrypt_string_to_bytes": (".encryption", "encrypt_string_to_bytes"),
+    "verify_encryption": (".encryption", "verify_encryption"),
+    "ApplicationStatus": (".license", "ApplicationStatus"),
+    "LicenseData": (".license", "LicenseData"),
+    "LicensePayload": (".license", "LicensePayload"),
+    "get_license_status": (".license", "get_license_status"),
+    "is_license_valid": (".license", "is_license_valid"),
+    "verify_license_signature": (".license", "verify_license_signature"),
+    "ExpiryWarningStage": (".license_expiry", "ExpiryWarningStage"),
+    "get_expiry_warning_stage": (".license_expiry", "get_expiry_warning_stage"),
+    "get_grace_days_remaining": (".license_expiry", "get_grace_days_remaining"),
+    "get_grace_period_end": (".license_expiry", "get_grace_period_end"),
+    "notify_admins_for_stage": (".license_notifications", "notify_admins_for_stage"),
+    "alias_user": (".posthog_client", "alias_user"),
+    "build_posthog_client": (".posthog_client", "build_posthog_client"),
+    "get_anon_id_from_request": (".posthog_client", "get_anon_id_from_request"),
+    "parse_posthog_cookie": (".posthog_client", "parse_posthog_cookie"),
+    "event_telemetry": (".telemetry", "event_telemetry"),
+    "identify_user": (".telemetry", "identify_user"),
+    "get_tier": (".tier", "get_tier"),
+    "tier_at_least": (".tier", "tier_at_least"),
+}
+
+__all__ = sorted(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name, __name__), attr_name)
+    globals()[name] = value
+    return value
