@@ -92,6 +92,10 @@ class AppSettings:
     telemetry: TelemetrySettings = field(default_factory=TelemetrySettings)
     license_enforcement_enabled: bool = False
     cloud_data_plane_url: str | None = None
+    # Billing / Stripe configuration (optional; only needed when using billing endpoints)
+    stripe_publishable_key_override: str | None = None
+    stripe_publishable_key_url: str | None = None
+    web_domain: str = "http://localhost:8080"
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -145,6 +149,13 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         cloud_data_plane_url=get_env_str(
             source, "AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL", None
         ),
+        stripe_publishable_key_override=get_env_str(
+            source, "STRIPE_PUBLISHABLE_KEY_OVERRIDE", None
+        ),
+        stripe_publishable_key_url=get_env_str(
+            source, "STRIPE_PUBLISHABLE_KEY_URL", None
+        ),
+        web_domain=get_env_str(source, "WEB_DOMAIN", "http://localhost:8080"),
     )
 
 
