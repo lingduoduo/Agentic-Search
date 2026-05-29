@@ -96,6 +96,7 @@ class AppSettings:
     stripe_publishable_key_override: str | None = None
     stripe_publishable_key_url: str | None = None
     web_domain: str = "http://localhost:8080"
+    dev_mode: bool = False
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -156,6 +157,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
             source, "STRIPE_PUBLISHABLE_KEY_URL", None
         ),
         web_domain=get_env_str(source, "WEB_DOMAIN", "http://localhost:8080"),
+        dev_mode=get_env_bool(source, "DEV_MODE", False),
     )
 
 

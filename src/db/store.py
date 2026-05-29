@@ -1199,3 +1199,475 @@ class AgenticSearchStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+    # ------------------------------------------------------------------
+    # Standard answers (manage module)
+    # ------------------------------------------------------------------
+
+    def _ensure_standard_answer_tables(self) -> None:
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS standard_answer_categories (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS standard_answers (
+                id TEXT PRIMARY KEY,
+                keyword TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                match_regex INTEGER NOT NULL DEFAULT 0,
+                match_any_keywords INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS standard_answer_category_links (
+                answer_id TEXT NOT NULL,
+                category_id TEXT NOT NULL,
+                PRIMARY KEY (answer_id, category_id)
+            );
+            """
+        )
+        self._conn.commit()
+
+    def insert_standard_answer_category(self, name: str) -> dict[str, str]:
+        self._ensure_standard_answer_tables()
+        now = _now()
+        rec_id = _new_id("sac")
+        self._conn.execute(
+            "INSERT INTO standard_answer_categories (id, name, created_at) VALUES (?, ?, ?)",
+            (rec_id, name, now),
+        )
+        self._conn.commit()
+        return {"id": rec_id, "name": name, "created_at": now}
+
+    def fetch_standard_answer_categories(self) -> list[dict[str, str]]:
+        self._ensure_standard_answer_tables()
+        rows = self._conn.execute(
+            "SELECT * FROM standard_answer_categories ORDER BY name"
+        ).fetchall()
+        return [
+            {"id": r["id"], "name": r["name"], "created_at": r["created_at"]}
+            for r in rows
+        ]
+
+    def fetch_standard_answer_category(self, category_id: str) -> dict[str, str] | None:
+        self._ensure_standard_answer_tables()
+        row = self._conn.execute(
+            "SELECT * FROM standard_answer_categories WHERE id = ?", (category_id,)
+        ).fetchone()
+        return (
+            {"id": row["id"], "name": row["name"], "created_at": row["created_at"]}
+            if row
+            else None
+        )
+
+    def update_standard_answer_category(
+        self, category_id: str, name: str
+    ) -> dict[str, str]:
+        self._ensure_standard_answer_tables()
+        row = self._conn.execute(
+            "SELECT * FROM standard_answer_categories WHERE id = ?", (category_id,)
+        ).fetchone()
+        if not row:
+            msg = f"Category {category_id!r} not found"
+            raise KeyError(msg)
+        self._conn.execute(
+            "UPDATE standard_answer_categories SET name = ? WHERE id = ?",
+            (name, category_id),
+        )
+        self._conn.commit()
+        return {"id": category_id, "name": name, "created_at": row["created_at"]}
+
+    def insert_standard_answer(
+        self,
+        keyword: str,
+        answer: str,
+        category_ids: list[str],
+        match_regex: bool = False,
+        match_any_keywords: bool = False,
+    ) -> dict[str, object]:
+        self._ensure_standard_answer_tables()
+        now = _now()
+        rec_id = _new_id("sa")
+        self._conn.execute(
+            """
+            INSERT INTO standard_answers
+                (id, keyword, answer, match_regex, match_any_keywords, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rec_id,
+                keyword,
+                answer,
+                int(match_regex),
+                int(match_any_keywords),
+                now,
+                now,
+            ),
+        )
+        for cid in category_ids:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO standard_answer_category_links (answer_id, category_id) VALUES (?, ?)",
+                (rec_id, cid),
+            )
+        self._conn.commit()
+        return self._fetch_standard_answer(rec_id)  # type: ignore[return-value]
+
+    def fetch_standard_answers(self) -> list[dict[str, object]]:
+        self._ensure_standard_answer_tables()
+        rows = self._conn.execute(
+            "SELECT * FROM standard_answers ORDER BY created_at DESC"
+        ).fetchall()
+        return [self._fetch_standard_answer(r["id"]) for r in rows]  # type: ignore[misc]
+
+    def fetch_standard_answer(self, answer_id: str) -> dict[str, object] | None:
+        self._ensure_standard_answer_tables()
+        return self._fetch_standard_answer(answer_id)
+
+    def _fetch_standard_answer(self, answer_id: str) -> dict[str, object] | None:
+        row = self._conn.execute(
+            "SELECT * FROM standard_answers WHERE id = ?", (answer_id,)
+        ).fetchone()
+        if not row:
+            return None
+        cat_rows = self._conn.execute(
+            "SELECT category_id FROM standard_answer_category_links WHERE answer_id = ?",
+            (answer_id,),
+        ).fetchall()
+        return {
+            "id": row["id"],
+            "keyword": row["keyword"],
+            "answer": row["answer"],
+            "match_regex": bool(row["match_regex"]),
+            "match_any_keywords": bool(row["match_any_keywords"]),
+            "categories": [r["category_id"] for r in cat_rows],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def update_standard_answer(
+        self,
+        answer_id: str,
+        keyword: str,
+        answer: str,
+        category_ids: list[str],
+        match_regex: bool = False,
+        match_any_keywords: bool = False,
+    ) -> dict[str, object]:
+        self._ensure_standard_answer_tables()
+        now = _now()
+        self._conn.execute(
+            """
+            UPDATE standard_answers
+            SET keyword=?, answer=?, match_regex=?, match_any_keywords=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                keyword,
+                answer,
+                int(match_regex),
+                int(match_any_keywords),
+                now,
+                answer_id,
+            ),
+        )
+        self._conn.execute(
+            "DELETE FROM standard_answer_category_links WHERE answer_id = ?",
+            (answer_id,),
+        )
+        for cid in category_ids:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO standard_answer_category_links (answer_id, category_id) VALUES (?, ?)",
+                (answer_id, cid),
+            )
+        self._conn.commit()
+        return self._fetch_standard_answer(answer_id)  # type: ignore[return-value]
+
+    def remove_standard_answer(self, answer_id: str) -> None:
+        self._ensure_standard_answer_tables()
+        self._conn.execute(
+            "DELETE FROM standard_answer_category_links WHERE answer_id = ?",
+            (answer_id,),
+        )
+        self._conn.execute("DELETE FROM standard_answers WHERE id = ?", (answer_id,))
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # SCIM token storage
+    # ------------------------------------------------------------------
+
+    def _ensure_scim_tables(self) -> None:
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS scim_tokens (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_display TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_used_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS scim_user_mappings (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL UNIQUE,
+                external_id TEXT,
+                scim_username TEXT,
+                department TEXT,
+                manager TEXT,
+                given_name TEXT,
+                family_name TEXT,
+                scim_emails_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS scim_group_mappings (
+                id TEXT PRIMARY KEY,
+                group_id TEXT NOT NULL UNIQUE,
+                external_id TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS user_is_active (
+                user_id TEXT PRIMARY KEY,
+                is_active INTEGER NOT NULL DEFAULT 1
+            );
+            """
+        )
+        self._conn.commit()
+
+    def get_scim_token_by_hash(self, token_hash: str) -> dict[str, object] | None:
+        self._ensure_scim_tables()
+        row = self._conn.execute(
+            "SELECT * FROM scim_tokens WHERE token_hash = ?", (token_hash,)
+        ).fetchone()
+        return self._row_to_scim_token(row) if row else None
+
+    def create_scim_token(
+        self, name: str, token_hash: str, token_display: str
+    ) -> dict[str, object]:
+        self._ensure_scim_tables()
+        now = _now()
+        rec_id = _new_id("sctok")
+        self._conn.execute(
+            """
+            INSERT INTO scim_tokens (id, name, token_hash, token_display, is_active, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (rec_id, name, token_hash, token_display, now),
+        )
+        self._conn.commit()
+        return {
+            "id": rec_id,
+            "name": name,
+            "token_hash": token_hash,
+            "token_display": token_display,
+            "is_active": True,
+            "created_at": now,
+            "last_used_at": None,
+        }
+
+    def update_scim_token_last_used(self, token_id: str) -> None:
+        self._ensure_scim_tables()
+        self._conn.execute(
+            "UPDATE scim_tokens SET last_used_at = ? WHERE id = ?", (_now(), token_id)
+        )
+        self._conn.commit()
+
+    def list_scim_tokens(self) -> list[dict[str, object]]:
+        self._ensure_scim_tables()
+        rows = self._conn.execute(
+            "SELECT * FROM scim_tokens ORDER BY created_at DESC"
+        ).fetchall()
+        return [self._row_to_scim_token(r) for r in rows]
+
+    def revoke_scim_token(self, token_id: str) -> bool:
+        self._ensure_scim_tables()
+        cur = self._conn.execute(
+            "UPDATE scim_tokens SET is_active = 0 WHERE id = ?", (token_id,)
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def _row_to_scim_token(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "token_hash": row["token_hash"],
+            "token_display": row["token_display"],
+            "is_active": bool(row["is_active"]),
+            "created_at": row["created_at"],
+            "last_used_at": row["last_used_at"],
+        }
+
+    def get_scim_user_mapping(self, user_id: str) -> dict[str, object] | None:
+        self._ensure_scim_tables()
+        row = self._conn.execute(
+            "SELECT * FROM scim_user_mappings WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def create_scim_user_mapping(
+        self,
+        user_id: str,
+        external_id: str | None = None,
+        scim_username: str | None = None,
+        department: str | None = None,
+        manager: str | None = None,
+        given_name: str | None = None,
+        family_name: str | None = None,
+        scim_emails_json: str | None = None,
+    ) -> None:
+        self._ensure_scim_tables()
+        now = _now()
+        rec_id = _new_id("scum")
+        self._conn.execute(
+            """
+            INSERT INTO scim_user_mappings
+                (id, user_id, external_id, scim_username, department, manager,
+                 given_name, family_name, scim_emails_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rec_id,
+                user_id,
+                external_id,
+                scim_username,
+                department,
+                manager,
+                given_name,
+                family_name,
+                scim_emails_json,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    def upsert_scim_user_mapping(
+        self,
+        user_id: str,
+        external_id: str | None = None,
+        scim_username: str | None = None,
+        department: str | None = None,
+        manager: str | None = None,
+        given_name: str | None = None,
+        family_name: str | None = None,
+        scim_emails_json: str | None = None,
+    ) -> None:
+        self._ensure_scim_tables()
+        now = _now()
+        existing = self._conn.execute(
+            "SELECT id FROM scim_user_mappings WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if existing:
+            self._conn.execute(
+                """
+                UPDATE scim_user_mappings
+                SET external_id=?, scim_username=?, department=?, manager=?,
+                    given_name=?, family_name=?, scim_emails_json=?, updated_at=?
+                WHERE user_id=?
+                """,
+                (
+                    external_id,
+                    scim_username,
+                    department,
+                    manager,
+                    given_name,
+                    family_name,
+                    scim_emails_json,
+                    now,
+                    user_id,
+                ),
+            )
+        else:
+            rec_id = _new_id("scum")
+            self._conn.execute(
+                """
+                INSERT INTO scim_user_mappings
+                    (id, user_id, external_id, scim_username, department, manager,
+                     given_name, family_name, scim_emails_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    rec_id,
+                    user_id,
+                    external_id,
+                    scim_username,
+                    department,
+                    manager,
+                    given_name,
+                    family_name,
+                    scim_emails_json,
+                    now,
+                    now,
+                ),
+            )
+        self._conn.commit()
+
+    def delete_scim_user_mapping(self, user_id: str) -> None:
+        self._ensure_scim_tables()
+        self._conn.execute(
+            "DELETE FROM scim_user_mappings WHERE user_id = ?", (user_id,)
+        )
+        self._conn.commit()
+
+    def get_scim_group_mapping(self, group_id: str) -> dict[str, object] | None:
+        self._ensure_scim_tables()
+        row = self._conn.execute(
+            "SELECT * FROM scim_group_mappings WHERE group_id = ?", (group_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def create_scim_group_mapping(
+        self, group_id: str, external_id: str | None = None
+    ) -> None:
+        self._ensure_scim_tables()
+        rec_id = _new_id("scgm")
+        self._conn.execute(
+            "INSERT OR IGNORE INTO scim_group_mappings (id, group_id, external_id, created_at) VALUES (?, ?, ?, ?)",
+            (rec_id, group_id, external_id, _now()),
+        )
+        self._conn.commit()
+
+    def upsert_scim_group_mapping(self, group_id: str, external_id: str | None) -> None:
+        self._ensure_scim_tables()
+        existing = self._conn.execute(
+            "SELECT id FROM scim_group_mappings WHERE group_id = ?", (group_id,)
+        ).fetchone()
+        if existing:
+            self._conn.execute(
+                "UPDATE scim_group_mappings SET external_id = ? WHERE group_id = ?",
+                (external_id, group_id),
+            )
+        else:
+            self._conn.execute(
+                "INSERT INTO scim_group_mappings (id, group_id, external_id, created_at) VALUES (?, ?, ?, ?)",
+                (_new_id("scgm"), group_id, external_id, _now()),
+            )
+        self._conn.commit()
+
+    def delete_scim_group_mapping(self, group_id: str) -> None:
+        self._ensure_scim_tables()
+        self._conn.execute(
+            "DELETE FROM scim_group_mappings WHERE group_id = ?", (group_id,)
+        )
+        self._conn.commit()
+
+    def set_user_active(self, user_id: str, is_active: bool) -> None:
+        """Set the is_active flag for a user (used by SCIM provisioning)."""
+        self._ensure_scim_tables()
+        self._conn.execute(
+            "INSERT OR REPLACE INTO user_is_active (user_id, is_active) VALUES (?, ?)",
+            (user_id, int(is_active)),
+        )
+        self._conn.commit()
+
+    def get_user_active(self, user_id: str) -> bool:
+        """Return the is_active flag for a user (defaults to True)."""
+        self._ensure_scim_tables()
+        row = self._conn.execute(
+            "SELECT is_active FROM user_is_active WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        return bool(row["is_active"]) if row else True
