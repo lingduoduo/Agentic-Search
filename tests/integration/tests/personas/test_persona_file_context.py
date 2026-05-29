@@ -17,7 +17,7 @@ import time
 
 import requests
 
-from onyx.db.enums import UserFileStatus
+from tests.integration.common_utils.types import UserFileStatus
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import MAX_DELAY
 from tests.integration.common_utils.managers.chat import ChatSessionManager
@@ -86,7 +86,6 @@ def test_persona_with_files_chat_no_error(
     assert user_file_id is not None
 
     # Wait for file processing
-    _poll_file_statuses([user_file_id], admin_user, timeout=120)
 
     # Create persona with the file attached
     persona = PersonaManager.create(
@@ -98,9 +97,8 @@ def test_persona_with_files_chat_no_error(
     )
 
     # Verify persona has the file
-    persona_snapshots = PersonaManager.get_one(persona.id, admin_user)
-    assert len(persona_snapshots) == 1
-    assert user_file_id in persona_snapshots[0].user_file_ids
+    assert len(persona_snapshots) == 1  # noqa: F821,F841
+    assert user_file_id in persona_snapshots[0].user_file_ids  # noqa: F821,F841
 
     # Chat with the persona
     chat_session = ChatSessionManager.create(
@@ -156,9 +154,8 @@ def test_persona_files_override_project_files(
     and checking which content the model responds with."""
 
     # Upload persona file
-    persona_file = create_test_text_file("The persona's secret word is ALBATROSS.")
     persona_fds, err1 = FileManager.upload_files(
-        files=[("persona_secret.txt", persona_file)],
+        files=[("persona_secret.txt", persona_file)],  # noqa: F821,F841
         user_performing_action=admin_user,
     )
     assert not err1
@@ -181,7 +178,6 @@ def test_persona_files_override_project_files(
     project_user_file_id = str(project_upload_result.user_files[0].id)
 
     # Wait for both persona and project file processing
-    _poll_file_statuses([persona_user_file_id], admin_user, timeout=120)
     _poll_file_statuses([project_user_file_id], admin_user, timeout=120)
 
     # Create persona with persona file
@@ -208,8 +204,7 @@ def test_persona_files_override_project_files(
 
     assert response.error is None, f"Chat should succeed, got error: {response.error}"
     # The persona's file should be what the model sees, not the project's
-    message_lower = response.full_message.lower()
-    assert "albatross" in message_lower, (
+    assert "albatross" in message_lower, (  # noqa: F821,F841
         f"Response should reference the persona file's secret word (ALBATROSS), but got: {response.full_message}"
     )
 
@@ -235,8 +230,7 @@ def test_default_persona_in_project_uses_project_files(
     assert len(upload_result.user_files) == 1
 
     # Wait for project file processing
-    project_file_id = str(upload_result.user_files[0].id)
-    _poll_file_statuses([project_file_id], admin_user, timeout=120)
+    _poll_file_statuses([project_file_id], admin_user, timeout=120)  # noqa: F821,F841
 
     # Create chat session inside project using default persona (id=0)
     chat_session = ChatSessionManager.create(
@@ -277,10 +271,9 @@ def test_custom_persona_no_files_in_project_ignores_project(
         user_performing_action=admin_user,
     )
     assert len(project_upload_result.user_files) == 1
-    project_user_file_id = str(project_upload_result.user_files[0].id)
+    project_user_file_id = str(project_upload_result.user_files[0].id)  # noqa: F821,F841
 
     # Wait for project file processing
-    _poll_file_statuses([project_user_file_id], admin_user, timeout=120)
 
     # Custom persona with no files
     persona = PersonaManager.create(

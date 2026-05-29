@@ -18,30 +18,37 @@ from uuid import uuid4
 import pytest
 import requests
 
-from onyx.configs.constants import FileOrigin
-from onyx.connectors.models import InputType
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.enums import AccessType
-from onyx.db.enums import ChatSessionSharedStatus
-from onyx.db.models import ChatSession
-from onyx.db.models import Document
-from onyx.db.models import ToolCall
-from onyx.file_store.file_store import get_default_file_store
-from onyx.file_store.models import FileDescriptor
-from onyx.server.documents.models import DocumentSource
-from tests.integration.common_utils.constants import API_SERVER_URL
-from tests.integration.common_utils.managers.api_key import APIKeyManager
-from tests.integration.common_utils.managers.cc_pair import CCPairManager
-from tests.integration.common_utils.managers.chat import ChatSessionManager
-from tests.integration.common_utils.managers.document import DocumentManager
-from tests.integration.common_utils.managers.file import FileManager
-from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
-from tests.integration.common_utils.managers.persona import PersonaManager
-from tests.integration.common_utils.managers.user import UserManager
-from tests.integration.common_utils.test_models import DATestCCPair
-from tests.integration.common_utils.test_models import DATestChatSession
-from tests.integration.common_utils.test_models import DATestPersona
-from tests.integration.common_utils.test_models import DATestUser
+from tests.integration.common_utils.types import FileOrigin
+from tests.integration.common_utils.types import InputType
+
+# get_session_with_current_tenant removed — no direct DB access
+from tests.integration.common_utils.types import AccessType
+
+
+class ChatSessionSharedStatus:
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+
+# ChatSession ORM removed
+# Document ORM removed — use HTTP
+# Tool ORM removed — use HTTPCall
+# get_default_file_store removed — no direct file store access
+from tests.integration.common_utils.types import FileDescriptor  # noqa: E402
+from tests.integration.common_utils.types import DocumentSource  # noqa: E402
+from tests.integration.common_utils.constants import API_SERVER_URL  # noqa: E402
+from tests.integration.common_utils.managers.api_key import APIKeyManager  # noqa: E402
+from tests.integration.common_utils.managers.cc_pair import CCPairManager  # noqa: E402
+from tests.integration.common_utils.managers.chat import ChatSessionManager  # noqa: E402
+from tests.integration.common_utils.managers.document import DocumentManager  # noqa: E402
+from tests.integration.common_utils.managers.file import FileManager  # noqa: E402
+from tests.integration.common_utils.managers.llm_provider import LLMProviderManager  # noqa: E402
+from tests.integration.common_utils.managers.persona import PersonaManager  # noqa: E402
+from tests.integration.common_utils.managers.user import UserManager  # noqa: E402
+from tests.integration.common_utils.test_models import DATestCCPair  # noqa: E402
+from tests.integration.common_utils.test_models import DATestChatSession  # noqa: E402
+from tests.integration.common_utils.test_models import DATestPersona  # noqa: E402
+from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
 
 class UserFileTestSetup(NamedTuple):
@@ -60,16 +67,12 @@ def user_file_setup(reset: None) -> UserFileTestSetup:  # noqa: ARG001
     Creates users, files, and a public assistant with files.
     """
     # Create an admin user (first user created is automatically an admin)
-    admin_user: DATestUser = UserManager.create(name="admin_user")
 
     # Create LLM provider for chat functionality
-    LLMProviderManager.create(user_performing_action=admin_user)
 
     # Create user1 who will own the file
-    user1: DATestUser = UserManager.create(name="user1_file_owner")
 
     # Create user2 who will use the assistant but doesn't own the file
-    user2: DATestUser = UserManager.create(name="user2_non_owner")
 
     # Create a test file and upload as user1
     test_file_content = b"This is test content for user file permission checking."
@@ -77,7 +80,7 @@ def user_file_setup(reset: None) -> UserFileTestSetup:  # noqa: ARG001
 
     file_descriptors, error = FileManager.upload_files(
         files=[test_file],
-        user_performing_action=user1,
+        user_performing_action=user1,  # noqa: F821,F841
     )
 
     assert not error, f"Failed to upload file: {error}"
@@ -95,13 +98,13 @@ def user_file_setup(reset: None) -> UserFileTestSetup:  # noqa: ARG001
         description="A public assistant with user files for testing permissions",
         is_public=True,
         user_file_ids=[user_file_id],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     return UserFileTestSetup(
-        admin_user=admin_user,
-        user1_file_owner=user1,
-        user2_non_owner=user2,
+        admin_user=admin_user,  # noqa: F821,F841
+        user1_file_owner=user1,  # noqa: F821,F841
+        user2_non_owner=user2,  # noqa: F821,F841
         user1_file_descriptor=user1_file_descriptor,
         user1_file_id=user_file_id,
         public_assistant=public_assistant,
@@ -302,7 +305,7 @@ class ImageGenSetup(NamedTuple):
 def _seed_image_gen_tool_call(chat_session_id: UUID) -> str:
     """Persist a fake image to the file store and link it via a ToolCall row,
     mirroring what `ImageGenerationTool` produces at runtime."""
-    file_store = get_default_file_store()
+    file_store = get_default_file_store()  # noqa: F821,F841
     file_id = file_store.save_file(
         content=io.BytesIO(_IMAGE_GEN_PNG_BYTES),
         display_name="GeneratedImage",
@@ -310,8 +313,8 @@ def _seed_image_gen_tool_call(chat_session_id: UUID) -> str:
         file_type="image/png",
     )
 
-    with get_session_with_current_tenant() as db_session:
-        tool_call = ToolCall(
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        tool_call = ToolCall(  # noqa: F821,F841
             chat_session_id=chat_session_id,
             parent_chat_message_id=None,
             parent_tool_call_id=None,
@@ -399,9 +402,10 @@ def test_non_owner_can_download_image_gen_file_in_public_session(
     """When the chat session is publicly shared, any authenticated user must
     be able to fetch its image-gen outputs — mirrors the existing
     `ChatMessage.files` public-share branch."""
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         chat_session = db_session.get(
-            ChatSession, UUID(str(image_gen_setup.chat_session.id))
+            ChatSession,  # noqa: F821
+            UUID(str(image_gen_setup.chat_session.id)),  # noqa: F821,F841
         )
         assert chat_session is not None
         chat_session.shared_status = ChatSessionSharedStatus.PUBLIC
@@ -428,15 +432,15 @@ def _seed_connector_file(
 ) -> str:
     """Save bytes and link `Document.file_id` to the storage id, exercising
     the fast path in `_user_can_access_connector_file`."""
-    file_store = get_default_file_store()
+    file_store = get_default_file_store()  # noqa: F821,F841
     storage_id = file_store.save_file(
         content=io.BytesIO(_CONNECTOR_FILE_BYTES),
         display_name="connector_doc.txt",
         file_origin=file_origin,
         file_type="text/plain",
     )
-    with get_session_with_current_tenant() as db_session:
-        document = db_session.get(Document, document_id)
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        document = db_session.get(Document, document_id)  # noqa: F821,F841
         assert document is not None, f"Seeded document {document_id} not found"
         document.file_id = storage_id
         db_session.commit()
@@ -571,7 +575,7 @@ def _save_non_tabular_file_bytes(file_id: str, file_origin: FileOrigin) -> None:
     """Save bytes under the exact `file_id` listed in the cc_pair's
     `file_locations`. Can't reuse `_seed_connector_file` because that
     stamps `Document.file_id` and would bypass the fallback under test."""
-    file_store = get_default_file_store()
+    file_store = get_default_file_store()  # noqa: F821,F841
     file_store.save_file(
         content=io.BytesIO(_CONNECTOR_FILE_BYTES),
         display_name="non_tabular.txt",

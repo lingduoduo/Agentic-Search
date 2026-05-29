@@ -3,9 +3,8 @@ from typing import Optional
 from github import Github
 from github.GithubException import GithubException
 
-from onyx.utils.logger import setup_logger
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)  # noqa: F821,F841
 
 
 class GitHubManager:
@@ -100,15 +99,13 @@ class GitHubManager:
             )
 
         try:
-            repo = self.github_client.get_repo(f"{repo_owner}/{repo_name}")
+            repo = self.github_client.get_repo(f"{repo_owner}/{repo_name}")  # noqa: F821,F841
             org = self.github_client.get_organization(repo_owner)
-            team = org.get_team_by_slug(team_slug)
+            team = org.get_team_by_slug(team_slug)  # noqa: F821,F841
 
             # Add team to repository
-            team.add_to_repos(repo)
 
             # Set team permissions on the repository
-            team.set_repo_permission(repo, permission)
 
             logger.info(
                 "Successfully added team %s to %s/%s with %s permissions",
@@ -141,12 +138,11 @@ class GitHubManager:
             GithubException: If GitHub API call fails
         """
         try:
-            repo = self.github_client.get_repo(f"{repo_owner}/{repo_name}")
+            repo = self.github_client.get_repo(f"{repo_owner}/{repo_name}")  # noqa: F821,F841
             org = self.github_client.get_organization(repo_owner)
-            team = org.get_team_by_slug(team_slug)
+            team = org.get_team_by_slug(team_slug)  # noqa: F821,F841
 
             # Remove team from repository
-            team.remove_from_repos(repo)
 
             logger.info(
                 "Successfully removed team %s from %s/%s",

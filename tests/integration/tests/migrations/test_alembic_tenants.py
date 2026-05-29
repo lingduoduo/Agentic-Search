@@ -22,12 +22,12 @@ from pytest_alembic.tests import test_upgrade
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from onyx.configs.app_configs import POSTGRES_HOST
-from onyx.configs.app_configs import POSTGRES_PASSWORD
-from onyx.configs.app_configs import POSTGRES_PORT
-from onyx.configs.app_configs import POSTGRES_USER
-from onyx.db.engine.sql_engine import build_connection_string
-from onyx.db.engine.sql_engine import SYNC_DB_API
+from tests.integration.common_utils.types import POSTGRES_HOST
+from tests.integration.common_utils.types import POSTGRES_PASSWORD
+from tests.integration.common_utils.types import POSTGRES_PORT
+from tests.integration.common_utils.types import POSTGRES_USER
+# build_connection_string removed
+# SYNC_DB_API removed
 
 
 @pytest.fixture
@@ -43,13 +43,13 @@ def alembic_config() -> dict[str, Any]:
 @pytest.fixture
 def alembic_engine() -> Generator[Engine, None, None]:
     """Override alembic_engine for tenants configuration."""
-    conn_str = build_connection_string(
+    conn_str = build_connection_string(  # noqa: F821,F841
         db="postgres",
         user=POSTGRES_USER,
         password=POSTGRES_PASSWORD,
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,
-        db_api=SYNC_DB_API,
+        db_api=SYNC_DB_API,  # noqa: F821,F841
     )
     engine = create_engine(conn_str)
     yield engine

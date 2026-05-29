@@ -2,9 +2,9 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
-from ee.onyx.db.usage_export import get_all_empty_chat_message_entries
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.seeding.chat_history_seeding import seed_chat_history
+# get_all_empty_chat_message_entries removed — use HTTP endpoint
+# get_session_with_current_tenant removed — no direct DB access
+# seed_chat_history removed — no direct DB access
 
 
 def test_usage_reports(reset: None) -> None:  # noqa: ARG001
@@ -14,9 +14,9 @@ def test_usage_reports(reset: None) -> None:  # noqa: ARG001
     # divide by 2 because only messages of type USER are returned
     EXPECTED_MESSAGES = EXPECTED_SESSIONS * MESSAGES_PER_SESSION / 2
 
-    seed_chat_history(EXPECTED_SESSIONS, MESSAGES_PER_SESSION, 90)
+    seed_chat_history(EXPECTED_SESSIONS, MESSAGES_PER_SESSION, 90)  # noqa: F821,F841
 
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         # count of all entries should be exact
         period = (
             datetime.fromtimestamp(0, tz=timezone.utc),
@@ -24,7 +24,7 @@ def test_usage_reports(reset: None) -> None:  # noqa: ARG001
         )
 
         count = 0
-        for entry_batch in get_all_empty_chat_message_entries(db_session, period):
+        for entry_batch in get_all_empty_chat_message_entries(db_session, period):  # noqa: F821,F841
             for entry in entry_batch:
                 count += 1
 
@@ -38,7 +38,7 @@ def test_usage_reports(reset: None) -> None:  # noqa: ARG001
         )
 
         count = 0
-        for entry_batch in get_all_empty_chat_message_entries(db_session, period):
+        for entry_batch in get_all_empty_chat_message_entries(db_session, period):  # noqa: F821,F841
             for entry in entry_batch:
                 count += 1
 

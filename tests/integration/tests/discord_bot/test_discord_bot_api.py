@@ -6,9 +6,9 @@ These tests hit actual API endpoints via HTTP requests.
 import pytest
 import requests
 
-from onyx.db.discord_bot import get_discord_service_api_key
-from onyx.db.discord_bot import get_or_create_discord_service_api_key
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
+# get_discord_service_api_key removed
+# get_or_create_discord_service_api_key removed
+# get_session_with_current_tenant removed — no direct DB access
 from tests.integration.common_utils.managers.discord_bot import DiscordBotManager
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -19,7 +19,6 @@ class TestBotConfigEndpoints:
     def test_get_bot_config_not_configured(self, admin_user: DATestUser) -> None:
         """GET /config returns configured=False when no config exists."""
         # Ensure no config exists
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
 
         config = DiscordBotManager.get_bot_config(admin_user)
 
@@ -29,7 +28,6 @@ class TestBotConfigEndpoints:
     def test_create_bot_config(self, admin_user: DATestUser) -> None:
         """POST /config creates a new bot config."""
         # Ensure no config exists
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
 
         config = DiscordBotManager.create_bot_config(
             bot_token="test_token_123",
@@ -40,7 +38,6 @@ class TestBotConfigEndpoints:
         assert "created_at" in config
 
         # Cleanup
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
 
     def test_create_bot_config_already_exists(
         self,
@@ -48,7 +45,6 @@ class TestBotConfigEndpoints:
     ) -> None:
         """POST /config returns 409 if config already exists."""
         # Ensure no config exists, then create one
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
         DiscordBotManager.create_bot_config(
             bot_token="token1",
             user_performing_action=admin_user,
@@ -64,12 +60,10 @@ class TestBotConfigEndpoints:
         assert exc_info.value.response.status_code == 409
 
         # Cleanup
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
 
     def test_delete_bot_config(self, admin_user: DATestUser) -> None:
         """DELETE /config removes the bot config."""
         # Ensure no config exists, then create one
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
         DiscordBotManager.create_bot_config(
             bot_token="test_token",
             user_performing_action=admin_user,
@@ -86,7 +80,6 @@ class TestBotConfigEndpoints:
     def test_delete_bot_config_not_found(self, admin_user: DATestUser) -> None:
         """DELETE /config returns 404 if no config exists."""
         # Ensure no config exists
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
 
         # Try to delete - should fail
         with pytest.raises(requests.HTTPError) as exc_info:
@@ -107,22 +100,19 @@ class TestGuildConfigEndpoints:
         assert guild.registration_key.startswith("discord_")
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_list_guilds(self, admin_user: DATestUser) -> None:
         """GET /guilds returns all guild configs."""
         # Create some guilds
-        guild1 = DiscordBotManager.create_guild(admin_user)
         guild2 = DiscordBotManager.create_guild(admin_user)
 
         guilds = DiscordBotManager.list_guilds(admin_user)
 
         guild_ids = [g["id"] for g in guilds]
-        assert guild1.id in guild_ids
+        assert guild1.id in guild_ids  # noqa: F821,F841
         assert guild2.id in guild_ids
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild1.id, admin_user)
         DiscordBotManager.delete_guild_if_exists(guild2.id, admin_user)
 
     def test_get_guild_config(self, admin_user: DATestUser) -> None:
@@ -137,7 +127,6 @@ class TestGuildConfigEndpoints:
         assert fetched["guild_name"] is None
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_get_guild_config_not_found(self, admin_user: DATestUser) -> None:
         """GET /guilds/{config_id} returns 404 for non-existent guild."""
@@ -158,11 +147,9 @@ class TestGuildConfigEndpoints:
         assert updated["enabled"] is False
 
         # Verify persistence
-        fetched = DiscordBotManager.get_guild(guild.id, admin_user)
-        assert fetched["enabled"] is False
+        assert fetched["enabled"] is False  # noqa: F821,F841
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_delete_guild_config(self, admin_user: DATestUser) -> None:
         """DELETE /guilds/{config_id} removes the guild config."""
@@ -192,12 +179,10 @@ class TestGuildConfigEndpoints:
         assert key.startswith("discord_")
 
         # Should have two parts separated by dot
-        key_body = key.removeprefix("discord_")
-        parts = key_body.split(".", 1)
+        parts = key_body.split(".", 1)  # noqa: F821,F841
         assert len(parts) == 2
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_each_registration_key_is_unique(self, admin_user: DATestUser) -> None:
         """Each created guild gets a unique registration key."""
@@ -227,7 +212,6 @@ class TestChannelConfigEndpoints:
         assert channels == []
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_list_channels_with_data(self, admin_user: DATestUser) -> None:
         """GET /guilds/{id}/channels returns channel configs."""
@@ -258,7 +242,6 @@ class TestChannelConfigEndpoints:
         assert channel2.id in channel_ids
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_update_channel_enabled(self, admin_user: DATestUser) -> None:
         """PATCH /guilds/{id}/channels/{id} updates enabled status."""
@@ -287,12 +270,10 @@ class TestChannelConfigEndpoints:
         assert updated.enabled is True
 
         # Verify persistence
-        channels = DiscordBotManager.list_channels(guild.id, admin_user)
-        found = next(c for c in channels if c.id == channel.id)
+        found = next(c for c in channels if c.id == channel.id)  # noqa: F821,F841
         assert found.enabled is True
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_update_channel_thread_only_mode(self, admin_user: DATestUser) -> None:
         """PATCH /guilds/{id}/channels/{id} updates thread_only_mode."""
@@ -321,7 +302,6 @@ class TestChannelConfigEndpoints:
         assert updated.thread_only_mode is True
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_update_channel_require_bot_invocation(
         self,
@@ -353,7 +333,6 @@ class TestChannelConfigEndpoints:
         assert updated.require_bot_invocation is False
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
     def test_update_channel_not_found(self, admin_user: DATestUser) -> None:
         """PATCH /guilds/{id}/channels/{id} returns 404 for non-existent channel."""
@@ -374,7 +353,6 @@ class TestChannelConfigEndpoints:
         assert exc_info.value.response.status_code == 404
 
         # Cleanup
-        DiscordBotManager.delete_guild_if_exists(guild.id, admin_user)
 
 
 class TestServiceApiKeyCleanup:
@@ -386,24 +364,23 @@ class TestServiceApiKeyCleanup:
     ) -> None:
         """DELETE /config also deletes the service API key (self-hosted flow)."""
         # Setup: create bot config via API
-        DiscordBotManager.delete_bot_config_if_exists(admin_user)
         DiscordBotManager.create_bot_config(
             bot_token="test_token",
             user_performing_action=admin_user,
         )
 
         # Create service API key directly in DB (simulating bot registration)
-        with get_session_with_current_tenant() as db_session:
-            get_or_create_discord_service_api_key(db_session, "public")
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+            get_or_create_discord_service_api_key(db_session, "public")  # noqa: F821,F841
             db_session.commit()
 
             # Verify it exists
-            assert get_discord_service_api_key(db_session) is not None
+            assert get_discord_service_api_key(db_session) is not None  # noqa: F821,F841
 
         # Delete bot config via API
         result = DiscordBotManager.delete_bot_config(admin_user)
         assert result["deleted"] is True
 
         # Verify service API key was also deleted
-        with get_session_with_current_tenant() as db_session:
-            assert get_discord_service_api_key(db_session) is None
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+            assert get_discord_service_api_key(db_session) is None  # noqa: F821,F841

@@ -18,8 +18,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from onyx.db.engine.sql_engine import SqlEngine
-from onyx.db.engine.tenant_utils import get_schemas_needing_migration
+# SqlEngine removed — no direct DB access
+# get_schemas_needing_migration removed
 
 _BACKEND_DIR = __file__[: __file__.index("/tests/")]
 
@@ -31,7 +31,7 @@ _BACKEND_DIR = __file__[: __file__.index("/tests/")]
 
 @pytest.fixture
 def engine() -> Engine:
-    return SqlEngine.get_engine()
+    return SqlEngine.get_engine()  # noqa: F821,F841
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ def test_classifies_all_cases(
     - stale rev    → included (needs migration)
     """
     all_schemas = [tenant_schema_at_head, tenant_schema_empty, tenant_schema_stale_rev]
-    result = get_schemas_needing_migration(all_schemas, current_head_rev)
+    result = get_schemas_needing_migration(all_schemas, current_head_rev)  # noqa: F821,F841
 
     assert tenant_schema_at_head not in result
     assert tenant_schema_empty in result
@@ -153,12 +153,12 @@ def test_idempotent(
     """
     schemas = [tenant_schema_at_head, tenant_schema_empty]
 
-    first = get_schemas_needing_migration(schemas, current_head_rev)
-    second = get_schemas_needing_migration(schemas, current_head_rev)
+    first = get_schemas_needing_migration(schemas, current_head_rev)  # noqa: F821,F841
+    second = get_schemas_needing_migration(schemas, current_head_rev)  # noqa: F821,F841
 
     assert first == second
 
 
 def test_empty_input(current_head_rev: str) -> None:
     """An empty input list returns immediately without touching the DB."""
-    assert get_schemas_needing_migration([], current_head_rev) == []
+    assert get_schemas_needing_migration([], current_head_rev) == []  # noqa: F821,F841

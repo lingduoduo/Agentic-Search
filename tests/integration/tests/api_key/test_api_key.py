@@ -2,8 +2,8 @@ from uuid import UUID
 
 import requests
 
-from onyx.auth.schemas import UserRole
-from onyx.db.enums import AccountType
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import AccountType
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.user import UserManager
@@ -17,11 +17,10 @@ def test_limited(reset: None) -> None:  # noqa: ARG001
     others are not."""
 
     # Creating an admin user (first user created is automatically an admin)
-    admin_user: DATestUser = UserManager.create(name="admin_user")
 
     api_key: DATestAPIKey = APIKeyManager.create(
         api_key_role=UserRole.LIMITED,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # test limited endpoint
@@ -92,18 +91,16 @@ def test_api_key_limited_service_account(reset: None) -> None:  # noqa: ARG001
     )
 
     # Verify account_type
-    account_type = _get_service_account_account_type(admin_user, api_key.user_id)
-    assert account_type == AccountType.SERVICE_ACCOUNT, (
-        f"Expected account_type={AccountType.SERVICE_ACCOUNT}, got {account_type}"
+    assert account_type == AccountType.SERVICE_ACCOUNT, (  # noqa: F821,F841
+        f"Expected account_type={AccountType.SERVICE_ACCOUNT}, got {account_type}"  # noqa: F821,F841
     )
 
     # Verify no group membership
-    admin_ids, basic_ids = _get_default_group_user_ids(admin_user)
     user_id_str = str(api_key.user_id)
-    assert user_id_str not in admin_ids, (
+    assert user_id_str not in admin_ids, (  # noqa: F821,F841
         "LIMITED API key should NOT be in Admin default group"
     )
-    assert user_id_str not in basic_ids, (
+    assert user_id_str not in basic_ids, (  # noqa: F821,F841
         "LIMITED API key should NOT be in Basic default group"
     )
 
@@ -118,16 +115,14 @@ def test_api_key_basic_service_account(reset: None) -> None:  # noqa: ARG001
     )
 
     # Verify account_type
-    account_type = _get_service_account_account_type(admin_user, api_key.user_id)
-    assert account_type == AccountType.SERVICE_ACCOUNT, (
-        f"Expected account_type={AccountType.SERVICE_ACCOUNT}, got {account_type}"
+    assert account_type == AccountType.SERVICE_ACCOUNT, (  # noqa: F821,F841
+        f"Expected account_type={AccountType.SERVICE_ACCOUNT}, got {account_type}"  # noqa: F821,F841
     )
 
     # Verify Basic group membership
-    admin_ids, basic_ids = _get_default_group_user_ids(admin_user)
     user_id_str = str(api_key.user_id)
-    assert user_id_str in basic_ids, "BASIC API key should be in Basic default group"
-    assert user_id_str not in admin_ids, (
+    assert user_id_str in basic_ids, "BASIC API key should be in Basic default group"  # noqa: F821,F841
+    assert user_id_str not in admin_ids, (  # noqa: F821,F841
         "BASIC API key should NOT be in Admin default group"
     )
 
@@ -142,16 +137,14 @@ def test_api_key_admin_service_account(reset: None) -> None:  # noqa: ARG001
     )
 
     # Verify account_type
-    account_type = _get_service_account_account_type(admin_user, api_key.user_id)
-    assert account_type == AccountType.SERVICE_ACCOUNT, (
-        f"Expected account_type={AccountType.SERVICE_ACCOUNT}, got {account_type}"
+    assert account_type == AccountType.SERVICE_ACCOUNT, (  # noqa: F821,F841
+        f"Expected account_type={AccountType.SERVICE_ACCOUNT}, got {account_type}"  # noqa: F821,F841
     )
 
     # Verify Admin group membership
-    admin_ids, basic_ids = _get_default_group_user_ids(admin_user)
     user_id_str = str(api_key.user_id)
-    assert user_id_str in admin_ids, "ADMIN API key should be in Admin default group"
-    assert user_id_str not in basic_ids, (
+    assert user_id_str in admin_ids, "ADMIN API key should be in Admin default group"  # noqa: F821,F841
+    assert user_id_str not in basic_ids, (  # noqa: F821,F841
         "ADMIN API key should NOT be in Basic default group"
     )
 

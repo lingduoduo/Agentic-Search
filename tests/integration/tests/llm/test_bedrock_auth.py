@@ -11,7 +11,7 @@ response body verbatim. This test pins the contract:
 
 import requests
 
-from onyx.llm.constants import LlmProviderNames
+from tests.integration.common_utils.types import LlmProviderNames
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.user import UserManager
 

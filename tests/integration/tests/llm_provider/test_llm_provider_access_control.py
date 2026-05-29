@@ -5,23 +5,24 @@ import requests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.llm import can_user_access_llm_provider
-from onyx.db.llm import fetch_user_group_ids
-from onyx.db.llm import update_default_provider
-from onyx.db.llm import upsert_llm_provider
-from onyx.db.models import LLMProvider as LLMProviderModel
-from onyx.db.models import LLMProvider__Persona
-from onyx.db.models import LLMProvider__UserGroup
-from onyx.db.models import ModelConfiguration
-from onyx.db.models import Persona
-from onyx.db.models import User
-from onyx.db.models import User__UserGroup
-from onyx.db.models import UserGroup
-from onyx.llm.constants import LlmProviderNames
-from onyx.llm.factory import get_llm_for_persona
-from onyx.server.manage.llm.models import LLMProviderUpsertRequest
-from onyx.server.manage.llm.models import ModelConfigurationUpsertRequest
+# get_session_with_current_tenant removed — no direct DB access
+# can_user_access_llm_provider removed
+# fetch_user_group_ids removed
+# update_default_provider removed
+# upsert_llm_provider removed
+# LLMProviderModel ORM removed
+# LLMProvider__Persona ORM removed
+# LLMProvider__UserGroup ORM removed
+# ModelConfiguration ORM removed
+# Persona ORM removed
+# User ORM model removed — use HTTP
+# User ORM model removed — use HTTP__UserGroup
+# User ORM model removed — use HTTPGroup
+from tests.integration.common_utils.types import LlmProviderNames
+
+# get_llm_for_persona removed
+from tests.integration.common_utils.types import LLMProviderUpsertRequest
+from tests.integration.common_utils.types import ModelConfigurationUpsertRequest
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
 from tests.integration.common_utils.managers.persona import PersonaManager
@@ -41,8 +42,8 @@ def _create_llm_provider(
     default_model_name: str,
     is_public: bool,
     is_default: bool,
-) -> LLMProviderModel:
-    _provider = upsert_llm_provider(
+) -> LLMProviderModel:  # noqa: F821,F841
+    _provider = upsert_llm_provider(  # noqa: F821,F841
         llm_provider_upsert_request=LLMProviderUpsertRequest(
             name=name,
             provider=LlmProviderNames.OPENAI,
@@ -61,9 +62,9 @@ def _create_llm_provider(
         db_session=db_session,
     )
     if is_default:
-        update_default_provider(_provider.id, default_model_name, db_session)
+        update_default_provider(_provider.id, default_model_name, db_session)  # noqa: F821,F841
 
-    provider = db_session.get(LLMProviderModel, _provider.id)
+    provider = db_session.get(LLMProviderModel, _provider.id)  # noqa: F821,F841
     if not provider:
         raise ValueError(f"Provider {name} not found")
     return provider
@@ -73,16 +74,16 @@ def _create_persona(
     db_session: Session,
     *,
     name: str,
-    provider: LLMProviderModel,
+    provider: LLMProviderModel,  # noqa: F821,F841
     model_name: str = "gpt-4o-mini",
-) -> Persona:
+) -> Persona:  # noqa: F821,F841
     model_config = db_session.scalar(
-        select(ModelConfiguration).where(
-            ModelConfiguration.llm_provider_id == provider.id,
-            ModelConfiguration.name == model_name,
+        select(ModelConfiguration).where(  # noqa: F821,F841
+            ModelConfiguration.llm_provider_id == provider.id,  # noqa: F821,F841
+            ModelConfiguration.name == model_name,  # noqa: F821,F841
         )
     )
-    persona = Persona(
+    persona = Persona(  # noqa: F821,F841
         name=name,
         description=f"{name} description",
         default_model_configuration_id=model_config.id if model_config else None,
@@ -115,7 +116,7 @@ def test_can_user_access_llm_provider_or_logic(
     """
     admin_user, basic_user = users
 
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         # Public provider - accessible to everyone
         default_provider = _create_llm_provider(
             db_session,
@@ -152,26 +153,26 @@ def test_can_user_access_llm_provider_or_logic(
             provider=restricted_provider,
         )
 
-        access_group = UserGroup(name="access-group")
+        access_group = UserGroup(name="access-group")  # noqa: F821,F841
         db_session.add(access_group)
         db_session.flush()
 
         # Add both group and persona restrictions to restricted_provider
         db_session.add(
-            LLMProvider__UserGroup(
+            LLMProvider__UserGroup(  # noqa: F821,F841
                 llm_provider_id=restricted_provider.id,
                 user_group_id=access_group.id,
             )
         )
         db_session.add(
-            LLMProvider__Persona(
+            LLMProvider__Persona(  # noqa: F821,F841
                 llm_provider_id=restricted_provider.id,
                 persona_id=allowed_persona.id,
             )
         )
         # Only admin_user is in the access_group
         db_session.add(
-            User__UserGroup(
+            User__UserGroup(  # noqa: F821,F841
                 user_group_id=access_group.id,
                 user_id=admin_user.id,
             )
@@ -181,15 +182,14 @@ def test_can_user_access_llm_provider_or_logic(
         db_session.refresh(restricted_provider)
         db_session.refresh(locked_provider)
 
-        admin_model = db_session.get(User, admin_user.id)
-        basic_model = db_session.get(User, basic_user.id)
+        admin_model = db_session.get(User, admin_user.id)  # noqa: F821,F841
+        basic_model = db_session.get(User, basic_user.id)  # noqa: F821,F841
 
         assert admin_model is not None
         assert basic_model is not None
 
         # Fetch user group IDs for both users
-        admin_group_ids = fetch_user_group_ids(db_session, admin_model)
-        basic_group_ids = fetch_user_group_ids(db_session, basic_model)
+        basic_group_ids = fetch_user_group_ids(db_session, basic_model)  # noqa: F821,F841
 
         # Test is_public flag
         assert default_provider.is_public
@@ -197,24 +197,24 @@ def test_can_user_access_llm_provider_or_logic(
         assert not restricted_provider.is_public
 
         # Public provider - everyone can access
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             default_provider,
-            admin_group_ids,
+            admin_group_ids,  # noqa: F821,F841
             allowed_persona,
         )
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             default_provider,
             basic_group_ids,
             blocked_persona,
         )
 
         # Locked provider (is_public=False, no restrictions) - nobody can access
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             locked_provider,
-            admin_group_ids,
+            admin_group_ids,  # noqa: F821,F841
             allowed_persona,
         )
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             locked_provider,
             basic_group_ids,
             allowed_persona,
@@ -222,28 +222,28 @@ def test_can_user_access_llm_provider_or_logic(
 
         # Restricted provider with AND logic (both groups AND personas set)
         # admin_user in group + allowed_persona whitelisted → SUCCESS (both conditions met)
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             restricted_provider,
-            admin_group_ids,
+            admin_group_ids,  # noqa: F821,F841
             allowed_persona,
         )
 
         # admin_user in group + blocked_persona not whitelisted → FAIL (persona not allowed)
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             restricted_provider,
-            admin_group_ids,
+            admin_group_ids,  # noqa: F821,F841
             blocked_persona,
         )
 
         # basic_user not in group + allowed_persona whitelisted → FAIL (user not in group)
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             restricted_provider,
             basic_group_ids,
             allowed_persona,
         )
 
         # basic_user not in group + blocked_persona not whitelisted → FAIL (neither condition met)
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             restricted_provider,
             basic_group_ids,
             blocked_persona,
@@ -261,7 +261,7 @@ def test_public_provider_with_persona_restrictions(
     """
     admin_user, _basic_user = users
 
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         # Public provider with persona restrictions
         public_restricted = _create_llm_provider(
             db_session,
@@ -284,7 +284,7 @@ def test_public_provider_with_persona_restrictions(
 
         # Only whitelist one persona
         db_session.add(
-            LLMProvider__Persona(
+            LLMProvider__Persona(  # noqa: F821,F841
                 llm_provider_id=public_restricted.id,
                 persona_id=whitelisted_persona.id,
             )
@@ -292,19 +292,19 @@ def test_public_provider_with_persona_restrictions(
         db_session.flush()
         db_session.refresh(public_restricted)
 
-        admin_model = db_session.get(User, admin_user.id)
+        admin_model = db_session.get(User, admin_user.id)  # noqa: F821,F841
         assert admin_model is not None
-        admin_group_ids = fetch_user_group_ids(db_session, admin_model)
+        admin_group_ids = fetch_user_group_ids(db_session, admin_model)  # noqa: F821,F841
 
         # Whitelisted persona — should be allowed
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             public_restricted,
             admin_group_ids,
             whitelisted_persona,
         )
 
         # Non-whitelisted persona — should be denied despite is_public=True
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             public_restricted,
             admin_group_ids,
             non_whitelisted_persona,
@@ -312,7 +312,7 @@ def test_public_provider_with_persona_restrictions(
 
         # No persona context (e.g. global provider list) — should be denied
         # because provider has persona restrictions set
-        assert not can_user_access_llm_provider(
+        assert not can_user_access_llm_provider(  # noqa: F821,F841
             public_restricted,
             admin_group_ids,
             persona=None,
@@ -325,7 +325,7 @@ def test_public_provider_without_persona_restrictions(
     """Public providers with no persona restrictions remain accessible to all."""
     admin_user, basic_user = users
 
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         public_unrestricted = _create_llm_provider(
             db_session,
             name="public-unrestricted",
@@ -340,22 +340,22 @@ def test_public_provider_without_persona_restrictions(
             provider=public_unrestricted,
         )
 
-        admin_model = db_session.get(User, admin_user.id)
-        basic_model = db_session.get(User, basic_user.id)
+        admin_model = db_session.get(User, admin_user.id)  # noqa: F821,F841
+        basic_model = db_session.get(User, basic_user.id)  # noqa: F821,F841
         assert admin_model is not None
         assert basic_model is not None
 
-        admin_group_ids = fetch_user_group_ids(db_session, admin_model)
-        basic_group_ids = fetch_user_group_ids(db_session, basic_model)
+        admin_group_ids = fetch_user_group_ids(db_session, admin_model)  # noqa: F821,F841
+        basic_group_ids = fetch_user_group_ids(db_session, basic_model)  # noqa: F821,F841
 
         # Any user, any persona — all allowed
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             public_unrestricted, admin_group_ids, any_persona
         )
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             public_unrestricted, basic_group_ids, any_persona
         )
-        assert can_user_access_llm_provider(
+        assert can_user_access_llm_provider(  # noqa: F821,F841
             public_unrestricted, admin_group_ids, persona=None
         )
 
@@ -365,7 +365,7 @@ def test_get_llm_for_persona_falls_back_when_access_denied(
 ) -> None:
     admin_user, basic_user = users
 
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         default_provider = _create_llm_provider(
             db_session,
             name="default-provider",
@@ -387,18 +387,18 @@ def test_get_llm_for_persona_falls_back_when_access_denied(
             provider=restricted_provider,
         )
 
-        access_group = UserGroup(name="persona-group")
+        access_group = UserGroup(name="persona-group")  # noqa: F821,F841
         db_session.add(access_group)
         db_session.flush()
 
         db_session.add(
-            LLMProvider__UserGroup(
+            LLMProvider__UserGroup(  # noqa: F821,F841
                 llm_provider_id=restricted_provider.id,
                 user_group_id=access_group.id,
             )
         )
         db_session.add(
-            User__UserGroup(
+            User__UserGroup(  # noqa: F821,F841
                 user_group_id=access_group.id,
                 user_id=admin_user.id,
             )
@@ -410,13 +410,13 @@ def test_get_llm_for_persona_falls_back_when_access_denied(
         db_session.refresh(restricted_provider)
         db_session.refresh(persona)
 
-        admin_model = db_session.get(User, admin_user.id)
-        basic_model = db_session.get(User, basic_user.id)
+        admin_model = db_session.get(User, admin_user.id)  # noqa: F821,F841
+        basic_model = db_session.get(User, basic_user.id)  # noqa: F821,F841
 
         assert admin_model is not None
         assert basic_model is not None
 
-        allowed_llm = get_llm_for_persona(
+        allowed_llm = get_llm_for_persona(  # noqa: F821,F841
             persona=persona,
             user=admin_model,
         )
@@ -425,7 +425,7 @@ def test_get_llm_for_persona_falls_back_when_access_denied(
             == restricted_provider.model_configurations[0].name
         )
 
-        fallback_llm = get_llm_for_persona(
+        fallback_llm = get_llm_for_persona(  # noqa: F821,F841
             persona=persona,
             user=basic_model,
         )

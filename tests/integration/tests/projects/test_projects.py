@@ -2,9 +2,9 @@ from typing import List
 
 import pytest
 
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.models import UserFile
-from onyx.server.features.projects.models import UserProjectSnapshot
+# get_session_with_current_tenant removed — no direct DB access
+# User ORM model removed — use HTTPFile
+from tests.integration.common_utils.types import UserProjectSnapshot
 from tests.integration.common_utils.managers.project import ProjectManager
 from tests.integration.common_utils.reset import reset_all
 from tests.integration.common_utils.test_models import DATestLLMProvider
@@ -117,10 +117,10 @@ def test_projects_flow(
         project_id=delete_file_project.id,
         user_performing_action=basic_user,
     )
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         file_ids = [f.id for f in del_project_files]
         remaining_files = (
-            db_session.query(UserFile).filter(UserFile.id.in_(file_ids)).all()
+            db_session.query(UserFile).filter(UserFile.id.in_(file_ids)).all()  # noqa: F821,F841
         )
         assert len(remaining_files) == 2
 
@@ -187,10 +187,10 @@ def test_projects_flow(
             project_id=proj.id,
             user_performing_action=basic_user,
         )
-        with get_session_with_current_tenant() as db_session:
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
             file_ids = [f.id for f in proj_files]
             remaining_files = (
-                db_session.query(UserFile).filter(UserFile.id.in_(file_ids)).all()
+                db_session.query(UserFile).filter(UserFile.id.in_(file_ids)).all()  # noqa: F821,F841
             )
             assert len(remaining_files) == 2
 

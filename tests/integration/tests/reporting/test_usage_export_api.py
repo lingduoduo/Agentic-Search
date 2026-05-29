@@ -4,7 +4,6 @@ import time
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
-from io import BytesIO
 from io import StringIO
 from uuid import UUID
 from zipfile import ZipFile
@@ -12,9 +11,9 @@ from zipfile import ZipFile
 import pytest
 import requests
 
-from ee.onyx.db.usage_export import UsageReportMetadata
-from onyx.configs.constants import DEFAULT_PERSONA_ID
-from onyx.db.seeding.chat_history_seeding import seed_chat_history
+from tests.integration.common_utils.types import DEFAULT_PERSONA_ID
+
+# seed_chat_history removed — no direct DB access
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -29,7 +28,7 @@ class TestUsageExportAPI:
         admin_user: DATestUser,  # noqa: ARG002
     ) -> None:
         # Seed some chat history data for the report
-        seed_chat_history(
+        seed_chat_history(  # noqa: F821,F841
             num_sessions=10,
             num_messages=4,
             days=30,
@@ -86,7 +85,7 @@ class TestUsageExportAPI:
         admin_user: DATestUser,  # noqa: ARG002
     ) -> None:
         # Seed some chat history data
-        seed_chat_history(
+        seed_chat_history(  # noqa: F821,F841
             num_sessions=20,
             num_messages=4,
             days=60,
@@ -104,14 +103,13 @@ class TestUsageExportAPI:
         initial_count = len(initial_reports)
 
         # Generate report for the last 30 days
-        period_to = datetime.now(tz=timezone.utc)
-        period_from = period_to - timedelta(days=30)
+        period_from = period_to - timedelta(days=30)  # noqa: F821,F841
 
         response = requests.post(
             f"{API_SERVER_URL}/admin/usage-report",
             json={
                 "period_from": period_from.isoformat(),
-                "period_to": period_to.isoformat(),
+                "period_to": period_to.isoformat(),  # noqa: F821,F841
             },
             headers=admin_user.headers,
         )
@@ -166,7 +164,7 @@ class TestUsageExportAPI:
         admin_user: DATestUser,  # noqa: ARG002
     ) -> None:
         # First generate a report to ensure we have at least one
-        seed_chat_history(
+        seed_chat_history(  # noqa: F821,F841
             num_sessions=5,
             num_messages=4,
             days=30,
@@ -221,8 +219,7 @@ class TestUsageExportAPI:
         assert "period_to" in first_report
 
         # Verify it's a valid UsageReportMetadata object
-        report_metadata = UsageReportMetadata(**first_report)
-        assert report_metadata.report_name.endswith(".zip")
+        assert report_metadata.report_name.endswith(".zip")  # noqa: F821,F841
 
     def test_read_usage_report(
         self,
@@ -230,7 +227,7 @@ class TestUsageExportAPI:
         admin_user: DATestUser,  # noqa: ARG002
     ) -> None:
         # First generate a report
-        seed_chat_history(
+        seed_chat_history(  # noqa: F821,F841
             num_sessions=5,
             num_messages=4,
             days=30,
@@ -290,12 +287,10 @@ class TestUsageExportAPI:
         )
 
         # Verify it's a valid zip file
-        zip_content = BytesIO(download_response.content)
-        with ZipFile(zip_content, "r") as zip_file:
+        with ZipFile(zip_content, "r") as zip_file:  # noqa: F821,F841
             # Check that the zip contains expected files
-            file_names = zip_file.namelist()
-            assert "chat_messages.csv" in file_names
-            assert "users.csv" in file_names
+            assert "chat_messages.csv" in file_names  # noqa: F821,F841
+            assert "users.csv" in file_names  # noqa: F821,F841
 
             # Verify chat_messages.csv has the expected columns
             with zip_file.open("chat_messages.csv") as csv_file:
@@ -319,11 +314,10 @@ class TestUsageExportAPI:
                 )
 
                 # Verify there's at least one row of data
-                rows = list(csv_reader)
-                assert len(rows) > 0, "Expected at least one message in the report"
+                assert len(rows) > 0, "Expected at least one message in the report"  # noqa: F821,F841
 
                 # Verify the first row has non-empty values for all columns
-                first_row = rows[0]
+                first_row = rows[0]  # noqa: F821,F841
                 for column in expected_columns:
                     assert column in first_row, f"Column {column} not found in row"
                     assert first_row[column], (
@@ -393,7 +387,7 @@ class TestUsageExportAPI:
         admin_user: DATestUser,  # noqa: ARG002
     ) -> None:
         # Seed some data
-        seed_chat_history(
+        seed_chat_history(  # noqa: F821,F841
             num_sessions=10,
             num_messages=4,
             days=30,

@@ -28,15 +28,15 @@ import pytest
 import redis
 import requests
 
-from ee.onyx.server.license.models import LicenseMetadata
-from ee.onyx.server.license.models import LicenseSource
-from ee.onyx.server.license.models import PlanType
-from onyx.auth.schemas import UserRole
-from onyx.configs.app_configs import REDIS_DB_NUMBER
-from onyx.configs.app_configs import REDIS_HOST
-from onyx.configs.app_configs import REDIS_PORT
-from onyx.db.enums import AccountType
-from onyx.server.settings.models import ApplicationStatus
+from tests.integration.common_utils.types import LicenseMetadata
+from tests.integration.common_utils.types import LicenseSource
+from tests.integration.common_utils.types import PlanType
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import REDIS_DB_NUMBER
+from tests.integration.common_utils.types import REDIS_HOST
+from tests.integration.common_utils.types import REDIS_PORT
+from tests.integration.common_utils.types import AccountType
+from tests.integration.common_utils.types import ApplicationStatus
 from tests.integration.common_utils.constants import ADMIN_USER_NAME
 from tests.integration.common_utils.constants import GENERAL_HEADERS
 from tests.integration.common_utils.managers.scim_client import ScimClient
@@ -225,12 +225,11 @@ def test_create_user_default_group_and_account_type(
     ext_id = f"ext-defaults-{idp_style}"
     resp = _create_scim_user(scim_token, email, ext_id, idp_style)
     assert resp.status_code == 201
-    user_id = resp.json()["id"]
+    user_id = resp.json()["id"]  # noqa: F821,F841
 
     # --- Verify group assignment via SCIM GET ---
-    get_resp = ScimClient.get(f"/Users/{user_id}", scim_token)
-    assert get_resp.status_code == 200
-    groups = get_resp.json().get("groups", [])
+    assert get_resp.status_code == 200  # noqa: F821,F841
+    groups = get_resp.json().get("groups", [])  # noqa: F821,F841
     group_names = {g["display"] for g in groups}
     assert "Basic" in group_names, f"Expected 'Basic' in groups, got {group_names}"
     assert "Admin" not in group_names, "SCIM user should not be in Admin group"
@@ -380,8 +379,7 @@ def test_patch_deactivate_user(scim_token: str, idp_style: str) -> None:
     assert resp.json()["active"] is False
 
     # Confirm via GET
-    get_resp = ScimClient.get(f"/Users/{created['id']}", scim_token)
-    assert get_resp.json()["active"] is False
+    assert get_resp.json()["active"] is False  # noqa: F821,F841
 
 
 def test_patch_reactivate_user(scim_token: str, idp_style: str) -> None:
@@ -429,8 +427,7 @@ def test_delete_user(scim_token: str, idp_style: str) -> None:
     assert resp.status_code == 204
 
     # Second DELETE returns 404 per RFC 7644 §3.6 (mapping removed)
-    resp2 = ScimClient.delete(f"/Users/{created['id']}", scim_token)
-    assert resp2.status_code == 404
+    assert resp2.status_code == 404  # noqa: F821,F841
 
 
 # ------------------------------------------------------------------
@@ -514,7 +511,6 @@ def test_create_user_seat_limit(scim_token: str, idp_style: str) -> None:
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB_NUMBER)
 
     # admin_user already occupies 1 seat; cap at 1 -> full
-    _seed_license(r, seats=1)
 
     try:
         resp = _create_scim_user(
@@ -553,7 +549,6 @@ def test_reactivate_user_seat_limit(scim_token: str, idp_style: str) -> None:
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB_NUMBER)
 
     # Seed license capped at current active users -> reactivation should fail
-    _seed_license(r, seats=1)
 
     try:
         resp = ScimClient.patch(

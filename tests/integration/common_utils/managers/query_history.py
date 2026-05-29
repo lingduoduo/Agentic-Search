@@ -6,11 +6,11 @@ from uuid import UUID
 import requests
 from requests.models import CaseInsensitiveDict
 
-from ee.onyx.server.query_history.models import ChatSessionMinimal
-from ee.onyx.server.query_history.models import ChatSessionSnapshot
-from onyx.configs.constants import QAFeedbackType
-from onyx.db.enums import TaskStatus
-from onyx.server.documents.models import PaginatedReturn
+from tests.integration.common_utils.types import ChatSessionMinimal
+from tests.integration.common_utils.types import ChatSessionSnapshot
+from tests.integration.common_utils.types import QAFeedbackType
+from tests.integration.common_utils.types import TaskStatus
+from tests.integration.common_utils.types import PaginatedReturn
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import MAX_DELAY
 from tests.integration.common_utils.test_models import DATestUser

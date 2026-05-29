@@ -6,15 +6,15 @@ from uuid import uuid4
 import generated.onyx_openapi_client.onyx_openapi_client as api  # ty: ignore[unresolved-import]
 import requests
 
-from onyx.connectors.models import InputType
-from onyx.db.enums import AccessType
-from onyx.db.enums import ConnectorCredentialPairStatus
-from onyx.server.documents.models import CCPairFullInfo
-from onyx.server.documents.models import ConnectorCredentialPairIdentifier
-from onyx.server.documents.models import ConnectorIndexingStatusLite
-from onyx.server.documents.models import ConnectorStatus
-from onyx.server.documents.models import DocumentSource
-from onyx.server.documents.models import DocumentSyncStatus
+from tests.integration.common_utils.types import InputType
+from tests.integration.common_utils.types import AccessType
+from tests.integration.common_utils.types import ConnectorCredentialPairStatus
+from tests.integration.common_utils.types import CCPairFullInfo
+from tests.integration.common_utils.types import ConnectorCredentialPairIdentifier
+from tests.integration.common_utils.types import ConnectorIndexingStatusLite
+from tests.integration.common_utils.types import ConnectorStatus
+from tests.integration.common_utils.types import DocumentSource
+from tests.integration.common_utils.types import DocumentSyncStatus
 from tests.integration.common_utils.config import api_config
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import MAX_DELAY
@@ -550,9 +550,7 @@ class CCPairManager:
         timeout: float = MAX_DELAY,
         number_of_updated_docs: int = 0,
         # Sometimes waiting for a group sync is not necessary
-        should_wait_for_group_sync: bool = True,
         # Sometimes waiting for a vespa sync is not necessary
-        should_wait_for_vespa_sync: bool = True,
     ) -> None:
         """after: The task register time must be after this time."""
         doc_synced = False
@@ -579,7 +577,7 @@ class CCPairManager:
                 print(f"group sync complete: cc_pair={cc_pair.id}")
                 group_synced = True
 
-            if doc_synced and (group_synced or not should_wait_for_group_sync):
+            if doc_synced and (group_synced or not should_wait_for_group_sync):  # noqa: F821,F841
                 break
 
             elapsed = time.monotonic() - start
@@ -595,14 +593,12 @@ class CCPairManager:
 
         # TODO: remove this sleep,
         # this shouldnt be necessary but something is off with the timing for the sync jobs
-        time.sleep(5)
 
-        if not should_wait_for_vespa_sync:
+        if not should_wait_for_vespa_sync:  # noqa: F821,F841
             return
 
         print("waiting for vespa sync")
         # wait for the vespa sync to complete once the permission sync is complete
-        start = time.monotonic()
         while True:
             doc_sync_statuses = CCPairManager.get_doc_sync_statuses(
                 cc_pair=cc_pair,

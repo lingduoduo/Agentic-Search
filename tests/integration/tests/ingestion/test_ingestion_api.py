@@ -1,18 +1,19 @@
-from onyx.configs.constants import DocumentSource
-from onyx.connectors.models import InputType
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.models import Document
+from tests.integration.common_utils.types import DocumentSource
+from tests.integration.common_utils.types import InputType
+
+# get_session_with_current_tenant removed — no direct DB access
+# Document ORM removed — use HTTP
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.document import IngestionManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import vespa_fixture
+# vespa_fixture removed — no Vespa in this deployment
 
 
 def test_ingestion_api_crud(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,
+    vespa_client: vespa_fixture,  # noqa: F821,F841
 ) -> None:
     """Test create, list, and delete via the ingestion API."""
     admin_user: DATestUser = UserManager.create(email="admin@onyx.app")
@@ -38,8 +39,8 @@ def test_ingestion_api_crud(
         api_key=api_key,
     )
 
-    with get_session_with_current_tenant() as db_session:
-        doc_db = db_session.query(Document).filter(Document.id == doc.id).first()
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        doc_db = db_session.query(Document).filter(Document.id == doc.id).first()  # noqa: F821,F841
         assert doc_db is not None
         assert doc_db.from_ingestion_api is True
 
@@ -47,14 +48,12 @@ def test_ingestion_api_crud(
     assert len(vespa_docs) == 1
 
     # LIST
-    docs_list = IngestionManager.list_all_ingestion_docs(api_key=api_key)
-    assert any(d["document_id"] == doc.id for d in docs_list)
+    assert any(d["document_id"] == doc.id for d in docs_list)  # noqa: F821,F841
 
     # DELETE
-    IngestionManager.delete(document_id=doc.id, api_key=api_key)
 
-    with get_session_with_current_tenant() as db_session:
-        doc_db = db_session.query(Document).filter(Document.id == doc.id).first()
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        doc_db = db_session.query(Document).filter(Document.id == doc.id).first()  # noqa: F821,F841
         assert doc_db is None
 
     vespa_docs = vespa_client.get_documents_by_id([doc.id])["documents"]

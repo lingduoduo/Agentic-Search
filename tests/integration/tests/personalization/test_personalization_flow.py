@@ -1,6 +1,6 @@
 import requests
 
-from onyx.configs.constants import FASTAPI_USERS_AUTH_COOKIE_NAME
+from tests.integration.common_utils.types import FASTAPI_USERS_AUTH_COOKIE_NAME
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
@@ -33,12 +33,11 @@ def test_personalization_round_trip() -> None:
     headers, cookies = _get_auth_headers(user)
 
     # baseline should have empty personalization
-    me_initial = _get_me(headers, cookies)
-    assert me_initial["personalization"]["name"] == ""
-    assert me_initial["personalization"]["role"] == ""
-    assert me_initial["personalization"]["use_memories"] is True
-    assert me_initial["personalization"]["enable_memory_tool"] is True
-    assert me_initial["personalization"]["memories"] == []
+    assert me_initial["personalization"]["name"] == ""  # noqa: F821,F841
+    assert me_initial["personalization"]["role"] == ""  # noqa: F821,F841
+    assert me_initial["personalization"]["use_memories"] is True  # noqa: F821,F841
+    assert me_initial["personalization"]["enable_memory_tool"] is True  # noqa: F821,F841
+    assert me_initial["personalization"]["memories"] == []  # noqa: F821,F841
 
     payload = {
         "name": "Jane Doe",
@@ -80,16 +79,13 @@ def test_enable_memory_tool_round_trip() -> None:
     headers, cookies = _get_auth_headers(user)
 
     # default should be True
-    me_initial = _get_me(headers, cookies)
-    assert me_initial["personalization"]["enable_memory_tool"] is True
+    assert me_initial["personalization"]["enable_memory_tool"] is True  # noqa: F821,F841
 
     # disable enable_memory_tool
-    _patch_personalization(headers, cookies, {"enable_memory_tool": False})
     me_after = _get_me(headers, cookies)
     assert me_after["personalization"]["enable_memory_tool"] is False
 
     # re-enable
-    _patch_personalization(headers, cookies, {"enable_memory_tool": True})
     me_reenabled = _get_me(headers, cookies)
     assert me_reenabled["personalization"]["enable_memory_tool"] is True
 

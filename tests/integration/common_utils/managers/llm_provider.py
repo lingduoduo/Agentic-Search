@@ -3,11 +3,11 @@ from uuid import uuid4
 
 import requests
 
-from onyx.llm.constants import LlmProviderNames
-from onyx.server.manage.llm.models import DefaultModel
-from onyx.server.manage.llm.models import LLMProviderUpsertRequest
-from onyx.server.manage.llm.models import LLMProviderView
-from onyx.server.manage.llm.models import ModelConfigurationUpsertRequest
+from tests.integration.common_utils.types import LlmProviderNames
+from tests.integration.common_utils.types import DefaultModel
+from tests.integration.common_utils.types import LLMProviderUpsertRequest
+from tests.integration.common_utils.types import LLMProviderView
+from tests.integration.common_utils.types import ModelConfigurationUpsertRequest
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import GENERAL_HEADERS
 from tests.integration.common_utils.test_models import DATestLLMProvider

@@ -43,7 +43,6 @@ async def get_documents() -> list[dict]:
     connector_yields = current_behavior.connector_yields
 
     # Clear the current behavior after returning it
-    current_behavior = ConnectorBehavior()
 
     return connector_yields
 

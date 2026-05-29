@@ -49,7 +49,7 @@ from pathlib import Path
 
 import pytest
 
-from onyx.configs.constants import DocumentSource
+from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.document import DocumentManager

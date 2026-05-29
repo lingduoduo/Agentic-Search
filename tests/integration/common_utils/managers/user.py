@@ -6,14 +6,14 @@ import pytest
 import requests
 from requests import HTTPError
 
-from onyx.auth.schemas import UserRole
-from onyx.configs.constants import ANONYMOUS_USER_EMAIL
-from onyx.configs.constants import ANONYMOUS_USER_UUID
-from onyx.configs.constants import FASTAPI_USERS_AUTH_COOKIE_NAME
-from onyx.server.documents.models import PaginatedReturn
-from onyx.server.manage.models import UserInfo
-from onyx.server.models import FullUserSnapshot
-from onyx.server.models import InvitedUserSnapshot
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import ANONYMOUS_USER_EMAIL
+from tests.integration.common_utils.types import ANONYMOUS_USER_UUID
+from tests.integration.common_utils.types import FASTAPI_USERS_AUTH_COOKIE_NAME
+from tests.integration.common_utils.types import PaginatedReturn
+from tests.integration.common_utils.types import UserInfo
+from tests.integration.common_utils.types import FullUserSnapshot
+from tests.integration.common_utils.types import InvitedUserSnapshot
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import GENERAL_HEADERS
 from tests.integration.common_utils.test_models import DATestUser
@@ -76,7 +76,6 @@ class UserManager:
             headers=deepcopy(GENERAL_HEADERS),
             # fill as basic for now, the `login_as_user` call will
             # fill it in correctly
-            role=UserRole.BASIC,
             is_active=True,
         )
         print(f"Created user {test_user.email}")

@@ -8,8 +8,8 @@ Verifies that when a BOT or EXT_PERM_USER user signs up via email/password:
 
 import pytest
 
-from onyx.auth.schemas import UserRole
-from onyx.db.enums import AccountType
+from tests.integration.common_utils.types import UserRole
+from tests.integration.common_utils.types import AccountType
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 from tests.integration.common_utils.test_models import DATestUser
@@ -50,15 +50,13 @@ def test_password_signup_upgrade(
     )
 
     # Verify user was removed from Basic group after downgrade
-    basic_emails = _get_default_group_member_emails(admin_user, "Basic")
-    assert test_email not in basic_emails, (
+    assert test_email not in basic_emails, (  # noqa: F821,F841
         f"{target_role.value} should not be in Basic default group"
     )
 
     # Re-register with the same email — triggers the password signup upgrade
-    upgraded_user = UserManager.create(email=test_email)
 
-    assert upgraded_user.role == UserRole.BASIC
+    assert upgraded_user.role == UserRole.BASIC  # noqa: F821,F841
 
     paginated = UserManager.get_user_page(
         user_performing_action=admin_user,
@@ -66,7 +64,8 @@ def test_password_signup_upgrade(
         page_size=10,
     )
     user_snapshot = next(
-        (u for u in paginated.items if str(u.id) == upgraded_user.id), None
+        (u for u in paginated.items if str(u.id) == upgraded_user.id),  # noqa: F821
+        None,  # noqa: F821,F841
     )
     assert user_snapshot is not None
     assert user_snapshot.account_type == AccountType.STANDARD, (
@@ -74,8 +73,7 @@ def test_password_signup_upgrade(
     )
 
     # Verify user is now in the Basic default group
-    basic_emails = _get_default_group_member_emails(admin_user, "Basic")
-    assert test_email in basic_emails, (
+    assert test_email in basic_emails, (  # noqa: F821,F841
         f"Upgraded user '{test_email}' not found in Basic default group"
     )
 

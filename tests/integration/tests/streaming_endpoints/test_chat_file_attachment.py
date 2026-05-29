@@ -7,7 +7,6 @@ from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.managers.chat import ChatSessionManager
 from tests.integration.common_utils.managers.file import FileManager
 from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
-from tests.integration.common_utils.test_file_utils import create_test_image
 from tests.integration.common_utils.test_file_utils import create_test_text_file
 from tests.integration.common_utils.test_models import DATestUser
 
@@ -17,11 +16,10 @@ def test_send_message_with_image_attachment(admin_user: DATestUser) -> None:
     LLMProviderManager.create(user_performing_action=admin_user)
 
     # Create a simple test image
-    image_file = create_test_image(width=100, height=100, color="blue")
 
     # Upload the image file
     file_descriptors, error = FileManager.upload_files(
-        files=[("test_image.png", image_file)],
+        files=[("test_image.png", image_file)],  # noqa: F821,F841
         user_performing_action=admin_user,
     )
 
@@ -30,11 +28,10 @@ def test_send_message_with_image_attachment(admin_user: DATestUser) -> None:
     assert file_descriptors[0]["type"] == "image", "File should be identified as image"
 
     # Create a chat session
-    test_chat_session = ChatSessionManager.create(user_performing_action=admin_user)
 
     # Send a message with the image attachment
     response = ChatSessionManager.send_message(
-        chat_session_id=test_chat_session.id,
+        chat_session_id=test_chat_session.id,  # noqa: F821,F841
         message="What color is this image?",
         user_performing_action=admin_user,
         file_descriptors=file_descriptors,
@@ -70,11 +67,10 @@ def test_send_message_with_text_file_attachment(admin_user: DATestUser) -> None:
     ], "File should be identified as text or document"
 
     # Create a chat session
-    test_chat_session = ChatSessionManager.create(user_performing_action=admin_user)
 
     # Send a message with the text file attachment
     response = ChatSessionManager.send_message(
-        chat_session_id=test_chat_session.id,
+        chat_session_id=test_chat_session.id,  # noqa: F821,F841
         message="Repeat the contents of this file word for word.",
         user_performing_action=admin_user,
         file_descriptors=file_descriptors,

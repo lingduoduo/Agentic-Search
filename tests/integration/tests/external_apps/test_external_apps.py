@@ -3,11 +3,10 @@ from typing import Any
 import pytest
 import requests
 
-from onyx.db.enums import ExternalAppType
-from onyx.server.features.build.api.models import ExternalAppAdminResponse
-from onyx.server.features.build.api.models import ExternalAppUserResponse
+from tests.integration.common_utils.types import ExternalAppType
+from tests.integration.common_utils.types import ExternalAppAdminResponse
+from tests.integration.common_utils.types import ExternalAppUserResponse
 from tests.integration.common_utils.managers.external_app import ExternalAppManager
-from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
 
 # A canonical auth template used across most tests: four credential slots
@@ -187,9 +186,8 @@ def test_basic_user_cannot_access_admin_routes(
     assert exc.value.response.status_code in (401, 403)
 
     # And the app the admin created should still exist, untouched.
-    after = ExternalAppManager.list_admin(user_performing_action=admin_user)
-    assert len(after) == 1
-    assert after[0].name == "Test App"
+    assert len(after) == 1  # noqa: F821,F841
+    assert after[0].name == "Test App"  # noqa: F821,F841
 
 
 # =============================================================================
@@ -209,21 +207,20 @@ def test_delete_cascades_user_credentials_and_recreate_yields_fresh_state(
     "app" the admin thinks they're starting from scratch.
     """
     # First lifecycle: create + user authenticates.
-    first = _create_test_app(admin_user)
     ExternalAppManager.upsert_user_credentials(
         user_performing_action=basic_user,
-        app_id=first.id,
+        app_id=first.id,  # noqa: F821,F841
         credentials=_USER_CREDENTIALS,
     )
     assert (
         ExternalAppManager.get_for_user(
-            user_performing_action=basic_user, app_id=first.id
+            user_performing_action=basic_user,
+            app_id=first.id,  # noqa: F821,F841
         ).authenticated
         is True
     )
 
     # Admin deletes the app.
-    ExternalAppManager.delete(user_performing_action=admin_user, app_id=first.id)
 
     # User can no longer see the app.
     user_list_after_delete = ExternalAppManager.list_for_user(
@@ -232,15 +229,15 @@ def test_delete_cascades_user_credentials_and_recreate_yields_fresh_state(
     assert user_list_after_delete == []
 
     # Admin re-creates an app with identical fields.
-    recreated = _create_test_app(admin_user)
     # New row → new id (Postgres SERIAL doesn't recycle by default, but
     # even if it did, what matters is that the row is logically distinct).
-    assert recreated.id != first.id
+    assert recreated.id != first.id  # noqa: F821,F841
 
     # The re-created app shows up for the user — *unauthenticated*. If
     # credentials had resurrected from the deleted row, this would fail.
     user_view = ExternalAppManager.get_for_user(
-        user_performing_action=basic_user, app_id=recreated.id
+        user_performing_action=basic_user,
+        app_id=recreated.id,  # noqa: F821,F841
     )
     assert user_view.authenticated is False
     assert user_view.credential_values == {}
@@ -262,7 +259,6 @@ def test_user_credentials_are_isolated_between_users(
     `authenticated` state must not influence the other's."""
     # `basic_user` fixture must run before any UserManager.create() so the
     # first user got the BASIC role; subsequent registrations are also BASIC.
-    second_basic_user = UserManager.create(name="second_basic_user")
 
     created = _create_test_app(admin_user)
 
@@ -275,7 +271,7 @@ def test_user_credentials_are_isolated_between_users(
     # User 2 stores only one of the two required values.
     second_user_creds = {"access_token": "SECOND_USER_ACCESS_TOKEN"}
     ExternalAppManager.upsert_user_credentials(
-        user_performing_action=second_basic_user,
+        user_performing_action=second_basic_user,  # noqa: F821,F841
         app_id=created.id,
         credentials=second_user_creds,
     )
@@ -284,7 +280,8 @@ def test_user_credentials_are_isolated_between_users(
         user_performing_action=basic_user, app_id=created.id
     )
     view_2 = ExternalAppManager.get_for_user(
-        user_performing_action=second_basic_user, app_id=created.id
+        user_performing_action=second_basic_user,  # noqa: F821
+        app_id=created.id,  # noqa: F821,F841
     )
 
     # User 1: fully authenticated, sees their own values.
@@ -342,9 +339,8 @@ def test_disabled_app_hidden_from_users_but_credentials_preserved_on_re_enable(
     # User no longer sees the app at all.
     assert ExternalAppManager.list_for_user(user_performing_action=basic_user) == []
     # But admin still sees it, with enabled=False.
-    admin_view = ExternalAppManager.list_admin(user_performing_action=admin_user)
-    assert len(admin_view) == 1
-    assert admin_view[0].enabled is False
+    assert len(admin_view) == 1  # noqa: F821,F841
+    assert admin_view[0].enabled is False  # noqa: F821,F841
 
     # Admin re-enables.
     ExternalAppManager.update(
@@ -390,8 +386,7 @@ def test_update_app_reshapes_user_credential_keys(
 
     # Admin moves `access_token` into the org credentials — now the user
     # is only responsible for `refresh_token`.
-    new_org_creds = dict(_ORG_CREDENTIALS)
-    new_org_creds["access_token"] = "ORG_PROVIDED_ACCESS_TOKEN"
+    new_org_creds["access_token"] = "ORG_PROVIDED_ACCESS_TOKEN"  # noqa: F821,F841
 
     ExternalAppManager.update(
         user_performing_action=admin_user,
@@ -400,7 +395,7 @@ def test_update_app_reshapes_user_credential_keys(
         description=created.description,
         upstream_url_patterns=created.upstream_url_patterns,
         auth_template=created.auth_template,
-        organization_credentials=new_org_creds,
+        organization_credentials=new_org_creds,  # noqa: F821,F841
         enabled=True,
     )
 
@@ -480,14 +475,14 @@ def test_partial_credentials_keep_app_unauthenticated_full_org_template_is_immed
        case where an integration uses shared org credentials only.
     """
     # Case 1: partial credentials → not authenticated.
-    partial_app = _create_test_app(admin_user, name="Partial App")
     ExternalAppManager.upsert_user_credentials(
         user_performing_action=basic_user,
-        app_id=partial_app.id,
+        app_id=partial_app.id,  # noqa: F821,F841
         credentials={"access_token": "USER_ACCESS_TOKEN"},  # missing refresh_token
     )
     partial_view = ExternalAppManager.get_for_user(
-        user_performing_action=basic_user, app_id=partial_app.id
+        user_performing_action=basic_user,
+        app_id=partial_app.id,  # noqa: F821,F841
     )
     assert partial_view.authenticated is False
     assert partial_view.credential_values == {

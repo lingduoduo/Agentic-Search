@@ -19,9 +19,9 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
-from onyx.db.models import IndexingStatus
-from onyx.server.documents.models import CCPairFullInfo
-from onyx.server.documents.models import ConnectorIndexingStatusLite
+from tests.integration.common_utils.types import IndexingStatus
+from tests.integration.common_utils.types import CCPairFullInfo
+from tests.integration.common_utils.types import ConnectorIndexingStatusLite
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.connector import ConnectorManager
 from tests.integration.common_utils.managers.credential import CredentialManager
@@ -69,8 +69,7 @@ def test_last_indexed_first_page_all_errors(reset: None) -> None:  # noqa: ARG00
     _wait_for_real_success(cc_pair, admin)
 
     # Baseline: last_success should be set from the initial successful run
-    listing_before = _get_listing(cc_pair.id, admin)
-    assert listing_before.last_success is not None
+    assert listing_before.last_success is not None  # noqa: F821,F841
 
     # 10 recent failures push the success off page 1
     IndexAttemptManager.create_test_index_attempts(

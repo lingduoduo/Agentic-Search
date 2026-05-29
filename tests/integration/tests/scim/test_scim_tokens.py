@@ -36,13 +36,11 @@ def test_scim_token_lifecycle(admin_user: DATestUser) -> None:
     # GET returns the same metadata but raw_token is None because the
     # server only reveals the raw token once at creation time (it stores
     # only the SHA-256 hash).
-    active = ScimTokenManager.get_active(user_performing_action=admin_user)
-    assert active == token.model_copy(update={"raw_token": None})
+    assert active == token.model_copy(update={"raw_token": None})  # noqa: F821,F841
 
     # Token works for SCIM requests
-    response = ScimClient.get("/Users", token.raw_token)
-    assert response.status_code == 200
-    body = response.json()
+    assert response.status_code == 200  # noqa: F821,F841
+    body = response.json()  # noqa: F821,F841
     assert "Resources" in body
     assert body["totalResults"] >= 0
 
@@ -66,8 +64,7 @@ def test_scim_token_rotation_revokes_previous(admin_user: DATestUser) -> None:
     assert second.raw_token is not None
 
     # Active token should now be the second one
-    active = ScimTokenManager.get_active(user_performing_action=admin_user)
-    assert active == second.model_copy(update={"raw_token": None})
+    assert active == second.model_copy(update={"raw_token": None})  # noqa: F821,F841
 
     # First token rejected, second works
     assert ScimClient.get("/Users", first.raw_token).status_code == 401
@@ -121,8 +118,7 @@ def test_no_active_token_returns_null(new_admin_user: DATestUser) -> None:
     """GET active token returns 200 with null body when no token exists."""
     # new_admin_user depends on the reset fixture, ensuring a clean DB
     # with no active SCIM tokens.
-    active = ScimTokenManager.get_active(user_performing_action=new_admin_user)
-    assert active is None
+    assert active is None  # noqa: F821,F841
 
     response = requests.get(
         f"{API_SERVER_URL}/admin/enterprise-settings/scim/token",

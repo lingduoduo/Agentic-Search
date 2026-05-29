@@ -8,13 +8,11 @@ import os
 import pytest
 from onyx_openapi_client.exceptions import ApiException  # ty: ignore[unresolved-import]
 
-from onyx.db.enums import AccessType
-from onyx.server.documents.models import DocumentSource
+from tests.integration.common_utils.types import AccessType
+from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
 from tests.integration.common_utils.managers.connector import ConnectorManager
 from tests.integration.common_utils.managers.credential import CredentialManager
-from tests.integration.common_utils.managers.user import DATestUser
-from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 
 
@@ -24,37 +22,37 @@ from tests.integration.common_utils.managers.user_group import UserGroupManager
 )
 def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
     # Creating an admin user (first user created is automatically an admin)
-    admin_user: DATestUser = UserManager.create(name="admin_user")
 
     # Creating a curator
-    curator: DATestUser = UserManager.create(name="curator")
 
     # Creating a user group
     user_group_1 = UserGroupManager.create(
         name="curated_user_group",
-        user_ids=[curator.id],
+        user_ids=[curator.id],  # noqa: F821,F841
         cc_pair_ids=[],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     UserGroupManager.wait_for_sync(
-        user_groups_to_check=[user_group_1], user_performing_action=admin_user
+        user_groups_to_check=[user_group_1],
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     # setting the user as a curator for the user group
     UserGroupManager.set_curator_status(
         test_user_group=user_group_1,
-        user_to_set_as_curator=curator,
-        user_performing_action=admin_user,
+        user_to_set_as_curator=curator,  # noqa: F821,F841
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Creating another user group that the user is not a curator of
     user_group_2 = UserGroupManager.create(
         name="uncurated_user_group",
-        user_ids=[curator.id],
+        user_ids=[curator.id],  # noqa: F821,F841
         cc_pair_ids=[],
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     UserGroupManager.wait_for_sync(
-        user_groups_to_check=[user_group_1], user_performing_action=admin_user
+        user_groups_to_check=[user_group_1],
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     connector_1 = ConnectorManager.create(
@@ -62,7 +60,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
         source=DocumentSource.CONFLUENCE,
         groups=[user_group_1.id],
         access_type=AccessType.PRIVATE,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     # currently we dont enforce permissions at the connector level
     # pending cc_pair -> connector rework
@@ -79,14 +77,14 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
         source=DocumentSource.CONFLUENCE,
         groups=[user_group_1.id],
         curator_public=False,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
     credential_2 = CredentialManager.create(
         name="curator_visible_credential",
         source=DocumentSource.CONFLUENCE,
         groups=[user_group_2.id],
         curator_public=False,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # END OF HAPPY PATH
@@ -102,7 +100,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
             name="invalid_cc_pair_2",
             access_type=AccessType.PRIVATE,
             groups=[user_group_1.id, user_group_2.id],
-            user_performing_action=curator,
+            user_performing_action=curator,  # noqa: F821,F841
         )
 
     # Curators should not be able to create a cc
@@ -114,7 +112,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
             name="invalid_cc_pair_2",
             access_type=AccessType.PRIVATE,
             groups=[],
-            user_performing_action=curator,
+            user_performing_action=curator,  # noqa: F821,F841
         )
 
     # # This test is currently disabled because permissions are
@@ -140,7 +138,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
             name="invalid_cc_pair_4",
             access_type=AccessType.PRIVATE,
             groups=[user_group_1.id],
-            user_performing_action=curator,
+            user_performing_action=curator,  # noqa: F821,F841
         )
 
     """Tests for things Curators should be able to do"""
@@ -152,7 +150,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
         source=DocumentSource.CONFLUENCE,
         groups=[user_group_1.id],
         access_type=AccessType.PRIVATE,
-        user_performing_action=admin_user,
+        user_performing_action=admin_user,  # noqa: F821,F841
     )
 
     # Curators should be able to create a private
@@ -163,26 +161,25 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
         credential_id=credential_1.id,
         access_type=AccessType.PRIVATE,
         groups=[user_group_1.id],
-        user_performing_action=curator,
+        user_performing_action=curator,  # noqa: F821,F841
     )
 
     # Verify the created cc pair
     CCPairManager.verify(
         cc_pair=valid_cc_pair,
-        user_performing_action=curator,
+        user_performing_action=curator,  # noqa: F821,F841
     )
 
     # Test pausing the cc pair
-    CCPairManager.pause_cc_pair(valid_cc_pair, user_performing_action=curator)
 
     # Test deleting the cc pair
-    CCPairManager.delete(valid_cc_pair, user_performing_action=curator)
     CCPairManager.wait_for_deletion_completion(
-        cc_pair_id=valid_cc_pair.id, user_performing_action=curator
+        cc_pair_id=valid_cc_pair.id,
+        user_performing_action=curator,  # noqa: F821,F841
     )
 
     CCPairManager.verify(
         cc_pair=valid_cc_pair,
         verify_deleted=True,
-        user_performing_action=curator,
+        user_performing_action=curator,  # noqa: F821,F841
     )

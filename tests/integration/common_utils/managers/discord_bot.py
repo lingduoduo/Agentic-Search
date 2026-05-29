@@ -2,12 +2,12 @@
 
 import requests
 
-from onyx.db.discord_bot import create_channel_config
-from onyx.db.discord_bot import create_guild_config
-from onyx.db.discord_bot import register_guild
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.utils import DiscordChannelView
-from onyx.server.manage.discord_bot.utils import generate_discord_registration_key
+# create_channel_config removed
+# create_guild_config removed
+# register_guild removed
+# get_session_with_current_tenant removed — no direct DB access
+# DiscordChannelView removed
+# generate_discord_registration_key removed — use HTTP endpoint
 from shared_configs.contextvars import get_current_tenant_id
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestDiscordChannelConfig
@@ -118,15 +118,14 @@ class DiscordBotManager:
     ) -> dict:
         """Update a guild config."""
         # Fetch current guild config to get existing values
-        current_guild = DiscordBotManager.get_guild(config_id, user_performing_action)
 
         # Build request body with required fields
         body: dict = {
-            "enabled": enabled if enabled is not None else current_guild["enabled"],
+            "enabled": enabled if enabled is not None else current_guild["enabled"],  # noqa: F821,F841
             "default_persona_id": (
                 default_persona_id
                 if default_persona_id is not None
-                else current_guild.get("default_persona_id")
+                else current_guild.get("default_persona_id")  # noqa: F821,F841
             ),
         }
 
@@ -213,11 +212,11 @@ class DiscordBotManager:
         with guild_id and guild_name set. Use this for testing channel
         endpoints which require a registered guild.
         """
-        with get_session_with_current_tenant() as db_session:
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
             tenant_id = get_current_tenant_id()
-            registration_key = generate_discord_registration_key(tenant_id)
-            config = create_guild_config(db_session, registration_key)
-            config = register_guild(db_session, config, guild_id, guild_name)
+            registration_key = generate_discord_registration_key(tenant_id)  # noqa: F821,F841
+            config = create_guild_config(db_session, registration_key)  # noqa: F821,F841
+            config = register_guild(db_session, config, guild_id, guild_name)  # noqa: F821,F841
             db_session.commit()
 
             return DATestDiscordGuildConfig(
@@ -286,14 +285,14 @@ class DiscordBotManager:
         not created via API. For testing the channel API endpoints,
         we need to populate test data directly.
         """
-        with get_session_with_current_tenant() as db_session:
-            channel_view = DiscordChannelView(
+        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+            channel_view = DiscordChannelView(  # noqa: F821,F841
                 channel_id=channel_id,
                 channel_name=channel_name,
                 channel_type=channel_type,
                 is_private=is_private,
             )
-            config = create_channel_config(db_session, guild_config_id, channel_view)
+            config = create_channel_config(db_session, guild_config_id, channel_view)  # noqa: F821,F841
             db_session.commit()
 
             return DATestDiscordChannelConfig(

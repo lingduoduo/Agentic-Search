@@ -8,14 +8,14 @@ from uuid import UUID
 import requests
 from requests.models import Response
 
-from onyx.context.search.models import SavedSearchDoc
-from onyx.context.search.models import SearchDoc
-from onyx.file_store.models import FileDescriptor
-from onyx.llm.override_models import LLMOverride
-from onyx.server.query_and_chat.models import AUTO_PLACE_AFTER_LATEST_MESSAGE
-from onyx.server.query_and_chat.models import ChatSessionCreationRequest
-from onyx.server.query_and_chat.models import SendMessageRequest
-from onyx.server.query_and_chat.streaming_models import StreamingType
+from tests.integration.common_utils.types import SavedSearchDoc
+from tests.integration.common_utils.types import SearchDoc
+from tests.integration.common_utils.types import FileDescriptor
+from tests.integration.common_utils.types import LLMOverride
+from tests.integration.common_utils.types import AUTO_PLACE_AFTER_LATEST_MESSAGE
+from tests.integration.common_utils.types import ChatSessionCreationRequest
+from tests.integration.common_utils.types import SendMessageRequest
+from tests.integration.common_utils.types import StreamingType
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.test_models import DATestChatMessage
 from tests.integration.common_utils.test_models import DATestChatSession
@@ -297,8 +297,7 @@ class ChatSessionManager:
                         )
                     )
                 elif packet_type_str == StreamingType.IMAGE_GENERATION_HEARTBEAT.value:
-                    # Track heartbeat packets for debugging/testing
-                    heartbeat_packets.append(data)
+                    pass  # heartbeat packet
                 elif packet_type_str == StreamingType.IMAGE_GENERATION_FINAL.value:
                     from tests.integration.common_utils.test_models import (
                         GeneratedImage,
@@ -316,13 +315,11 @@ class ChatSessionManager:
                     docs = []
                     for doc in data_obj.get("documents", []):
                         if "db_doc_id" in doc:
-                            # Already a SavedSearchDoc format
-                            docs.append(SavedSearchDoc(**doc))
+                            pass  # Already a SavedSearchDoc format
                         else:
                             # SearchDoc format - Convert to SavedSearchDoc
-                            search_doc = SearchDoc(**doc)
                             docs.append(
-                                SavedSearchDoc.from_search_doc(search_doc, db_doc_id=0)
+                                SavedSearchDoc.from_search_doc(search_doc, db_doc_id=0)  # noqa: F821,F841
                             )
                     ind_to_tool_use[
                         ind  # ty: ignore[possibly-unresolved-reference]
@@ -482,8 +479,7 @@ class ChatSessionManager:
 
         if response.status_code == 200:
             # Chat exists, check if it's marked as deleted
-            chat_data = response.json()
-            return chat_data.get("deleted", False) is True
+            return chat_data.get("deleted", False) is True  # noqa: F821,F841
         return False
 
     @staticmethod

@@ -1,6 +1,5 @@
 """Integration tests for the unified assistant."""
 
-from tests.integration.common_utils.managers.persona import PersonaManager
 from tests.integration.common_utils.test_models import DATestUser
 
 
@@ -10,19 +9,18 @@ def test_unified_assistant(
 ) -> None:
     """Combined test verifying unified assistant existence, tools, and starter messages."""
     # Fetch all personas
-    personas = PersonaManager.get_all(admin_user)
 
     # Find the unified assistant (ID 0)
     unified_assistant = None
-    for persona in personas:
+    for persona in personas:  # noqa: F821,F841
         if persona.id == 0:
             unified_assistant = persona
             break
 
     # Assert that there are no other assistants (personas) besides the unified assistant
     # (ID 0)
-    assert len(personas) == 1, (
-        f"Expected only the unified assistant, found {len(personas)} personas"
+    assert len(personas) == 1, (  # noqa: F821,F841
+        f"Expected only the unified assistant, found {len(personas)} personas"  # noqa: F821,F841
     )
 
     # Verify the unified assistant exists

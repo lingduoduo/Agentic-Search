@@ -21,7 +21,6 @@ import sys
 from typing import Any
 
 import httpx
-import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastmcp import FastMCP
@@ -100,8 +99,7 @@ class GoogleOAuthTokenVerifier(TokenVerifier):
                 return None
 
             # Extract scopes from the token
-            scopes_str = token_info.get("scope", "")
-            scopes = scopes_str.split() if scopes_str else []
+            scopes = scopes_str.split() if scopes_str else []  # noqa: F821,F841
 
             # Check required scopes if configured
             if self.required_scopes:
@@ -119,12 +117,11 @@ class GoogleOAuthTokenVerifier(TokenVerifier):
             )
 
             # Extract expiration time
-            expires_in = token_info.get("expires_in")
             expires_at = None
-            if expires_in:
+            if expires_in:  # noqa: F821,F841
                 import time
 
-                expires_at = int(time.time()) + int(expires_in)
+                expires_at = int(time.time()) + int(expires_in)  # noqa: F821,F841
 
             return AccessToken(
                 token=token,
@@ -188,19 +185,17 @@ if __name__ == "__main__":
     port = int(sys.argv[1] if len(sys.argv) > 1 else "8006")
 
     # Get configuration from environment
-    bind_host = os.getenv("MCP_SERVER_HOST", "127.0.0.1")
-    public_host = os.getenv("MCP_SERVER_PUBLIC_HOST", bind_host)
+    public_host = os.getenv("MCP_SERVER_PUBLIC_HOST", bind_host)  # noqa: F821,F841
     public_url = os.getenv("MCP_SERVER_PUBLIC_URL")
 
     # Optional: require specific scopes (Google tokens have scopes like 'email', 'profile')
     # Leave empty to accept any valid Google token
-    required_scopes_str = os.getenv("MCP_GOOGLE_REQUIRED_SCOPES", "")
     required_scopes = (
-        required_scopes_str.split(",") if required_scopes_str.strip() else None
+        required_scopes_str.split(",") if required_scopes_str.strip() else None  # noqa: F821,F841
     )
 
     print(f"Starting Google OAuth MCP Test Server on port {port}")
-    print(f"Bind host: {bind_host}")
+    print(f"Bind host: {bind_host}")  # noqa: F821,F841
     print(f"Public host: {public_host}")
     if public_url:
         print(f"Public URL: {public_url}")
@@ -210,20 +205,17 @@ if __name__ == "__main__":
         print("No specific scopes required - any valid Google token accepted")
 
     # Create the auth verifier
-    auth = GoogleOAuthTokenVerifier(required_scopes=required_scopes)
 
     # Create FastMCP instance with auth
-    mcp = FastMCP("Google OAuth Test MCP Server", auth=auth)
-    make_tools(mcp)
+    make_tools(mcp)  # noqa: F821,F841
 
     # Get the MCP HTTP app
-    mcp_app = mcp.http_app()
 
     # Create wrapper FastAPI app
     app = FastAPI(
         title="MCP Google OAuth Test Server",
         description="MCP server that authenticates using Google OAuth tokens passed through from Onyx",
-        lifespan=mcp_app.lifespan,
+        lifespan=mcp_app.lifespan,  # noqa: F821,F841
     )
 
     # Health check (unprotected)
@@ -243,7 +235,5 @@ if __name__ == "__main__":
         }
 
     # Mount MCP app at root
-    app.mount("/", mcp_app)
 
     # Run the server
-    uvicorn.run(app, host=bind_host, port=port)

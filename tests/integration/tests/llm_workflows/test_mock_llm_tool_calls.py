@@ -1,11 +1,12 @@
-from onyx.configs import app_configs
-from onyx.configs.constants import DocumentSource
-from onyx.tools.constants import SEARCH_TOOL_ID
-from tests.integration.common_utils.managers.cc_pair import CCPairManager
-from tests.integration.common_utils.managers.chat import ChatSessionManager
-from tests.integration.common_utils.managers.llm_provider import LLMProviderManager
-from tests.integration.common_utils.managers.tool import ToolManager
-from tests.integration.common_utils.test_models import DATestUser
+# app_configs removed — use env vars directly
+from tests.integration.common_utils.types import DocumentSource
+
+SEARCH_TOOL_ID = "run_search"
+from tests.integration.common_utils.managers.cc_pair import CCPairManager  # noqa: E402
+from tests.integration.common_utils.managers.chat import ChatSessionManager  # noqa: E402
+from tests.integration.common_utils.managers.llm_provider import LLMProviderManager  # noqa: E402
+from tests.integration.common_utils.managers.tool import ToolManager  # noqa: E402
+from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
 _DUMMY_OPENAI_API_KEY = "sk-mock-llm-workflow-tests"
 
@@ -19,7 +20,7 @@ def _get_internal_search_tool_id(admin_user: DATestUser) -> int:
 
 
 def _assert_integration_mode_enabled() -> None:
-    assert app_configs.INTEGRATION_TESTS_MODE is True, (
+    assert app_configs.INTEGRATION_TESTS_MODE is True, (  # noqa: F821,F841
         "Integration tests require INTEGRATION_TESTS_MODE=true."
     )
 

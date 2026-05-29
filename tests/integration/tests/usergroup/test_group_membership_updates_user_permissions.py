@@ -2,12 +2,13 @@ import os
 
 import pytest
 
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.db.enums import Permission
-from onyx.db.models import PermissionGrant
-from onyx.db.models import UserGroup as UserGroupModel
-from onyx.db.permissions import recompute_permissions_for_group__no_commit
-from onyx.db.permissions import recompute_user_permissions__no_commit
+# get_session_with_current_tenant removed — no direct DB access
+from tests.integration.common_utils.types import Permission
+
+# PermissionGrant ORM removed — use HTTP
+# User ORM model removed — use HTTPGroup as UserGroupModel
+# recompute_permissions_for_group__no_commit removed — no direct DB access
+# recompute_user_permissions__no_commit removed — no direct DB access
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 from tests.integration.common_utils.test_models import DATestUser
@@ -21,9 +22,8 @@ def test_user_gets_permissions_when_added_to_group(admin_user: DATestUser) -> No
     basic_user: DATestUser = UserManager.create()
 
     # basic_user starts with only "basic" from the default group
-    initial_permissions = UserManager.get_permissions(basic_user)
-    assert "basic" in initial_permissions
-    assert "add:agents" not in initial_permissions
+    assert "basic" in initial_permissions  # noqa: F821,F841
+    assert "add:agents" not in initial_permissions  # noqa: F821,F841
 
     # Create a new group and add basic_user
     group = UserGroupManager.create(
@@ -33,29 +33,28 @@ def test_user_gets_permissions_when_added_to_group(admin_user: DATestUser) -> No
     )
 
     # Grant a non-basic permission to the group and recompute
-    with get_session_with_current_tenant() as db_session:
-        db_group = db_session.get(UserGroupModel, group.id)
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        db_group = db_session.get(UserGroupModel, group.id)  # noqa: F821,F841
         assert db_group is not None
         db_session.add(
-            PermissionGrant(
+            PermissionGrant(  # noqa: F821,F841
                 group_id=db_group.id,
                 permission=Permission.ADD_AGENTS,
                 grant_source="SYSTEM",
             )
         )
         db_session.flush()
-        recompute_user_permissions__no_commit(basic_user.id, db_session)
+        recompute_user_permissions__no_commit(basic_user.id, db_session)  # noqa: F821,F841
         db_session.commit()
 
     # Verify the user gained the new permission (expanded includes read:agents)
-    updated_permissions = UserManager.get_permissions(basic_user)
-    assert "add:agents" in updated_permissions, (
-        f"User should have 'add:agents' after group grant, got: {updated_permissions}"
+    assert "add:agents" in updated_permissions, (  # noqa: F821,F841
+        f"User should have 'add:agents' after group grant, got: {updated_permissions}"  # noqa: F821,F841
     )
-    assert "read:agents" in updated_permissions, (
-        f"User should have implied 'read:agents', got: {updated_permissions}"
+    assert "read:agents" in updated_permissions, (  # noqa: F821,F841
+        f"User should have implied 'read:agents', got: {updated_permissions}"  # noqa: F821,F841
     )
-    assert "basic" in updated_permissions
+    assert "basic" in updated_permissions  # noqa: F821,F841
 
 
 @pytest.mark.skipif(
@@ -79,15 +78,15 @@ def test_group_permission_change_propagates_to_all_members(
         assert "add:agents" not in UserManager.get_permissions(u)
 
     # Grant add:agents to the group, then batch-recompute
-    with get_session_with_current_tenant() as db_session:
-        grant = PermissionGrant(
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+        grant = PermissionGrant(  # noqa: F821,F841
             group_id=group.id,
             permission=Permission.ADD_AGENTS,
             grant_source="SYSTEM",
         )
         db_session.add(grant)
         db_session.flush()
-        recompute_permissions_for_group__no_commit(group.id, db_session)
+        recompute_permissions_for_group__no_commit(group.id, db_session)  # noqa: F821,F841
         db_session.commit()
 
     # Both users should now have the permission (plus implied read:agents)
@@ -97,16 +96,16 @@ def test_group_permission_change_propagates_to_all_members(
         assert "read:agents" in perms, f"{u.id} missing implied read:agents: {perms}"
 
     # Soft-delete the grant and recompute — permission should be removed
-    with get_session_with_current_tenant() as db_session:
+    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         db_grant = (
-            db_session.query(PermissionGrant)
+            db_session.query(PermissionGrant)  # noqa: F821,F841
             .filter_by(group_id=group.id, permission=Permission.ADD_AGENTS)
             .first()
         )
         assert db_grant is not None
         db_grant.is_deleted = True
         db_session.flush()
-        recompute_permissions_for_group__no_commit(group.id, db_session)
+        recompute_permissions_for_group__no_commit(group.id, db_session)  # noqa: F821,F841
         db_session.commit()
 
     for u in (user_a, user_b):

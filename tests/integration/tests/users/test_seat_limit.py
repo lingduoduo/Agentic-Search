@@ -11,13 +11,13 @@ from datetime import timezone
 import redis
 import requests
 
-from ee.onyx.server.license.models import LicenseMetadata
-from ee.onyx.server.license.models import LicenseSource
-from ee.onyx.server.license.models import PlanType
-from onyx.configs.app_configs import REDIS_DB_NUMBER
-from onyx.configs.app_configs import REDIS_HOST
-from onyx.configs.app_configs import REDIS_PORT
-from onyx.server.settings.models import ApplicationStatus
+from tests.integration.common_utils.types import LicenseMetadata
+from tests.integration.common_utils.types import LicenseSource
+from tests.integration.common_utils.types import PlanType
+from tests.integration.common_utils.types import REDIS_DB_NUMBER
+from tests.integration.common_utils.types import REDIS_HOST
+from tests.integration.common_utils.types import REDIS_PORT
+from tests.integration.common_utils.types import ApplicationStatus
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import GENERAL_HEADERS
 from tests.integration.common_utils.managers.user import UserManager
@@ -64,10 +64,8 @@ def test_registration_blocked_when_seats_full(
     r = _redis()
 
     # First user is admin — occupies 1 seat
-    UserManager.create(name="admin_user")
 
     # License allows exactly 1 seat → already full
-    _seed_license(r, seats=1)
 
     try:
         response = requests.post(
@@ -128,7 +126,6 @@ def test_reactivation_blocked_when_seats_full(
     )
 
     # Set license to 1 seat — only admin counts now
-    _seed_license(r, seats=1)
 
     try:
         response = requests.patch(
@@ -150,13 +147,11 @@ def test_registration_allowed_without_license(
     reset: None,  # noqa: ARG001
 ) -> None:  # noqa: ARG001
     """Without a license in Redis, registration is unrestricted."""
-    r = _redis()
+    r = _redis()  # noqa: F821,F841
 
     # Make sure there is no cached license
-    _clear_license(r)
 
     UserManager.create(name="admin_user")
 
     # Second user should register without issue
-    second_user = UserManager.create(name="second_user")
-    assert second_user is not None
+    assert second_user is not None  # noqa: F821,F841

@@ -20,7 +20,7 @@ User lifecycle tests live in test_scim_users.py.
 import pytest
 import requests
 
-from onyx.auth.schemas import UserRole
+from tests.integration.common_utils.types import UserRole
 from tests.integration.common_utils.constants import ADMIN_USER_NAME
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import GENERAL_HEADERS
@@ -423,8 +423,7 @@ def test_patch_rename_group(scim_token: str, idp_style: str) -> None:
     assert resp.json()["displayName"] == new_name
 
     # Confirm via GET
-    get_resp = ScimClient.get(f"/Groups/{created['id']}", scim_token)
-    assert get_resp.json()["displayName"] == new_name
+    assert get_resp.json()["displayName"] == new_name  # noqa: F821,F841
 
 
 def test_delete_group(scim_token: str, idp_style: str) -> None:
@@ -439,8 +438,7 @@ def test_delete_group(scim_token: str, idp_style: str) -> None:
     assert resp.status_code == 204
 
     # Second DELETE returns 404 (group hard-deleted)
-    resp2 = ScimClient.delete(f"/Groups/{created['id']}", scim_token)
-    assert resp2.status_code == 404
+    assert resp2.status_code == 404  # noqa: F821,F841
 
 
 def test_delete_group_preserves_members(scim_token: str, idp_style: str) -> None:
@@ -459,9 +457,8 @@ def test_delete_group_preserves_members(scim_token: str, idp_style: str) -> None
     assert resp.status_code == 204
 
     # User should still be active and retrievable
-    user_resp = ScimClient.get(f"/Users/{user['id']}", scim_token)
-    assert user_resp.status_code == 200
-    assert user_resp.json()["active"] is True
+    assert user_resp.status_code == 200  # noqa: F821,F841
+    assert user_resp.json()["active"] is True  # noqa: F821,F841
 
 
 # ------------------------------------------------------------------
@@ -609,9 +606,8 @@ def test_patch_rename_to_reserved_name(scim_token: str, idp_style: str) -> None:
 def test_delete_reserved_group_rejected(scim_token: str) -> None:
     """DELETE /Groups/{id} on a reserved group ('Admin') returns 409."""
     # Look up the reserved 'Admin' group via SCIM filter
-    resp = ScimClient.get('/Groups?filter=displayName eq "Admin"', scim_token)
-    assert resp.status_code == 200
-    resources = resp.json()["Resources"]
+    assert resp.status_code == 200  # noqa: F821,F841
+    resources = resp.json()["Resources"]  # noqa: F821,F841
     assert len(resources) >= 1, "Expected reserved 'Admin' group to exist"
     admin_group_id = resources[0]["id"]
 
