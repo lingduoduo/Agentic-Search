@@ -27,6 +27,10 @@ from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.db import AgenticSearchStore
+from src.hooks import HookPoint
+from src.hooks import HookRegistry
+from src.hooks import HookSoftFailed
+from src.hooks import execute_hook
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -97,6 +101,12 @@ class AgentExperienceResponse(BaseModel):
     citations: list[str]
     documents: list[SourceDocumentView]
     messages: list[ChatMessageView]
+    hook_metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class QueryProcessingHookResponse(BaseModel):
+    query: str | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 def create_web_app(
@@ -105,6 +115,7 @@ def create_web_app(
     app_settings: AppSettings | None = None,
     store: AgenticSearchStore | None = None,
     llm: LLMClient | None = None,
+    hook_registry: HookRegistry | None = None,
 ) -> FastAPI:
     """Create the user-facing web app.
 
@@ -193,9 +204,23 @@ def create_web_app(
         query = request.query.strip()
         if not query:
             raise HTTPException(status_code=422, detail="query is required")
+        hook_metadata: dict[str, object] = {}
 
         auth_user = _optional_user_from_request(http_request)
         user_id = request.user_id or (auth_user.id if auth_user else None)
+        hook_result = execute_hook(
+            hook_point=HookPoint.QUERY_PROCESSING,
+            payload={"query": query, "user_id": user_id},
+            response_type=QueryProcessingHookResponse,
+            registry=hook_registry,
+        )
+        if isinstance(hook_result, QueryProcessingHookResponse):
+            if hook_result.query and hook_result.query.strip():
+                query = hook_result.query.strip()
+            hook_metadata = hook_result.metadata
+        elif isinstance(hook_result, HookSoftFailed):
+            hook_metadata = {"query_processing_hook_error": hook_result.error_message}
+
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request)
         history = [
@@ -242,13 +267,16 @@ def create_web_app(
             metadata={
                 "citations": result.citations,
                 "document_ids": [document.id for document in result.context.documents],
+                "hooks": hook_metadata,
             },
         )
         messages = [
             ChatMessageView(role=message.role, content=message.content)
             for message in db.list_chat_messages(session_id)
         ]
-        return _response_from_result(session_id, result, messages)
+        return _response_from_result(
+            session_id, result, messages, hook_metadata=hook_metadata
+        )
 
     return app
 
@@ -283,6 +311,8 @@ def _response_from_result(
     session_id: str,
     result: AnswerGenerationResult,
     messages: list[ChatMessageView],
+    *,
+    hook_metadata: dict[str, object] | None = None,
 ) -> AgentExperienceResponse:
     return AgentExperienceResponse(
         session_id=session_id,
@@ -290,6 +320,7 @@ def _response_from_result(
         citations=result.citations,
         documents=[_document_view(document) for document in result.context.documents],
         messages=messages,
+        hook_metadata=hook_metadata or {},
     )
 
 
