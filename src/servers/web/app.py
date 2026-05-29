@@ -29,6 +29,9 @@ from src.context.preprocessing.access_filters import build_user_only_filters
 from src.db import AgenticSearchStore
 from src.hooks import HookPoint
 from src.servers.analytics.api import create_analytics_router
+from src.servers.auth_check import PUBLIC_ENDPOINT_SPECS
+from src.servers.auth_check import check_router_auth
+from src.servers.seeding import seed_db
 from src.hooks import HookRegistry
 from src.hooks import HookSoftFailed
 from src.hooks import execute_hook
@@ -132,6 +135,8 @@ def create_web_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        seed_db(db)
+        check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
         try:
             yield
         finally:
