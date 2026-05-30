@@ -48,6 +48,7 @@ def generate_user_jwt_token(
     tenant_id: str | None = None,
     expires_in_seconds: int | None = None,
     secret: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     """Create a signed HS256 token for local API clients and tests."""
 
@@ -64,6 +65,8 @@ def generate_user_jwt_token(
         payload["tenant_id"] = tenant_id
     if expires_in_seconds is not None:
         payload["exp"] = now + expires_in_seconds
+    if extra:
+        payload.update(extra)
     return _encode_jwt(payload, get_auth_secret(secret))
 
 
@@ -111,8 +114,20 @@ def extract_bearer_token(headers: Mapping[str, str]) -> str | None:
     return token.strip()
 
 
+_COOKIE_NAME = "fastapiusersauth"
+
+
+def _extract_cookie_token(headers: Mapping[str, str]) -> str | None:
+    cookie_header = headers.get("Cookie") or headers.get("cookie") or ""
+    for part in cookie_header.split(";"):
+        name, _, value = part.strip().partition("=")
+        if name.strip() == _COOKIE_NAME and value.strip():
+            return value.strip()
+    return None
+
+
 def user_from_headers(headers: Mapping[str, str]) -> AuthenticatedUser | None:
-    token = extract_bearer_token(headers)
+    token = extract_bearer_token(headers) or _extract_cookie_token(headers)
     if not token:
         return None
     try:

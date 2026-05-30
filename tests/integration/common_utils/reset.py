@@ -42,19 +42,31 @@ def _seed_dev_license_if_set() -> None:
 
 
 def reset_all() -> None:
-    """No-op reset for SQLite-backed integration tests.
+    """Reset integration test state by clearing all users via the server API.
 
-    The server creates a fresh in-memory / file-based SQLite store at startup.
-    Tests that need isolation should run against a dedicated server instance or
-    use unique identifiers to avoid cross-test interference.
-
-    Setting SKIP_RESET=true is honoured for consistency with the original API.
+    Calls POST /manage/admin/reset-test-data (only available when the server
+    is started with INTEGRATION_TESTS_MODE=true).
     """
     if os.environ.get("SKIP_RESET", "").lower() == "true":
         logger.info("Skipping reset (SKIP_RESET=true).")
         return
 
-    logger.info("reset_all: no-op for SQLite-backed server")
+    try:
+        import requests
+
+        resp = requests.post(
+            f"{API_SERVER_URL}/manage/admin/reset-test-data",
+            timeout=10,
+        )
+        if resp.ok:
+            logger.info("Test data reset via /manage/admin/reset-test-data")
+        else:
+            logger.warning(
+                "Reset endpoint returned %s: %s", resp.status_code, resp.text
+            )
+    except Exception as exc:
+        logger.warning("Could not reset test data: %s", exc)
+
     _seed_dev_license_if_set()
 
 

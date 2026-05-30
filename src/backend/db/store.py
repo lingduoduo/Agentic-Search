@@ -455,6 +455,15 @@ class AgenticSearchStore:
         ).fetchone()
         return self._row_to_user(row) if row else None
 
+    def list_users(self) -> list[UserRecord]:
+        rows = self._conn.execute("SELECT * FROM users ORDER BY created_at").fetchall()
+        return [self._row_to_user(row) for row in rows]
+
+    def delete_user(self, user_id: str) -> bool:
+        cursor = self._conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0
+
     def upsert_group(self, group: GroupRecord) -> GroupRecord:
         now = _now()
         created_at = group.created_at or self._created_at("groups", group.id, now)

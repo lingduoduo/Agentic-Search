@@ -74,8 +74,7 @@ class UserManager:
             email=email,
             password=password,
             headers=deepcopy(GENERAL_HEADERS),
-            # fill as basic for now, the `login_as_user` call will
-            # fill it in correctly
+            role=UserRole.BASIC,
             is_active=True,
         )
         print(f"Created user {test_user.email}")
