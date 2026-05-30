@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi.responses import Response
 
 from src.backend.auth import AuthenticatedUser
 from src.backend.configs import AppSettings
@@ -72,12 +73,13 @@ def create_manage_router(
         )
         return StandardAnswer.from_record(record)
 
-    @router.delete("/admin/standard-answer/{answer_id}", status_code=204)
+    @router.delete("/admin/standard-answer/{answer_id}", status_code=204, response_class=Response)
     def delete_standard_answer(
         answer_id: str,
         _: AuthenticatedUser = Depends(_require_admin),
-    ) -> None:
+    ) -> Response:
         store.remove_standard_answer(answer_id)
+        return Response(status_code=204)
 
     # -----------------------------------------------------------------------
     # Standard answer categories
