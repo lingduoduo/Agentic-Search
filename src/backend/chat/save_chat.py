@@ -28,12 +28,9 @@ logger = setup_logger()
 # Repo-local implementations
 # ---------------------------------------------------------------------------
 
+from src.backend.chat.llm_step import sanitize_string  # noqa: E402
+
 _save_chat_id_counter = _itertools.count(1)
-
-
-def sanitize_string(s: str) -> str:
-    """Remove NULL bytes and lone surrogates."""
-    return s.replace("\x00", "").encode("utf-8", errors="ignore").decode("utf-8")
 
 
 def mime_type_to_chat_file_type(mime_type: str | None) -> _Any:

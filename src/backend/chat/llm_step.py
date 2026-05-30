@@ -183,15 +183,7 @@ def find_all_json_objects(text: str) -> list[dict[str, Any]]:
     return results
 
 
-class Parser:
-    """Minimal stub for jsonriver.Parser (incremental JSON parser)."""
-
-    def __init__(self) -> None:
-        self._buf = ""
-
-    def feed(self, s: str) -> list:
-        self._buf += s
-        return []
+from src.backend.chat.tool_call_args_streaming import Parser  # noqa: E402
 
 
 @dataclass

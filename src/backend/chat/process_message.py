@@ -419,27 +419,11 @@ def construct_tools(
     return {}
 
 
-# ---------------------------------------------------------------------------
-# Cache stub
-# ---------------------------------------------------------------------------
+from src.backend.cache.interface import InMemoryCache as _InMemoryCache
 
 
-class _DictCache:
-    def __init__(self) -> None:
-        self._store: dict = {}
-
-    def get(self, key: str) -> Any:
-        return self._store.get(key)
-
-    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
-        self._store[key] = value
-
-    def delete(self, key: str) -> None:
-        self._store.pop(key, None)
-
-
-def get_cache_backend() -> _DictCache:
-    return _DictCache()
+def get_cache_backend() -> _InMemoryCache:
+    return _InMemoryCache()
 
 
 # ---------------------------------------------------------------------------
