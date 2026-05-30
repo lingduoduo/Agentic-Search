@@ -35,14 +35,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from src.db.store import AgenticSearchStore
-from src.servers.indexing.heavy_worker import HeavyWorker
-from src.servers.indexing.light_worker import (
+from src.servers.backgroundworker.heavy_worker import HeavyWorker
+from src.servers.backgroundworker.light_worker import (
     CleanupIndexAttemptsTask,
     DeleteConnectorTask,
     LightWorker,
     SyncVdbMetadataTask,
 )
-from src.servers.indexing.monitoring_worker import MonitoringWorker
+from src.servers.backgroundworker.monitoring_worker import MonitoringWorker
 
 logger = logging.getLogger(__name__)
 

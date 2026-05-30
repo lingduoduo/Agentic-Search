@@ -6,14 +6,14 @@ from typing import Protocol
 
 import numpy as np
 
-from src.retrieval.index_builder import EmbeddingFn
-from src.retrieval.index_builder import deterministic_embedding_fn
-from src.retrieval.index_builder import embed_chunks
-from src.retrieval.index_builder import embed_chunks_with_failure_handling
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
-from src.retrieval.models import EmbeddedChunk
-from src.retrieval.models import EmbeddingConfig
-from src.retrieval.models import IndexChunk
+from .index_builder import EmbeddingFn
+from .index_builder import deterministic_embedding_fn
+from .index_builder import embed_chunks
+from .index_builder import embed_chunks_with_failure_handling
+from .indexing_heartbeat import IndexingHeartbeatInterface
+from .models import EmbeddedChunk
+from .models import EmbeddingConfig
+from .models import IndexChunk
 
 
 class IndexingEmbedder(Protocol):

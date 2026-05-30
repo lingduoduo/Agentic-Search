@@ -26,9 +26,9 @@ from src.retrieval.index_builder import embed_chunks_with_failure_handling
 from src.retrieval.index_builder import filter_indexable_documents
 from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
 from src.retrieval.models import ChunkingConfig, EmbeddingConfig
-from src.servers.indexing.chunker import Chunker
-from src.servers.indexing.embedder import DefaultIndexingEmbedder
-from src.servers.indexing.vector_db_insertion import (
+from src.retrieval.chunker import Chunker
+from src.retrieval.embedder import DefaultIndexingEmbedder
+from src.retrieval.vector_db_insertion import (
     ChunkSink,
     write_chunks_with_backoff,
 )

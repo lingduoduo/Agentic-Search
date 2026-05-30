@@ -24,7 +24,10 @@ from src.connectors.basic import LocalFileConnector
 from src.connectors.models import Document
 from src.db.models import ConnectorConfig
 from src.db.store import AgenticSearchStore
-from src.servers.indexing.docprocessing import DocprocessingConfig, DocprocessingWorker
+from src.servers.backgroundworker.docprocessing import (
+    DocprocessingConfig,
+    DocprocessingWorker,
+)
 
 logger = logging.getLogger(__name__)
 

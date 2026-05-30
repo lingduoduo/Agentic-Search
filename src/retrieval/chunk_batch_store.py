@@ -8,7 +8,7 @@ import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
-from src.retrieval.models import EmbeddedChunk
+from .models import EmbeddedChunk
 
 
 class ChunkBatchStore:

@@ -1,19 +1,19 @@
-"""Tests for the repo-native src.servers.indexing facade."""
+"""Tests for the indexing pipeline facade (moved from src.servers.indexing to src.retrieval)."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from src.connectors import Document
+from src.retrieval import ChunkBatchStore
+from src.retrieval import Chunker
+from src.retrieval import DefaultIndexingEmbedder
+from src.retrieval import embed_and_stream
+from src.retrieval import filter_documents
+from src.retrieval import index_document_batch
 from src.retrieval.models import ChunkingConfig
 from src.retrieval.models import EmbeddingConfig
-from src.servers.indexing import ChunkBatchStore
-from src.servers.indexing import Chunker
-from src.servers.indexing import DefaultIndexingEmbedder
-from src.servers.indexing import embed_and_stream
-from src.servers.indexing import filter_documents
-from src.servers.indexing import index_document_batch
-from src.servers.indexing.vector_db_insertion import write_chunks_with_backoff
+from src.retrieval.vector_db_insertion import write_chunks_with_backoff
 
 
 def test_chunker_and_embedder_facade_support_mini_chunks():
