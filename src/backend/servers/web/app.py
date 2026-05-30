@@ -61,6 +61,7 @@ from src.backend.servers.settings.api import create_settings_router
 from src.backend.servers.tenants.api import router as tenants_router
 from src.backend.servers.token_rate_limits.api import create_token_rate_limits_router
 from src.backend.servers.user_group.api import create_user_group_router
+from src.backend.servers.users.api import create_users_router
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -146,6 +147,9 @@ def _register_routers(
     search_url: str,
 ) -> None:
     """Attach all API routers and exception handlers to *app*."""
+
+    # --- User auth ---
+    app.include_router(create_users_router(db, settings))
 
     # --- Core search & chat ---
     app.include_router(create_search_router(db, search_url=search_url))
