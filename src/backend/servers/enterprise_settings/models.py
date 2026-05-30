@@ -1,6 +1,6 @@
 """Pydantic models for enterprise settings.
 
-Kept close to the sampled Onyx models so callers that reference them compile
+Kept close to the models so callers that reference them compile
 unchanged. The NavigationItem validator is ported to proper Pydantic v2 style
 (model_validator instead of overriding model_validate).
 """

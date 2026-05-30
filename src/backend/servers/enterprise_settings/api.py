@@ -1,8 +1,8 @@
 """Enterprise settings API router.
 
-Provides branding/UI configuration endpoints. The sampled Onyx version
+Provides branding/UI configuration endpoints. The previous version
 depended on get_kv_store(), get_default_file_store(), ScimDAL, Meechum
-OAuth token refresh, MULTI_TENANT context vars, and OnyxError error codes.
+OAuth token refresh, MULTI_TENANT context vars, and AppError error codes.
 
 This implementation uses:
   - File-backed store (store.py in this package)

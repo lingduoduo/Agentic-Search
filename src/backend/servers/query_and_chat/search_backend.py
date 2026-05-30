@@ -1,11 +1,11 @@
 """Search API router for Agentic Search.
 
-Provides three endpoints that mirror the sampled Onyx search_backend:
+Provides three endpoints that mirror the search_backend:
   POST /search/search-flow-classification  — keyword vs chat routing
   POST /search/send-search-message         — run a (possibly expanded) search
   GET  /search/search-history              — past sessions for the caller
 
-The Onyx versions depended on SQLAlchemy, Celery, Redis, and EE models.
+The previous versions depended on SQLAlchemy, Celery, Redis, and EE models.
 This implementation uses the repo's own types:
   - classify_is_search_flow  (src/secondary_llm_flows/)
   - run_expanded_search      (src/search/)

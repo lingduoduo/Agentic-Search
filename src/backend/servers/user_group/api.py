@@ -1,7 +1,7 @@
 """User-group management API router.
 
 Provides full CRUD for groups stored in AgenticSearchStore, mirroring the
-structure of the sampled Onyx user_group API. Onyx-specific concepts
+structure of the user_group API. repo-specific concepts
 (curators, personas, connector-credential pairs, document sets) are absent
 from this repo and are not exposed here.
 

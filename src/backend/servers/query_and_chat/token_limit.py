@@ -1,6 +1,6 @@
 """In-process message rate limiting for the query API.
 
-The sampled Onyx version used SQLAlchemy ORM queries over a `token_count`
+The previous version used SQLAlchemy ORM queries over a `token_count`
 field in `ChatMessage`, user-group rate-limit tables, and global limits stored
 in the DB. This repo has no token-count field and no rate-limit tables.
 

@@ -1,6 +1,6 @@
 """File-backed persistence for enterprise settings, logo, and analytics script.
 
-The sampled Onyx version used get_kv_store() (Redis/DB-backed) and
+The previous version used get_kv_store() (Redis/DB-backed) and
 get_default_file_store() (S3/local blob store). This repo uses plain
 filesystem files inside AGENTIC_SEARCH_DATA_DIR so no external service
 is required.

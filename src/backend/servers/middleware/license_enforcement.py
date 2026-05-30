@@ -1,6 +1,6 @@
 """License enforcement middleware for self-hosted deployments.
 
-The sampled Onyx version used Redis (get_cached_license_metadata),
+The previous version used Redis (get_cached_license_metadata),
 SQLAlchemy, and CACHE_TRANSIENT_ERRORS. This repo uses the file-backed
 license store from src/servers/license/api.py and the allowlist from
 src/configs/license_enforcement_config.py.

@@ -1,6 +1,6 @@
 """Query API router — stub for EE-only features.
 
-Standard Answers (the sampled Onyx query_backend.py) are an Enterprise
+Standard Answers (the query_backend.py) are an Enterprise
 feature that requires a separate Slack/bot integration and DB tables
 not present in this repo. The endpoint is preserved as a documented stub
 that returns HTTP 501 so API clients that probe for the feature receive

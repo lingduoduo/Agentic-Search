@@ -1,6 +1,6 @@
 """Base SCIM provider abstraction.
 
-Adapted from the sampled Onyx ee/onyx/server/scim/providers/base.py.
+py.
 ORM User/UserGroup replaced with lightweight ScimUser/ScimGroup dataclasses.
 """
 

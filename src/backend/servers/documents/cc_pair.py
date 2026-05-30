@@ -1,7 +1,7 @@
 """Connector sync API router.
 
-The sampled Onyx cc_pair.py triggered Celery tasks via Redis for permission
-sync and external group sync — all of which require the full Onyx
+The cc_pair.py triggered Celery tasks via Redis for permission
+sync and external group sync — all of which require the full
 infrastructure (SQLAlchemy, Celery, Redis, multi-tenant context vars).
 
 This repo uses AgenticSearchStore and stores sync state as IndexAttemptRecords.

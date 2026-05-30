@@ -1,6 +1,6 @@
 """SCIM 2.0 API endpoints (RFC 7644).
 
-Adapted from the sampled Onyx ee/onyx/server/scim/api.py.
+py.
 Changes:
 - ScimDAL backed by AgenticSearchStore (no SQLAlchemy).
 - ORM User/UserGroup replaced with ScimUser/ScimGroup dataclasses.
@@ -628,7 +628,7 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         return Response(status_code=204)
 
     # ---------------------------------------------------------------------------
-    # Token admin endpoints (Onyx-internal)
+    # Token admin endpoints (internal)
     # ---------------------------------------------------------------------------
 
     @scim_router.post("/tokens", status_code=201)

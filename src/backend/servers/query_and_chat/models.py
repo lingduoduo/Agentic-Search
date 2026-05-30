@@ -1,12 +1,12 @@
 """Request/response models for the search and query API.
 
-These models mirror the structure of the sampled Onyx query_and_chat models
+These models mirror the structure of the query_and_chat models
 but are built on top of the types that exist in this repo:
   - SearchResult  (src/retrieval/context.py)
   - SearchFilters (src/context/models.py)
   - SearchQueryResult (src/search/process_search_query.py)
 
-Onyx-specific concepts (StandardAnswer, InferenceSection, BaseFilters,
+repo-specific concepts (StandardAnswer, InferenceSection, BaseFilters,
 SearchDoc) are replaced with repo-native equivalents or omitted.
 """
 

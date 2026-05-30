@@ -1,7 +1,7 @@
 """Pydantic models for tenant and invitation management.
 
-The sampled Onyx models imported CustomerTier (EE) and ApplicationStatus
-(Onyx settings) — both replaced with repo equivalents from src/utils/license.py
+The models imported CustomerTier (EE) and ApplicationStatus
+both replaced with repo equivalents from src/utils/license.py
 and src/configs/. Cloud-only models (Stripe checkout, billing information,
 schema management) are kept as stubs so callers that reference them compile,
 but the corresponding endpoints return 501.

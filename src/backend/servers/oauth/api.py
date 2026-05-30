@@ -1,6 +1,6 @@
 """OAuth admin API.
 
-Adapted from the sampled Onyx ee/onyx/server/oauth/api.py.
+py.
 Changes:
 - Redis session store replaced with an in-memory dict (TTL enforced on access).
 - Connector credential storage callbacks are stubbed with HTTP 501 — this

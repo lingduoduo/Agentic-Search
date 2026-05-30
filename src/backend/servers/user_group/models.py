@@ -1,6 +1,6 @@
 """Pydantic models for the user-group management API.
 
-The sampled Onyx models referenced ORM relationships (cc_pairs, personas,
+The models referenced ORM relationships (cc_pairs, personas,
 document_sets, curator_ids) and used integer/UUID primary keys. This repo
 uses string IDs and the group model only tracks membership — no personas,
 connectors, or document-sets are associated with groups here.

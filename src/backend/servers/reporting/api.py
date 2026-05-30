@@ -1,8 +1,8 @@
 """Usage report API.
 
-Adapted from the sampled Onyx ee/onyx/server/reporting/usage_export_api.py.
+py.
 Celery-based async generation is replaced with synchronous report creation.
-External onyx/ee imports are replaced with project-local equivalents.
+External imports are replaced with project-local equivalents.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def create_reporting_router(
     ) -> UsageReportMetadata:
         """Generate a usage report synchronously and return its metadata.
 
-        The original Onyx version dispatched this to a Celery task.
+        The original version dispatched this to a Celery task.
         Here the ZIP is assembled in-memory and stored in the DB immediately.
         """
         return create_new_usage_report(

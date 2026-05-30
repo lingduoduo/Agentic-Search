@@ -1,10 +1,10 @@
 """Billing service layer.
 
-Adapted from the sampled Onyx ee/onyx/server/billing/service.py.
+py.
 Changes from the original:
 - MULTI_TENANT removed — this is a single-tenant self-hosted deployment;
   requests always proxy through cloud_data_plane_url (never direct control plane).
-- OnyxError / OnyxErrorCode replaced with standard FastAPI HTTPException.
+- AppError / AppErrorCode replaced with standard FastAPI HTTPException.
 - generate_data_plane_token (EE JWT) replaced with license-bearer auth.
 - setup_logger replaced with standard logging.getLogger.
 - CLOUD_DATA_PLANE_URL / CONTROL_PLANE_API_BASE_URL replaced with

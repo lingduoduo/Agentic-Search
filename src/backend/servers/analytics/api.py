@@ -2,7 +2,7 @@
 
 Provides admin-only endpoints that aggregate chat session and user activity
 stored in AgenticSearchStore. Endpoints mirror the structure of the sampled
-onyx analytics API, adapted to the data model available in this repo:
+Analytics API adapted to the data model available in this repo:
 
   - sessions  ↔  queries   (one session = one user query interaction)
   - messages  ↔  responses (message count within a session)

@@ -1,7 +1,7 @@
 """Settings API.
 
-Adapted from the sampled Onyx ee/onyx/server/settings/api.py.
-Redis, SQLAlchemy, and ee.onyx license cache are replaced with the
+py.
+Redis, SQLAlchemy, and the license cache are replaced with the
 project's file-backed license store (src/utils/license.py).
 """
 

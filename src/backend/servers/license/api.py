@@ -1,8 +1,8 @@
 """License API for self-hosted deployments.
 
 Provides endpoints for uploading, verifying, refreshing, and deleting
-the RSA-signed license. The sampled Onyx version used SQLAlchemy ORM
-(ee.onyx.db.license) and Redis for caching. This repo stores the license
+the RSA-signed license. The previous version used SQLAlchemy ORM
+and Redis for caching. This repo stores the license
 as a plain file in AGENTIC_SEARCH_DATA_DIR alongside enterprise settings.
 
 Endpoints:

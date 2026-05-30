@@ -1,7 +1,7 @@
 """Evaluation API router.
 
-The sampled Onyx version dispatched an eval run to Celery
-(OnyxCeleryTask.EVAL_RUN_TASK) and required a cloud superuser token.
+The previous version dispatched an eval run to Celery
+(EVAL_RUN_TASK) and required a cloud superuser token.
 
 This repo has no Celery worker. The eval endpoint runs
 ``run_expanded_search`` synchronously and returns structured results,
@@ -88,7 +88,7 @@ def create_evals_router(
     ) -> EvalRunResult:
         """Run a search evaluation synchronously and return structured results.
 
-        Unlike the sampled Onyx version (Celery async), this endpoint blocks
+        Unlike the previous version (Celery async), this endpoint blocks
         until the search completes and returns results directly — suitable for
         local quality measurement and CI pipelines.
         """
