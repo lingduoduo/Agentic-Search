@@ -351,6 +351,7 @@ def create_users_router(
 
         @router.post("/manage/admin/reset-test-data")
         def reset_test_data() -> dict:
+            # No auth required — only registered when INTEGRATION_TESTS_MODE=true.
             for user in store.list_users():
                 store.delete_user(user.id)
             return {"status": "ok"}

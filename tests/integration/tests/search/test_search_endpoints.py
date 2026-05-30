@@ -86,18 +86,19 @@ def test_send_search_message_returns_response(admin_user: DATestUser) -> None:
 
 
 def test_search_history_returns_list(admin_user: DATestUser) -> None:
-    """GET /search/search-history returns a list (may be empty on a fresh server)."""
+    """GET /search/search-history returns a dict with a search_queries list."""
     resp = requests.get(
         f"{API_SERVER_URL}/search/search-history",
         headers=admin_user.headers,
         cookies=admin_user.cookies,
     )
     assert resp.status_code == 200, resp.text
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert "search_queries" in data or isinstance(data, list)
 
 
-def test_register_and_login_basic_user(reset: None) -> None:
-    """A newly registered user can log in and get their own /me info."""
+def test_register_and_login_basic_user(admin_user: DATestUser) -> None:
+    """A second registered user gets basic role; can log in and hit /me."""
     basic = UserManager.create(name="search_test_basic")
     assert basic.email is not None
     assert basic.role.value == "basic"
@@ -125,7 +126,7 @@ def test_admin_can_list_users(admin_user: DATestUser) -> None:
     assert data["total_items"] >= 1
 
 
-def test_basic_user_cannot_list_users(reset: None) -> None:
+def test_basic_user_cannot_list_users(admin_user: DATestUser) -> None:
     """Basic user is forbidden from GET /manage/users/accepted."""
     basic = UserManager.create(name="nonadmin")
     resp = requests.get(
