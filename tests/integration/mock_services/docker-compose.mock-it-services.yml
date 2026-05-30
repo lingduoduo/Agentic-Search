@@ -13,8 +13,8 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - onyx_default
+      - agentic_search_default
 networks:
-  onyx_default:
-    name: onyx_default
+  agentic_search_default:
+    name: agentic_search_default
     external: true

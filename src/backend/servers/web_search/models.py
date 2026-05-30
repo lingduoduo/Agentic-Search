@@ -24,6 +24,7 @@ class WebSearchProviderType(StrEnum):
 
 class WebContentProviderType(StrEnum):
     DIRECT = "direct"
+    WEB_CRAWLER = "web_crawler"
 
 
 class WebSearchProviderConfig(BaseModel):
