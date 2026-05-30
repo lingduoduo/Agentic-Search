@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import pytest
 
-from src.access import acl_for_store_user
-from src.access import acl_for_user
-from src.access import can_access_document
-from src.access import get_access_for_document
-from src.access import metadata_with_acl
-from src.auth import AuthenticatedUser
-from src.auth import generate_user_jwt_token
-from src.auth import user_from_jwt_token
-from src.db import AgenticSearchStore
-from src.db import DocumentPermission
-from src.db import GroupRecord
-from src.db import StoredDocument
-from src.db import UserRecord
+from src.backend.access import acl_for_store_user
+from src.backend.access import acl_for_user
+from src.backend.access import can_access_document
+from src.backend.access import get_access_for_document
+from src.backend.access import metadata_with_acl
+from src.backend.auth import AuthenticatedUser
+from src.backend.auth import generate_user_jwt_token
+from src.backend.auth import user_from_jwt_token
+from src.backend.db import AgenticSearchStore
+from src.backend.db import DocumentPermission
+from src.backend.db import GroupRecord
+from src.backend.db import StoredDocument
+from src.backend.db import UserRecord
 from src.retrieval.models import DocumentAccess
 
 

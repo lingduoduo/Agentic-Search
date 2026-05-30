@@ -1,4 +1,4 @@
-"""Tests for the indexing pipeline facade (moved from src.servers.indexing to src.retrieval)."""
+"""Tests for the indexing pipeline facade (moved from src.backend.servers.indexing to src.retrieval)."""
 
 from __future__ import annotations
 

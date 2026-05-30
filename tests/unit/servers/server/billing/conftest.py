@@ -7,13 +7,13 @@ from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
-from src.auth import generate_user_jwt_token
-from src.configs import AppSettings
-from src.configs import AuthSettings
-from src.db import AgenticSearchStore
-from src.db.models import UserRecord
-from src.servers.web.app import SearchExperienceSettings
-from src.servers.web.app import create_web_app
+from src.backend.auth import generate_user_jwt_token
+from src.backend.configs import AppSettings
+from src.backend.configs import AuthSettings
+from src.backend.db import AgenticSearchStore
+from src.backend.db.models import UserRecord
+from src.backend.servers.web.app import SearchExperienceSettings
+from src.backend.servers.web.app import create_web_app
 
 _ADMIN = "admin-user"
 _USER = "regular-user"

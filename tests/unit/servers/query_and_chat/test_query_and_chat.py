@@ -7,21 +7,21 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from src.auth import generate_user_jwt_token
-from src.configs import AppSettings
-from src.configs import AuthSettings
-from src.db import AgenticSearchStore
-from src.db.models import ConnectorConfig
-from src.db.models import UserRecord
+from src.backend.auth import generate_user_jwt_token
+from src.backend.configs import AppSettings
+from src.backend.configs import AuthSettings
+from src.backend.db import AgenticSearchStore
+from src.backend.db.models import ConnectorConfig
+from src.backend.db.models import UserRecord
 from src.retrieval.context import SearchResult
-from src.servers.query_and_chat.models import SearchDocWithContent
-from src.servers.query_and_chat.models import SendSearchQueryRequest
-from src.servers.query_and_chat.streaming_models import SearchErrorPacket
-from src.servers.query_and_chat.streaming_models import SearchQueriesPacket
-from src.servers.query_and_chat.token_limit import check_message_rate_limit
-from src.servers.query_and_chat.token_limit import reset_rate_limit
-from src.servers.web.app import SearchExperienceSettings
-from src.servers.web.app import create_web_app
+from src.backend.servers.query_and_chat.models import SearchDocWithContent
+from src.backend.servers.query_and_chat.models import SendSearchQueryRequest
+from src.backend.servers.query_and_chat.streaming_models import SearchErrorPacket
+from src.backend.servers.query_and_chat.streaming_models import SearchQueriesPacket
+from src.backend.servers.query_and_chat.token_limit import check_message_rate_limit
+from src.backend.servers.query_and_chat.token_limit import reset_rate_limit
+from src.backend.servers.web.app import SearchExperienceSettings
+from src.backend.servers.web.app import create_web_app
 
 _ADMIN_ID = "admin-user"
 _USER_ID = "regular-user"
@@ -153,7 +153,7 @@ def test_search_flow_classification_long_query_is_chat(tmp_path):
 
 def test_send_search_message_non_streaming(tmp_path, monkeypatch):
     async def fake_run_expanded_search(query, **_):
-        from src.search.process_search_query import SearchQueryResult
+        from src.backend.search.process_search_query import SearchQueryResult
         from src.retrieval.context import SearchResult
 
         return SearchQueryResult(
@@ -163,7 +163,7 @@ def test_send_search_message_non_streaming(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.servers.query_and_chat.search_backend.run_expanded_search",
+        "src.backend.servers.query_and_chat.search_backend.run_expanded_search",
         fake_run_expanded_search,
     )
     client, store = _admin_client(tmp_path)
@@ -180,7 +180,7 @@ def test_send_search_message_non_streaming(tmp_path, monkeypatch):
 
 def test_send_search_message_streaming(tmp_path, monkeypatch):
     async def fake_run_expanded_search(query, **_):
-        from src.search.process_search_query import SearchQueryResult
+        from src.backend.search.process_search_query import SearchQueryResult
 
         return SearchQueryResult(
             original_query=query,
@@ -189,7 +189,7 @@ def test_send_search_message_streaming(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.servers.query_and_chat.search_backend.run_expanded_search",
+        "src.backend.servers.query_and_chat.search_backend.run_expanded_search",
         fake_run_expanded_search,
     )
     client, store = _admin_client(tmp_path)

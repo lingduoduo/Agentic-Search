@@ -7,7 +7,7 @@ import json
 import numpy as np
 import pytest
 
-from src.connectors import Document
+from src.backend.connectors import Document
 from src.retrieval.index_builder import (
     ChunkingConfig,
     EmbeddingConfig,

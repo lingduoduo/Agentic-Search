@@ -10,9 +10,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.configs import AppSettings, Tier
-from src.utils.license import LicensePayload
-from src.utils.tier import get_tier, tier_at_least
+from src.backend.configs import AppSettings, Tier
+from src.backend.utils.license import LicensePayload
+from src.backend.utils.tier import get_tier, tier_at_least
 
 
 def _payload(features: list[str], days: int = 365) -> LicensePayload:

@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from src.configs import Tier
-from src.configs import get_env_bool
-from src.configs import is_license_enforcement_exempt
-from src.configs import is_path_allowed_for_gated_tenant
-from src.configs import is_path_allowed_for_tier
-from src.configs import load_app_settings
-from src.configs import load_permission_sync_settings
-from src.configs import required_tier_for_path
-from src.servers.web.app import SearchExperienceSettings
+from src.backend.configs import Tier
+from src.backend.configs import get_env_bool
+from src.backend.configs import is_license_enforcement_exempt
+from src.backend.configs import is_path_allowed_for_gated_tenant
+from src.backend.configs import is_path_allowed_for_tier
+from src.backend.configs import load_app_settings
+from src.backend.configs import load_permission_sync_settings
+from src.backend.configs import required_tier_for_path
+from src.backend.servers.web.app import SearchExperienceSettings
 
 
 def test_load_app_settings_reads_typed_environment():

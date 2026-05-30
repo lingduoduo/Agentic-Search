@@ -21,7 +21,7 @@ class TestMakeBillingRequest:
 
     @pytest.mark.asyncio
     async def test_makes_post_request_and_returns_json(self) -> None:
-        from src.servers.billing.service import _make_billing_request
+        from src.backend.servers.billing.service import _make_billing_request
 
         mock_response = make_mock_response({"url": "https://checkout.stripe.com/s"})
         mock_client = make_mock_http_client("post", response=mock_response)
@@ -38,7 +38,7 @@ class TestMakeBillingRequest:
 
     @pytest.mark.asyncio
     async def test_makes_get_request_with_params(self) -> None:
-        from src.servers.billing.service import _make_billing_request
+        from src.backend.servers.billing.service import _make_billing_request
 
         mock_response = make_mock_response({"subscribed": False})
         mock_client = make_mock_http_client("get", response=mock_response)
@@ -55,7 +55,7 @@ class TestMakeBillingRequest:
 
     @pytest.mark.asyncio
     async def test_uses_license_bearer_auth(self) -> None:
-        from src.servers.billing.service import _make_billing_request
+        from src.backend.servers.billing.service import _make_billing_request
 
         mock_response = make_mock_response({})
         mock_client = make_mock_http_client("post", response=mock_response)
@@ -75,7 +75,7 @@ class TestMakeBillingRequest:
 
     @pytest.mark.asyncio
     async def test_follows_redirects(self) -> None:
-        from src.servers.billing.service import _make_billing_request
+        from src.backend.servers.billing.service import _make_billing_request
 
         mock_response = make_mock_response({})
         mock_client = make_mock_http_client("get", response=mock_response)
@@ -93,7 +93,7 @@ class TestMakeBillingRequest:
     async def test_raises_http_exception_on_http_status_error(self) -> None:
         from fastapi import HTTPException
 
-        from src.servers.billing.service import _make_billing_request
+        from src.backend.servers.billing.service import _make_billing_request
 
         mock_response = make_mock_response({"detail": "Bad gateway"})
         mock_response.status_code = 502
@@ -118,7 +118,7 @@ class TestMakeBillingRequest:
     async def test_raises_http_exception_on_connection_error(self) -> None:
         from fastapi import HTTPException
 
-        from src.servers.billing.service import _make_billing_request
+        from src.backend.servers.billing.service import _make_billing_request
 
         mock_client = make_mock_http_client(
             "post", side_effect=httpx.RequestError("connection refused")
@@ -139,10 +139,10 @@ class TestMakeBillingRequest:
 class TestCreateCheckoutSession:
     @pytest.mark.asyncio
     async def test_builds_body_and_returns_url(self) -> None:
-        from src.servers.billing.service import create_checkout_session
+        from src.backend.servers.billing.service import create_checkout_session
 
         with patch(
-            "src.servers.billing.service._make_billing_request",
+            "src.backend.servers.billing.service._make_billing_request",
             new_callable=AsyncMock,
             return_value={"url": "https://checkout.stripe.com/session"},
         ) as mock_req:
@@ -162,10 +162,10 @@ class TestCreateCheckoutSession:
 
     @pytest.mark.asyncio
     async def test_omits_email_when_none(self) -> None:
-        from src.servers.billing.service import create_checkout_session
+        from src.backend.servers.billing.service import create_checkout_session
 
         with patch(
-            "src.servers.billing.service._make_billing_request",
+            "src.backend.servers.billing.service._make_billing_request",
             new_callable=AsyncMock,
             return_value={"url": "https://checkout.stripe.com/session"},
         ) as mock_req:
@@ -181,10 +181,10 @@ class TestCreateCheckoutSession:
 class TestCreateCustomerPortalSession:
     @pytest.mark.asyncio
     async def test_returns_portal_url(self) -> None:
-        from src.servers.billing.service import create_customer_portal_session
+        from src.backend.servers.billing.service import create_customer_portal_session
 
         with patch(
-            "src.servers.billing.service._make_billing_request",
+            "src.backend.servers.billing.service._make_billing_request",
             new_callable=AsyncMock,
             return_value={"url": "https://billing.stripe.com/portal"},
         ):
@@ -200,11 +200,11 @@ class TestCreateCustomerPortalSession:
 class TestGetBillingInformation:
     @pytest.mark.asyncio
     async def test_returns_billing_info_when_subscribed(self) -> None:
-        from src.servers.billing.models import BillingInformationResponse
-        from src.servers.billing.service import get_billing_information
+        from src.backend.servers.billing.models import BillingInformationResponse
+        from src.backend.servers.billing.service import get_billing_information
 
         with patch(
-            "src.servers.billing.service._make_billing_request",
+            "src.backend.servers.billing.service._make_billing_request",
             new_callable=AsyncMock,
             return_value={"tenant_id": "t1", "status": "active", "seats": 10},
         ):
@@ -219,11 +219,11 @@ class TestGetBillingInformation:
 
     @pytest.mark.asyncio
     async def test_returns_not_subscribed_when_subscribed_false(self) -> None:
-        from src.servers.billing.models import SubscriptionStatusResponse
-        from src.servers.billing.service import get_billing_information
+        from src.backend.servers.billing.models import SubscriptionStatusResponse
+        from src.backend.servers.billing.service import get_billing_information
 
         with patch(
-            "src.servers.billing.service._make_billing_request",
+            "src.backend.servers.billing.service._make_billing_request",
             new_callable=AsyncMock,
             return_value={"subscribed": False},
         ):
@@ -238,10 +238,10 @@ class TestGetBillingInformation:
 class TestUpdateSeatCount:
     @pytest.mark.asyncio
     async def test_updates_seats_and_returns_response(self) -> None:
-        from src.servers.billing.service import update_seat_count
+        from src.backend.servers.billing.service import update_seat_count
 
         with patch(
-            "src.servers.billing.service._make_billing_request",
+            "src.backend.servers.billing.service._make_billing_request",
             new_callable=AsyncMock,
             return_value={
                 "success": True,
@@ -266,7 +266,7 @@ class TestEndTrial:
     async def test_raises_501_for_self_hosted(self) -> None:
         from fastapi import HTTPException
 
-        from src.servers.billing.service import end_trial
+        from src.backend.servers.billing.service import end_trial
 
         with pytest.raises(HTTPException) as exc_info:
             await end_trial()

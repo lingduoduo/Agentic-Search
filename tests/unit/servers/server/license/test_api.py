@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.servers.license.api import _strip_pem
+from src.backend.servers.license.api import _strip_pem
 
 # The project uses "AGENTIC SEARCH LICENSE" as the PEM header.
 _BEGIN = "-----BEGIN AGENTIC SEARCH LICENSE-----"

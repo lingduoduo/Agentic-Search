@@ -28,7 +28,7 @@ from src.backend.auth import user_from_headers
 from src.backend.db import AgenticSearchStore
 from src.backend.search.process_search_query import SearchQueryResult
 from src.backend.search.process_search_query import run_expanded_search
-from src.secondary_llm_flows import classify_is_search_flow
+from src.backend.secondary_llm_flows import classify_is_search_flow
 from src.backend.servers.query_and_chat.models import SearchDocWithContent
 from src.backend.servers.query_and_chat.models import SearchFlowClassificationRequest
 from src.backend.servers.query_and_chat.models import SearchFlowClassificationResponse
