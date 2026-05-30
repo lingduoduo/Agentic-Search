@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from src.access import PUBLIC_ACL
-from src.access import prefix_email
-from src.access import prefix_group
-from src.access import prefix_user
+from src.backend.access import PUBLIC_ACL
+from src.backend.access import prefix_email
+from src.backend.access import prefix_group
+from src.backend.access import prefix_user
 
 from ..models import SearchFilters
 

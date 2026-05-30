@@ -6,8 +6,8 @@ from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from ..connectors.models import ConnectorFailure
-from ..connectors.models import Document
+from src.backend.connectors.models import ConnectorFailure
+from src.backend.connectors.models import Document
 from .index_builder import EmbeddingFn
 from .index_builder import chunk_documents
 from .index_builder import deterministic_embedding_fn

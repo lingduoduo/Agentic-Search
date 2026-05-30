@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..connectors.models import Document
+from src.backend.connectors.models import Document
 from .index_builder import chunk_document
 from .index_builder import chunk_documents
 from .index_builder import filter_indexable_documents

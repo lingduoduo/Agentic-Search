@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from itertools import groupby
 from typing import Protocol, TypeVar
 
-from ..connectors.models import ConnectorFailure
+from src.backend.connectors.models import ConnectorFailure
 from .models import EmbeddedChunk
 
 T = TypeVar("T")

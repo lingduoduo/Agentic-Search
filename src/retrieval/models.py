@@ -21,8 +21,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from ..connectors.models import ConnectorFailure
-from ..connectors.models import Document
+from src.backend.connectors.models import ConnectorFailure
+from src.backend.connectors.models import Document
 
 MAX_METADATA_PERCENTAGE = 0.25
 CHUNK_MIN_CONTENT = 16
