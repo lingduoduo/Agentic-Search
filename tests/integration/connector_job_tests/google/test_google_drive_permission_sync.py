@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import pytest
 
 pytestmark = pytest.mark.skip(reason="requires external services")
@@ -29,7 +30,7 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
 from tests.integration.connector_job_tests.google.google_drive_api_utils import (  # noqa: E402
     GoogleDriveManager,
 )
@@ -37,7 +38,7 @@ from tests.integration.connector_job_tests.google.google_drive_api_utils import 
 
 @pytest.fixture()
 def google_drive_test_env_setup() -> Generator[
-    tuple[GoogleDriveService, str, DATestCCPair, DATestUser, DATestUser, DATestUser],  # noqa: F821,F841
+    tuple[GoogleDriveService, str, DATestCCPair, DATestUser, DATestUser, DATestUser],
     None,
     None,
 ]:
@@ -47,24 +48,24 @@ def google_drive_test_env_setup() -> Generator[
 
     service_account_key = os.environ["FULL_CONTROL_DRIVE_SERVICE_ACCOUNT"]
     drive_id: str | None = None
-    drive_service: GoogleDriveService | None = None  # noqa: F821,F841
+    drive_service: GoogleDriveService | None = None
 
     try:
         credentials = {
-            DB_CREDENTIALS_PRIMARY_ADMIN_KEY: admin_user.email,  # noqa: F821,F841
-            DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY: service_account_key,  # noqa: F821,F841
+            DB_CREDENTIALS_PRIMARY_ADMIN_KEY: admin_user.email,
+            DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY: service_account_key,
         }
 
         # Setup Google Drive
         drive_service = GoogleDriveManager.create_impersonated_drive_service(
             json.loads(service_account_key),
-            admin_user.email,  # noqa: F821,F841
+            admin_user.email,
         )
         test_id = str(uuid4())
         drive_id = GoogleDriveManager.create_shared_drive(
             drive_service,
-            admin_user.email,  # noqa: F821
-            test_id,  # noqa: F821,F841
+            admin_user.email,
+            test_id,
         )
 
         # Setup test infrastructure
@@ -73,7 +74,7 @@ def google_drive_test_env_setup() -> Generator[
         credential: DATestCredential = CredentialManager.create(
             source=DocumentSource.GOOGLE_DRIVE,
             credential_json=credentials,
-            user_performing_action=admin_user,  # noqa: F821,F841
+            user_performing_action=admin_user,
         )
         connector: DATestConnector = ConnectorManager.create(
             name="Google Drive Test",
@@ -83,21 +84,21 @@ def google_drive_test_env_setup() -> Generator[
                 "shared_drive_urls": f"https://drive.google.com/drive/folders/{drive_id}"
             },
             access_type=AccessType.SYNC,
-            user_performing_action=admin_user,  # noqa: F821,F841
+            user_performing_action=admin_user,
         )
         cc_pair: DATestCCPair = CCPairManager.create(
             credential_id=credential.id,
             connector_id=connector.id,
             access_type=AccessType.SYNC,
-            user_performing_action=admin_user,  # noqa: F821,F841
+            user_performing_action=admin_user,
         )
         CCPairManager.wait_for_indexing_completion(
             cc_pair=cc_pair,
             after=before,
-            user_performing_action=admin_user,  # noqa: F821,F841
+            user_performing_action=admin_user,
         )
 
-        yield drive_service, drive_id, cc_pair, admin_user, test_user_1, test_user_2  # noqa: F821,F841
+        yield drive_service, drive_id, cc_pair, admin_user, test_user_1, test_user_2
 
     except json.JSONDecodeError:
         pytest.skip("FULL_CONTROL_DRIVE_SERVICE_ACCOUNT is not valid JSON")
@@ -110,9 +111,9 @@ def google_drive_test_env_setup() -> Generator[
 @pytest.mark.xfail(reason="Needs to be tested for flakiness")
 def test_google_permission_sync(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001,F821
+    vespa_client: vespa_fixture,  # noqa: ARG001
     google_drive_test_env_setup: tuple[
-        GoogleDriveService, str, DATestCCPair, DATestUser, DATestUser, DATestUser  # noqa: F821,F841
+        GoogleDriveService, str, DATestCCPair, DATestUser, DATestUser, DATestUser
     ],
 ) -> None:
     (
@@ -130,7 +131,7 @@ def test_google_permission_sync(
 
     # Append text to doc
     doc_text_1 = "The secret number is 12345"
-    GoogleDriveManager.append_text_to_doc(drive_service, doc_id_1, doc_text_1)  # noqa: F821,F841
+    GoogleDriveManager.append_text_to_doc(drive_service, doc_id_1, doc_text_1)
 
     # run indexing
     CCPairManager.run_once(
@@ -138,8 +139,8 @@ def test_google_permission_sync(
     )
     CCPairManager.wait_for_indexing_completion(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821
-        user_performing_action=admin_user,  # noqa: F821,F841
+        after=before,
+        user_performing_action=admin_user,
     )
 
     # run permission sync
@@ -149,7 +150,7 @@ def test_google_permission_sync(
     )
     CCPairManager.wait_for_sync(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821,F841
+        after=before,
         number_of_updated_docs=1,
         user_performing_action=admin_user,
     )
@@ -171,14 +172,14 @@ def test_google_permission_sync(
     # Grant user 1 access to document 1
     GoogleDriveManager.update_file_permissions(
         drive_service=drive_service,
-        file_id=doc_id_1,  # noqa: F821,F841
+        file_id=doc_id_1,
         email=test_user_1.email,
         role="reader",
     )
 
     # Create a second doc in the drive which user 1 should not have access to
     doc_text_2 = "The secret number is 67890"
-    GoogleDriveManager.append_text_to_doc(drive_service, doc_id_2, doc_text_2)  # noqa: F821,F841
+    GoogleDriveManager.append_text_to_doc(drive_service, doc_id_2, doc_text_2)
 
     # Run indexing
     CCPairManager.run_once(
@@ -186,7 +187,7 @@ def test_google_permission_sync(
     )
     CCPairManager.wait_for_indexing_completion(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821,F841
+        after=before,
         user_performing_action=admin_user,
     )
 
@@ -197,7 +198,7 @@ def test_google_permission_sync(
     )
     CCPairManager.wait_for_sync(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821,F841
+        after=before,
         number_of_updated_docs=1,
         user_performing_action=admin_user,
     )
@@ -227,8 +228,8 @@ def test_google_permission_sync(
     # Remove user 1 access to document 1
     GoogleDriveManager.remove_file_permissions(
         drive_service=drive_service,
-        file_id=doc_id_1,  # noqa: F821
-        email=test_user_1.email,  # noqa: F821,F841
+        file_id=doc_id_1,
+        email=test_user_1.email,
     )
     # Run permission sync
     CCPairManager.sync(
@@ -237,7 +238,7 @@ def test_google_permission_sync(
     )
     CCPairManager.wait_for_sync(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821,F841
+        after=before,
         number_of_updated_docs=1,
         user_performing_action=admin_user,
     )
@@ -274,7 +275,7 @@ def test_google_permission_sync(
 
     CCPairManager.wait_for_sync(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821,F841
+        after=before,
         number_of_updated_docs=2,
         user_performing_action=admin_user,
         # if we are only updating the group definition for this test we use this varaiable,
@@ -292,7 +293,7 @@ def test_google_permission_sync(
     # ----------------------MAKE DRIVE PUBLIC TEST--------------------------
 
     # Unable to make drive itself public as Google's security policies prevent this, so we make the documents public instead
-    GoogleDriveManager.make_file_public(drive_service, doc_id_2)  # noqa: F821,F841
+    GoogleDriveManager.make_file_public(drive_service, doc_id_2)
 
     # Run permission sync
     CCPairManager.sync(
@@ -301,7 +302,7 @@ def test_google_permission_sync(
     )
     CCPairManager.wait_for_sync(
         cc_pair=cc_pair,
-        after=before,  # noqa: F821,F841
+        after=before,
         number_of_updated_docs=2,
         user_performing_action=admin_user,
     )

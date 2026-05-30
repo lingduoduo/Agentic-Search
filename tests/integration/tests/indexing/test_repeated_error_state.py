@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import pytest
 
 pytestmark = pytest.mark.skip(
@@ -24,12 +25,12 @@ from tests.integration.common_utils.managers.cc_pair import CCPairManager  # noq
 from tests.integration.common_utils.managers.document import DocumentManager  # noqa: E402
 from tests.integration.common_utils.managers.index_attempt import IndexAttemptManager  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
 
 
 def test_repeated_error_state_detection_and_recovery(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that a connector is marked as in a repeated error state after
@@ -44,7 +45,7 @@ def test_repeated_error_state_detection_and_recovery(
     # First, set up the mock server to consistently fail
     error_response = {
         "documents": [],
-        "checkpoint": MockConnectorCheckpoint(has_more=False).model_dump(mode="json"),  # noqa: F821,F841
+        "checkpoint": MockConnectorCheckpoint(has_more=False).model_dump(mode="json"),
         "failures": [],
         "unhandled_exception": "Simulated unhandled error for testing repeated errors",
     }
@@ -52,7 +53,7 @@ def test_repeated_error_state_detection_and_recovery(
     # Create a list of failure responses with at least the same length
     # as NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE
     failure_behaviors = [error_response] * (
-        5 * NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE  # noqa: F821,F841
+        5 * NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE
     )
 
     response = mock_server_client.post(
@@ -89,18 +90,18 @@ def test_repeated_error_state_detection_and_recovery(
             for ia in index_attempts_page.items
             if ia.status and ia.status.is_terminal()
         ]
-        if len(index_attempts) >= NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE:  # noqa: F821,F841
+        if len(index_attempts) >= NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE:
             break
 
-        if time.monotonic() - start_time > 180:  # noqa: F821,F841
+        if time.monotonic() - start_time > 180:
             raise TimeoutError(
                 "Did not get required number of failed attempts within 180 seconds"
             )
 
         # make sure that we don't mark the connector as in repeated error state
         # before we have the required number of failed attempts
-        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
-            cc_pair_obj = get_connector_credential_pair_from_id(  # noqa: F821,F841
+        with get_session_with_current_tenant() as db_session:
+            cc_pair_obj = get_connector_credential_pair_from_id(
                 db_session=db_session,
                 cc_pair_id=cc_pair.id,
             )
@@ -110,14 +111,14 @@ def test_repeated_error_state_detection_and_recovery(
         time.sleep(2)
 
     # Verify we have the correct number of failed attempts
-    assert len(index_attempts) == NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE  # noqa: F821,F841
+    assert len(index_attempts) == NUM_REPEAT_ERRORS_BEFORE_REPEATED_ERROR_STATE
     for attempt in index_attempts:
         assert attempt.status == IndexingStatus.FAILED
 
     # Check if the connector is in a repeated error state
     while True:
-        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
-            cc_pair_obj = get_connector_credential_pair_from_id(  # noqa: F821,F841
+        with get_session_with_current_tenant() as db_session:
+            cc_pair_obj = get_connector_credential_pair_from_id(
                 db_session=db_session,
                 cc_pair_id=cc_pair.id,
             )
@@ -132,7 +133,7 @@ def test_repeated_error_state_detection_and_recovery(
                 #     )
                 break
 
-        if time.monotonic() - start_time > 90:  # noqa: F821,F841
+        if time.monotonic() - start_time > 90:
             assert False, "CC pair did not enter repeated error state within 90 seconds"
 
         time.sleep(2)
@@ -142,8 +143,8 @@ def test_repeated_error_state_detection_and_recovery(
 
     # Now set up the mock server to succeed
     success_response = {
-        "documents": [test_doc.model_dump(mode="json")],  # noqa: F821,F841
-        "checkpoint": MockConnectorCheckpoint(has_more=False).model_dump(mode="json"),  # noqa: F821,F841
+        "documents": [test_doc.model_dump(mode="json")],
+        "checkpoint": MockConnectorCheckpoint(has_more=False).model_dump(mode="json"),
         "failures": [],
     }
 
@@ -182,19 +183,19 @@ def test_repeated_error_state_detection_and_recovery(
     assert finished_recovery_attempt.status == IndexingStatus.SUCCESS
 
     # Verify the document was indexed
-    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+    with get_session_with_current_tenant() as db_session:
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
             vespa_client=vespa_client,
         )
     assert len(documents) == 1
-    assert documents[0].id == test_doc.id  # noqa: F821,F841
+    assert documents[0].id == test_doc.id
 
     # Verify the CC pair is no longer in a repeated error state
     while True:
-        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
-            cc_pair_obj = get_connector_credential_pair_from_id(  # noqa: F821,F841
+        with get_session_with_current_tenant() as db_session:
+            cc_pair_obj = get_connector_credential_pair_from_id(
                 db_session=db_session,
                 cc_pair_id=cc_pair.id,
             )
@@ -202,7 +203,7 @@ def test_repeated_error_state_detection_and_recovery(
             if not cc_pair_obj.in_repeated_error_state:
                 break
 
-        elapsed = time.monotonic() - start  # noqa: F821,F841
+        elapsed = time.monotonic() - start
         if elapsed > 30:
             raise TimeoutError(
                 "CC pair did not exit repeated error state within 30 seconds"

@@ -13,7 +13,7 @@ from tests.integration.common_utils.managers.api_key import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestCCPair
 from tests.integration.common_utils.test_models import DATestUser
 from tests.integration.common_utils.test_models import SimpleTestDocument
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture
 
 
 def _verify_document_permissions(
@@ -163,7 +163,7 @@ class DocumentManager:
 
     @staticmethod
     def verify(
-        vespa_client: vespa_fixture,  # noqa: F821,F841
+        vespa_client: vespa_fixture,
         cc_pair: DATestCCPair,
         doc_creating_user: DATestUser,
         # If None, will not check doc sets or groups

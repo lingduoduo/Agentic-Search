@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import os
 
 import pytest
@@ -10,7 +11,7 @@ from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 from tests.integration.common_utils.test_models import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestUserGroup
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture
 
 
 @pytest.mark.skipif(
@@ -19,23 +20,23 @@ from tests.integration.common_utils.test_models import DATestUserGroup
 )
 def test_removing_connector(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
 ) -> None:
     # Creating an admin user (first user created is automatically an admin)
 
     # create api key
     api_key: DATestAPIKey = APIKeyManager.create(
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     # create connectors
     cc_pair_1 = CCPairManager.create_from_scratch(
         source=DocumentSource.INGESTION_API,
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
     cc_pair_2 = CCPairManager.create_from_scratch(
         source=DocumentSource.INGESTION_API,
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     # seed documents
@@ -54,17 +55,17 @@ def test_removing_connector(
     # Create user group
     user_group_1: DATestUserGroup = UserGroupManager.create(
         cc_pair_ids=[cc_pair_1.id, cc_pair_2.id],
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     UserGroupManager.wait_for_sync(
         user_groups_to_check=[user_group_1],
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     UserGroupManager.verify(
         user_group=user_group_1,
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     # make sure cc_pair_1 docs are user_group_1 only
@@ -72,7 +73,7 @@ def test_removing_connector(
         vespa_client=vespa_client,
         cc_pair=cc_pair_1,
         group_names=[user_group_1.name],
-        doc_creating_user=admin_user,  # noqa: F821,F841
+        doc_creating_user=admin_user,
     )
 
     # make sure cc_pair_2 docs are user_group_1 only
@@ -80,18 +81,18 @@ def test_removing_connector(
         vespa_client=vespa_client,
         cc_pair=cc_pair_2,
         group_names=[user_group_1.name],
-        doc_creating_user=admin_user,  # noqa: F821,F841
+        doc_creating_user=admin_user,
     )
 
     # remove cc_pair_2 from document set
     user_group_1.cc_pair_ids = [cc_pair_1.id]
     UserGroupManager.edit(
         user_group_1,
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     UserGroupManager.wait_for_sync(
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     # make sure cc_pair_1 docs are user_group_1 only
@@ -99,7 +100,7 @@ def test_removing_connector(
         vespa_client=vespa_client,
         cc_pair=cc_pair_1,
         group_names=[user_group_1.name],
-        doc_creating_user=admin_user,  # noqa: F821,F841
+        doc_creating_user=admin_user,
     )
 
     # make sure cc_pair_2 docs have no user group
@@ -107,5 +108,5 @@ def test_removing_connector(
         vespa_client=vespa_client,
         cc_pair=cc_pair_2,
         group_names=[],
-        doc_creating_user=admin_user,  # noqa: F821,F841
+        doc_creating_user=admin_user,
     )
