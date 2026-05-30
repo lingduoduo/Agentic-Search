@@ -6,19 +6,62 @@ billing proxy, OAuth connectors, query history, usage reporting) with local
 dense/sparse retrieval, multi-turn agent traces, SFT data builders, and
 PPO/GRPO reward helpers.
 
+## Repository Structure
+
+```
+src/
+├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, …)
+├── backend/                     # Backend services
+│   ├── access/                  # Access control & ACL helpers
+│   ├── auth/                    # Authentication & authorization
+│   ├── chat/                    # Chat functionality & LLM interactions
+│   ├── configs/                 # Environment-based configuration (AppSettings)
+│   ├── connectors/              # Data source connectors
+│   ├── db/                      # Database models & operations (AgenticSearchStore)
+│   ├── document_index/          # Vespa integration
+│   ├── federated_connectors/    # External search connectors
+│   ├── feature_flags/           # Feature-flag providers
+│   ├── hooks/                   # Outbound webhook execution
+│   ├── llm/                     # LLM provider integrations
+│   ├── prompts/                 # Prompt templates
+│   ├── search/                  # Search query processing
+│   ├── secondary_llm_flows/     # Query expansion, flow classification
+│   ├── servers/                 # API endpoints & routers
+│   │   ├── backgroundworker/    # Background workers (beat, docfetching, light, heavy, …)
+│   │   ├── analytics/           # Usage analytics API
+│   │   ├── billing/             # Stripe billing proxy
+│   │   ├── documents/           # Connector-credential pair management
+│   │   ├── middleware/          # License enforcement, tier gate, tenant tracking
+│   │   ├── oauth/               # OAuth 2.0 connector authorization
+│   │   ├── query_and_chat/      # Search and chat endpoints
+│   │   ├── reporting/           # Usage report ZIP generation
+│   │   ├── retrieval/           # Dense/sparse/rerank server entry points
+│   │   ├── scim/                # SCIM 2.0 user & group provisioning
+│   │   ├── tenants/             # Multi-tenant provisioning & management
+│   │   └── web/                 # FastAPI app assembly
+│   └── utils/                   # License, encryption, telemetry utilities
+├── context/                     # Retrieval-grounded context & prompt builders
+├── model/                       # LLM generation, intent classifier, tensor helpers
+├── retrieval/                   # Dense/sparse retrievers, indexing pipeline, embedders
+├── tools/                       # Tool schemas, search tools, OpenAPI tool registry
+└── training/                    # SFT, rewards, PPO, GRPO helpers
+tests/                           # Unit and integration test suites
+examples/                        # Runnable CLI examples
+```
+
 ## What Is Here
 
 | Area | Main modules |
 |------|--------------|
-| **FastAPI server layer** | `src/servers/` |
+| **FastAPI server layer** | `src/backend/servers/` |
 | **Admin APIs** | `analytics`, `billing`, `evals`, `license`, `manage`, `query_history`, `reporting`, `settings`, `token_rate_limits` |
-| **Auth & access** | `src/servers/_auth.py`, `src/servers/middleware/` |
-| **Connectors API** | `src/servers/documents/`, `src/servers/oauth/` |
-| **Identity provisioning** | `src/servers/scim/` |
-| **User & group management** | `src/servers/user_group/`, `src/servers/tenants/` |
-| **Search & chat** | `src/servers/query_and_chat/`, `src/servers/web/` |
-| **Retrieval servers** | `src/servers/retrieval/`, `src/servers/web_search/` |
-| **Indexing pipeline** | `src/servers/indexing/` |
+| **Auth & access** | `src/backend/servers/_auth.py`, `src/backend/servers/middleware/` |
+| **Connectors API** | `src/backend/servers/documents/`, `src/backend/servers/oauth/` |
+| **Identity provisioning** | `src/backend/servers/scim/` |
+| **User & group management** | `src/backend/servers/user_group/`, `src/backend/servers/tenants/` |
+| **Search & chat** | `src/backend/servers/query_and_chat/`, `src/backend/servers/web/` |
+| **Retrieval servers** | `src/backend/servers/retrieval/`, `src/backend/servers/web_search/` |
+| **Background workers** | `src/backend/servers/backgroundworker/` |
 | Agent loops | `src/agents/` |
 | Retrieval and search engines | `src/retrieval/` |
 | Tool schemas and search tools | `src/tools/` |
@@ -26,10 +69,11 @@ PPO/GRPO reward helpers.
 | SFT, rewards, PPO, and GRPO helpers | `src/training/` |
 | Runnable examples | `examples/` |
 
-The FastAPI application is assembled in `src/servers/web/app.py`. Every feature
-area is a self-contained router factory registered via `_register_routers()`.
-The SQLite-backed `AgenticSearchStore` (`src/db/`) is the single persistence
-layer — no Postgres, Redis, or Celery required for local deployments.
+The FastAPI application is assembled in `src/backend/servers/web/app.py`. Every
+feature area is a self-contained router factory registered via
+`_register_routers()`. The SQLite-backed `AgenticSearchStore`
+(`src/backend/db/`) is the single persistence layer — no Postgres, Redis, or
+Celery required for local deployments.
 
 ## Features
 
@@ -82,12 +126,12 @@ JAVA_HOME=/path/to/java
 ## Server Architecture
 
 The full web application is a single FastAPI instance created by
-`src.servers.web.app.create_web_app()`. Router factories are grouped by feature
+`src.backend.servers.web.app.create_web_app()`. Router factories are grouped by feature
 area and registered in `_register_routers()`.
 
 ```python
-from src.servers.web.app import create_web_app
-from src.db import AgenticSearchStore
+from src.backend.servers.web.app import create_web_app
+from src.backend.db import AgenticSearchStore
 
 store = AgenticSearchStore("agentic-search.sqlite3")
 app   = create_web_app(store=store)
@@ -101,19 +145,19 @@ rate-limit rules, and more. No external database is required.
 
 | Middleware | Module | Purpose |
 |-----------|--------|---------|
-| Tenant tracking | `src/servers/middleware/tenant_tracking.py` | Sets tenant context from request headers |
-| License enforcement | `src/servers/middleware/license_enforcement.py` | Returns 402 for gated paths when license is invalid |
-| Tier gate | `src/servers/middleware/tier_gate.py` | Returns 402 for paths that require a higher plan tier |
+| Tenant tracking | `src/backend/servers/middleware/tenant_tracking.py` | Sets tenant context from request headers |
+| License enforcement | `src/backend/servers/middleware/license_enforcement.py` | Returns 402 for gated paths when license is invalid |
+| Tier gate | `src/backend/servers/middleware/tier_gate.py` | Returns 402 for paths that require a higher plan tier |
 
 ### Admin Auth
 
 Every router factory that needs admin-only endpoints calls
-`make_require_admin(app_settings)` from `src/servers/_auth.py`. It returns a
+`make_require_admin(app_settings)` from `src/backend/servers/_auth.py`. It returns a
 FastAPI dependency that checks `Authorization: Bearer <jwt>` against
 `AppSettings.auth.super_users`.
 
 ```python
-from src.servers._auth import make_require_admin
+from src.backend.servers._auth import make_require_admin
 _require_admin = make_require_admin(app_settings)
 
 @router.get("/admin/my-endpoint")
@@ -123,7 +167,7 @@ def my_endpoint(_: AuthenticatedUser = Depends(_require_admin)):
 
 ### API Routers
 
-#### Analytics — `src/servers/analytics/`
+#### Analytics — `src/backend/servers/analytics/`
 
 `create_analytics_router(store, app_settings)` — admin-only daily aggregates.
 
@@ -132,7 +176,7 @@ def my_endpoint(_: AuthenticatedUser = Depends(_require_admin)):
 | `GET /analytics/query` | Daily session + message counts for a date window |
 | `GET /analytics/user` | Daily distinct active user counts |
 
-#### Billing — `src/servers/billing/`
+#### Billing — `src/backend/servers/billing/`
 
 `create_billing_router(app_settings)` — Stripe proxy with in-memory circuit breaker.
 
@@ -148,11 +192,11 @@ def my_endpoint(_: AuthenticatedUser = Depends(_require_admin)):
 
 Configure with `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL`, `STRIPE_PUBLISHABLE_KEY_OVERRIDE`, and `WEB_DOMAIN`.
 
-#### Documents — `src/servers/documents/`
+#### Documents — `src/backend/servers/documents/`
 
 `create_documents_router(store, app_settings)` — connector-credential pair management.
 
-#### Enterprise Settings — `src/servers/enterprise_settings/`
+#### Enterprise Settings — `src/backend/servers/enterprise_settings/`
 
 `create_enterprise_settings_routers(app_settings)` — branding, logo, analytics script.
 
@@ -163,7 +207,7 @@ Configure with `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL`, `STRIPE_PUBLISHABLE_KEY_OV
 | `GET/PUT /admin/enterprise-settings/custom-analytics-script` | Custom analytics JS |
 | `GET/POST /admin/enterprise-settings/scim/token` | SCIM bearer-token management |
 
-#### Evals — `src/servers/evals/`
+#### Evals — `src/backend/servers/evals/`
 
 `create_evals_router(app_settings, search_url)` — synchronous search quality evaluation.
 
@@ -172,7 +216,7 @@ Configure with `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL`, `STRIPE_PUBLISHABLE_KEY_OV
 | `POST /evals/eval_run` | Run a search eval synchronously, return structured results |
 | `POST /evals/eval_run_ack` | Fire-and-forget background eval |
 
-#### Features / Hooks — `src/servers/features/hooks/`
+#### Features / Hooks — `src/backend/servers/features/hooks/`
 
 `create_hooks_router(store, app_settings)` — admin CRUD for outbound webhooks with SSRF protection and live reachability checks.
 
@@ -191,7 +235,7 @@ Configure with `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL`, `STRIPE_PUBLISHABLE_KEY_OV
 
 Hooks fire at `HookPoint.QUERY_PROCESSING` and `HookPoint.ANSWER_GENERATED`.
 
-#### License — `src/servers/license/`
+#### License — `src/backend/servers/license/`
 
 `create_license_router(app_settings)` — file-backed RSA-signed license management.
 
@@ -206,7 +250,7 @@ Hooks fire at `HookPoint.QUERY_PROCESSING` and `HookPoint.ANSWER_GENERATED`.
 
 License files are stored at `$AGENTIC_SEARCH_DATA_DIR/license.dat`.
 
-#### Manage (Standard Answers) — `src/servers/manage/`
+#### Manage (Standard Answers) — `src/backend/servers/manage/`
 
 `create_manage_router(store, app_settings)` — keyword → answer mappings with categories.
 
@@ -218,7 +262,7 @@ License files are stored at `$AGENTIC_SEARCH_DATA_DIR/license.dat`.
 | `GET/POST /manage/admin/standard-answer/category` | List / create categories |
 | `PATCH    /manage/admin/standard-answer/category/{id}` | Update a category |
 
-#### OAuth — `src/servers/oauth/`
+#### OAuth — `src/backend/servers/oauth/`
 
 `create_oauth_router(app_settings)` — OAuth 2.0 URL generation for connector authorization.
 
@@ -229,11 +273,11 @@ License files are stored at `$AGENTIC_SEARCH_DATA_DIR/license.dat`.
 
 Session state is stored in-memory (10-minute TTL). Configure connector credentials via `OAUTH_SLACK_CLIENT_ID`, `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID`, `OAUTH_GOOGLE_DRIVE_CLIENT_ID`.
 
-#### Query and Chat — `src/servers/query_and_chat/`
+#### Query and Chat — `src/backend/servers/query_and_chat/`
 
 `create_search_router(store, search_url)` and `basic_router` — search and chat APIs.
 
-#### Query History — `src/servers/query_history/`
+#### Query History — `src/backend/servers/query_history/`
 
 `create_query_history_router(store, app_settings)` — admin access to chat session history.
 
@@ -244,7 +288,7 @@ Session state is stored in-memory (10-minute TTL). Configure connector credentia
 | `GET /admin/chat-session-history/{id}` | Full message list for one session |
 | `GET /admin/query-history/export` | Stream CSV of all Q&A pairs (synchronous) |
 
-#### Reporting (Usage Export) — `src/servers/reporting/`
+#### Reporting (Usage Export) — `src/backend/servers/reporting/`
 
 `create_reporting_router(store, app_settings)` — ZIP reports with chat messages and users CSVs.
 
@@ -256,7 +300,7 @@ Session state is stored in-memory (10-minute TTL). Configure connector credentia
 
 Reports are stored as BLOBs in the SQLite store.
 
-#### SCIM 2.0 — `src/servers/scim/`
+#### SCIM 2.0 — `src/backend/servers/scim/`
 
 `create_scim_router(store)` — RFC 7644 user and group provisioning for Okta, Entra ID, and other IdPs.
 
@@ -275,7 +319,7 @@ Tokens are SHA-256 hashed and stored in SQLite. The `ScimDAL` provides all SCIM
 queries through `AgenticSearchStore`. Providers `OktaProvider` and `EntraProvider`
 handle IdP-specific PATCH quirks.
 
-#### Settings — `src/servers/settings/`
+#### Settings — `src/backend/servers/settings/`
 
 `create_settings_router(app_settings)` — license-aware application status for the UI.
 
@@ -283,7 +327,7 @@ handle IdP-specific PATCH quirks.
 |----------|-------------|
 | `GET /settings` | Returns `{ee_features_enabled, tier, application_status, license_enforcement_enabled}` |
 
-#### Token Rate Limits — `src/servers/token_rate_limits/`
+#### Token Rate Limits — `src/backend/servers/token_rate_limits/`
 
 `create_token_rate_limits_router(store, app_settings)` — configurable token budget rules per user or group.
 
@@ -295,17 +339,17 @@ handle IdP-specific PATCH quirks.
 | `GET  /admin/token-rate-limits/user-group/{id}` | Limits for one group |
 | `POST /admin/token-rate-limits/user-group/{id}` | Create a group limit |
 
-#### Tenants — `src/servers/tenants/`
+#### Tenants — `src/backend/servers/tenants/`
 
 Multi-tenant scaffolding: provisioning, billing, schema management, team membership, and user invitation APIs.
 
-#### User Groups — `src/servers/user_group/`
+#### User Groups — `src/backend/servers/user_group/`
 
 `create_user_group_router(store, app_settings)` — group CRUD with document-permission integration.
 
 ### Configuration
 
-All settings are loaded from environment variables via `src/configs/AppSettings`:
+All settings are loaded from environment variables via `src/backend/configs/AppSettings`:
 
 | Env var | Default | Description |
 |---------|---------|-------------|
@@ -325,7 +369,7 @@ All settings are loaded from environment variables via `src/configs/AppSettings`
 
 ### Database Store
 
-`AgenticSearchStore` (`src/db/`) is a single SQLite repository. All tables are
+`AgenticSearchStore` (`src/backend/db/`) is a single SQLite repository. All tables are
 created at init time — no migrations needed:
 
 | Table | Purpose |
@@ -349,7 +393,7 @@ The repo also includes a lightweight FastAPI admin surface for configuring web
 search providers without adding a database dependency:
 
 ```python
-from src.servers.web_search.api import create_web_search_router
+from src.backend.servers.web_search.api import create_web_search_router
 
 router = create_web_search_router()
 ```
@@ -479,11 +523,11 @@ python3 -m examples.run_agentic_search \
 ## Indexing Helpers
 
 The repo-native indexing pipeline lives in `src/retrieval/index_builder.py`.
-For a server-style facade, use `src.servers.indexing`:
+For a server-style facade, use `src.backend.servers.backgroundworker`:
 
 ```python
-from src.connectors import Document
-from src.servers.indexing import index_document_batch
+from src.backend.connectors import Document
+from src.backend.servers.backgroundworker import index_document_batch
 
 result = index_document_batch(
     [Document(id="doc-1", title="Example", contents="hello world")],
@@ -497,11 +541,11 @@ retry helpers.
 
 ## Metadata Store
 
-`src.db` provides a lightweight SQLite store for local connector and retrieval
+`src.backend.db` provides a lightweight SQLite store for local connector and retrieval
 metadata:
 
 ```python
-from src import AgenticSearchStore, ConnectorConfig, StoredDocument
+from src.backend.db import AgenticSearchStore, ConnectorConfig, StoredDocument
 
 with AgenticSearchStore("agentic-search.sqlite3") as store:
     connector = store.upsert_connector(
@@ -549,13 +593,13 @@ Three processes must be running at the same time:
 For a quick local demo (no index or Java required):
 
 ```bash
-python3 -m src.servers.retrieval.demo --corpus_path data/corpus.jsonl
+python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
 ```
 
 For production BM25 (requires `pyserini` and Java), see [Build Indexes](#build-indexes) then:
 
 ```bash
-python3 -m src.servers.retrieval.retrieval \
+python3 -m src.backend.servers.retrieval.retrieval \
   --retrieval_method bm25 \
   --index_path indexes/bm25 \
   --corpus_path data/corpus.jsonl
@@ -565,7 +609,7 @@ python3 -m src.servers.retrieval.retrieval \
 
 ```bash
 pip install -e .   # one-time, installs src as a package
-uvicorn src.servers.web.app:app --host 127.0.0.1 --port 7860
+uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
 **Terminal 3 — frontend**:
@@ -581,7 +625,7 @@ citations, source cards, and session history. The JSON API is available at
 `POST /api/agent` and persists chat state with `AgenticSearchStore`.
 
 During development Vite proxies `/api/*` to the FastAPI server on port `7860`.
-For production, run `npm run build`; `src.servers.web.app` serves `web/dist`
+For production, run `npm run build`; `src.backend.servers.web.app` serves `web/dist`
 when that bundle exists and falls back to its built-in HTML otherwise.
 
 ## Local Retrieval
@@ -589,7 +633,7 @@ when that bundle exists and falls back to its built-in HTML otherwise.
 Start a dense retrieval server:
 
 ```bash
-python3 -m src.servers.retrieval.retrieval \
+python3 -m src.backend.servers.retrieval.retrieval \
   --model_path intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -602,7 +646,7 @@ python3 -m src.servers.retrieval.retrieval \
 Start a sparse BM25 server:
 
 ```bash
-python3 -m src.servers.retrieval.retrieval \
+python3 -m src.backend.servers.retrieval.retrieval \
   --index_path indexes/bm25 \
   --corpus_path data/corpus.jsonl \
   --retrieval_method bm25 \
@@ -647,15 +691,15 @@ python3 -m src.retrieval.index_builder \
 
 `src.tools.search` routes calls to `retrieval`, `google`, or `serpapi`. Missing API keys return structured tool errors.
 
-Standalone web-search servers are available under `src.servers.retrieval`:
+Standalone web-search servers are available under `src.backend.servers.retrieval`:
 
 ```bash
-python3 -m src.servers.retrieval.serp \
+python3 -m src.backend.servers.retrieval.serp \
   --search_url "https://serpapi.com/search" \
   --topk 3 \
   --serp_api_key "$SERP_API_KEY"
 
-python3 -m src.servers.retrieval.google \
+python3 -m src.backend.servers.retrieval.google \
   --api_key "$GOOGLE_API_KEY" \
   --topk 5 \
   --cse_id "$GOOGLE_CSE_ID" \
@@ -665,7 +709,7 @@ python3 -m src.servers.retrieval.google \
 ## Retrieval Plus Rerank
 
 ```bash
-python3 -m src.servers.retrieval.retrieval_rerank \
+python3 -m src.backend.servers.retrieval.retrieval_rerank \
   --retriever_model intfloat/e5-base-v2 \
   --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
@@ -812,7 +856,7 @@ If confidence is too low or a route model is missing, the CLI falls back to
 | `ApiRequestTool` | Auto-generated tool that executes one OpenAPI operation |
 | `parse_openapi_schema` | Parse an OpenAPI 3.x YAML/JSON string into `OpenAPISchema` |
 
-### Connectors (`src/connectors/`)
+### Connectors (`src/backend/connectors/`)
 
 | Class / function | Description |
 |-----------------|-------------|
