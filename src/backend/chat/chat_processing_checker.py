@@ -34,7 +34,7 @@ def set_processing_status(
     """
     fence_key = _get_fence_key(chat_session_id)
     if value:
-        cache.set(fence_key, 0, ex=FENCE_TTL)
+        cache.set(fence_key, 0, ttl=FENCE_TTL)
     else:
         cache.delete(fence_key)
 

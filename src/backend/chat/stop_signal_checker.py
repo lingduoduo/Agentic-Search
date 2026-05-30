@@ -32,7 +32,7 @@ def set_fence(chat_session_id: UUID, cache: CacheBackend, value: bool) -> None:
     if not value:
         cache.delete(fence_key)
         return
-    cache.set(fence_key, 0, ex=FENCE_TTL)
+    cache.set(fence_key, 0, ttl=FENCE_TTL)
 
 
 def is_connected(chat_session_id: UUID, cache: CacheBackend) -> bool:
