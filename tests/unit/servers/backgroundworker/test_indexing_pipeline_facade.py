@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.connectors import Document
+from src.backend.connectors import Document
 from src.retrieval import ChunkBatchStore
 from src.retrieval import Chunker
 from src.retrieval import DefaultIndexingEmbedder

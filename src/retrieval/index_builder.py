@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ..connectors.models import ConnectorFailure
-from ..connectors.models import Document
+from src.backend.connectors.models import ConnectorFailure
+from src.backend.connectors.models import Document
 from .indexing_heartbeat import IndexingHeartbeatInterface
 from .models import ChunkingConfig
 from .models import EmbeddedChunk
@@ -270,7 +270,7 @@ def load_corpus(corpus_path: str) -> _Corpus:
 
 def load_corpus_from_connector(connector: Any) -> _Corpus:
     """Build a _Corpus from any LoadConnector, skipping HierarchyNodes."""
-    from ..connectors.models import Document
+    from src.backend.connectors.models import Document
 
     rows: list[dict] = []
     for batch in connector.load_from_state():
@@ -284,7 +284,7 @@ def load_corpus_from_connector(connector: Any) -> _Corpus:
 
 def dump_connector_to_jsonl(connector: Any, path: "Path | str") -> None:
     """Write connector documents to a JSONL file suitable for BM25/pyserini indexing."""
-    from ..connectors.models import Document
+    from src.backend.connectors.models import Document
 
     dest = Path(path)
     with dest.open("w", encoding="utf-8") as fh:

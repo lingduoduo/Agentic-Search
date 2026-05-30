@@ -45,47 +45,47 @@ from .agents.state import ToolType as ToolType
 from .agents.state import UserRequest as UserRequest
 from .agents.tool_calling import ToolAgentLoop as ToolAgentLoop
 from .agents.tool_calling import ToolAgentLoopConfig as ToolAgentLoopConfig
-from .connectors import BaseConnector as BaseConnector
-from .connectors import CheckpointedConnector as CheckpointedConnector
-from .connectors import (
+from .backend.connectors import BaseConnector as BaseConnector
+from .backend.connectors import CheckpointedConnector as CheckpointedConnector
+from .backend.connectors import (
     CheckpointedConnectorWithPermSync as CheckpointedConnectorWithPermSync,
 )
-from .connectors import ConnectorCheckpoint as ConnectorCheckpoint
-from .connectors import ConnectorFailure as ConnectorFailure
-from .connectors import CredentialsConnector as CredentialsConnector
-from .connectors import (
+from .backend.connectors import ConnectorCheckpoint as ConnectorCheckpoint
+from .backend.connectors import ConnectorFailure as ConnectorFailure
+from .backend.connectors import CredentialsConnector as CredentialsConnector
+from .backend.connectors import (
     CredentialsProviderInterface as CredentialsProviderInterface,
 )
-from .connectors import Document as Document
-from .connectors import EventConnector as EventConnector
-from .connectors import HierarchyConnector as HierarchyConnector
-from .connectors import HierarchyNode as HierarchyNode
-from .connectors import InMemoryConnector as InMemoryConnector
-from .connectors import LoadConnector as LoadConnector
-from .connectors import LocalFileConnector as LocalFileConnector
-from .connectors import LocalFilePollConnector as LocalFilePollConnector
-from .connectors import LocalFileSlimConnector as LocalFileSlimConnector
-from .connectors import (
+from .backend.connectors import Document as Document
+from .backend.connectors import EventConnector as EventConnector
+from .backend.connectors import HierarchyConnector as HierarchyConnector
+from .backend.connectors import HierarchyNode as HierarchyNode
+from .backend.connectors import InMemoryConnector as InMemoryConnector
+from .backend.connectors import LoadConnector as LoadConnector
+from .backend.connectors import LocalFileConnector as LocalFileConnector
+from .backend.connectors import LocalFilePollConnector as LocalFilePollConnector
+from .backend.connectors import LocalFileSlimConnector as LocalFileSlimConnector
+from .backend.connectors import (
     LocalFileSlimConnectorWithPermSync as LocalFileSlimConnectorWithPermSync,
 )
-from .connectors import OAuthConnector as OAuthConnector
-from .connectors import PollConnector as PollConnector
-from .connectors import Resolver as Resolver
-from .connectors import SearchConnector as SearchConnector
-from .connectors import SlimConnector as SlimConnector
-from .connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
-from .connectors import SlimDocument as SlimDocument
-from .connectors import StaticCredentialsProvider as StaticCredentialsProvider
-from .connectors import batched as batched
-from .db import AgenticSearchStore as AgenticSearchStore
-from .db import ChatMessageRecord as ChatMessageRecord
-from .db import ChatSessionRecord as ChatSessionRecord
-from .db import ConnectorConfig as ConnectorConfig
-from .db import DocumentPermission as DocumentPermission
-from .db import GroupRecord as GroupRecord
-from .db import IndexAttemptRecord as IndexAttemptRecord
-from .db import StoredDocument as StoredDocument
-from .db import UserRecord as UserRecord
+from .backend.connectors import OAuthConnector as OAuthConnector
+from .backend.connectors import PollConnector as PollConnector
+from .backend.connectors import Resolver as Resolver
+from .backend.connectors import SearchConnector as SearchConnector
+from .backend.connectors import SlimConnector as SlimConnector
+from .backend.connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
+from .backend.connectors import SlimDocument as SlimDocument
+from .backend.connectors import StaticCredentialsProvider as StaticCredentialsProvider
+from .backend.connectors import batched as batched
+from .backend.db import AgenticSearchStore as AgenticSearchStore
+from .backend.db import ChatMessageRecord as ChatMessageRecord
+from .backend.db import ChatSessionRecord as ChatSessionRecord
+from .backend.db import ConnectorConfig as ConnectorConfig
+from .backend.db import DocumentPermission as DocumentPermission
+from .backend.db import GroupRecord as GroupRecord
+from .backend.db import IndexAttemptRecord as IndexAttemptRecord
+from .backend.db import StoredDocument as StoredDocument
+from .backend.db import UserRecord as UserRecord
 from .retrieval.client import SearchClient as SearchClient
 from .retrieval.client import SearchClientConfig as SearchClientConfig
 from .retrieval.context import AgentContext as AgentContext
@@ -237,22 +237,22 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "score_group_rollout": (".model.generation", "score_group_rollout"),
     "trajectory_log_prob_pack": (".model.generation", "trajectory_log_prob_pack"),
     # servers.retrieval
-    "OnlineSearchConfig": (".servers.retrieval.google", "OnlineSearchConfig"),
-    "OnlineSearchEngine": (".servers.retrieval.google", "OnlineSearchEngine"),
-    "SerpSearchConfig": (".servers.retrieval.serp", "SerpSearchConfig"),
-    "SerpSearchEngine": (".servers.retrieval.serp", "SerpSearchEngine"),
+    "OnlineSearchConfig": (".backend.servers.retrieval.google", "OnlineSearchConfig"),
+    "OnlineSearchEngine": (".backend.servers.retrieval.google", "OnlineSearchEngine"),
+    "SerpSearchConfig": (".backend.servers.retrieval.serp", "SerpSearchConfig"),
+    "SerpSearchEngine": (".backend.servers.retrieval.serp", "SerpSearchEngine"),
     "RetrievalServerConfig": (
-        ".servers.retrieval.retrieval",
+        ".backend.servers.retrieval.retrieval",
         "RetrievalServerConfig",
     ),
     "RetrievalRerankConfig": (
-        ".servers.retrieval.retrieval_rerank",
+        ".backend.servers.retrieval.retrieval_rerank",
         "RetrievalRerankConfig",
     ),
     "RerankerConfig": (".retrieval.rerank", "RerankerConfig"),
-    "create_base_app": (".servers.retrieval.app", "create_base_app"),
-    "create_search_app": (".servers.retrieval.app", "create_search_app"),
-    "format_document": (".servers.retrieval.app", "format_document"),
+    "create_base_app": (".backend.servers.retrieval.app", "create_base_app"),
+    "create_search_app": (".backend.servers.retrieval.app", "create_search_app"),
+    "format_document": (".backend.servers.retrieval.app", "format_document"),
     # retrieval.index_builder
     "IndexBuilder": (".retrieval.index_builder", "IndexBuilder"),
     "IndexBuilderConfig": (".retrieval.index_builder", "IndexBuilderConfig"),
@@ -322,20 +322,26 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "synthesize_answer_from_context",
     ),
     # feature_flags
-    "EnvFeatureFlagProvider": (".feature_flags", "EnvFeatureFlagProvider"),
-    "NoOpFeatureFlagProvider": (".feature_flags", "NoOpFeatureFlagProvider"),
-    "StaticFeatureFlagProvider": (".feature_flags", "StaticFeatureFlagProvider"),
-    "get_feature_flag_provider": (".feature_flags", "get_feature_flag_provider"),
-    "is_feature_enabled": (".feature_flags", "is_feature_enabled"),
+    "EnvFeatureFlagProvider": (".backend.feature_flags", "EnvFeatureFlagProvider"),
+    "NoOpFeatureFlagProvider": (".backend.feature_flags", "NoOpFeatureFlagProvider"),
+    "StaticFeatureFlagProvider": (
+        ".backend.feature_flags",
+        "StaticFeatureFlagProvider",
+    ),
+    "get_feature_flag_provider": (
+        ".backend.feature_flags",
+        "get_feature_flag_provider",
+    ),
+    "is_feature_enabled": (".backend.feature_flags", "is_feature_enabled"),
     # hooks
-    "HookConfig": (".hooks", "HookConfig"),
-    "HookExecutionError": (".hooks", "HookExecutionError"),
-    "HookFailStrategy": (".hooks", "HookFailStrategy"),
-    "HookPoint": (".hooks", "HookPoint"),
-    "HookRegistry": (".hooks", "HookRegistry"),
-    "HookSkipped": (".hooks", "HookSkipped"),
-    "HookSoftFailed": (".hooks", "HookSoftFailed"),
-    "execute_hook": (".hooks", "execute_hook"),
+    "HookConfig": (".backend.hooks", "HookConfig"),
+    "HookExecutionError": (".backend.hooks", "HookExecutionError"),
+    "HookFailStrategy": (".backend.hooks", "HookFailStrategy"),
+    "HookPoint": (".backend.hooks", "HookPoint"),
+    "HookRegistry": (".backend.hooks", "HookRegistry"),
+    "HookSkipped": (".backend.hooks", "HookSkipped"),
+    "HookSoftFailed": (".backend.hooks", "HookSoftFailed"),
+    "execute_hook": (".backend.hooks", "execute_hook"),
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
     "RolloutResult": (".training.ppo.controller", "RolloutResult"),
