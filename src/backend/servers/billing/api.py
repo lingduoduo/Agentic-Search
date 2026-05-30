@@ -1,10 +1,10 @@
 """Billing admin API.
 
-Adapted from the sampled Onyx ee/onyx/server/billing/api.py.
+py.
 Changes from the original:
 - Redis circuit breaker replaced with a thread-safe in-memory flag.
 - MULTI_TENANT removed — single-tenant self-hosted deployment only.
-- OnyxError / OnyxErrorCode replaced with HTTPException.
+- AppError / AppErrorCode replaced with HTTPException.
 - License data read from the file-backed store (same path as license/api.py).
 - Stripe key and web domain read from AppSettings instead of module-level env vars.
 - require_permission / User replaced with the project's _require_admin pattern.

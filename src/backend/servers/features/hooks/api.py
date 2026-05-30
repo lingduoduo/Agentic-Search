@@ -4,8 +4,8 @@ Provides admin CRUD for persistent webhook configurations backed by
 AgenticSearchStore. Endpoint reachability is validated with real HTTP
 calls (httpx) before any hook is created or re-activated.
 
-The sampled Onyx version used SQLAlchemy ORM models, SecretStr masked
-API keys, and an onyx.hooks.registry spec system. This port:
+The previous version used SQLAlchemy ORM models, SecretStr masked
+API keys, and an hooks registry spec system. This port:
   - Stores hooks in AgenticSearchStore (new hooks table)
   - Uses HookPoint / HookFailStrategy enums from src/hooks/executor.py
   - Implements SSRF protection via a lightweight URL validator

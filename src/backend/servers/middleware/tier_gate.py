@@ -1,6 +1,6 @@
 """Tier-gating middleware.
 
-The sampled Onyx version used Redis-backed get_tier(), OnyxErrorCode, and
+The previous version used Redis-backed get_tier(), AppErrorCode, and
 shared_configs tenant context vars. This repo uses:
   - src/configs/license_enforcement_config.py — PATH_PREFIX_MIN_TIER,
     is_license_enforcement_exempt (the allowlist)

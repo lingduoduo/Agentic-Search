@@ -1,6 +1,6 @@
 """Confluence Cloud OAuth helper.
 
-Adapted from the sampled Onyx ee/onyx/server/oauth/confluence_cloud.py.
+py.
 Credential DB (SQLAlchemy) callbacks are stubbed with 501 — this deployment
 has no connector credential store.  URL generation is unchanged.
 """

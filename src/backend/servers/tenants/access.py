@@ -1,7 +1,7 @@
 """Data-plane authentication helpers.
 
-The sampled Onyx version used PyJWT directly and read DATA_PLANE_SECRET from
-an Onyx config var. This repo uses its own HS256 JWT helpers from src/auth
+The previous version used PyJWT directly and read DATA_PLANE_SECRET from
+a config var. This repo uses its own HS256 JWT helpers from src/auth
 and reads the secret from the standard AGENTIC_SEARCH_AUTH_SECRET env var.
 
 generate_data_plane_token() produces a short-lived HS256 token for

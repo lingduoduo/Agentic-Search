@@ -1,7 +1,7 @@
 """Standard answer admin API.
 
-Adapted from the sampled Onyx ee/onyx/server/manage/standard_answer.py.
-SQLAlchemy ORM and ee.onyx/onyx imports replaced with AgenticSearchStore.
+py.
+SQLAlchemy ORM imports replaced with AgenticSearchStore.
 """
 
 from __future__ import annotations

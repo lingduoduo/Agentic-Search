@@ -1,6 +1,6 @@
 """Google Drive OAuth helper.
 
-Adapted from the sampled Onyx ee/onyx/server/oauth/google_drive.py.
+py.
 Credential callbacks stubbed with 501; URL generation is unchanged.
 """
 

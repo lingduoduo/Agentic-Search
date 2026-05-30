@@ -1,7 +1,6 @@
 """Pydantic models for the license API.
 
-The sampled Onyx models imported ExpiryWarningStage from ee.onyx and
-ApplicationStatus from onyx.server.settings.models. Both are replaced
+The models imported ExpiryWarningStage and ApplicationStatus — both are replaced
 with repo equivalents from src/utils/.
 """
 

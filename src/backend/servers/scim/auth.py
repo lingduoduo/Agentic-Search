@@ -1,6 +1,6 @@
 """SCIM bearer token authentication.
 
-Adapted from the sampled Onyx ee/onyx/server/scim/auth.py.
+py.
 ScimDAL backed by AgenticSearchStore instead of SQLAlchemy.
 get_hashed_bearer_token_from_request replaced with a local extraction helper.
 """

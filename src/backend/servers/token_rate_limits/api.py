@@ -1,7 +1,7 @@
 """Token rate limit admin API.
 
-Adapted from the sampled Onyx ee/onyx/server/token_rate_limits/api.py.
-SQLAlchemy ORM and ee.onyx/onyx imports are replaced with AgenticSearchStore.
+py.
+SQLAlchemy ORM imports are replaced with AgenticSearchStore.
 Group IDs are strings (store primary keys) rather than integers.
 """
 

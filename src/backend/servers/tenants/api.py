@@ -2,7 +2,7 @@
 
 This repo is a single-tenant self-hosted deployment. Multi-tenant features
 (billing, provisioning, schema management, anonymous users, SCIM, impersonation)
-require the full Onyx cloud infrastructure and are not implemented here.
+require the full cloud infrastructure and are not implemented here.
 
 The router exists so that code that imports from this module compiles; all
 endpoints return HTTP 501 Not Implemented.

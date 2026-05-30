@@ -3,7 +3,7 @@
 On startup, ``seed_db(store)`` reads ``ENV_SEED_CONFIGURATION`` (a JSON string)
 and upserts the declared users and connectors into ``AgenticSearchStore``.
 
-This is the repo-native port of the sampled Onyx seeding module. Onyx-specific
+This is the repo-native port of the seeding module. repo-specific
 concepts (personas, LLM providers, tools, enterprise settings, logos, analytics
 scripts) are omitted because they have no equivalent in this repo's data model.
 

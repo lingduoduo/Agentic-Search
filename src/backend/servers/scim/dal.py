@@ -1,6 +1,6 @@
 """SCIM Data Access Layer backed by AgenticSearchStore.
 
-Replaces the SQLAlchemy-based ee.onyx.db.scim.ScimDAL. Provides SCIM-specific
+Replaces the SQLAlchemy-based ScimDAL. Provides SCIM-specific
 queries over the project's SQLite store. Seat-checking and permission
 recomputation (EE/PostgreSQL-only) are omitted.
 """

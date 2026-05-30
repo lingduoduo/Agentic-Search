@@ -1,8 +1,8 @@
 """Query history admin API.
 
-Adapted from the sampled Onyx ee/onyx/server/query_history/api.py.
+py.
 Celery-based async export is replaced with synchronous streaming CSV.
-External onyx/ee imports are replaced with project-local equivalents.
+External imports are replaced with project-local equivalents.
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def create_query_history_router(
     ) -> StreamingResponse:
         """Stream a CSV export of all question/answer pairs in the given window.
 
-        The original Onyx version dispatched a Celery task and required a
+        The original version dispatched a Celery task and required a
         separate download step. Here the export is generated synchronously and
         streamed directly to the caller.
         """

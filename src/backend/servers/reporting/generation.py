@@ -1,6 +1,6 @@
 """Usage report generation.
 
-Adapted from the sampled Onyx ee/onyx/server/reporting/usage_export_generation.py.
+py.
 Replaces: SQLAlchemy queries, external FileStore, and Celery with
 AgenticSearchStore queries and in-memory ZIP assembly.
 """

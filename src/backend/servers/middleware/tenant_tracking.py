@@ -1,9 +1,9 @@
 """Tenant tracking middleware — no-op stub for single-tenant deployments.
 
-The sampled Onyx version set CURRENT_TENANT_ID_CONTEXTVAR per request by
+The previous version set CURRENT_TENANT_ID_CONTEXTVAR per request by
 extracting tenant identity from Redis session tokens, API-key headers,
 anonymous user JWT cookies, and PostgreSQL schema names. This requires
-the full Onyx multi-tenant infrastructure (Redis, PostgreSQL multi-schema,
+the full multi-tenant infrastructure (Redis, PostgreSQL multi-schema,
 shared_configs contextvars) which does not exist in this single-tenant
 self-hosted deployment.
 
