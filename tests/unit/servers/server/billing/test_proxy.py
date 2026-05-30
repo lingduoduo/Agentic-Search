@@ -1,6 +1,6 @@
 """Billing proxy tests.
 
-The sampled Onyx version had a tenants/proxy.py module for cloud data-plane
+The sampled version had a tenants/proxy.py module for cloud data-plane
 forwarding.  This deployment is single-tenant self-hosted; the proxy layer is
 not implemented.  Billing endpoints proxy directly via the service layer which
 is tested in test_billing_service.py.

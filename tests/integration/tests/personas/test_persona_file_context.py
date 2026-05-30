@@ -8,7 +8,7 @@ End-to-end tests that verify:
 4. Precedence: custom persona files take priority over project files when
    the chat session is inside a project.
 
-These tests run against a real Onyx deployment (all services running).
+These tests run against a real deployment (all services running).
 File processing is asynchronous, so we poll the file status endpoint
 until files reach COMPLETED before chatting.
 """

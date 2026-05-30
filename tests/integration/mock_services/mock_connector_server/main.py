@@ -4,8 +4,8 @@ from pydantic import BaseModel
 from pydantic import Field
 
 # We would like to import these, but it makes building this so much harder/slower
-# from onyx.connectors.mock_connector.connector import SingleConnectorYield
-# from onyx.connectors.models import ConnectorCheckpoint
+# from src.backend.connectors.interface import ConnectorBase  # placeholder
+# connector checkpoint model not yet ported
 
 app = FastAPI()
 

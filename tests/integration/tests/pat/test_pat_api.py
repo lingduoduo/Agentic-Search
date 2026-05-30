@@ -42,11 +42,11 @@ def test_pat_lifecycle_happy_path(reset: None) -> None:  # noqa: ARG001
     assert pat.created_at is not None
     assert pat.expires_at is not None
 
-    assert pat.token.startswith("onyx_pat_")
+    assert pat.token.startswith("agentic_search_pat_")
     assert len(pat.token) > 20
 
     assert "****" in pat.token_display
-    assert pat.token_display.startswith("onyx_pat_")
+    assert pat.token_display.startswith("agentic_search_pat_")
 
     # List PATs
     tokens = PATManager.list(user)

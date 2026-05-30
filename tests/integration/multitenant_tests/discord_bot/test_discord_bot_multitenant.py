@@ -42,7 +42,7 @@ class TestBotConfigIsolationCloudMode:
 
     def test_cannot_create_bot_config_in_cloud_mode(self) -> None:
         """Bot config creation is blocked in cloud mode."""
-        with patch("onyx.configs.app_configs.AUTH_TYPE", AuthType.CLOUD):
+        with patch("src.backend.configs.app_configs.AUTH_TYPE", AuthType.CLOUD):
             from fastapi import HTTPException
 
             pass  # _check_bot_config_api_access removed
@@ -58,8 +58,8 @@ class TestBotConfigIsolationCloudMode:
         pass  # get_bot_token removed
 
         with (
-            patch("onyx.onyxbot.discord.utils.DISCORD_BOT_TOKEN", "env_token"),
-            patch("onyx.onyxbot.discord.utils.AUTH_TYPE", AuthType.CLOUD),
+            patch("src.backend.configs.app_configs.DISCORD_BOT_TOKEN", "env_token"),
+            patch("src.backend.configs.app_configs.AUTH_TYPE", AuthType.CLOUD),
         ):
             result = get_bot_token()  # noqa: F821,F841
 

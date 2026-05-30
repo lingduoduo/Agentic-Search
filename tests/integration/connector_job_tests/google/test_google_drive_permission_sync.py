@@ -67,7 +67,7 @@ def google_drive_test_env_setup() -> Generator[
             test_id,  # noqa: F821,F841
         )
 
-        # Setup Onyx infrastructure
+        # Setup test infrastructure
 
         before = datetime.now(timezone.utc)
         credential: DATestCredential = CredentialManager.create(

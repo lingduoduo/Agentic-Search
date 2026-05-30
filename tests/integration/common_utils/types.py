@@ -1,4 +1,4 @@
-"""Local type definitions replacing onyx.* / ee.onyx.* imports.
+"""Local type definitions replacing upstream imports.
 
 All enums, constants, and Pydantic models that the integration tests need
 are defined here so the test suite has no dependency on external packages.
@@ -177,7 +177,7 @@ FASTAPI_USERS_AUTH_COOKIE_NAME = "fastapiusersauth"
 DEFAULT_PERSONA_ID = 0
 PUBLIC_DOC_PAT = "__public__"
 
-# Redis / Postgres config — read from env (mirrors onyx.configs.app_configs)
+# Redis / Postgres config — read from env (mirrors src.backend.configs.app_configs)
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB_NUMBER = int(os.getenv("REDIS_DB_NUMBER", "0"))
@@ -199,7 +199,7 @@ class PaginatedReturn(BaseModel, Generic[T]):
 
 
 # ---------------------------------------------------------------------------
-# Pydantic models replacing onyx.server.* models used by managers/tests
+# Pydantic models replacing upstream server models used by managers/tests
 # ---------------------------------------------------------------------------
 
 

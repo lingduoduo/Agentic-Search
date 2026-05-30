@@ -178,7 +178,7 @@ def test_proxy_strips_set_cookie_header(admin_user: DATestUser) -> None:
     response. That response is generated locally by ``_offline_html_response``
     and never contains a ``Set-Cookie`` header — which is exactly the
     invariant we care about for security: no upstream-controlled cookie
-    can ever reach the parent Onyx origin via this path.
+    can ever reach the parent origin via this path.
     """
     session = _create_session(admin_user)
     session_id = UUID(session["id"])

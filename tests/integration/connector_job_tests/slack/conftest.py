@@ -11,9 +11,9 @@ class ChannelType:
 
 from tests.integration.connector_job_tests.slack.slack_api_utils import SlackManager  # noqa: E402
 
-SLACK_ADMIN_EMAIL = os.environ.get("SLACK_ADMIN_EMAIL", "evan@onyx.app")
-SLACK_TEST_USER_1_EMAIL = os.environ.get("SLACK_TEST_USER_1_EMAIL", "evan+1@onyx.app")
-SLACK_TEST_USER_2_EMAIL = os.environ.get("SLACK_TEST_USER_2_EMAIL", "justin@onyx.app")
+SLACK_ADMIN_EMAIL = os.environ.get("SLACK_ADMIN_EMAIL", "admin@example.com")
+SLACK_TEST_USER_1_EMAIL = os.environ.get("SLACK_TEST_USER_1_EMAIL", "user1@example.com")
+SLACK_TEST_USER_2_EMAIL = os.environ.get("SLACK_TEST_USER_2_EMAIL", "user2@example.com")
 
 
 def _provision_slack_channels(

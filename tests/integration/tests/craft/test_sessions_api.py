@@ -1,7 +1,7 @@
 """Session lifecycle tests (HTTP boundary half).
 
 These tests exercise the FE-visible session HTTP API at ``/build/sessions``.
-They run against a real Onyx deployment (Postgres + Redis + the local
+They run against a real deployment (Postgres + Redis + the local
 sandbox backend) using the :class:`BuildSessionManager` HTTP wrapper.
 """
 
@@ -60,8 +60,8 @@ def test_create_session_requires_auth() -> None:
         json={},
         headers={"Content-Type": "application/json"},
     )
-    # The build router gates access through ``require_onyx_craft_enabled`` →
-    # ``require_permission(BASIC_ACCESS)`` → ``current_user``. Onyx's
+    # The build router gates access through ``require_craft_enabled`` →
+    # ``require_permission(BASIC_ACCESS)`` → ``current_user``.
     # ``BasicAuthenticationError`` returns 403 for unauthenticated callers
     # (not 401). Either is acceptable so long as it's a 4xx auth failure.
     assert response.status_code in (401, 403)

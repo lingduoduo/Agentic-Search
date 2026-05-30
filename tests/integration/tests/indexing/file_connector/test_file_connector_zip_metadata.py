@@ -23,7 +23,7 @@ from tests.integration.common_utils.test_models import DATestUser
 TEST_FILES_BASE = "tests/integration/tests/indexing/file_connector/test_files"
 TEST_META_ZIP_PATH = f"{TEST_FILES_BASE}/with_meta.zip"
 TEST_NO_META_ZIP_PATH = f"{TEST_FILES_BASE}/without_meta.zip"
-TEST_METADATA_FILE = f"{TEST_FILES_BASE}/.onyx_metadata.json"
+TEST_METADATA_FILE = f"{TEST_FILES_BASE}/.metadata.json"
 
 
 @pytest.mark.parametrize(
@@ -104,7 +104,7 @@ def test_zip_metadata_handling(
     with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
         documents = get_documents_for_cc_pair(db_session, cc_pair.id)  # noqa: F821,F841
 
-    # Expected metadata from the .onyx_metadata.json file
+    # Expected metadata from the .metadata.json file
     with open(TEST_METADATA_FILE, "r") as f:
         expected_metadata = json.load(f)
 

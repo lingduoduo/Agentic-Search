@@ -106,7 +106,7 @@ class ApiKeyVerifier(TokenVerifier):
 class RequireHeadersMiddleware(BaseHTTPMiddleware):
     """Reject requests under ``MCP_PATH_PREFIX`` that omit any required header.
 
-    Useful for testing the per-user MCP API-key flow in onyx where the admin
+    Useful for testing the per-user MCP API-key flow in where the admin
     templates extra headers (e.g. ``X-Username: {username}``) so each user is
     prompted for additional fields alongside their API key.
 
