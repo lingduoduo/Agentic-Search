@@ -48,10 +48,39 @@ def _json_loads(value: str | None) -> dict[str, Any]:
     return loaded
 
 
+class _NullSession:
+    """Null-object DB session for local (no-SQLAlchemy) mode.
+
+    All mutating operations are no-ops; reads return None so callers can
+    guard with ``if obj is not None:`` rather than crashing.
+    """
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+    def expunge_all(self) -> None:
+        pass
+
+    def get(self, model, pk):
+        return None
+
+    def add(self, obj) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+    def delete(self, obj) -> None:
+        pass
+
+
 @contextlib.contextmanager
 def get_session_with_current_tenant():
-    """Stub context manager — yields None (no real DB session in local mode)."""
-    yield None
+    """Yield a null-object session (no real DB in local mode)."""
+    yield _NullSession()
 
 
 class AgenticSearchStore:

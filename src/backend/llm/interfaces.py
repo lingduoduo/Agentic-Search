@@ -63,6 +63,7 @@ class LlmProviderNames:
     AZURE = "azure"
     GOOGLE = "google"
     COHERE = "cohere"
+    OLLAMA_CHAT = "ollama_chat"
 
 
 def is_true_openai_model(provider: str, model: str) -> bool:
