@@ -51,7 +51,7 @@ def test_upload_endpoint_requires_auth(admin_user: DATestUser) -> None:
         headers={},
         cookies=None,
     )
-    # Onyx auth middleware returns either 401 or 403 for unauthenticated
+    # auth middleware returns either 401 or 403 for unauthenticated
     # requests against BASIC_ACCESS endpoints.
     assert response.status_code in (401, 403)
 

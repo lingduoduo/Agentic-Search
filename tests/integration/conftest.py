@@ -52,7 +52,7 @@ load_env_vars()
 
 @pytest.fixture(scope="session", autouse=True)
 def seed_dev_license_for_session() -> None:
-    """Seed dev license once at session start if ONYX_DEV_LICENSE is set."""
+    """Seed dev license once at session start if AGENTIC_SEARCH_DEV_LICENSE is set."""
     _seed_dev_license_if_set()
 
 

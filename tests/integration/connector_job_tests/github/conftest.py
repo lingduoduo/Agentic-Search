@@ -30,15 +30,15 @@ def _get_github_test_tokens() -> list[str]:
     Returns a list of GitHub tokens to run the GitHub connector suite against.
 
     Minimal setup:
-    - Set ONYX_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN (token1)
+    - Set AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN (token1)
     Optional:
-    - Set ONYX_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC (token2 / classic)
+    - Set AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC (token2 / classic)
 
     If the classic token is provided, the GitHub suite will run twice (once per token).
     """
-    token_1 = os.environ.get("ONYX_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN")
+    token_1 = os.environ.get("AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN")
     # Prefer the new "classic" name, but keep backward compatibility.
-    token_2 = os.environ.get("ONYX_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC")
+    token_2 = os.environ.get("AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC")
 
     tokens: list[str] = []
     if token_1:
@@ -54,8 +54,8 @@ def github_access_token(request: pytest.FixtureRequest) -> str:
     if not tokens:
         pytest.skip(
             "Skipping GitHub tests due to missing env vars "
-            "ONYX_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN and "
-            "ONYX_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC"
+            "AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN and "
+            "AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC"
         )
     return request.param
 
@@ -78,10 +78,10 @@ def github_test_env_setup(
 
     # Get user emails from environment (with fallbacks)
     test_user_1_email = os.environ.get(
-        "ONYX_GITHUB_TEST_USER_1_EMAIL", "subash@onyx.app"
+        "AGENTIC_SEARCH_GITHUB_TEST_USER_1_EMAIL", "user1@example.com"
     )
     test_user_2_email = os.environ.get(
-        "ONYX_GITHUB_TEST_USER_2_EMAIL", "msubash203@gmail.com"
+        "AGENTIC_SEARCH_GITHUB_TEST_USER_2_EMAIL", "user2@example.com"
     )
 
     if not admin_email or not test_user_1_email or not test_user_2_email:  # noqa: F821,F841

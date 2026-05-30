@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 def _seed_dev_license_if_set() -> None:
-    """Seed a dev license via the /license/upload endpoint if ONYX_DEV_LICENSE is set."""
-    blob = os.environ.get("ONYX_DEV_LICENSE", "").strip()
+    """Seed a dev license via the /license/upload endpoint if AGENTIC_SEARCH_DEV_LICENSE is set."""
+    blob = os.environ.get("AGENTIC_SEARCH_DEV_LICENSE", "").strip()
     if not blob:
         return
 

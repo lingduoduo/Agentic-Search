@@ -1,15 +1,15 @@
 """
-Integration tests for the onyx-cli binary against a real Onyx backend.
+Integration tests for the CLI binary against a real backend.
 
-These tests require a pre-built CLI binary passed via the ONYX_CLI_BINARY
+These tests require a pre-built CLI binary passed via the AGENTIC_SEARCH_CLI_BINARY
 env var. In CI, the workflow builds the binary and mounts it into the test
-container. The tests are skipped when ONYX_CLI_BINARY is not set.
+container. The tests are skipped when AGENTIC_SEARCH_CLI_BINARY is not set.
 
-To run locally (requires Go toolchain + all Onyx services running):
+To run locally (requires Go toolchain + all services running):
 
-    cd cli && go build -o /tmp/onyx-cli-test .
+    cd cli && go build -o /tmp/agentic-search-cli-test .
     cd ..
-    ONYX_CLI_BINARY=/tmp/onyx-cli-test \
+    AGENTIC_SEARCH_CLI_BINARY=/tmp/agentic-search-cli-test \
       python -m dotenv -f .vscode/.env run -- \
       pytest backend/tests/integration/tests/cli/
 
@@ -61,17 +61,17 @@ from tests.integration.common_utils.test_models import DATestLLMProvider
 from tests.integration.common_utils.test_models import DATestPersona
 from tests.integration.common_utils.test_models import DATestUser
 
-_CLI_BINARY = os.environ.get("ONYX_CLI_BINARY")
+_CLI_BINARY = os.environ.get("AGENTIC_SEARCH_CLI_BINARY")
 
 pytestmark = pytest.mark.skipif(
     _CLI_BINARY is None,
-    reason="CLI integration tests require ONYX_CLI_BINARY env var pointing to the built binary",
+    reason="CLI integration tests require AGENTIC_SEARCH_CLI_BINARY env var pointing to the built binary",
 )
 
 
 @pytest.fixture(scope="module")
 def cli_binary() -> Path:
-    """Return the pre-built CLI binary path from ONYX_CLI_BINARY."""
+    """Return the pre-built CLI binary path from AGENTIC_SEARCH_CLI_BINARY."""
     assert _CLI_BINARY is not None
     binary = Path(_CLI_BINARY)
     assert binary.exists(), f"CLI binary not found at {binary}"
@@ -118,12 +118,12 @@ def run_cli(
     env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", ""),
-        "ONYX_SERVER_URL": server_url,
-        "ONYX_API_PREFIX": "",
+        "AGENTIC_SEARCH_SERVER_URL": server_url,
+        "AGENTIC_SEARCH_API_PREFIX": "",
         "XDG_CONFIG_HOME": tempfile.mkdtemp(),
     }
     if pat is not None:
-        env["ONYX_PAT"] = pat
+        env["AGENTIC_SEARCH_PAT"] = pat
 
     return subprocess.run(
         [str(binary)] + args,
@@ -492,7 +492,7 @@ def test_search_source_filter(
     phrase = "cli-search-source-filter-unique"
     DocumentManager.seed_doc_with_content(cc_pair, phrase, api_key)
 
-    # TODO(@wenxi-onyx): Make the integration test manager allow source types during seeding
+    # TODO: Make the integration test manager allow source types during seeding
     result = run_cli(
         cli_binary,
         ["search", "--raw", "--source", DocumentSource.NOT_APPLICABLE.value, phrase],

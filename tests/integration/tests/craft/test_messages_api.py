@@ -2,7 +2,7 @@
 
 These tests drive the ``/build/sessions/{id}/send-message`` SSE endpoint and
 inspect the packet sequence the consumer actually sees. They run against a
-real Onyx deployment using :class:`BuildSessionManager`.
+real deployment using :class:`BuildSessionManager`.
 
 The DB-bound (ext-dep) half lives in
 ``backend/tests/external_dependency_unit/craft/test_streaming_persistence.py``

@@ -1,6 +1,6 @@
 """Integration coverage for `/admin/llm/test` against AWS Bedrock.
 
-The Onyx admin UI calls this endpoint when a user clicks "Test" on the
+The admin UI calls this endpoint when a user clicks "Test" on the
 Bedrock provider page; if the credentials are wrong the UI surfaces the
 response body verbatim. This test pins the contract:
 

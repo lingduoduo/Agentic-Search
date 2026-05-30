@@ -16,7 +16,7 @@ def test_ingestion_api_crud(
     vespa_client: vespa_fixture,  # noqa: F821,F841
 ) -> None:
     """Test create, list, and delete via the ingestion API."""
-    admin_user: DATestUser = UserManager.create(email="admin@onyx.app")
+    admin_user: DATestUser = UserManager.create(email="admin@example.com")
     cc_pair = CCPairManager.create_from_scratch(
         name="Ingestion-API-Test",
         source=DocumentSource.FILE,

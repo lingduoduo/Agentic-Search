@@ -32,9 +32,9 @@ from tests.integration.common_utils.test_models import DATestLLMProvider  # noqa
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
 # TODO: update mcp client tests to use constants in common_utils/constants.py
-# NOTE: the tests for client should be independent of the Onyx MCP server
-# This means the port should probably stay to be 8010/not 8090 the Onyx MCP server port
-# Use MOCK_MCP_SERVER_PORT to avoid conflicts with the real Onyx MCP server port (8090)
+# NOTE: the tests for client should be independent of the MCP server
+# This means the port should probably stay to be 8010/not 8090 the MCP server port
+# Use MOCK_MCP_SERVER_PORT to avoid conflicts with the real MCP server port (8090)
 MCP_SERVER_HOST = os.getenv("TEST_WEB_HOSTNAME", "127.0.0.1")
 MCP_SERVER_PORT = int(os.getenv("MOCK_MCP_SERVER_PORT", "8010"))
 MCP_SERVER_URL = f"http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/mcp"

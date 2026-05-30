@@ -219,7 +219,7 @@ def test_slack_group_permission_sync(
     slack_perm_sync_test_setup: tuple[ChannelType, ChannelType],
 ) -> None:
     """
-    This test ensures that permission sync overrides onyx group access.
+    This test ensures that permission sync overrides group access.
     """
     public_channel, private_channel = slack_perm_sync_test_setup
 

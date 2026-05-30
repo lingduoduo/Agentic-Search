@@ -1,5 +1,5 @@
-import generated.onyx_openapi_client.onyx_openapi_client as onyx_api  # ty: ignore[unresolved-import]
+import generated.onyx_openapi_client.onyx_openapi_client as app_api  # ty: ignore[unresolved-import]
 
 from tests.integration.common_utils.constants import API_SERVER_URL
 
-api_config = onyx_api.Configuration(host=API_SERVER_URL)
+api_config = app_api.Configuration(host=API_SERVER_URL)

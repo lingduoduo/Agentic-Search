@@ -67,17 +67,17 @@ class TestTenantProvisioningRollback:
         mock_lock.acquire.return_value = True
 
         with patch(
-            "ee.onyx.background.celery.tasks.tenant_provisioning.tasks.get_redis_client"
+            "src.backend.servers.tenants.provisioning.get_redis_client"
         ) as mock_redis:
             mock_redis.return_value.lock.return_value = mock_lock
 
             with patch(
-                "ee.onyx.background.celery.tasks.tenant_provisioning.tasks.setup_tenant"
+                "src.backend.servers.tenants.provisioning.setup_tenant"
             ) as mock_setup:
                 mock_setup.side_effect = Exception("Simulated provisioning failure")
 
                 with patch(
-                    "ee.onyx.background.celery.tasks.tenant_provisioning.tasks.create_schema_if_not_exists",
+                    "src.backend.servers.tenants.provisioning.create_schema_if_not_exists",
                     side_effect=track_schema_creation,
                 ):
                     pass  # pre-provisioning — removed
