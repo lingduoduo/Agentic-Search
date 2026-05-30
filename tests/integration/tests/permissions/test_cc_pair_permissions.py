@@ -6,7 +6,7 @@ the permissions of the curator manipulating connector-credential pairs.
 import os
 
 import pytest
-from generated.onyx_openapi_client.exceptions import ApiException  # ty: ignore[unresolved-import]
+from generated.agentic_search_openapi_client.exceptions import ApiException  # ty: ignore[unresolved-import]
 
 from tests.integration.common_utils.types import AccessType
 from tests.integration.common_utils.types import DocumentSource
