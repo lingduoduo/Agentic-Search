@@ -102,6 +102,34 @@ class SearchHistoryResponse(BaseModel):
     search_queries: list[SearchQueryResponse]
 
 
+# ---------------------------------------------------------------------------
+# Chat message request (used by the LLM loop and process_message)
+# ---------------------------------------------------------------------------
+
+
+class SendMessageRequest(BaseModel):
+    """Request payload for sending a user message in a chat session."""
+
+    message: str
+    chat_session_id: Any | None = None
+    persona_id: int | None = None
+    search_doc_ids: list[str] | None = None
+    file_descriptors: list[Any] = []
+    parent_message_id: int | None = None
+    prompt_id: int | None = None
+    retrieval_options: Any | None = None
+    regenerate: bool = False
+    use_existing_user_message: bool = False
+    no_ai_answer: bool = False
+
+
+class Placement(BaseModel):
+    """Token placement metadata for streaming packets."""
+
+    turn_index: int = 0
+    tab_index: int | None = None
+
+
 __all__ = [
     "SearchDocWithContent",
     "SearchFlowClassificationRequest",

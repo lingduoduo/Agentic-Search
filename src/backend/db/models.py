@@ -128,3 +128,81 @@ class IndexAttemptRecord:
     metadata: JsonObject = field(default_factory=dict)
     created_at: str | None = None
     updated_at: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Chat ORM stubs used by the chat pipeline
+# These are lightweight dataclass stand-ins for the full SQLAlchemy models
+# that would exist in a production Postgres deployment.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Persona:
+    """Configuration for a chat persona / assistant."""
+
+    id: int = 0
+    name: str = "Assistant"
+    system_prompt: str = ""
+    task_prompt: str = ""
+    datetime_aware: bool = True
+    replace_base_system_prompt: bool = False
+    tools: list = field(default_factory=list)
+
+
+@dataclass
+class ChatSession:
+    """A single chat session."""
+
+    id: Any = None
+    user_id: str | None = None
+    persona_id: int | None = None
+    description: str = ""
+
+
+@dataclass
+class ChatMessage:
+    """One message within a chat session."""
+
+    id: int = 0
+    session_id: Any = None
+    message: str = ""
+    message_type: str = "user"
+    token_count: int = 0
+
+
+@dataclass
+class User:
+    """Application user record."""
+
+    id: str = ""
+    email: str | None = None
+    name: str | None = None
+
+
+@dataclass
+class UserFile:
+    """A file record owned by a user."""
+
+    id: Any = None
+    user_id: str | None = None
+    filename: str = ""
+
+
+@dataclass
+class ToolCall:
+    """Persisted record for a single LLM tool call."""
+
+    id: int = 0
+    chat_message_id: int = 0
+    tool_name: str = ""
+    tool_arguments: dict = field(default_factory=dict)
+    tool_result: str = ""
+
+
+@dataclass
+class SlackContext:
+    """Slack-specific context for OnyxBot responses."""
+
+    channel_id: str = ""
+    thread_ts: str | None = None
