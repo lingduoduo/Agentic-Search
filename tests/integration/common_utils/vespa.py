@@ -1,87 +1,67 @@
+"""Local index fixture backed by AgenticSearchStore (SQLite).
+
+Named ``vespa_fixture`` for backwards compatibility with existing tests that
+accept it as a pytest parameter. The class previously wrapped an OpenSearch
+client; it now reads directly from the same SQLite database that the running
+API server uses.
+
+Set AGENTIC_SEARCH_WEB_DB_PATH to the file path used when launching the server.
+With the default in-memory DB (":memory:") the fixture will always return empty
+results, so integration tests that verify indexing require a file-based path.
+"""
+
+from __future__ import annotations
+
+import os
 from typing import Any
 
-from opensearchpy import OpenSearch
-from opensearchpy.exceptions import NotFoundError
 
-OPENSEARCH_ADMIN_PASSWORD = "admin"
-OPENSEARCH_ADMIN_USERNAME = "admin"
-OPENSEARCH_HOST = "localhost"
-OPENSEARCH_REST_API_PORT = 9200
-OPENSEARCH_USE_SSL = False
-# get_session_with_current_tenant removed — no direct DB access
-# get_current_search_settings removed — no direct DB access
+SQLITE_DB_PATH = os.getenv("AGENTIC_SEARCH_WEB_DB_PATH", ":memory:")
 
 
 class vespa_fixture:
-    """Test fixture for inspecting the document index.
-
-    Kept named ``vespa_fixture`` for backwards compatibility with the many
-    existing integration tests that take it as a parameter. Internally it is now
-    backed by OpenSearch, and it reshapes hits into the dict-of-keys layout that
-    the legacy Vespa assertions expect (``access_control_list`` and
-    ``document_sets`` as dicts; ``image_file_name`` mirrored from OpenSearch's
-    ``image_file_id``; the ``public`` boolean folded back into the ACL as the
-    ``"PUBLIC"`` entry).
-
-    The current index name is resolved lazily on each call rather than at
-    construction time. The docprocessing worker performs an in-flight swap from
-    ``danswer_chunk`` to ``danswer_chunk_<model>`` the first time it indexes
-    after a Postgres reset; resolving the name eagerly in the fixture would
-    cache the pre-swap value and query a non-existent index.
-    """
+    """Test fixture for inspecting the document index via the local SQLite store."""
 
     def __init__(self, index_name: str | None = None) -> None:
-        # index_name is accepted for backwards compat with the prior Vespa
-        # fixture signature but ignored — see class docstring.
+        # index_name is accepted for backwards compat but ignored.
         del index_name
-        self._client = OpenSearch(
-            hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_REST_API_PORT}],
-            http_auth=(OPENSEARCH_ADMIN_USERNAME, OPENSEARCH_ADMIN_PASSWORD),
-            use_ssl=OPENSEARCH_USE_SSL,
-            verify_certs=False,
-            ssl_show_warn=False,
-        )
+        from src.backend.db.store import AgenticSearchStore
 
-    @property
-    def index_name(self) -> str:
-        with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
-            return get_current_search_settings(db_session).index_name  # noqa: F821,F841
+        self._store = AgenticSearchStore(SQLITE_DB_PATH)
 
     def get_documents_by_id(
         self, document_ids: list[str], wanted_doc_count: int = 1_000
     ) -> dict[str, Any]:
-        index_name = self.index_name
-        # Refresh first so chunks indexed just before the call are visible.
-        try:
-            self._client.indices.refresh(index=index_name)
-        except NotFoundError:
-            return {"documents": []}
-
-        body: dict[str, Any] = {
-            "size": wanted_doc_count,
-            "query": {"terms": {"document_id": document_ids}},
-        }
-        try:
-            result = self._client.search(index=index_name, body=body)
-        except NotFoundError:
-            return {"documents": []}
-
-        hits = result.get("hits", {}).get("hits", [])
         documents: list[dict[str, Any]] = []
-        for hit in hits:
-            source: dict[str, Any] = dict(hit.get("_source", {}))
+        for doc_id in document_ids[:wanted_doc_count]:
+            doc = self._store.get_document(doc_id)
+            if doc is None:
+                continue
+            perms = self._store.get_document_permissions(doc_id)
 
-            acl_entries: set[str] = set(source.get("access_control_list") or [])
-            if source.get("public"):
-                acl_entries.add("PUBLIC")
-            source["access_control_list"] = {entry: 1 for entry in acl_entries}
+            acl_entries: set[str] = set()
+            is_public = False
+            for perm in perms:
+                if perm.principal_type == "public":
+                    acl_entries.add("PUBLIC")
+                    is_public = True
+                elif perm.principal_type == "user" and perm.principal_id:
+                    user = self._store.get_user(perm.principal_id)
+                    if user and user.email:
+                        acl_entries.add(f"user_email:{user.email}")
+                    else:
+                        acl_entries.add(f"user:{perm.principal_id}")
+                elif perm.principal_type == "group" and perm.principal_id:
+                    acl_entries.add(f"group:{perm.principal_id}")
 
-            source["document_sets"] = {
-                entry: 1 for entry in (source.get("document_sets") or [])
-            }
-
-            if "image_file_id" in source:
-                source["image_file_name"] = source["image_file_id"]
-
-            documents.append({"fields": source})
+            documents.append(
+                {
+                    "fields": {
+                        "document_id": doc.id,
+                        "access_control_list": {entry: 1 for entry in acl_entries},
+                        "document_sets": {},
+                        "public": is_public,
+                    }
+                }
+            )
         return {"documents": documents}

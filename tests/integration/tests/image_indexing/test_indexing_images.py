@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import os
 from datetime import datetime
 from datetime import timezone
@@ -18,7 +19,7 @@ from tests.integration.common_utils.managers.llm_provider import LLMProviderMana
 from tests.integration.common_utils.managers.settings import SettingsManager
 from tests.integration.common_utils.test_models import DATestSettings
 from tests.integration.common_utils.test_models import DATestUser
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture
 
 FILE_NAME = "Sample.pdf"
 FILE_PATH = "tests/integration/common_utils/test_files"
@@ -28,7 +29,7 @@ DOCX_FILE_NAME = "three_images.docx"
 def test_image_indexing(
     reset: None,  # noqa: ARG001
     admin_user: DATestUser,
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
 ) -> None:
     os.makedirs(FILE_PATH, exist_ok=True)
     test_file_path = os.path.join(FILE_PATH, FILE_NAME)
@@ -99,7 +100,7 @@ def test_image_indexing(
         user_performing_action=admin_user,
     )
 
-    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+    with get_session_with_current_tenant() as db_session:
         # really gets the chunks from Vespa, which is why there are two;
         # one for the raw text and one for the summarized image.
         documents = DocumentManager.fetch_documents_for_cc_pair(
@@ -120,7 +121,7 @@ def test_image_indexing(
 def test_docx_image_indexing(
     reset: None,  # noqa: ARG001
     admin_user: DATestUser,
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
 ) -> None:
     """Test that images from docx files are correctly extracted and indexed."""
     os.makedirs(FILE_PATH, exist_ok=True)
@@ -194,7 +195,7 @@ def test_docx_image_indexing(
         user_performing_action=admin_user,
     )
 
-    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
+    with get_session_with_current_tenant() as db_session:
         # Fetch documents from Vespa - expect text content plus 3 images
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,

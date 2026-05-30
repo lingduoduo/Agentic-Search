@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import http.server
 import os
 import shutil
@@ -15,9 +16,9 @@ from fastapi import FastAPI
 from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture
 
-logger = logging.getLogger(__name__)  # noqa: F821,F841
+logger = logging.getLogger(__name__)
 
 
 # FastAPI server for serving files
@@ -40,7 +41,7 @@ def fastapi_server_context(
     server = uvicorn.Server(config)
 
     # Create a thread to run the FastAPI server
-    server_thread.daemon = (  # noqa: F821,F841
+    server_thread.daemon = (
         True  # Ensures the thread will exit when the main program exits
     )
 
@@ -51,7 +52,7 @@ def fastapi_server_context(
     finally:
         # Shutdown the server
         server.should_exit = True
-        server_thread.join()  # noqa: F821,F841
+        server_thread.join()
 
 
 # Leaving this here for posterity and experimentation, but the reason we're
@@ -72,29 +73,29 @@ def http_server_context(
     # Create an HTTPServer instance
 
     # Define a thread that runs the server in the background
-    server_thread.daemon = (  # noqa: F821,F841
+    server_thread.daemon = (
         True  # Ensures the thread will exit when the main program exits
     )
 
     try:
         # Start the server in the background
         sleep(5)  # give it a few seconds to start
-        yield httpd  # noqa: F821,F841
+        yield httpd
     finally:
         # Shutdown the server and wait for the thread to finish
-        httpd.server_close()  # noqa: F821,F841
-        server_thread.join()  # noqa: F821,F841
+        httpd.server_close()
+        server_thread.join()
 
 
 def test_web_pruning(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
 ) -> None:
     # Creating an admin user (first user created is automatically an admin)
 
     # add api key to user
     APIKeyManager.create(
-        user_performing_action=admin_user,  # noqa: F821,F841
+        user_performing_action=admin_user,
     )
 
     test_filename = os.path.realpath(__file__)
@@ -121,19 +122,19 @@ def test_web_pruning(
             cc_pair_1 = CCPairManager.create_from_scratch(
                 source=DocumentSource.WEB,
                 connector_specific_config=config,
-                user_performing_action=admin_user,  # noqa: F821,F841
+                user_performing_action=admin_user,
             )
 
             CCPairManager.wait_for_indexing_completion(
                 cc_pair_1,
-                now,  # noqa: F821
+                now,
                 timeout=300,
-                user_performing_action=admin_user,  # noqa: F821,F841
+                user_performing_action=admin_user,
             )
 
             selected_cc_pair = CCPairManager.get_indexing_status_by_id(
                 cc_pair_1.id,
-                user_performing_action=admin_user,  # noqa: F821,F841
+                user_performing_action=admin_user,
             )
 
             assert selected_cc_pair is not None, "cc_pair not found after indexing!"
@@ -148,17 +149,17 @@ def test_web_pruning(
             os.remove(os.path.join(website_tgt, "courses.html"))
 
             now = datetime.now(timezone.utc)
-            CCPairManager.prune(cc_pair_1, user_performing_action=admin_user)  # noqa: F821,F841
+            CCPairManager.prune(cc_pair_1, user_performing_action=admin_user)
             CCPairManager.wait_for_prune(
                 cc_pair_1,
                 now,
                 timeout=300,
-                user_performing_action=admin_user,  # noqa: F821,F841
+                user_performing_action=admin_user,
             )
 
             selected_cc_pair = CCPairManager.get_indexing_status_by_id(
                 cc_pair_1.id,
-                user_performing_action=admin_user,  # noqa: F821,F841
+                user_performing_action=admin_user,
             )
             assert selected_cc_pair is not None, "cc_pair not found after pruning!"
             assert selected_cc_pair.docs_indexed == 12
@@ -177,13 +178,13 @@ def test_web_pruning(
             }
 
             # verify root exists in Vespa
-            assert retrieved_doc  # noqa: F821,F841
+            assert retrieved_doc
 
             # verify index.html does not exist in Vespa since it is a duplicate of root
-            assert not retrieved_doc  # noqa: F821,F841
+            assert not retrieved_doc
 
             # verify about and courses do not exist
-            assert not retrieved_doc  # noqa: F821,F841
+            assert not retrieved_doc
 
             retrieved_doc = retrieved_docs.get(courses_id)
             assert not retrieved_doc

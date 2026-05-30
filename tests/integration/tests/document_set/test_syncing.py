@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 from uuid import uuid4
 
 from tests.integration.common_utils.types import DocumentSource
@@ -8,11 +9,11 @@ from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.document_set import DocumentSetManager
 from tests.integration.common_utils.test_models import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestUser
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture
 
 
 def test_multiple_document_sets_syncing_same_connnector(
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
     admin_user: DATestUser,
 ) -> None:
     # create api key
@@ -66,7 +67,7 @@ def test_multiple_document_sets_syncing_same_connnector(
 
 
 def test_removing_connector(
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
     admin_user: DATestUser,
 ) -> None:
     # create api key
@@ -157,7 +158,7 @@ def test_removing_connector(
 
 
 def test_renaming_document_set(
-    vespa_client: vespa_fixture,  # noqa: F821,F841
+    vespa_client: vespa_fixture,
     admin_user: DATestUser,
 ) -> None:
     api_key: DATestAPIKey = APIKeyManager.create(

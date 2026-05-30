@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import pytest
 
 pytestmark = pytest.mark.skip(reason="requires external services")
@@ -31,14 +32,14 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
 from tests.integration.connector_job_tests.slack.slack_api_utils import SlackManager  # noqa: E402
 
 
 @pytest.mark.xfail(reason="flaky - see DAN-986 for details", strict=False)
 def test_slack_prune(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001,F821
+    vespa_client: vespa_fixture,  # noqa: ARG001
     slack_test_setup: tuple[ChannelType, ChannelType],
 ) -> None:
     public_channel, private_channel = slack_test_setup
@@ -182,7 +183,7 @@ def test_slack_prune(
 
     # Prune the cc_pair
     CCPairManager.prune(cc_pair, user_performing_action=admin_user)
-    CCPairManager.wait_for_prune(cc_pair, now, user_performing_action=admin_user)  # noqa: F821,F841
+    CCPairManager.wait_for_prune(cc_pair, now, user_performing_action=admin_user)
 
     # ----------------------------VERIFY THE CHANGES---------------------------
     # Ensure admin user can't see deleted messages

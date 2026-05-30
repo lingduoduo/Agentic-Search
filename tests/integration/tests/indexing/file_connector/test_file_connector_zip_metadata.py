@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 import json
 import os
 from datetime import datetime
@@ -17,7 +18,7 @@ from tests.integration.common_utils.managers.credential import CredentialManager
 from tests.integration.common_utils.managers.file import FileManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
-# vespa_fixture removed — no Vespa in this deployment
+from tests.integration.common_utils.vespa import vespa_fixture
 
 # This is a placeholder - you'll need to create this zip file with actual test files
 TEST_FILES_BASE = "tests/integration/tests/indexing/file_connector/test_files"
@@ -35,7 +36,7 @@ TEST_METADATA_FILE = f"{TEST_FILES_BASE}/.metadata.json"
 )
 def test_zip_metadata_handling(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001,F821
+    vespa_client: vespa_fixture,  # noqa: ARG001
     zip_path: str,
     has_metadata: bool,
 ) -> None:
@@ -101,8 +102,8 @@ def test_zip_metadata_handling(
     )
 
     # Get the indexed documents
-    with get_session_with_current_tenant() as db_session:  # noqa: F821,F841
-        documents = get_documents_for_cc_pair(db_session, cc_pair.id)  # noqa: F821,F841
+    with get_session_with_current_tenant() as db_session:
+        documents = get_documents_for_cc_pair(db_session, cc_pair.id)
 
     # Expected metadata from the .metadata.json file
     with open(TEST_METADATA_FILE, "r") as f:
