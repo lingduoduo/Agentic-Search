@@ -8,26 +8,26 @@ from datetime import timezone
 
 import pytest
 
-from src.configs import AppSettings
-from src.configs import Tier
-from src.utils.encryption import decrypt_bytes_to_string
-from src.utils.encryption import encrypt_string_to_bytes
-from src.utils.encryption import verify_encryption
-from src.utils.license import ApplicationStatus
-from src.utils.license import LicensePayload
-from src.utils.license import get_license_status
-from src.utils.license import is_license_valid
-from src.utils.license_expiry import ExpiryWarningStage
-from src.utils.license_expiry import get_expiry_warning_stage
-from src.utils.license_expiry import get_grace_days_remaining
-from src.utils.license_expiry import get_grace_period_end
-from src.utils.license_notifications import notify_admins_for_stage
-from src.utils.posthog_client import build_posthog_client
-from src.utils.posthog_client import parse_posthog_cookie
-from src.utils.telemetry import event_telemetry
-from src.utils.telemetry import identify_user
-from src.utils.tier import get_tier
-from src.utils.tier import tier_at_least
+from src.backend.configs import AppSettings
+from src.backend.configs import Tier
+from src.backend.utils.encryption import decrypt_bytes_to_string
+from src.backend.utils.encryption import encrypt_string_to_bytes
+from src.backend.utils.encryption import verify_encryption
+from src.backend.utils.license import ApplicationStatus
+from src.backend.utils.license import LicensePayload
+from src.backend.utils.license import get_license_status
+from src.backend.utils.license import is_license_valid
+from src.backend.utils.license_expiry import ExpiryWarningStage
+from src.backend.utils.license_expiry import get_expiry_warning_stage
+from src.backend.utils.license_expiry import get_grace_days_remaining
+from src.backend.utils.license_expiry import get_grace_period_end
+from src.backend.utils.license_notifications import notify_admins_for_stage
+from src.backend.utils.posthog_client import build_posthog_client
+from src.backend.utils.posthog_client import parse_posthog_cookie
+from src.backend.utils.telemetry import event_telemetry
+from src.backend.utils.telemetry import identify_user
+from src.backend.utils.tier import get_tier
+from src.backend.utils.tier import tier_at_least
 
 _NOW = datetime.now(timezone.utc)
 
@@ -39,7 +39,7 @@ _NOW = datetime.now(timezone.utc)
 
 def test_encryption_passthrough_when_no_key(monkeypatch):
     monkeypatch.delenv("AGENTIC_SEARCH_ENCRYPTION_KEY", raising=False)
-    from src.utils.encryption import _get_trimmed_key
+    from src.backend.utils.encryption import _get_trimmed_key
 
     _get_trimmed_key.cache_clear()
     text = "hello world"
@@ -58,7 +58,7 @@ def test_encryption_roundtrip_with_explicit_key():
 def test_encryption_roundtrip_uses_env_key(monkeypatch):
     key = "32-byte-key-for-aes-256-bit-enc!"
     monkeypatch.setenv("AGENTIC_SEARCH_ENCRYPTION_KEY", key)
-    from src.utils.encryption import _get_trimmed_key
+    from src.backend.utils.encryption import _get_trimmed_key
 
     _get_trimmed_key.cache_clear()
     text = "my secret"
@@ -74,7 +74,7 @@ def test_encryption_different_keys_produce_different_ciphertext():
 
 
 def test_encryption_rejects_short_key():
-    from src.utils.encryption import _get_trimmed_key
+    from src.backend.utils.encryption import _get_trimmed_key
 
     _get_trimmed_key.cache_clear()
     with pytest.raises(ValueError, match="too short"):
@@ -84,7 +84,7 @@ def test_encryption_rejects_short_key():
 
 def test_verify_encryption_self_test_passes(monkeypatch):
     monkeypatch.delenv("AGENTIC_SEARCH_ENCRYPTION_KEY", raising=False)
-    from src.utils.encryption import _get_trimmed_key
+    from src.backend.utils.encryption import _get_trimmed_key
 
     _get_trimmed_key.cache_clear()
     verify_encryption()
@@ -285,14 +285,14 @@ def test_get_tier_enterprise_when_enforcement_disabled():
 
 
 def test_get_tier_free_when_enforcement_enabled_no_license():
-    from src.configs import load_app_settings
+    from src.backend.configs import load_app_settings
 
     settings = load_app_settings({"AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED": "true"})
     assert get_tier(settings) == Tier.FREE
 
 
 def test_get_tier_enterprise_from_license_feature():
-    from src.configs import load_app_settings
+    from src.backend.configs import load_app_settings
 
     settings = load_app_settings({"AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED": "true"})
     payload = LicensePayload(
@@ -302,7 +302,7 @@ def test_get_tier_enterprise_from_license_feature():
 
 
 def test_get_tier_business_from_license_without_enterprise_feature():
-    from src.configs import load_app_settings
+    from src.backend.configs import load_app_settings
 
     settings = load_app_settings({"AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED": "true"})
     payload = LicensePayload(

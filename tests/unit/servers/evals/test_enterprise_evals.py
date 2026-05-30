@@ -6,19 +6,19 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from src.auth import generate_user_jwt_token
-from src.configs import AppSettings
-from src.configs import AuthSettings
-from src.db import AgenticSearchStore
-from src.db.models import UserRecord
-from src.servers.enterprise_settings.models import AnalyticsScriptUpload
-from src.servers.enterprise_settings.models import EnterpriseSettings
-from src.servers.enterprise_settings.models import NavigationItem
-from src.servers.enterprise_settings.store import load_runtime_settings
-from src.servers.enterprise_settings.store import load_settings
-from src.servers.enterprise_settings.store import store_settings
-from src.servers.web.app import SearchExperienceSettings
-from src.servers.web.app import create_web_app
+from src.backend.auth import generate_user_jwt_token
+from src.backend.configs import AppSettings
+from src.backend.configs import AuthSettings
+from src.backend.db import AgenticSearchStore
+from src.backend.db.models import UserRecord
+from src.backend.servers.enterprise_settings.models import AnalyticsScriptUpload
+from src.backend.servers.enterprise_settings.models import EnterpriseSettings
+from src.backend.servers.enterprise_settings.models import NavigationItem
+from src.backend.servers.enterprise_settings.store import load_runtime_settings
+from src.backend.servers.enterprise_settings.store import load_settings
+from src.backend.servers.enterprise_settings.store import store_settings
+from src.backend.servers.web.app import SearchExperienceSettings
+from src.backend.servers.web.app import create_web_app
 
 _ADMIN = "admin-user"
 _USER = "regular-user"
@@ -246,7 +246,7 @@ def test_eval_run_with_fake_search(tmp_path, monkeypatch):
 
     async def fake_run_expanded_search(query, **_):
         from src.retrieval.context import SearchResult
-        from src.search.process_search_query import SearchQueryResult
+        from src.backend.search.process_search_query import SearchQueryResult
 
         return SearchQueryResult(
             original_query=query,
@@ -257,7 +257,7 @@ def test_eval_run_with_fake_search(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.servers.evals.api.run_expanded_search", fake_run_expanded_search
+        "src.backend.servers.evals.api.run_expanded_search", fake_run_expanded_search
     )
     client, store = _make_client(tmp_path)
     resp = client.post(

@@ -7,14 +7,14 @@ import urllib.error
 import pytest
 from pydantic import BaseModel
 
-from src.hooks import HookConfig
-from src.hooks import HookExecutionError
-from src.hooks import HookFailStrategy
-from src.hooks import HookPoint
-from src.hooks import HookRegistry
-from src.hooks import HookSkipped
-from src.hooks import HookSoftFailed
-from src.hooks import execute_hook
+from src.backend.hooks import HookConfig
+from src.backend.hooks import HookExecutionError
+from src.backend.hooks import HookFailStrategy
+from src.backend.hooks import HookPoint
+from src.backend.hooks import HookRegistry
+from src.backend.hooks import HookSkipped
+from src.backend.hooks import HookSoftFailed
+from src.backend.hooks import execute_hook
 
 
 class QueryHookResponse(BaseModel):
@@ -56,7 +56,7 @@ def test_execute_hook_posts_payload_and_validates_response(monkeypatch):
         captured["auth"] = request.headers["Authorization"]
         return FakeResponse({"query": "rewritten"})
 
-    monkeypatch.setattr("src.hooks.executor.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("src.backend.hooks.executor.urllib.request.urlopen", fake_urlopen)
     registry = HookRegistry(
         [
             HookConfig(
@@ -98,7 +98,7 @@ def test_execute_hook_soft_failure_returns_marker(monkeypatch):
             fp=io.BytesIO(b"bad key"),
         )
 
-    monkeypatch.setattr("src.hooks.executor.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("src.backend.hooks.executor.urllib.request.urlopen", fake_urlopen)
 
     result = execute_hook(
         hook_point=HookPoint.QUERY_PROCESSING,
@@ -120,7 +120,7 @@ def test_execute_hook_hard_failure_raises(monkeypatch):
         del request, timeout
         raise urllib.error.URLError("dns failed")
 
-    monkeypatch.setattr("src.hooks.executor.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("src.backend.hooks.executor.urllib.request.urlopen", fake_urlopen)
 
     with pytest.raises(HookExecutionError, match="unreachable"):
         execute_hook(

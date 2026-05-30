@@ -6,17 +6,17 @@ import json
 
 from fastapi import FastAPI
 
-from src.db import AgenticSearchStore
-from src.servers.auth_check import PUBLIC_ENDPOINT_SPECS
-from src.servers.auth_check import check_router_auth
-from src.servers.seeding import SeedConfiguration
-from src.servers.seeding import get_seed_config
-from src.servers.seeding import seed_db
-from src.servers.tenant_usage_limits import get_tenant_usage_limit_overrides
-from src.servers.tenant_usage_limits import unlimited
-from src.servers.usage_limits import NO_LIMIT
-from src.servers.usage_limits import TenantUsageLimitOverrides
-from src.servers.usage_limits import is_tenant_on_trial
+from src.backend.db import AgenticSearchStore
+from src.backend.servers.auth_check import PUBLIC_ENDPOINT_SPECS
+from src.backend.servers.auth_check import check_router_auth
+from src.backend.servers.seeding import SeedConfiguration
+from src.backend.servers.seeding import get_seed_config
+from src.backend.servers.seeding import seed_db
+from src.backend.servers.tenant_usage_limits import get_tenant_usage_limit_overrides
+from src.backend.servers.tenant_usage_limits import unlimited
+from src.backend.servers.usage_limits import NO_LIMIT
+from src.backend.servers.usage_limits import TenantUsageLimitOverrides
+from src.backend.servers.usage_limits import is_tenant_on_trial
 
 
 # ---------------------------------------------------------------------------

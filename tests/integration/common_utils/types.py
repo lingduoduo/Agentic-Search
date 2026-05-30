@@ -469,21 +469,21 @@ class UpsertUserCredentialsRequest(BaseModel):
 # Query-history models (re-exported from src for convenience)
 # ---------------------------------------------------------------------------
 
-from src.servers.query_history.models import ChatSessionMinimal  # noqa: E402
-from src.servers.query_history.models import ChatSessionSnapshot  # noqa: E402
+from src.backend.servers.query_history.models import ChatSessionMinimal  # noqa: E402
+from src.backend.servers.query_history.models import ChatSessionSnapshot  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Reporting models
 # ---------------------------------------------------------------------------
 
-from src.servers.reporting.models import UsageReportMetadata  # noqa: E402
+from src.backend.servers.reporting.models import UsageReportMetadata  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # License models
 # ---------------------------------------------------------------------------
 
-from src.servers.license.models import LicenseSource  # noqa: E402
-from src.servers.license.models import PlanType  # noqa: E402
+from src.backend.servers.license.models import LicenseSource  # noqa: E402
+from src.backend.servers.license.models import PlanType  # noqa: E402
 
 
 class LicenseMetadata(BaseModel):

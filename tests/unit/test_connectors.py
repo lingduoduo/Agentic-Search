@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from src.connectors import (
+from src.backend.connectors import (
     BaseConnector,
     CheckpointedConnectorWithPermSync,
     ConnectorCheckpoint,
@@ -355,7 +355,7 @@ def test_search_connector_loads_search_results(monkeypatch):
             SearchPage(error="ignored"),
         ]
 
-    monkeypatch.setattr("src.connectors.basic.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.backend.connectors.basic.search_tool", _fake_search_tool)
 
     connector = SearchConnector(
         ["agentic search"],
@@ -381,7 +381,7 @@ def test_search_connector_async_variant_inside_event_loop(monkeypatch):
         del query, kwargs
         return [SearchPage(title="A", summary="Alpha", url="https://a.test")]
 
-    monkeypatch.setattr("src.connectors.basic.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.backend.connectors.basic.search_tool", _fake_search_tool)
 
     async def _run():
         connector = SearchConnector(["q"])

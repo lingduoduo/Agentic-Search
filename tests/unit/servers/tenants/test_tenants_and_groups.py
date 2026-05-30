@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.auth import generate_user_jwt_token
-from src.configs import AppSettings
-from src.configs import AuthSettings
-from src.db import AgenticSearchStore
-from src.db.models import UserRecord
-from src.servers.tenants.access import generate_data_plane_token
-from src.servers.tenants.access import verify_data_plane_token
-from src.servers.tenants.models import AnonymousUserPath
-from src.servers.tenants.models import RequestInviteRequest
-from src.servers.tenants.models import TierUpdateRequest
-from src.servers.web.app import SearchExperienceSettings
-from src.servers.web.app import create_web_app
+from src.backend.auth import generate_user_jwt_token
+from src.backend.configs import AppSettings
+from src.backend.configs import AuthSettings
+from src.backend.db import AgenticSearchStore
+from src.backend.db.models import UserRecord
+from src.backend.servers.tenants.access import generate_data_plane_token
+from src.backend.servers.tenants.access import verify_data_plane_token
+from src.backend.servers.tenants.models import AnonymousUserPath
+from src.backend.servers.tenants.models import RequestInviteRequest
+from src.backend.servers.tenants.models import TierUpdateRequest
+from src.backend.servers.web.app import SearchExperienceSettings
+from src.backend.servers.web.app import create_web_app
 
 _ADMIN = "admin-user"
 _USER = "regular-user"
@@ -74,7 +74,7 @@ def test_data_plane_token_expires(monkeypatch):
 
 
 def test_tenant_models_instantiate():
-    from src.configs import Tier
+    from src.backend.configs import Tier
 
     req = TierUpdateRequest(tenant_id="t1", customer_tier=Tier.BUSINESS)
     assert req.trial_end is None
@@ -124,7 +124,7 @@ def test_delete_group_returns_false_when_not_found(tmp_path):
 
 
 def test_remove_user_from_group_is_idempotent(tmp_path):
-    from src.db.models import GroupRecord
+    from src.backend.db.models import GroupRecord
 
     store = AgenticSearchStore(tmp_path / "db.sqlite3")
     store.upsert_user(UserRecord(id="u1"))

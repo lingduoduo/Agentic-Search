@@ -8,20 +8,20 @@ Settings model with tier / ee_features_enabled / application_status.
 from __future__ import annotations
 
 
-from src.configs import Tier
-from src.servers.settings.api import Settings
-from src.servers.settings.api import _load_license_status
-from src.utils.license import ApplicationStatus
+from src.backend.configs import Tier
+from src.backend.servers.settings.api import Settings
+from src.backend.servers.settings.api import _load_license_status
+from src.backend.utils.license import ApplicationStatus
 
 
 def _enforcement_enabled_settings():
-    from src.configs import AppSettings
+    from src.backend.configs import AppSettings
 
     return AppSettings(license_enforcement_enabled=True)
 
 
 def _enforcement_disabled_settings():
-    from src.configs import AppSettings
+    from src.backend.configs import AppSettings
 
     return AppSettings(license_enforcement_enabled=False)
 
@@ -63,9 +63,9 @@ class TestSettingsEndpoint:
     def _make_client(self, tmp_path, *, enforcement: bool = False):
         from fastapi.testclient import TestClient
 
-        from src.configs import AppSettings, AuthSettings
-        from src.db import AgenticSearchStore
-        from src.servers.web.app import SearchExperienceSettings, create_web_app
+        from src.backend.configs import AppSettings, AuthSettings
+        from src.backend.db import AgenticSearchStore
+        from src.backend.servers.web.app import SearchExperienceSettings, create_web_app
 
         store = AgenticSearchStore(tmp_path / "db.sqlite3")
         settings = AppSettings(

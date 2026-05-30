@@ -22,10 +22,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from src.utils.license import LicensePayload
-from src.utils.license import get_license_status
-from src.utils.license import is_license_valid
-from src.utils.license import verify_license_signature
+from src.backend.utils.license import LicensePayload
+from src.backend.utils.license import get_license_status
+from src.backend.utils.license import is_license_valid
+from src.backend.utils.license import verify_license_signature
 
 
 def _generate_key_pair():
@@ -62,7 +62,7 @@ class TestVerifyLicenseSignature:
     def test_valid_signature_returns_payload(self) -> None:
         private, public = _generate_key_pair()
         license_data = _make_license(private)
-        with patch("src.utils.license._get_public_key", return_value=public):
+        with patch("src.backend.utils.license._get_public_key", return_value=public):
             result = verify_license_signature(license_data)
         assert result.max_seats == 10
         assert "enterprise" in result.features
@@ -71,7 +71,7 @@ class TestVerifyLicenseSignature:
         private, _ = _generate_key_pair()
         _, other_public = _generate_key_pair()
         license_data = _make_license(private)
-        with patch("src.utils.license._get_public_key", return_value=other_public):
+        with patch("src.backend.utils.license._get_public_key", return_value=other_public):
             with pytest.raises(ValueError, match="[Ii]nvalid"):
                 verify_license_signature(license_data)
 
@@ -97,7 +97,7 @@ class TestVerifyLicenseSignature:
                 {"payload": tampered, "signature": base64.b64encode(sig).decode()}
             ).encode()
         ).decode()
-        with patch("src.utils.license._get_public_key", return_value=public):
+        with patch("src.backend.utils.license._get_public_key", return_value=public):
             with pytest.raises(ValueError):
                 verify_license_signature(encoded)
 
@@ -115,12 +115,12 @@ class TestGetLicenseStatus:
         payload = LicensePayload(
             expires_at=datetime.now(timezone.utc) + timedelta(days=30)
         )
-        from src.utils.license import ApplicationStatus
+        from src.backend.utils.license import ApplicationStatus
 
         assert get_license_status(payload) == ApplicationStatus.ACTIVE
 
     def test_expired_no_grace(self) -> None:
-        from src.utils.license import ApplicationStatus
+        from src.backend.utils.license import ApplicationStatus
 
         payload = LicensePayload(
             expires_at=datetime.now(timezone.utc) - timedelta(days=1)
@@ -128,8 +128,8 @@ class TestGetLicenseStatus:
         assert get_license_status(payload) == ApplicationStatus.GATED_ACCESS
 
     def test_within_grace_period(self) -> None:
-        from src.utils.license import ApplicationStatus
-        from src.utils.license_expiry import get_grace_period_end
+        from src.backend.utils.license import ApplicationStatus
+        from src.backend.utils.license_expiry import get_grace_period_end
 
         payload = LicensePayload(
             expires_at=datetime.now(timezone.utc) - timedelta(days=1)
@@ -138,7 +138,7 @@ class TestGetLicenseStatus:
         assert get_license_status(payload, grace) == ApplicationStatus.GRACE_PERIOD
 
     def test_grace_period_expired_returns_gated(self) -> None:
-        from src.utils.license import ApplicationStatus
+        from src.backend.utils.license import ApplicationStatus
 
         payload = LicensePayload(
             expires_at=datetime.now(timezone.utc) - timedelta(days=30)

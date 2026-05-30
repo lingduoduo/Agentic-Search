@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-from src.connectors import (
+from src.backend.connectors import (
     LocalFileConnector,
     LocalFilePollConnector,
     LocalFileSlimConnector,

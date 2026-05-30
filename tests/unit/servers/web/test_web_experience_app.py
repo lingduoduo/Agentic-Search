@@ -7,12 +7,12 @@ from src.context.models import ChatMessage
 from src.context.models import ContextDocument
 from src.context.models import PromptBundle
 from src.context.models import SearchContextBundle
-from src.db import AgenticSearchStore
-from src.hooks import HookConfig
-from src.hooks import HookPoint
-from src.hooks import HookRegistry
-from src.servers.web.app import SearchExperienceSettings
-from src.servers.web.app import create_web_app
+from src.backend.db import AgenticSearchStore
+from src.backend.hooks import HookConfig
+from src.backend.hooks import HookPoint
+from src.backend.hooks import HookRegistry
+from src.backend.servers.web.app import SearchExperienceSettings
+from src.backend.servers.web.app import create_web_app
 
 
 def _answer_result(question: str) -> AnswerGenerationResult:
@@ -67,7 +67,7 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         return _answer_result(question)
 
     monkeypatch.setattr(
-        "src.servers.web.app.answer_with_retrieval",
+        "src.backend.servers.web.app.answer_with_retrieval",
         fake_answer_with_retrieval,
     )
     store = AgenticSearchStore(tmp_path / "state.sqlite3")
@@ -114,7 +114,7 @@ def test_agent_endpoint_reuses_existing_session_history(monkeypatch, tmp_path):
         return _answer_result(question)
 
     monkeypatch.setattr(
-        "src.servers.web.app.answer_with_retrieval",
+        "src.backend.servers.web.app.answer_with_retrieval",
         fake_answer_with_retrieval,
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "state.sqlite3"))
@@ -161,11 +161,11 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
         return _answer_result(question)
 
     monkeypatch.setattr(
-        "src.servers.web.app.answer_with_retrieval",
+        "src.backend.servers.web.app.answer_with_retrieval",
         fake_answer_with_retrieval,
     )
     monkeypatch.setattr(
-        "src.hooks.executor.urllib.request.urlopen",
+        "src.backend.hooks.executor.urllib.request.urlopen",
         lambda request, timeout: FakeHookResponse(),
     )
     registry = HookRegistry(

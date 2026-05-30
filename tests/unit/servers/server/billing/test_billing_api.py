@@ -22,13 +22,13 @@ from .conftest import make_test_client
 
 
 def test_circuit_starts_closed() -> None:
-    from src.servers.billing.api import _is_billing_circuit_open
+    from src.backend.servers.billing.api import _is_billing_circuit_open
 
     assert _is_billing_circuit_open() is False
 
 
 def test_open_and_close_circuit() -> None:
-    from src.servers.billing.api import (
+    from src.backend.servers.billing.api import (
         _close_billing_circuit,
         _is_billing_circuit_open,
         _open_billing_circuit,
@@ -47,7 +47,7 @@ def test_open_and_close_circuit() -> None:
 
 def test_billing_info_returns_not_subscribed_without_license(tmp_path):
     client, store = make_test_client(tmp_path)
-    with patch("src.servers.billing.api.load_stored_license", return_value=None):
+    with patch("src.backend.servers.billing.api.load_stored_license", return_value=None):
         resp = client.get("/admin/billing/billing-information", headers=_bearer(_ADMIN))
     assert resp.status_code == 200
     assert resp.json()["subscribed"] is False
@@ -67,14 +67,14 @@ def test_billing_info_requires_admin(tmp_path):
 
 
 def test_billing_info_503_when_circuit_open(tmp_path):
-    from src.servers.billing.api import _close_billing_circuit
+    from src.backend.servers.billing.api import _close_billing_circuit
 
     client, store = make_test_client(tmp_path)
     with (
         patch(
-            "src.servers.billing.api.load_stored_license", return_value="license_blob"
+            "src.backend.servers.billing.api.load_stored_license", return_value="license_blob"
         ),
-        patch("src.servers.billing.api._is_billing_circuit_open", return_value=True),
+        patch("src.backend.servers.billing.api._is_billing_circuit_open", return_value=True),
     ):
         resp = client.get("/admin/billing/billing-information", headers=_bearer(_ADMIN))
     assert resp.status_code == 503
@@ -84,10 +84,10 @@ def test_billing_info_503_when_circuit_open(tmp_path):
 
 def _make_cloud_client(tmp_path):
     """Make a TestClient with cloud_data_plane_url configured."""
-    from src.configs import AppSettings, AuthSettings
-    from src.db import AgenticSearchStore
-    from src.db.models import UserRecord
-    from src.servers.web.app import SearchExperienceSettings, create_web_app
+    from src.backend.configs import AppSettings, AuthSettings
+    from src.backend.db import AgenticSearchStore
+    from src.backend.db.models import UserRecord
+    from src.backend.servers.web.app import SearchExperienceSettings, create_web_app
     from fastapi.testclient import TestClient as _TestClient
 
     store = AgenticSearchStore(tmp_path / "db.sqlite3")
@@ -107,17 +107,17 @@ def _make_cloud_client(tmp_path):
 def test_billing_info_opens_circuit_on_502(tmp_path):
     from fastapi import HTTPException
 
-    from src.servers.billing.api import _close_billing_circuit, _is_billing_circuit_open
+    from src.backend.servers.billing.api import _close_billing_circuit, _is_billing_circuit_open
 
     client, store = _make_cloud_client(tmp_path)
     _close_billing_circuit()
 
     with (
         patch(
-            "src.servers.billing.api.load_stored_license", return_value="license_blob"
+            "src.backend.servers.billing.api.load_stored_license", return_value="license_blob"
         ),
         patch(
-            "src.servers.billing.api._get_billing", new_callable=AsyncMock
+            "src.backend.servers.billing.api._get_billing", new_callable=AsyncMock
         ) as mock_svc,
     ):
         mock_svc.side_effect = HTTPException(status_code=502, detail="upstream down")
@@ -132,17 +132,17 @@ def test_billing_info_opens_circuit_on_502(tmp_path):
 def test_billing_info_does_not_open_circuit_on_400(tmp_path):
     from fastapi import HTTPException
 
-    from src.servers.billing.api import _close_billing_circuit, _is_billing_circuit_open
+    from src.backend.servers.billing.api import _close_billing_circuit, _is_billing_circuit_open
 
     client, store = _make_cloud_client(tmp_path)
     _close_billing_circuit()
 
     with (
         patch(
-            "src.servers.billing.api.load_stored_license", return_value="license_blob"
+            "src.backend.servers.billing.api.load_stored_license", return_value="license_blob"
         ),
         patch(
-            "src.servers.billing.api._get_billing", new_callable=AsyncMock
+            "src.backend.servers.billing.api._get_billing", new_callable=AsyncMock
         ) as mock_svc,
     ):
         mock_svc.side_effect = HTTPException(status_code=400, detail="bad request")
@@ -160,7 +160,7 @@ def test_billing_info_does_not_open_circuit_on_400(tmp_path):
 
 def test_create_checkout_session_returns_501_without_cloud_url(tmp_path):
     client, store = make_test_client(tmp_path)
-    with patch("src.servers.billing.api.load_stored_license", return_value=None):
+    with patch("src.backend.servers.billing.api.load_stored_license", return_value=None):
         resp = client.post(
             "/admin/billing/create-checkout-session",
             json={"billing_period": "monthly"},
@@ -189,7 +189,7 @@ def test_create_checkout_session_requires_admin(tmp_path):
 def test_create_portal_session_returns_501_without_cloud_url(tmp_path):
     # Without cloud_data_plane_url, _require_proxy_url() raises 501 first
     client, store = make_test_client(tmp_path)
-    with patch("src.servers.billing.api.load_stored_license", return_value=None):
+    with patch("src.backend.servers.billing.api.load_stored_license", return_value=None):
         resp = client.post(
             "/admin/billing/create-customer-portal-session",
             json={},
@@ -201,10 +201,10 @@ def test_create_portal_session_returns_501_without_cloud_url(tmp_path):
 
 def test_create_portal_session_returns_400_when_no_license_with_cloud_url(tmp_path):
     # With cloud_data_plane_url set but no license → 400
-    from src.configs import AppSettings, AuthSettings
-    from src.db import AgenticSearchStore
-    from src.db.models import UserRecord
-    from src.servers.web.app import SearchExperienceSettings, create_web_app
+    from src.backend.configs import AppSettings, AuthSettings
+    from src.backend.db import AgenticSearchStore
+    from src.backend.db.models import UserRecord
+    from src.backend.servers.web.app import SearchExperienceSettings, create_web_app
     from fastapi.testclient import TestClient
 
     store = AgenticSearchStore(tmp_path / "db.sqlite3")
@@ -220,7 +220,7 @@ def test_create_portal_session_returns_400_when_no_license_with_cloud_url(tmp_pa
     )
     client = TestClient(app)
 
-    with patch("src.servers.billing.api.load_stored_license", return_value=None):
+    with patch("src.backend.servers.billing.api.load_stored_license", return_value=None):
         resp = client.post(
             "/admin/billing/create-customer-portal-session",
             json={},
@@ -237,7 +237,7 @@ def test_create_portal_session_returns_400_when_no_license_with_cloud_url(tmp_pa
 
 def test_update_seats_returns_400_without_license(tmp_path):
     client, store = make_test_client(tmp_path)
-    with patch("src.servers.billing.api.load_stored_license", return_value=None):
+    with patch("src.backend.servers.billing.api.load_stored_license", return_value=None):
         resp = client.post(
             "/admin/billing/seats/update",
             json={"new_seat_count": 10},
@@ -266,8 +266,8 @@ def test_update_seats_requires_admin(tmp_path):
 def test_stripe_key_from_override(tmp_path):
     from fastapi.testclient import TestClient as _TestClient
 
-    from src.configs import AppSettings, AuthSettings
-    from src.servers.web.app import SearchExperienceSettings, create_web_app
+    from src.backend.configs import AppSettings, AuthSettings
+    from src.backend.servers.web.app import SearchExperienceSettings, create_web_app
 
     store_path = tmp_path / "db.sqlite3"
     settings = AppSettings(
@@ -280,7 +280,7 @@ def test_stripe_key_from_override(tmp_path):
     )
     client = _TestClient(app)
     # Reset module-level cache before test
-    import src.servers.billing.api as billing_mod
+    import src.backend.servers.billing.api as billing_mod
 
     billing_mod._stripe_key_cache = None
 
@@ -292,7 +292,7 @@ def test_stripe_key_from_override(tmp_path):
 
 def test_stripe_key_returns_500_when_not_configured(tmp_path):
     client, store = make_test_client(tmp_path)
-    import src.servers.billing.api as billing_mod
+    import src.backend.servers.billing.api as billing_mod
 
     billing_mod._stripe_key_cache = None
 
@@ -308,7 +308,7 @@ def test_stripe_key_returns_500_when_not_configured(tmp_path):
 
 
 def test_reset_connection_closes_circuit(tmp_path):
-    from src.servers.billing.api import _open_billing_circuit, _is_billing_circuit_open
+    from src.backend.servers.billing.api import _open_billing_circuit, _is_billing_circuit_open
 
     _open_billing_circuit()
     assert _is_billing_circuit_open() is True
