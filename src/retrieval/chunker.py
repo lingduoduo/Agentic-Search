@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from src.connectors.models import Document
-from src.retrieval.index_builder import chunk_document
-from src.retrieval.index_builder import chunk_documents
-from src.retrieval.index_builder import filter_indexable_documents
-from src.retrieval.index_builder import generate_large_chunks
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
-from src.retrieval.models import ChunkingConfig
-from src.retrieval.models import IndexChunk
+from ..connectors.models import Document
+from .index_builder import chunk_document
+from .index_builder import chunk_documents
+from .index_builder import filter_indexable_documents
+from .index_builder import generate_large_chunks
+from .indexing_heartbeat import IndexingHeartbeatInterface
+from .models import ChunkingConfig
+from .models import IndexChunk
 
 
 class Chunker:

@@ -6,20 +6,20 @@ from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from src.connectors.models import ConnectorFailure
-from src.connectors.models import Document
-from src.retrieval.index_builder import EmbeddingFn
-from src.retrieval.index_builder import chunk_documents
-from src.retrieval.index_builder import deterministic_embedding_fn
-from src.retrieval.index_builder import filter_indexable_documents
-from src.retrieval.index_builder import run_indexing_pipeline
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
-from src.retrieval.models import ChunkingConfig
-from src.retrieval.models import EmbeddedChunk
-from src.retrieval.models import EmbeddingConfig
-from src.retrieval.models import IndexingPipelineConfig
-from src.retrieval.models import IndexingPipelineResult
-from src.retrieval.models import IndexWriterConfig
+from ..connectors.models import ConnectorFailure
+from ..connectors.models import Document
+from .index_builder import EmbeddingFn
+from .index_builder import chunk_documents
+from .index_builder import deterministic_embedding_fn
+from .index_builder import filter_indexable_documents
+from .index_builder import run_indexing_pipeline
+from .indexing_heartbeat import IndexingHeartbeatInterface
+from .models import ChunkingConfig
+from .models import EmbeddedChunk
+from .models import EmbeddingConfig
+from .models import IndexingPipelineConfig
+from .models import IndexingPipelineResult
+from .models import IndexWriterConfig
 
 from .chunk_batch_store import ChunkBatchStore
 from .embedder import DefaultIndexingEmbedder
