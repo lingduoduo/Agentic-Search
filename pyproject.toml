@@ -12,10 +12,17 @@ where = ["."]
 include = ["src*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Default run covers unit + regression tests only.
+# Integration tests require a live server stack (Postgres, Vespa, Redis, etc.)
+# and are opt-in:  pytest tests/integration/
+testpaths = ["tests/unit", "tests/regression"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
+# Add src/ to sys.path so shared_configs and other src-level packages are importable
+# without the src. prefix (matching their package structure).
+pythonpath = ["src", "generated"]
 markers = [
-    "slow: marks tests as slow (deselect with -m 'not slow')",
+    "slow: marks tests as slow (deselect with '-m not slow')",
     "load: marks tests as load/performance tests",
+    "integration: marks tests requiring a live server stack",
 ]

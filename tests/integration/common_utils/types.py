@@ -103,6 +103,7 @@ class DocumentSource(str, Enum):
     LINEAR = "linear"
     HUBSPOT = "hubspot"
     GMAIL = "gmail"
+    MOCK_CONNECTOR = "mock_connector"
 
 
 class SharingScope(str, Enum):
@@ -119,6 +120,14 @@ class IndexModelStatus(str, Enum):
 class UserFileStatus(str, Enum):
     ACTIVE = "active"
     DELETED = "deleted"
+    COMPLETED = "completed"
+
+
+class PermissionSyncStatus(str, Enum):
+    SYNCED = "synced"
+    NOT_SYNCED = "not_synced"
+    IN_PROGRESS = "in_progress"
+    FAILED = "failed"
 
 
 class ExternalAppType(str, Enum):
@@ -127,6 +136,7 @@ class ExternalAppType(str, Enum):
     CONFLUENCE = "confluence"
     SLACK = "slack"
     GOOGLE = "google"
+    CUSTOM = "custom"
 
 
 class Permission(str, Enum):
@@ -530,6 +540,7 @@ __all__ = [
     "DocumentSyncStatus",
     "ExternalAppAdminResponse",
     "ExternalAppType",
+    "PermissionSyncStatus",
     "ExternalAppUserResponse",
     "FileDescriptor",
     "FileOrigin",
