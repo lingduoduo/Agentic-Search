@@ -777,6 +777,74 @@ class AgenticSearchStore:
         rows = self._conn.execute(query, params).fetchall()
         return [self._row_to_index_attempt(row) for row in rows]
 
+    def delete_connector(self, connector_id: str) -> bool:
+        """Delete a connector and all its associated documents and index attempts.
+
+        Returns True if the connector existed and was deleted.
+        """
+        if (
+            self._conn.execute(
+                "SELECT 1 FROM connector_configs WHERE id = ?", (connector_id,)
+            ).fetchone()
+            is None
+        ):
+            return False
+        self._conn.execute(
+            "DELETE FROM index_attempts WHERE connector_id = ?", (connector_id,)
+        )
+        self._conn.execute(
+            "DELETE FROM documents WHERE connector_id = ?", (connector_id,)
+        )
+        self._conn.execute(
+            "DELETE FROM connector_configs WHERE id = ?", (connector_id,)
+        )
+        self._conn.commit()
+        return True
+
+    def delete_old_index_attempts(self, connector_id: str, keep_last_n: int) -> int:
+        """Delete all but the most recent *keep_last_n* attempts for *connector_id*.
+
+        Returns the number of rows deleted.
+        """
+        rows = self._conn.execute(
+            "SELECT id FROM index_attempts WHERE connector_id = ? ORDER BY created_at DESC, id",
+            (connector_id,),
+        ).fetchall()
+        to_delete = [row["id"] for row in rows[keep_last_n:]]
+        if not to_delete:
+            return 0
+        placeholders = ", ".join("?" * len(to_delete))
+        cursor = self._conn.execute(
+            f"DELETE FROM index_attempts WHERE id IN ({placeholders})",
+            tuple(to_delete),
+        )
+        self._conn.commit()
+        return cursor.rowcount
+
+    def delete_stale_index_attempts(
+        self,
+        *,
+        older_than_days: int,
+        statuses: tuple[str, ...] = ("success", "failed"),
+    ) -> int:
+        """Delete finished attempts whose *updated_at* is older than *older_than_days*.
+
+        Only rows matching *statuses* are considered; defaults to completed states.
+        Returns the number of rows deleted.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=older_than_days)
+        ).isoformat()
+        placeholders = ", ".join("?" * len(statuses))
+        cursor = self._conn.execute(
+            f"DELETE FROM index_attempts WHERE status IN ({placeholders}) AND updated_at < ?",
+            (*statuses, cutoff),
+        )
+        self._conn.commit()
+        return cursor.rowcount
+
     def _created_at(self, table: str, record_id: str, default: str) -> str:
         row = self._conn.execute(
             f"SELECT created_at FROM {table} WHERE id = ?", (record_id,)
