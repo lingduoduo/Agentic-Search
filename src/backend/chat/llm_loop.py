@@ -643,12 +643,7 @@ def run_llm_loop(
             "user_id": user_identity.user_id if user_identity else None,
         },
     ):
-        # Fix some LiteLLM issues,
-        from onyx.llm.litellm_singleton.config import (
-            initialize_litellm,
-        )  # Here for lazy load LiteLLM
-
-        initialize_litellm()
+        # LiteLLM initialization is not required in this repo.
 
         # Normalize chat_files to a mutable list so we can extend it mid-loop
         # when a search hit carries an attached file the Python tool should

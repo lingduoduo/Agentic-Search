@@ -1,36 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.db.persona import get_default_behavior_persona
-    from onyx.db.user_file import calculate_user_files_token_count
-    from onyx.prompts.chat_prompts import CITATION_REMINDER
-    from onyx.prompts.chat_prompts import DEFAULT_SYSTEM_PROMPT
-    from onyx.prompts.chat_prompts import FILE_REMINDER
-    from onyx.prompts.chat_prompts import LAST_CYCLE_CITATION_REMINDER
-    from onyx.prompts.chat_prompts import REQUIRE_CITATION_GUIDANCE
-    from onyx.prompts.prompt_utils import get_company_context
-    from onyx.prompts.prompt_utils import handle_onyx_date_awareness
-    from onyx.prompts.prompt_utils import replace_citation_guidance_tag
-    from onyx.prompts.prompt_utils import replace_reminder_tag
-    from onyx.prompts.tool_prompts import GENERATE_IMAGE_GUIDANCE
-    from onyx.prompts.tool_prompts import INTERNAL_SEARCH_GUIDANCE
-    from onyx.prompts.tool_prompts import MEMORY_GUIDANCE
-    from onyx.prompts.tool_prompts import OPEN_URLS_GUIDANCE
-    from onyx.prompts.tool_prompts import PYTHON_TOOL_GUIDANCE
-    from onyx.prompts.tool_prompts import TOOL_DESCRIPTION_SEARCH_GUIDANCE
-    from onyx.prompts.tool_prompts import TOOL_SECTION_HEADER
-    from onyx.prompts.tool_prompts import WEB_SEARCH_GUIDANCE
-    from onyx.prompts.tool_prompts import WEB_SEARCH_SITE_DISABLED_GUIDANCE
-    from onyx.prompts.user_info import BASIC_INFORMATION_PROMPT
-    from onyx.prompts.user_info import TEAM_INFORMATION_PROMPT
-    from onyx.prompts.user_info import USER_INFORMATION_HEADER
-    from onyx.prompts.user_info import USER_MEMORIES_PROMPT
-    from onyx.prompts.user_info import USER_PREFERENCES_PROMPT
-    from onyx.prompts.user_info import USER_ROLE_PROMPT
-
-    # onyx.tools.tool_implementations not available in this repo
+import logging as _log
 from collections.abc import Callable
 from collections.abc import Sequence
 from uuid import UUID
@@ -38,22 +8,105 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from src.backend.db.memory import UserMemoryContext
-
-
 from src.backend.file_store.models import FileDescriptor
-
-
-from src.backend.tools.interface import Tool
-from src.backend.tools.built_in_tools import SearchTool
-from src.backend.tools.built_in_tools import WebSearchTool
-from src.backend.tools.built_in_tools import PythonTool
-from src.backend.tools.built_in_tools import OpenURLTool
+from src.backend.prompts.chat_prompts import CITATION_REMINDER
+from src.backend.prompts.chat_prompts import DEFAULT_SYSTEM_PROMPT
+from src.backend.prompts.chat_prompts import FILE_REMINDER
+from src.backend.prompts.chat_prompts import LAST_CYCLE_CITATION_REMINDER
+from src.backend.prompts.chat_prompts import REQUIRE_CITATION_GUIDANCE
 from src.backend.tools.built_in_tools import ImageGenerationTool
 from src.backend.tools.built_in_tools import MemoryTool
-
-import logging as _log
+from src.backend.tools.built_in_tools import OpenURLTool
+from src.backend.tools.built_in_tools import PythonTool
+from src.backend.tools.built_in_tools import SearchTool
+from src.backend.tools.built_in_tools import WebSearchTool
+from src.backend.tools.interface import Tool
 
 logger = _log.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Tool guidance prompts
+# ---------------------------------------------------------------------------
+TOOL_SECTION_HEADER = "\n\n## Tool Guidance\n\n"
+TOOL_DESCRIPTION_SEARCH_GUIDANCE = (
+    "Use search tools to find relevant information before answering. "
+    "Always ground your answers in retrieved content."
+)
+INTERNAL_SEARCH_GUIDANCE = (
+    "Use the internal search tool to query documents in the knowledge base."
+)
+WEB_SEARCH_GUIDANCE = "Use the web search tool to find up-to-date information from the internet.{site_colon_disabled}"
+WEB_SEARCH_SITE_DISABLED_GUIDANCE = (
+    " Note: filtering by site is not supported for this search tool."
+)
+OPEN_URLS_GUIDANCE = (
+    "Use the URL opener tool to retrieve the full content of a web page."
+)
+PYTHON_TOOL_GUIDANCE = (
+    "Use the Python tool to run code for calculations, data processing, or analysis."
+)
+GENERATE_IMAGE_GUIDANCE = (
+    "Use the image generation tool to create images from text descriptions."
+)
+MEMORY_GUIDANCE = (
+    "Use the memory tool to save important facts and retrieve them in future sessions."
+)
+
+# ---------------------------------------------------------------------------
+# User information prompts
+# ---------------------------------------------------------------------------
+USER_INFORMATION_HEADER = "\n\n## User Information\n"
+BASIC_INFORMATION_PROMPT = "**Name:** {user_name}  **Email:** {user_email}{user_role}\n"
+USER_ROLE_PROMPT = "  **Role:** {user_role}"
+TEAM_INFORMATION_PROMPT = "**Team context:** {team_information}\n"
+USER_PREFERENCES_PROMPT = "**Preferences:** {user_preferences}\n"
+USER_MEMORIES_PROMPT = "**Saved memories:**\n{user_memories}\n"
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
+
+
+def get_company_context() -> str | None:
+    """No company context configured in this repo."""
+    return None
+
+
+def handle_date_awareness(prompt: str, datetime_aware: bool) -> str:
+    """Prepend the current UTC date to the prompt when datetime_aware is True."""
+    if not datetime_aware:
+        return prompt
+    from datetime import datetime, timezone
+
+    date_str = datetime.now(timezone.utc).strftime("%A, %B %d, %Y")
+    return f"Current date: {date_str}\n\n{prompt}"
+
+
+def replace_citation_guidance_tag(
+    prompt: str,
+    should_cite_documents: bool = False,
+    include_all_guidance: bool = False,
+) -> tuple[str, bool]:
+    """No inline citation-guidance tag in this repo's prompts.
+
+    Always signals that guidance should be appended separately when citations are needed.
+    """
+    return prompt, should_cite_documents or include_all_guidance
+
+
+def replace_reminder_tag(prompt: str) -> str:
+    """No inline reminder tag in this repo's prompts — return unchanged."""
+    return prompt
+
+
+def calculate_user_files_token_count(
+    user_file_ids: list[UUID], db_session: Session
+) -> int:
+    """No file-token DB in this repo; always returns 0."""
+    return 0
+
+
+# ---------------------------------------------------------------------------
 
 
 def log_function_time(print_only: bool = False):
@@ -64,12 +117,8 @@ def log_function_time(print_only: bool = False):
 
 
 def get_default_base_system_prompt(db_session: Session) -> str:
-    default_persona = get_default_behavior_persona(db_session)
-    return (
-        default_persona.system_prompt
-        if default_persona and default_persona.system_prompt is not None
-        else DEFAULT_SYSTEM_PROMPT
-    )
+    """No persona DB in this repo; always returns the default system prompt."""
+    return DEFAULT_SYSTEM_PROMPT
 
 
 @log_function_time(print_only=True)
@@ -221,7 +270,7 @@ def build_system_prompt(
     """Should only be called with the default behavior system prompt.
     If the user has replaced the default behavior prompt with their custom agent prompt, do not call this function.
     """
-    system_prompt = handle_onyx_date_awareness(base_system_prompt, datetime_aware)
+    system_prompt = handle_date_awareness(base_system_prompt, datetime_aware)
 
     # Replace citation guidance placeholder if present
     system_prompt, should_append_citation_guidance = replace_citation_guidance_tag(

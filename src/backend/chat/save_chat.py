@@ -1,22 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.db.chat import add_search_docs_to_chat_message
-    from onyx.db.chat import add_search_docs_to_tool_call
-    from onyx.db.chat import create_db_search_doc
-    from onyx.db.tools import create_tool_call_no_commit
-    from onyx.natural_language_processing.utils import BaseTokenizer
-    from onyx.natural_language_processing.utils import get_tokenizer
-    from onyx.server.query_and_chat.chat_utils import mime_type_to_chat_file_type
-    from onyx.utils.postgres_sanitization import sanitize_string
-
-import logging as _logging
-
+import itertools as _itertools
 import json
+import logging as _logging
 import mimetypes
+from typing import Any as _Any
+
 from sqlalchemy.orm import Session
+
 from src.backend.chat.chat_state import ChatStateContainer
 from src.backend.chat.chat_state import SearchDocKey
 from src.backend.configs.constants import DocumentSource
@@ -32,6 +23,99 @@ def setup_logger():
 
 
 logger = setup_logger()
+
+# ---------------------------------------------------------------------------
+# Repo-local implementations
+# ---------------------------------------------------------------------------
+
+_save_chat_id_counter = _itertools.count(1)
+
+
+def sanitize_string(s: str) -> str:
+    """Remove NULL bytes and lone surrogates."""
+    return s.replace("\x00", "").encode("utf-8", errors="ignore").decode("utf-8")
+
+
+def mime_type_to_chat_file_type(mime_type: str | None) -> _Any:
+    from src.backend.file_store.models import ChatFileType
+
+    if mime_type and "image" in mime_type:
+        return ChatFileType.IMAGE
+    if mime_type and "text" in mime_type:
+        return ChatFileType.PLAIN_TEXT
+    return ChatFileType.OTHER
+
+
+class BaseTokenizer:
+    """Minimal tokenizer interface."""
+
+    def encode(self, text: str) -> list[int]:
+        return list(range(max(1, len(text) // 4)))
+
+
+class _SimpleTokenizer(BaseTokenizer):
+    pass
+
+
+def get_tokenizer(model: _Any, provider: _Any) -> _SimpleTokenizer:
+    return _SimpleTokenizer()
+
+
+class _DbSearchDocStub:
+    """Stub for a persisted SearchDoc row — carries a synthetic numeric id."""
+
+    def __init__(self) -> None:
+        self.id: int = next(_save_chat_id_counter)
+
+
+def create_db_search_doc(
+    *, server_search_doc: _Any, db_session: _Any, commit: bool = False
+) -> _DbSearchDocStub:
+    return _DbSearchDocStub()
+
+
+def create_tool_call_no_commit(
+    *,
+    chat_session_id: _Any,
+    parent_chat_message_id: _Any,
+    turn_number: int,
+    tool_id: _Any,
+    tool_call_id: str,
+    tool_call_arguments: _Any,
+    tool_call_response: _Any,
+    tool_call_tokens: int,
+    db_session: _Any,
+    parent_tool_call_id: _Any = None,
+    reasoning_tokens: _Any = None,
+    generated_images: _Any = None,
+    tab_index: int = 0,
+    add_only: bool = False,
+) -> _Any:
+    from src.backend.db.models import ToolCall
+
+    return ToolCall(
+        id=next(_save_chat_id_counter),
+        chat_message_id=parent_chat_message_id or 0,
+        tool_call_id=tool_call_id,
+        parent_tool_call_id=parent_tool_call_id,
+        tab_index=tab_index,
+        turn_number=turn_number,
+    )
+
+
+def add_search_docs_to_tool_call(
+    *, tool_call_id: int, search_doc_ids: list[int], db_session: _Any
+) -> None:
+    pass
+
+
+def add_search_docs_to_chat_message(
+    *, chat_message_id: int, search_doc_ids: list[int], db_session: _Any
+) -> None:
+    pass
+
+
+# ---------------------------------------------------------------------------
 
 
 def _extract_referenced_file_descriptors(

@@ -1,22 +1,34 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.llm.model_response import ChatCompletionDeltaToolCall
-    from onyx.utils.jsonriver import Parser
-
 from collections.abc import Generator
 from collections.abc import Mapping
 from typing import Any
 from typing import Type
-
 
 from src.backend.servers.query_and_chat.models import Placement
 from src.backend.servers.query_and_chat.streaming_models import Packet
 from src.backend.servers.query_and_chat.streaming_models import ToolCallArgumentDelta
 from src.backend.tools.built_in_tools import TOOL_NAME_TO_CLASS
 from src.backend.tools.interface import Tool
+
+
+class Parser:
+    """Stub for jsonriver.Parser (incremental JSON parser)."""
+
+    def __init__(self) -> None:
+        self._buf = ""
+
+    def feed(self, s: str) -> list:
+        self._buf += s
+        return []
+
+
+class ChatCompletionDeltaToolCall:
+    """Streaming tool-call delta — carries index, id, and function fields."""
+
+    index: int
+    id: str | None
+    function: Any | None
 
 
 def _get_tool_class(
@@ -75,10 +87,11 @@ def maybe_emit_argument_delta(
         return
 
     tc_data = tool_calls_in_progress[tool_call_delta.index]
+    combined_delta = " ".join(argument_deltas.values())
     yield Packet(
         placement=placement,
         obj=ToolCallArgumentDelta(
-            tool_type=tc_data.get("name", ""),
-            argument_deltas=argument_deltas,
+            tool_call_id=tc_data.get("id", ""),
+            delta=combined_delta,
         ),
     )

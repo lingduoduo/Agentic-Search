@@ -1,32 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.configs.app_configs import ENABLE_AZURE_IMAGE_CAP
-    from onyx.configs.app_configs import LOG_ONYX_MODEL_INTERACTIONS
-    from onyx.configs.app_configs import PROMPT_CACHE_CHAT_HISTORY
-    from onyx.llm.constants import LlmProviderNames
-    from onyx.llm.model_response import Delta
-    from onyx.llm.prompt_cache.processor import process_with_prompt_cache
-    from onyx.llm.utils import model_needs_formatting_reenabled
-    from onyx.prompts.chat_prompts import CODE_BLOCK_MARKDOWN
-    from onyx.prompts.chat_prompts import IMAGE_DROP_REMINDER
-    from onyx.prompts.constants import SYSTEM_REMINDER_TAG_CLOSE
-    from onyx.prompts.constants import SYSTEM_REMINDER_TAG_OPEN
-    from onyx.server.query_and_chat.streaming_models import AgentResponseDelta
-    from onyx.server.query_and_chat.streaming_models import AgentResponseStart
-    from onyx.server.query_and_chat.streaming_models import ReasoningDelta
-    from onyx.server.query_and_chat.streaming_models import ReasoningDone
-    from onyx.server.query_and_chat.streaming_models import ReasoningStart
-    from onyx.tools.tool_name import sanitize_tool_name
-    from onyx.tracing.flows import LLMFlow
-    from onyx.tracing.framework.create import generation_span
-    from onyx.utils.b64 import get_image_type_from_bytes
-    from onyx.utils.jsonriver import Parser
-    from onyx.utils.postgres_sanitization import sanitize_string
-    from onyx.utils.text_processing import find_all_json_objects
-
+import contextlib
 import logging as _logging
 
 import json
@@ -37,9 +11,13 @@ from collections.abc import Callable
 from collections.abc import Generator
 from collections.abc import Mapping
 from collections.abc import Sequence
+from dataclasses import dataclass
+from enum import Enum
 from html import unescape
 from typing import Any
 from typing import cast
+from src.backend.llm.interfaces import LlmProviderNames
+from src.backend.prompts.chat_prompts import CODE_BLOCK_MARKDOWN
 from src.backend.chat.chat_state import ChatStateContainer
 from src.backend.chat.citation_processor import DynamicCitationProcessor
 from src.backend.chat.emitter import Emitter
@@ -76,6 +54,171 @@ def setup_logger():
 
 
 logger = setup_logger()
+
+# ---------------------------------------------------------------------------
+# Config flags
+# ---------------------------------------------------------------------------
+ENABLE_AZURE_IMAGE_CAP: bool = False
+LOG_MODEL_INTERACTIONS: bool = False
+PROMPT_CACHE_CHAT_HISTORY: bool = False
+
+# ---------------------------------------------------------------------------
+# Prompt constants
+# ---------------------------------------------------------------------------
+SYSTEM_REMINDER_TAG_OPEN = "<system_reminder>"
+SYSTEM_REMINDER_TAG_CLOSE = "</system_reminder>"
+IMAGE_DROP_REMINDER = (
+    "{dropped_count} image(s) were removed because the provider's per-request "
+    "image limit was exceeded."
+)
+
+# ---------------------------------------------------------------------------
+# Streaming model classes
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AgentResponseStart:
+    final_documents: list | None = None
+    pre_answer_processing_seconds: float | None = None
+
+
+@dataclass
+class AgentResponseDelta:
+    content: str
+
+
+@dataclass
+class ReasoningStart:
+    pass
+
+
+@dataclass
+class ReasoningDelta:
+    reasoning: str
+
+
+@dataclass
+class ReasoningDone:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Tracing stubs
+# ---------------------------------------------------------------------------
+
+
+class LLMFlow(Enum):
+    CHAT_RESPONSE = "chat_response"
+    CHAT_HISTORY_SUMMARIZATION = "chat_history_summarization"
+
+
+class _SpanData:
+    def __init__(self) -> None:
+        self.input: Any = None
+        self.output: Any = None
+        self.usage: Any = None
+        self.reasoning: Any = None
+        self.time_to_first_action_seconds: Any = None
+
+
+class _GenerationSpan:
+    def __init__(self) -> None:
+        self.span_data = _SpanData()
+
+
+@contextlib.contextmanager
+def generation_span(model: str = "", model_config: dict | None = None):
+    yield _GenerationSpan()
+
+
+# ---------------------------------------------------------------------------
+# Utility stubs
+# ---------------------------------------------------------------------------
+
+
+def sanitize_string(s: str) -> str:
+    """Remove NULL bytes and lone surrogates from a string."""
+    return s.replace("\x00", "").encode("utf-8", errors="ignore").decode("utf-8")
+
+
+def sanitize_tool_name(name: str) -> str:
+    """Replace characters not allowed in tool names with underscores."""
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", name)
+
+
+def get_image_type_from_bytes(data: bytes) -> str:
+    """Detect MIME type from image magic bytes."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def find_all_json_objects(text: str) -> list[dict[str, Any]]:
+    """Extract all top-level JSON objects from text using brace matching."""
+    results: list[dict[str, Any]] = []
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start != -1:
+                try:
+                    obj = json.loads(text[start : i + 1])
+                    if isinstance(obj, dict):
+                        results.append(obj)
+                except json.JSONDecodeError:
+                    pass
+                start = -1
+    return results
+
+
+class Parser:
+    """Minimal stub for jsonriver.Parser (incremental JSON parser)."""
+
+    def __init__(self) -> None:
+        self._buf = ""
+
+    def feed(self, s: str) -> list:
+        self._buf += s
+        return []
+
+
+@dataclass
+class Delta:
+    """Stub for an LLM stream chunk delta."""
+
+    content: str | None = None
+    reasoning_content: str | None = None
+    tool_calls: list | None = None
+
+
+def process_with_prompt_cache(
+    llm_config: Any,
+    cacheable_prefix: list,
+    suffix: list,
+    continuation: bool = False,
+) -> tuple[list, None]:
+    """No-op: prompt caching is not available in this repo."""
+    return cacheable_prefix + suffix, None
+
+
+def model_needs_formatting_reenabled(model_name: str) -> bool:
+    """No-op: formatting re-enable logic is not needed in this repo."""
+    return False
+
+
+# ---------------------------------------------------------------------------
 
 _XML_INVOKE_BLOCK_RE = re.compile(
     r"<invoke\b(?P<attrs>[^>]*)>(?P<body>.*?)</invoke>",
@@ -1118,7 +1261,7 @@ def run_llm_step_pkt_generator(
     llm_msg_history = translate_history_to_llm_format(history, llm.config)
     has_reasoned = False
 
-    if LOG_ONYX_MODEL_INTERACTIONS:
+    if LOG_MODEL_INTERACTIONS:
         logger.debug(
             "Message history:\n%s",
             _format_message_history_for_logging(llm_msg_history),
@@ -1427,7 +1570,7 @@ def run_llm_step_pkt_generator(
 
     # Note: Content (AgentResponseDelta) doesn't need an explicit end packet - OverallStop handles it
     # Tool calls are handled by tool execution code and emit their own packets (e.g., SectionEnd)
-    if LOG_ONYX_MODEL_INTERACTIONS:
+    if LOG_MODEL_INTERACTIONS:
         logger.debug("Accumulated reasoning: %s", accumulated_reasoning)
         logger.debug("Accumulated answer: %s", accumulated_answer)
 

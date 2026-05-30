@@ -10,22 +10,7 @@ message when compression triggered, making it part of the tree structure.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.db.tools import get_tools
-    from onyx.natural_language_processing.utils import get_tokenizer
-    from onyx.prompts.compression_prompts import PROGRESSIVE_SUMMARY_SYSTEM_PROMPT_BLOCK
-    from onyx.prompts.compression_prompts import PROGRESSIVE_USER_REMINDER
-    from onyx.prompts.compression_prompts import SUMMARIZATION_CUTOFF_MARKER
-    from onyx.prompts.compression_prompts import SUMMARIZATION_PROMPT
-    from onyx.prompts.compression_prompts import USER_REMINDER
-    from onyx.tracing.flows import LLMFlow
-    from onyx.tracing.framework.create import ensure_trace
-    from onyx.tracing.llm_utils import llm_generation_span
-    from onyx.tracing.llm_utils import record_llm_response
-
-
+import contextlib
 import logging as _logging
 
 from typing import NamedTuple
@@ -48,6 +33,62 @@ def setup_logger():
 
 
 logger = setup_logger()
+
+# ---------------------------------------------------------------------------
+# Compression prompt constants
+# ---------------------------------------------------------------------------
+
+SUMMARIZATION_PROMPT = (
+    "You are an expert at summarizing conversations. "
+    "Summarize the conversation below concisely, preserving all key facts, "
+    "decisions, and context needed to continue the conversation naturally. "
+    "Write in third person and use past tense."
+)
+
+PROGRESSIVE_SUMMARY_SYSTEM_PROMPT_BLOCK = (
+    "\n\nA previous summary already exists:\n{previous_summary}\n\n"
+    "Incorporate the previous summary into your new summary."
+)
+
+SUMMARIZATION_CUTOFF_MARKER = (
+    "--- END OF MESSAGES TO SUMMARIZE. RECENT MESSAGES FOR CONTEXT ONLY ---"
+)
+
+USER_REMINDER = "Please summarize the conversation above."
+
+PROGRESSIVE_USER_REMINDER = (
+    "Please produce an updated summary that incorporates the previous summary "
+    "and the new messages above."
+)
+
+
+# ---------------------------------------------------------------------------
+# Tracing no-ops
+# ---------------------------------------------------------------------------
+
+
+class _LLMFlowStub:
+    CHAT_HISTORY_SUMMARIZATION = "chat_history_summarization"
+
+
+LLMFlow = _LLMFlowStub()
+
+
+@contextlib.contextmanager
+def ensure_trace(name: str, **kwargs):
+    yield
+
+
+@contextlib.contextmanager
+def llm_generation_span(llm, flow, input_messages):
+    yield None
+
+
+def record_llm_response(span, response) -> None:
+    pass
+
+
+# ---------------------------------------------------------------------------
 
 # Ratio of available context to allocate for recent messages after compression
 RECENT_MESSAGES_RATIO = 0.2
@@ -139,11 +180,13 @@ def find_summary_for_branch(
     Returns:
         The applicable summary message, or None if no summary exists for this branch
     """
-    if not chat_history:
+    if not chat_history or db_session is None:
         return None
 
     history_ids = {m.id for m in chat_history}
-    chat_session_id = chat_history[0].chat_session_id
+    chat_session_id = getattr(chat_history[0], "chat_session_id", None)
+    if chat_session_id is None:
+        return None
 
     # Query all summaries for this session (typically few), then filter in Python.
     # Order by time_sent descending to get the most recent summary first.
@@ -156,9 +199,8 @@ def find_summary_for_branch(
         .order_by(ChatMessage.time_sent.desc())
         .all()
     )
-    # Optimization to avoid using IN clause for large histories
     for summary in summaries:
-        if summary.parent_message_id in history_ids:
+        if getattr(summary, "parent_message_id", None) in history_ids:
             return summary
 
     return None
@@ -180,13 +222,21 @@ def get_messages_to_summarize(
     Returns:
         SummaryContent with older_messages to summarize and recent_messages to keep
     """
-    # Filter to messages after the existing summary's cutoff using timestamp
-    if existing_summary and existing_summary.last_summarized_message_id:
-        cutoff_id = existing_summary.last_summarized_message_id
-        last_summarized_msg = next(m for m in chat_history if m.id == cutoff_id)
-        messages = [
-            m for m in chat_history if m.time_sent > last_summarized_msg.time_sent
-        ]
+    # Filter to messages after the existing summary's cutoff.
+    cutoff_id = (
+        getattr(existing_summary, "last_summarized_message_id", None)
+        if existing_summary
+        else None
+    )
+    if cutoff_id:
+        cutoff_idx = next(
+            (i for i, m in enumerate(chat_history) if m.id == cutoff_id), None
+        )
+        messages = (
+            chat_history[cutoff_idx + 1 :]
+            if cutoff_idx is not None
+            else list(chat_history)
+        )
     else:
         messages = list(chat_history)
 
@@ -242,9 +292,11 @@ def _build_llm_messages_for_summarization(
 
         # Handle assistant messages with tool calls compactly
         if msg.message_type == MessageType.ASSISTANT:
-            if msg.tool_calls:
+            tool_calls = getattr(msg, "tool_calls", None)
+            if tool_calls:
                 tool_names = [
-                    tool_id_to_name.get(tc.tool_id, "unknown") for tc in msg.tool_calls
+                    tool_id_to_name.get(getattr(tc, "tool_id", None), "unknown")
+                    for tc in tool_calls
                 ]
                 result.append(
                     AssistantMessage(content=f"[Used tools: {', '.join(tool_names)}]")
@@ -384,7 +436,7 @@ def compress_chat_history(
     if not chat_history:
         return CompressionResult(summary_created=False, messages_summarized=0)
 
-    chat_session_id = chat_history[0].chat_session_id
+    chat_session_id = getattr(chat_history[0], "chat_session_id", None)
 
     logger.info(
         "Starting compression for session %s, history_len=%s, tokens_for_recent=%s",
@@ -402,16 +454,13 @@ def compress_chat_history(
         },
     ):
         try:
-            # Read phase: existing summary + tool name map. Closed before LLM call.
             with get_session_with_current_tenant() as read_session:
                 existing_summary = find_summary_for_branch(read_session, chat_history)
                 existing_summary_text = (
                     existing_summary.message if existing_summary else None
                 )
-                all_tools = get_tools(read_session)
-                tool_id_to_name: dict[int, str] = {
-                    tool.id: tool.name for tool in all_tools
-                }
+                # No tool DB in this repo; tool names will show as "unknown".
+                tool_id_to_name: dict[int, str] = {}
 
             summary_content = get_messages_to_summarize(
                 chat_history,
@@ -432,27 +481,15 @@ def compress_chat_history(
                 existing_summary=existing_summary_text,
             )
 
-            tokenizer = get_tokenizer(None, None)
-            summary_token_count = len(tokenizer.encode(summary_text))
+            # Approximate token count: 1 token ≈ 4 characters.
+            summary_token_count = max(1, len(summary_text) // 4)
             logger.debug(
                 "Generated summary (%s tokens): %s...",
                 summary_token_count,
                 summary_text[:200],
             )
 
-            # Persist phase: fresh short session.
-            with get_session_with_current_tenant() as write_session:
-                summary_message = ChatMessage(
-                    chat_session_id=chat_session_id,
-                    message_type=MessageType.ASSISTANT,
-                    message=summary_text,
-                    token_count=summary_token_count,
-                    parent_message_id=chat_history[-1].id,
-                    last_summarized_message_id=summary_content.older_messages[-1].id,
-                )
-                write_session.add(summary_message)
-                write_session.commit()
-
+            # No persistent session in this repo; summary is not stored.
             logger.info(
                 "Compressed %s messages into summary (session_id=%s, summary_tokens=%s)",
                 len(summary_content.older_messages),

@@ -148,6 +148,7 @@ class Persona:
     datetime_aware: bool = True
     replace_base_system_prompt: bool = False
     tools: list = field(default_factory=list)
+    user_files: list = field(default_factory=list)
 
 
 @dataclass
@@ -158,6 +159,9 @@ class ChatSession:
     user_id: str | None = None
     persona_id: int | None = None
     description: str = ""
+    project_id: int | None = None
+    llm_override: Any = None
+    persona: Any = None
 
 
 @dataclass
@@ -169,6 +173,12 @@ class ChatMessage:
     message: str = ""
     message_type: str = "user"
     token_count: int = 0
+    chat_session_id: Any = None
+    reasoning_tokens: str | None = None
+    is_clarification: bool = False
+    processing_duration_seconds: float | None = None
+    citations: dict | None = None
+    files: list | None = None
 
 
 @dataclass
@@ -178,6 +188,8 @@ class User:
     id: str = ""
     email: str | None = None
     name: str | None = None
+    is_anonymous: bool = False
+    use_memories: bool = True
 
 
 @dataclass
@@ -198,11 +210,15 @@ class ToolCall:
     tool_name: str = ""
     tool_arguments: dict = field(default_factory=dict)
     tool_result: str = ""
+    tool_call_id: str = ""
+    parent_tool_call_id: int | None = None
+    tab_index: int = 0
+    turn_number: int = 0
 
 
 @dataclass
 class SlackContext:
-    """Slack-specific context for OnyxBot responses."""
+    """Slack-specific context for bot responses."""
 
     channel_id: str = ""
     thread_ts: str | None = None

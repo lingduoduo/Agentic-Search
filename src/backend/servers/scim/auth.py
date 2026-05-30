@@ -25,7 +25,7 @@ class ScimAuthError(Exception):
         super().__init__(detail)
 
 
-SCIM_TOKEN_PREFIX = "onyx_scim_"
+SCIM_TOKEN_PREFIX = "agentic_search_scim_"
 SCIM_TOKEN_LENGTH = 48
 
 

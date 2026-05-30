@@ -52,7 +52,7 @@ class _ParallelToolCallResults:
 
 
 def run_tool_calls(tool_calls, tools, **kwargs) -> _ParallelToolCallResults:
-    """Stub — real implementation requires full onyx tool runner."""
+    """Stub — replace with a real tool-runner implementation."""
     return _ParallelToolCallResults()
 
 

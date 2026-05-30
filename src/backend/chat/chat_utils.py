@@ -1,30 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.context.search.utils import sandbox_filename_for_document
-    from onyx.db.chat import create_chat_session
-    from onyx.db.chat import get_chat_messages_by_session
-    from onyx.db.chat import get_or_create_root_message
-    from onyx.db.kg_config import get_kg_config_settings
-    from onyx.db.kg_config import is_kg_config_settings_enabled_valid
-    from onyx.db.models import User
-    from onyx.db.persona import user_can_access_persona
-    from onyx.db.projects import check_project_ownership
-    from onyx.file_processing.extract_file_text import extract_file_text
-    from onyx.file_store.file_store import get_default_file_store
-    from onyx.file_store.utils import plaintext_file_name_for_id
-    from onyx.file_store.utils import store_plaintext
-
-    # onyx.kg.setup not available in this repo
 import logging as _logging
 
 import json
 import re
 from collections.abc import Callable
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi.datastructures import Headers
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -34,15 +16,14 @@ from src.backend.chat.models import ChatMessageSimple
 from src.backend.chat.models import FileToolMetadata
 from src.backend.chat.models import ToolCallSimple
 from src.backend.configs.constants import DEFAULT_PERSONA_ID
-from src.backend.configs.constants import FileOrigin
 from src.backend.servers.query_history.models import MessageType
 from src.backend.configs.constants import TMP_DRALPHA_PERSONA_NAME
 from src.retrieval.models import SearchDoc
 from src.backend.db.models import ChatMessage
 from src.backend.db.models import ChatSession
 from src.backend.db.models import Persona
+from src.backend.db.models import User
 from src.retrieval.models import SearchDoc as DbSearchDoc
-from src.backend.db.models import UserFile
 from src.backend.file_store.models import ChatFileType
 from src.backend.file_store.models import FileDescriptor
 from src.backend.servers.query_and_chat.models import (
@@ -137,46 +118,12 @@ def create_chat_session_from_request(
     user: User,
     db_session: Session,
 ) -> ChatSession:
-    """Create a chat session from a ChatSessionCreationRequest.
-
-    Includes project ownership and persona access validation.
-
-    Args:
-        chat_session_request: The request containing persona_id, description, and project_id
-        user: The user creating the session. Anonymous users are represented as a
-            User with is_anonymous=True (never None); the access-check helpers
-            handle that case. A real User is required so the persona access check
-            always runs — do not introduce a None-tolerant caller.
-        db_session: The database session
-
-    Returns:
-        The newly created ChatSession
-
-    Raises:
-        ValueError: If user lacks access to the specified project or persona
-        Exception: If the persona is invalid
-    """
-    project_id = chat_session_request.project_id
-    if project_id:
-        if not check_project_ownership(project_id, user.id, db_session):
-            raise ValueError("User does not have access to project")
-
-    persona_id = chat_session_request.persona_id
-    if persona_id != DEFAULT_PERSONA_ID:
-        if not user_can_access_persona(
-            db_session=db_session,
-            persona_id=persona_id,
-            user=user,
-            get_editable=False,
-        ):
-            raise ValueError("User does not have access to persona")
-
-    return create_chat_session(
-        db_session=db_session,
-        description=chat_session_request.description or "",
+    """Create a chat session from a ChatSessionCreationRequest."""
+    return ChatSession(
+        id=uuid4(),
         user_id=user.id,
         persona_id=chat_session_request.persona_id,
-        project_id=chat_session_request.project_id,
+        description=chat_session_request.description or "",
     )
 
 
@@ -185,62 +132,14 @@ def create_chat_history_chain(
     db_session: Session,
     prefetch_top_two_level_tool_calls: bool = True,
     prefetch_message_details: bool = False,
-    # Optional id at which we finish processing
     stop_at_message_id: int | None = None,
 ) -> list[ChatMessage]:
-    """Build the linear chain of messages without including the root message"""
-    mainline_messages: list[ChatMessage] = []
+    """Build the linear chain of messages without including the root message.
 
-    all_chat_messages = get_chat_messages_by_session(
-        chat_session_id=chat_session_id,
-        user_id=None,
-        db_session=db_session,
-        skip_permission_check=True,
-        prefetch_top_two_level_tool_calls=prefetch_top_two_level_tool_calls,
-        prefetch_message_details=prefetch_message_details,
-    )
-
-    if not all_chat_messages:
-        root_message = get_or_create_root_message(
-            chat_session_id=chat_session_id, db_session=db_session
-        )
-    else:
-        root_message = all_chat_messages[0]
-        if root_message.parent_message is not None:
-            raise RuntimeError(
-                "Invalid root message, unable to fetch valid chat message sequence"
-            )
-
-    current_message: ChatMessage | None = root_message
-    previous_message: ChatMessage | None = None
-    while current_message is not None:
-        child_msg = current_message.latest_child_message
-
-        # Break if at the end of the chain
-        # or have reached the `final_id` of the submitted message
-        if not child_msg or (
-            stop_at_message_id and current_message.id == stop_at_message_id
-        ):
-            break
-        current_message = child_msg
-
-        if (
-            current_message.message_type == MessageType.ASSISTANT
-            and previous_message is not None
-            and previous_message.message_type == MessageType.ASSISTANT
-            and mainline_messages
-        ):
-            # Note that 2 user messages in a row is fine since this is often used for
-            # adding custom prompts and reminders
-            raise RuntimeError(
-                "Invalid message chain, cannot have two assistant messages in a row"
-            )
-        else:
-            mainline_messages.append(current_message)
-
-        previous_message = current_message
-
-    return mainline_messages
+    Returns an empty list in this repo — no SQLAlchemy session means no persisted
+    message tree to walk. History is managed in-memory per request.
+    """
+    return []
 
 
 def reorganize_citations(
@@ -373,128 +272,32 @@ def process_kg_commands(
     tenant_id: str,  # noqa: ARG001
     db_session: Session,
 ) -> None:
-    # Temporarily, until we have a draft UI for the KG Operations/Management
-    # TODO: move to api endpoint once we get frontend
+    # KG config and setup are not available in this repo; this is a no-op.
     if not persona_name.startswith(TMP_DRALPHA_PERSONA_NAME):
         return
-
-    kg_config_settings = get_kg_config_settings()
-    if not is_kg_config_settings_enabled_valid(kg_config_settings):
-        return
-
-    if message == "kg_setup":
-        pass  # populate_missing_default_entity_types__commit not available in this repo
-
-
-def _get_or_extract_plaintext(
-    file_id: str,
-    extract_fn: Callable[[], str],
-) -> str:
-    """Load cached plaintext for a file, or extract and store it.
-
-    calls extract_fn to produce the text, then stores the result so
-    future calls skip the expensive extraction.
-    """
-    file_store = get_default_file_store()
-    plaintext_key = plaintext_file_name_for_id(file_id)
-
-    # Try cached plaintext first.
-    try:
-        plaintext_io = file_store.read_file(plaintext_key, mode="b")
-        return plaintext_io.read().decode("utf-8")
-    except Exception:
-        logger.info("Cache miss for file with id=%s", file_id)
-
-    # Cache miss — extract and store.  We cache the result unconditionally
-    # (including the empty string) so that files we cannot extract text from
-    # (e.g. .zip, or any extension without a handler in extract_file_text)
-    # don't get re-fetched from object storage and re-attempted on every
-    # subsequent chat turn.  Transient extraction errors surface as raised
-    # exceptions, not empty returns, so they propagate without poisoning the
-    # cache.
-    content_text = extract_fn()
-    store_plaintext(file_id, content_text)
-    return content_text
 
 
 @log_function_time(print_only=True)
 def load_chat_file(
     file_descriptor: FileDescriptor, db_session: Session
 ) -> ChatLoadedFile:
-    """Build a ChatLoadedFile whose raw ``content`` bytes are loaded lazily.
+    """Build a ChatLoadedFile for a file descriptor.
 
-    Chat sessions accumulate hundreds of files over time, and a new message
-    sent in such a session previously triggered an unbounded parallel fan-out
-    of full-bytes-into-memory reads, the vast majority of which were
-    immediately discarded by chat-history truncation. We now defer the raw
-    bytes read until something downstream actually accesses ``.content`` —
-    typically only a handful of files survive truncation per turn.
-
-    ``content_text`` (used for LLM context injection) and ``token_count``
-    remain eager because they're cheap: the cached-plaintext store hit avoids
-    reading the original bytes entirely on the common path, and token_count
-    is a single DB lookup.
+    No remote file store is available in this repo, so content is always empty.
+    The lazy loader returns empty bytes so downstream code that accesses
+    ``.content`` does not raise.
     """
     file_id = file_descriptor["id"]
-    # `FileDescriptor` is often JSON-roundtripped (e.g. JSONB / API), so `type`
-    # may arrive as a raw string value instead of a `ChatFileType`.
     file_type = ChatFileType(file_descriptor["type"])
     filename = file_descriptor.get("name")
-
-    # Extract text content if it's a text file type (not an image). The
-    # cached-plaintext path avoids reading the original bytes on the steady
-    # state; only the cache miss branch opens the binary stream.
-    content_text: str | None = None
-    if file_type.is_text_file():
-
-        def _extract() -> str:
-            # Only invoked on cache miss; bytes-read happens here, not upfront.
-            file_io = get_default_file_store().read_file(file_id, mode="b")
-            return extract_file_text(
-                file=file_io,
-                file_name=filename or "",
-                break_on_unprocessable=False,
-            )
-
-        # Use the user_file_id as cache key when available (matches what
-        # the celery indexing worker stores), otherwise fall back to the
-        # file store id (covers code-interpreter-generated files, etc.).
-        user_file_id_str = file_descriptor.get("user_file_id")
-        cache_key = user_file_id_str or file_id
-
-        try:
-            content_text = _get_or_extract_plaintext(cache_key, _extract)
-        except Exception as e:
-            logger.warning(
-                "Failed to retrieve content for file %s: %s",
-                file_id,
-                str(e),
-            )
-
-    # Get token count from UserFile if available
-    token_count = 0
-    user_file_id_str = file_descriptor.get("user_file_id")
-    if user_file_id_str:
-        try:
-            user_file_id = UUID(user_file_id_str)
-            user_file = (
-                db_session.query(UserFile).filter(UserFile.id == user_file_id).first()
-            )
-            if user_file and user_file.token_count:
-                token_count = user_file.token_count
-        except (ValueError, TypeError) as e:
-            logger.warning("Failed to get token count for file %s: %s", file_id, e)
-
-    def _load_content() -> bytes:
-        return get_default_file_store().read_file(file_id, mode="b").read()
 
     return ChatLoadedFile.lazy_loaded(
         file_id=file_id,
         file_type=file_type,
         filename=filename,
-        content_text=content_text,
-        token_count=token_count,
-        loader=_load_content,
+        content_text=None,
+        token_count=0,
+        loader=lambda: b"",
     )
 
 
@@ -934,50 +737,5 @@ def create_tool_call_failure_messages(
 def build_python_chat_files_from_search_docs(
     search_docs: list[SearchDoc],
 ) -> list[ChatFile]:
-    """Turn each eligible search hit into a ready-to-upload `ChatFile`.
-    The associated file needs to have been uploaded to the file store
-    by a Connector.
-    """
-    if not search_docs:
-        return []
-
-    file_store = get_default_file_store()
-
-    chat_files: list[ChatFile] = []
-    seen_file_ids: set[str] = set()
-    for doc in search_docs:
-        if not doc.file_id or doc.file_id in seen_file_ids:
-            continue
-        seen_file_ids.add(doc.file_id)
-
-        try:
-            record = file_store.read_file_record(doc.file_id)
-        except Exception as e:
-            logger.warning(
-                "file_id=%r not found in file store (%s); skipping.", doc.file_id, e
-            )
-            continue
-
-        if record.file_origin not in (
-            FileOrigin.CONNECTOR,
-            FileOrigin.CONNECTOR_FILE_UPLOAD,
-        ):
-            logger.warning(
-                "file_id=%r has origin=%r, not eligible for code-interpreter staging; skipping.",
-                doc.file_id,
-                record.file_origin,
-            )
-            continue
-
-        try:
-            content = file_store.read_file(doc.file_id, mode="b").read()
-        except Exception as e:
-            logger.warning(
-                "Failed to read bytes for file_id=%r: %s; skipping.", doc.file_id, e
-            )
-            continue
-
-        filename = sandbox_filename_for_document(doc.semantic_identifier, doc.file_id)
-        chat_files.append(ChatFile(filename=filename, content=content))
-
-    return chat_files
+    """No remote file store is available in this repo; always returns an empty list."""
+    return []

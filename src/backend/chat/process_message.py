@@ -5,57 +5,6 @@ An overview can be found in the README.md file in this directory.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from onyx.cache.factory import get_cache_backend
-    from onyx.configs.app_configs import DISABLE_VECTOR_DB
-    from onyx.context.search.models import BaseFilters
-    from onyx.db.chat import create_new_chat_message
-    from onyx.db.chat import get_chat_session_by_id
-    from onyx.db.chat import get_or_create_root_message
-    from onyx.db.chat import reserve_message_id
-    from onyx.db.chat import reserve_multi_model_message_ids
-    from onyx.db.document_set import filter_document_set_names_by_user_access
-    from onyx.db.enums import HookPoint
-    from onyx.db.models import User
-    from onyx.db.projects import get_user_files_from_project
-    from onyx.db.tools import get_tools
-    from onyx.deep_research.dr_loop import run_deep_research_llm_loop
-    from onyx.error_handling.error_codes import OnyxErrorCode
-    from onyx.error_handling.exceptions import log_onyx_error
-    from onyx.error_handling.exceptions import OnyxError
-    from onyx.file_processing.extract_file_text import extract_file_text
-    from onyx.file_store.utils import get_default_file_store
-    from onyx.file_store.utils import load_in_memory_chat_files
-    from onyx.file_store.utils import verify_user_files
-    from onyx.hooks.executor import execute_hook
-    from onyx.hooks.executor import HookSkipped
-    from onyx.hooks.executor import HookSoftFailed
-    from onyx.hooks.points.query_processing import QueryProcessingPayload
-    from onyx.hooks.points.query_processing import QueryProcessingResponse
-    from onyx.llm.factory import get_llm_for_persona
-    from onyx.llm.factory import get_llm_token_counter
-    from onyx.llm.override_models import LLMOverride
-    from onyx.llm.request_context import reset_llm_mock_response
-    from onyx.llm.request_context import set_llm_mock_response
-    from onyx.llm.utils import litellm_exception_to_error_msg
-    from onyx.server.query_and_chat.chat_utils import mime_type_to_chat_file_type
-    from onyx.server.query_and_chat.models import AUTO_PLACE_AFTER_LATEST_MESSAGE
-    from onyx.server.query_and_chat.models import ModelResponseSlot
-    from onyx.server.query_and_chat.streaming_models import AgentResponseDelta
-    from onyx.server.query_and_chat.streaming_models import AgentResponseStart
-    from onyx.server.usage_limits import check_llm_cost_limit_for_provider
-    from onyx.tools.constants import FILE_READER_TOOL_ID
-    from onyx.tools.constants import SEARCH_TOOL_ID
-    from onyx.tools.tool_constructor import construct_tools
-    from onyx.tools.tool_constructor import CustomToolConfig
-    from onyx.tools.tool_constructor import FileReaderToolConfig
-    from onyx.tools.tool_constructor import SearchToolConfig
-    from onyx.utils.telemetry import mt_cloud_telemetry
-    from onyx.utils.timing import log_function_time
-
-
 import logging as _logging
 
 import contextvars
@@ -69,6 +18,9 @@ from collections.abc import Callable
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import Token
+from dataclasses import dataclass, field
+from typing import Any
+from pydantic import BaseModel
 from typing import Final
 from uuid import UUID
 from sqlalchemy.orm import Session
@@ -132,6 +84,13 @@ from src.backend.servers.query_and_chat.models import Placement
 from src.backend.servers.query_and_chat.streaming_models import CitationInfo
 from src.backend.servers.query_and_chat.streaming_models import OverallStop
 from src.backend.servers.query_and_chat.streaming_models import Packet
+from src.backend.chat.llm_step import AgentResponseDelta
+from src.backend.chat.llm_step import AgentResponseStart
+from src.backend.db.models import User
+from src.backend.hooks.executor import HookPoint
+from src.backend.hooks.executor import HookSkipped
+from src.backend.hooks.executor import HookSoftFailed
+from src.backend.hooks.executor import execute_hook
 from src.backend.tools.models import ChatFile
 from src.backend.tools.models import SearchToolUsage
 from src.shared_configs.contextvars import get_current_tenant_id
@@ -144,6 +103,388 @@ def setup_logger():
 logger = setup_logger()
 ERROR_TYPE_CANCELLED = "cancelled"
 APPROX_CHARS_PER_TOKEN = 4
+
+# ---------------------------------------------------------------------------
+# Config flags
+# ---------------------------------------------------------------------------
+DISABLE_VECTOR_DB: bool = False
+AUTO_PLACE_AFTER_LATEST_MESSAGE: int = -1
+FILE_READER_TOOL_ID = "file_reader"
+SEARCH_TOOL_ID = "search"
+
+
+# ---------------------------------------------------------------------------
+# Search / filter stubs
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class BaseFilters:
+    source_type: list | None = None
+    document_set: list | None = None
+
+
+# ---------------------------------------------------------------------------
+# LLM stubs
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LLMOverride:
+    display_name: str | None = None
+    model_version: str | None = None
+    model_provider: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+
+
+class _AppCode:
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+    def __repr__(self) -> str:
+        return f"AppErrorCode.{self.code}"
+
+
+class AppErrorCode:
+    QUERY_REJECTED = _AppCode("QUERY_REJECTED")
+    INSUFFICIENT_PERMISSIONS = _AppCode("INSUFFICIENT_PERMISSIONS")
+
+
+class AppError(Exception):
+    def __init__(
+        self, error_code: _AppCode, detail: str = "", status_code: int = 400
+    ) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
+        self.status_code = status_code
+
+
+def log_app_error(e: Exception) -> None:
+    logger.error("AppError: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Hook data models
+# ---------------------------------------------------------------------------
+
+
+class QueryProcessingPayload(BaseModel):
+    query: str
+    user_email: str | None = None
+    chat_session_id: str | None = None
+
+
+class QueryProcessingResponse(BaseModel):
+    query: str | None = None
+    rejection_message: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Server model stubs
+# ---------------------------------------------------------------------------
+
+
+class ModelResponseSlot(BaseModel):
+    message_id: int
+    model_name: str
+
+
+# ---------------------------------------------------------------------------
+# DB function stubs (no SQLAlchemy session in this repo)
+# ---------------------------------------------------------------------------
+
+
+def get_chat_session_by_id(
+    chat_session_id: Any,
+    user_id: Any,
+    db_session: Any,
+    *,
+    eager_load_persona: bool = False,
+) -> Any:
+    from src.backend.db.models import ChatSession, Persona
+
+    cs = ChatSession(id=chat_session_id, user_id=str(user_id) if user_id else None)
+    cs.persona = Persona()
+    return cs
+
+
+def get_or_create_root_message(chat_session_id: Any, db_session: Any) -> Any:
+    from src.backend.db.models import ChatMessage
+
+    return ChatMessage(
+        id=0, session_id=chat_session_id, chat_session_id=chat_session_id
+    )
+
+
+def create_new_chat_message(
+    *,
+    chat_session_id: Any,
+    parent_message: Any,
+    message: str,
+    token_count: int,
+    message_type: Any,
+    files: Any = None,
+    db_session: Any,
+    commit: bool = True,
+) -> Any:
+    from src.backend.db.models import ChatMessage
+
+    return ChatMessage(
+        id=1,
+        session_id=chat_session_id,
+        chat_session_id=chat_session_id,
+        message=message,
+        message_type=message_type,
+        token_count=token_count,
+    )
+
+
+def reserve_message_id(
+    *,
+    db_session: Any,
+    chat_session_id: Any,
+    parent_message: Any,
+    message_type: Any,
+    model_display_name: str | None = None,
+) -> Any:
+    from src.backend.db.models import ChatMessage
+
+    return ChatMessage(
+        id=1,
+        session_id=chat_session_id,
+        chat_session_id=chat_session_id,
+        message_type=message_type,
+    )
+
+
+def reserve_multi_model_message_ids(
+    *,
+    db_session: Any,
+    chat_session_id: Any,
+    parent_message_id: Any,
+    model_display_names: list[str],
+) -> list[Any]:
+    from src.backend.db.models import ChatMessage
+
+    return [
+        ChatMessage(
+            id=i + 1, session_id=chat_session_id, chat_session_id=chat_session_id
+        )
+        for i in range(len(model_display_names))
+    ]
+
+
+def filter_document_set_names_by_user_access(
+    *, db_session: Any, document_set_names: Any, user: Any
+) -> set[str]:
+    return set(document_set_names)
+
+
+def get_user_files_from_project(
+    *, project_id: Any, user_id: Any, db_session: Any
+) -> list:
+    return []
+
+
+def get_tools(db_session: Any) -> list:
+    return []
+
+
+# ---------------------------------------------------------------------------
+# LLM factory stubs
+# ---------------------------------------------------------------------------
+
+
+def get_llm_for_persona(
+    *,
+    persona: Any,
+    user: Any,
+    llm_override: Any = None,
+    additional_headers: Any = None,
+) -> Any:
+    raise NotImplementedError(
+        "get_llm_for_persona is not implemented in this repo. "
+        "Wire up an LLM provider before calling build_chat_turn."
+    )
+
+
+def get_llm_token_counter(llm: Any) -> Callable[[str], int]:
+    return lambda text: max(1, len(text) // 4)
+
+
+def set_llm_mock_response(response: Any) -> Any:
+    return None
+
+
+def reset_llm_mock_response(token: Any) -> None:
+    pass
+
+
+def litellm_exception_to_error_msg(e: Exception, llm: Any) -> tuple[str, str, bool]:
+    return str(e), "LLM_ERROR", True
+
+
+# ---------------------------------------------------------------------------
+# File / MIME stubs
+# ---------------------------------------------------------------------------
+
+
+def extract_file_text(
+    file: Any, file_name: str = "", break_on_unprocessable: bool = True
+) -> str:
+    try:
+        return file.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+class _NullFileStore:
+    def read_file(self, file_id: str, mode: str = "b") -> Any:
+        return io.BytesIO(b"")
+
+    def read_file_record(self, file_id: str) -> None:
+        raise FileNotFoundError(file_id)
+
+
+def get_default_file_store() -> _NullFileStore:
+    return _NullFileStore()
+
+
+def load_in_memory_chat_files(*, user_file_ids: list, db_session: Any) -> list:
+    return []
+
+
+def verify_user_files(
+    *, user_files: Any, user_id: Any, db_session: Any, project_id: Any = None
+) -> None:
+    pass
+
+
+def mime_type_to_chat_file_type(mime_type: str | None) -> Any:
+    from src.backend.file_store.models import ChatFileType
+
+    if mime_type and "image" in mime_type:
+        return ChatFileType.IMAGE
+    if mime_type and "text" in mime_type:
+        return ChatFileType.PLAIN_TEXT
+    return ChatFileType.OTHER
+
+
+# ---------------------------------------------------------------------------
+# Tool construction stubs
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SearchToolConfig:
+    user_selected_filters: Any = None
+    project_id_filter: int | None = None
+    persona_id_filter: int | None = None
+    bypass_acl: bool = False
+    slack_context: Any = None
+    enable_slack_search: bool = False
+
+
+@dataclass
+class CustomToolConfig:
+    chat_session_id: Any = None
+    message_id: Any = None
+    additional_headers: dict | None = None
+    mcp_headers: dict | None = None
+
+
+@dataclass
+class FileReaderToolConfig:
+    user_file_ids: list = field(default_factory=list)
+    chat_file_ids: list = field(default_factory=list)
+
+
+def construct_tools(
+    *,
+    persona: Any,
+    emitter: Any,
+    user: Any,
+    llm: Any,
+    search_tool_config: SearchToolConfig,
+    custom_tool_config: CustomToolConfig,
+    file_reader_tool_config: FileReaderToolConfig,
+    allowed_tool_ids: Any = None,
+    search_usage_forcing_setting: Any = None,
+) -> dict:
+    return {}
+
+
+# ---------------------------------------------------------------------------
+# Cache stub
+# ---------------------------------------------------------------------------
+
+
+class _DictCache:
+    def __init__(self) -> None:
+        self._store: dict = {}
+
+    def get(self, key: str) -> Any:
+        return self._store.get(key)
+
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
+        self._store[key] = value
+
+    def delete(self, key: str) -> None:
+        self._store.pop(key, None)
+
+
+def get_cache_backend() -> _DictCache:
+    return _DictCache()
+
+
+# ---------------------------------------------------------------------------
+# Deep research stub
+# ---------------------------------------------------------------------------
+
+
+def run_deep_research_llm_loop(**kwargs: Any) -> None:
+    logger.warning(
+        "run_deep_research_llm_loop is not implemented in this repo; "
+        "falling back to standard LLM loop."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Telemetry / cost stubs
+# ---------------------------------------------------------------------------
+
+
+def mt_cloud_telemetry(
+    *,
+    tenant_id: Any = None,
+    distinct_id: Any = None,
+    event: Any = None,
+    properties: Any = None,
+) -> None:
+    pass
+
+
+def check_llm_cost_limit_for_provider(
+    *, db_session: Any = None, tenant_id: Any = None, llm_provider_api_key: Any = None
+) -> None:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+
+
+def log_function_time(print_only: bool = False) -> Any:
+    def decorator(fn: Any) -> Any:
+        return fn
+
+    return decorator
 
 
 def _collect_available_file_ids(
@@ -557,7 +898,7 @@ def _resolve_query_processing_hook_result(
 ) -> str:
     """Apply the Query Processing hook result to the message text.
 
-    Returns the (possibly rewritten) message text, or raises OnyxError with
+    Returns the (possibly rewritten) message text, or raises AppError with
     QUERY_REJECTED if the hook signals rejection (query is null or empty).
     HookSkipped and HookSoftFailed are pass-throughs — the original text is
     returned unchanged.
@@ -565,8 +906,8 @@ def _resolve_query_processing_hook_result(
     if isinstance(hook_result, (HookSkipped, HookSoftFailed)):
         return message_text
     if not (hook_result.query and hook_result.query.strip()):
-        raise OnyxError(
-            OnyxErrorCode.QUERY_REJECTED,
+        raise AppError(
+            AppErrorCode.QUERY_REJECTED,
             hook_result.rejection_message
             or "The hook extension for query processing did not return a valid query. No rejection reason was provided.",
         )
@@ -664,8 +1005,7 @@ def build_chat_turn(
         },
     )
 
-    # Check LLM cost limits before using the LLM (only for Onyx-managed keys),
-    # then build the LLM instance(s).
+    # Check LLM cost limits then build the LLM instance(s).
     llms: list[LLM] = []
     model_display_names: list[str] = []
     selected_overrides: list[LLMOverride | None] = (
@@ -1429,10 +1769,8 @@ def _stream_chat_turn(
                     and new_msg_req.internal_search_filters is not None
                     and new_msg_req.internal_search_filters.document_set is not None
                 ):
-                    # TODO @wenxi-onyx: this check for doc set access has been added
-                    # to SearchTool.run() so that all invocations of the SearchTool
-                    # will check for access before running. This instance should be removed
-                    # in a follow up PR.
+                    # TODO: this doc-set access check is also enforced in SearchTool.run();
+                    # this instance can be removed in a follow-up PR.
                     accessible_names = filter_document_set_names_by_user_access(
                         db_session=setup_db_session,
                         document_set_names=new_msg_req.internal_search_filters.document_set,
@@ -1444,8 +1782,8 @@ def _stream_chat_turn(
                         if name not in accessible_names
                     )
                     if unauthorized:
-                        raise OnyxError(
-                            OnyxErrorCode.INSUFFICIENT_PERMISSIONS,
+                        raise AppError(
+                            AppErrorCode.INSUFFICIENT_PERMISSIONS,
                             "User does not have access to document sets: %s"
                             % unauthorized,
                         )
@@ -1470,18 +1808,18 @@ def _stream_chat_turn(
         if new_msg_req.mock_llm_response is not None:
             mock_response_token = set_llm_mock_response(new_msg_req.mock_llm_response)
 
-        assert setup is not None, (
-            "build_chat_turn must complete before _run_models is called"
-        )
+        assert (
+            setup is not None
+        ), "build_chat_turn must complete before _run_models is called"
         yield from _run_models(
             setup=setup,
             user=user,
             external_state_container=external_state_container,
         )
 
-    except OnyxError as e:
-        if e.error_code is not OnyxErrorCode.QUERY_REJECTED:
-            log_onyx_error(e)
+    except AppError as e:
+        if e.error_code is not AppErrorCode.QUERY_REJECTED:
+            log_app_error(e)
         yield StreamingError(
             error=e.detail,
             error_code=e.error_code.code,
