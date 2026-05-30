@@ -28,6 +28,61 @@ MAX_METADATA_PERCENTAGE = 0.25
 CHUNK_MIN_CONTENT = 16
 
 
+# ---------------------------------------------------------------------------
+# SearchDoc — canonical search result used by chat, citation, and retrieval
+# ---------------------------------------------------------------------------
+
+try:
+    from pydantic import BaseModel as _PydanticBase
+    from pydantic import Field as _Field
+
+    class SearchDoc(_PydanticBase):
+        """A single retrieved document chunk returned by the search layer.
+
+        Used throughout the chat pipeline (citation processor, llm_loop, etc.)
+        and the retrieval servers.
+        """
+
+        document_id: str
+        chunk_ind: int = 0
+        semantic_identifier: str = ""
+        link: str | None = None
+        blurb: str = ""
+        source_type: str = ""
+        boost: int = 0
+        hidden: bool = False
+        metadata: dict[str, Any] = _Field(default_factory=dict)
+        score: float = 0.0
+        match_highlights: list[str] = _Field(default_factory=list)
+
+    class SearchDocsResponse(_PydanticBase):
+        """Wrapper returned by search tool calls."""
+
+        search_docs: list[SearchDoc] = _Field(default_factory=list)
+        displayed_docs: list[SearchDoc] | None = None
+
+except ImportError:  # pydantic not available (rare — retrieval-only environments)
+
+    @dataclass  # type: ignore[no-redef]
+    class SearchDoc:  # type: ignore[no-redef]
+        document_id: str
+        chunk_ind: int = 0
+        semantic_identifier: str = ""
+        link: str | None = None
+        blurb: str = ""
+        source_type: str = ""
+        boost: int = 0
+        hidden: bool = False
+        metadata: dict = field(default_factory=dict)
+        score: float = 0.0
+        match_highlights: list = field(default_factory=list)
+
+    @dataclass  # type: ignore[no-redef]
+    class SearchDocsResponse:  # type: ignore[no-redef]
+        search_docs: list = field(default_factory=list)
+        displayed_docs: list | None = None
+
+
 class EmbeddingPrecision(StrEnum):
     FLOAT = "float"
     BFLOAT16 = "bfloat16"

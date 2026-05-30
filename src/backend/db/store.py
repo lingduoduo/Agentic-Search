@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from collections.abc import Iterable
@@ -45,6 +46,12 @@ def _json_loads(value: str | None) -> dict[str, Any]:
         msg = "metadata JSON fields must decode to an object"
         raise ValueError(msg)
     return loaded
+
+
+@contextlib.contextmanager
+def get_session_with_current_tenant():
+    """Stub context manager — yields None (no real DB session in local mode)."""
+    yield None
 
 
 class AgenticSearchStore:

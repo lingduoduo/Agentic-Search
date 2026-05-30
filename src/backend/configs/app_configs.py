@@ -285,3 +285,5 @@ __all__ = [
     "load_app_settings",
     "load_permission_sync_settings",
 ]
+
+INTEGRATION_TESTS_MODE: bool = False
