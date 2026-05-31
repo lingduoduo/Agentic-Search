@@ -19,11 +19,13 @@ from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import Token
 from dataclasses import dataclass, field
-from typing import Any
-from pydantic import BaseModel
-from typing import Final
+from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
-from sqlalchemy.orm import Session
+
+from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 from src.backend.chat.chat_processing_checker import set_processing_status
 from src.backend.chat.chat_state import AvailableFiles
 from src.backend.chat.chat_state import ChatStateContainer

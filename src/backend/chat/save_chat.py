@@ -6,7 +6,10 @@ import logging as _logging
 import mimetypes
 from typing import Any as _Any
 
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 from src.backend.chat.chat_state import ChatStateContainer
 from src.backend.chat.chat_state import SearchDocKey
