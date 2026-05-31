@@ -10,6 +10,7 @@ from .models import AnswerGenerationResult
 from .models import ChatMessage
 from .models import ContextDocument
 from .models import ContextSection
+from .models import EvidenceSnippet
 from .models import LLMClient
 from .models import LLMResponse
 from .models import PromptBundle
@@ -18,6 +19,7 @@ from .models import SearchFilters
 from .models import SearchRequest
 from .pipeline import answer_with_retrieval
 from .pipeline import generate_answer
+from .pipeline import rank_evidence_snippets
 from .pipeline import retrieve_context
 from .pipeline import synthesize_answer_from_context
 from .prompts import build_agent_behavior_prompt
@@ -38,6 +40,7 @@ __all__ = [
     "ChatMessage",
     "ContextDocument",
     "ContextSection",
+    "EvidenceSnippet",
     "LLMClient",
     "LLMResponse",
     "PromptBundle",
@@ -56,6 +59,7 @@ __all__ = [
     "extract_citations",
     "generate_answer",
     "merge_adjacent_documents",
+    "rank_evidence_snippets",
     "retrieve_context",
     "synthesize_answer_from_context",
 ]

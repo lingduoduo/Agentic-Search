@@ -308,6 +308,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ChatMessage": (".context", "ChatMessage"),
     "ContextDocument": (".context", "ContextDocument"),
     "ContextSection": (".context", "ContextSection"),
+    "EvidenceSnippet": (".context", "EvidenceSnippet"),
     "LLMResponse": (".context", "LLMResponse"),
     "PromptBundle": (".context", "PromptBundle"),
     "SearchContextBundle": (".context", "SearchContextBundle"),
@@ -321,6 +322,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "build_retrieval_prompt": (".context", "build_retrieval_prompt"),
     "extract_citations": (".context", "extract_citations"),
     "generate_answer": (".context", "generate_answer"),
+    "rank_evidence_snippets": (".context", "rank_evidence_snippets"),
     "retrieve_context": (".context", "retrieve_context"),
     "synthesize_answer_from_context": (
         ".context",

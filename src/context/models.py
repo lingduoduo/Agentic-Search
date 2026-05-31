@@ -141,6 +141,16 @@ class ContextSection:
 
 
 @dataclass(frozen=True)
+class EvidenceSnippet:
+    citation: str
+    title: str
+    text: str
+    score: float
+    document: ContextDocument
+    section: ContextSection | None = None
+
+
+@dataclass(frozen=True)
 class SearchContextBundle:
     query: str
     documents: list[ContextDocument]
