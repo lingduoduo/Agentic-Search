@@ -16,6 +16,7 @@ from src.context import build_answer_prompt
 from src.context import build_context_bundle
 from src.context import extract_citations
 from src.context import generate_answer
+from src.context import rank_evidence_snippets
 from src.context import synthesize_answer_from_context
 from src.context.retrieval.search_runner import combine_search_results
 from src.context.retrieval.search_runner import run_search
@@ -187,9 +188,11 @@ def test_run_search_sends_filters_to_retrieval_client(monkeypatch):
 def test_context_helpers_are_exported_from_top_level_src():
     from src import SearchRequest as ExportedSearchRequest
     from src import build_answer_prompt as exported_build_answer_prompt
+    from src import rank_evidence_snippets as exported_rank_evidence_snippets
 
     assert ExportedSearchRequest(query="hello").query == "hello"
     assert exported_build_answer_prompt is build_answer_prompt
+    assert exported_rank_evidence_snippets is rank_evidence_snippets
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +247,58 @@ def test_synthesize_deduplicates_citations():
 
     assert answer.count("[D1]") <= 1
     assert answer.count("[D2]") <= 1
+
+
+def test_rank_evidence_snippets_uses_retrieval_score_as_tiebreaker():
+    results = [
+        SearchResult(
+            title="Lower ranked",
+            contents='"Lower ranked"\nVector search retrieves nearest neighbors.',
+            score=0.1,
+        ),
+        SearchResult(
+            title="Higher ranked",
+            contents='"Higher ranked"\nVector search retrieves nearest neighbors.',
+            score=0.9,
+        ),
+    ]
+    bundle = build_context_bundle("vector search nearest neighbors", results)
+
+    snippets = rank_evidence_snippets(
+        "vector search nearest neighbors", bundle, max_snippets=2
+    )
+
+    assert [snippet.citation for snippet in snippets] == ["[D2]", "[D1]"]
+    assert snippets[0].score > snippets[1].score
+
+
+def test_rank_evidence_snippets_contextualizes_adjacent_chunks():
+    results = [
+        SearchResult(
+            title="Policy chunk 1",
+            contents='"Policy"\nThe approval workflow starts with a manager review.',
+            score=0.7,
+            metadata={"document_id": "policy", "chunk_id": 1},
+        ),
+        SearchResult(
+            title="Policy chunk 2",
+            contents="Finance signs off after manager approval for purchases.",
+            score=0.6,
+            metadata={"document_id": "policy", "chunk_id": 2},
+        ),
+    ]
+    bundle = build_context_bundle(
+        "Who signs off after manager approval?",
+        results,
+        merge_adjacent=True,
+    )
+
+    snippets = rank_evidence_snippets(
+        "Who signs off after manager approval?", bundle, max_snippets=1
+    )
+
+    assert snippets[0].section is not None
+    assert snippets[0].text == "Finance signs off after manager approval for purchases."
 
 
 def test_tokenize_handles_numbers():

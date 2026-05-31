@@ -5,6 +5,9 @@ from __future__ import annotations
 from .models import AnswerGenerationRequest
 from .models import AnswerGenerationResult
 from .models import ChatMessage
+from .models import ContextDocument
+from .models import ContextSection
+from .models import EvidenceSnippet
 from .models import LLMClient
 from .models import LLMResponse
 from .models import SearchContextBundle
@@ -88,40 +91,81 @@ def synthesize_answer_from_context(question: str, context: SearchContextBundle) 
     if not context.documents:
         return f"I could not find retrieved context to answer: {question}"
 
-    question_tokens = _tokenize(question)
-    if not question_tokens:
-        # Degenerate query — fall back to the top document's lead sentence.
+    snippets = rank_evidence_snippets(question, context, max_snippets=3)
+    if not snippets:
         doc = context.documents[0]
-        lead = _first_sentence(doc.content)
+        lead = _first_sentence(_contextualized_content(doc, context.sections))
         return f"{lead} {doc.citation}"
 
-    # Score every sentence across all documents.
-    scored: list[tuple[float, str, str]] = []  # (score, citation, sentence)
-    for doc in context.documents:
-        for sentence in _split_sentences(doc.content):
-            score = _overlap_score(question_tokens, _tokenize(sentence))
+    parts = [f"{snippet.text} {snippet.citation}" for snippet in snippets]
+    return " ".join(parts)
+
+
+def rank_evidence_snippets(
+    question: str,
+    context: SearchContextBundle,
+    *,
+    max_snippets: int = 3,
+) -> list[EvidenceSnippet]:
+    """Return ranked, citation-ready evidence snippets for grounded synthesis."""
+    if max_snippets < 1:
+        return []
+
+    question_tokens = _tokenize(question)
+    if not question_tokens:
+        doc = context.documents[0] if context.documents else None
+        if doc is None:
+            return []
+        section = _section_for_document(doc, context.sections)
+        return [
+            EvidenceSnippet(
+                citation=doc.citation,
+                title=doc.title,
+                text=_first_sentence(_contextualized_content(doc, context.sections)),
+                score=float(doc.score),
+                document=doc,
+                section=section,
+            )
+        ]
+
+    scored: list[EvidenceSnippet] = []
+    for doc_index, doc in enumerate(context.documents):
+        section = _section_for_document(doc, context.sections)
+        content = _contextualized_content(doc, context.sections)
+        for sentence_index, sentence in enumerate(_split_sentences(content)):
+            score = _evidence_score(
+                question_tokens,
+                sentence,
+                doc,
+                doc_index=doc_index,
+                sentence_index=sentence_index,
+            )
             if score > 0:
-                scored.append((score, doc.citation, sentence))
+                scored.append(
+                    EvidenceSnippet(
+                        citation=doc.citation,
+                        title=doc.title,
+                        text=sentence,
+                        score=score,
+                        document=doc,
+                        section=section,
+                    )
+                )
 
     if not scored:
-        # No sentence matched any keyword — return the lead of the top doc.
-        doc = context.documents[0]
-        return f"Based on {doc.citation} ({doc.title}): {_first_sentence(doc.content)}"
+        return []
 
-    scored.sort(key=lambda t: t[0], reverse=True)
+    scored.sort(key=lambda snippet: snippet.score, reverse=True)
 
-    # Take up to 3 best sentences, deduplicating by citation.
     seen_citations: set[str] = set()
-    selected: list[tuple[str, str]] = []
-    for _, citation, sentence in scored:
-        if citation not in seen_citations:
-            selected.append((citation, sentence))
-            seen_citations.add(citation)
-        if len(selected) >= 3:
+    selected: list[EvidenceSnippet] = []
+    for snippet in scored:
+        if snippet.citation not in seen_citations:
+            selected.append(snippet)
+            seen_citations.add(snippet.citation)
+        if len(selected) >= max_snippets:
             break
-
-    parts = [f"{sentence} {citation}" for citation, sentence in selected]
-    return " ".join(parts)
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +200,31 @@ def _overlap_score(query_tokens: set[str], sentence_tokens: set[str]) -> float:
     return len(shared) / len(query_tokens)
 
 
+def _evidence_score(
+    query_tokens: set[str],
+    sentence: str,
+    document: ContextDocument,
+    *,
+    doc_index: int,
+    sentence_index: int,
+) -> float:
+    sentence_tokens = _tokenize(sentence)
+    overlap = _overlap_score(query_tokens, sentence_tokens)
+    if overlap <= 0:
+        return 0.0
+    title_overlap = _overlap_score(query_tokens, _tokenize(document.title))
+    retrieval_score = max(float(document.score or 0.0), 0.0)
+    rank_boost = 1.0 / (doc_index + 1)
+    lead_boost = 1.0 / (sentence_index + 1)
+    return (
+        overlap * 10.0
+        + title_overlap * 2.0
+        + retrieval_score
+        + rank_boost * 0.2
+        + lead_boost * 0.1
+    )
+
+
 def _split_sentences(text: str) -> list[str]:
     import re
 
@@ -166,3 +235,21 @@ def _split_sentences(text: str) -> list[str]:
 def _first_sentence(text: str) -> str:
     sentences = _split_sentences(text)
     return sentences[0] if sentences else text[:200].strip()
+
+
+def _section_for_document(
+    document: ContextDocument,
+    sections: list[ContextSection],
+) -> ContextSection | None:
+    for section in sections:
+        if any(candidate.id == document.id for candidate in section.documents):
+            return section
+    return None
+
+
+def _contextualized_content(
+    document: ContextDocument,
+    sections: list[ContextSection],
+) -> str:
+    section = _section_for_document(document, sections)
+    return section.combined_content if section else document.content
