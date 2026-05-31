@@ -391,7 +391,36 @@ def load_in_memory_chat_files(*, user_file_ids: list, db_session: Any) -> list:
 def verify_user_files(
     *, user_files: Any, user_id: Any, db_session: Any, project_id: Any = None
 ) -> None:
-    pass
+    """Verify that every file in *user_files* is accessible to *user_id*.
+
+    Raises ``AppError(INSUFFICIENT_PERMISSIONS)`` for the first file that
+    cannot be verified.  Files with no ``id`` attribute are skipped silently —
+    they are transient in-memory files that were never persisted.
+    """
+    if not user_files:
+        return
+
+    for file_ref in user_files:
+        file_id = getattr(file_ref, "id", None) or getattr(file_ref, "file_id", None)
+        if not file_id:
+            continue
+
+        # Try to read the file record from the store; absence means no access.
+        try:
+            store = get_default_file_store()
+            store.read_file_record(str(file_id))
+        except FileNotFoundError:
+            logger.warning(
+                "verify_user_files: file %s not found for user %s (project=%s)",
+                file_id,
+                user_id,
+                project_id,
+            )
+            raise AppError(
+                AppErrorCode.INSUFFICIENT_PERMISSIONS,
+                detail=f"File {file_id} is not accessible.",
+                status_code=403,
+            )
 
 
 def mime_type_to_chat_file_type(mime_type: str | None) -> Any:
@@ -479,10 +508,59 @@ def mt_cloud_telemetry(
     pass
 
 
+_provider_token_windows: dict[str, list[float]] = {}
+_provider_token_lock = __import__("threading").Lock()
+_TOKEN_WINDOW_SECONDS: Final[int] = 60
+_TOKEN_LIMIT_ENV_VAR: Final[str] = "GEN_AI_TOKEN_LIMIT_PER_MINUTE"
+
+
 def check_llm_cost_limit_for_provider(
     *, db_session: Any = None, tenant_id: Any = None, llm_provider_api_key: Any = None
 ) -> None:
-    pass
+    """Enforce a per-provider sliding-window token-request rate limit.
+
+    The limit is read from the ``GEN_AI_TOKEN_LIMIT_PER_MINUTE`` environment
+    variable (default: unlimited).  The key is the first 8 chars of the API key
+    (or ``"default"`` when no key is configured) so different key holders are
+    rate-limited independently.
+
+    Raises ``AppError`` with HTTP 429 when the limit is exceeded.
+    """
+    import os
+    import time
+
+    raw_limit = os.environ.get(_TOKEN_LIMIT_ENV_VAR, "").strip()
+    if not raw_limit:
+        return
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        logger.warning(
+            "check_llm_cost_limit_for_provider: invalid %s=%r — skipping check",
+            _TOKEN_LIMIT_ENV_VAR,
+            raw_limit,
+        )
+        return
+
+    key = (str(llm_provider_api_key or "default"))[:8]
+    now = time.monotonic()
+    cutoff = now - _TOKEN_WINDOW_SECONDS
+
+    with _provider_token_lock:
+        window = _provider_token_windows.setdefault(key, [])
+        # Evict expired timestamps
+        _provider_token_windows[key] = [t for t in window if t >= cutoff]
+        count = len(_provider_token_windows[key])
+        if count >= limit:
+            raise AppError(
+                AppErrorCode.QUERY_REJECTED,
+                detail=(
+                    f"LLM request rate limit of {limit} requests/minute exceeded. "
+                    "Please wait and try again."
+                ),
+                status_code=429,
+            )
+        _provider_token_windows[key].append(now)
 
 
 # ---------------------------------------------------------------------------
