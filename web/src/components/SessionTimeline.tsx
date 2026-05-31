@@ -1,10 +1,13 @@
+import { memo } from "react";
 import type { ChatMessageView } from "../types";
 
 interface SessionTimelineProps {
   messages: ChatMessageView[];
 }
 
-export function SessionTimeline({ messages }: SessionTimelineProps) {
+export const SessionTimeline = memo(function SessionTimeline({
+  messages,
+}: SessionTimelineProps) {
   if (messages.length === 0) {
     return <div className="empty-state compact">Start a query to create history.</div>;
   }
@@ -19,4 +22,4 @@ export function SessionTimeline({ messages }: SessionTimelineProps) {
       ))}
     </ol>
   );
-}
+});

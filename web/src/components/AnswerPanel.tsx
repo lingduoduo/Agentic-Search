@@ -1,9 +1,16 @@
+import { memo, useMemo } from "react";
+
 interface AnswerPanelProps {
   answer: string;
   citations: string[];
 }
 
-export function AnswerPanel({ answer, citations }: AnswerPanelProps) {
+export const AnswerPanel = memo(function AnswerPanel({
+  answer,
+  citations,
+}: AnswerPanelProps) {
+  const paragraphs = useMemo(() => answer.split(/\n\n+/).filter(Boolean), [answer]);
+
   if (!answer) {
     return (
       <div className="empty-state">
@@ -11,8 +18,6 @@ export function AnswerPanel({ answer, citations }: AnswerPanelProps) {
       </div>
     );
   }
-
-  const paragraphs = answer.split(/\n\n+/).filter(Boolean);
 
   return (
     <article className="answer-panel">
@@ -28,4 +33,4 @@ export function AnswerPanel({ answer, citations }: AnswerPanelProps) {
       )}
     </article>
   );
-}
+});
