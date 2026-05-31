@@ -480,7 +480,20 @@ def filter_indexable_documents(
 
     filtered: list[Document] = []
     failures: list[ConnectorFailure] = []
+    seen_document_ids: set[str] = set()
     for document in documents:
+        if document.id in seen_document_ids:
+            failures.append(
+                ConnectorFailure(
+                    document_id=document.id,
+                    message="Duplicate document id skipped before indexing.",
+                    exception_type=None,
+                    metadata={"url": document.url} if document.url else {},
+                )
+            )
+            continue
+        seen_document_ids.add(document.id)
+
         title = document.title or ""
         contents = document.contents or ""
         if not title.strip() and not contents.strip():

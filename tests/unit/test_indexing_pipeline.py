@@ -147,6 +147,21 @@ def test_chunk_document_can_emit_mini_chunks_for_multipass_indexing():
     ]
 
 
+def test_filter_indexable_documents_skips_duplicate_document_ids():
+    kept, failures = filter_indexable_documents(
+        [
+            Document(id="doc", title="First", contents="alpha", url="https://one"),
+            Document(id="doc", title="Second", contents="beta", url="https://two"),
+            Document(id="other", title="Other", contents="gamma"),
+        ]
+    )
+
+    assert [document.title for document in kept] == ["First", "Other"]
+    assert [failure.document_id for failure in failures] == ["doc"]
+    assert failures[0].message == "Duplicate document id skipped before indexing."
+    assert failures[0].metadata == {"url": "https://two"}
+
+
 def test_embed_chunks_uses_index_builder_text_preparation():
     chunks = chunk_document(
         Document(id="doc", title=None, contents="alpha beta"),
