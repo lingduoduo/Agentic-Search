@@ -6,10 +6,31 @@ No direct database access — all state is managed via the HTTP API.
 
 import os
 from collections.abc import Callable
+from typing import Any
 
 import pytest
+import requests
 
 os.environ["INTEGRATION_TESTS_MODE"] = "true"
+
+DEFAULT_HTTP_TIMEOUT_SECONDS = float(
+    os.getenv("AGENTIC_SEARCH_TEST_HTTP_TIMEOUT_SECONDS", "30")
+)
+
+if not getattr(requests.sessions.Session.request, "_agentic_search_timeout", False):
+    _original_request = requests.sessions.Session.request
+
+    def _request_with_default_timeout(
+        self: requests.Session,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> requests.Response:
+        kwargs.setdefault("timeout", DEFAULT_HTTP_TIMEOUT_SECONDS)
+        return _original_request(self, method, url, **kwargs)
+
+    _request_with_default_timeout._agentic_search_timeout = True  # type: ignore[attr-defined]
+    requests.sessions.Session.request = _request_with_default_timeout
 
 from tests.integration.common_utils.constants import ADMIN_USER_NAME  # noqa: E402
 from tests.integration.common_utils.constants import GENERAL_HEADERS  # noqa: E402

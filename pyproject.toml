@@ -18,6 +18,18 @@ include = ["src*"]
 testpaths = ["tests/unit", "tests/regression"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
+norecursedirs = [
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".understand-anything",
+    "agentic_search.egg-info",
+    "data",
+    "indexes",
+    "models",
+    "web/dist",
+    "web/node_modules",
+]
 # Add src/ to sys.path so shared_configs and other src-level packages are importable
 # without the src. prefix (matching their package structure).
 pythonpath = ["src", "generated"]
@@ -25,4 +37,8 @@ markers = [
     "slow: marks tests as slow (deselect with '-m not slow')",
     "load: marks tests as load/performance tests",
     "integration: marks tests requiring a live server stack",
+    "alembic: marks migration tests that exercise Alembic migration flows",
+]
+filterwarnings = [
+    "ignore:Please use `import python_multipart` instead\\.:PendingDeprecationWarning:starlette\\.formparsers",
 ]

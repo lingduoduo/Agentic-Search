@@ -4,6 +4,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Callable
 from pydantic import BaseModel
+from pydantic import ConfigDict
 
 
 class ChatFileType(str, Enum):
@@ -16,13 +17,12 @@ class ChatFileType(str, Enum):
 class InMemoryChatFile(BaseModel):
     """A file held in memory for the duration of a chat turn."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     file_id: str
     content: bytes = b""
     file_type: ChatFileType = ChatFileType.PLAIN_TEXT
     filename: str | None = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class FileDescriptor(BaseModel):
