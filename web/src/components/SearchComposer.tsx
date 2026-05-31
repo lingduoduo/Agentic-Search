@@ -1,4 +1,5 @@
-import { FormEvent } from "react";
+import { memo } from "react";
+import type { FormEvent } from "react";
 import { Loader2, Search } from "lucide-react";
 
 interface SearchComposerProps {
@@ -12,7 +13,7 @@ interface SearchComposerProps {
   onSubmit: (event?: FormEvent) => void;
 }
 
-export function SearchComposer({
+export const SearchComposer = memo(function SearchComposer({
   query,
   searchUrl,
   topK,
@@ -30,6 +31,7 @@ export function SearchComposer({
         onChange={(event) => onQueryChange(event.target.value)}
         onKeyDown={(event) => {
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
             onSubmit();
           }
         }}
@@ -51,7 +53,7 @@ export function SearchComposer({
             max={20}
             type="number"
             value={topK}
-            onChange={(event) => onTopKChange(Number(event.target.value))}
+            onChange={(event) => onTopKChange(event.currentTarget.valueAsNumber)}
           />
         </label>
         <button type="submit" disabled={isLoading || !query.trim()}>
@@ -61,4 +63,4 @@ export function SearchComposer({
       </div>
     </form>
   );
-}
+});

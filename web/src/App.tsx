@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { Bot, FileSearch, MessageSquarePlus, Search } from "lucide-react";
 import { createSession, runAgent } from "./api";
 import { AnswerPanel } from "./components/AnswerPanel";
@@ -24,6 +25,7 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   const status = useMemo(() => {
     if (isLoading) return "Searching";
@@ -32,42 +34,55 @@ export function App() {
     return "Ready";
   }, [answer, error, isLoading]);
 
-  async function ensureSession() {
-    if (sessionId) return sessionId;
-    const session = await createSession({ title: "Search session" });
-    setSessionId(session.id);
-    setMessages(session.messages);
-    return session.id;
-  }
+  const ensureSession = useCallback(
+    async (signal: AbortSignal) => {
+      if (sessionId) return sessionId;
+      const session = await createSession({ title: "Search session" }, { signal });
+      setSessionId(session.id);
+      setMessages(session.messages);
+      return session.id;
+    },
+    [sessionId],
+  );
 
-  async function handleSubmit(event?: FormEvent) {
+  const handleSubmit = useCallback(async (event?: FormEvent) => {
     event?.preventDefault();
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return;
+
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+
     setIsLoading(true);
     setError(null);
     try {
-      const activeSessionId = await ensureSession();
+      const activeSessionId = await ensureSession(controller.signal);
       const response: AgentExperienceResponse = await runAgent({
         query: normalizedQuery,
         session_id: activeSessionId,
         search_url: searchUrl,
         top_k: topK,
-      });
+      }, { signal: controller.signal });
       setSessionId(response.session_id);
       setAnswer(response.answer);
       setCitations(response.citations);
       setDocuments(response.documents);
       setMessages(response.messages);
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
       setDocuments([]);
     } finally {
-      setIsLoading(false);
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setIsLoading(false);
+      }
     }
-  }
+  }, [ensureSession, query, searchUrl, topK]);
 
-  async function handleNewSession() {
+  const handleNewSession = useCallback(async () => {
+    requestRef.current?.abort();
     const session = await createSession({ title: "Search session" });
     setSessionId(session.id);
     setAnswer("");
@@ -75,7 +90,12 @@ export function App() {
     setDocuments([]);
     setMessages([]);
     setError(null);
-  }
+    setIsLoading(false);
+  }, []);
+
+  const handleTopKChange = useCallback((value: number) => {
+    setTopK(Math.min(20, Math.max(1, value || 1)));
+  }, []);
 
   return (
     <main className="app-shell">
@@ -106,7 +126,7 @@ export function App() {
           isLoading={isLoading}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
-          onTopKChange={setTopK}
+          onTopKChange={handleTopKChange}
           onSubmit={handleSubmit}
         />
 

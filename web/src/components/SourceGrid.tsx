@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ExternalLink } from "lucide-react";
 import type { SourceDocumentView } from "../types";
 
@@ -5,7 +6,7 @@ interface SourceGridProps {
   documents: SourceDocumentView[];
 }
 
-export function SourceGrid({ documents }: SourceGridProps) {
+export const SourceGrid = memo(function SourceGrid({ documents }: SourceGridProps) {
   if (documents.length === 0) {
     return <div className="empty-state compact">No sources yet.</div>;
   }
@@ -31,4 +32,4 @@ export function SourceGrid({ documents }: SourceGridProps) {
       ))}
     </div>
   );
-}
+});
