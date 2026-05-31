@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from src.backend.auth import AuthenticatedUser
 from src.backend.db import AgenticSearchStore
@@ -42,6 +43,10 @@ def acl_for_user(user: AuthenticatedUser | None) -> set[str]:
     if user.email:
         entries.add(prefix_email(user.email))
     entries.update(prefix_group(group_id) for group_id in user.group_ids)
+    entries.update(
+        prefix_external_group(group_id)
+        for group_id in _external_group_ids_from_metadata(user.metadata)
+    )
     return entries
 
 
@@ -58,9 +63,12 @@ def acl_for_store_user(
     user = store.get_user(user_id)
     if user and user.email:
         entries.add(prefix_email(user.email))
-    entries.update(
-        prefix_group(group.id) for group in store.list_groups_for_user(user_id)
-    )
+    groups = store.list_groups_for_user(user_id)
+    entries.update(prefix_group(group.id) for group in groups)
+    for group in groups:
+        mapping = store.get_scim_group_mapping(group.id)
+        if mapping and mapping.get("external_id"):
+            entries.add(prefix_external_group(str(mapping["external_id"])))
     return entries
 
 
@@ -105,7 +113,8 @@ def can_access_acl(
     document_acl: Iterable[str],
     user_acl: Iterable[str],
 ) -> bool:
-    return not set(document_acl).isdisjoint(user_acl)
+    user_entries = user_acl if isinstance(user_acl, set) else set(user_acl)
+    return any(entry in user_entries for entry in document_acl)
 
 
 def can_access_document(
@@ -129,6 +138,21 @@ def metadata_with_acl(
     elif access is not None:
         enriched["acl"] = sorted(acl_for_document_access(access))
     return enriched
+
+
+def _external_group_ids_from_metadata(metadata: dict[str, Any]) -> set[str]:
+    values: set[str] = set()
+    for key in ("external_group_ids", "external_groups"):
+        raw = metadata.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            values.update(part.strip() for part in raw.split(",") if part.strip())
+        elif isinstance(raw, Iterable):
+            values.update(str(part).strip() for part in raw if str(part).strip())
+        else:
+            values.add(str(raw))
+    return values
 
 
 def get_access_for_document(

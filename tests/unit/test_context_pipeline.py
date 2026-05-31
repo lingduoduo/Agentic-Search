@@ -116,6 +116,14 @@ def test_search_filters_match_access_acl_metadata():
     assert not filters.matches({"acl": ["group:finance"]})
 
 
+def test_search_filters_match_external_group_acl_metadata():
+    filters = SearchFilters(access_acl=["external_group:okta-eng"])
+
+    assert filters.matches({"acl": ["external_group:okta-eng"]})
+    assert filters.matches({"tags": {"acl": "external_group:okta-eng,user:alice"}})
+    assert not filters.matches({"acl": ["external_group:okta-finance"]})
+
+
 def test_run_search_uses_retrieval_client(monkeypatch):
     class FakeClient:
         def __init__(self, config):

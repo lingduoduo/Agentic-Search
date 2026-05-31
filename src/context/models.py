@@ -63,11 +63,7 @@ class SearchFilters:
                 if tags.get(key) != value:
                     return False
         if self.access_acl:
-            acl_values = _metadata_values(metadata.get("acl"))
-            tags = metadata.get("tags")
-            if isinstance(tags, dict):
-                acl_values.update(_metadata_values(tags.get("acl")))
-            if not acl_values.intersection(set(self.access_acl)):
+            if not _metadata_acl_values(metadata).intersection(self.access_acl):
                 return False
         if self.time_cutoff:
             updated_at = metadata.get("updated_at")
@@ -209,3 +205,11 @@ def _metadata_values(value: object) -> set[str]:
     if isinstance(value, (list, tuple, set, frozenset)):
         return {str(part).strip() for part in value if str(part).strip()}
     return {str(value)}
+
+
+def _metadata_acl_values(metadata: dict[str, object]) -> set[str]:
+    acl_values = _metadata_values(metadata.get("acl"))
+    tags = metadata.get("tags")
+    if isinstance(tags, dict):
+        acl_values.update(_metadata_values(tags.get("acl")))
+    return acl_values
