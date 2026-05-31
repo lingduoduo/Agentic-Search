@@ -50,6 +50,7 @@ textarea {
 
 .topbar,
 .composer,
+.admin-overview,
 .answer-column,
 .panel {
   background: var(--panel);
@@ -202,6 +203,124 @@ input {
   cursor: not-allowed;
 }
 
+.admin-overview {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.admin-overview-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-overview-header p,
+.admin-card p,
+.admin-metric span,
+.admin-metric small {
+  color: var(--muted);
+}
+
+.admin-health {
+  min-width: 180px;
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  gap: 2px;
+}
+
+.admin-health span,
+.admin-metric span,
+.admin-metric small {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.admin-health strong {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--accent-strong);
+}
+
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-metric {
+  min-width: 0;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  background: var(--panel-soft);
+}
+
+.admin-metric + .admin-metric {
+  border-left: 1px solid var(--line);
+}
+
+.admin-metric strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.admin-card-title span {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-card-title span[data-tone="good"] {
+  background: #e3f3ef;
+  color: var(--accent-strong);
+}
+
+.admin-card-title span[data-tone="watch"] {
+  background: #f3ead8;
+  color: var(--amber);
+}
+
+.admin-card-title span[data-tone="neutral"] {
+  background: #edf1f2;
+  color: var(--muted);
+}
+
+.admin-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
@@ -345,8 +464,15 @@ input {
 
 @media (max-width: 900px) {
   .content-grid,
-  .composer-controls {
+  .composer-controls,
+  .admin-metrics,
+  .admin-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-metric + .admin-metric {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .topbar {
@@ -367,5 +493,14 @@ input {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .admin-overview-header {
+    display: grid;
+  }
+
+  .admin-health {
+    min-width: 0;
+    justify-items: start;
   }
 }

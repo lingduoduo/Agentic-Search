@@ -28,6 +28,7 @@ from src.backend.hooks import HookPoint
 from src.backend.hooks import HookRegistry
 from src.backend.hooks import HookSoftFailed
 from src.backend.hooks import execute_hook
+from src.backend.servers.admin_surface.api import create_admin_surface_router
 from src.backend.servers.analytics.api import create_analytics_router
 from src.backend.servers.auth_check import PUBLIC_ENDPOINT_SPECS
 from src.backend.servers.auth_check import check_router_auth
@@ -175,6 +176,7 @@ def _register_routers(
     app.include_router(create_billing_router(settings))
 
     # --- Admin: rate limits, standard answers, reporting ---
+    app.include_router(create_admin_surface_router(db, settings))
     app.include_router(create_token_rate_limits_router(db, settings))
     app.include_router(create_manage_router(db, settings))
     app.include_router(create_reporting_router(db, settings))
