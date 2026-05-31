@@ -118,7 +118,7 @@ def test_stream_yields_content_chunks():
         'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}',
         "data: [DONE]",
     ]
-    with patch("requests.post", return_value=_mock_response(*lines)):
+    with patch("requests.Session.post", return_value=_mock_response(*lines)):
         chunks = list(llm.stream(prompt="hi"))
     assert len(chunks) == 2
     assert chunks[0].choice.delta.content == "hello "
@@ -129,7 +129,7 @@ def test_stream_normalises_string_prompt():
     config = _make_config()
     llm = OpenAICompatibleLLM(config)
     with patch(
-        "requests.post", return_value=_mock_response("data: [DONE]")
+        "requests.Session.post", return_value=_mock_response("data: [DONE]")
     ) as mock_post:
         list(llm.stream(prompt="hello"))
     body = mock_post.call_args.kwargs["json"]
@@ -144,7 +144,7 @@ def test_stream_normalises_dict_messages():
         {"role": "user", "content": "hi"},
     ]
     with patch(
-        "requests.post", return_value=_mock_response("data: [DONE]")
+        "requests.Session.post", return_value=_mock_response("data: [DONE]")
     ) as mock_post:
         list(llm.stream(prompt=msgs))
     body = mock_post.call_args.kwargs["json"]
@@ -156,7 +156,7 @@ def test_stream_includes_tools():
     llm = OpenAICompatibleLLM(config)
     tools = [{"type": "function", "function": {"name": "search", "parameters": {}}}]
     with patch(
-        "requests.post", return_value=_mock_response("data: [DONE]")
+        "requests.Session.post", return_value=_mock_response("data: [DONE]")
     ) as mock_post:
         list(llm.stream(prompt="hi", tools=tools, tool_choice=ToolChoiceOptions.AUTO))
     body = mock_post.call_args.kwargs["json"]
@@ -168,7 +168,7 @@ def test_stream_no_tools_omits_tool_fields():
     config = _make_config()
     llm = OpenAICompatibleLLM(config)
     with patch(
-        "requests.post", return_value=_mock_response("data: [DONE]")
+        "requests.Session.post", return_value=_mock_response("data: [DONE]")
     ) as mock_post:
         list(llm.stream(prompt="hi"))
     body = mock_post.call_args.kwargs["json"]

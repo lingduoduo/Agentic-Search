@@ -40,7 +40,7 @@ class ChunkBatchStore:
 
     def save(self, chunks: list[EmbeddedChunk], batch_idx: int) -> None:
         with (self._dir / f"batch_{batch_idx}{self._EXT}").open("wb") as fh:
-            pickle.dump(chunks, fh)
+            pickle.dump(chunks, fh, protocol=pickle.HIGHEST_PROTOCOL)
 
     def stream(self) -> Iterator[EmbeddedChunk]:
         for batch_file in self._batch_files():
@@ -56,7 +56,7 @@ class ChunkBatchStore:
             ]
             if len(cleaned) != len(batch_chunks):
                 with batch_file.open("wb") as fh:
-                    pickle.dump(cleaned, fh)
+                    pickle.dump(cleaned, fh, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _load(self, batch_file: Path) -> list[EmbeddedChunk]:
         with batch_file.open("rb") as fh:
