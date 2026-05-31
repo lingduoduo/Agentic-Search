@@ -955,6 +955,95 @@ def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
     assert output.metrics["cited_task_coverage_ratio"] == 1.0
 
 
+def test_search_agent_loop_auto_registers_task_prefixed_research_tracks():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode(
+            "<searches>\n"
+            "[T1] Alice David Lara Croft voice\n"
+            "[T2] Lara Croft game developer\n"
+            "</searches>"
+        ),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R1Q2D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=2
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("Alice David Lara Croft voice", "Lara Croft game developer"): [
+                [SearchResult(contents='"Voice"\nAlice David')],
+                [SearchResult(contents='"Developer"\nCrystal Dynamics')],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.context.tasks == {
+        "T1": "Alice David Lara Croft voice",
+        "T2": "Lara Croft game developer",
+    }
+    assert output.context.turns[0].task_id == "T1"
+    assert output.context.turns[1].task_id == "T2"
+    assert output.metrics["implicit_subquestions"] == 2.0
+    assert output.metrics["active_subquestions"] == 2.0
+    assert output.metrics["subquestion_coverage_ratio"] == 1.0
+
+
+def test_search_agent_loop_tracks_research_followup_queries():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\n[T1] company funding\n</searches>"),
+        tokenizer.encode("<searches>\n[T1] company funding 2024 amount\n</searches>"),
+        tokenizer.encode("<answer>Done [R2Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=2, min_total_results=2
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("company funding",): [
+                [SearchResult(contents='"Funding"\nSeed round')],
+            ],
+            ("company funding 2024 amount",): [
+                [
+                    SearchResult(contents='"Funding 2024"\nSeries A was $10M.'),
+                    SearchResult(contents='"Investor"\nLead investor confirmed.'),
+                ],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    second_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
+    )
+    assert "T1: company funding (searches: 1)" in second_prompt
+    assert output.metrics["research_followup_queries"] == 1.0
+    assert output.metrics["research_tasks_with_followup"] == 1.0
+    assert output.metrics["subquestion_coverage_ratio"] == 1.0
+
+
 def test_agent_context_reports_cited_task_coverage():
     ctx = SearchContext(
         query="voice actor",
