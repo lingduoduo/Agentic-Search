@@ -15,7 +15,11 @@ import logging as _logging
 
 from typing import NamedTuple
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 from src.backend.configs.chat_configs import COMPRESSION_TRIGGER_RATIO
 from src.backend.servers.query_history.models import MessageType
 from src.backend.db.models import ChatMessage

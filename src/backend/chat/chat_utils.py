@@ -9,7 +9,11 @@ from typing import cast
 from uuid import UUID, uuid4
 from fastapi.datastructures import Headers
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 from src.backend.chat.models import ChatHistoryResult
 from src.backend.chat.models import ChatLoadedFile
 from src.backend.chat.models import ChatMessageSimple

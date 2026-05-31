@@ -5,7 +5,11 @@ from collections.abc import Callable
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 from src.backend.db.memory import UserMemoryContext
 from src.backend.file_store.models import FileDescriptor
