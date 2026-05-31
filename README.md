@@ -1,10 +1,34 @@
 # Agentic Search
 
-Agentic Search is a retrieval-backed agent and search-policy platform. It
+Agentic Search is planning to build a retrieval-backed agent and search-policy platform. It
 combines a full-featured FastAPI server layer (admin APIs, SCIM provisioning,
 billing proxy, OAuth connectors, query history, usage reporting) with local
 dense/sparse retrieval, multi-turn agent traces, SFT data builders, and
 PPO/GRPO reward helpers.
+
+At its core, Agentic Search is built for enterprise knowledge workflows:
+
+- **Agentic enterprise search**: users ask questions against company knowledge,
+  while agents retrieve, rank, synthesize, cite, and reason across follow-up
+  turns.
+- **RAG over connected sources**: connectors ingest documents from tools such as
+  Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk,
+  Notion, and other external systems.
+- **Document indexing pipeline**: background workers fetch, parse, chunk, enrich,
+  embed, and index documents into search backends such as Vespa or OpenSearch,
+  while persisting sync state in Postgres.
+- **Permission-aware retrieval**: access controls, external group sync,
+  user/group permissions, and enterprise auth are part of the retrieval path.
+- **Custom agents and actions**: agents can be configured with instructions,
+  knowledge, tools/actions, MCP integrations, and workflows.
+- **Grounded synthesis**: the system retrieves evidence, ranks and contextualizes
+  it, then produces answers with citations.
+- **Research workflows**: deeper multi-step research features build on the same
+  retrieval, ranking, and reasoning foundation.
+- **Admin and observability surface**: the frontend includes connector
+  management, indexing status, users/groups, auth, model settings, tools/actions,
+  analytics, and enterprise controls.
+
 
 ## Repository Structure
 

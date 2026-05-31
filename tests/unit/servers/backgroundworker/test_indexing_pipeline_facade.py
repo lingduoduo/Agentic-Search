@@ -108,6 +108,35 @@ def test_embed_and_stream_yields_store_and_prefilter_failures():
         assert [chunk.chunk.document_id for chunk in store.stream()] == ["ok"]
 
 
+def test_embed_and_stream_persists_embedding_batches_incrementally():
+    batch_sizes: list[int] = []
+
+    def fake_embed(texts):
+        batch_sizes.append(len(texts))
+        return np.ones((len(texts), 2), dtype=np.float32)
+
+    with embed_and_stream(
+        [
+            Document(id="one", contents="alpha"),
+            Document(id="two", contents="beta"),
+            Document(id="three", contents="gamma"),
+        ],
+        chunking=ChunkingConfig(chunk_size=10, chunk_overlap=0, include_title=False),
+        embedder=DefaultIndexingEmbedder(
+            embedding_fn=fake_embed,
+            config=EmbeddingConfig(retrieval_method="contriever", batch_size=2),
+        ),
+    ) as (failures, store):
+        assert failures == []
+        assert [chunk.chunk.document_id for chunk in store.stream()] == [
+            "one",
+            "two",
+            "three",
+        ]
+
+    assert batch_sizes == [2, 1]
+
+
 def test_write_chunks_with_backoff_isolates_document_failures():
     chunker = Chunker(
         ChunkingConfig(chunk_size=10, chunk_overlap=0, include_title=False)
