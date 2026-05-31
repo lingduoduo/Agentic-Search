@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from src.backend.connectors.models import ConnectorFailure
 from src.backend.connectors.models import Document
@@ -23,6 +24,15 @@ from .models import IndexWriterConfig
 
 from .chunk_batch_store import ChunkBatchStore
 from .embedder import DefaultIndexingEmbedder
+
+_T = TypeVar("_T")
+
+
+def _batched_items(items: list[_T], batch_size: int) -> Generator[list[_T], None, None]:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero.")
+    for start in range(0, len(items), batch_size):
+        yield items[start : start + batch_size]
 
 
 @dataclass(frozen=True)
@@ -90,10 +100,17 @@ def embed_and_stream(
     )
     chunks = chunk_documents(indexable_docs, chunking_config, callback=callback)
     effective_embedder = embedder or DefaultIndexingEmbedder(callback=callback)
+    embed_batch_size = effective_embedder.config.batch_size
 
     with ChunkBatchStore() as store:
-        embedded_chunks: list[EmbeddedChunk] = effective_embedder.embed_chunks(chunks)
-        store.save(embedded_chunks, batch_idx=0)
+        for batch_idx, chunk_batch in enumerate(
+            _batched_items(chunks, embed_batch_size)
+        ):
+            embedded_chunks: list[EmbeddedChunk] = effective_embedder.embed_chunks(
+                chunk_batch
+            )
+            if embedded_chunks:
+                store.save(embedded_chunks, batch_idx=batch_idx)
         yield failures, store
 
 
