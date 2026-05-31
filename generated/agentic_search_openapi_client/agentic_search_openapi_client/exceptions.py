@@ -1,8 +1,5 @@
-"""Stub exceptions for the generated API client."""
+"""Compatibility import path for generated API client exceptions."""
 
+from .._stub import ApiException
 
-class ApiException(Exception):
-    def __init__(self, status: int = 0, reason: str = "") -> None:
-        self.status = status
-        self.reason = reason
-        super().__init__(f"({status}) {reason}")
+__all__ = ["ApiException"]
