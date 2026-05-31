@@ -96,13 +96,15 @@ def test_embed_and_stream_yields_store_and_prefilter_failures():
         [
             Document(id="empty", contents=" "),
             Document(id="ok", contents="alpha"),
+            Document(id="ok", contents="duplicate"),
         ],
         embedder=DefaultIndexingEmbedder(
             embedding_fn=lambda texts: np.ones((len(texts), 2), dtype=np.float32),
             config=EmbeddingConfig(retrieval_method="contriever"),
         ),
     ) as (failures, store):
-        assert [failure.document_id for failure in failures] == ["empty"]
+        assert [failure.document_id for failure in failures] == ["empty", "ok"]
+        assert failures[1].message == "Duplicate document id skipped before indexing."
         assert [chunk.chunk.document_id for chunk in store.stream()] == ["ok"]
 
 
