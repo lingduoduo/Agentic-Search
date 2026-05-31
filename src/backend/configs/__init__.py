@@ -2,6 +2,7 @@
 
 from .app_configs import AppSettings
 from .app_configs import AuthSettings
+from .app_configs import LLMSettings
 from .app_configs import PermissionSyncSettings
 from .app_configs import ServiceSettings
 from .app_configs import TelemetrySettings
@@ -22,6 +23,7 @@ from .multi_tenant_gating_config import is_path_allowed_for_gated_tenant
 __all__ = [
     "AppSettings",
     "AuthSettings",
+    "LLMSettings",
     "PermissionSyncSettings",
     "ServiceSettings",
     "TelemetrySettings",

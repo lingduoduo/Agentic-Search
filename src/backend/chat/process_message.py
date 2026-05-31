@@ -72,8 +72,11 @@ from src.backend.db.models import Persona
 from src.backend.db.models import UserFile
 from src.backend.file_store.models import ChatFileType
 from src.backend.file_store.models import InMemoryChatFile
+from src.backend.cache.interface import InMemoryCache as _InMemoryCache
 from src.backend.llm.interfaces import LLM
+from src.backend.llm.interfaces import LLMConfig
 from src.backend.llm.interfaces import LLMUserIdentity
+from src.backend.llm.providers import OpenAICompatibleLLM
 from src.backend.db.models import SlackContext
 from src.backend.servers.query_and_chat.streaming_models import MessageResponseIDInfo
 from src.backend.servers.query_and_chat.streaming_models import (
@@ -306,11 +309,37 @@ def get_llm_for_persona(
     user: Any,
     llm_override: Any = None,
     additional_headers: Any = None,
-) -> Any:
-    raise NotImplementedError(
-        "get_llm_for_persona is not implemented in this repo. "
-        "Wire up an LLM provider before calling build_chat_turn."
+) -> LLM:
+    """Return an LLM instance for the given persona and optional override.
+
+    Resolution order:
+    1. Explicit ``llm_override`` (model_provider + model_version fields).
+    2. AppSettings defaults loaded from GEN_AI_* environment variables.
+    """
+    from src.backend.configs.app_configs import load_app_settings
+
+    defaults = load_app_settings().llm
+
+    provider = defaults.model_provider
+    model = defaults.model_name
+    api_key = defaults.api_key
+    api_base = defaults.api_base
+    max_tokens = defaults.max_input_tokens
+
+    if llm_override is not None:
+        if getattr(llm_override, "model_provider", None):
+            provider = llm_override.model_provider
+        if getattr(llm_override, "model_version", None):
+            model = llm_override.model_version
+
+    config = LLMConfig(
+        model_provider=provider,
+        model_name=model,
+        api_key=api_key,
+        api_base=api_base,
+        max_input_tokens=max_tokens,
     )
+    return OpenAICompatibleLLM(config)
 
 
 def get_llm_token_counter(llm: Any) -> Callable[[str], int]:
@@ -417,9 +446,6 @@ def construct_tools(
     search_usage_forcing_setting: Any = None,
 ) -> dict:
     return {}
-
-
-from src.backend.cache.interface import InMemoryCache as _InMemoryCache
 
 
 def get_cache_backend() -> _InMemoryCache:
@@ -1792,9 +1818,9 @@ def _stream_chat_turn(
         if new_msg_req.mock_llm_response is not None:
             mock_response_token = set_llm_mock_response(new_msg_req.mock_llm_response)
 
-        assert (
-            setup is not None
-        ), "build_chat_turn must complete before _run_models is called"
+        assert setup is not None, (
+            "build_chat_turn must complete before _run_models is called"
+        )
         yield from _run_models(
             setup=setup,
             user=user,
