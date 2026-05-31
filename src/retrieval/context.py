@@ -9,6 +9,13 @@ from typing import Any
 _CITATION_RE = re.compile(r"\[R(\d+)Q(\d+)D(\d+)\]")
 
 
+def _citation_keys(answer_text: str) -> set[str]:
+    return {
+        f"R{int(m.group(1))}Q{int(m.group(2))}D{int(m.group(3))}"
+        for m in _CITATION_RE.finditer(answer_text)
+    }
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """One passage returned by a search or retrieval server."""
@@ -167,13 +174,7 @@ class AgentContext:
         by :meth:`SearchAgentLoop._format_round_information`.  Only keys that
         correspond to an actual retrieved result are included in the return value.
         """
-        referenced = {
-            f"R{r}Q{q}D{d}"
-            for r, q, d in (
-                (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-                for m in _CITATION_RE.finditer(answer_text)
-            )
-        }
+        referenced = _citation_keys(answer_text)
         valid: set[str] = set()
         for round_idx, round_ctxs in enumerate(self.rounds, 1):
             for query_idx, ctx in enumerate(round_ctxs, 1):
@@ -185,10 +186,7 @@ class AgentContext:
 
     def cited_results(self, answer_text: str) -> list[SearchResult]:
         """Return retrieved results whose citation keys appear in *answer_text*."""
-        referenced = {
-            f"R{int(m.group(1))}Q{int(m.group(2))}D{int(m.group(3))}"
-            for m in _CITATION_RE.finditer(answer_text)
-        }
+        referenced = _citation_keys(answer_text)
         if not referenced:
             return []
         results: list[SearchResult] = []
@@ -198,6 +196,29 @@ class AgentContext:
                     if f"R{round_idx}Q{query_idx}D{doc_idx}" in referenced:
                         results.append(result)
         return results
+
+    def cited_search_contexts(self, answer_text: str) -> list[SearchContext]:
+        """Return query contexts that contain at least one cited result."""
+        referenced = _citation_keys(answer_text)
+        if not referenced:
+            return []
+        contexts: list[SearchContext] = []
+        for round_idx, round_ctxs in enumerate(self.rounds, 1):
+            for query_idx, ctx in enumerate(round_ctxs, 1):
+                if any(
+                    f"R{round_idx}Q{query_idx}D{doc_idx}" in referenced
+                    for doc_idx in range(1, len(ctx.results) + 1)
+                ):
+                    contexts.append(ctx)
+        return contexts
+
+    def cited_task_ids(self, answer_text: str) -> frozenset[str]:
+        """Return active research task ids covered by answer citations."""
+        return frozenset(
+            ctx.task_id
+            for ctx in self.cited_search_contexts(answer_text)
+            if ctx.task_id
+        )
 
     @property
     def num_results(self) -> int:

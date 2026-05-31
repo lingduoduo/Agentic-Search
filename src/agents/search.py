@@ -67,6 +67,7 @@ _TASK_PREFIX_RE = re.compile(r"^\[(?P<task>[^\]]+)\]\s*(?P<query>.+)$")
 _LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
 _QUERY_TAG_RE = re.compile(r"<query>(.*?)</query>", re.DOTALL)
 _URL_SPLIT_RE = re.compile(r"[\n,]+")
+_SPACE_RE = re.compile(r"\s+")
 
 
 def _normalize_task_id(raw: str) -> str:
@@ -76,6 +77,23 @@ def _normalize_task_id(raw: str) -> str:
 
 def _dedupe(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
+
+
+def _normalize_result_fingerprint(value: str) -> str:
+    return _SPACE_RE.sub(" ", value.strip().lower())
+
+
+def _result_fingerprint(result: SearchResult) -> str:
+    """Stable key for duplicate evidence across enterprise search backends."""
+    for key in ("document_id", "doc_id", "chunk_id", "id"):
+        value = result.metadata.get(key)
+        if value:
+            return f"{key}:{value}"
+    if result.url:
+        return "url:" + result.url.split("#", 1)[0].rstrip("/").lower()
+    if result.title:
+        return "title:" + _normalize_result_fingerprint(result.title)
+    return "content:" + _normalize_result_fingerprint(result.contents[:512])
 
 
 def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) -> str:
@@ -191,6 +209,7 @@ class SearchAgentLoopConfig(AgentLoopConfig):
         "</search_feedback>\n\n"
     )
     allow_internal_knowledge_answer: bool = True
+    deduplicate_search_results: bool = True
 
 
 @register("search_agent")
@@ -285,6 +304,7 @@ class SearchAgentLoop(AgentLoopBase):
             "evidence_sufficient_rounds": 0.0,
             "evidence_insufficient_rounds": 0.0,
             "search_quality_score_sum": 0.0,
+            "duplicate_search_results_removed": 0.0,
         }
 
     def _with_system_prompt(
@@ -452,6 +472,47 @@ class SearchAgentLoop(AgentLoopBase):
             cache.update({p.url: p for p in pages if p.url})
         return [cache[u] for u in urls if u in cache]
 
+    def _deduplicate_results_by_source(
+        self,
+        results_by_query: list[list[SearchResult]],
+    ) -> tuple[list[list[SearchResult]], int]:
+        """Remove repeated sources from a multi-query evidence pack.
+
+        Enterprise corpora often return the same document chunk for several
+        follow-up queries. Keeping the first occurrence preserves citation
+        labels while reducing context waste and duplicate synthesis pressure.
+        Within one query, the higher-scored duplicate is retained.
+        """
+        seen: set[str] = set()
+        deduped_rows: list[list[SearchResult]] = []
+        removed = 0
+
+        for row in results_by_query:
+            best_by_key: dict[str, SearchResult] = {}
+            key_order: list[str] = []
+            for result in row:
+                key = _result_fingerprint(result)
+                current = best_by_key.get(key)
+                if current is None:
+                    best_by_key[key] = result
+                    key_order.append(key)
+                elif result.score > current.score:
+                    removed += 1
+                    best_by_key[key] = result
+                else:
+                    removed += 1
+
+            row_out: list[SearchResult] = []
+            for key in key_order:
+                if key in seen:
+                    removed += 1
+                    continue
+                seen.add(key)
+                row_out.append(best_by_key[key])
+            deduped_rows.append(row_out)
+
+        return deduped_rows, removed
+
     # ------------------------------------------------------------------
     # Observation builders
     # ------------------------------------------------------------------
@@ -611,6 +672,11 @@ class SearchAgentLoop(AgentLoopBase):
 
         t0 = time.perf_counter()
         results_by_query = await self._retrieve_with_cache(queries, search_cache)
+        if cfg.deduplicate_search_results:
+            results_by_query, removed = self._deduplicate_results_by_source(
+                results_by_query
+            )
+            metrics["duplicate_search_results_removed"] += removed
         metrics["search_rounds"] += 1
         logger.debug(
             "search returned %d total results across %d queries in %.2fs",
@@ -943,6 +1009,15 @@ class SearchAgentLoop(AgentLoopBase):
             metrics["search_quality_score_sum"] / metrics["search_rounds"]
             if metrics["search_rounds"]
             else 0.0
+        )
+        cited_contexts = agent_ctx.cited_search_contexts(final_answer or "")
+        cited_task_ids = agent_ctx.cited_task_ids(final_answer or "")
+        metrics["citation_count"] = float(
+            len(agent_ctx.cited_result_ids(final_answer or ""))
+        )
+        metrics["cited_search_contexts"] = float(len(cited_contexts))
+        metrics["cited_task_coverage_ratio"] = (
+            len(cited_task_ids) / len(active_tasks) if active_tasks else 1.0
         )
         answer_allowed = False
         if final_answer:
