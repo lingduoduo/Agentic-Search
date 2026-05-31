@@ -182,3 +182,75 @@ def test_context_helpers_are_exported_from_top_level_src():
 
     assert ExportedSearchRequest(query="hello").query == "hello"
     assert exported_build_answer_prompt is build_answer_prompt
+
+
+# ---------------------------------------------------------------------------
+# synthesize_answer_from_context — extractive behaviour
+# ---------------------------------------------------------------------------
+
+from src.context.models import SearchContextBundle  # noqa: E402
+from src.context.pipeline import _overlap_score, _split_sentences, _tokenize  # noqa: E402
+
+
+def test_synthesize_selects_most_relevant_sentence():
+    """The sentence with the highest keyword overlap must appear in the answer."""
+    doc = SearchResult(
+        title="Olympics history",
+        contents=(
+            "The Olympics were founded in ancient Greece."
+            " Paris hosted the Summer Olympics in 1900 and again in 1924."
+            " The modern Games attract thousands of athletes worldwide."
+        ),
+        score=1.0,
+    )
+    bundle = build_context_bundle("When did Paris host the Olympics?", [doc])
+    answer = synthesize_answer_from_context("When did Paris host the Olympics?", bundle)
+
+    assert "[D1]" in answer
+    # Must mention the specific fact, not just dump the whole document
+    assert "1900" in answer or "1924" in answer or "Paris" in answer
+
+
+def test_synthesize_no_documents_mentions_question():
+    bundle = SearchContextBundle(query="q", documents=[])
+    answer = synthesize_answer_from_context("What is quantum computing?", bundle)
+    assert "quantum computing" in answer.lower() or "context" in answer.lower()
+
+
+def test_synthesize_deduplicates_citations():
+    """Each source document should appear at most once."""
+    results = [
+        SearchResult(
+            title="A",
+            contents='"A"\nFAISS is fast and efficient for vector search queries.',
+            score=0.9,
+        ),
+        SearchResult(
+            title="B",
+            contents='"B"\nBM25 is a traditional lexical ranking method used in search.',
+            score=0.7,
+        ),
+    ]
+    bundle = build_context_bundle("fast search methods", results)
+    answer = synthesize_answer_from_context("fast search methods", bundle)
+
+    assert answer.count("[D1]") <= 1
+    assert answer.count("[D2]") <= 1
+
+
+def test_tokenize_handles_numbers():
+    tokens = _tokenize("Paris hosted the 2024 Olympics")
+    assert "2024" in tokens
+    assert "paris" in tokens
+    assert "the" not in tokens
+
+
+def test_overlap_score_empty_inputs():
+    assert _overlap_score(set(), {"paris"}) == 0.0
+    assert _overlap_score({"paris"}, set()) == 0.0
+
+
+def test_split_sentences_preserves_long_sentences():
+    text = "This is a sufficiently long first sentence about vector search. This is another sentence about BM25 ranking."
+    sentences = _split_sentences(text)
+    assert len(sentences) == 2
