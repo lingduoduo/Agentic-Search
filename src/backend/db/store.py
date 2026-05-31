@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
+from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -90,7 +91,7 @@ class AgenticSearchStore:
         self.path = str(path)
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._configure_connection()
         self._init_schema()
 
     def close(self) -> None:
@@ -101,6 +102,14 @@ class AgenticSearchStore:
 
     def __exit__(self, *_exc: object) -> None:
         self.close()
+
+    def _configure_connection(self) -> None:
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
+        self._conn.execute("PRAGMA temp_store = MEMORY")
+        if self.path != ":memory:":
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA synchronous = NORMAL")
 
     def _init_schema(self) -> None:
         self._conn.executescript(
@@ -282,6 +291,21 @@ class AgenticSearchStore:
                 user_id TEXT PRIMARY KEY,
                 is_active INTEGER NOT NULL DEFAULT 1
             );
+
+            CREATE INDEX IF NOT EXISTS idx_documents_connector_updated
+                ON documents(connector_id, updated_at DESC, id);
+            CREATE INDEX IF NOT EXISTS idx_documents_updated
+                ON documents(updated_at DESC, id);
+            CREATE INDEX IF NOT EXISTS idx_group_members_user
+                ON group_members(user_id, group_id);
+            CREATE INDEX IF NOT EXISTS idx_document_permissions_principal
+                ON document_permissions(principal_type, principal_id, document_id);
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated
+                ON chat_sessions(user_id, updated_at DESC, id);
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
+                ON chat_messages(session_id, created_at, id);
+            CREATE INDEX IF NOT EXISTS idx_index_attempts_connector_updated
+                ON index_attempts(connector_id, updated_at DESC, id);
             """
         )
         self._conn.commit()
@@ -485,21 +509,20 @@ class AgenticSearchStore:
             ),
         )
         self._conn.execute("DELETE FROM group_members WHERE group_id = ?", (group.id,))
-        for user_id in group.user_ids:
-            self._conn.execute(
-                """
-                INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
-                VALUES (?, ?, ?)
-                """,
-                (group.id, user_id, now),
-            )
+        self._conn.executemany(
+            """
+            INSERT OR IGNORE INTO group_members (group_id, user_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            [(group.id, user_id, now) for user_id in group.user_ids],
+        )
         self._conn.commit()
         return self.get_group(group.id) or GroupRecord(id=group.id, name=group.name)
 
     def list_groups(self) -> list[GroupRecord]:
         """Return all groups ordered by name."""
         rows = self._conn.execute("SELECT * FROM groups ORDER BY name").fetchall()
-        return [self._row_to_group(row) for row in rows]
+        return self._rows_to_groups(rows)
 
     def delete_group(self, group_id: str) -> bool:
         """Delete *group_id* and its memberships. Returns True if it existed."""
@@ -543,7 +566,18 @@ class AgenticSearchStore:
             """,
             (user_id,),
         ).fetchall()
-        return [self._row_to_group(row) for row in rows]
+        return self._rows_to_groups(rows)
+
+    def list_group_ids_for_user(self, user_id: str) -> list[str]:
+        rows = self._conn.execute(
+            """
+            SELECT group_id FROM group_members
+            WHERE user_id = ?
+            ORDER BY group_id
+            """,
+            (user_id,),
+        ).fetchall()
+        return [row["group_id"] for row in rows]
 
     def grant_document_access(
         self, permission: DocumentPermission
@@ -593,7 +627,7 @@ class AgenticSearchStore:
     ) -> list[StoredDocument]:
         groups = set(group_ids or [])
         if user_id is not None:
-            groups.update(group.id for group in self.list_groups_for_user(user_id))
+            groups.update(self.list_group_ids_for_user(user_id))
         clauses = ["p.principal_type = 'public'"]
         params: list[object] = []
         if user_id is not None:
@@ -1098,18 +1132,43 @@ class AgenticSearchStore:
         )
 
     def _row_to_group(self, row: sqlite3.Row) -> GroupRecord:
-        members = self._conn.execute(
-            """
-            SELECT user_id FROM group_members
-            WHERE group_id = ?
-            ORDER BY user_id
+        members_by_group = self._members_by_group_id([row["id"]])
+        return self._row_to_group_with_members(row, members_by_group[row["id"]])
+
+    def _rows_to_groups(self, rows: list[sqlite3.Row]) -> list[GroupRecord]:
+        if not rows:
+            return []
+        members_by_group = self._members_by_group_id([row["id"] for row in rows])
+        return [
+            self._row_to_group_with_members(row, members_by_group[row["id"]])
+            for row in rows
+        ]
+
+    def _members_by_group_id(self, group_ids: Iterable[str]) -> dict[str, list[str]]:
+        ids = list(dict.fromkeys(group_ids))
+        members_by_group: dict[str, list[str]] = defaultdict(list)
+        if not ids:
+            return members_by_group
+        placeholders = ", ".join("?" for _ in ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT group_id, user_id FROM group_members
+            WHERE group_id IN ({placeholders})
+            ORDER BY group_id, user_id
             """,
-            (row["id"],),
+            tuple(ids),
         ).fetchall()
+        for member in rows:
+            members_by_group[member["group_id"]].append(member["user_id"])
+        return members_by_group
+
+    def _row_to_group_with_members(
+        self, row: sqlite3.Row, members: list[str]
+    ) -> GroupRecord:
         return GroupRecord(
             id=row["id"],
             name=row["name"],
-            user_ids=[member["user_id"] for member in members],
+            user_ids=members,
             metadata=_json_loads(row["metadata_json"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],

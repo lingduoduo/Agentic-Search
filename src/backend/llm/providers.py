@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from .interfaces import LLM, LLMConfig, ToolChoiceOptions
 
@@ -148,6 +149,13 @@ class OpenAICompatibleLLM(LLM):
         self._headers: dict[str, str] = {"Content-Type": "application/json"}
         if config.api_key:
             self._headers["Authorization"] = f"Bearer {config.api_key}"
+        self._session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=4, pool_maxsize=16)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+
+    def close(self) -> None:
+        self._session.close()
 
     @property
     def config(self) -> LLMConfig:
@@ -176,8 +184,9 @@ class OpenAICompatibleLLM(LLM):
             body["tool_choice"] = _TOOL_CHOICE_MAP.get(tool_choice, "auto")
 
         timeout = kwargs.get("timeout_override") or 120
+        resp: requests.Response | None = None
         try:
-            resp = requests.post(
+            resp = self._session.post(
                 self._endpoint,
                 headers=self._headers,
                 json=body,
@@ -194,12 +203,15 @@ class OpenAICompatibleLLM(LLM):
             )
             raise
 
-        for raw_line in resp.iter_lines(decode_unicode=True):
-            if not raw_line:
-                continue
-            chunk = _parse_sse_chunk(raw_line)
-            if chunk is not None:
-                yield chunk
+        try:
+            for raw_line in resp.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                chunk = _parse_sse_chunk(raw_line)
+                if chunk is not None:
+                    yield chunk
+        finally:
+            resp.close()
 
     @staticmethod
     def _normalise_messages(prompt: Any) -> list[dict]:

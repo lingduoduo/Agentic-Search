@@ -26,6 +26,7 @@ from .interface import (
 from .models import Document, HierarchyNode, SlimDocument
 
 DEFAULT_FILE_BATCH_SIZE = 32
+DEFAULT_SEARCH_CONCURRENCY = 8
 TEXT_FILE_EXTENSIONS = {
     ".csv",
     ".json",
@@ -301,12 +302,14 @@ class SearchConnector(LoadConnector):
         search_url: str = "http://localhost:8000/retrieve",
         page_size: int = 5,
         batch_size: int = 32,
+        max_concurrency: int = DEFAULT_SEARCH_CONCURRENCY,
     ) -> None:
         self.queries = list(queries)
         self.provider = provider
         self.search_url = search_url
         self.page_size = page_size
         self.batch_size = batch_size
+        self.max_concurrency = max_concurrency
 
     def validate_connector_settings(self) -> None:
         if not self.queries:
@@ -315,6 +318,8 @@ class SearchConnector(LoadConnector):
             raise ValueError("page_size must be greater than zero.")
         if self.batch_size <= 0:
             raise ValueError("batch_size must be greater than zero.")
+        if self.max_concurrency <= 0:
+            raise ValueError("max_concurrency must be greater than zero.")
 
     def load_from_state(self) -> Iterator[list[Document | HierarchyNode]]:
         self.validate_connector_settings()
@@ -324,14 +329,17 @@ class SearchConnector(LoadConnector):
         """Async variant for callers already running inside an event loop."""
 
         self.validate_connector_settings()
-        documents: list[Document] = []
-        for query in self.queries:
-            pages = await search_tool(
-                query,
-                provider=self.provider,
-                search_url=self.search_url,
-                page_size=self.page_size,
-            )
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+
+        async def _search_query(query: str) -> list[Document]:
+            async with semaphore:
+                pages = await search_tool(
+                    query,
+                    provider=self.provider,
+                    search_url=self.search_url,
+                    page_size=self.page_size,
+                )
+            documents: list[Document] = []
             for index, page in enumerate(pages, 1):
                 if page.error:
                     continue
@@ -345,6 +353,13 @@ class SearchConnector(LoadConnector):
                         metadata={"source": self.provider, "query": query},
                     )
                 )
+            return documents
+
+        documents: list[Document] = []
+        for query_docs in await asyncio.gather(
+            *(_search_query(query) for query in self.queries)
+        ):
+            documents.extend(query_docs)
         return documents
 
     def _iter_documents_sync(self) -> Iterator[Document]:
