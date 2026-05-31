@@ -57,9 +57,31 @@ CitationMapping: TypeAlias = dict[int, SearchDoc]
 
 
 def in_code_block(llm_text: str) -> bool:
-    """Check if we're currently inside a code block by counting triple backticks."""
+    """Check if we're currently inside a fenced code block (``` ... ```)."""
     count = llm_text.count(TRIPLE_BACKTICK)
     return count % 2 != 0
+
+
+def in_inline_code(llm_text: str) -> bool:
+    """Check if we're currently inside an inline code span (` ... ` or `` ... ``).
+
+    Works by stripping all triple-backtick fenced blocks first, then counting
+    the remaining single/double backtick delimiters.  An odd count means we are
+    inside an unclosed inline span.
+    """
+    # Remove fenced code blocks so their interior backticks don't confuse counting.
+    stripped = llm_text
+    while TRIPLE_BACKTICK in stripped:
+        start = stripped.find(TRIPLE_BACKTICK)
+        end = stripped.find(TRIPLE_BACKTICK, start + 3)
+        if end == -1:
+            # Unclosed fenced block — everything from start onward is inside it.
+            stripped = stripped[:start]
+            break
+        stripped = stripped[:start] + stripped[end + 3 :]
+
+    # Count remaining backticks; an odd number means we're in an inline span.
+    return stripped.count("`") % 2 != 0
 
 
 # ============================================================================
@@ -312,7 +334,12 @@ class DynamicCitationProcessor:
         # If we see ``` followed by \n, add "plaintext" language specifier
         if "`" in self.curr_segment:
             if self.curr_segment.endswith("`"):
-                pass
+                # Segment ends mid-backtick sequence (e.g. "`", "``").
+                # We don't know yet whether this is an inline code span or the
+                # start of a fenced block, so hold the segment until the sequence
+                # resolves.  Marking possible_citation_found keeps it buffered.
+                possible_citation_found = True
+                return
             elif "```" in self.curr_segment:
                 parts = self.curr_segment.split("```")
                 if len(parts) > 1 and len(parts[1]) > 0:
@@ -329,7 +356,11 @@ class DynamicCitationProcessor:
         )
 
         result = ""
-        if citation_matches and not in_code_block(self.llm_out):
+        if (
+            citation_matches
+            and not in_code_block(self.llm_out)
+            and not in_inline_code(self.llm_out)
+        ):
             match_idx = 0
             for match in citation_matches:
                 match_span = match.span()
