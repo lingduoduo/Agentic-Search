@@ -7,6 +7,7 @@ import pytest
 from src import (
     AgentLoopBase,
     AgentLoopConfig,
+    AgentContext,
     PlainGenerationLoop,
     PlainGenerationLoopConfig,
     RolloutStep,
@@ -830,6 +831,75 @@ def test_search_agent_loop_deduplicates_queries_and_urls_and_tracks_metrics():
     assert output.metrics["unnecessary_fetch_count"] == 0.0
 
 
+def test_search_agent_loop_deduplicates_duplicate_evidence_across_queries():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nalpha\nbeta\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R1Q2D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=2
+            ),
+        ),
+    )
+    duplicate = SearchResult(
+        contents='"Shared"\nDuplicate body',
+        score=0.4,
+        url="https://example.com/shared",
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("alpha", "beta"): [
+                [
+                    duplicate,
+                    SearchResult(
+                        contents='"Shared"\nDuplicate body',
+                        score=0.9,
+                        url="https://example.com/shared",
+                    ),
+                    SearchResult(
+                        contents='"Alpha"\nAlpha body',
+                        url="https://example.com/alpha",
+                    ),
+                ],
+                [
+                    SearchResult(
+                        contents='"Shared"\nDuplicate body',
+                        url="https://example.com/shared#section",
+                    ),
+                    SearchResult(
+                        contents='"Beta"\nBeta body',
+                        url="https://example.com/beta",
+                    ),
+                ],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    first_query_results = output.context.rounds[0][0].results
+    second_query_results = output.context.rounds[0][1].results
+    assert [result.url for result in first_query_results] == [
+        "https://example.com/shared",
+        "https://example.com/alpha",
+    ]
+    assert first_query_results[0].score == 0.9
+    assert [result.url for result in second_query_results] == [
+        "https://example.com/beta"
+    ]
+    assert output.metrics["duplicate_search_results_removed"] == 2.0
+    assert output.metrics["citation_count"] == 2.0
+    assert output.metrics["cited_search_contexts"] == 2.0
+
+
 def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
     tokenizer = DummyTokenizerWithEncode()
     responses = [
@@ -881,6 +951,31 @@ def test_search_agent_loop_registers_subquestions_and_tracks_task_searches():
     assert output.metrics["active_subquestions"] == 2.0
     assert output.metrics["subquestions_covered"] == 2.0
     assert output.metrics["subquestion_coverage_ratio"] == 1.0
+    assert output.metrics["citation_count"] == 2.0
+    assert output.metrics["cited_task_coverage_ratio"] == 1.0
+
+
+def test_agent_context_reports_cited_task_coverage():
+    ctx = SearchContext(
+        query="voice actor",
+        task_id="T1",
+        task_description="identify the voice actor",
+        results=[
+            SearchResult(contents='"Voice"\nAlice David'),
+            SearchResult(contents='"Bio"\nBiography'),
+        ],
+    )
+    agent_ctx = AgentContext(tasks={"T1": "identify the voice actor"})
+    agent_ctx.rounds.append([ctx])
+    agent_ctx.turns.append(ctx)
+
+    assert agent_ctx.cited_result_ids("Use the voice source [R1Q1D2]") == frozenset(
+        {"R1Q1D2"}
+    )
+    assert agent_ctx.cited_search_contexts("Use the voice source [R1Q1D2]") == [ctx]
+    assert agent_ctx.cited_task_ids("Use the voice source [R1Q1D2]") == frozenset(
+        {"T1"}
+    )
 
 
 def test_search_agent_loop_rejects_answer_when_a_subquestion_is_unresolved():
