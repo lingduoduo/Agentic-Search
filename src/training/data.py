@@ -16,6 +16,39 @@ DEFAULT_TOOL_SYSTEM_PROMPT = (
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
+# ---------------------------------------------------------------------------
+# Template registries
+#
+# Each registry maps a template_type string to a callable that produces the
+# prompt string for that type.  Register new templates at import time via
+# ``register_qa_prompt_template`` / ``register_rag_prompt_template``, or by
+# calling ``register_qa_messages_template`` for the messages variant.
+# ---------------------------------------------------------------------------
+
+_QAPromptFn = Callable[[str], str]
+_RAGPromptFn = Callable[[str, str], str]
+_QAMessagesFn = Callable[..., list[dict[str, str]]]
+
+_QA_PROMPT_REGISTRY: dict[str, _QAPromptFn] = {}
+_RAG_PROMPT_REGISTRY: dict[str, _RAGPromptFn] = {}
+_QA_MESSAGES_REGISTRY: dict[str, _QAMessagesFn] = {}
+
+
+def register_qa_prompt_template(name: str, fn: _QAPromptFn) -> None:
+    """Register a custom QA prompt builder under *name*."""
+    _QA_PROMPT_REGISTRY[name] = fn
+
+
+def register_rag_prompt_template(name: str, fn: _RAGPromptFn) -> None:
+    """Register a custom RAG prompt builder under *name*."""
+    _RAG_PROMPT_REGISTRY[name] = fn
+
+
+def register_qa_messages_template(name: str, fn: _QAMessagesFn) -> None:
+    """Register a custom QA messages builder under *name*."""
+    _QA_MESSAGES_REGISTRY[name] = fn
+
+
 def normalize_question_text(question: Any) -> str:
     """Normalize raw QA questions into stable, searchable prompts."""
 
@@ -78,11 +111,29 @@ def extract_question_text(example: Mapping[str, Any]) -> str:
 
 
 def build_search_qa_prompt(question: str, *, template_type: str = "base") -> str:
-    """Normalize a QA question for search-agent datasets."""
+    """Normalize a QA question for search-agent datasets.
 
-    if template_type != "base":
-        raise NotImplementedError(f"Unsupported QA prompt template: {template_type}")
-    return normalize_question_text(question)
+    Built-in template types:
+
+    ``"base"``
+        Plain normalised question (the original behaviour).
+
+    ``"chat"``
+        Conversational phrasing: *"Please help me answer: <question>"*.
+
+    ``"instruct"``
+        Instruction-tuning style with an explicit chain-of-thought directive.
+
+    Additional types can be registered at runtime via
+    :func:`register_qa_prompt_template`.
+    """
+    if template_type in _QA_PROMPT_REGISTRY:
+        return _QA_PROMPT_REGISTRY[template_type](question)
+    raise ValueError(
+        f"Unknown QA prompt template: {template_type!r}. "
+        f"Available: {sorted(_QA_PROMPT_REGISTRY)}. "
+        "Register a custom template with register_qa_prompt_template()."
+    )
 
 
 def build_search_qa_messages(
@@ -93,21 +144,36 @@ def build_search_qa_messages(
     max_search_limit: int = 5,
     max_url_fetch: int = 3,
 ) -> list[dict[str, str]]:
-    """Build QA messages using the same prompt contract as SearchAgentLoop."""
+    """Build QA messages using the same prompt contract as SearchAgentLoop.
 
-    if template_type != "base":
-        raise NotImplementedError(f"Unsupported QA prompt template: {template_type}")
-    if system_prompt is None:
-        from src.agents.search import build_search_agent_instruction
+    Built-in template types:
 
-        system_prompt = build_search_agent_instruction(
+    ``"base"``
+        Full search-agent system prompt + normalised user question.
+
+    ``"chat"``
+        Minimal assistant persona + conversational user question.
+        Suitable for fine-tuning general chat models without search tools.
+
+    ``"instruct"``
+        Instruction-following format that asks the model to reason before
+        answering using ``<think>`` / ``<answer>`` XML markers.
+
+    Additional types can be registered via
+    :func:`register_qa_messages_template`.
+    """
+    if template_type in _QA_MESSAGES_REGISTRY:
+        return _QA_MESSAGES_REGISTRY[template_type](
+            question,
+            system_prompt=system_prompt,
             max_search_limit=max_search_limit,
             max_url_fetch=max_url_fetch,
         )
-    return [
-        {"role": "system", "content": system_prompt.strip()},
-        {"role": "user", "content": normalize_question_text(question)},
-    ]
+    raise ValueError(
+        f"Unknown QA messages template: {template_type!r}. "
+        f"Available: {sorted(_QA_MESSAGES_REGISTRY)}. "
+        "Register a custom template with register_qa_messages_template()."
+    )
 
 
 def _build_record(
@@ -184,16 +250,31 @@ def build_search_rag_prompt(
     *,
     template_type: str = "base",
 ) -> str:
-    """Build a compact RAG prompt with fixed question/context sections."""
+    """Build a RAG prompt with question and retrieved context.
 
-    if template_type != "base":
-        raise NotImplementedError(f"Unsupported RAG prompt template: {template_type}")
-    return (
-        "Answer the given question with the potentially useful context.\n"
-        "Reason in <think></think> and return the final answer in "
-        "<answer></answer>.\n"
-        f"Question: {normalize_question_text(question)}\n"
-        f"Context:\n{context.strip()}\n"
+    Built-in template types:
+
+    ``"base"``
+        Structured prompt with ``<think>`` / ``<answer>`` XML markers
+        (the original behaviour).
+
+    ``"chat"``
+        Conversational style: introduces the context as "Here is some
+        information that may help" without XML markers.
+
+    ``"instruct"``
+        Explicit instruction format that asks for a numbered step-by-step
+        reasoning trace followed by a concise final answer.
+
+    Additional types can be registered via
+    :func:`register_rag_prompt_template`.
+    """
+    if template_type in _RAG_PROMPT_REGISTRY:
+        return _RAG_PROMPT_REGISTRY[template_type](question, context)
+    raise ValueError(
+        f"Unknown RAG prompt template: {template_type!r}. "
+        f"Available: {sorted(_RAG_PROMPT_REGISTRY)}. "
+        "Register a custom template with register_rag_prompt_template()."
     )
 
 
@@ -596,3 +677,118 @@ def build_prompt_dataloader(
         drop_last=drop_last,
         collate_fn=lambda batch: collate_prompt_batch(batch, pad_token_id=pad_token_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# Built-in template registrations
+# ---------------------------------------------------------------------------
+# These run at import time so every call to build_search_qa_prompt etc. can
+# resolve "base", "chat", and "instruct" without extra configuration.
+
+
+def _qa_prompt_base(question: str) -> str:
+    return normalize_question_text(question)
+
+
+def _qa_prompt_chat(question: str) -> str:
+    return f"Please help me answer: {normalize_question_text(question)}"
+
+
+def _qa_prompt_instruct(question: str) -> str:
+    return (
+        f"Answer the following question. "
+        f"Think step by step before giving your final answer.\n"
+        f"Question: {normalize_question_text(question)}"
+    )
+
+
+register_qa_prompt_template("base", _qa_prompt_base)
+register_qa_prompt_template("chat", _qa_prompt_chat)
+register_qa_prompt_template("instruct", _qa_prompt_instruct)
+
+
+def _qa_messages_base(
+    question: str,
+    *,
+    system_prompt: str | None = None,
+    max_search_limit: int = 5,
+    max_url_fetch: int = 3,
+) -> list[dict[str, str]]:
+    if system_prompt is None:
+        from src.agents.search import build_search_agent_instruction
+
+        system_prompt = build_search_agent_instruction(
+            max_search_limit=max_search_limit,
+            max_url_fetch=max_url_fetch,
+        )
+    return [
+        {"role": "system", "content": system_prompt.strip()},
+        {"role": "user", "content": normalize_question_text(question)},
+    ]
+
+
+def _qa_messages_chat(
+    question: str,
+    *,
+    system_prompt: str | None = None,
+    **_kwargs: Any,
+) -> list[dict[str, str]]:
+    sys = system_prompt or "You are a helpful assistant."
+    return [
+        {"role": "system", "content": sys.strip()},
+        {"role": "user", "content": _qa_prompt_chat(question)},
+    ]
+
+
+def _qa_messages_instruct(
+    question: str,
+    *,
+    system_prompt: str | None = None,
+    **_kwargs: Any,
+) -> list[dict[str, str]]:
+    sys = system_prompt or (
+        "You are a knowledgeable assistant. Reason carefully before answering."
+    )
+    return [
+        {"role": "system", "content": sys.strip()},
+        {"role": "user", "content": _qa_prompt_instruct(question)},
+    ]
+
+
+register_qa_messages_template("base", _qa_messages_base)
+register_qa_messages_template("chat", _qa_messages_chat)
+register_qa_messages_template("instruct", _qa_messages_instruct)
+
+
+def _rag_prompt_base(question: str, context: str) -> str:
+    return (
+        "Answer the given question with the potentially useful context.\n"
+        "Reason in <think></think> and return the final answer in "
+        "<answer></answer>.\n"
+        f"Question: {normalize_question_text(question)}\n"
+        f"Context:\n{context.strip()}\n"
+    )
+
+
+def _rag_prompt_chat(question: str, context: str) -> str:
+    return (
+        f"Here is some information that may help:\n{context.strip()}\n\n"
+        f"Based on the above, {normalize_question_text(question)}"
+    )
+
+
+def _rag_prompt_instruct(question: str, context: str) -> str:
+    return (
+        "Use the provided context to answer the question. "
+        "Follow these steps:\n"
+        "1. Identify the relevant facts from the context.\n"
+        "2. Reason step by step.\n"
+        "3. State your final answer concisely.\n\n"
+        f"Context:\n{context.strip()}\n\n"
+        f"Question: {normalize_question_text(question)}"
+    )
+
+
+register_rag_prompt_template("base", _rag_prompt_base)
+register_rag_prompt_template("chat", _rag_prompt_chat)
+register_rag_prompt_template("instruct", _rag_prompt_instruct)
