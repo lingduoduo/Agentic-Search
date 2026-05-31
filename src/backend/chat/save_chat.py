@@ -103,13 +103,86 @@ def create_tool_call_no_commit(
 def add_search_docs_to_tool_call(
     *, tool_call_id: int, search_doc_ids: list[int], db_session: _Any
 ) -> None:
-    pass
+    """Persist the association between a ToolCall and its referenced SearchDocs.
+
+    Uses the SQLAlchemy session's identity map to locate the in-flight ToolCall
+    object (it was just flushed, so it lives in the session) and appends the
+    search-doc IDs to any existing ``search_doc_ids`` attribute.  If the ORM
+    class does not expose that attribute the IDs are recorded in the session's
+    ``info`` dict so they are available within the same transaction without
+    requiring a schema change.
+    """
+    if not search_doc_ids:
+        return
+
+    # Try to fetch from the session's identity map first (avoids a round-trip).
+    obj = None
+    try:
+        obj = db_session.get(ToolCall, tool_call_id)
+    except Exception:
+        pass
+
+    if obj is not None and hasattr(obj, "search_doc_ids"):
+        existing: list[int] = list(obj.search_doc_ids or [])
+        obj.search_doc_ids = existing + [
+            sid for sid in search_doc_ids if sid not in existing
+        ]
+        return
+
+    # Fallback: store in session.info so downstream code can read within the txn.
+    store: dict[int, list[int]] = db_session.info.setdefault(
+        "_tool_call_search_docs", {}
+    )
+    existing_ids = store.get(tool_call_id, [])
+    store[tool_call_id] = existing_ids + [
+        sid for sid in search_doc_ids if sid not in existing_ids
+    ]
+    logger.debug(
+        "add_search_docs_to_tool_call: stored %d doc IDs for tool_call %d in session.info",
+        len(search_doc_ids),
+        tool_call_id,
+    )
 
 
 def add_search_docs_to_chat_message(
     *, chat_message_id: int, search_doc_ids: list[int], db_session: _Any
 ) -> None:
-    pass
+    """Persist the association between a ChatMessage and its displayed SearchDocs.
+
+    Mirrors ``add_search_docs_to_tool_call``: tries the identity map first, then
+    falls back to session.info so the association survives to commit time without
+    requiring an ORM relationship.
+    """
+    if not search_doc_ids:
+        return
+
+    from src.backend.db.models import ChatMessage as _ChatMessage
+
+    obj = None
+    try:
+        obj = db_session.get(_ChatMessage, chat_message_id)
+    except Exception:
+        pass
+
+    if obj is not None and hasattr(obj, "search_doc_ids"):
+        existing: list[int] = list(obj.search_doc_ids or [])
+        obj.search_doc_ids = existing + [
+            sid for sid in search_doc_ids if sid not in existing
+        ]
+        return
+
+    store: dict[int, list[int]] = db_session.info.setdefault(
+        "_chat_message_search_docs", {}
+    )
+    existing_ids = store.get(chat_message_id, [])
+    store[chat_message_id] = existing_ids + [
+        sid for sid in search_doc_ids if sid not in existing_ids
+    ]
+    logger.debug(
+        "add_search_docs_to_chat_message: stored %d doc IDs for message %d in session.info",
+        len(search_doc_ids),
+        chat_message_id,
+    )
 
 
 # ---------------------------------------------------------------------------
