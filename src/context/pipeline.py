@@ -78,10 +78,91 @@ async def answer_with_retrieval(
 
 
 def synthesize_answer_from_context(question: str, context: SearchContextBundle) -> str:
+    """Extractive fallback answer when no LLM is available.
+
+    Scores every sentence in the retrieved documents by keyword overlap with
+    the question, then assembles the top sentences into a grounded answer with
+    inline citations.  This is intentionally conservative — it never fabricates
+    information not present in the retrieved context.
+    """
     if not context.documents:
-        return f"I do not have retrieved context to answer: {question}"
-    snippets = []
-    for document in context.documents[:3]:
-        content = " ".join(document.content.split())
-        snippets.append(f"{document.citation} {document.title}\n{content}")
-    return "\n\n".join(snippets)
+        return f"I could not find retrieved context to answer: {question}"
+
+    question_tokens = _tokenize(question)
+    if not question_tokens:
+        # Degenerate query — fall back to the top document's lead sentence.
+        doc = context.documents[0]
+        lead = _first_sentence(doc.content)
+        return f"{lead} {doc.citation}"
+
+    # Score every sentence across all documents.
+    scored: list[tuple[float, str, str]] = []  # (score, citation, sentence)
+    for doc in context.documents:
+        for sentence in _split_sentences(doc.content):
+            score = _overlap_score(question_tokens, _tokenize(sentence))
+            if score > 0:
+                scored.append((score, doc.citation, sentence))
+
+    if not scored:
+        # No sentence matched any keyword — return the lead of the top doc.
+        doc = context.documents[0]
+        return f"Based on {doc.citation} ({doc.title}): {_first_sentence(doc.content)}"
+
+    scored.sort(key=lambda t: t[0], reverse=True)
+
+    # Take up to 3 best sentences, deduplicating by citation.
+    seen_citations: set[str] = set()
+    selected: list[tuple[str, str]] = []
+    for _, citation, sentence in scored:
+        if citation not in seen_citations:
+            selected.append((citation, sentence))
+            seen_citations.add(citation)
+        if len(selected) >= 3:
+            break
+
+    parts = [f"{sentence} {citation}" for citation, sentence in selected]
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Extractive helpers
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = frozenset(
+    "a an the is are was were be been being have has had do does did "
+    "will would could should may might shall can need dare ought used "
+    "to of in on at for by with from about into through during before "
+    "after above below between among and or but nor so yet both either "
+    "neither not only also just more most some any such other each every "
+    "both few more most other some such no nor not only own same so than "
+    "too very i me my we our you your he she it its they them their "
+    "what which who whom this that these those i s t don doesn won couldn "
+    "how when where why".split()
+)
+
+
+def _tokenize(text: str) -> set[str]:
+    import re
+
+    tokens = re.findall(r"[a-z0-9]+", text.lower())
+    return {t for t in tokens if t not in _STOPWORDS and len(t) > 1}
+
+
+def _overlap_score(query_tokens: set[str], sentence_tokens: set[str]) -> float:
+    if not query_tokens or not sentence_tokens:
+        return 0.0
+    shared = query_tokens & sentence_tokens
+    # Jaccard-style but biased toward query recall
+    return len(shared) / len(query_tokens)
+
+
+def _split_sentences(text: str) -> list[str]:
+    import re
+
+    raw = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [s.strip() for s in raw if len(s.strip()) > 20]
+
+
+def _first_sentence(text: str) -> str:
+    sentences = _split_sentences(text)
+    return sentences[0] if sentences else text[:200].strip()
