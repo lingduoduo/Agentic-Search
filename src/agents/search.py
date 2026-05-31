@@ -274,8 +274,7 @@ class SearchAgentLoop(AgentLoopBase):
             cfg.answer_tag,
         ]
         self._action_re = re.compile(
-            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})>"
-            rf"(.*?)</\1>",
+            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})>" rf"(.*?)</\1>",
             re.DOTALL,
         )
         self._search_client = SearchClient(
@@ -305,6 +304,8 @@ class SearchAgentLoop(AgentLoopBase):
             "evidence_insufficient_rounds": 0.0,
             "search_quality_score_sum": 0.0,
             "duplicate_search_results_removed": 0.0,
+            "implicit_subquestions": 0.0,
+            "research_followup_queries": 0.0,
         }
 
     def _with_system_prompt(
@@ -598,6 +599,7 @@ class SearchAgentLoop(AgentLoopBase):
         self,
         active_tasks: dict[str, str],
         task_statuses: dict[str, bool],
+        task_search_counts: dict[str, int] | None = None,
     ) -> str:
         if not active_tasks:
             return "No active subquestions."
@@ -606,6 +608,8 @@ class SearchAgentLoop(AgentLoopBase):
         missing: list[str] = []
         for tid, desc in active_tasks.items():
             line = f"{tid}: {desc}"
+            if task_search_counts and task_search_counts.get(tid, 0):
+                line += f" (searches: {task_search_counts[tid]})"
             if task_statuses.get(tid, False):
                 covered.append(line)
             else:
@@ -619,6 +623,25 @@ class SearchAgentLoop(AgentLoopBase):
                 "Needs more evidence:\n" + "\n".join(f"- {item}" for item in missing)
             )
         return "\n".join(sections)
+
+    def _register_implicit_tasks(
+        self,
+        query_specs: list[tuple[str | None, str]],
+        active_tasks: dict[str, str],
+        task_statuses: dict[str, bool],
+        agent_ctx: AgentContext,
+    ) -> int:
+        """Register task-prefixed searches as research tracks when needed."""
+        implicit: dict[str, str] = {}
+        for task_id, query in query_specs:
+            if task_id and task_id not in active_tasks and task_id not in implicit:
+                implicit[task_id] = query
+        if not implicit:
+            return 0
+        active_tasks.update(implicit)
+        task_statuses.update({tid: False for tid in implicit})
+        agent_ctx.register_tasks(implicit)
+        return len(implicit)
 
     def _evaluate_tasks(
         self,
@@ -749,6 +772,7 @@ class SearchAgentLoop(AgentLoopBase):
         consecutive_rejections = 0
         rounds_used = 0
         executed_queries: set[str] = set()
+        task_search_counts: dict[str, int] = {}
         search_cache: dict[str, list[SearchResult]] = {}
         page_cache: dict[str, SearchResult] = {}
 
@@ -837,6 +861,12 @@ class SearchAgentLoop(AgentLoopBase):
                 query_specs, fetch_urls = self._collect_requested_queries_and_urls(
                     actions, search_tags=search_tags, fetch_tag=fetch_tag
                 )
+                implicit_tasks = self._register_implicit_tasks(
+                    query_specs, active_tasks, task_statuses, agent_ctx
+                )
+                if implicit_tasks:
+                    metrics["implicit_subquestions"] += implicit_tasks
+                    metrics["active_subquestions"] = float(len(active_tasks))
                 allowed_specs, repeated, overflow = self._partition_search_requests(
                     query_specs,
                     executed_queries=executed_queries,
@@ -944,6 +974,14 @@ class SearchAgentLoop(AgentLoopBase):
                 if search_tool_call.has_new_queries:
                     consecutive_rejections = 0
                     rounds_used += 1  # count rounds, not individual queries
+                    for task_id in search_tool_call.task_ids:
+                        if not task_id:
+                            continue
+                        if task_search_counts.get(task_id, 0):
+                            metrics["research_followup_queries"] += 1.0
+                        task_search_counts[task_id] = (
+                            task_search_counts.get(task_id, 0) + 1
+                        )
                     executed_queries.update(search_tool_call.queries)
                     round_result = await self._execute_search_round(
                         search_tool_call,
@@ -959,7 +997,7 @@ class SearchAgentLoop(AgentLoopBase):
                         turn_observations.append(
                             cfg.subquestions_obs_template.format(
                                 content=self._build_subquestion_status_feedback(
-                                    active_tasks, task_statuses
+                                    active_tasks, task_statuses, task_search_counts
                                 )
                             )
                         )
@@ -1003,6 +1041,9 @@ class SearchAgentLoop(AgentLoopBase):
             sum(task_statuses.values()) / len(task_statuses) if task_statuses else 1.0
         )
         metrics["subquestions_covered"] = float(sum(task_statuses.values()))
+        metrics["research_tasks_with_followup"] = float(
+            sum(1 for count in task_search_counts.values() if count > 1)
+        )
         metrics["rounds_used"] = float(rounds_used)
         metrics["budget_used_ratio"] = rounds_used / max(cfg.max_search_limit or 1, 1)
         metrics["search_quality_score"] = (
