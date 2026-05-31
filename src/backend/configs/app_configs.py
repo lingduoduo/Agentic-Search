@@ -83,6 +83,25 @@ class TelemetrySettings:
 
 
 @dataclass(frozen=True)
+class LLMSettings:
+    """Default LLM provider used when no per-persona override is set.
+
+    Env vars (all optional – defaults to a local Ollama-compatible endpoint):
+      GEN_AI_MODEL_PROVIDER  e.g. "openai", "anthropic", "ollama_chat"
+      GEN_AI_MODEL_VERSION   e.g. "gpt-4o-mini", "claude-3-5-haiku-20241022"
+      GEN_AI_API_KEY         provider API key (omit for local endpoints)
+      GEN_AI_API_BASE        override base URL (e.g. "http://localhost:11434/v1")
+      GEN_AI_MAX_INPUT_TOKENS  context window size (default 8192)
+    """
+
+    model_provider: str = "openai"
+    model_name: str = "gpt-4o-mini"
+    api_key: str | None = None
+    api_base: str | None = None
+    max_input_tokens: int = 8192
+
+
+@dataclass(frozen=True)
 class AppSettings:
     """Top-level process settings for Agentic Search."""
 
@@ -90,6 +109,7 @@ class AppSettings:
     auth: AuthSettings = field(default_factory=AuthSettings)
     permissions: PermissionSyncSettings = field(default_factory=PermissionSyncSettings)
     telemetry: TelemetrySettings = field(default_factory=TelemetrySettings)
+    llm: LLMSettings = field(default_factory=LLMSettings)
     license_enforcement_enabled: bool = False
     cloud_data_plane_url: str | None = None
     # Billing / Stripe configuration (optional; only needed when using billing endpoints)
@@ -135,6 +155,13 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
             super_api_key=get_env_str(source, "AGENTIC_SEARCH_SUPER_API_KEY", None),
         ),
         permissions=load_permission_sync_settings(source),
+        llm=LLMSettings(
+            model_provider=get_env_str(source, "GEN_AI_MODEL_PROVIDER", "openai"),
+            model_name=get_env_str(source, "GEN_AI_MODEL_VERSION", "gpt-4o-mini"),
+            api_key=get_env_str(source, "GEN_AI_API_KEY", None),
+            api_base=get_env_str(source, "GEN_AI_API_BASE", None),
+            max_input_tokens=get_env_int(source, "GEN_AI_MAX_INPUT_TOKENS", 8192),
+        ),
         telemetry=TelemetrySettings(
             posthog_api_key=get_env_str(source, "POSTHOG_API_KEY", None),
             posthog_host=get_env_str(
