@@ -8,9 +8,14 @@ from pydantic import BaseModel, Field
 
 from src.backend.configs import AppSettings
 from src.backend.db import AgenticSearchStore
+from src.backend.db import IndexAttemptRecord
 from src.backend.tools.built_in_tools import CITEABLE_TOOLS_NAMES
 from src.backend.tools.built_in_tools import STOPPING_TOOLS_NAMES
 from src.backend.tools.built_in_tools import TOOL_NAME_TO_CLASS
+
+_BUILT_IN_TOOL_COUNT = len(
+    CITEABLE_TOOLS_NAMES | STOPPING_TOOLS_NAMES | set(TOOL_NAME_TO_CLASS)
+)
 
 
 class AdminSurfaceMetric(BaseModel):
@@ -59,10 +64,11 @@ def build_admin_surface_summary(
 
     failed_attempts = attempt_statuses.get("failed", 0)
     in_progress_attempts = attempt_statuses.get("in_progress", 0)
+    attempted_connector_ids = {attempt.connector_id for attempt in attempts}
     stale_connectors = [
         connector
         for connector in enabled_connectors
-        if not any(attempt.connector_id == connector.id for attempt in attempts)
+        if connector.id not in attempted_connector_ids
     ]
     watch_count = failed_attempts + len(stale_connectors)
     health_score = max(0, min(100, 100 - watch_count * 8))
@@ -72,9 +78,6 @@ def build_admin_surface_summary(
         f"{source}:{count}" for source, count in source_counts.most_common(3)
     )
     latest_attempt = attempts[0] if attempts else None
-    built_in_tool_count = len(
-        CITEABLE_TOOLS_NAMES | STOPPING_TOOLS_NAMES | set(TOOL_NAME_TO_CLASS)
-    )
     active_hooks = sum(1 for hook in hooks if hook.is_active)
 
     return AdminSurfaceSummary(
@@ -97,7 +100,7 @@ def build_admin_surface_summary(
             ),
             AdminSurfaceMetric(
                 label="Tools/actions",
-                value=str(built_in_tool_count),
+                value=str(_BUILT_IN_TOOL_COUNT),
                 detail=f"{active_hooks} active hooks",
             ),
         ],
@@ -209,9 +212,8 @@ def _index_attempt_detail(statuses: Counter[str]) -> str:
     return ", ".join(f"{status}:{count}" for status, count in sorted(statuses.items()))
 
 
-def _latest_attempt_item(attempt: object | None) -> str:
+def _latest_attempt_item(attempt: IndexAttemptRecord | None) -> str:
     if attempt is None:
         return "No indexing attempts yet"
-    connector_id = getattr(attempt, "connector_id", None) or "unassigned"
-    status = getattr(attempt, "status", "unknown")
-    return f"Latest {connector_id}: {status}"
+    connector_id = attempt.connector_id or "unassigned"
+    return f"Latest {connector_id}: {attempt.status}"

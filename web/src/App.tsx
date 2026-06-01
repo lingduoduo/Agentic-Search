@@ -1,97 +1,20 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Bot, FileSearch, MessageSquarePlus, Search } from "lucide-react";
-import { createSession, runAgent } from "./api";
+import { createSession, getAdminSummary, runAgent } from "./api";
 import { AdminOverview } from "./components/AdminOverview";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
 import type {
-  AgentExperienceResponse,
   AdminSurfaceSummary,
+  AgentExperienceResponse,
   ChatMessageView,
   SourceDocumentView,
 } from "./types";
 
 const DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve";
-
-const ADMIN_SUMMARY: AdminSurfaceSummary = {
-  healthLabel: "Operational readiness",
-  healthScore: 94,
-  metrics: [
-    { label: "Connectors", value: "12", detail: "10 active syncs" },
-    { label: "Indexing", value: "98.7%", detail: "freshness SLA" },
-    { label: "Users/groups", value: "4.2k", detail: "SCIM synced" },
-    { label: "Tools/actions", value: "18", detail: "7 MCP backed" },
-  ],
-  sections: [
-    {
-      key: "connectors",
-      title: "Connector management",
-      status: "Healthy",
-      tone: "good",
-      description: "Source syncs, credentials, crawl windows, and permissions sync.",
-      items: ["Slack, Drive, GitHub, SharePoint", "Retry queue monitored"],
-    },
-    {
-      key: "indexing",
-      title: "Indexing status",
-      status: "Watching",
-      tone: "watch",
-      description: "Fetch, parse, chunk, enrich, embed, and search-index pipeline.",
-      items: ["Last batch 6 min ago", "2 delayed documents"],
-    },
-    {
-      key: "access",
-      title: "Users and groups",
-      status: "Synced",
-      tone: "good",
-      description: "Internal groups, external group mappings, and document ACLs.",
-      items: ["SCIM delta sync enabled", "ACL audits available"],
-    },
-    {
-      key: "auth",
-      title: "Auth controls",
-      status: "Enforced",
-      tone: "good",
-      description: "SSO, API keys, tenant gates, role policies, and token limits.",
-      items: ["Enterprise SSO active", "Admin changes tracked"],
-    },
-    {
-      key: "models",
-      title: "Model settings",
-      status: "Ready",
-      tone: "neutral",
-      description: "Primary LLM, reasoning model, reranker, and embedding settings.",
-      items: ["Fallback provider configured", "Budget guardrails enabled"],
-    },
-    {
-      key: "tools",
-      title: "Tools and actions",
-      status: "Governed",
-      tone: "good",
-      description: "Custom actions, OpenAPI tools, MCP integrations, and policies.",
-      items: ["Approval workflow required", "Tool traces retained"],
-    },
-    {
-      key: "analytics",
-      title: "Analytics",
-      status: "Live",
-      tone: "good",
-      description: "Sessions, citations, answer quality, latency, and usage trends.",
-      items: ["Citation coverage tracked", "P95 latency visible"],
-    },
-    {
-      key: "enterprise",
-      title: "Enterprise controls",
-      status: "Active",
-      tone: "good",
-      description: "Licensing, tenant isolation, audit hooks, and data controls.",
-      items: ["Tier gates enforced", "Audit exports enabled"],
-    },
-  ],
-};
 
 export function App() {
   const [query, setQuery] = useState("");
@@ -104,7 +27,12 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adminSummary, setAdminSummary] = useState<AdminSurfaceSummary | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    getAdminSummary().then(setAdminSummary).catch(() => undefined);
+  }, []);
 
   const status = useMemo(() => {
     if (isLoading) return "Searching";
@@ -211,7 +139,7 @@ export function App() {
 
         {error && <div className="error-banner">{error}</div>}
 
-        <AdminOverview summary={ADMIN_SUMMARY} />
+        {adminSummary && <AdminOverview summary={adminSummary} />}
 
         <div className="content-grid">
           <section className="answer-column" aria-label="Answer">

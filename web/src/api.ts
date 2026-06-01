@@ -1,4 +1,5 @@
 import type {
+  AdminSurfaceSummary,
   AgentExperienceRequest,
   AgentExperienceResponse,
   ChatSessionView,
@@ -41,6 +42,14 @@ export function getSession(
   init?: Pick<RequestInit, "signal">,
 ): Promise<ChatSessionView> {
   return requestJson<ChatSessionView>(`/api/sessions/${sessionId}`, {
+    signal: init?.signal,
+  });
+}
+
+export function getAdminSummary(
+  init?: Pick<RequestInit, "signal">,
+): Promise<AdminSurfaceSummary> {
+  return requestJson<AdminSurfaceSummary>("/admin/observability/summary", {
     signal: init?.signal,
   });
 }

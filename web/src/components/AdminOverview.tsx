@@ -8,13 +8,14 @@ import {
   ShieldCheck,
   UsersRound,
 } from "lucide-react";
-import type { AdminSurfaceSummary } from "../types";
+import type { LucideIcon } from "lucide-react";
+import type { AdminSurfaceKey, AdminSurfaceSummary } from "../types";
 
 interface AdminOverviewProps {
   summary: AdminSurfaceSummary;
 }
 
-const iconByKey = {
+const iconByKey: Record<AdminSurfaceKey, LucideIcon> = {
   connectors: Boxes,
   indexing: DatabaseZap,
   access: UsersRound,
@@ -23,7 +24,7 @@ const iconByKey = {
   tools: ShieldCheck,
   analytics: LineChart,
   enterprise: Activity,
-} as const;
+};
 
 export function AdminOverview({ summary }: AdminOverviewProps) {
   return (
