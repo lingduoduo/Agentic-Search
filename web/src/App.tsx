@@ -1,12 +1,14 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Bot, FileSearch, MessageSquarePlus, Search } from "lucide-react";
-import { createSession, runAgent } from "./api";
+import { createSession, getAdminSummary, runAgent } from "./api";
+import { AdminOverview } from "./components/AdminOverview";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
 import type {
+  AdminSurfaceSummary,
   AgentExperienceResponse,
   ChatMessageView,
   SourceDocumentView,
@@ -25,7 +27,12 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adminSummary, setAdminSummary] = useState<AdminSurfaceSummary | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    getAdminSummary().then(setAdminSummary).catch(() => undefined);
+  }, []);
 
   const status = useMemo(() => {
     if (isLoading) return "Searching";
@@ -131,6 +138,8 @@ export function App() {
         />
 
         {error && <div className="error-banner">{error}</div>}
+
+        {adminSummary && <AdminOverview summary={adminSummary} />}
 
         <div className="content-grid">
           <section className="answer-column" aria-label="Answer">

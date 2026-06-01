@@ -42,3 +42,35 @@ export interface SessionCreateRequest {
   title?: string | null;
   user_id?: string | null;
 }
+
+export type AdminSurfaceKey =
+  | "connectors"
+  | "indexing"
+  | "access"
+  | "auth"
+  | "models"
+  | "tools"
+  | "analytics"
+  | "enterprise";
+
+export interface AdminSurfaceMetric {
+  label: string;
+  value: string;
+  detail: string;
+}
+
+export interface AdminSurfaceSection {
+  key: AdminSurfaceKey;
+  title: string;
+  status: string;
+  tone: "good" | "watch" | "neutral";
+  description: string;
+  items: string[];
+}
+
+export interface AdminSurfaceSummary {
+  healthLabel: string;
+  healthScore: number;
+  metrics: AdminSurfaceMetric[];
+  sections: AdminSurfaceSection[];
+}
