@@ -214,8 +214,9 @@ python3 -m examples.prepare_search_rag_dataset \
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - Training data builders for search-QA and RAG parquet datasets
 
-**Routing & Intent**
-- Intent classifier (`IntentPipeline`) for query routing and model routing
+**Query Classification**
+- **Search vs chat classifier** (`classify_is_search_flow`) — LLM-backed binary classifier that routes each query to document search or direct chat; defaults to chat on ambiguous input (`src/backend/secondary_llm_flows/search_flow_classification.py`)
+- **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model that classifies queries into `purchase`, `navigate`, `qa`, `recommendation` and selects the appropriate model tier (fast / balanced / reasoning) (`src/model/intent_classifier.py`)
 
 
 ## Run An Agent
