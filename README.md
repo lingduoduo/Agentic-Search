@@ -2,14 +2,21 @@
 
 A retrieval-backed agent and search-policy platform combining a FastAPI server layer with local dense/sparse retrieval, multi-turn agent traces, and RL training helpers.
 
-**Core capabilities:**
-- **Agentic enterprise search** — agents retrieve, rank, synthesize, cite, and reason across follow-up turns against company knowledge
+🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents for information retrieval. Benchmark to release soon!
+
+🔬 **Deep Research** — In-depth reports with a multi-step research flow. Top of [leaderboard](https://github.com/onyx-dot-app/onyx_deep_research_bench) as of Feb 2026.
+
+🤖 **Custom Agents** — Build AI Agents with unique instructions, knowledge, and actions.
+
+🌍 **Web Search** — Browse the web for up-to-date information. Supports Serper, Google PSE, Brave, SearXNG, and others. Comes with an in-house web crawler and support for Firecrawl/Exa.
+
+🧠 **PPO/GRPO Reward** — Train search agents with composite reward shaping, group-relative advantages, and PPO/GRPO/REINFORCE helpers. Plug in any LLM and retrieval backend.
+
+**Enterprise capabilities:**
 - **RAG over connected sources** — connectors ingest documents from Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion, and others
 - **Document indexing pipeline** — background workers fetch, parse, chunk, enrich, embed, and index into Vespa or OpenSearch; sync state in Postgres
 - **Permission-aware retrieval** — access controls, external group sync, user/group permissions, and enterprise auth in the retrieval path
-- **Custom agents and actions** — configurable instructions, knowledge, tools/actions, MCP integrations, and workflows
-- **Grounded synthesis** — retrieves evidence, ranks and contextualizes it, then produces answers with citations
-- **Admin and observability surface** — connector management, indexing status, users/groups, auth, model settings, tools/actions, analytics, and enterprise controls
+- **Admin and observability surface** — connector management, indexing status, users/groups, auth, model settings, analytics, and enterprise controls
 
 
 ## Repository Structure
@@ -298,6 +305,58 @@ python3 -m examples.prepare_search_qa_dataset \
 python3 -m examples.prepare_search_qa_dataset \
   --dataset_name RUC-NLPIR/FlashRAG_datasets \
   --dataset_config nq --splits test --max_examples 20 --preview --preview_rows 5
+```
+
+
+## PPO/GRPO Reward
+
+`SearchRewardFunction` scores trajectories across four composable components:
+
+| Component | What it measures |
+|-----------|-----------------|
+| `format` | Well-formed XML trace with required action tags |
+| `search_use` | Whether the agent issued at least one search action |
+| `answer_length` | Answer is within acceptable token bounds |
+| `exact_match` | Token-overlap correctness against reference answers |
+
+```python
+from src.training.reward import SearchRewardFunction, SearchRewardConfig
+
+reward_fn = SearchRewardFunction(SearchRewardConfig(
+    format_weight=0.2,
+    search_use_weight=0.3,
+    length_weight=0.1,
+    exact_match_weight=0.4,
+))
+scores = reward_fn(trajectories, reference_answers)
+```
+
+**GRPO** — compute group-relative advantages from G rollouts per prompt:
+
+```python
+from src.training.grpo import score_prompt_group, compute_grpo_outcome_advantage
+
+scored = score_prompt_group(rollouts, reward_fn, reference_answer)
+advantages = compute_grpo_outcome_advantage(scored)
+```
+
+**PPO** — clipped policy + value loss with KL penalty:
+
+```python
+from src.training.ppo import (
+    compute_ppo_policy_loss_core,
+    compute_value_loss,
+    AdaptiveKLController,
+)
+
+policy_loss = compute_ppo_policy_loss_core(logprobs, old_logprobs, advantages, clip_eps=0.2)
+value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
+```
+
+Run the end-to-end smoke test:
+
+```bash
+python3 -m examples.run_grpo_training_pipeline
 ```
 
 
