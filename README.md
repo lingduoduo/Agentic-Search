@@ -268,6 +268,8 @@ python3 -m examples.prepare_search_rag_dataset \
 - `event_telemetry` / `identify_user` — PostHog event capture helpers; no-ops when PostHog is not configured
 - Feature flags — composable chain: `EnvFeatureFlagProvider` → `PostHogFeatureFlagProvider`; `StaticFeatureFlagProvider` for tests; single call-site via `is_feature_enabled`
 
+[Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/agentic-search-grpo-architecture.html)
+
 
 ## Agentic RAG
 
