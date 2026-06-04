@@ -2,11 +2,37 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `browser.py` retrieval backend that uses `playwright-cli` subprocess calls to search Google and return results, fitting the existing `/retrieve` API contract.
+**Goal:** Add `browser.py` as a third web-search retrieval backend — a drop-in alternative to `google.py` (Google Custom Search API) and `serp.py` (SerpAPI) that requires no API key, using `playwright-cli` to drive a real browser against Google Search.
 
-**Architecture:** `BrowserSearchEngine` shells out to the globally-installed `playwright-cli` binary in three sequential steps per query — `open`, `fill --submit`, `eval` (JS DOM extraction) — using named sessions so batch queries can run in parallel. Results are formatted via the shared `format_document` helper and served through the standard `create_search_app` FastAPI app.
+**Why:** All three backends share the same `POST /retrieve` contract. `browser.py` fills the gap when API keys aren't available or cost is a concern — at the tradeoff of higher per-query latency and exposure to bot detection.
+
+| | `google.py` | `serp.py` | `browser.py` |
+|---|---|---|---|
+| API key required | Yes (`GOOGLE_API_KEY` + `GOOGLE_CSE_ID`) | Yes (`SERP_API_KEY`) | No |
+| Rate limits | Quota-based | Paid plan | Browser fingerprint only |
+| Result source | Google CSE (limited index) | Full Google SERP | Full Google SERP |
+| Extra dependency | `google-api-python-client` | `requests` | `playwright-cli` (npm global) |
+| Cost | Paid beyond free tier | Paid | Free (compute only) |
+| Latency | ~1s | ~1s | ~5–10s (full browser round-trip) |
+
+**Architecture:** `BrowserSearchEngine` shells out to the globally-installed `playwright-cli` binary in six sequential steps per query — `open`, `snapshot` (page load), `fill --submit`, `snapshot` (wait for SERP), `--raw eval` (JS DOM extraction), `close` — using named sessions so batch queries can run in parallel. Results are formatted via the shared `format_document` helper and served through the standard `create_search_app` FastAPI app.
 
 **Tech Stack:** Python `subprocess`, `concurrent.futures.ThreadPoolExecutor`, `playwright-cli` CLI (global npm install `@playwright/cli`), FastAPI via existing `app.py` helpers.
+
+**Fits existing pattern:** Mirrors `serp.py` / `google.py` — frozen dataclass config, `batch_search` → `_search_and_process`, `create_app(config)` helper, `parse_args()` + `main()`.
+
+---
+
+## Key corrections vs initial draft
+
+| Issue | Original | Fixed |
+|-------|----------|-------|
+| `--raw` flag position | `playwright-cli -s=session --raw eval JS` | `playwright-cli --raw -s=session eval JS` |
+| Missing `snapshot` after open | ❌ eval runs before page loads | ✅ snapshot waits for page to settle |
+| Missing `snapshot` after fill | ❌ eval runs before SERP renders | ✅ snapshot waits for results |
+| `create_app(config)` helper | `main()` calls `create_search_app` directly | Dedicated `create_app(config)` like serp.py |
+| `batch_search` empty-queries guard | `min(len(queries), workers)` → 0-worker crash | `min(max(len(queries), 1), workers)` |
+| Test mock call count | 4 per query | 6 per query (two snapshot calls added) |
 
 ---
 
@@ -31,7 +57,8 @@
 # tests/unit/retrieval/test_browser_retrieval.py
 from __future__ import annotations
 import json
-from unittest.mock import MagicMock, call, patch
+import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -54,10 +81,12 @@ def test_search_query_returns_formatted_documents():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2))
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
-            _make_proc(),            # open
-            _make_proc(),            # fill --submit
-            _make_proc(FAKE_RESULTS),# eval (returns JSON)
-            _make_proc(),            # close
+            _make_proc(),             # open
+            _make_proc(),             # snapshot (page load)
+            _make_proc(),             # fill --submit
+            _make_proc(),             # snapshot (SERP results)
+            _make_proc(FAKE_RESULTS), # --raw eval
+            _make_proc(),             # close
         ]
         results = engine._search_and_process("what is FAISS")
 
@@ -90,7 +119,9 @@ import logging
 import subprocess
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from fastapi import FastAPI
 
 from .app import (
     add_host_port_args,
@@ -109,8 +140,7 @@ PLAYWRIGHT_CMD = "playwright-cli"
 SEARCH_URL = "https://www.google.com"
 SUBPROCESS_TIMEOUT = 30
 
-# JS that extracts top organic results from a Google SERP page.
-# Uses h3 headings (result titles) as anchor points — more stable than CSS class names.
+# Extracts organic results from a Google SERP via h3 headings — more stable than class names.
 _EXTRACT_JS = (
     "JSON.stringify("
     "[...document.querySelectorAll('h3')]"
@@ -135,14 +165,22 @@ class BrowserSearchEngine:
     def __init__(self, config: BrowserSearchConfig):
         self.config = config
 
-    def _run(self, *args: str, session: str | None = None, capture: bool = False) -> subprocess.CompletedProcess:
+    def _run(
+        self,
+        *args: str,
+        session: str | None = None,
+        raw: bool = False,
+    ) -> subprocess.CompletedProcess:
+        # --raw is a global flag; must precede -s= per playwright-cli CLI contract.
         cmd = [PLAYWRIGHT_CMD]
+        if raw:
+            cmd.append("--raw")
         if session:
             cmd.append(f"-s={session}")
         cmd.extend(args)
         return subprocess.run(
             cmd,
-            capture_output=capture,
+            capture_output=raw,
             text=True,
             timeout=self.config.subprocess_timeout,
         )
@@ -151,6 +189,7 @@ class BrowserSearchEngine:
         session = f"search-{uuid.uuid4().hex[:8]}"
         try:
             self._run("open", SEARCH_URL, "--persistent", session=session)
+            self._run("snapshot", session=session)        # wait for page to settle; discover refs
             self._run(
                 "fill",
                 "getByRole('combobox', { name: 'Search' })",
@@ -158,9 +197,9 @@ class BrowserSearchEngine:
                 "--submit",
                 session=session,
             )
-            proc = self._run("--raw", "eval", _EXTRACT_JS, session=session, capture=True)
-            raw = proc.stdout.strip()
-            hits: list[dict] = json.loads(raw) if raw else []
+            self._run("snapshot", session=session)        # wait for SERP results to render
+            proc = self._run("eval", _EXTRACT_JS, session=session, raw=True)
+            hits: list[dict] = json.loads(proc.stdout.strip()) if proc.stdout.strip() else []
         except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as exc:
             logger.warning("browser search failed for %r: %s", query, exc)
             hits = []
@@ -176,26 +215,29 @@ class BrowserSearchEngine:
         ]
 
     def batch_search(self, queries: list[str]) -> list[list[dict[str, dict[str, str]]]]:
-        max_workers = min(len(queries), self.config.batch_workers)
+        max_workers = min(max(len(queries), 1), self.config.batch_workers)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             return list(executor.map(self._search_and_process, queries))
 
 
-def _build_arg_parser() -> argparse.ArgumentParser:
+def create_app(config: BrowserSearchConfig) -> FastAPI:
+    return create_search_app("Browser Retrieval (playwright-cli)", BrowserSearchEngine(config))
+
+
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Browser-based retrieval server (playwright-cli)")
     add_host_port_args(parser, "BROWSER_RETRIEVAL_HOST", "BROWSER_RETRIEVAL_PORT", DEFAULT_HOST, DEFAULT_PORT)
     parser.add_argument("--topk", type=int, default=DEFAULT_TOPK)
     parser.add_argument("--workers", type=int, default=4)
-    return parser
+    return parser.parse_args()
 
 
 def main() -> None:
     load_environment()
-    args = _build_arg_parser().parse_args()
+    args = parse_args()
     config = BrowserSearchConfig(topk=args.topk, batch_workers=args.workers)
-    engine = BrowserSearchEngine(config)
-    app = create_search_app("Browser Retrieval (playwright-cli)", engine)
-    run_uvicorn_app(app, args.host, args.port)
+    app = create_app(config)
+    run_uvicorn_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
@@ -226,6 +268,8 @@ git commit -m "feat: add BrowserSearchEngine using playwright-cli subprocess"
 
 - [ ] **Step 1: Write failing tests**
 
+Each call sequence is 6 per query: open, snapshot, fill, snapshot, eval, close.
+
 ```python
 # append to tests/unit/retrieval/test_browser_retrieval.py
 
@@ -233,10 +277,12 @@ def test_empty_results_when_eval_returns_empty_list():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
-            _make_proc(),       # open
-            _make_proc(),       # fill
-            _make_proc("[]"),   # eval → empty list
-            _make_proc(),       # close
+            _make_proc(),      # open
+            _make_proc(),      # snapshot
+            _make_proc(),      # fill
+            _make_proc(),      # snapshot
+            _make_proc("[]"),  # eval → empty list
+            _make_proc(),      # close
         ]
         results = engine._search_and_process("obscure query xyz")
     assert results == []
@@ -245,7 +291,7 @@ def test_empty_results_when_eval_returns_empty_list():
 def test_subprocess_timeout_returns_empty_and_closes():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
-        # open succeeds, fill times out, close still called
+        # open succeeds, snapshot times out, close still called in finally
         mock_run.side_effect = [
             _make_proc(),
             subprocess.TimeoutExpired(cmd="playwright-cli", timeout=30),
@@ -253,7 +299,7 @@ def test_subprocess_timeout_returns_empty_and_closes():
         ]
         results = engine._search_and_process("query")
     assert results == []
-    assert mock_run.call_count == 3  # open, fill (timeout), close
+    assert mock_run.call_count == 3  # open, snapshot (timeout), close
 
 
 def test_topk_truncates_results():
@@ -263,7 +309,10 @@ def test_topk_truncates_results():
         for i in range(5)
     ])
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
-        mock_run.side_effect = [_make_proc(), _make_proc(), _make_proc(many), _make_proc()]
+        mock_run.side_effect = [
+            _make_proc(), _make_proc(), _make_proc(), _make_proc(),
+            _make_proc(many), _make_proc(),
+        ]
         results = engine._search_and_process("query")
     assert len(results) == 1
     assert results[0]["document"]["title"] == "Result 0"
@@ -273,32 +322,17 @@ def test_batch_search_runs_queries_in_parallel():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2, batch_workers=2))
     single = json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
-        # 4 calls per query × 2 queries = 8 calls
+        # 6 calls per query × 2 queries = 12 calls
         mock_run.side_effect = [
-            _make_proc(), _make_proc(), _make_proc(single), _make_proc(),
-            _make_proc(), _make_proc(), _make_proc(single), _make_proc(),
+            _make_proc(), _make_proc(), _make_proc(), _make_proc(), _make_proc(single), _make_proc(),
+            _make_proc(), _make_proc(), _make_proc(), _make_proc(), _make_proc(single), _make_proc(),
         ]
         results = engine.batch_search(["q1", "q2"])
     assert len(results) == 2
     assert results[0][0]["document"]["title"] == "T"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
-
-```bash
-pytest tests/unit/retrieval/test_browser_retrieval.py -v -k "empty or timeout or topk or batch"
-```
-
-Expected: `ImportError` on `subprocess.TimeoutExpired` in test file — add `import subprocess` to the test file.
-
-- [ ] **Step 3: Add missing import to test file**
-
-```python
-# at top of tests/unit/retrieval/test_browser_retrieval.py, add:
-import subprocess
-```
-
-- [ ] **Step 4: Run tests again**
+- [ ] **Step 2: Run tests to verify they pass**
 
 ```bash
 pytest tests/unit/retrieval/test_browser_retrieval.py -v
@@ -306,7 +340,7 @@ pytest tests/unit/retrieval/test_browser_retrieval.py -v
 
 Expected: all 5 tests `PASSED`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add tests/unit/retrieval/test_browser_retrieval.py
@@ -315,26 +349,12 @@ git commit -m "test: add edge-case coverage for BrowserSearchEngine"
 
 ---
 
-### Task 3: Wire into module `__init__` and verify server starts
+### Task 3: Wire into module and verify server starts
 
 **Files:**
-- Modify: `src/backend/servers/retrieval/__init__.py`
+- Check: `src/backend/servers/retrieval/__init__.py` (empty — no changes needed)
 
-- [ ] **Step 1: Check current `__init__.py`**
-
-```bash
-cat src/backend/servers/retrieval/__init__.py
-```
-
-- [ ] **Step 2: Add browser to `__init__.py` exports (only if the file exports other engines)**
-
-If `__init__.py` is empty, skip this step. If it imports other engines, add:
-
-```python
-from .browser import BrowserSearchConfig, BrowserSearchEngine
-```
-
-- [ ] **Step 3: Verify the module entry point is runnable**
+- [ ] **Step 1: Verify the module entry point is runnable**
 
 ```bash
 python3 -m src.backend.servers.retrieval.browser --help
@@ -342,15 +362,17 @@ python3 -m src.backend.servers.retrieval.browser --help
 
 Expected output includes `--topk`, `--host`, `--port`, `--workers`.
 
-- [ ] **Step 4: Smoke-test the server starts (no live browser needed)**
+- [ ] **Step 2: Smoke-test the server starts**
 
 ```bash
 timeout 3 python3 -m src.backend.servers.retrieval.browser --port 8099 2>&1 || true
 ```
 
-Expected: server starts, logs `Uvicorn running on ...`, then killed by timeout. No import errors.
+Expected: logs `Uvicorn running on ...`, killed by timeout. No import errors.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit (only if `__init__.py` needed changes)**
+
+If `__init__.py` was empty (it is), skip. Otherwise:
 
 ```bash
 git add src/backend/servers/retrieval/__init__.py
@@ -394,8 +416,6 @@ kill $SERVER_PID 2>/dev/null || true
 playwright-cli kill-all 2>/dev/null || true
 ```
 
-- [ ] **Step 5: Commit nothing (validation-only task)**
-
 ---
 
 ### Task 5: Update playwright-cli skill with browser-retrieval pattern
@@ -416,11 +436,15 @@ Drive a Google search and extract top results as JSON using playwright-cli subpr
 ```bash
 SESSION="search-$(openssl rand -hex 4)"
 playwright-cli -s=$SESSION open https://www.google.com --persistent
+playwright-cli -s=$SESSION snapshot                          # wait for page to settle
 playwright-cli -s=$SESSION fill "getByRole('combobox', { name: 'Search' })" "what is FAISS" --submit
-playwright-cli -s=$SESSION --raw eval \
+playwright-cli -s=$SESSION snapshot                          # wait for SERP results to render
+playwright-cli --raw -s=$SESSION eval \
   "JSON.stringify([...document.querySelectorAll('h3')].filter(h=>h.closest('a')).slice(0,5).map(h=>({title:h.textContent.trim(),url:h.closest('a').href,snippet:(h.closest('[data-hveid]')?.lastElementChild?.textContent?.trim()||'')})).filter(r=>r.url&&!r.url.includes('google.com/search')))"
 playwright-cli -s=$SESSION close
 ```
+
+Note: `--raw` is a global flag and must precede `-s=` in the command.
 ```
 
 - [ ] **Step 2: Commit**
@@ -437,14 +461,17 @@ git commit -m "docs: add browser-retrieval example to playwright-cli skill"
 **Spec coverage:**
 - [x] `BrowserSearchEngine.batch_search` → Tasks 1–2
 - [x] Per-query named sessions for parallel execution → Task 1
+- [x] `snapshot` after `open` and after `fill --submit` (correct playwright-cli flow) → Task 1
+- [x] `--raw` before `-s=` in cmd builder → Task 1
+- [x] `create_app(config)` helper matching serp.py/google.py pattern → Task 1
+- [x] `min(max(len(queries), 1), workers)` guard → Task 1
 - [x] Follows `format_document` / `create_search_app` contract → Task 1
 - [x] CLI entrypoint (`python3 -m ...`) → Task 3
 - [x] Live validation → Task 4
-- [x] Skill updated → Task 5
-
-**Placeholder scan:** No TBDs. All code blocks are complete.
+- [x] Skill updated with correct command order → Task 5
 
 **Type consistency:**
-- `_search_and_process` returns `list[dict[str, dict[str, str]]]` (matches `batch_search` inner type) ✓
-- `format_document` signature: `(title, content, url)` → used as `format_document(h["title"], h["snippet"], h["url"])` ✓
-- `BrowserSearchConfig` frozen dataclass — all fields have defaults ✓
+- `_search_and_process` returns `list[dict[str, dict[str, str]]]` ✓
+- `format_document(title, snippet, url)` matches app.py signature ✓
+- `BrowserSearchConfig` frozen dataclass, all fields have defaults ✓
+- `create_app(config) -> FastAPI` matches serp.py/google.py pattern ✓

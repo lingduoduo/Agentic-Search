@@ -137,7 +137,9 @@ Multiple interchangeable backends behind the same `/retrieve` API:
 - `demo.py` — TF-IDF over a local corpus.jsonl, no Java required
 - `retrieval.py` — BM25 (pyserini/Java) or dense (e5/sentence-transformers) via FAISS
 - `retrieval_rerank.py` — retrieval + cross-encoder reranker
-- `google.py` / `serp.py` — web search proxies
+- `google.py` — Google Custom Search API proxy (requires `GOOGLE_API_KEY` + `GOOGLE_CSE_ID`)
+- `serp.py` — SerpAPI proxy (requires `SERP_API_KEY`)
+- `browser.py` — playwright-cli browser automation; no API key needed, slower (~5–10s/query)
 
 **2. Web backend** (`src/backend/servers/web/app.py`)
 FastAPI app that exposes `POST /api/agent`. On each request it:
