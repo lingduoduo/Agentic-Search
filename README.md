@@ -1,16 +1,26 @@
 # Agentic Search
 
-A retrieval-backed agent and search-policy platform — FastAPI server, local dense/sparse retrieval, multi-turn agent traces, and RL training helpers.
+A retrieval-backed agent platform for building high-quality search, research, and custom AI workflows. Agentic Search combines a FastAPI backend, local dense and sparse retrieval, multi-turn agent traces, web search, connector-based indexing, and RL training utilities.
 
-🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents.
+🔍 **Agentic RAG** — Improve search and answer quality with hybrid retrieval, reranking, query decomposition, HyDE, and citation-grounded synthesis.
 
-🤖 **Custom Agents** — Build AI Agents with unique instructions, knowledge, and actions.
+🔬 **Deep Research** — Generate in-depth reports through a multi-step research workflow with iterative search, evidence gathering, and synthesis.
 
-🌍 **Web Search** — Browse the web for up-to-date information. Supports Google PSE, SerpAPI, and playwright-cli.
+🤖 **Custom Agents** — Build agents with tailored instructions, knowledge sources, memory, tools, and action workflows.
 
-🧠 **PPO/GRPO Reward** — Train search agents with composite reward shaping, group-relative advantages, and PPO/GRPO/REINFORCE helpers.
+🌍 **Web Search** — Retrieve up-to-date information from Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
 
-🔬 **Deep Research** — In-depth reports with a multi-step research flow.
+📚 **Document Indexing** — Ingest, chunk, enrich, embed, and index documents for retrieval-backed chat and search.
+
+🔗 **Connectors** — Bring in content from local files, search results, and external systems such as Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
+
+🛠️ **Tool Use** — Register and execute tools from Python functions or OpenAPI schemas, with support for structured tool-calling loops.
+
+💬 **Chat Orchestration** — Run streaming multi-turn chat with citations, tool calls, file context, history compression, and persisted sessions.
+
+🧠 **PPO/GRPO Rewards** — Train search agents with composite reward shaping, group-relative advantages, and PPO, GRPO, or REINFORCE helpers.
+
+📊 **Admin & Observability** — Track usage, query history, health, analytics, reporting, rate limits, hooks, billing, and license state.
 
 | Feature | Key modules |
 |---------|-------------|
@@ -18,11 +28,13 @@ A retrieval-backed agent and search-policy platform — FastAPI server, local de
 | 🔬 Deep Research | `src/agents/deep_research/`, `src/context/`, `src/retrieval/` |
 | 🤖 Custom Agents | `src/agents/custom.py`, `src/tools/`, `src/backend/servers/query_and_chat/` |
 | 🌍 Web Search | `src/backend/servers/retrieval/google.py`, `serp.py`, `browser.py` |
-| 🧠 PPO/GRPO Reward | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
-| 🔗 RAG over connectors | `src/backend/connectors/`, `src/backend/servers/documents/` |
-| 📦 Document indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py` |
-| 🔒 Permission-aware retrieval | `src/backend/access/`, `src/context/preprocessing/` |
-| 📊 Admin & observability | `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
+| 📚 Document Indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py`, `src/retrieval/indexing_pipeline.py` |
+| 🔗 Connectors | `src/backend/connectors/`, `src/backend/servers/documents/`, `src/backend/servers/oauth/` |
+| 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
+| 💬 Chat Orchestration | `src/backend/chat/process_message.py`, `src/backend/chat/llm_loop.py`, `src/backend/chat/citation_processor.py`, `src/backend/chat/compression.py` |
+| 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
+| 🔒 Permission-Aware Retrieval | `src/backend/access/`, `src/context/preprocessing/`, `src/backend/servers/documents/` |
+| 📊 Admin & Observability | `src/backend/observability/`, `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
 
 ## Repository Structure
