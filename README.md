@@ -216,6 +216,12 @@ python3 -m examples.prepare_search_rag_dataset \
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, `<fetch>`, and `<answer>` actions
 - `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
 
+**LLM Backends**
+- `OpenAICompatibleLLM` — single client for any OpenAI-compatible API: OpenAI, Azure OpenAI, Anthropic (via compatibility layer), Ollama, LiteLLM proxy, and vLLM (`src/backend/llm/providers.py`)
+- `VLLMServerManager` — call any vLLM / Ollama / LiteLLM completions endpoint for server-backed inference
+- `LocalServerManager` — load a HuggingFace model in-process (Qwen, Llama, Mistral, etc.) for CPU or GPU inference without a separate server
+- Configured via four env vars: `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
+
 **Tool Use**
 - Hermes, Llama-3, and JSON tool-call parsers — parse structured tool calls from any LLM output format
 - OpenAPI-based `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
