@@ -19,10 +19,10 @@ A retrieval-backed agent and search-policy platform combining a FastAPI server l
 | 🤖 Custom Agents | `src/agents/custom.py`, `src/tools/`, `src/backend/servers/query_and_chat/` |
 | 🌍 Web Search | `src/backend/servers/retrieval/google.py`, `serp.py`, `browser.py` |
 | 🧠 PPO/GRPO Reward | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
-| RAG over connectors | `src/backend/connectors/`, `src/backend/servers/documents/` |
-| Document indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py` |
-| Permission-aware retrieval | `src/backend/access/`, `src/context/preprocessing/` |
-| Admin & observability | `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
+| 🔗 RAG over connectors | `src/backend/connectors/`, `src/backend/servers/documents/` |
+| 📦 Document indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py` |
+| 🔒 Permission-aware retrieval | `src/backend/access/`, `src/context/preprocessing/` |
+| 📊 Admin & observability | `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
 ## Repository Structure
 
