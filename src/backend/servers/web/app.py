@@ -18,6 +18,7 @@ from src.backend.auth import user_from_headers
 from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
+from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
@@ -126,6 +127,7 @@ class AgentExperienceRequest(BaseModel):
     user_id: str | None = None
     search_url: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
+    mode: str = Field(default="standard", description="'standard' or 'agentic_rag'")
 
 
 class AgentExperienceResponse(BaseModel):
@@ -317,22 +319,57 @@ def create_web_app(
         ]
         db.add_chat_message(session_id, role="user", content=query)
 
+        search_url = request.search_url or settings.search_url
+        top_k = request.top_k or settings.top_k
+        filters = (
+            build_user_only_filters(
+                auth_user.id,
+                email=auth_user.email,
+                group_ids=auth_user.group_ids,
+            )
+            if auth_user
+            else (build_user_only_filters(user_id) if user_id else None)
+        )
+
         try:
+            if request.mode == "agentic_rag":
+                rag_loop = AgenticRAGLoop(
+                    AgenticRAGConfig(
+                        max_rounds=3, topk=top_k, retrieval_url=search_url
+                    ),
+                    llm=llm,
+                )
+                rag = await rag_loop.run(query, chat_history=history)
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=rag.answer,
+                    metadata={
+                        "citations": rag.citations,
+                        "document_ids": [doc.id for doc in rag.context.documents],
+                        "hooks": hook_metadata,
+                        "rounds_used": rag.rounds_used,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=rag.answer,
+                    citations=rag.citations,
+                    documents=[_document_view(doc) for doc in rag.context.documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
             result = await answer_with_retrieval(
                 query,
                 llm=llm,
                 chat_history=history,
-                search_url=request.search_url or settings.search_url,
-                top_k=request.top_k or settings.top_k,
-                filters=(
-                    build_user_only_filters(
-                        auth_user.id,
-                        email=auth_user.email,
-                        group_ids=auth_user.group_ids,
-                    )
-                    if auth_user
-                    else (build_user_only_filters(user_id) if user_id else None)
-                ),
+                search_url=search_url,
+                top_k=top_k,
+                filters=filters,
             )
         except Exception as exc:
             logger.exception("Agent search failed: %s", exc)
