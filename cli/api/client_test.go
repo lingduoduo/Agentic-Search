@@ -1,6 +1,8 @@
 package api_test
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -92,5 +94,46 @@ func TestTestConnection_AWSELB403(t *testing.T) {
 	}
 	if !strings.Contains(authErr.Error(), "AWS load balancer") {
 		t.Fatalf("expected AWS load balancer message, got: %s", authErr.Error())
+	}
+}
+
+func TestQueryAgent(t *testing.T) {
+	fakeResp := models.AgentResult{
+		SessionID: "sess-1",
+		Answer:    "Revenue grew 12%.",
+		Citations: []string{"[1]"},
+		Documents: []models.AgentDocument{
+			{ID: "d1", Citation: "[1]", Title: "Q3 Report", Content: "...", Score: 0.9},
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/agent") {
+			t.Errorf("path = %s, want /api/agent", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("Authorization = %s, want Bearer test-key", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(fakeResp)
+	}))
+	defer srv.Close()
+
+	client := testutil.NewClient(srv.URL)
+	sessionID := "s1"
+	result, err := client.QueryAgent(context.Background(), "show Q3 results", 5, &sessionID)
+	if err != nil {
+		t.Fatalf("QueryAgent: %v", err)
+	}
+	if result.SessionID != "sess-1" {
+		t.Errorf("SessionID = %q, want sess-1", result.SessionID)
+	}
+	if result.Answer != "Revenue grew 12%." {
+		t.Errorf("Answer = %q", result.Answer)
+	}
+	if len(result.Documents) != 1 {
+		t.Errorf("Documents count = %d, want 1", len(result.Documents))
 	}
 }

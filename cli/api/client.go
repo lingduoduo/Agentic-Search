@@ -151,6 +151,20 @@ func (c *Client) Search(ctx context.Context, req models.SearchRequest) (*models.
 	return &resp, nil
 }
 
+// QueryAgent calls POST /api/agent and returns the parsed result.
+func (c *Client) QueryAgent(ctx context.Context, query string, topK int, sessionID *string) (*models.AgentResult, error) {
+	req := models.AgentRequest{
+		Query:     query,
+		TopK:      topK,
+		SessionID: sessionID,
+	}
+	var result models.AgentResult
+	if err := c.doJSONWith(ctx, c.searchHTTPClient, "POST", "/agent", req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // TestConnection checks if the server is reachable and credentials are valid.
 // Returns nil on success, or an error with a descriptive message on failure.
 func (c *Client) TestConnection(ctx context.Context) error {
@@ -354,6 +368,7 @@ type ClientAPI interface {
 	StopChatSession(ctx context.Context, sessionID string)
 	SendMessageStream(ctx context.Context, message string, chatSessionID *string, agentID int, parentMessageID *int, fileDescriptors []models.FileDescriptorPayload) <-chan models.StreamEvent
 	Search(ctx context.Context, req models.SearchRequest) (*models.SearchResponse, error)
+	QueryAgent(ctx context.Context, query string, topK int, sessionID *string) (*models.AgentResult, error)
 }
 
 var _ ClientAPI = (*Client)(nil)
