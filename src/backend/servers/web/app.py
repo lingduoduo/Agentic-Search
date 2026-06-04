@@ -18,10 +18,12 @@ from src.backend.auth import user_from_headers
 from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
+from src.backend.search.process_search_query import run_expanded_search
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
+from src.context import build_context_bundle
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.preprocessing.access_filters import build_user_only_filters
@@ -65,6 +67,8 @@ from src.backend.servers.tenants.api import router as tenants_router
 from src.backend.servers.token_rate_limits.api import create_token_rate_limits_router
 from src.backend.servers.user_group.api import create_user_group_router
 from src.backend.servers.users.api import create_users_router
+from src.tools.search import SearchPage
+from src.tools.search import search_tool
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -127,7 +131,13 @@ class AgentExperienceRequest(BaseModel):
     user_id: str | None = None
     search_url: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
-    mode: str = Field(default="standard", description="'standard' or 'agentic_rag'")
+    mode: str = Field(
+        default="chat_once",
+        description=(
+            "'search_tool', 'hybrid_search', 'chat_once', or 'chat_loop'. "
+            "'standard' and 'agentic_rag' are accepted as legacy aliases."
+        ),
+    )
 
 
 class AgentExperienceResponse(BaseModel):
@@ -311,6 +321,7 @@ def create_web_app(
         elif isinstance(hook_result, HookSoftFailed):
             hook_metadata = {"query_processing_hook_error": hook_result.error_message}
 
+        mode = _normalize_agent_mode(request.mode)
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request, auth_user=auth_user)
         history = [
@@ -332,7 +343,88 @@ def create_web_app(
         )
 
         try:
-            if request.mode == "agentic_rag":
+            if mode == "search_tool":
+                pages = await search_tool(
+                    query,
+                    provider="retrieval",
+                    search_url=search_url,
+                    page_size=top_k,
+                )
+                documents = _documents_from_search_pages(pages)
+                answer = _search_only_answer(
+                    "Direct search tool",
+                    queries=[query],
+                    documents=documents,
+                )
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "citations": [doc.citation for doc in documents],
+                        "document_ids": [doc.id for doc in documents],
+                        "hooks": hook_metadata,
+                        "mode": mode,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=[doc.citation for doc in documents],
+                    documents=[_document_view(doc) for doc in documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
+
+            if mode == "hybrid_search":
+                search_result = await run_expanded_search(
+                    query,
+                    llm=llm,
+                    search_url=search_url,
+                    top_k=top_k,
+                    filters=filters,
+                    expand=True,
+                )
+                context = build_context_bundle(
+                    query,
+                    search_result.results,
+                    max_documents=top_k,
+                )
+                answer = _search_only_answer(
+                    "Hybrid search",
+                    queries=search_result.executed_queries,
+                    documents=context.documents,
+                )
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "citations": [doc.citation for doc in context.documents],
+                        "document_ids": [doc.id for doc in context.documents],
+                        "hooks": hook_metadata,
+                        "mode": mode,
+                        "executed_queries": search_result.executed_queries,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=[doc.citation for doc in context.documents],
+                    documents=[_document_view(doc) for doc in context.documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
+
+            if mode == "chat_loop":
                 rag_loop = AgenticRAGLoop(
                     AgenticRAGConfig(
                         max_rounds=3, topk=top_k, retrieval_url=search_url
@@ -349,6 +441,7 @@ def create_web_app(
                         "document_ids": [doc.id for doc in rag.context.documents],
                         "hooks": hook_metadata,
                         "rounds_used": rag.rounds_used,
+                        "mode": mode,
                     },
                 )
                 messages = [
@@ -393,6 +486,7 @@ def create_web_app(
                 "citations": result.citations,
                 "document_ids": [document.id for document in result.context.documents],
                 "hooks": hook_metadata,
+                "mode": mode,
             },
         )
         messages = [
@@ -433,6 +527,60 @@ def _copy_agent_request(
     if callable(model_copy):
         return model_copy(update={"user_id": user_id})
     return request.copy(update={"user_id": user_id})
+
+
+_MODE_ALIASES = {
+    "standard": "chat_once",
+    "agentic_rag": "chat_loop",
+}
+_VALID_AGENT_MODES = {
+    "search_tool",
+    "hybrid_search",
+    "chat_once",
+    "chat_loop",
+}
+
+
+def _normalize_agent_mode(mode: str) -> str:
+    normalized = _MODE_ALIASES.get(mode, mode)
+    if normalized not in _VALID_AGENT_MODES:
+        valid = ", ".join(sorted(_VALID_AGENT_MODES))
+        raise HTTPException(status_code=422, detail=f"mode must be one of: {valid}")
+    return normalized
+
+
+def _documents_from_search_pages(pages: list[SearchPage]) -> list[ContextDocument]:
+    documents: list[ContextDocument] = []
+    for index, page in enumerate(pages, 1):
+        documents.append(
+            ContextDocument(
+                id=f"D{index}",
+                title=page.title
+                or ("Search error" if page.error else f"Result {index}"),
+                content=page.error or page.summary or "No summary available.",
+                url=page.url or None,
+                score=0.0,
+                metadata={"source": "search_tool"},
+            )
+        )
+    return documents
+
+
+def _search_only_answer(
+    label: str,
+    *,
+    queries: list[str],
+    documents: list[ContextDocument],
+) -> str:
+    query_lines = "\n".join(f"- {query}" for query in queries)
+    if not documents:
+        return f"{label} returned no results.\n\nExecuted queries:\n{query_lines}"
+    citation_list = ", ".join(doc.citation for doc in documents)
+    return (
+        f"{label} returned {len(documents)} result(s).\n\n"
+        f"Executed queries:\n{query_lines}\n\n"
+        f"Open the Sources panel to inspect {citation_list}."
+    )
 
 
 def _response_from_result(

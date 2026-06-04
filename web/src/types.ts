@@ -22,7 +22,7 @@ export interface SourceDocumentView {
   metadata: Record<string, unknown>;
 }
 
-export type AgentMode = "standard" | "agentic_rag";
+export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop";
 
 export interface AgentExperienceRequest {
   query: string;

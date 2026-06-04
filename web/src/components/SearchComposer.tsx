@@ -3,6 +3,13 @@ import type { FormEvent } from "react";
 import { Loader2, Search } from "lucide-react";
 import type { AgentMode } from "../types";
 
+const MODE_OPTIONS: Array<{ value: AgentMode; label: string }> = [
+  { value: "search_tool", label: "Search: Direct Tool" },
+  { value: "hybrid_search", label: "Search: Hybrid" },
+  { value: "chat_once", label: "Chat: No Loop" },
+  { value: "chat_loop", label: "Chat: Loop" },
+];
+
 interface SearchComposerProps {
   query: string;
   searchUrl: string;
@@ -44,25 +51,19 @@ export const SearchComposer = memo(function SearchComposer({
         rows={4}
       />
       <div className="composer-controls">
-        <div className="mode-field">
-          <span className="control-label">Mode</span>
-          <div className="mode-toggle" role="group" aria-label="Agent mode">
-            <button
-              type="button"
-              aria-pressed={mode === "standard"}
-              onClick={() => onModeChange("standard")}
-            >
-              Standard
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === "agentic_rag"}
-              onClick={() => onModeChange("agentic_rag")}
-            >
-              Agentic RAG
-            </button>
-          </div>
-        </div>
+        <label>
+          Entry Point
+          <select
+            value={mode}
+            onChange={(event) => onModeChange(event.currentTarget.value as AgentMode)}
+          >
+            {MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           Retrieval URL
           <input

@@ -32,6 +32,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -179,7 +180,6 @@ textarea {
   align-items: end;
 }
 
-.control-label,
 label {
   display: grid;
   gap: 6px;
@@ -188,45 +188,18 @@ label {
   font-weight: 700;
 }
 
-.mode-field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.mode-toggle {
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  overflow: hidden;
-}
-
-.mode-toggle button {
-  min-width: 0;
-  min-height: 40px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 0 10px;
-  font-size: 13px;
-}
-
-.mode-toggle button + button {
-  border-left: 1px solid var(--line);
-}
-
-.mode-toggle button[aria-pressed="true"] {
-  background: #e3f3ef;
-  color: var(--accent-strong);
-}
-
-input {
+input,
+select {
   min-height: 42px;
   padding: 9px 10px;
+}
+
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
 }
 
 .composer button {

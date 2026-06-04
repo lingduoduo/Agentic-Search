@@ -21,7 +21,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
-  const [mode, setMode] = useState<AgentMode>("standard");
+  const [mode, setMode] = useState<AgentMode>("chat_once");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<string[]>([]);
