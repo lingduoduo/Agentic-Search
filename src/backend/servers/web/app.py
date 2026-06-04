@@ -19,6 +19,7 @@ from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
 from src.backend.search.process_search_query import run_expanded_search
+from src.backend.secondary_llm_flows import expand_keywords
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient
@@ -26,6 +27,7 @@ from src.context import answer_with_retrieval
 from src.context import build_context_bundle
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
+from src.context.models import SearchFilters
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.backend.db import AgenticSearchStore
 from src.backend.hooks import HookPoint
@@ -131,6 +133,13 @@ class AgentExperienceRequest(BaseModel):
     user_id: str | None = None
     search_url: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
+    source_provider: str = Field(
+        default="retrieval",
+        description=(
+            "'retrieval', 'google', 'serpapi', 'browser', or 'all'. "
+            "Browser uses the retrieval-compatible URL in search_url."
+        ),
+    )
     mode: str = Field(
         default="chat_once",
         description=(
@@ -152,6 +161,12 @@ class AgentExperienceResponse(BaseModel):
 class QueryProcessingHookResponse(BaseModel):
     query: str | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _HybridSearchResult:
+    executed_queries: list[str]
+    documents: list[ContextDocument]
 
 
 def _register_routers(
@@ -344,17 +359,18 @@ def create_web_app(
 
         try:
             if mode == "search_tool":
-                pages = await search_tool(
+                source_provider = _normalize_source_provider(request.source_provider)
+                documents = await _run_direct_search(
                     query,
-                    provider="retrieval",
+                    source_provider=source_provider,
                     search_url=search_url,
-                    page_size=top_k,
+                    top_k=top_k,
                 )
-                documents = _documents_from_search_pages(pages)
                 answer = _search_only_answer(
                     "Direct search tool",
                     queries=[query],
                     documents=documents,
+                    source_provider=source_provider,
                 )
                 db.add_chat_message(
                     session_id,
@@ -365,6 +381,7 @@ def create_web_app(
                         "document_ids": [doc.id for doc in documents],
                         "hooks": hook_metadata,
                         "mode": mode,
+                        "source_provider": source_provider,
                     },
                 )
                 messages = [
@@ -381,33 +398,31 @@ def create_web_app(
                 )
 
             if mode == "hybrid_search":
-                search_result = await run_expanded_search(
+                source_provider = _normalize_source_provider(request.source_provider)
+                search_result = await _run_hybrid_search(
                     query,
                     llm=llm,
                     search_url=search_url,
                     top_k=top_k,
                     filters=filters,
-                    expand=True,
-                )
-                context = build_context_bundle(
-                    query,
-                    search_result.results,
-                    max_documents=top_k,
+                    source_provider=source_provider,
                 )
                 answer = _search_only_answer(
                     "Hybrid search",
                     queries=search_result.executed_queries,
-                    documents=context.documents,
+                    documents=search_result.documents,
+                    source_provider=source_provider,
                 )
                 db.add_chat_message(
                     session_id,
                     role="assistant",
                     content=answer,
                     metadata={
-                        "citations": [doc.citation for doc in context.documents],
-                        "document_ids": [doc.id for doc in context.documents],
+                        "citations": [doc.citation for doc in search_result.documents],
+                        "document_ids": [doc.id for doc in search_result.documents],
                         "hooks": hook_metadata,
                         "mode": mode,
+                        "source_provider": source_provider,
                         "executed_queries": search_result.executed_queries,
                     },
                 )
@@ -418,8 +433,8 @@ def create_web_app(
                 return AgentExperienceResponse(
                     session_id=session_id,
                     answer=answer,
-                    citations=[doc.citation for doc in context.documents],
-                    documents=[_document_view(doc) for doc in context.documents],
+                    citations=[doc.citation for doc in search_result.documents],
+                    documents=[_document_view(doc) for doc in search_result.documents],
                     messages=messages,
                     hook_metadata=hook_metadata,
                 )
@@ -542,16 +557,171 @@ _VALID_AGENT_MODES = {
 
 
 def _normalize_agent_mode(mode: str) -> str:
-    normalized = _MODE_ALIASES.get(mode, mode)
+    requested = mode.strip().lower()
+    normalized = _MODE_ALIASES.get(requested, requested)
     if normalized not in _VALID_AGENT_MODES:
         valid = ", ".join(sorted(_VALID_AGENT_MODES))
         raise HTTPException(status_code=422, detail=f"mode must be one of: {valid}")
     return normalized
 
 
-def _documents_from_search_pages(pages: list[SearchPage]) -> list[ContextDocument]:
+_SOURCE_PROVIDER_ALIASES = {
+    "local": "retrieval",
+    "direct": "retrieval",
+    "serp": "serpapi",
+    "web": "all",
+}
+_VALID_SOURCE_PROVIDERS = {
+    "retrieval",
+    "google",
+    "serpapi",
+    "browser",
+    "all",
+}
+_SOURCE_PROVIDER_LABELS = {
+    "retrieval": "Local Retrieval",
+    "google": "Google PSE",
+    "serpapi": "SerpAPI",
+    "browser": "Browser Retrieval",
+    "all": "All Sources",
+}
+
+
+def _normalize_source_provider(source_provider: str) -> str:
+    requested = source_provider.strip().lower()
+    normalized = _SOURCE_PROVIDER_ALIASES.get(requested, requested)
+    if normalized not in _VALID_SOURCE_PROVIDERS:
+        valid = ", ".join(sorted(_VALID_SOURCE_PROVIDERS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"source_provider must be one of: {valid}",
+        )
+    return normalized
+
+
+def _source_providers_for(source_provider: str) -> list[str]:
+    if source_provider == "all":
+        return ["retrieval", "google", "serpapi"]
+    return [source_provider]
+
+
+def _tool_provider_for(source_provider: str):
+    return "retrieval" if source_provider == "browser" else source_provider
+
+
+def _source_label(source_provider: str) -> str:
+    return _SOURCE_PROVIDER_LABELS.get(source_provider, source_provider)
+
+
+async def _run_direct_search(
+    query: str,
+    *,
+    source_provider: str,
+    search_url: str,
+    top_k: int,
+) -> list[ContextDocument]:
     documents: list[ContextDocument] = []
-    for index, page in enumerate(pages, 1):
+    for provider in _source_providers_for(source_provider):
+        pages = await search_tool(
+            query,
+            provider=_tool_provider_for(provider),
+            search_url=search_url,
+            page_size=top_k,
+        )
+        documents.extend(
+            _documents_from_search_pages(
+                pages,
+                source_provider=provider,
+                query=query,
+                start_index=len(documents) + 1,
+            )
+        )
+    return _reindex_documents(_dedupe_documents(documents))
+
+
+async def _run_hybrid_search(
+    query: str,
+    *,
+    llm: LLMClient | None,
+    search_url: str,
+    top_k: int,
+    filters: SearchFilters | None,
+    source_provider: str,
+) -> _HybridSearchResult:
+    if source_provider in {"retrieval", "browser"}:
+        search_result = await run_expanded_search(
+            query,
+            llm=llm,
+            search_url=search_url,
+            top_k=top_k,
+            filters=filters,
+            expand=True,
+        )
+        context = build_context_bundle(
+            query,
+            search_result.results,
+            max_documents=top_k,
+        )
+        return _HybridSearchResult(
+            executed_queries=search_result.executed_queries,
+            documents=[
+                _document_with_metadata(
+                    doc,
+                    source_provider=source_provider,
+                    query=query,
+                    entry_point="hybrid_search",
+                )
+                for doc in context.documents
+            ],
+        )
+
+    executed_queries = _expanded_queries(query, llm)
+    documents: list[ContextDocument] = []
+    for provider in _source_providers_for(source_provider):
+        for expanded_query in executed_queries:
+            pages = await search_tool(
+                expanded_query,
+                provider=_tool_provider_for(provider),
+                search_url=search_url,
+                page_size=top_k,
+            )
+            documents.extend(
+                _documents_from_search_pages(
+                    pages,
+                    source_provider=provider,
+                    query=expanded_query,
+                    start_index=len(documents) + 1,
+                    entry_point="hybrid_search",
+                )
+            )
+    return _HybridSearchResult(
+        executed_queries=executed_queries,
+        documents=_reindex_documents(_dedupe_documents(documents)),
+    )
+
+
+def _expanded_queries(query: str, llm: LLMClient | None) -> list[str]:
+    if llm is None:
+        return [query]
+    try:
+        expansions = expand_keywords(query, llm)
+    except Exception:
+        logger.exception("Query expansion failed for hybrid web search")
+        expansions = []
+    return [query] + [expanded for expanded in expansions if expanded != query]
+
+
+def _documents_from_search_pages(
+    pages: list[SearchPage],
+    *,
+    source_provider: str,
+    query: str,
+    start_index: int = 1,
+    entry_point: str = "search_tool",
+) -> list[ContextDocument]:
+    documents: list[ContextDocument] = []
+    for offset, page in enumerate(pages):
+        index = start_index + offset
         documents.append(
             ContextDocument(
                 id=f"D{index}",
@@ -560,10 +730,64 @@ def _documents_from_search_pages(pages: list[SearchPage]) -> list[ContextDocumen
                 content=page.error or page.summary or "No summary available.",
                 url=page.url or None,
                 score=0.0,
-                metadata={"source": "search_tool"},
+                metadata={
+                    "entry_point": entry_point,
+                    "source": _source_label(source_provider),
+                    "source_provider": source_provider,
+                    "query": query,
+                },
             )
         )
     return documents
+
+
+def _document_with_metadata(
+    document: ContextDocument,
+    *,
+    source_provider: str,
+    query: str,
+    entry_point: str,
+) -> ContextDocument:
+    return ContextDocument(
+        id=document.id,
+        title=document.title,
+        content=document.content,
+        url=document.url,
+        score=document.score,
+        metadata={
+            **document.metadata,
+            "entry_point": entry_point,
+            "source": _source_label(source_provider),
+            "source_provider": source_provider,
+            "query": query,
+        },
+    )
+
+
+def _dedupe_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
+    deduped: list[ContextDocument] = []
+    seen: set[tuple[str | None, str]] = set()
+    for document in documents:
+        key = (document.url, document.content[:160])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(document)
+    return deduped
+
+
+def _reindex_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
+    return [
+        ContextDocument(
+            id=f"D{index}",
+            title=document.title,
+            content=document.content,
+            url=document.url,
+            score=document.score,
+            metadata=document.metadata,
+        )
+        for index, document in enumerate(documents, 1)
+    ]
 
 
 def _search_only_answer(
@@ -571,13 +795,18 @@ def _search_only_answer(
     *,
     queries: list[str],
     documents: list[ContextDocument],
+    source_provider: str,
 ) -> str:
     query_lines = "\n".join(f"- {query}" for query in queries)
     if not documents:
-        return f"{label} returned no results.\n\nExecuted queries:\n{query_lines}"
+        return (
+            f"{label} returned no results from {_source_label(source_provider)}.\n\n"
+            f"Executed queries:\n{query_lines}"
+        )
     citation_list = ", ".join(doc.citation for doc in documents)
     return (
-        f"{label} returned {len(documents)} result(s).\n\n"
+        f"{label} returned {len(documents)} result(s) from "
+        f"{_source_label(source_provider)}.\n\n"
         f"Executed queries:\n{query_lines}\n\n"
         f"Open the Sources panel to inspect {citation_list}."
     )

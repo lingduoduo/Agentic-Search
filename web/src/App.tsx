@@ -12,6 +12,7 @@ import type {
   AgentExperienceResponse,
   AgentMode,
   ChatMessageView,
+  SearchSourceProvider,
   SourceDocumentView,
 } from "./types";
 
@@ -22,6 +23,8 @@ export function App() {
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
   const [mode, setMode] = useState<AgentMode>("chat_once");
+  const [sourceProvider, setSourceProvider] =
+    useState<SearchSourceProvider>("retrieval");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<string[]>([]);
@@ -73,6 +76,7 @@ export function App() {
         search_url: searchUrl,
         top_k: topK,
         mode,
+        source_provider: sourceProvider,
       }, { signal: controller.signal });
       setSessionId(response.session_id);
       setAnswer(response.answer);
@@ -89,7 +93,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [ensureSession, mode, query, searchUrl, topK]);
+  }, [ensureSession, mode, query, searchUrl, sourceProvider, topK]);
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
@@ -134,11 +138,13 @@ export function App() {
           searchUrl={searchUrl}
           topK={topK}
           mode={mode}
+          sourceProvider={sourceProvider}
           isLoading={isLoading}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}
           onModeChange={setMode}
+          onSourceProviderChange={setSourceProvider}
           onSubmit={handleSubmit}
         />
 
