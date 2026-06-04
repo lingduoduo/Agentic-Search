@@ -470,6 +470,113 @@ All settings are loaded from environment variables via `src/backend/configs/AppS
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
 
 
+## API Health Checks
+
+All checks assume the web backend is running on `http://localhost:7860` and the retrieval server on `http://localhost:8000`.
+
+**Generate a dev JWT** (required for admin endpoints):
+
+```bash
+export TOKEN=$(python3 -c "
+from src.backend.auth import generate_user_jwt_token
+print(generate_user_jwt_token(user_id='dev', email='dev@local'))
+")
+```
+
+**Core health**
+
+```bash
+# Web server
+curl -s http://localhost:7860/health
+
+# Retrieval server
+curl -s http://localhost:8000/health
+
+# Application tier / license status (no auth required)
+curl -s http://localhost:7860/settings
+```
+
+**Search and chat**
+
+```bash
+# One-shot agent query
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is FAISS?", "mode": "search"}'
+
+# List chat sessions
+curl -s http://localhost:7860/api/sessions \
+  -H "Authorization: Bearer $TOKEN"
+
+# Retrieval endpoint
+curl -s -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "dense retrieval", "top_k": 3}'
+```
+
+**Admin — analytics, billing, reporting** (requires admin JWT)
+
+```bash
+# Daily query analytics
+curl -s "http://localhost:7860/analytics/query?start=2024-01-01&end=2025-12-31" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Billing status
+curl -s http://localhost:7860/admin/billing/billing-information \
+  -H "Authorization: Bearer $TOKEN"
+
+# List usage reports
+curl -s http://localhost:7860/admin/usage-report \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Admin — connectors, hooks, rate limits**
+
+```bash
+# List webhook specs
+curl -s http://localhost:7860/admin/hooks/specs \
+  -H "Authorization: Bearer $TOKEN"
+
+# List configured hooks
+curl -s http://localhost:7860/admin/hooks \
+  -H "Authorization: Bearer $TOKEN"
+
+# Token rate limits (users)
+curl -s http://localhost:7860/admin/token-rate-limits/users \
+  -H "Authorization: Bearer $TOKEN"
+
+# Web-search provider config
+curl -s http://localhost:7860/admin/web-search/search-providers \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Admin — license**
+
+```bash
+curl -s http://localhost:7860/license \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -s http://localhost:7860/license/seats \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**SCIM** (uses a SCIM bearer token, not a JWT)
+
+```bash
+# Capability advertisement — no auth
+curl -s http://localhost:7860/scim/v2/ServiceProviderConfig
+curl -s http://localhost:7860/scim/v2/ResourceTypes
+curl -s http://localhost:7860/scim/v2/Schemas
+
+# User and group list — requires SCIM token
+export SCIM_TOKEN=<token-from-POST-/scim/v2/tokens>
+curl -s http://localhost:7860/scim/v2/Users \
+  -H "Authorization: Bearer $SCIM_TOKEN"
+curl -s http://localhost:7860/scim/v2/Groups \
+  -H "Authorization: Bearer $SCIM_TOKEN"
+```
+
+
 ## Tests
 
 ```bash
