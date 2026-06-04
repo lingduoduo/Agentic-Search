@@ -7,7 +7,7 @@ set -u
 #   1. Web backend running at API_URL, default http://127.0.0.1:7860
 #   2. Local retrieval running at LOCAL_RETRIEVAL_URL for local/chat checks
 #   3. Optional browser retrieval running at BROWSER_RETRIEVAL_URL for browser checks
-#   4. Optional GOOGLE_API_KEY + GOOGLE_CSE_ID and/or SERP_API_KEY in env or .env
+#   4. Optional SERP_API_KEY in env or .env for SerpAPI checks
 #
 # Example:
 #   bin/check_agent_triggers.sh
@@ -30,6 +30,7 @@ TOP_K="${TOP_K:-3}"
 OUT_DIR="${OUT_DIR:-/tmp/agentic-search-trigger-checks}"
 RUN_EXTERNAL="${RUN_EXTERNAL:-auto}" # auto | 1 | 0
 RUN_BROWSER="${RUN_BROWSER:-auto}"   # auto | 1 | 0
+GOOGLE_DISABLED_REASON="Google PSE disabled for this demo because the current API key/CSE returns 403"
 
 mkdir -p "$OUT_DIR"
 
@@ -173,6 +174,8 @@ if mode in {"search_tool", "hybrid_search"}:
         seen = {doc.get("metadata", {}).get("source_provider") for doc in docs}
         if "retrieval" not in seen:
             raise SystemExit(f"all-sources response did not include retrieval, saw {sorted(seen)}")
+        if "serpapi" not in seen:
+            raise SystemExit(f"all-sources response did not include serpapi, saw {sorted(seen)}")
 
 if mode in {"chat_once", "chat_loop"} and not answer.strip():
     raise SystemExit("chat response answer is empty")
@@ -199,10 +202,6 @@ run_agent_case() {
       pass=$((pass - 1))
     fi
   fi
-}
-
-has_google_keys() {
-  [ -n "${GOOGLE_API_KEY:-}" ] && [ -n "${GOOGLE_CSE_ID:-}" ]
 }
 
 has_serp_key() {
@@ -294,13 +293,11 @@ else
   skip_case "hybrid_search_browser" "RUN_BROWSER=$RUN_BROWSER"
 fi
 
-if should_run_external && has_google_keys; then
-  run_agent_case "search_tool" "google" "$LOCAL_RETRIEVAL_URL"
-  run_agent_case "hybrid_search" "google" "$LOCAL_RETRIEVAL_URL"
-else
-  skip_case "search_tool_google" "missing GOOGLE_API_KEY/GOOGLE_CSE_ID or RUN_EXTERNAL=$RUN_EXTERNAL"
-  skip_case "hybrid_search_google" "missing GOOGLE_API_KEY/GOOGLE_CSE_ID or RUN_EXTERNAL=$RUN_EXTERNAL"
-fi
+# Google PSE is intentionally skipped in the demo matrix until the configured
+# API key/CSE pair is fixed. The backend search helper remains available for a
+# future re-enable, but the batch health check should focus on active paths.
+skip_case "search_tool_google" "$GOOGLE_DISABLED_REASON"
+skip_case "hybrid_search_google" "$GOOGLE_DISABLED_REASON"
 
 if should_run_external && has_serp_key; then
   run_agent_case "search_tool" "serpapi" "$LOCAL_RETRIEVAL_URL"
@@ -310,12 +307,12 @@ else
   skip_case "hybrid_search_serpapi" "missing SERP_API_KEY/SERPAPI_API_KEY or RUN_EXTERNAL=$RUN_EXTERNAL"
 fi
 
-if should_run_external && has_google_keys && has_serp_key; then
+if should_run_external && has_serp_key; then
   run_agent_case "search_tool" "all" "$LOCAL_RETRIEVAL_URL"
   run_agent_case "hybrid_search" "all" "$LOCAL_RETRIEVAL_URL"
 else
-  skip_case "search_tool_all" "requires Google + SerpAPI credentials or RUN_EXTERNAL=$RUN_EXTERNAL"
-  skip_case "hybrid_search_all" "requires Google + SerpAPI credentials or RUN_EXTERNAL=$RUN_EXTERNAL"
+  skip_case "search_tool_all" "requires SERP_API_KEY/SERPAPI_API_KEY or RUN_EXTERNAL=$RUN_EXTERNAL"
+  skip_case "hybrid_search_all" "requires SERP_API_KEY/SERPAPI_API_KEY or RUN_EXTERNAL=$RUN_EXTERNAL"
 fi
 
 print_header "Summary"

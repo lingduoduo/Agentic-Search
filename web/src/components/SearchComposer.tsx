@@ -11,12 +11,16 @@ const MODE_OPTIONS: Array<{ value: AgentMode; label: string }> = [
   { value: "chat_loop", label: "Chat: Loop" },
 ];
 
-const SOURCE_OPTIONS: Array<{ value: SearchSourceProvider; label: string }> = [
+const SOURCE_OPTIONS: Array<{
+  value: SearchSourceProvider;
+  label: string;
+  disabled?: boolean;
+}> = [
   { value: "retrieval", label: "Local Retrieval" },
-  { value: "google", label: "Google PSE" },
+  { value: "google", label: "Google PSE", disabled: true },
   { value: "serpapi", label: "SerpAPI" },
   { value: "browser", label: "Browser Retrieval" },
-  { value: "all", label: "All Sources" },
+  { value: "all", label: "All Active Sources" },
 ];
 
 interface SearchComposerProps {
@@ -100,7 +104,12 @@ export const SearchComposer = memo(function SearchComposer({
               }
             >
               {SOURCE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                  className={option.disabled ? "disabled-option" : undefined}
+                >
                   {option.label}
                 </option>
               ))}
