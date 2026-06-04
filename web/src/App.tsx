@@ -17,6 +17,7 @@ import type {
 } from "./types";
 
 const DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve";
+const DEFAULT_BROWSER_SEARCH_URL = "http://localhost:8001/retrieve";
 
 export function App() {
   const [query, setQuery] = useState("");
@@ -113,6 +114,22 @@ export function App() {
     setTopK(Math.min(20, Math.max(1, value || 1)));
   }, []);
 
+  const handleSourceProviderChange = useCallback((value: SearchSourceProvider) => {
+    setSourceProvider(value);
+    setSearchUrl((current) => {
+      if (value === "browser" && current === DEFAULT_SEARCH_URL) {
+        return DEFAULT_BROWSER_SEARCH_URL;
+      }
+      if (
+        (value === "retrieval" || value === "all") &&
+        current === DEFAULT_BROWSER_SEARCH_URL
+      ) {
+        return DEFAULT_SEARCH_URL;
+      }
+      return current;
+    });
+  }, []);
+
   return (
     <main className="app-shell">
       <section className="workspace" aria-label="Agentic Search workspace">
@@ -146,7 +163,7 @@ export function App() {
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}
           onModeChange={setMode}
-          onSourceProviderChange={setSourceProvider}
+          onSourceProviderChange={handleSourceProviderChange}
           onSubmit={handleSubmit}
         />
 

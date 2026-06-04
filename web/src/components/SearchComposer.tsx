@@ -15,7 +15,7 @@ const SOURCE_OPTIONS: Array<{ value: SearchSourceProvider; label: string }> = [
   { value: "retrieval", label: "Local Retrieval" },
   { value: "google", label: "Google PSE" },
   { value: "serpapi", label: "SerpAPI" },
-  { value: "browser", label: "Browser URL" },
+  { value: "browser", label: "Browser Retrieval" },
   { value: "all", label: "All Sources" },
 ];
 
@@ -54,7 +54,8 @@ export const SearchComposer = memo(function SearchComposer({
     sourceProvider === "retrieval" ||
     sourceProvider === "browser" ||
     sourceProvider === "all";
-  const urlLabel = sourceProvider === "browser" ? "Browser URL" : "Retrieval URL";
+  const urlLabel =
+    sourceProvider === "browser" ? "Browser Retrieval URL" : "Retrieval URL";
   const topKLabel = isSearchMode ? "Results" : "Context Docs";
 
   return (
