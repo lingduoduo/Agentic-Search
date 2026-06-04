@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(git *)",
       "Bash(node *)",
       "Bash(mkdir *)",
       "Bash(cat *)",
