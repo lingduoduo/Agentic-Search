@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from src.backend.auth import AuthenticatedUser
@@ -18,12 +19,16 @@ from src.backend.auth import user_from_headers
 from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
+from src.backend.search.process_search_query import run_expanded_search
+from src.backend.secondary_llm_flows import expand_keywords
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
+from src.context import build_context_bundle
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
+from src.context.models import SearchFilters
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.backend.db import AgenticSearchStore
 from src.backend.hooks import HookPoint
@@ -65,6 +70,8 @@ from src.backend.servers.tenants.api import router as tenants_router
 from src.backend.servers.token_rate_limits.api import create_token_rate_limits_router
 from src.backend.servers.user_group.api import create_user_group_router
 from src.backend.servers.users.api import create_users_router
+from src.tools.search import SearchPage
+from src.tools.search import search_tool
 
 from .static import APP_CSS
 from .static import APP_HTML
@@ -127,7 +134,20 @@ class AgentExperienceRequest(BaseModel):
     user_id: str | None = None
     search_url: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
-    mode: str = Field(default="standard", description="'standard' or 'agentic_rag'")
+    source_provider: str = Field(
+        default="retrieval",
+        description=(
+            "'retrieval', 'google', 'serpapi', 'browser', or 'all'. "
+            "Browser uses the retrieval-compatible URL in search_url."
+        ),
+    )
+    mode: str = Field(
+        default="chat_once",
+        description=(
+            "'search_tool', 'hybrid_search', 'chat_once', or 'chat_loop'. "
+            "'standard' and 'agentic_rag' are accepted as legacy aliases."
+        ),
+    )
 
 
 class AgentExperienceResponse(BaseModel):
@@ -142,6 +162,12 @@ class AgentExperienceResponse(BaseModel):
 class QueryProcessingHookResponse(BaseModel):
     query: str | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _HybridSearchResult:
+    executed_queries: list[str]
+    documents: list[ContextDocument]
 
 
 def _register_routers(
@@ -208,6 +234,7 @@ def create_web_app(
     runs the repo's retrieval-grounded answer pipeline. Chat state is persisted
     through `AgenticSearchStore`, which defaults to an in-memory SQLite DB.
     """
+    load_dotenv()
     resolved = app_settings or load_app_settings()
     settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
@@ -311,6 +338,7 @@ def create_web_app(
         elif isinstance(hook_result, HookSoftFailed):
             hook_metadata = {"query_processing_hook_error": hook_result.error_message}
 
+        mode = _normalize_agent_mode(request.mode)
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request, auth_user=auth_user)
         history = [
@@ -332,7 +360,88 @@ def create_web_app(
         )
 
         try:
-            if request.mode == "agentic_rag":
+            if mode == "search_tool":
+                source_provider = _normalize_source_provider(request.source_provider)
+                documents = await _run_direct_search(
+                    query,
+                    source_provider=source_provider,
+                    search_url=search_url,
+                    top_k=top_k,
+                )
+                answer = _search_only_answer(
+                    "Direct search tool",
+                    queries=[query],
+                    documents=documents,
+                    source_provider=source_provider,
+                )
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "citations": [doc.citation for doc in documents],
+                        "document_ids": [doc.id for doc in documents],
+                        "hooks": hook_metadata,
+                        "mode": mode,
+                        "source_provider": source_provider,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=[doc.citation for doc in documents],
+                    documents=[_document_view(doc) for doc in documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
+
+            if mode == "hybrid_search":
+                source_provider = _normalize_source_provider(request.source_provider)
+                search_result = await _run_hybrid_search(
+                    query,
+                    llm=llm,
+                    search_url=search_url,
+                    top_k=top_k,
+                    filters=filters,
+                    source_provider=source_provider,
+                )
+                answer = _search_only_answer(
+                    "Hybrid search",
+                    queries=search_result.executed_queries,
+                    documents=search_result.documents,
+                    source_provider=source_provider,
+                )
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "citations": [doc.citation for doc in search_result.documents],
+                        "document_ids": [doc.id for doc in search_result.documents],
+                        "hooks": hook_metadata,
+                        "mode": mode,
+                        "source_provider": source_provider,
+                        "executed_queries": search_result.executed_queries,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=[doc.citation for doc in search_result.documents],
+                    documents=[_document_view(doc) for doc in search_result.documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
+
+            if mode == "chat_loop":
                 rag_loop = AgenticRAGLoop(
                     AgenticRAGConfig(
                         max_rounds=3, topk=top_k, retrieval_url=search_url
@@ -349,6 +458,7 @@ def create_web_app(
                         "document_ids": [doc.id for doc in rag.context.documents],
                         "hooks": hook_metadata,
                         "rounds_used": rag.rounds_used,
+                        "mode": mode,
                     },
                 )
                 messages = [
@@ -393,6 +503,7 @@ def create_web_app(
                 "citations": result.citations,
                 "document_ids": [document.id for document in result.context.documents],
                 "hooks": hook_metadata,
+                "mode": mode,
             },
         )
         messages = [
@@ -433,6 +544,274 @@ def _copy_agent_request(
     if callable(model_copy):
         return model_copy(update={"user_id": user_id})
     return request.copy(update={"user_id": user_id})
+
+
+_MODE_ALIASES = {
+    "standard": "chat_once",
+    "agentic_rag": "chat_loop",
+}
+_VALID_AGENT_MODES = {
+    "search_tool",
+    "hybrid_search",
+    "chat_once",
+    "chat_loop",
+}
+
+
+def _normalize_agent_mode(mode: str) -> str:
+    requested = mode.strip().lower()
+    normalized = _MODE_ALIASES.get(requested, requested)
+    if normalized not in _VALID_AGENT_MODES:
+        valid = ", ".join(sorted(_VALID_AGENT_MODES))
+        raise HTTPException(status_code=422, detail=f"mode must be one of: {valid}")
+    return normalized
+
+
+_SOURCE_PROVIDER_ALIASES = {
+    "local": "retrieval",
+    "direct": "retrieval",
+    "serp": "serpapi",
+    "web": "all",
+}
+_VALID_SOURCE_PROVIDERS = {
+    "retrieval",
+    "google",
+    "serpapi",
+    "browser",
+    "all",
+}
+_SOURCE_PROVIDER_LABELS = {
+    "retrieval": "Local Retrieval",
+    "google": "Google PSE",
+    "serpapi": "SerpAPI",
+    "browser": "Browser Retrieval",
+    "all": "All Sources",
+}
+
+
+def _normalize_source_provider(source_provider: str) -> str:
+    requested = source_provider.strip().lower()
+    normalized = _SOURCE_PROVIDER_ALIASES.get(requested, requested)
+    if normalized not in _VALID_SOURCE_PROVIDERS:
+        valid = ", ".join(sorted(_VALID_SOURCE_PROVIDERS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"source_provider must be one of: {valid}",
+        )
+    return normalized
+
+
+def _source_providers_for(source_provider: str) -> list[str]:
+    if source_provider == "all":
+        return ["retrieval", "google", "serpapi"]
+    return [source_provider]
+
+
+def _tool_provider_for(source_provider: str):
+    return "retrieval" if source_provider == "browser" else source_provider
+
+
+def _source_label(source_provider: str) -> str:
+    return _SOURCE_PROVIDER_LABELS.get(source_provider, source_provider)
+
+
+async def _run_direct_search(
+    query: str,
+    *,
+    source_provider: str,
+    search_url: str,
+    top_k: int,
+) -> list[ContextDocument]:
+    documents: list[ContextDocument] = []
+    for provider in _source_providers_for(source_provider):
+        pages = await search_tool(
+            query,
+            provider=_tool_provider_for(provider),
+            search_url=search_url,
+            page_size=top_k,
+        )
+        documents.extend(
+            _documents_from_search_pages(
+                pages,
+                source_provider=provider,
+                query=query,
+                start_index=len(documents) + 1,
+            )
+        )
+    return _reindex_documents(_dedupe_documents(documents))
+
+
+async def _run_hybrid_search(
+    query: str,
+    *,
+    llm: LLMClient | None,
+    search_url: str,
+    top_k: int,
+    filters: SearchFilters | None,
+    source_provider: str,
+) -> _HybridSearchResult:
+    if source_provider in {"retrieval", "browser"}:
+        search_result = await run_expanded_search(
+            query,
+            llm=llm,
+            search_url=search_url,
+            top_k=top_k,
+            filters=filters,
+            expand=True,
+        )
+        context = build_context_bundle(
+            query,
+            search_result.results,
+            max_documents=top_k,
+        )
+        return _HybridSearchResult(
+            executed_queries=search_result.executed_queries,
+            documents=[
+                _document_with_metadata(
+                    doc,
+                    source_provider=source_provider,
+                    query=query,
+                    entry_point="hybrid_search",
+                )
+                for doc in context.documents
+            ],
+        )
+
+    executed_queries = _expanded_queries(query, llm)
+    documents: list[ContextDocument] = []
+    for provider in _source_providers_for(source_provider):
+        for expanded_query in executed_queries:
+            pages = await search_tool(
+                expanded_query,
+                provider=_tool_provider_for(provider),
+                search_url=search_url,
+                page_size=top_k,
+            )
+            documents.extend(
+                _documents_from_search_pages(
+                    pages,
+                    source_provider=provider,
+                    query=expanded_query,
+                    start_index=len(documents) + 1,
+                    entry_point="hybrid_search",
+                )
+            )
+    return _HybridSearchResult(
+        executed_queries=executed_queries,
+        documents=_reindex_documents(_dedupe_documents(documents)),
+    )
+
+
+def _expanded_queries(query: str, llm: LLMClient | None) -> list[str]:
+    if llm is None:
+        return [query]
+    try:
+        expansions = expand_keywords(query, llm)
+    except Exception:
+        logger.exception("Query expansion failed for hybrid web search")
+        expansions = []
+    return [query] + [expanded for expanded in expansions if expanded != query]
+
+
+def _documents_from_search_pages(
+    pages: list[SearchPage],
+    *,
+    source_provider: str,
+    query: str,
+    start_index: int = 1,
+    entry_point: str = "search_tool",
+) -> list[ContextDocument]:
+    documents: list[ContextDocument] = []
+    for offset, page in enumerate(pages):
+        index = start_index + offset
+        documents.append(
+            ContextDocument(
+                id=f"D{index}",
+                title=page.title
+                or ("Search error" if page.error else f"Result {index}"),
+                content=page.error or page.summary or "No summary available.",
+                url=page.url or None,
+                score=0.0,
+                metadata={
+                    "entry_point": entry_point,
+                    "source": _source_label(source_provider),
+                    "source_provider": source_provider,
+                    "query": query,
+                },
+            )
+        )
+    return documents
+
+
+def _document_with_metadata(
+    document: ContextDocument,
+    *,
+    source_provider: str,
+    query: str,
+    entry_point: str,
+) -> ContextDocument:
+    return ContextDocument(
+        id=document.id,
+        title=document.title,
+        content=document.content,
+        url=document.url,
+        score=document.score,
+        metadata={
+            **document.metadata,
+            "entry_point": entry_point,
+            "source": _source_label(source_provider),
+            "source_provider": source_provider,
+            "query": query,
+        },
+    )
+
+
+def _dedupe_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
+    deduped: list[ContextDocument] = []
+    seen: set[tuple[str | None, str]] = set()
+    for document in documents:
+        key = (document.url, document.content[:160])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(document)
+    return deduped
+
+
+def _reindex_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
+    return [
+        ContextDocument(
+            id=f"D{index}",
+            title=document.title,
+            content=document.content,
+            url=document.url,
+            score=document.score,
+            metadata=document.metadata,
+        )
+        for index, document in enumerate(documents, 1)
+    ]
+
+
+def _search_only_answer(
+    label: str,
+    *,
+    queries: list[str],
+    documents: list[ContextDocument],
+    source_provider: str,
+) -> str:
+    query_lines = "\n".join(f"- {query}" for query in queries)
+    if not documents:
+        return (
+            f"{label} returned no results from {_source_label(source_provider)}.\n\n"
+            f"Executed queries:\n{query_lines}"
+        )
+    citation_list = ", ".join(doc.citation for doc in documents)
+    return (
+        f"{label} returned {len(documents)} result(s) from "
+        f"{_source_label(source_provider)}.\n\n"
+        f"Executed queries:\n{query_lines}\n\n"
+        f"Open the Sources panel to inspect {citation_list}."
+    )
 
 
 def _response_from_result(

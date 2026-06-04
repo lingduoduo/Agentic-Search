@@ -22,7 +22,13 @@ export interface SourceDocumentView {
   metadata: Record<string, unknown>;
 }
 
-export type AgentMode = "standard" | "agentic_rag";
+export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop";
+export type SearchSourceProvider =
+  | "retrieval"
+  | "google"
+  | "serpapi"
+  | "browser"
+  | "all";
 
 export interface AgentExperienceRequest {
   query: string;
@@ -30,6 +36,7 @@ export interface AgentExperienceRequest {
   user_id?: string | null;
   search_url?: string | null;
   top_k?: number;
+  source_provider?: SearchSourceProvider;
   mode?: AgentMode;
 }
 

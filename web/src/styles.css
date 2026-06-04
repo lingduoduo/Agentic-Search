@@ -32,6 +32,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -174,12 +175,12 @@ textarea {
 .composer-controls {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: minmax(190px, 240px) minmax(220px, 1fr) 100px auto;
+  grid-template-columns:
+    minmax(170px, 220px) minmax(220px, 1fr) minmax(150px, 190px) 100px auto;
   gap: 12px;
   align-items: end;
 }
 
-.control-label,
 label {
   display: grid;
   gap: 6px;
@@ -188,45 +189,18 @@ label {
   font-weight: 700;
 }
 
-.mode-field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.mode-toggle {
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  overflow: hidden;
-}
-
-.mode-toggle button {
-  min-width: 0;
-  min-height: 40px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 0 10px;
-  font-size: 13px;
-}
-
-.mode-toggle button + button {
-  border-left: 1px solid var(--line);
-}
-
-.mode-toggle button[aria-pressed="true"] {
-  background: #e3f3ef;
-  color: var(--accent-strong);
-}
-
-input {
+input,
+select {
   min-height: 42px;
   padding: 9px 10px;
+}
+
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
 }
 
 .composer button {
@@ -358,11 +332,9 @@ input {
   line-height: 1.45;
 }
 
-.content-grid {
+.results-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
   gap: 16px;
-  align-items: start;
 }
 
 .answer-column,
@@ -398,20 +370,20 @@ input {
 }
 
 .citation-row span,
-.source-meta span {
+.source-meta span,
+.source-tags span {
   background: #e3f3ef;
   color: var(--accent-strong);
-}
-
-.side-column {
-  display: grid;
-  gap: 16px;
 }
 
 .source-grid {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.sources-panel.wide .source-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
 .source-card {
@@ -429,6 +401,19 @@ input {
   gap: 10px;
 }
 
+.source-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.source-tags span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .source-card a {
   display: inline-flex;
   align-items: center;
@@ -441,7 +426,7 @@ input {
 .source-card p {
   display: -webkit-box;
   overflow: hidden;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   line-height: 1.45;
 }
@@ -500,7 +485,6 @@ input {
 }
 
 @media (max-width: 900px) {
-  .content-grid,
   .composer-controls,
   .admin-metrics,
   .admin-grid {

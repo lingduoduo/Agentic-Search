@@ -12,6 +12,7 @@ import type {
   AgentExperienceResponse,
   AgentMode,
   ChatMessageView,
+  SearchSourceProvider,
   SourceDocumentView,
 } from "./types";
 
@@ -21,7 +22,9 @@ export function App() {
   const [query, setQuery] = useState("");
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
-  const [mode, setMode] = useState<AgentMode>("standard");
+  const [mode, setMode] = useState<AgentMode>("chat_once");
+  const [sourceProvider, setSourceProvider] =
+    useState<SearchSourceProvider>("retrieval");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<string[]>([]);
@@ -73,6 +76,7 @@ export function App() {
         search_url: searchUrl,
         top_k: topK,
         mode,
+        source_provider: sourceProvider,
       }, { signal: controller.signal });
       setSessionId(response.session_id);
       setAnswer(response.answer);
@@ -89,7 +93,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [ensureSession, mode, query, searchUrl, topK]);
+  }, [ensureSession, mode, query, searchUrl, sourceProvider, topK]);
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
@@ -106,6 +110,8 @@ export function App() {
   const handleTopKChange = useCallback((value: number) => {
     setTopK(Math.min(20, Math.max(1, value || 1)));
   }, []);
+
+  const isChatMode = mode === "chat_once" || mode === "chat_loop";
 
   return (
     <main className="app-shell">
@@ -134,11 +140,13 @@ export function App() {
           searchUrl={searchUrl}
           topK={topK}
           mode={mode}
+          sourceProvider={sourceProvider}
           isLoading={isLoading}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}
           onModeChange={setMode}
+          onSourceProviderChange={setSourceProvider}
           onSubmit={handleSubmit}
         />
 
@@ -146,33 +154,33 @@ export function App() {
 
         {adminSummary && <AdminOverview summary={adminSummary} />}
 
-        <div className="content-grid">
-          <section className="answer-column" aria-label="Answer">
+        <div className="results-layout">
+          {isChatMode && (
+            <section className="answer-column" aria-label="Answer">
+              <div className="section-heading">
+                <Bot size={18} />
+                <h2>Answer</h2>
+              </div>
+              <AnswerPanel answer={answer} citations={citations} />
+            </section>
+          )}
+
+          <section className="panel sources-panel wide" aria-label="Sources">
             <div className="section-heading">
-              <Bot size={18} />
-              <h2>Answer</h2>
+              <Search size={18} />
+              <h2>Sources</h2>
+              <span className="count">{documents.length}</span>
             </div>
-            <AnswerPanel answer={answer} citations={citations} />
+            <SourceGrid documents={documents} />
           </section>
 
-          <aside className="side-column" aria-label="Sources and session">
-            <section className="panel">
-              <div className="section-heading">
-                <Search size={18} />
-                <h2>Sources</h2>
-                <span className="count">{documents.length}</span>
-              </div>
-              <SourceGrid documents={documents} />
-            </section>
-
-            <section className="panel">
-              <div className="section-heading">
-                <MessageSquarePlus size={18} />
-                <h2>Session</h2>
-              </div>
-              <SessionTimeline messages={messages} />
-            </section>
-          </aside>
+          <section className="panel" aria-label="Session">
+            <div className="section-heading">
+              <MessageSquarePlus size={18} />
+              <h2>Session</h2>
+            </div>
+            <SessionTimeline messages={messages} />
+          </section>
         </div>
       </section>
     </main>

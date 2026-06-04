@@ -2,17 +2,35 @@ import { memo } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Search } from "lucide-react";
 import type { AgentMode } from "../types";
+import type { SearchSourceProvider } from "../types";
+
+const MODE_OPTIONS: Array<{ value: AgentMode; label: string }> = [
+  { value: "search_tool", label: "Search: Direct Tool" },
+  { value: "hybrid_search", label: "Search: Hybrid" },
+  { value: "chat_once", label: "Chat: No Loop" },
+  { value: "chat_loop", label: "Chat: Loop" },
+];
+
+const SOURCE_OPTIONS: Array<{ value: SearchSourceProvider; label: string }> = [
+  { value: "retrieval", label: "Local Retrieval" },
+  { value: "google", label: "Google PSE" },
+  { value: "serpapi", label: "SerpAPI" },
+  { value: "browser", label: "Browser URL" },
+  { value: "all", label: "All Sources" },
+];
 
 interface SearchComposerProps {
   query: string;
   searchUrl: string;
   topK: number;
   mode: AgentMode;
+  sourceProvider: SearchSourceProvider;
   isLoading: boolean;
   onQueryChange: (value: string) => void;
   onSearchUrlChange: (value: string) => void;
   onTopKChange: (value: number) => void;
   onModeChange: (value: AgentMode) => void;
+  onSourceProviderChange: (value: SearchSourceProvider) => void;
   onSubmit: (event?: FormEvent) => void;
 }
 
@@ -21,11 +39,13 @@ export const SearchComposer = memo(function SearchComposer({
   searchUrl,
   topK,
   mode,
+  sourceProvider,
   isLoading,
   onQueryChange,
   onSearchUrlChange,
   onTopKChange,
   onModeChange,
+  onSourceProviderChange,
   onSubmit,
 }: SearchComposerProps) {
   return (
@@ -44,31 +64,42 @@ export const SearchComposer = memo(function SearchComposer({
         rows={4}
       />
       <div className="composer-controls">
-        <div className="mode-field">
-          <span className="control-label">Mode</span>
-          <div className="mode-toggle" role="group" aria-label="Agent mode">
-            <button
-              type="button"
-              aria-pressed={mode === "standard"}
-              onClick={() => onModeChange("standard")}
-            >
-              Standard
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === "agentic_rag"}
-              onClick={() => onModeChange("agentic_rag")}
-            >
-              Agentic RAG
-            </button>
-          </div>
-        </div>
+        <label>
+          Entry Point
+          <select
+            value={mode}
+            onChange={(event) => onModeChange(event.currentTarget.value as AgentMode)}
+          >
+            {MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           Retrieval URL
           <input
             value={searchUrl}
             onChange={(event) => onSearchUrlChange(event.target.value)}
           />
+        </label>
+        <label>
+          Source
+          <select
+            value={sourceProvider}
+            onChange={(event) =>
+              onSourceProviderChange(
+                event.currentTarget.value as SearchSourceProvider,
+              )
+            }
+          >
+            {SOURCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Top K
