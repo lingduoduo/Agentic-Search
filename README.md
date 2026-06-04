@@ -234,6 +234,14 @@ python3 -m examples.prepare_search_rag_dataset \
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - Training data builders for search-QA and RAG parquet datasets
 
+**Cache & Persistence**
+- **SQLite store** (`AgenticSearchStore`) — single repository for connector configs, documents, document permissions, chat sessions & messages, indexing attempts, usage reports, rate-limit rules, SCIM tokens, and standard answers; no external database required (`src/backend/db/store.py`)
+- **Search history** — past search queries persisted per user and retrievable via `GET /search/search-history` (`src/backend/servers/query_and_chat/search_backend.py`)
+- **Query history** — full chat session history with time/feedback filters, exportable as CSV via `GET /admin/query-history/export` (`src/backend/servers/query_history/`)
+- **In-memory cache** (`CacheBackend` / `InMemoryCache`) — tracks in-flight chat session state (processing flag, stop signal, cancel status) during streaming responses (`src/backend/cache/`)
+- **Chunk batch store** (`ChunkBatchStore`) — temp disk buffer that decouples embedding from index insertion during large indexing jobs; auto-cleaned on exit (`src/retrieval/chunk_batch_store.py`)
+- **File store** (`InMemoryChatFile`) — holds uploaded files (images, PDFs, plain text) in memory for the duration of a chat turn (`src/backend/file_store/`)
+
 **Query Classification**
 - **Search vs chat classifier** (`classify_is_search_flow`) — LLM-backed binary classifier that routes each query to document search or direct chat; defaults to chat on ambiguous input (`src/backend/secondary_llm_flows/search_flow_classification.py`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model that classifies queries into `purchase`, `navigate`, `qa`, `recommendation` and selects the appropriate model tier (fast / balanced / reasoning) (`src/model/intent_classifier.py`)
