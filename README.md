@@ -195,20 +195,27 @@ python3 -m examples.prepare_search_rag_dataset \
 
 ## Features
 
-- **Agentic RAG** (`AgenticRAGLoop`) — LLM query decomposition (multi-hop), HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
-- **Hybrid + rerank retrieval** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
+**Retrieval & Search**
+- **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
-- Optional web search via Google Custom Search, SerpAPI, and playwright-cli (no API key required)
+- Web search via Google Custom Search, SerpAPI, and playwright-cli (no API key required)
+
+**Agent Loops**
+- **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, `<fetch>`, and `<answer>` actions
 - Hermes, Llama-3, and JSON tool-call parsers
 - OpenAPI-based `ApiToolRegistry` for dynamic tool loading
+
+**RL Training**
 - Composite reward shaping (`SearchRewardFunction`) with format, search-use, answer-length, and exact-match components
 - Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
-- Intent classifier (`IntentPipeline`) for query routing and model routing
 - Training data builders for search-QA and RAG parquet datasets
+
+**Routing & Intent**
+- Intent classifier (`IntentPipeline`) for query routing and model routing
 
 
 ## Run An Agent
