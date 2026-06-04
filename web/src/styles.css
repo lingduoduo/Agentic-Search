@@ -339,6 +339,11 @@ select {
   align-items: start;
 }
 
+.search-results-layout {
+  display: grid;
+  gap: 16px;
+}
+
 .answer-column,
 .panel {
   padding: 16px;
@@ -389,6 +394,10 @@ select {
   margin-top: 12px;
 }
 
+.sources-panel.wide .source-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
 .source-card {
   display: grid;
   gap: 8px;
@@ -429,7 +438,7 @@ select {
 .source-card p {
   display: -webkit-box;
   overflow: hidden;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   line-height: 1.45;
 }
