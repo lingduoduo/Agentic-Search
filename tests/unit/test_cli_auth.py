@@ -22,7 +22,9 @@ def test_user_id_mints_jwt(monkeypatch):
         "src.cli._auth.generate_user_jwt_token",
         lambda **_: minted,
     )
-    result = resolve_token(token=None, user_id="alice", email="a@corp.com", secret="s")
+    result = resolve_token(
+        token=None, user_id="alice", email="a@corp.com", secret="test-signing-secret"
+    )
     assert result == minted
 
 
