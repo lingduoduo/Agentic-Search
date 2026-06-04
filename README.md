@@ -2,15 +2,15 @@
 
 A retrieval-backed agent and search-policy platform — FastAPI server, local dense/sparse retrieval, multi-turn agent traces, and RL training helpers.
 
-🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents. Benchmark to release soon!
-
-🔬 **Deep Research** — In-depth reports with a multi-step research flow.
+🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents.
 
 🤖 **Custom Agents** — Build AI Agents with unique instructions, knowledge, and actions.
 
-🌍 **Web Search** — Browse the web for up-to-date information. Supports Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
+🌍 **Web Search** — Browse the web for up-to-date information. Supports Google PSE, SerpAPI, and playwright-cli.
 
 🧠 **PPO/GRPO Reward** — Train search agents with composite reward shaping, group-relative advantages, and PPO/GRPO/REINFORCE helpers.
+
+🔬 **Deep Research** — In-depth reports with a multi-step research flow.
 
 | Feature | Key modules |
 |---------|-------------|
