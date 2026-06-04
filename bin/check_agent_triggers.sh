@@ -86,6 +86,55 @@ check_endpoint() {
   return 1
 }
 
+redact_file() {
+  local path="$1"
+  python - "$path" <<'PY'
+import re
+import sys
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    text = f.read()
+
+def redact_url(match):
+    parsed = urlsplit(match.group(0))
+    query = urlencode(
+        [
+            (key, "[REDACTED]" if key.lower() in {"key", "api_key"} else value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
+
+text = re.sub(r"https://[^\s'\"<>]+", redact_url, text)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(text)
+PY
+}
+
+validate_retrieval_response() {
+  local name="$1"
+  local response_file="$OUT_DIR/${name}.json"
+
+  python - "$response_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    data = json.load(f)
+
+rows = data.get("result", data.get("results", []))
+if rows and isinstance(rows[0], dict):
+    rows = [rows]
+doc_count = sum(len(row) for row in rows if isinstance(row, list))
+if doc_count < 1:
+    raise SystemExit("retrieval endpoint returned no documents")
+print(f"docs={doc_count}")
+PY
+}
+
 validate_agent_response() {
   local name="$1"
   local mode="$2"
@@ -141,6 +190,7 @@ run_agent_case() {
   payload="$(json_payload "$mode" "$source" "$search_url")"
 
   if check_endpoint "$name" "$API_URL/api/agent" "$payload"; then
+    redact_file "$OUT_DIR/${name}.json"
     if validate_agent_response "$name" "$mode" "$source"; then
       printf "     %-42s validated\n" "$name"
     else
@@ -192,22 +242,40 @@ else
 fi
 
 print_header "Retrieval Health"
-check_endpoint "local_retrieval_direct" "$LOCAL_RETRIEVAL_URL" \
+if check_endpoint "local_retrieval_direct" "$LOCAL_RETRIEVAL_URL" \
   "$(python - "$QUERY" "$TOP_K" <<'PY'
 import json
 import sys
 print(json.dumps({"queries": [sys.argv[1]], "topk": int(sys.argv[2])}))
 PY
-)"
+)"; then
+  if validate_retrieval_response "local_retrieval_direct"; then
+    printf "     %-42s validated\n" "local_retrieval_direct"
+  else
+    printf "FAIL %-42s validation failed body=%s\n" \
+      "local_retrieval_direct" "$OUT_DIR/local_retrieval_direct.json"
+    fail=$((fail + 1))
+    pass=$((pass - 1))
+  fi
+fi
 
 if should_run_browser; then
-  check_endpoint "browser_retrieval_direct" "$BROWSER_RETRIEVAL_URL" \
+  if check_endpoint "browser_retrieval_direct" "$BROWSER_RETRIEVAL_URL" \
     "$(python - "$QUERY" "$TOP_K" <<'PY'
 import json
 import sys
 print(json.dumps({"queries": [sys.argv[1]], "topk": int(sys.argv[2])}))
 PY
-)"
+)"; then
+    if validate_retrieval_response "browser_retrieval_direct"; then
+      printf "     %-42s validated\n" "browser_retrieval_direct"
+    else
+      printf "FAIL %-42s validation failed body=%s\n" \
+        "browser_retrieval_direct" "$OUT_DIR/browser_retrieval_direct.json"
+      fail=$((fail + 1))
+      pass=$((pass - 1))
+    fi
+  fi
 else
   skip_case "browser_retrieval_direct" "RUN_BROWSER=$RUN_BROWSER"
 fi
