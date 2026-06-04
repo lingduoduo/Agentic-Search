@@ -1,15 +1,18 @@
 import { memo } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Search } from "lucide-react";
+import type { AgentMode } from "../types";
 
 interface SearchComposerProps {
   query: string;
   searchUrl: string;
   topK: number;
+  mode: AgentMode;
   isLoading: boolean;
   onQueryChange: (value: string) => void;
   onSearchUrlChange: (value: string) => void;
   onTopKChange: (value: number) => void;
+  onModeChange: (value: AgentMode) => void;
   onSubmit: (event?: FormEvent) => void;
 }
 
@@ -17,10 +20,12 @@ export const SearchComposer = memo(function SearchComposer({
   query,
   searchUrl,
   topK,
+  mode,
   isLoading,
   onQueryChange,
   onSearchUrlChange,
   onTopKChange,
+  onModeChange,
   onSubmit,
 }: SearchComposerProps) {
   return (
@@ -39,6 +44,25 @@ export const SearchComposer = memo(function SearchComposer({
         rows={4}
       />
       <div className="composer-controls">
+        <div className="mode-field">
+          <span className="control-label">Mode</span>
+          <div className="mode-toggle" role="group" aria-label="Agent mode">
+            <button
+              type="button"
+              aria-pressed={mode === "standard"}
+              onClick={() => onModeChange("standard")}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "agentic_rag"}
+              onClick={() => onModeChange("agentic_rag")}
+            >
+              Agentic RAG
+            </button>
+          </div>
+        </div>
         <label>
           Retrieval URL
           <input
