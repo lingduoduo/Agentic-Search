@@ -1,8 +1,7 @@
 # tests/unit/test_cli_query.py
 from __future__ import annotations
 
-from unittest.mock import patch
-
+from unittest.mock import AsyncMock, patch
 
 from src.cli._client import AgentResult
 from src.cli.query import main
@@ -25,7 +24,7 @@ RESULT = AgentResult(
 def test_main_returns_0_on_success():
     with (
         patch("src.cli.query.resolve_token", return_value="tok"),
-        patch("src.cli.query.asyncio.run", return_value=RESULT),
+        patch("src.cli.query.query_agent", new=AsyncMock(return_value=RESULT)),
         patch("src.cli.query.render_sources"),
         patch("src.cli.query.render_answer_progressive"),
         patch("src.cli.query.console"),
@@ -46,7 +45,10 @@ def test_main_returns_1_on_auth_error():
 def test_main_returns_1_on_request_error():
     with (
         patch("src.cli.query.resolve_token", return_value="tok"),
-        patch("src.cli.query.asyncio.run", side_effect=Exception("connection refused")),
+        patch(
+            "src.cli.query.query_agent",
+            new=AsyncMock(side_effect=Exception("connection refused")),
+        ),
         patch("src.cli.query.console"),
     ):
         code = main(["q", "--token", "tok", "--url", "http://x"])
