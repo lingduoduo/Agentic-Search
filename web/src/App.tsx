@@ -45,6 +45,8 @@ export function App() {
     if (answer) return "Grounded";
     return "Ready";
   }, [answer, error, isLoading]);
+  const isChatMode = mode === "chat_once" || mode === "chat_loop";
+  const isSearchMode = mode === "search_tool" || mode === "hybrid_search";
 
   const ensureSession = useCallback(
     async (signal: AbortSignal) => {
@@ -76,7 +78,7 @@ export function App() {
         search_url: searchUrl,
         top_k: topK,
         mode,
-        source_provider: sourceProvider,
+        source_provider: isSearchMode ? sourceProvider : "retrieval",
       }, { signal: controller.signal });
       setSessionId(response.session_id);
       setAnswer(response.answer);
@@ -93,7 +95,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [ensureSession, mode, query, searchUrl, sourceProvider, topK]);
+  }, [ensureSession, isSearchMode, mode, query, searchUrl, sourceProvider, topK]);
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
@@ -110,8 +112,6 @@ export function App() {
   const handleTopKChange = useCallback((value: number) => {
     setTopK(Math.min(20, Math.max(1, value || 1)));
   }, []);
-
-  const isChatMode = mode === "chat_once" || mode === "chat_loop";
 
   return (
     <main className="app-shell">

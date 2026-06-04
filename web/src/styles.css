@@ -174,11 +174,18 @@ textarea {
 
 .composer-controls {
   margin-top: 12px;
-  display: grid;
-  grid-template-columns:
-    minmax(170px, 220px) minmax(220px, 1fr) minmax(150px, 190px) 100px auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: end;
+}
+
+.composer-controls label {
+  flex: 0 1 190px;
+}
+
+.composer-controls .url-field {
+  flex: 1 1 360px;
 }
 
 label {
