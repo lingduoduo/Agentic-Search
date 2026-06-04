@@ -12,12 +12,17 @@ A retrieval-backed agent and search-policy platform combining a FastAPI server l
 
 🧠 **PPO/GRPO Reward** — Train search agents with composite reward shaping, group-relative advantages, and PPO/GRPO/REINFORCE helpers. Plug in any LLM and retrieval backend.
 
-**Enterprise capabilities:**
-- **RAG over connected sources** — connectors ingest documents from Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion, and others
-- **Document indexing pipeline** — background workers fetch, parse, chunk, enrich, embed, and index into Vespa or OpenSearch; sync state in Postgres
-- **Permission-aware retrieval** — access controls, external group sync, user/group permissions, and enterprise auth in the retrieval path
-- **Admin and observability surface** — connector management, indexing status, users/groups, auth, model settings, analytics, and enterprise controls
-
+| Feature | Key modules |
+|---------|-------------|
+| 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/backend/servers/retrieval/hybrid_rerank.py` |
+| 🔬 Deep Research | `src/agents/deep_research/`, `src/context/`, `src/retrieval/` |
+| 🤖 Custom Agents | `src/agents/custom.py`, `src/tools/`, `src/backend/servers/query_and_chat/` |
+| 🌍 Web Search | `src/backend/servers/retrieval/google.py`, `serp.py`, `browser.py` |
+| 🧠 PPO/GRPO Reward | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
+| RAG over connectors | `src/backend/connectors/`, `src/backend/servers/documents/` |
+| Document indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py` |
+| Permission-aware retrieval | `src/backend/access/`, `src/context/preprocessing/` |
+| Admin & observability | `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
 ## Repository Structure
 
