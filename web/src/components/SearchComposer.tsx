@@ -15,7 +15,7 @@ const SOURCE_OPTIONS: Array<{ value: SearchSourceProvider; label: string }> = [
   { value: "retrieval", label: "Local Retrieval" },
   { value: "google", label: "Google PSE" },
   { value: "serpapi", label: "SerpAPI" },
-  { value: "browser", label: "Browser URL" },
+  { value: "browser", label: "Browser Retrieval" },
   { value: "all", label: "All Sources" },
 ];
 
@@ -48,6 +48,16 @@ export const SearchComposer = memo(function SearchComposer({
   onSourceProviderChange,
   onSubmit,
 }: SearchComposerProps) {
+  const isSearchMode = mode === "search_tool" || mode === "hybrid_search";
+  const usesRetrievalUrl =
+    !isSearchMode ||
+    sourceProvider === "retrieval" ||
+    sourceProvider === "browser" ||
+    sourceProvider === "all";
+  const urlLabel =
+    sourceProvider === "browser" ? "Browser Retrieval URL" : "Retrieval URL";
+  const topKLabel = isSearchMode ? "Results" : "Context Docs";
+
   return (
     <form className="composer" onSubmit={onSubmit}>
       <textarea
@@ -77,32 +87,39 @@ export const SearchComposer = memo(function SearchComposer({
             ))}
           </select>
         </label>
+
+        {isSearchMode && (
+          <label>
+            Source
+            <select
+              value={sourceProvider}
+              onChange={(event) =>
+                onSourceProviderChange(
+                  event.currentTarget.value as SearchSourceProvider,
+                )
+              }
+            >
+              {SOURCE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {usesRetrievalUrl && (
+          <label className="url-field">
+            {urlLabel}
+            <input
+              value={searchUrl}
+              onChange={(event) => onSearchUrlChange(event.target.value)}
+            />
+          </label>
+        )}
+
         <label>
-          Retrieval URL
-          <input
-            value={searchUrl}
-            onChange={(event) => onSearchUrlChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Source
-          <select
-            value={sourceProvider}
-            onChange={(event) =>
-              onSourceProviderChange(
-                event.currentTarget.value as SearchSourceProvider,
-              )
-            }
-          >
-            {SOURCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Top K
+          {topKLabel}
           <input
             min={1}
             max={20}

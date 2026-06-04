@@ -17,6 +17,7 @@ import type {
 } from "./types";
 
 const DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve";
+const DEFAULT_BROWSER_SEARCH_URL = "http://localhost:8001/retrieve";
 
 export function App() {
   const [query, setQuery] = useState("");
@@ -45,6 +46,8 @@ export function App() {
     if (answer) return "Grounded";
     return "Ready";
   }, [answer, error, isLoading]);
+  const isChatMode = mode === "chat_once" || mode === "chat_loop";
+  const isSearchMode = mode === "search_tool" || mode === "hybrid_search";
 
   const ensureSession = useCallback(
     async (signal: AbortSignal) => {
@@ -76,7 +79,7 @@ export function App() {
         search_url: searchUrl,
         top_k: topK,
         mode,
-        source_provider: sourceProvider,
+        source_provider: isSearchMode ? sourceProvider : "retrieval",
       }, { signal: controller.signal });
       setSessionId(response.session_id);
       setAnswer(response.answer);
@@ -93,7 +96,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [ensureSession, mode, query, searchUrl, sourceProvider, topK]);
+  }, [ensureSession, isSearchMode, mode, query, searchUrl, sourceProvider, topK]);
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
@@ -111,7 +114,21 @@ export function App() {
     setTopK(Math.min(20, Math.max(1, value || 1)));
   }, []);
 
-  const isChatMode = mode === "chat_once" || mode === "chat_loop";
+  const handleSourceProviderChange = useCallback((value: SearchSourceProvider) => {
+    setSourceProvider(value);
+    setSearchUrl((current) => {
+      if (value === "browser" && current === DEFAULT_SEARCH_URL) {
+        return DEFAULT_BROWSER_SEARCH_URL;
+      }
+      if (
+        (value === "retrieval" || value === "all") &&
+        current === DEFAULT_BROWSER_SEARCH_URL
+      ) {
+        return DEFAULT_SEARCH_URL;
+      }
+      return current;
+    });
+  }, []);
 
   return (
     <main className="app-shell">
@@ -146,7 +163,7 @@ export function App() {
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}
           onModeChange={setMode}
-          onSourceProviderChange={setSourceProvider}
+          onSourceProviderChange={handleSourceProviderChange}
           onSubmit={handleSubmit}
         />
 
