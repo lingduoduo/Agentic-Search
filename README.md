@@ -22,6 +22,8 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 📊 **Admin & Observability** — Track usage, query history, health, analytics, reporting, rate limits, hooks, billing, and license state.
 
+[Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
+
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/backend/servers/retrieval/hybrid_rerank.py` |
@@ -267,8 +269,6 @@ python3 -m examples.prepare_search_rag_dataset \
 - `MonitoringWorker` — background poller for process memory (RSS), index queue depth, connector count; ships JSON snapshots to a cloud data-plane URL
 - `event_telemetry` / `identify_user` — PostHog event capture helpers; no-ops when PostHog is not configured
 - Feature flags — composable chain: `EnvFeatureFlagProvider` → `PostHogFeatureFlagProvider`; `StaticFeatureFlagProvider` for tests; single call-site via `is_feature_enabled`
-
-[Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/agentic-search-grpo-architecture.html)
 
 
 ## Agentic RAG
