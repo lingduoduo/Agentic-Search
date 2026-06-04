@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from src.backend.auth import AuthenticatedUser
@@ -233,6 +234,7 @@ def create_web_app(
     runs the repo's retrieval-grounded answer pipeline. Chat state is persisted
     through `AgenticSearchStore`, which defaults to an in-memory SQLite DB.
     """
+    load_dotenv()
     resolved = app_settings or load_app_settings()
     settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
