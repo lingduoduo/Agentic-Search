@@ -253,6 +253,19 @@ python3 -m examples.prepare_search_rag_dataset \
 - **Chunk batch store** (`ChunkBatchStore`) — temp disk buffer that decouples embedding from index insertion during large indexing jobs; auto-cleaned on exit (`src/retrieval/chunk_batch_store.py`)
 - **File store** (`InMemoryChatFile`) — holds uploaded files (images, PDFs, plain text) in memory for the duration of a chat turn (`src/backend/file_store/`)
 
+**Prompts**
+- **Chat prompt constants** — citation reminders, system prompt defaults, file/image reminders, and tool-call response templates (`src/backend/prompts/chat_prompts.py`)
+- **Query expansion prompts** — `KEYWORD_EXPANSION_PROMPT` broadens sparse queries; `QUERY_TYPE_PROMPT` classifies intent for retrieval tuning (`src/backend/prompts/query_expansion.py`)
+- **Search flow classification prompt** — binary `search` / `chat` prompt with labelled examples and strict single-word output (`src/backend/prompts/search_flow_classification.py`)
+- **Agentic RAG prompts** — decompose prompt (2–4 focused sub-questions) and HyDE prompt (hypothetical ideal answer) used by `QueryEnhancer` (`src/context/query_enhancer.py`)
+- **Search agent instruction builder** (`build_search_agent_instruction`) — assembles the ReAct-style system prompt for `SearchAgentLoop` with `<think>/<search>/<answer>` protocol (`src/agents/`)
+
+**Observability & Feature Flags**
+- **Admin surface summary** (`build_admin_surface_summary`) — single-call snapshot of connectors, indexing status, users/groups, auth, model settings, tools, analytics, and enterprise controls with a composite health score (`src/backend/observability/admin_surface.py`)
+- **Monitoring worker** (`MonitoringWorker`) — single-threaded background poller that collects process memory (RSS), index queue depth, connector count, and document count; optionally ships JSON snapshots to a cloud data-plane URL (`src/backend/servers/backgroundworker/monitoring_worker.py`)
+- **Telemetry** (`event_telemetry` / `identify_user`) — PostHog event capture and user profile helpers; no-ops when PostHog is not configured (`src/backend/utils/telemetry.py`)
+- **Feature flags** — composable provider chain: `EnvFeatureFlagProvider` (env-var overrides) → `PostHogFeatureFlagProvider` (remote flags); `StaticFeatureFlagProvider` for tests; `is_feature_enabled` as the single call-site (`src/backend/feature_flags/`)
+
 **Query Classification**
 - **Search vs chat classifier** (`classify_is_search_flow`) — LLM-backed binary classifier that routes each query to document search or direct chat; defaults to chat on ambiguous input (`src/backend/secondary_llm_flows/search_flow_classification.py`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model that classifies queries into `purchase`, `navigate`, `qa`, `recommendation` and selects the appropriate model tier (fast / balanced / reasoning) (`src/model/intent_classifier.py`)
