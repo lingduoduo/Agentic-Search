@@ -112,12 +112,84 @@ cd web && npm install && npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to port 7860 during development. For production, `npm run build` produces `web/dist`; the FastAPI app serves it automatically.
 
-Run a deterministic search-agent trace with fake model/search backends:
+
+## Examples
+
+All examples run without a live model or retrieval server unless noted.
+
+**Agent loops**
 
 ```bash
+# Deterministic SearchAgentLoop trace with fake model + search (no GPU required)
 python3 -m examples.run_search_trace_workflow
-python3 -m examples.run_search_trace_workflow --sft   # build SFT example from trace
-python3 -m examples.run_grpo_training_pipeline        # reward/GRPO smoke test
+
+# Build a matching SFT training record from the trace
+python3 -m examples.run_search_trace_workflow --sft
+
+# Minimal SearchAgentLoop usage — shows the public API directly
+python3 -m examples.run_search_agent_loop
+
+# Search pipeline with access filters and permission filtering
+python3 -m examples.run_search_pipeline
+```
+
+**Agent CLI** (requires a running retrieval server and optionally a vLLM endpoint)
+
+```bash
+# One-shot local generation (CPU, no retrieval server)
+python3 -m examples.run_agentic_search \
+  --mode single --question "What is FAISS?" \
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
+
+# Multi-turn search agent against a live retrieval server
+python3 -m examples.run_agentic_search \
+  --mode search --question "Compare dense and sparse retrieval" \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
+```
+
+**PPO/GRPO reward training**
+
+```bash
+# End-to-end reward + GRPO advantage smoke test (no GPU required)
+python3 -m examples.run_grpo_training_pipeline
+```
+
+**Intent classifier**
+
+```bash
+# Generate training examples from a local corpus, then train the classifier
+python3 -m examples.run_intent_training generate \
+  --corpus data/corpus.jsonl \
+  --vocabulary data/vocabulary_corpus.json \
+  --output data/intent_examples.json
+
+python3 -m examples.run_intent_training train \
+  --examples data/intent_examples.json \
+  --output models/intent_classifier.pt
+```
+
+**Dataset preparation**
+
+```bash
+# Prepare NQ search-QA parquet (downloads from HuggingFace)
+python3 -m examples.prepare_search_qa_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq --local_dir data/nq_search
+
+# Preview 20 examples before writing
+python3 -m examples.prepare_search_qa_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq --splits test --max_examples 20 --preview --preview_rows 5
+
+# Prepare RAG parquet from cached retrieval results
+python3 -m examples.prepare_search_rag_dataset \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets \
+  --dataset_config nq \
+  --corpus_path data/wiki-18.jsonl \
+  --train_retrieval_cache data/nq_train_retrieval_cache.json \
+  --test_retrieval_cache data/nq_test_retrieval_cache.json \
+  --topk 3 --local_dir data/nq_rag
 ```
 
 
