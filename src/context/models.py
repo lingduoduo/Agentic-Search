@@ -63,7 +63,10 @@ class SearchFilters:
                 if tags.get(key) != value:
                     return False
         if self.access_acl:
-            if not _metadata_acl_values(metadata).intersection(self.access_acl):
+            doc_acl = _metadata_acl_values(metadata)
+            # Documents with no ACL metadata are treated as public (open access).
+            # Only enforce when the document explicitly declares its ACL.
+            if doc_acl and not doc_acl.intersection(self.access_acl):
                 return False
         if self.time_cutoff:
             updated_at = metadata.get("updated_at")
