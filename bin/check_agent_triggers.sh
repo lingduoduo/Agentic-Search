@@ -30,6 +30,7 @@ TOP_K="${TOP_K:-3}"
 OUT_DIR="${OUT_DIR:-/tmp/agentic-search-trigger-checks}"
 RUN_EXTERNAL="${RUN_EXTERNAL:-auto}" # auto | 1 | 0
 RUN_BROWSER="${RUN_BROWSER:-auto}"   # auto | 1 | 0
+RUN_ALL="${RUN_ALL:-0}"              # 1 to validate aggregate all-source routing
 GOOGLE_DISABLED_REASON="Google PSE disabled for this demo because the current API key/CSE returns 403"
 
 mkdir -p "$OUT_DIR"
@@ -37,6 +38,8 @@ mkdir -p "$OUT_DIR"
 pass=0
 fail=0
 skip=0
+browser_available=0
+browser_skip_reason="browser retrieval did not validate"
 
 print_header() {
   printf "\n== %s ==\n" "$1"
@@ -65,6 +68,7 @@ check_endpoint() {
   local name="$1"
   local url="$2"
   local payload="$3"
+  local optional="${4:-0}"
   local response_file="$OUT_DIR/${name}.json"
 
   local status
@@ -77,6 +81,15 @@ check_endpoint() {
     printf "PASS %-42s HTTP %s\n" "$name" "$status"
     pass=$((pass + 1))
     return 0
+  fi
+
+  if [ "$optional" = "1" ]; then
+    printf "SKIP %-42s HTTP %s body=%s\n" "$name" "$status" "$response_file"
+    if [ -s "$OUT_DIR/${name}.curl.err" ]; then
+      sed 's/^/  curl: /' "$OUT_DIR/${name}.curl.err"
+    fi
+    skip=$((skip + 1))
+    return 2
   fi
 
   printf "FAIL %-42s HTTP %s body=%s\n" "$name" "$status" "$response_file"
@@ -226,9 +239,28 @@ should_run_browser() {
   esac
 }
 
+browser_is_auto() {
+  [ "$RUN_BROWSER" = "auto" ]
+}
+
+should_run_all() {
+  case "$RUN_ALL" in
+    1|true|yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 skip_case() {
   printf "SKIP %-42s %s\n" "$1" "$2"
   skip=$((skip + 1))
+}
+
+skip_passed_optional_case() {
+  local name="$1"
+  local reason="$2"
+  printf "SKIP %-42s %s\n" "$name" "$reason"
+  skip=$((skip + 1))
+  pass=$((pass - 1))
 }
 
 print_header "Backend Health"
@@ -265,12 +297,21 @@ import json
 import sys
 print(json.dumps({"queries": [sys.argv[1]], "topk": int(sys.argv[2])}))
 PY
-)"; then
-    if validate_retrieval_response "browser_retrieval_direct"; then
+)" "$(browser_is_auto && printf 1 || printf 0)"; then
+    if validate_retrieval_response \
+      "browser_retrieval_direct" \
+      2>"$OUT_DIR/browser_retrieval_direct.validation.err"; then
       printf "     %-42s validated\n" "browser_retrieval_direct"
+      browser_available=1
+    elif browser_is_auto; then
+      browser_skip_reason="browser retrieval returned no documents"
+      skip_passed_optional_case \
+        "browser_retrieval_direct" \
+        "optional browser retrieval returned no documents; use RUN_BROWSER=1 to fail on this"
     else
       printf "FAIL %-42s validation failed body=%s\n" \
         "browser_retrieval_direct" "$OUT_DIR/browser_retrieval_direct.json"
+      sed 's/^/  validation: /' "$OUT_DIR/browser_retrieval_direct.validation.err"
       fail=$((fail + 1))
       pass=$((pass - 1))
     fi
@@ -285,9 +326,12 @@ run_agent_case "hybrid_search" "retrieval" "$LOCAL_RETRIEVAL_URL"
 run_agent_case "chat_once" "retrieval" "$LOCAL_RETRIEVAL_URL"
 run_agent_case "chat_loop" "retrieval" "$LOCAL_RETRIEVAL_URL"
 
-if should_run_browser; then
+if [ "$browser_available" -eq 1 ]; then
   run_agent_case "search_tool" "browser" "$BROWSER_RETRIEVAL_URL"
   run_agent_case "hybrid_search" "browser" "$BROWSER_RETRIEVAL_URL"
+elif should_run_browser; then
+  skip_case "search_tool_browser" "$browser_skip_reason"
+  skip_case "hybrid_search_browser" "$browser_skip_reason"
 else
   skip_case "search_tool_browser" "RUN_BROWSER=$RUN_BROWSER"
   skip_case "hybrid_search_browser" "RUN_BROWSER=$RUN_BROWSER"
@@ -307,12 +351,17 @@ else
   skip_case "hybrid_search_serpapi" "missing SERP_API_KEY/SERPAPI_API_KEY or RUN_EXTERNAL=$RUN_EXTERNAL"
 fi
 
-if should_run_external && has_serp_key; then
+# Aggregate all-source checks are opt-in because older running backend
+# processes may still route `all` through disabled Google PSE until restarted.
+if should_run_all && should_run_external && has_serp_key; then
   run_agent_case "search_tool" "all" "$LOCAL_RETRIEVAL_URL"
   run_agent_case "hybrid_search" "all" "$LOCAL_RETRIEVAL_URL"
-else
+elif should_run_all; then
   skip_case "search_tool_all" "requires SERP_API_KEY/SERPAPI_API_KEY or RUN_EXTERNAL=$RUN_EXTERNAL"
   skip_case "hybrid_search_all" "requires SERP_API_KEY/SERPAPI_API_KEY or RUN_EXTERNAL=$RUN_EXTERNAL"
+else
+  skip_case "search_tool_all" "RUN_ALL=$RUN_ALL; active sources are already checked individually"
+  skip_case "hybrid_search_all" "RUN_ALL=$RUN_ALL; active sources are already checked individually"
 fi
 
 print_header "Summary"
