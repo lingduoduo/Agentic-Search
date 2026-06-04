@@ -332,14 +332,7 @@ select {
   line-height: 1.45;
 }
 
-.content-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-  gap: 16px;
-  align-items: start;
-}
-
-.search-results-layout {
+.results-layout {
   display: grid;
   gap: 16px;
 }
@@ -381,11 +374,6 @@ select {
 .source-tags span {
   background: #e3f3ef;
   color: var(--accent-strong);
-}
-
-.side-column {
-  display: grid;
-  gap: 16px;
 }
 
 .source-grid {
@@ -497,7 +485,6 @@ select {
 }
 
 @media (max-width: 900px) {
-  .content-grid,
   .composer-controls,
   .admin-metrics,
   .admin-grid {

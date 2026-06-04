@@ -111,7 +111,7 @@ export function App() {
     setTopK(Math.min(20, Math.max(1, value || 1)));
   }, []);
 
-  const isSearchMode = mode === "search_tool" || mode === "hybrid_search";
+  const isChatMode = mode === "chat_once" || mode === "chat_loop";
 
   return (
     <main className="app-shell">
@@ -154,27 +154,8 @@ export function App() {
 
         {adminSummary && <AdminOverview summary={adminSummary} />}
 
-        {isSearchMode ? (
-          <div className="search-results-layout">
-            <section className="panel sources-panel wide" aria-label="Sources">
-              <div className="section-heading">
-                <Search size={18} />
-                <h2>Sources</h2>
-                <span className="count">{documents.length}</span>
-              </div>
-              <SourceGrid documents={documents} />
-            </section>
-
-            <section className="panel" aria-label="Session">
-              <div className="section-heading">
-                <MessageSquarePlus size={18} />
-                <h2>Session</h2>
-              </div>
-              <SessionTimeline messages={messages} />
-            </section>
-          </div>
-        ) : (
-          <div className="content-grid">
+        <div className="results-layout">
+          {isChatMode && (
             <section className="answer-column" aria-label="Answer">
               <div className="section-heading">
                 <Bot size={18} />
@@ -182,27 +163,25 @@ export function App() {
               </div>
               <AnswerPanel answer={answer} citations={citations} />
             </section>
+          )}
 
-            <aside className="side-column" aria-label="Sources and session">
-              <section className="panel">
-                <div className="section-heading">
-                  <Search size={18} />
-                  <h2>Sources</h2>
-                  <span className="count">{documents.length}</span>
-                </div>
-                <SourceGrid documents={documents} />
-              </section>
+          <section className="panel sources-panel wide" aria-label="Sources">
+            <div className="section-heading">
+              <Search size={18} />
+              <h2>Sources</h2>
+              <span className="count">{documents.length}</span>
+            </div>
+            <SourceGrid documents={documents} />
+          </section>
 
-              <section className="panel">
-                <div className="section-heading">
-                  <MessageSquarePlus size={18} />
-                  <h2>Session</h2>
-                </div>
-                <SessionTimeline messages={messages} />
-              </section>
-            </aside>
-          </div>
-        )}
+          <section className="panel" aria-label="Session">
+            <div className="section-heading">
+              <MessageSquarePlus size={18} />
+              <h2>Session</h2>
+            </div>
+            <SessionTimeline messages={messages} />
+          </section>
+        </div>
       </section>
     </main>
   );
