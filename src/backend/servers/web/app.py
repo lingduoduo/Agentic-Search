@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from src.backend.auth import AuthenticatedUser
 from src.backend.auth import user_from_headers
+from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
 from src.context import ChatMessage
@@ -309,7 +310,7 @@ def create_web_app(
             hook_metadata = {"query_processing_hook_error": hook_result.error_message}
 
         session_request = _copy_agent_request(request, user_id=user_id)
-        session_id = _ensure_session(db, session_request)
+        session_id = _ensure_session(db, session_request, auth_user=auth_user)
         history = [
             ChatMessage(role=message.role, content=message.content)
             for message in db.list_chat_messages(session_id)
@@ -371,9 +372,12 @@ def create_web_app(
 def _ensure_session(
     store: AgenticSearchStore,
     request: AgentExperienceRequest,
+    auth_user: AuthenticatedUser | None = None,
 ) -> str:
     if request.session_id and store.get_chat_session(request.session_id):
         return request.session_id
+    if auth_user is not None and request.user_id:
+        store.upsert_user(UserRecord(id=auth_user.id, email=auth_user.email))
     session = store.create_chat_session(
         user_id=request.user_id,
         title=request.query[:80],
