@@ -702,7 +702,7 @@ Expected: `Searching enterprise knowledge… ` then connection error — token r
 - [ ] **Step 4: Test `-user-id` JWT minting path**
 
 ```bash
-./bin/query "test" -user-id alice -email alice@corp.com -secret testsecret -url http://localhost:9999 2>&1 | head -3
+./bin/query "test" -user-id alice -email alice@corp.com -secret "$AUTH_SECRET" -url http://localhost:9999 2>&1 | head -3
 ```
 Expected: `Searching enterprise knowledge… ` then connection error (not `auth error`).
 
