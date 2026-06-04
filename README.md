@@ -4,7 +4,7 @@ A retrieval-backed agent and search-policy platform — FastAPI server, local de
 
 🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents. Benchmark to release soon!
 
-🔬 **Deep Research** — In-depth reports with a multi-step research flow. Top of [leaderboard](https://github.com/onyx-dot-app/onyx_deep_research_bench) as of Feb 2026.
+🔬 **Deep Research** — In-depth reports with a multi-step research flow.
 
 🤖 **Custom Agents** — Build AI Agents with unique instructions, knowledge, and actions.
 
