@@ -8,7 +8,7 @@ Usage:
 
     # mint token from credentials
     python3 -m src.cli.query "what is our refund policy?" \
-        --user-id alice --email alice@corp.com --secret mysecret
+        --user-id alice --email alice@corp.com --secret "$AUTH_SECRET"
 
     # interactive prompt
     python3 -m src.cli.query --token <jwt>
