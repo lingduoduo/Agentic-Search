@@ -29,7 +29,7 @@ QUERY="${QUERY:-FAISS}"
 TOP_K="${TOP_K:-3}"
 OUT_DIR="${OUT_DIR:-/tmp/agentic-search-trigger-checks}"
 RUN_EXTERNAL="${RUN_EXTERNAL:-auto}" # auto | 1 | 0
-RUN_BROWSER="${RUN_BROWSER:-auto}"   # auto | 1 | 0
+RUN_BROWSER="${RUN_BROWSER:-1}"      # 1 | 0 | auto
 RUN_ALL="${RUN_ALL:-0}"              # 1 to validate aggregate all-source routing
 GOOGLE_DISABLED_REASON="Google PSE disabled for this demo because the current API key/CSE returns 403"
 

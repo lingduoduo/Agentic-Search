@@ -35,10 +35,9 @@ def test_search_query_returns_formatted_documents():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2))
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
-            _make_proc(),  # open
-            _make_proc(),  # snapshot (page load)
-            _make_proc(),  # fill --submit
-            _make_proc(),  # snapshot (SERP results)
+            _make_proc(),  # open about:blank
+            _make_proc(),  # goto search URL
+            _make_proc(),  # snapshot
             _make_proc(FAKE_RESULTS),  # --raw eval
             _make_proc(),  # close
         ]
@@ -55,10 +54,15 @@ def test_empty_results_when_eval_returns_empty_list():
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),  # open
-            _make_proc(),  # snapshot
-            _make_proc(),  # fill
-            _make_proc(),  # snapshot
-            _make_proc("[]"),  # eval → empty list
+            _make_proc(),  # goto Google
+            _make_proc(),  # snapshot Google
+            _make_proc("[]"),  # eval Google → empty list
+            _make_proc(),  # goto Yahoo
+            _make_proc(),  # snapshot Yahoo
+            _make_proc("[]"),  # eval Yahoo → empty list
+            _make_proc(),  # goto Wikipedia
+            _make_proc(),  # snapshot Wikipedia
+            _make_proc("[]"),  # eval Wikipedia → empty list
             _make_proc(),  # close
         ]
         results = engine._search_and_process("obscure query xyz")
@@ -71,11 +75,13 @@ def test_subprocess_timeout_returns_empty_and_closes():
         mock_run.side_effect = [
             _make_proc(),
             subprocess.TimeoutExpired(cmd="playwright-cli", timeout=30),
+            subprocess.TimeoutExpired(cmd="playwright-cli", timeout=30),
+            subprocess.TimeoutExpired(cmd="playwright-cli", timeout=30),
             _make_proc(),  # close in finally block
         ]
         results = engine._search_and_process("query")
     assert results == []
-    assert mock_run.call_count == 3  # open, snapshot (timeout), close
+    assert mock_run.call_count == 5  # open, three target timeouts, close
 
 
 def test_topk_truncates_results():
@@ -91,7 +97,6 @@ def test_topk_truncates_results():
             _make_proc(),
             _make_proc(),
             _make_proc(),
-            _make_proc(),
             _make_proc(many),
             _make_proc(),
         ]
@@ -104,14 +109,12 @@ def test_batch_search_runs_queries_in_parallel():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2, batch_workers=2))
     single = json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
     with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
-        # 6 calls per query × 2 queries = 12 calls
+        # 5 calls per query × 2 queries = 10 calls
         mock_run.side_effect = [
             _make_proc(),
             _make_proc(),
             _make_proc(),
-            _make_proc(),
             _make_proc(single),
-            _make_proc(),
             _make_proc(),
             _make_proc(),
             _make_proc(),
@@ -135,10 +138,57 @@ def test_non_dict_eval_items_are_filtered():
             _make_proc(),
             _make_proc(),
             _make_proc(),
-            _make_proc(),
             _make_proc(mixed),
             _make_proc(),
         ]
         results = engine._search_and_process("query")
     assert len(results) == 1
     assert results[0]["document"]["title"] == "T"
+
+
+def test_quoted_json_eval_output_is_decoded():
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    quoted = json.dumps(
+        json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
+    )
+    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            _make_proc(),
+            _make_proc(),
+            _make_proc(),
+            _make_proc(quoted),
+            _make_proc(),
+        ]
+        results = engine._search_and_process("query")
+    assert len(results) == 1
+    assert results[0]["document"]["title"] == "T"
+
+
+def test_google_empty_falls_back_to_wikipedia_article():
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    wiki = json.dumps(
+        [
+            {
+                "title": "FAISS",
+                "url": "https://en.wikipedia.org/wiki/FAISS",
+                "snippet": "FAISS is an open-source library.",
+            }
+        ]
+    )
+    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            _make_proc(),  # open
+            _make_proc(),  # goto Google
+            _make_proc(),  # snapshot Google
+            _make_proc("[]"),  # eval Google
+            _make_proc(),  # goto Yahoo
+            _make_proc(),  # snapshot Yahoo
+            _make_proc("[]"),  # eval Yahoo
+            _make_proc(),  # goto Wikipedia
+            _make_proc(),  # snapshot Wikipedia
+            _make_proc(wiki),  # eval Wikipedia
+            _make_proc(),  # close
+        ]
+        results = engine._search_and_process("FAISS")
+    assert len(results) == 1
+    assert results[0]["document"]["url"] == "https://en.wikipedia.org/wiki/FAISS"

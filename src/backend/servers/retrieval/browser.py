@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import subprocess
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from urllib.parse import quote_plus
 
 from fastapi import FastAPI
 
@@ -26,11 +28,13 @@ DEFAULT_TOPK = 5
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
 PLAYWRIGHT_CMD = "playwright-cli"
-SEARCH_URL = "https://www.google.com"
+GOOGLE_SEARCH_URL = "https://www.google.com/search?q={query}&num={topk}&hl=en"
+YAHOO_SEARCH_URL = "https://search.yahoo.com/search?p={query}"
+WIKIPEDIA_SEARCH_URL = "https://en.wikipedia.org/w/index.php?search={query}"
 SUBPROCESS_TIMEOUT = 30
 
 # Extracts organic results from a Google SERP via h3 headings — more stable than class names.
-_EXTRACT_JS = (
+_GOOGLE_EXTRACT_JS = (
     "JSON.stringify("
     "[...document.querySelectorAll('h3')]"
     ".filter(h=>h.closest('a'))"
@@ -40,6 +44,33 @@ _EXTRACT_JS = (
     "snippet:(h.closest('[data-hveid]')?.lastElementChild?.textContent?.trim()||'')}))"
     ".filter(r=>r.url&&!r.url.includes('google.com/search'))"
     ")"
+)
+_YAHOO_EXTRACT_JS = (
+    "JSON.stringify("
+    "[...document.querySelectorAll('#web li, .algo')].slice(0,10)"
+    ".map(el=>{const a=el.querySelector('h3 a, a');"
+    "return {title:(a?.textContent||'').trim(),url:a?.href||'',"
+    "snippet:(el.querySelector('.compText, .fc-falcon, p')?.textContent||'').trim()}})"
+    ".filter(r=>r.title&&r.url&&!r.title.toLowerCase().includes('search again'))"
+    ")"
+)
+_WIKIPEDIA_EXTRACT_JS = (
+    "JSON.stringify("
+    "location.pathname.startsWith('/wiki/')"
+    "? [{title:document.title.replace(' - Wikipedia',''),url:location.href,"
+    "snippet:[...document.querySelectorAll('p')].map(p=>p.textContent.trim()).find(Boolean)||''}]"
+    ": [...document.querySelectorAll('.mw-search-result')].slice(0,10)"
+    ".map(el=>{const a=el.querySelector('.mw-search-result-heading a');"
+    "return {title:(a?.textContent||'').trim(),url:a?new URL(a.getAttribute('href'), location.href).href:'',"
+    "snippet:(el.querySelector('.searchresult')?.textContent||'').trim()}})"
+    ".filter(r=>r.title&&r.url)"
+    ")"
+)
+
+_SEARCH_TARGETS = (
+    ("google", GOOGLE_SEARCH_URL, _GOOGLE_EXTRACT_JS),
+    ("yahoo", YAHOO_SEARCH_URL, _YAHOO_EXTRACT_JS),
+    ("wikipedia", WIKIPEDIA_SEARCH_URL, _WIKIPEDIA_EXTRACT_JS),
 )
 
 
@@ -67,31 +98,59 @@ class BrowserSearchEngine:
         if session:
             cmd.append(f"-s={session}")
         cmd.extend(args)
-        return subprocess.run(
+        env = os.environ.copy()
+        env.setdefault("TMPDIR", "/tmp")
+        proc = subprocess.run(
             cmd,
-            capture_output=raw,
+            capture_output=True,
             text=True,
             timeout=self.config.subprocess_timeout,
+            env=env,
+        )
+        if proc.returncode != 0:
+            stderr = getattr(proc, "stderr", "") or ""
+            raise RuntimeError(f"{' '.join(cmd)} failed: {stderr.strip()}")
+        return proc
+
+    def _extract_hits(self, js: str, *, session: str) -> list[dict[str, str]]:
+        proc = self._run("eval", js, session=session, raw=True)
+        value = json.loads(proc.stdout.strip()) if proc.stdout.strip() else []
+        if isinstance(value, str):
+            value = json.loads(value) if value else []
+        return (
+            [h for h in value if isinstance(h, dict)] if isinstance(value, list) else []
         )
 
     def _search_and_process(self, query: str) -> list[dict[str, dict[str, str]]]:
         session = f"search-{uuid.uuid4().hex[:8]}"
+        hits: list[dict[str, str]] = []
         try:
-            self._run("open", SEARCH_URL, "--persistent", session=session)
-            self._run("snapshot", session=session)
-            self._run(
-                "fill",
-                "getByRole('combobox', { name: 'Search' })",
-                query,
-                "--submit",
-                session=session,
-            )
-            self._run("snapshot", session=session)
-            proc = self._run("eval", _EXTRACT_JS, session=session, raw=True)
-            raw = json.loads(proc.stdout.strip()) if proc.stdout.strip() else []
-            hits = (
-                [h for h in raw if isinstance(h, dict)] if isinstance(raw, list) else []
-            )
+            self._run("open", "about:blank", "--persistent", session=session)
+            for name, url_template, extract_js in _SEARCH_TARGETS:
+                url = url_template.format(
+                    query=quote_plus(query),
+                    topk=max(self.config.topk, DEFAULT_TOPK),
+                )
+                try:
+                    self._run("goto", url, session=session)
+                    self._run("snapshot", session=session)
+                    hits = self._extract_hits(extract_js, session=session)
+                except Exception as exc:
+                    logger.info(
+                        "browser search target %s failed for %r: %s",
+                        name,
+                        query,
+                        exc,
+                    )
+                    hits = []
+                if hits:
+                    logger.info(
+                        "browser search target %s returned %d hit(s) for %r",
+                        name,
+                        len(hits),
+                        query,
+                    )
+                    break
         except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as exc:
             logger.warning("browser search failed for %r: %s", query, exc)
             hits = []
