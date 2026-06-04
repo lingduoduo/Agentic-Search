@@ -174,17 +174,54 @@ textarea {
 .composer-controls {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 100px auto;
+  grid-template-columns: minmax(190px, 240px) minmax(220px, 1fr) 100px auto;
   gap: 12px;
   align-items: end;
 }
 
+.control-label,
 label {
   display: grid;
   gap: 6px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+}
+
+.mode-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mode-toggle {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  overflow: hidden;
+}
+
+.mode-toggle button {
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.mode-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+
+.mode-toggle button[aria-pressed="true"] {
+  background: #e3f3ef;
+  color: var(--accent-strong);
 }
 
 input {

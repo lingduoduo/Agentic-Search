@@ -22,12 +22,15 @@ export interface SourceDocumentView {
   metadata: Record<string, unknown>;
 }
 
+export type AgentMode = "standard" | "agentic_rag";
+
 export interface AgentExperienceRequest {
   query: string;
   session_id?: string | null;
   user_id?: string | null;
   search_url?: string | null;
   top_k?: number;
+  mode?: AgentMode;
 }
 
 export interface AgentExperienceResponse {

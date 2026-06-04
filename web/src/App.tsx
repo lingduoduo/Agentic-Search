@@ -10,6 +10,7 @@ import { SourceGrid } from "./components/SourceGrid";
 import type {
   AdminSurfaceSummary,
   AgentExperienceResponse,
+  AgentMode,
   ChatMessageView,
   SourceDocumentView,
 } from "./types";
@@ -20,6 +21,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
+  const [mode, setMode] = useState<AgentMode>("standard");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<string[]>([]);
@@ -70,6 +72,7 @@ export function App() {
         session_id: activeSessionId,
         search_url: searchUrl,
         top_k: topK,
+        mode,
       }, { signal: controller.signal });
       setSessionId(response.session_id);
       setAnswer(response.answer);
@@ -86,7 +89,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [ensureSession, query, searchUrl, topK]);
+  }, [ensureSession, mode, query, searchUrl, topK]);
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
@@ -130,10 +133,12 @@ export function App() {
           query={query}
           searchUrl={searchUrl}
           topK={topK}
+          mode={mode}
           isLoading={isLoading}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}
+          onModeChange={setMode}
           onSubmit={handleSubmit}
         />
 
