@@ -195,12 +195,15 @@ python3 -m examples.prepare_search_rag_dataset \
 
 ## Features
 
-**Retrieval & Search**
+**Retrieval, Indexing & Search**
 - **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli (no API key required)
+- FAISS index builder — chunk, embed, and write dense indexes from a JSONL corpus (`src/retrieval/index_builder.py`)
+- BM25 index builder — build Pyserini/Lucene sparse indexes from the same corpus
+- Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index documents; supports mini-chunks, vector-write retries, and document prefiltering (`src/backend/servers/backgroundworker/`)
 
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
