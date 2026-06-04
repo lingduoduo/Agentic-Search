@@ -1,16 +1,16 @@
 # Agentic Search
 
-A retrieval-backed agent and search-policy platform combining a FastAPI server layer with local dense/sparse retrieval, multi-turn agent traces, and RL training helpers.
+A retrieval-backed agent and search-policy platform — FastAPI server, local dense/sparse retrieval, multi-turn agent traces, and RL training helpers.
 
-🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents for information retrieval. Benchmark to release soon!
+🔍 **Agentic RAG** — Best-in-class search and answer quality via hybrid index + AI Agents. Benchmark to release soon!
 
 🔬 **Deep Research** — In-depth reports with a multi-step research flow. Top of [leaderboard](https://github.com/onyx-dot-app/onyx_deep_research_bench) as of Feb 2026.
 
 🤖 **Custom Agents** — Build AI Agents with unique instructions, knowledge, and actions.
 
-🌍 **Web Search** — Browse the web for up-to-date information. Supports Serper, Google PSE, Brave, SearXNG, and others. Comes with an in-house web crawler and support for Firecrawl/Exa.
+🌍 **Web Search** — Browse the web for up-to-date information. Supports Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
 
-🧠 **PPO/GRPO Reward** — Train search agents with composite reward shaping, group-relative advantages, and PPO/GRPO/REINFORCE helpers. Plug in any LLM and retrieval backend.
+🧠 **PPO/GRPO Reward** — Train search agents with composite reward shaping, group-relative advantages, and PPO/GRPO/REINFORCE helpers.
 
 | Feature | Key modules |
 |---------|-------------|
@@ -24,28 +24,30 @@ A retrieval-backed agent and search-policy platform combining a FastAPI server l
 | 🔒 Permission-aware retrieval | `src/backend/access/`, `src/context/preprocessing/` |
 | 📊 Admin & observability | `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
+
 ## Repository Structure
 
 ```
 src/
 ├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, …)
-├── backend/                     # Backend services
+├── backend/
 │   ├── access/                  # Access control & ACL helpers
 │   ├── auth/                    # Authentication & authorization
-│   ├── chat/                    # Chat functionality & LLM interactions
+│   ├── cache/                   # In-memory cache backend (chat session state)
+│   ├── chat/                    # Chat pipeline (loop, steps, citations, compression)
 │   ├── configs/                 # Environment-based configuration (AppSettings)
 │   ├── connectors/              # Data source connectors
-│   ├── db/                      # Database models & operations (AgenticSearchStore)
+│   ├── db/                      # SQLite store (AgenticSearchStore)
 │   ├── document_index/          # Vespa integration
-│   ├── federated_connectors/    # External search connectors
-│   ├── feature_flags/           # Feature-flag providers
+│   ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
+│   ├── file_store/              # In-memory chat file handling
 │   ├── hooks/                   # Outbound webhook execution
 │   ├── llm/                     # LLM provider integrations
+│   ├── observability/           # Admin surface summary & health score
 │   ├── prompts/                 # Prompt templates
-│   ├── search/                  # Search query processing
-│   ├── secondary_llm_flows/     # Query expansion, flow classification
-│   ├── servers/                 # API endpoints & routers
-│   │   ├── backgroundworker/    # Background workers (beat, docfetching, light, heavy, …)
+│   ├── secondary_llm_flows/     # Search-vs-chat flow classification
+│   ├── servers/
+│   │   ├── backgroundworker/    # Async workers (beat, docfetching, light, heavy, monitoring)
 │   │   ├── analytics/           # Usage analytics API
 │   │   ├── billing/             # Stripe billing proxy
 │   │   ├── documents/           # Connector-credential pair management
@@ -67,7 +69,7 @@ tests/                           # Unit and integration test suites
 examples/                        # Runnable CLI examples
 ```
 
-The FastAPI application is assembled in `src/backend/servers/web/app.py`. Every feature area is a self-contained router factory registered via `_register_routers()`. The SQLite-backed `AgenticSearchStore` (`src/backend/db/`) is the single persistence layer — no Postgres, Redis, or Celery required for local deployments.
+The FastAPI app is assembled in `src/backend/servers/web/app.py`. Every feature area is a self-contained router factory. `AgenticSearchStore` (SQLite) is the single persistence layer — no Postgres, Redis, or Celery required locally.
 
 
 ## Install
@@ -79,25 +81,20 @@ pip install -e .          # one-time; makes src importable as a package
 pip install -r requirements.txt
 ```
 
-For BM25, Java must be available. On Apple Silicon, FAISS is usually more stable installed through conda:
+For BM25, Java must be available. On Apple Silicon, install FAISS via conda:
 
 ```bash
 conda install -c conda-forge faiss-cpu
 ```
 
-Optional environment variables:
+Optional env vars:
 
 ```bash
-GOOGLE_API_KEY=...
-GOOGLE_CSE_ID=...
-SERP_API_KEY=...
-JAVA_HOME=/path/to/java
+GOOGLE_API_KEY=...   GOOGLE_CSE_ID=...   SERP_API_KEY=...   JAVA_HOME=/path/to/java
 ```
 
 
 ## Quick Start
-
-Run the three-process local stack:
 
 ```bash
 # Terminal 1 — retrieval server (TF-IDF demo, no Java required)
@@ -106,11 +103,11 @@ python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
 # Terminal 2 — web backend
 uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
 
-# Terminal 3 — frontend dev server
+# Terminal 3 — frontend
 cd web && npm install && npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to port 7860 during development. For production, `npm run build` produces `web/dist`; the FastAPI app serves it automatically.
+Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to port 7860. For production, `npm run build` produces `web/dist`; the FastAPI app serves it automatically.
 
 
 ## Examples
@@ -120,72 +117,65 @@ All examples run without a live model or retrieval server unless noted.
 **Agent loops**
 
 ```bash
-# Deterministic SearchAgentLoop trace with fake model + search (no GPU required)
-python3 -m examples.run_search_trace_workflow
-
-# Build a matching SFT training record from the trace
-python3 -m examples.run_search_trace_workflow --sft
-
-# Minimal SearchAgentLoop usage — shows the public API directly
-python3 -m examples.run_search_agent_loop
-
-# Search pipeline with access filters and permission filtering
-python3 -m examples.run_search_pipeline
+python3 -m examples.run_search_trace_workflow          # deterministic trace (no GPU)
+python3 -m examples.run_search_trace_workflow --sft    # build SFT record from trace
+python3 -m examples.run_search_agent_loop              # minimal SearchAgentLoop usage
+python3 -m examples.run_search_pipeline                # pipeline with access filters
 ```
 
-**Agent CLI** (requires a running retrieval server and optionally a vLLM endpoint)
+**Agent CLI** (requires retrieval server; `--vllm_url` optional)
 
 ```bash
-# One-shot local generation (CPU, no retrieval server)
+# Local CPU inference
 python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
 
-# Multi-turn search agent against a live retrieval server
+# Server-backed multi-turn search
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
 ```
 
-**PPO/GRPO reward training**
+| Mode | Loop | Use it for |
+|------|------|------------|
+| `single` | `PlainGenerationLoop` | Local generation smoke tests |
+| `search` | `SearchAgentLoop` | Multi-turn RAG, SFT, and RL traces |
+| `tool` | `ToolAgentLoop` | Generic tool-calling experiments |
+
+**PPO/GRPO reward**
 
 ```bash
-# End-to-end reward + GRPO advantage smoke test (no GPU required)
-python3 -m examples.run_grpo_training_pipeline
+python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRPO (no GPU)
 ```
 
 **Intent classifier**
 
 ```bash
-# Generate training examples from a local corpus, then train the classifier
 python3 -m examples.run_intent_training generate \
-  --corpus data/corpus.jsonl \
-  --vocabulary data/vocabulary_corpus.json \
+  --corpus data/corpus.jsonl --vocabulary data/vocabulary_corpus.json \
   --output data/intent_examples.json
 
 python3 -m examples.run_intent_training train \
-  --examples data/intent_examples.json \
-  --output models/intent_classifier.pt
+  --examples data/intent_examples.json --output models/intent_classifier.pt
 ```
 
 **Dataset preparation**
 
 ```bash
-# Prepare NQ search-QA parquet (downloads from HuggingFace)
+# Search-QA parquet
 python3 -m examples.prepare_search_qa_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets \
-  --dataset_config nq --local_dir data/nq_search
+  --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq --local_dir data/nq_search
 
-# Preview 20 examples before writing
+# Preview before writing
 python3 -m examples.prepare_search_qa_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets \
-  --dataset_config nq --splits test --max_examples 20 --preview --preview_rows 5
+  --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
+  --splits test --max_examples 20 --preview --preview_rows 5
 
-# Prepare RAG parquet from cached retrieval results
+# RAG parquet from cached retrieval results
 python3 -m examples.prepare_search_rag_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets \
-  --dataset_config nq \
+  --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
   --corpus_path data/wiki-18.jsonl \
   --train_retrieval_cache data/nq_train_retrieval_cache.json \
   --test_retrieval_cache data/nq_test_retrieval_cache.json \
@@ -200,16 +190,15 @@ python3 -m examples.prepare_search_rag_dataset \
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
-- Web search via Google Custom Search, SerpAPI, and playwright-cli (no API key required)
-- FAISS index builder — chunk, embed, and write dense indexes from a JSONL corpus (`src/retrieval/index_builder.py`)
-- BM25 index builder — build Pyserini/Lucene sparse indexes from the same corpus
-- Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index documents; supports mini-chunks, vector-write retries, and document prefiltering (`src/backend/servers/backgroundworker/`)
-- **Connectors** — collect documents from multiple data sources into the indexing pipeline (`src/backend/connectors/`):
-  - `LocalFileConnector` / `LocalFilePollConnector` — ingest UTF-8 files from paths, directories, or globs; poll for changes by time window
-  - `SearchConnector` — pull search results as documents via retrieval, Google, or SerpAPI
-  - `InMemoryConnector` — load documents from Python objects for testing and prototyping
-  - `OAuthConnector` interface — authorization-code flow for external sources (Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion)
-  - `PollConnector` / `CheckpointedConnector` / `SlimConnector` — incremental sync patterns with time-window, checkpoint, and permission-metadata variants
+- Web search via Google Custom Search, SerpAPI, and playwright-cli
+- FAISS and BM25 index builders from a JSONL corpus (`src/retrieval/index_builder.py`)
+- Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index; supports mini-chunks, vector-write retries, and document prefiltering
+- **Connectors** (`src/backend/connectors/`) — collect documents from multiple sources:
+  - `LocalFileConnector` / `LocalFilePollConnector` — UTF-8 files from paths, directories, or globs
+  - `SearchConnector` — search results as documents via retrieval, Google, or SerpAPI
+  - `InMemoryConnector` — Python objects for testing and prototyping
+  - `OAuthConnector` — authorization-code flow for Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion
+  - `PollConnector` / `CheckpointedConnector` / `SlimConnector` — incremental sync with time-window, checkpoint, and permission-metadata variants
 
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
@@ -217,87 +206,58 @@ python3 -m examples.prepare_search_rag_dataset \
 - `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
 
 **LLM Backends**
-- `OpenAICompatibleLLM` — single client for any OpenAI-compatible API: OpenAI, Azure OpenAI, Anthropic (via compatibility layer), Ollama, LiteLLM proxy, and vLLM (`src/backend/llm/providers.py`)
-- `VLLMServerManager` — call any vLLM / Ollama / LiteLLM completions endpoint for server-backed inference
-- `LocalServerManager` — load a HuggingFace model in-process (Qwen, Llama, Mistral, etc.) for CPU or GPU inference without a separate server
-- Configured via four env vars: `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
+- `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/backend/llm/providers.py`)
+- `VLLMServerManager` — server-backed inference via any OpenAI-compatible endpoint
+- `LocalServerManager` — in-process HuggingFace models (Qwen, Llama, Mistral, etc.) on CPU or GPU
+- Configured via `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
 
 **Tool Use**
-- Hermes, Llama-3, and JSON tool-call parsers — parse structured tool calls from any LLM output format
-- OpenAPI-based `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
-- `FunctionTool` — wrap any Python callable as a tool with auto-generated JSON schema
-- `build_search_tool` — ready-made tool that dispatches to retrieval, Google, or SerpAPI
-
-**RL Training**
-- Composite reward shaping (`SearchRewardFunction`) with format, search-use, answer-length, and exact-match components
-- Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
-- PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
-- Training data builders for search-QA and RAG parquet datasets
+- Hermes, Llama-3, and JSON tool-call parsers
+- `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
+- `FunctionTool` — wrap any Python callable with auto-generated JSON schema
+- `build_search_tool` — ready-made tool dispatching to retrieval, Google, or SerpAPI
 
 **Chat Processing**
-- `run_llm_loop` — multi-turn LLM execution loop: builds message history, dispatches tool calls, injects context files, streams tokens, and handles forced tool invocations (`src/backend/chat/llm_loop.py`)
-- `run_llm_step` — single LLM step: sends the prompt, streams the response, extracts tool calls, and returns a structured `LlmStepResult` (`src/backend/chat/llm_step.py`)
-- `process_message` — top-level chat turn orchestrator: resolves persona, tools, files, search config, and LLM; dispatches to `run_llm_loop`; persists the turn via `save_chat_turn` (`src/backend/chat/process_message.py`)
-- `save_chat_turn` — persists messages, tool calls, and search doc references to the SQLite store after each turn (`src/backend/chat/save_chat.py`)
-- **Dynamic citation processor** (`DynamicCitationProcessor`) — streams LLM token output and extracts citation markers in REMOVE / KEEP / HYPERLINK modes; emits `CitationInfo` objects in real time (`src/backend/chat/citation_processor.py`)
-- **Chat history compression** (`compress_chat_history`) — summarises older turns with an LLM when context exceeds the token budget; summaries are branch-aware and keyed to the last message (`src/backend/chat/compression.py`)
-- **Emitter** — routes packets (tokens, tool calls, citations) from worker threads onto a shared queue for ordered streaming to the HTTP response (`src/backend/chat/emitter.py`)
-- **Stop signal checker** — lets a client cancel an in-progress stream; `set_fence` / `is_connected` / `reset_cancel_status` operate on the `CacheBackend` (`src/backend/chat/stop_signal_checker.py`)
-- **System prompt builder** (`build_system_prompt`) — assembles the system prompt from persona instructions, knowledge base snippets, tool descriptions, and memory context (`src/backend/chat/prompt_utils.py`)
+- `process_message` — top-level orchestrator: resolves persona, tools, files, and LLM; dispatches to `run_llm_loop`; persists via `save_chat_turn`
+- `run_llm_loop` — multi-turn loop: message history, tool dispatch, context injection, token streaming
+- `run_llm_step` — single LLM step: prompt → stream → extract tool calls → `LlmStepResult`
+- `DynamicCitationProcessor` — streams tokens and extracts citation markers in REMOVE / KEEP / HYPERLINK modes
+- `compress_chat_history` — summarises older turns when context exceeds the token budget; branch-aware
+- `Emitter` — routes packets (tokens, tool calls, citations) from worker threads to the HTTP stream
+- `build_system_prompt` — assembles system prompt from persona, tools, knowledge, and memory context
 
 **Cache & Persistence**
-- **SQLite store** (`AgenticSearchStore`) — single repository for connector configs, documents, document permissions, chat sessions & messages, indexing attempts, usage reports, rate-limit rules, SCIM tokens, and standard answers; no external database required (`src/backend/db/store.py`)
-- **Search history** — past search queries persisted per user and retrievable via `GET /search/search-history` (`src/backend/servers/query_and_chat/search_backend.py`)
-- **Query history** — full chat session history with time/feedback filters, exportable as CSV via `GET /admin/query-history/export` (`src/backend/servers/query_history/`)
-- **In-memory cache** (`CacheBackend` / `InMemoryCache`) — tracks in-flight chat session state (processing flag, stop signal, cancel status) during streaming responses (`src/backend/cache/`)
-- **Chunk batch store** (`ChunkBatchStore`) — temp disk buffer that decouples embedding from index insertion during large indexing jobs; auto-cleaned on exit (`src/retrieval/chunk_batch_store.py`)
-- **File store** (`InMemoryChatFile`) — holds uploaded files (images, PDFs, plain text) in memory for the duration of a chat turn (`src/backend/file_store/`)
+- `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing attempts, usage reports, rate limits, SCIM tokens, standard answers (`src/backend/db/store.py`)
+- Search history per user (`GET /search/search-history`) and query history with CSV export (`GET /admin/query-history/export`)
+- `InMemoryCache` — in-flight chat session state (processing flag, stop signal, cancel) during streaming
+- `ChunkBatchStore` — temp disk buffer decoupling embedding from index insertion for large jobs
+- `InMemoryChatFile` — uploaded files (images, PDFs, text) held in memory for one chat turn
 
 **Prompts**
-- **Chat prompt constants** — citation reminders, system prompt defaults, file/image reminders, and tool-call response templates (`src/backend/prompts/chat_prompts.py`)
-- **Query expansion prompts** — `KEYWORD_EXPANSION_PROMPT` broadens sparse queries; `QUERY_TYPE_PROMPT` classifies intent for retrieval tuning (`src/backend/prompts/query_expansion.py`)
-- **Search flow classification prompt** — binary `search` / `chat` prompt with labelled examples and strict single-word output (`src/backend/prompts/search_flow_classification.py`)
-- **Agentic RAG prompts** — decompose prompt (2–4 focused sub-questions) and HyDE prompt (hypothetical ideal answer) used by `QueryEnhancer` (`src/context/query_enhancer.py`)
-- **Search agent instruction builder** (`build_search_agent_instruction`) — assembles the ReAct-style system prompt for `SearchAgentLoop` with `<think>/<search>/<answer>` protocol (`src/agents/`)
+- Chat prompt constants — citation reminders, system prompt defaults, file/image/tool templates (`src/backend/prompts/chat_prompts.py`)
+- `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
+- Binary search/chat classification prompt with labelled examples and strict single-word output
+- Agentic RAG prompts — decompose (2–4 sub-questions) and HyDE (hypothetical ideal answer) for `QueryEnhancer`
+- `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop`
 
-**Observability & Feature Flags**
-- **Admin surface summary** (`build_admin_surface_summary`) — single-call snapshot of connectors, indexing status, users/groups, auth, model settings, tools, analytics, and enterprise controls with a composite health score (`src/backend/observability/admin_surface.py`)
-- **Monitoring worker** (`MonitoringWorker`) — single-threaded background poller that collects process memory (RSS), index queue depth, connector count, and document count; optionally ships JSON snapshots to a cloud data-plane URL (`src/backend/servers/backgroundworker/monitoring_worker.py`)
-- **Telemetry** (`event_telemetry` / `identify_user`) — PostHog event capture and user profile helpers; no-ops when PostHog is not configured (`src/backend/utils/telemetry.py`)
-- **Feature flags** — composable provider chain: `EnvFeatureFlagProvider` (env-var overrides) → `PostHogFeatureFlagProvider` (remote flags); `StaticFeatureFlagProvider` for tests; `is_feature_enabled` as the single call-site (`src/backend/feature_flags/`)
+**RL Training**
+- Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, and exact-match components
+- Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
+- PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
+- Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 
 **Query Classification**
-- **Search vs chat classifier** (`classify_is_search_flow`) — LLM-backed binary classifier that routes each query to document search or direct chat; defaults to chat on ambiguous input (`src/backend/secondary_llm_flows/search_flow_classification.py`)
-- **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model that classifies queries into `purchase`, `navigate`, `qa`, `recommendation` and selects the appropriate model tier (fast / balanced / reasoning) (`src/model/intent_classifier.py`)
+- **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/backend/secondary_llm_flows/`)
+- **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
 
-
-## Run An Agent
-
-`examples/run_agentic_search.py` is the main CLI.
-
-```bash
-# Local inference (CPU)
-python3 -m examples.run_agentic_search \
-  --mode single --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
-
-# Server-backed search mode
-python3 -m examples.run_agentic_search \
-  --mode search --question "Compare dense and sparse retrieval" \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
-```
-
-| Mode | Loop | Use it for |
-|------|------|------------|
-| `single` | `PlainGenerationLoop` | Simple local generation smoke tests |
-| `search` | `SearchAgentLoop` | Multi-turn search traces for RAG, SFT, and RL |
-| `tool` | `ToolAgentLoop` | Generic function/tool-calling experiments |
+**Observability & Feature Flags**
+- `build_admin_surface_summary` — single-call health snapshot: connectors, indexing, users, auth, models, tools, analytics, enterprise controls with a composite health score
+- `MonitoringWorker` — background poller for process memory (RSS), index queue depth, connector count; ships JSON snapshots to a cloud data-plane URL
+- `event_telemetry` / `identify_user` — PostHog event capture helpers; no-ops when PostHog is not configured
+- Feature flags — composable chain: `EnvFeatureFlagProvider` → `PostHogFeatureFlagProvider`; `StaticFeatureFlagProvider` for tests; single call-site via `is_feature_enabled`
 
 
 ## Agentic RAG
-
-`AgenticRAGLoop` delivers best-in-class answer quality by combining query enhancement, iterative hybrid retrieval, and evidence-gated synthesis.
 
 ```python
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
@@ -308,10 +268,10 @@ loop = AgenticRAGLoop(
 )
 result = await loop.run("What is FAISS and how does it compare to ScaNN?")
 print(result.answer)       # grounded answer with citations
-print(result.rounds_used)  # how many retrieval rounds were needed
+print(result.rounds_used)  # retrieval rounds used
 ```
 
-Via the web API — pass `"mode": "agentic_rag"` to `POST /api/agent`:
+Via the web API:
 
 ```bash
 curl -X POST http://localhost:7860/api/agent \
@@ -319,38 +279,18 @@ curl -X POST http://localhost:7860/api/agent \
   -d '{"query": "What is FAISS?", "mode": "agentic_rag", "top_k": 5}'
 ```
 
-Loop flow per query:
+Loop flow:
 
 1. **Query enhancement** — decompose into sub-queries; generate HyDE hypothetical answer
-2. **Hybrid+rerank retrieval** — retrieve for each enhanced query; accumulate unique documents
-3. **Sufficiency check** — LLM judges whether context is enough; break or continue
-4. **Follow-up generation** — if insufficient, LLM proposes targeted follow-up queries
+2. **Hybrid+rerank retrieval** — retrieve per enhanced query; accumulate unique documents
+3. **Sufficiency check** — LLM judges if context is enough; break or continue
+4. **Follow-up generation** — LLM proposes targeted follow-up queries if insufficient
 5. **Grounded synthesis** — answer from all accumulated evidence with inline citations
 
 
-## Local Retrieval
+## Retrieval Setup
 
-```bash
-# Dense retrieval server
-python3 -m src.backend.servers.retrieval.retrieval \
-  --model_path intfloat/e5-base-v2 \
-  --index_path indexes/e5_Flat.index \
-  --corpus_path data/corpus.jsonl \
-  --retrieval_method e5 --device cpu --topk 5
-
-# Sparse BM25 server
-python3 -m src.backend.servers.retrieval.retrieval \
-  --index_path indexes/bm25 --corpus_path data/corpus.jsonl \
-  --retrieval_method bm25
-
-# Health/test check
-curl -i -sS http://127.0.0.1:8000/health
-curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
-  -H "Content-Type: application/json" \
-  -d '{"query":"What is FAISS?","top_k":5}'
-```
-
-Retrieval servers available under `src/backend/servers/retrieval/`:
+**Retrieval servers** (`src/backend/servers/retrieval/`):
 
 | Module | Description |
 |--------|-------------|
@@ -362,44 +302,41 @@ Retrieval servers available under `src/backend/servers/retrieval/`:
 | `serp.py` | SerpAPI proxy |
 | `browser.py` | playwright-cli browser automation; no API key, ~5–10s/query |
 
-
-## Build Indexes
+**Start a retrieval server:**
 
 ```bash
-# Dense FAISS index
+# Dense (E5)
+python3 -m src.backend.servers.retrieval.retrieval \
+  --model_path intfloat/e5-base-v2 --index_path indexes/e5_Flat.index \
+  --corpus_path data/corpus.jsonl --retrieval_method e5 --device cpu --topk 5
+
+# Sparse BM25
+python3 -m src.backend.servers.retrieval.retrieval \
+  --index_path indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
+```
+
+**Build indexes:**
+
+```bash
 python3 -m src.retrieval.index_builder \
   --retrieval_method e5 --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl --faiss_type Flat --save_dir indexes/
 
-# BM25 index
 python3 -m src.retrieval.index_builder \
   --retrieval_method bm25 --corpus_path data/corpus.jsonl --save_dir indexes/
 ```
 
-
-## Hybrid Retrieval + Rerank
+**Hybrid + rerank:**
 
 ```bash
-# Pure dense (no BM25 index required)
 python3 -m src.backend.servers.retrieval.hybrid_rerank \
-  --dense_model intfloat/e5-base-v2 \
-  --index_path indexes/e5_Flat.index \
+  --dense_model intfloat/e5-base-v2 --index_path indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
+  --sparse_index_path indexes/bm25 --hybrid_alpha 0.5 \
   --retrieval_topk 10 --rerank_topk 5
-
-# Hybrid dense + BM25
-python3 -m src.backend.servers.retrieval.hybrid_rerank \
-  --dense_model intfloat/e5-base-v2 \
-  --index_path indexes/e5_Flat.index \
-  --corpus_path data/corpus.jsonl \
-  --sparse_index_path indexes/bm25 \
-  --hybrid_alpha 0.5 --retrieval_topk 10 --rerank_topk 5
 ```
 
-
-## Web Search
-
-`src.tools.search` routes calls to `retrieval`, `google`, or `serpapi`. Missing API keys return structured tool errors.
+**Web search servers:**
 
 ```bash
 python3 -m src.backend.servers.retrieval.serp \
@@ -409,19 +346,21 @@ python3 -m src.backend.servers.retrieval.google \
   --api_key "$GOOGLE_API_KEY" --topk 5 --cse_id "$GOOGLE_CSE_ID" --snippet_only
 ```
 
+**Health check:**
 
-## Training Flow
+```bash
+curl -i -sS http://127.0.0.1:8000/health
+curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
+  -H "Content-Type: application/json" -d '{"query":"What is FAISS?","top_k":5}'
+```
 
-The training pipeline is intentionally modular:
 
-1. Generate trajectories with `SearchAgentLoop` or `LLMGenerationManager`
-2. Score trajectories with `SearchRewardFunction`
-3. Compute group-relative advantages with `src.training.grpo`
-4. Save JSONL batches or compute token log probabilities
-5. Optimize with PPO/GRPO/REINFORCE helpers in `src.model.generation` and `src.training.ppo`
+## Training
 
-| Task | Command or module |
-|------|-------------------|
+The training pipeline is modular: generate trajectories → score with rewards → compute advantages → optimize.
+
+| Task | Entry point |
+|------|-------------|
 | Deterministic trace | `python3 -m examples.run_search_trace_workflow` |
 | SFT record from trace | `python3 -m examples.run_search_trace_workflow --sft` |
 | QA parquet preparation | `python3 -m examples.prepare_search_qa_dataset` |
@@ -431,44 +370,25 @@ The training pipeline is intentionally modular:
 | PPO helpers | `src/training/ppo/` |
 | Generation and policy loss | `src/model/generation.py` |
 
-Prepare NQ/FlashRAG-style QA pairs for training:
-
-```bash
-python3 -m examples.prepare_search_qa_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets \
-  --dataset_config nq --local_dir data/nq_search
-
-# Preview before writing parquet
-python3 -m examples.prepare_search_qa_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets \
-  --dataset_config nq --splits test --max_examples 20 --preview --preview_rows 5
-```
-
-
-## PPO/GRPO Reward
-
-`SearchRewardFunction` scores trajectories across four composable components:
+**Reward components** (`SearchRewardFunction`):
 
 | Component | What it measures |
 |-----------|-----------------|
 | `format` | Well-formed XML trace with required action tags |
-| `search_use` | Whether the agent issued at least one search action |
-| `answer_length` | Answer is within acceptable token bounds |
+| `search_use` | Agent issued at least one search action |
+| `answer_length` | Answer within acceptable token bounds |
 | `exact_match` | Token-overlap correctness against reference answers |
 
 ```python
 from src.training.reward import SearchRewardFunction, SearchRewardConfig
 
 reward_fn = SearchRewardFunction(SearchRewardConfig(
-    format_weight=0.2,
-    search_use_weight=0.3,
-    length_weight=0.1,
-    exact_match_weight=0.4,
+    format_weight=0.2, search_use_weight=0.3,
+    length_weight=0.1, exact_match_weight=0.4,
 ))
-scores = reward_fn(trajectories, reference_answers)
 ```
 
-**GRPO** — compute group-relative advantages from G rollouts per prompt:
+**GRPO** — group-relative advantages from G rollouts per prompt:
 
 ```python
 from src.training.grpo import score_prompt_group, compute_grpo_outcome_advantage
@@ -480,26 +400,13 @@ advantages = compute_grpo_outcome_advantage(scored)
 **PPO** — clipped policy + value loss with KL penalty:
 
 ```python
-from src.training.ppo import (
-    compute_ppo_policy_loss_core,
-    compute_value_loss,
-    AdaptiveKLController,
-)
+from src.training.ppo import compute_ppo_policy_loss_core, compute_value_loss, AdaptiveKLController
 
 policy_loss = compute_ppo_policy_loss_core(logprobs, old_logprobs, advantages, clip_eps=0.2)
 value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
 ```
 
-Run the end-to-end smoke test:
-
-```bash
-python3 -m examples.run_grpo_training_pipeline
-```
-
-
-## XML Search Protocol
-
-The search-agent trace uses a compact ReAct-style protocol:
+**XML search protocol** — the ReAct-style trace format used by `SearchAgentLoop`:
 
 ```xml
 <think>decide whether to answer or search</think>
@@ -508,12 +415,78 @@ The search-agent trace uses a compact ReAct-style protocol:
 <answer>final grounded answer</answer>
 ```
 
-`<information>` is environment output and should be masked out of policy/SFT action loss.
+`<information>` is environment output — mask it from policy/SFT action loss.
+
+
+## API Health Checks
+
+Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8000`
+
+**Generate a dev JWT** (required for admin endpoints):
+
+```bash
+export TOKEN=$(python3 -c "
+from src.backend.auth import generate_user_jwt_token
+print(generate_user_jwt_token(user_id='dev', email='dev@local'))
+")
+```
+
+**Core**
+
+```bash
+curl -s http://localhost:7860/health                  # web server
+curl -s http://localhost:8000/health                  # retrieval server
+curl -s http://localhost:7860/settings                # tier / license status (no auth)
+```
+
+**Search & chat**
+
+```bash
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is FAISS?", "mode": "search"}'
+
+curl -s http://localhost:7860/api/sessions -H "Authorization: Bearer $TOKEN"
+
+curl -s -X POST http://localhost:8000/retrieve \
+  -H "Content-Type: application/json" -d '{"query": "dense retrieval", "top_k": 3}'
+```
+
+**Admin — analytics, billing, reporting**
+
+```bash
+curl -s "http://localhost:7860/analytics/query?start=2024-01-01&end=2025-12-31" \
+  -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/billing/billing-information -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/usage-report                -H "Authorization: Bearer $TOKEN"
+```
+
+**Admin — hooks, rate limits, web search**
+
+```bash
+curl -s http://localhost:7860/admin/hooks/specs              -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/hooks                    -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/token-rate-limits/users  -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/web-search/search-providers -H "Authorization: Bearer $TOKEN"
+```
+
+**Admin — license**
+
+```bash
+curl -s http://localhost:7860/license       -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/license/seats -H "Authorization: Bearer $TOKEN"
+```
+
+**SCIM** (uses SCIM bearer token, not a JWT)
+
+```bash
+curl -s http://localhost:7860/scim/v2/ServiceProviderConfig  # no auth
+curl -s http://localhost:7860/scim/v2/Users  -H "Authorization: Bearer $SCIM_TOKEN"
+curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOKEN"
+```
 
 
 ## Configuration
-
-All settings are loaded from environment variables via `src/backend/configs/AppSettings`:
 
 | Env var | Default | Description |
 |---------|---------|-------------|
@@ -525,133 +498,27 @@ All settings are loaded from environment variables via `src/backend/configs/AppS
 | `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
 | `AGENTIC_SEARCH_DATA_DIR` | `~/.local/share/agentic_search` | License file directory |
 | `WEB_DOMAIN` | `http://localhost:8080` | External URL for OAuth redirects |
+| `GEN_AI_MODEL_PROVIDER` | `openai` | LLM provider (openai, anthropic, ollama, etc.) |
+| `GEN_AI_MODEL_VERSION` | `gpt-4o-mini` | Model name / version |
+| `GEN_AI_API_KEY` | — | Provider API key |
+| `GEN_AI_API_BASE` | — | Override base URL (e.g. `http://localhost:11434/v1`) |
 | `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
 | `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
 
 
-## API Health Checks
-
-All checks assume the web backend is running on `http://localhost:7860` and the retrieval server on `http://localhost:8000`.
-
-**Generate a dev JWT** (required for admin endpoints):
-
-```bash
-export TOKEN=$(python3 -c "
-from src.backend.auth import generate_user_jwt_token
-print(generate_user_jwt_token(user_id='dev', email='dev@local'))
-")
-```
-
-**Core health**
-
-```bash
-# Web server
-curl -s http://localhost:7860/health
-
-# Retrieval server
-curl -s http://localhost:8000/health
-
-# Application tier / license status (no auth required)
-curl -s http://localhost:7860/settings
-```
-
-**Search and chat**
-
-```bash
-# One-shot agent query
-curl -s -X POST http://localhost:7860/api/agent \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "mode": "search"}'
-
-# List chat sessions
-curl -s http://localhost:7860/api/sessions \
-  -H "Authorization: Bearer $TOKEN"
-
-# Retrieval endpoint
-curl -s -X POST http://localhost:8000/retrieve \
-  -H "Content-Type: application/json" \
-  -d '{"query": "dense retrieval", "top_k": 3}'
-```
-
-**Admin — analytics, billing, reporting** (requires admin JWT)
-
-```bash
-# Daily query analytics
-curl -s "http://localhost:7860/analytics/query?start=2024-01-01&end=2025-12-31" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Billing status
-curl -s http://localhost:7860/admin/billing/billing-information \
-  -H "Authorization: Bearer $TOKEN"
-
-# List usage reports
-curl -s http://localhost:7860/admin/usage-report \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Admin — connectors, hooks, rate limits**
-
-```bash
-# List webhook specs
-curl -s http://localhost:7860/admin/hooks/specs \
-  -H "Authorization: Bearer $TOKEN"
-
-# List configured hooks
-curl -s http://localhost:7860/admin/hooks \
-  -H "Authorization: Bearer $TOKEN"
-
-# Token rate limits (users)
-curl -s http://localhost:7860/admin/token-rate-limits/users \
-  -H "Authorization: Bearer $TOKEN"
-
-# Web-search provider config
-curl -s http://localhost:7860/admin/web-search/search-providers \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Admin — license**
-
-```bash
-curl -s http://localhost:7860/license \
-  -H "Authorization: Bearer $TOKEN"
-
-curl -s http://localhost:7860/license/seats \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**SCIM** (uses a SCIM bearer token, not a JWT)
-
-```bash
-# Capability advertisement — no auth
-curl -s http://localhost:7860/scim/v2/ServiceProviderConfig
-curl -s http://localhost:7860/scim/v2/ResourceTypes
-curl -s http://localhost:7860/scim/v2/Schemas
-
-# User and group list — requires SCIM token
-export SCIM_TOKEN=<token-from-POST-/scim/v2/tokens>
-curl -s http://localhost:7860/scim/v2/Users \
-  -H "Authorization: Bearer $SCIM_TOKEN"
-curl -s http://localhost:7860/scim/v2/Groups \
-  -H "Authorization: Bearer $SCIM_TOKEN"
-```
-
-
 ## Tests
 
 ```bash
-# Unit tests
-pytest                                      # full suite
-pytest tests/unit/ -v                       # unit only
-pytest tests/unit/servers/ -v               # server-focused
+pytest                           # full suite
+pytest tests/unit/ -v            # unit only
+pytest tests/unit/servers/ -v    # server-focused
 pytest tests/unit/test_reward.py tests/unit/test_grpo.py tests/unit/test_llm_agent_generation.py -v
 
-# Integration tests (requires live server at API_SERVER_URL, default http://localhost:8080)
+# Integration (requires live server, default http://localhost:8080)
 pytest tests/integration/ -v
 API_SERVER_HOST=localhost API_SERVER_PORT=8080 pytest tests/integration/
 ```
-
-Unit test coverage:
 
 | Test area | What is tested |
 |-----------|----------------|
@@ -667,9 +534,9 @@ Unit test coverage:
 
 ## Notes
 
-- Dense retrieval defaults to CPU to avoid competing with trainer GPU memory; set `--device cuda` only on a dedicated retrieval node.
+- Dense retrieval defaults to CPU; set `--device cuda` only on a dedicated retrieval node.
+- BM25 serving requires Java because Pyserini uses Lucene.
 - Empty or invalid queries return empty result lists.
 - Some web pages block scraping or return little usable text.
 - Google Custom Search and SerpAPI are subject to their own quota and billing rules.
-- BM25 serving requires Java because Pyserini uses Lucene.
-- If `prepare_search_qa_dataset` fails with a `pyarrow` extension error, refresh with `pip install -r requirements.txt`.
+- If `prepare_search_qa_dataset` fails with a `pyarrow` extension error, run `pip install -r requirements.txt`.
