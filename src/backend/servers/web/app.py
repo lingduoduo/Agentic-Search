@@ -137,7 +137,7 @@ class AgentExperienceRequest(BaseModel):
     source_provider: str = Field(
         default="retrieval",
         description=(
-            "'retrieval', 'google', 'serpapi', 'browser', or 'all'. "
+            "'retrieval', 'serpapi', 'browser', or 'all'. "
             "Browser uses the retrieval-compatible URL in search_url."
         ),
     )
@@ -575,17 +575,15 @@ _SOURCE_PROVIDER_ALIASES = {
 }
 _VALID_SOURCE_PROVIDERS = {
     "retrieval",
-    "google",
     "serpapi",
     "browser",
     "all",
 }
 _SOURCE_PROVIDER_LABELS = {
     "retrieval": "Local Retrieval",
-    "google": "Google PSE",
     "serpapi": "SerpAPI",
     "browser": "Browser Retrieval",
-    "all": "All Sources",
+    "all": "All Active Sources",
 }
 
 
@@ -603,7 +601,7 @@ def _normalize_source_provider(source_provider: str) -> str:
 
 def _source_providers_for(source_provider: str) -> list[str]:
     if source_provider == "all":
-        return ["retrieval", "google", "serpapi"]
+        return ["retrieval", "serpapi"]
     return [source_provider]
 
 

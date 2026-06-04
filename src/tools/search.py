@@ -6,6 +6,10 @@ import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import parse_qsl
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 from ..retrieval.context import SearchResult
 from ..retrieval.client import SearchClient, SearchClientConfig, aiohttp
@@ -66,7 +70,7 @@ async def google_custom_search(
             timeout_seconds=timeout_seconds,
         )
     except Exception as exc:
-        return [SearchPage(error=str(exc))]
+        return [SearchPage(error=_redact_secret_params(str(exc)))]
     return [
         SearchPage(
             title=item.get("title", ""),
@@ -104,7 +108,7 @@ async def serpapi_search(
             timeout_seconds=timeout_seconds,
         )
     except Exception as exc:
-        return [SearchPage(error=str(exc))]
+        return [SearchPage(error=_redact_secret_params(str(exc)))]
 
     pages = [
         SearchPage(
@@ -155,7 +159,7 @@ async def retrieval_search(
             for result in await client.retrieve_one(query, topk=page_size)
         ]
     except Exception as exc:
-        return [SearchPage(error=str(exc))]
+        return [SearchPage(error=_redact_secret_params(str(exc)))]
     finally:
         await client.aclose()
 
@@ -342,6 +346,34 @@ def format_search_pages(pages: list[SearchPage]) -> str:
             f"Title: {page.title}\nSummary: {page.summary}\nURL: {page.url}"
         )
     return "\n\n".join(sections) if sections else "No results found."
+
+
+def _redact_secret_params(text: str) -> str:
+    for marker in ("url=URL('", 'url="', "url='"):
+        start = text.find(marker)
+        if start == -1:
+            continue
+        url_start = start + len(marker)
+        quote = marker[-1]
+        url_end = text.find(quote, url_start)
+        if url_end == -1:
+            continue
+        original = text[url_start:url_end]
+        text = f"{text[:url_start]}{_redact_url(original)}{text[url_end:]}"
+    return text
+
+
+def _redact_url(url: str) -> str:
+    parsed = urlsplit(url)
+    redacted_query = urlencode(
+        [
+            (key, "[REDACTED]" if key.lower() in {"key", "api_key"} else value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+    )
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, redacted_query, parsed.fragment)
+    )
 
 
 async def _get_json(

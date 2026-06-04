@@ -13,6 +13,8 @@ from src.backend.hooks import HookPoint
 from src.backend.hooks import HookRegistry
 from src.backend.servers.web.app import SearchExperienceSettings
 from src.backend.servers.web.app import create_web_app
+from src.backend.servers.web.app import _normalize_source_provider
+from src.backend.servers.web.app import _source_providers_for
 
 
 def _answer_result(question: str) -> AnswerGenerationResult:
@@ -47,6 +49,19 @@ def test_web_app_serves_browser_experience(tmp_path):
     assert "Agentic Search" in response.text
     assert "/api/agent" in client.get("/assets/app.js").text
     assert "text/css" in client.get("/assets/app.css").headers["content-type"]
+
+
+def test_web_demo_all_sources_excludes_disabled_google():
+    assert _source_providers_for("all") == ["retrieval", "serpapi"]
+
+
+def test_web_demo_rejects_disabled_google_provider():
+    try:
+        _normalize_source_provider("google")
+    except Exception as exc:
+        assert "source_provider must be one of" in str(exc)
+    else:
+        raise AssertionError("google provider should be disabled for the web demo")
 
 
 def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
