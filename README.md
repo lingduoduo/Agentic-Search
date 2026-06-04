@@ -234,6 +234,17 @@ python3 -m examples.prepare_search_rag_dataset \
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - Training data builders for search-QA and RAG parquet datasets
 
+**Chat Processing**
+- `run_llm_loop` — multi-turn LLM execution loop: builds message history, dispatches tool calls, injects context files, streams tokens, and handles forced tool invocations (`src/backend/chat/llm_loop.py`)
+- `run_llm_step` — single LLM step: sends the prompt, streams the response, extracts tool calls, and returns a structured `LlmStepResult` (`src/backend/chat/llm_step.py`)
+- `process_message` — top-level chat turn orchestrator: resolves persona, tools, files, search config, and LLM; dispatches to `run_llm_loop`; persists the turn via `save_chat_turn` (`src/backend/chat/process_message.py`)
+- `save_chat_turn` — persists messages, tool calls, and search doc references to the SQLite store after each turn (`src/backend/chat/save_chat.py`)
+- **Dynamic citation processor** (`DynamicCitationProcessor`) — streams LLM token output and extracts citation markers in REMOVE / KEEP / HYPERLINK modes; emits `CitationInfo` objects in real time (`src/backend/chat/citation_processor.py`)
+- **Chat history compression** (`compress_chat_history`) — summarises older turns with an LLM when context exceeds the token budget; summaries are branch-aware and keyed to the last message (`src/backend/chat/compression.py`)
+- **Emitter** — routes packets (tokens, tool calls, citations) from worker threads onto a shared queue for ordered streaming to the HTTP response (`src/backend/chat/emitter.py`)
+- **Stop signal checker** — lets a client cancel an in-progress stream; `set_fence` / `is_connected` / `reset_cancel_status` operate on the `CacheBackend` (`src/backend/chat/stop_signal_checker.py`)
+- **System prompt builder** (`build_system_prompt`) — assembles the system prompt from persona instructions, knowledge base snippets, tool descriptions, and memory context (`src/backend/chat/prompt_utils.py`)
+
 **Cache & Persistence**
 - **SQLite store** (`AgenticSearchStore`) — single repository for connector configs, documents, document permissions, chat sessions & messages, indexing attempts, usage reports, rate-limit rules, SCIM tokens, and standard answers; no external database required (`src/backend/db/store.py`)
 - **Search history** — past search queries persisted per user and retrievable via `GET /search/search-history` (`src/backend/servers/query_and_chat/search_backend.py`)
