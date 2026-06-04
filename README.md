@@ -101,9 +101,16 @@ Celery required for local deployments.
 
 ## Features
 
+- **Agentic RAG** (`AgenticRAGLoop`) — best-in-class retrieval quality via:
+  - LLM query decomposition (multi-hop) and HyDE (hypothetical document embedding) for maximum recall
+  - Iterative retrieval with evidence sufficiency gating — loops until the LLM judges context sufficient or a round cap is reached
+  - Grounded answer synthesis with citations over all accumulated evidence
+  - Activate via `POST /api/agent` with `"mode": "agentic_rag"`
+- **Hybrid + rerank retrieval server** (`hybrid_rerank.py`) — combines dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
+- **Query enhancer** (`src/context/query_enhancer.py`) — `QueryEnhancer.decompose()` and `.hyde()` enrich any query for better retrieval; degrade gracefully without an LLM
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, and custom embedders).
 - Local sparse retrieval with BM25/Pyserini.
-- Optional web search through Google Custom Search and SerpAPI.
+- Optional web search through Google Custom Search, SerpAPI, and playwright-cli (no API key required).
 - Retrieval + cross-encoder reranking pipeline.
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`,
   `<information>`, `<fetch>`, and `<answer>` actions.
@@ -757,6 +764,8 @@ python3 -m src.backend.servers.retrieval.google \
 
 ## Retrieval Plus Rerank
 
+Single-backend (dense or BM25) with cross-encoder reranking:
+
 ```bash
 python3 -m src.backend.servers.retrieval.retrieval_rerank \
   --retriever_model intfloat/e5-base-v2 \
@@ -769,6 +778,83 @@ python3 -m src.backend.servers.retrieval.retrieval_rerank \
 
 For BM25 plus reranking, use `--retrieval_method bm25` and omit
 `--retriever_model`.
+
+## Hybrid Retrieval + Rerank (Best Quality)
+
+`hybrid_rerank.py` combines dense (FAISS) and sparse (BM25) retrieval with RRF
+fusion, then reranks the fused results with a cross-encoder. This is the
+recommended backend for `AgenticRAGLoop`.
+
+**Pure dense (no BM25 index required):**
+
+```bash
+python3 -m src.backend.servers.retrieval.hybrid_rerank \
+  --dense_model intfloat/e5-base-v2 \
+  --index_path indexes/e5_Flat.index \
+  --corpus_path data/corpus.jsonl \
+  --retrieval_topk 10 \
+  --rerank_topk 5
+```
+
+**Hybrid dense + BM25:**
+
+```bash
+python3 -m src.backend.servers.retrieval.hybrid_rerank \
+  --dense_model intfloat/e5-base-v2 \
+  --index_path indexes/e5_Flat.index \
+  --corpus_path data/corpus.jsonl \
+  --sparse_index_path indexes/bm25 \
+  --hybrid_alpha 0.5 \
+  --retrieval_topk 10 \
+  --rerank_topk 5
+```
+
+## Agentic RAG
+
+`AgenticRAGLoop` delivers best-in-class answer quality by combining query
+enhancement, iterative hybrid retrieval, and evidence-gated synthesis.
+
+```python
+from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
+from src.context.query_enhancer import QueryEnhancer
+
+loop = AgenticRAGLoop(
+    AgenticRAGConfig(max_rounds=3, topk=5, retrieval_url="http://localhost:8000/retrieve"),
+    llm=my_llm_client,  # any LLMClient; pass None for extractive fallback
+)
+result = await loop.run("What is FAISS and how does it compare to ScaNN?")
+print(result.answer)          # grounded answer with citations
+print(result.rounds_used)     # how many retrieval rounds were needed
+print(result.citations)       # e.g. ["[D0]", "[D2]"]
+```
+
+**Via the web API** — pass `"mode": "agentic_rag"` to `POST /api/agent`:
+
+```bash
+curl -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is FAISS?", "mode": "agentic_rag", "top_k": 5}'
+```
+
+The loop flow per query:
+
+1. **Query enhancement** — decompose into sub-queries; generate HyDE hypothetical answer
+2. **Hybrid+rerank retrieval** — retrieve for each enhanced query; accumulate unique documents
+3. **Sufficiency check** — LLM judges: "is this enough to answer?" → break or continue
+4. **Follow-up generation** — if insufficient, LLM proposes targeted follow-up queries
+5. **Grounded synthesis** — answer from all accumulated evidence with inline citations
+
+`QueryEnhancer` can also be used standalone:
+
+```python
+from src.context.query_enhancer import QueryEnhancer
+
+enhancer = QueryEnhancer(llm=my_llm)
+bundle = enhancer.enhance("How does HNSW indexing work in FAISS?")
+print(bundle.sub_queries)   # focused sub-questions
+print(bundle.hyde_text)     # hypothetical answer for dense retrieval
+print(bundle.all_queries()) # deduplicated list ready to pass to retrieval
+```
 
 ## Training Flow
 
