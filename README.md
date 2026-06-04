@@ -204,6 +204,12 @@ python3 -m examples.prepare_search_rag_dataset \
 - FAISS index builder — chunk, embed, and write dense indexes from a JSONL corpus (`src/retrieval/index_builder.py`)
 - BM25 index builder — build Pyserini/Lucene sparse indexes from the same corpus
 - Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index documents; supports mini-chunks, vector-write retries, and document prefiltering (`src/backend/servers/backgroundworker/`)
+- **Connectors** — collect documents from multiple data sources into the indexing pipeline (`src/backend/connectors/`):
+  - `LocalFileConnector` / `LocalFilePollConnector` — ingest UTF-8 files from paths, directories, or globs; poll for changes by time window
+  - `SearchConnector` — pull search results as documents via retrieval, Google, or SerpAPI
+  - `InMemoryConnector` — load documents from Python objects for testing and prototyping
+  - `OAuthConnector` interface — authorization-code flow for external sources (Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion)
+  - `PollConnector` / `CheckpointedConnector` / `SlimConnector` — incremental sync patterns with time-window, checkpoint, and permission-metadata variants
 
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
