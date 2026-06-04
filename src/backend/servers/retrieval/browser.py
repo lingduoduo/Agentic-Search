@@ -88,8 +88,9 @@ class BrowserSearchEngine:
             )
             self._run("snapshot", session=session)
             proc = self._run("eval", _EXTRACT_JS, session=session, raw=True)
-            hits: list[dict] = (
-                json.loads(proc.stdout.strip()) if proc.stdout.strip() else []
+            raw = json.loads(proc.stdout.strip()) if proc.stdout.strip() else []
+            hits = (
+                [h for h in raw if isinstance(h, dict)] if isinstance(raw, list) else []
             )
         except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as exc:
             logger.warning("browser search failed for %r: %s", query, exc)

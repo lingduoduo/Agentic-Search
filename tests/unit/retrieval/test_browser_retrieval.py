@@ -122,3 +122,23 @@ def test_batch_search_runs_queries_in_parallel():
         results = engine.batch_search(["q1", "q2"])
     assert len(results) == 2
     assert results[0][0]["document"]["title"] == "T"
+
+
+def test_non_dict_eval_items_are_filtered():
+    # Live test revealed: CAPTCHA/error pages can produce non-dict items in eval output.
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    mixed = json.dumps(
+        ["unexpected string", {"title": "T", "url": "https://t.com", "snippet": "s"}]
+    )
+    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            _make_proc(),
+            _make_proc(),
+            _make_proc(),
+            _make_proc(),
+            _make_proc(mixed),
+            _make_proc(),
+        ]
+        results = engine._search_and_process("query")
+    assert len(results) == 1
+    assert results[0]["document"]["title"] == "T"
