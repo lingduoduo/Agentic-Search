@@ -165,6 +165,31 @@ All state lives in `AgenticSearchStore` — a SQLite-backed repository for
 connectors, documents, users, groups, chat sessions, SCIM tokens, usage reports,
 rate-limit rules, and more. No external database is required.
 
+### Enterprise CLI Quick Start
+
+```bash
+# Terminal 1 — retrieval server
+python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
+
+# Terminal 2 — web backend
+uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
+
+# Terminal 3 — build & query
+go build -C cli -o bin/query ./cmd/query
+
+export AGENTIC_SEARCH_PAT=$(python3 -c "
+from src.backend.auth import generate_user_jwt_token
+print(generate_user_jwt_token(user_id='dev', email='dev@local'))")
+export AGENTIC_SEARCH_URL=http://localhost:7860
+
+bin/query "what is FAISS"
+bin/query "compare BM25 and dense retrieval"
+bin/query -top-k 3 "how does RAG work"
+
+# Python CLI equivalent
+python3 -m src.cli.query "what is FAISS"
+```
+
 ### Middleware Stack
 
 | Middleware | Module | Purpose |
