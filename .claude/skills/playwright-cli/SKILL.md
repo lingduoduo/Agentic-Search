@@ -130,3 +130,24 @@ playwright-cli kill-all
 playwright-cli open https://example.com
 playwright-cli show --annotate        # user draws boxes + adds comments; you receive annotated screenshot
 ```
+
+## Example: Scripted search and result extraction
+
+Drive a Google search and extract top results as JSON using playwright-cli subprocess calls
+(as used by `src/backend/servers/retrieval/browser.py`):
+
+```bash
+SESSION="search-$(openssl rand -hex 4)"
+playwright-cli -s=$SESSION open https://www.google.com --persistent
+playwright-cli -s=$SESSION snapshot                          # wait for page to settle
+playwright-cli -s=$SESSION fill "getByRole('combobox', { name: 'Search' })" "what is FAISS" --submit
+playwright-cli -s=$SESSION snapshot                          # wait for SERP results to render
+playwright-cli --raw -s=$SESSION eval \
+  "JSON.stringify([...document.querySelectorAll('h3')].filter(h=>h.closest('a')).slice(0,5).map(h=>({title:h.textContent.trim(),url:h.closest('a').href,snippet:(h.closest('[data-hveid]')?.lastElementChild?.textContent?.trim()||'')})).filter(r=>r.url&&!r.url.includes('google.com/search')))"
+playwright-cli -s=$SESSION close
+```
+
+Note: `--raw` is a global flag and must precede `-s=` in the command. Both `snapshot` calls are
+required — the first waits for page load, the second waits for SERP results after submit.
+Google may return a CAPTCHA page (`/sorry/index`) which will produce empty results; this is
+expected bot-detection behaviour.
