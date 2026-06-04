@@ -205,8 +205,13 @@ python3 -m examples.prepare_search_rag_dataset \
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, `<fetch>`, and `<answer>` actions
-- Hermes, Llama-3, and JSON tool-call parsers
-- OpenAPI-based `ApiToolRegistry` for dynamic tool loading
+- `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
+
+**Tool Use**
+- Hermes, Llama-3, and JSON tool-call parsers — parse structured tool calls from any LLM output format
+- OpenAPI-based `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
+- `FunctionTool` — wrap any Python callable as a tool with auto-generated JSON schema
+- `build_search_tool` — ready-made tool that dispatches to retrieval, Google, or SerpAPI
 
 **RL Training**
 - Composite reward shaping (`SearchRewardFunction`) with format, search-use, answer-length, and exact-match components
