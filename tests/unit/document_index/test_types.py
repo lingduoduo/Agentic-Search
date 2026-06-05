@@ -189,3 +189,19 @@ def test_split_relationship_id():
     assert source == "doc1"
     assert rel == "RELATED"
     assert target == "doc2"
+
+
+def test_redis_shared_lock_no_raise():
+    from src.backend.document_index.utils import redis_shared_lock
+
+    with redis_shared_lock("test"):
+        pass  # must not raise
+
+
+def test_get_shared_kv_store_interface():
+    from src.backend.document_index.utils import get_shared_kv_store
+
+    kv = get_shared_kv_store()
+    assert kv.get("k") is None
+    kv.set("k", "v")
+    kv.delete("k")

@@ -33,6 +33,7 @@ def batch_generator(
         yield batch
 
 
+# C0 controls (except \t, \n, \r) and DEL — intentionally excludes C1 range (\x80-\x9f)
 _INVALID_UNICODE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
