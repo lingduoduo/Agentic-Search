@@ -172,15 +172,13 @@ export function App() {
         {adminSummary && <AdminOverview summary={adminSummary} />}
 
         <div className="results-layout">
-          {isChatMode && (
-            <section className="answer-column" aria-label="Answer">
-              <div className="section-heading">
-                <Bot size={18} />
-                <h2>Answer</h2>
-              </div>
-              <AnswerPanel answer={answer} citations={citations} />
-            </section>
-          )}
+          <section className="answer-column" aria-label={isChatMode ? "Answer" : "Search Summary"}>
+            <div className="section-heading">
+              {isChatMode ? <Bot size={18} /> : <Search size={18} />}
+              <h2>{isChatMode ? "Answer" : "Search Summary"}</h2>
+            </div>
+            <AnswerPanel answer={answer} citations={citations} />
+          </section>
 
           <section className="panel sources-panel wide" aria-label="Sources">
             <div className="section-heading">
