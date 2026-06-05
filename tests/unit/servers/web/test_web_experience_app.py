@@ -203,3 +203,72 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
     session = client.get(f"/api/sessions/{response.json()['session_id']}").json()
     assert session["messages"][0]["content"] == "rewritten deploy question"
     assert registry.execution_log[-1].is_success is True
+
+
+def test_direct_search_enriches_web_provider_content(monkeypatch):
+    """Content fetching is called for serpapi/google providers, not for retrieval."""
+    from src.tools.search import SearchPage
+    from src.backend.servers.web.app import _run_direct_search
+    import asyncio
+
+    serpapi_pages = [
+        SearchPage(title="Result A", summary="snippet A", url="https://a.test"),
+    ]
+    fetched_pages = [
+        SearchPage(
+            title="Result A", summary="full article content A", url="https://a.test"
+        ),
+    ]
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return serpapi_pages
+
+    async def _fake_fetch_pages(pages, *, max_chars, timeout_seconds=10):
+        assert pages == serpapi_pages
+        return fetched_pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+
+    docs = asyncio.run(
+        _run_direct_search(
+            "test query",
+            source_provider="serpapi",
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+        )
+    )
+    assert any("full article content A" in doc.content for doc in docs)
+
+
+def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
+    """Content fetching is NOT called for the local retrieval provider."""
+    from src.tools.search import SearchPage
+    from src.backend.servers.web.app import _run_direct_search
+    import asyncio
+
+    fetch_called = []
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return [SearchPage(title="R", summary="corpus content", url="https://r.test")]
+
+    async def _fake_fetch_pages(pages, **kwargs):
+        fetch_called.append(True)
+        return pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+
+    asyncio.run(
+        _run_direct_search(
+            "test query",
+            source_provider="retrieval",
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+        )
+    )
+    assert not fetch_called

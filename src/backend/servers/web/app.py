@@ -74,6 +74,7 @@ from src.backend.servers.token_rate_limits.api import create_token_rate_limits_r
 from src.backend.servers.user_group.api import create_user_group_router
 from src.backend.servers.users.api import create_users_router
 from src.tools.search import SearchPage
+from src.tools.search import fetch_pages_concurrently
 from src.tools.search import search_tool
 
 from .static import APP_CSS
@@ -622,6 +623,14 @@ def _source_providers_for(source_provider: str) -> list[str]:
     return [source_provider]
 
 
+_WEB_PROVIDERS = {"serpapi", "google"}
+
+
+def _is_web_provider(source_provider: str) -> bool:
+    """Returns True for providers that return URL snippets needing full-page fetch."""
+    return source_provider in _WEB_PROVIDERS
+
+
 def _tool_provider_for(source_provider: str):
     return "retrieval" if source_provider == "browser" else source_provider
 
@@ -647,6 +656,8 @@ async def _run_direct_search(
             search_url=search_url,
             page_size=fetch_k,
         )
+        if _is_web_provider(provider):
+            pages = await fetch_pages_concurrently(pages, max_chars=2000)
         documents.extend(
             _documents_from_search_pages(
                 pages,
