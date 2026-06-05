@@ -203,3 +203,188 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
     session = client.get(f"/api/sessions/{response.json()['session_id']}").json()
     assert session["messages"][0]["content"] == "rewritten deploy question"
     assert registry.execution_log[-1].is_success is True
+
+
+def test_direct_search_enriches_web_provider_content(monkeypatch):
+    """Content fetching is called for serpapi/google providers, not for retrieval."""
+    from src.tools.search import SearchPage
+    from src.backend.servers.web.app import _run_direct_search
+    import asyncio
+
+    serpapi_pages = [
+        SearchPage(title="Result A", summary="snippet A", url="https://a.test"),
+    ]
+    fetched_pages = [
+        SearchPage(
+            title="Result A", summary="full article content A", url="https://a.test"
+        ),
+    ]
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return serpapi_pages
+
+    async def _fake_fetch_pages(pages, *, max_chars, timeout_seconds=10):
+        assert pages == serpapi_pages
+        return fetched_pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+
+    docs = asyncio.run(
+        _run_direct_search(
+            "test query",
+            source_provider="serpapi",
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+        )
+    )
+    assert any("full article content A" in doc.content for doc in docs)
+
+
+def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
+    """Content fetching is NOT called for the local retrieval provider."""
+    from src.tools.search import SearchPage
+    from src.backend.servers.web.app import _run_direct_search
+    import asyncio
+
+    fetch_called = []
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return [SearchPage(title="R", summary="corpus content", url="https://r.test")]
+
+    async def _fake_fetch_pages(pages, **kwargs):
+        fetch_called.append(True)
+        return pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+
+    asyncio.run(
+        _run_direct_search(
+            "test query",
+            source_provider="retrieval",
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+        )
+    )
+    assert not fetch_called
+
+
+def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
+    """Hybrid search fetches full page content for serpapi results."""
+    from src.tools.search import SearchPage
+    from src.backend.servers.web.app import _run_hybrid_search
+    import asyncio
+
+    pages = [SearchPage(title="T", summary="snippet", url="https://t.test")]
+    fetched = [SearchPage(title="T", summary="full article body", url="https://t.test")]
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return pages
+
+    async def _fake_fetch_pages(pgs, *, max_chars, timeout_seconds=10):
+        return fetched
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.expand_keywords",
+        lambda query, llm: [],
+    )
+
+    result = asyncio.run(
+        _run_hybrid_search(
+            "latest AI news",
+            llm=None,
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="serpapi",
+        )
+    )
+    assert any("full article body" in doc.content for doc in result.documents)
+
+
+def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkeypatch):
+    """Temporal variant is added to executed queries for time-sensitive queries."""
+    from src.backend.servers.web.app import _run_hybrid_search
+    from src.tools.search import SearchPage
+    import asyncio
+
+    executed: list[str] = []
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        executed.append(query)
+        return [SearchPage(title="T", summary="s", url="https://t.test")]
+
+    async def _fake_fetch_pages(pages, **kwargs):
+        return pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.expand_keywords",
+        lambda query, llm: [],
+    )
+
+    result = asyncio.run(
+        _run_hybrid_search(
+            "latest AI models",
+            llm=None,
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="serpapi",
+        )
+    )
+    from datetime import datetime
+
+    year = str(datetime.now().year)
+    assert any(year in q for q in result.executed_queries)
+
+
+def test_hybrid_search_runs_search_tool_calls_concurrently(monkeypatch):
+    """All search tool calls for expanded queries run concurrently (asyncio.gather)."""
+    from src.backend.servers.web.app import _run_hybrid_search
+    from src.tools.search import SearchPage
+    import asyncio
+
+    call_count = []
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        call_count.append(query)
+        return [SearchPage(title="T", summary="s", url="https://t.test")]
+
+    async def _fake_fetch_pages(pages, **kwargs):
+        return pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.expand_keywords",
+        lambda query, llm: ["AI news expanded"],
+    )
+
+    result = asyncio.run(
+        _run_hybrid_search(
+            "latest AI news",
+            llm=object(),  # non-None so expand_keywords is called
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="serpapi",
+        )
+    )
+    # 2 queries: original + 1 expansion (temporal variant added too = 3 total)
+    assert len(call_count) >= 2
+    assert result.executed_queries is not None

@@ -252,7 +252,7 @@ async def search_for_tool_string(
 
 
 async def fetch_url(
-    url: str, *, max_length: int = 500, timeout_seconds: int = 15
+    url: str, *, max_length: int = 2000, timeout_seconds: int = 15
 ) -> str:
     """Fetch readable webpage text with lightweight HTML extraction."""
 
@@ -268,6 +268,39 @@ async def fetch_url(
         return _html_to_text(html)[:max_length]
     except Exception as exc:
         return f"[fetch error] {exc}"
+
+
+async def fetch_pages_concurrently(
+    pages: list[SearchPage],
+    *,
+    max_chars: int = 2000,
+    timeout_seconds: int = 10,
+) -> list[SearchPage]:
+    """Fetch full page content for each SearchPage that has a URL and no error."""
+    fetchable = [p for p in pages if p.url and not p.error]
+    results = await asyncio.gather(
+        *[
+            fetch_url(p.url, max_length=max_chars, timeout_seconds=timeout_seconds)
+            for p in fetchable
+        ],
+        return_exceptions=True,
+    )
+    url_to_content: dict[str, str] = {}
+    for page, content in zip(fetchable, results):
+        if isinstance(content, str) and not content.startswith("[fetch error]"):
+            url_to_content[page.url] = content
+
+    return [
+        SearchPage(
+            title=p.title,
+            summary=url_to_content.get(p.url, p.summary)
+            if (p.url and not p.error)
+            else p.summary,
+            url=p.url,
+            error=p.error,
+        )
+        for p in pages
+    ]
 
 
 async def search_for_detail(
@@ -408,6 +441,16 @@ def _html_to_text(html: str) -> str:
     soup = bs4.BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
+
+    # Prefer semantic content containers before falling back to all <p> tags
+    for selector in ("article", "main", '[role="main"]', ".content", "#content"):
+        container = soup.select_one(selector)
+        if container:
+            paragraphs = [p.get_text(" ", strip=True) for p in container.find_all("p")]
+            text = "\n".join(p for p in paragraphs if p)
+            if text:
+                return text
+
     paragraphs = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
     text = "\n".join(paragraph for paragraph in paragraphs if paragraph)
     return text or soup.get_text(" ", strip=True)

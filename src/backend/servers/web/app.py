@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -23,6 +25,7 @@ from src.backend.llm.interfaces import LLMConfig
 from src.backend.llm.providers import OpenAICompatibleLLM
 from src.backend.search.process_search_query import run_expanded_search
 from src.backend.secondary_llm_flows import expand_keywords
+from src.backend.secondary_llm_flows.query_expansion import with_temporal_context
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient
@@ -74,6 +77,7 @@ from src.backend.servers.token_rate_limits.api import create_token_rate_limits_r
 from src.backend.servers.user_group.api import create_user_group_router
 from src.backend.servers.users.api import create_users_router
 from src.tools.search import SearchPage
+from src.tools.search import fetch_pages_concurrently
 from src.tools.search import search_tool
 
 from .static import APP_CSS
@@ -622,6 +626,14 @@ def _source_providers_for(source_provider: str) -> list[str]:
     return [source_provider]
 
 
+_WEB_PROVIDERS = {"serpapi"}
+
+
+def _is_web_provider(source_provider: str) -> bool:
+    """Returns True for providers that return URL snippets needing full-page fetch."""
+    return source_provider in _WEB_PROVIDERS
+
+
 def _tool_provider_for(source_provider: str):
     return "retrieval" if source_provider == "browser" else source_provider
 
@@ -647,6 +659,8 @@ async def _run_direct_search(
             search_url=search_url,
             page_size=fetch_k,
         )
+        if _is_web_provider(provider):
+            pages = await fetch_pages_concurrently(pages, max_chars=2000)
         documents.extend(
             _documents_from_search_pages(
                 pages,
@@ -701,13 +715,28 @@ async def _run_hybrid_search(
     executed_queries = _expanded_queries(query, llm)
     documents: list[ContextDocument] = []
     for provider in _source_providers_for(source_provider):
-        for expanded_query in executed_queries:
-            pages = await search_tool(
-                expanded_query,
-                provider=_tool_provider_for(provider),
-                search_url=search_url,
-                page_size=top_k,
+        tool_provider = _tool_provider_for(provider)
+        # Run all expanded queries concurrently for this provider
+        page_lists: list[list[SearchPage]] = list(
+            await asyncio.gather(
+                *[
+                    search_tool(
+                        expanded_query,
+                        provider=tool_provider,
+                        search_url=search_url,
+                        page_size=top_k,
+                    )
+                    for expanded_query in executed_queries
+                ]
             )
+        )
+        if _is_web_provider(provider):
+            all_pages = [p for pages in page_lists for p in pages]
+            enriched = await fetch_pages_concurrently(all_pages, max_chars=2000)
+            # Re-partition enriched pages back into per-query slices
+            it = iter(enriched)
+            page_lists = [list(islice(it, len(pages))) for pages in page_lists]
+        for expanded_query, pages in zip(executed_queries, page_lists):
             documents.extend(
                 _documents_from_search_pages(
                     pages,
@@ -727,13 +756,18 @@ async def _run_hybrid_search(
 
 def _expanded_queries(query: str, llm: LLMClient | None) -> list[str]:
     if llm is None:
-        return [query]
-    try:
-        expansions = expand_keywords(query, llm)
-    except Exception:
-        logger.exception("Query expansion failed for hybrid web search")
         expansions = []
-    return [query] + [expanded for expanded in expansions if expanded != query]
+    else:
+        try:
+            expansions = expand_keywords(query, llm)
+        except Exception:
+            logger.exception("Query expansion failed for hybrid web search")
+            expansions = []
+    queries = [query] + [e for e in expansions if e != query]
+    temporal = with_temporal_context(query)
+    if temporal != query and temporal not in queries:
+        queries.append(temporal)
+    return queries
 
 
 def _documents_from_search_pages(

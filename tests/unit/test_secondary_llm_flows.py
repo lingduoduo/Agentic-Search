@@ -6,6 +6,8 @@ from src.context.models import ChatMessage
 from src.backend.secondary_llm_flows import classify_is_search_flow
 from src.backend.secondary_llm_flows import expand_keywords
 from src.backend.secondary_llm_flows.query_expansion import _clean_keyword_line
+from src.backend.secondary_llm_flows.query_expansion import is_time_sensitive
+from src.backend.secondary_llm_flows.query_expansion import with_temporal_context
 
 
 class _FakeLLM:
@@ -117,3 +119,45 @@ def test_classify_is_search_flow_includes_query_in_prompt():
     sent = llm.calls[0][0].content
     assert "my question" in sent
     assert SEARCH_CHAT_PROMPT.split("{user_query}")[0] in sent
+
+
+def test_is_time_sensitive_detects_temporal_keywords():
+    assert is_time_sensitive("latest AI news") is True
+    assert is_time_sensitive("current president of France") is True
+    assert is_time_sensitive("recent breakthroughs in quantum computing") is True
+    assert is_time_sensitive("today's stock price") is True
+    assert is_time_sensitive("what is FAISS") is False
+    assert is_time_sensitive("how does BM25 work") is False
+
+
+def test_is_time_sensitive_is_case_insensitive():
+    assert is_time_sensitive("LATEST updates") is True
+    assert is_time_sensitive("Current events") is True
+
+
+def test_with_temporal_context_appends_date_to_time_sensitive_queries():
+    from datetime import datetime
+
+    result = with_temporal_context("latest AI models")
+    year = str(datetime.now().year)
+    assert year in result
+    assert "latest AI models" in result
+
+
+def test_with_temporal_context_leaves_non_temporal_queries_unchanged():
+    result = with_temporal_context("what is FAISS")
+    assert result == "what is FAISS"
+
+
+def test_is_time_sensitive_no_false_positive_substring_match():
+    # "now" as a substring of common words should NOT trigger time sensitivity
+    assert is_time_sensitive("knowledge management") is False
+    assert is_time_sensitive("snowflake architecture") is False
+    assert is_time_sensitive("renewal policy") is False
+    assert is_time_sensitive("renowned scientist") is False
+
+
+def test_is_time_sensitive_detects_whole_word_now():
+    # "now" as a standalone word SHOULD trigger time sensitivity
+    assert is_time_sensitive("what is happening now") is True
+    assert is_time_sensitive("NOW is the time") is True
