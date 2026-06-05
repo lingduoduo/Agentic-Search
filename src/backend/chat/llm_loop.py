@@ -315,7 +315,7 @@ def _build_project_message(
 
 def construct_message_history(
     system_prompt: ChatMessageSimple | None,
-    custom_agent_prompt: ChatMessageSimple | None,
+    persona_prompt: ChatMessageSimple | None,
     simple_chat_history: list[ChatMessageSimple],
     reminder_message: ChatMessageSimple | None,
     context_files: ExtractedContextFiles | None,
@@ -337,9 +337,7 @@ def construct_message_history(
 
     history_token_budget = available_tokens
     history_token_budget -= system_prompt.token_count if system_prompt else 0
-    history_token_budget -= (
-        custom_agent_prompt.token_count if custom_agent_prompt else 0
-    )
+    history_token_budget -= persona_prompt.token_count if persona_prompt else 0
     history_token_budget -= project_messages_tokens
     history_token_budget -= reminder_message.token_count if reminder_message else 0
 
@@ -352,8 +350,8 @@ def construct_message_history(
     # If no history, build minimal context
     if not simple_chat_history:
         result = [system_prompt] if system_prompt else []
-        if custom_agent_prompt:
-            result.append(custom_agent_prompt)
+        if persona_prompt:
+            result.append(persona_prompt)
         result.extend(project_messages)
         if reminder_message:
             result.append(reminder_message)
@@ -488,16 +486,16 @@ def construct_message_history(
                     )
 
     # Build the final message list according to README ordering:
-    # [system], [history_before_last_user], [custom_agent], [context_files],
+    # [system], [history_before_last_user], [persona], [context_files],
     # [forgotten_files], [last_user_message], [messages_after_last_user], [reminder]
     result = [system_prompt] if system_prompt else []
 
     # 1. Add truncated history before last user message
     result.extend(truncated_history_before)
 
-    # 2. Add custom agent prompt (inserted before last user message)
-    if custom_agent_prompt:
-        result.append(custom_agent_prompt)
+    # 2. Add persona prompt (inserted before last user message)
+    if persona_prompt:
+        result.append(persona_prompt)
 
     # 3. Add context files / file-metadata messages (inserted before last user message)
     result.extend(project_messages)
@@ -620,7 +618,7 @@ def run_llm_loop(
     state_container: ChatStateContainer,
     simple_chat_history: list[ChatMessageSimple],
     tools: list[Tool],
-    custom_agent_prompt: str | None,
+    persona_prompt: str | None,
     context_files: ExtractedContextFiles,
     persona: Persona | None,
     user_memory_context: UserMemoryContext | None,
@@ -706,7 +704,7 @@ def run_llm_loop(
                 prompt_db_session
             )
         system_prompt = None
-        custom_agent_prompt_msg = None
+        persona_prompt_msg = None
 
         reasoning_cycles = 0
         for llm_cycle_count in range(MAX_LLM_CYCLES):
@@ -727,7 +725,7 @@ def run_llm_loop(
                 tool_choice = ToolChoiceOptions.AUTO
                 final_tools = tools
 
-            # Handling the system prompt and custom agent prompt
+            # Handling the system prompt and persona prompt
             # The section below calculates the available tokens for history a bit more accurately
             # now that project files are loaded in.
             if persona and persona.replace_base_system_prompt:
@@ -741,7 +739,7 @@ def run_llm_loop(
                     if persona.system_prompt
                     else None
                 )
-                custom_agent_prompt_msg = None
+                persona_prompt_msg = None
             else:
                 # If it's an empty string, we assume the user does not want to include it as an empty System message
                 if default_base_system_prompt:
@@ -767,27 +765,27 @@ def run_llm_loop(
                         token_count=token_counter(system_prompt_str),
                         message_type=MessageType.SYSTEM,
                     )
-                    custom_agent_prompt_msg = (
+                    persona_prompt_msg = (
                         ChatMessageSimple(
-                            message=custom_agent_prompt,
-                            token_count=token_counter(custom_agent_prompt),
+                            message=persona_prompt,
+                            token_count=token_counter(persona_prompt),
                             message_type=MessageType.USER,
                         )
-                        if custom_agent_prompt
+                        if persona_prompt
                         else None
                     )
                 else:
-                    # If there is a custom agent prompt, it replaces the system prompt when the default system prompt is empty
+                    # If there is a persona prompt, it replaces the system prompt when the default system prompt is empty
                     system_prompt = (
                         ChatMessageSimple(
-                            message=custom_agent_prompt,
-                            token_count=token_counter(custom_agent_prompt),
+                            message=persona_prompt,
+                            token_count=token_counter(persona_prompt),
                             message_type=MessageType.SYSTEM,
                         )
-                        if custom_agent_prompt
+                        if persona_prompt
                         else None
                     )
-                    custom_agent_prompt_msg = None
+                    persona_prompt_msg = None
 
             reminder_message_text: str | None
             if ran_image_gen:
@@ -822,7 +820,7 @@ def run_llm_loop(
 
             truncated_message_history = construct_message_history(
                 system_prompt=system_prompt,
-                custom_agent_prompt=custom_agent_prompt_msg,
+                persona_prompt=persona_prompt_msg,
                 simple_chat_history=simple_chat_history,
                 reminder_message=reminder_msg,
                 context_files=context_files,

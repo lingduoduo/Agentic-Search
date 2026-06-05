@@ -210,7 +210,7 @@ class ChatTurnSetup:
     forced_tool_id: int | None
     files: list[ChatLoadedFile]
     chat_files_for_tools: list[ChatFile]
-    custom_agent_prompt: str | None
+    persona_prompt: str | None
     user_memory_context: UserMemoryContext
     # Was the last assistant message a clarification request?
     skip_clarification: bool

@@ -34,7 +34,7 @@ from src.backend.chat.chat_utils import build_file_context
 from src.backend.chat.chat_utils import convert_chat_history
 from src.backend.chat.chat_utils import create_chat_history_chain
 from src.backend.chat.chat_utils import create_chat_session_from_request
-from src.backend.chat.chat_utils import get_custom_agent_prompt
+from src.backend.chat.chat_utils import get_persona_prompt
 from src.backend.chat.chat_utils import is_last_assistant_message_clarification
 from src.backend.chat.chat_utils import load_all_chat_files
 from src.backend.chat.compression import calculate_total_history_tokens
@@ -1232,7 +1232,7 @@ def build_chat_turn(
     # This prompt may come from the Agent or Project. Fetched here (before run_llm_loop)
     # because the inner loop shouldn't need to access the DB-form chat history, but we
     # need it early for token reservation.
-    custom_agent_prompt = get_custom_agent_prompt(persona, chat_session)
+    persona_prompt = get_persona_prompt(persona, chat_session)
 
     # When use_memories is disabled, strip memories from the prompt context but keep
     # user info/preferences. The full context is still passed to the LLM loop for
@@ -1245,7 +1245,7 @@ def build_chat_turn(
 
     # ── Token reservation ────────────────────────────────────────────────────
     max_reserved_system_prompt_tokens_str = (persona.system_prompt or "") + (
-        custom_agent_prompt or ""
+        persona_prompt or ""
     )
     reserved_token_count = calculate_reserved_tokens(
         db_session=db_session,
@@ -1433,7 +1433,7 @@ def build_chat_turn(
         forced_tool_id=forced_tool_id,
         files=files,
         chat_files_for_tools=chat_files_for_tools,
-        custom_agent_prompt=custom_agent_prompt,
+        persona_prompt=persona_prompt,
         user_memory_context=user_memory_context,
         skip_clarification=skip_clarification,
         check_is_connected=check_is_connected,
@@ -1567,7 +1567,7 @@ def _run_models(
                 state_container=sc,
                 simple_chat_history=list(setup.simple_chat_history),
                 tools=model_tools,
-                custom_agent_prompt=setup.custom_agent_prompt,
+                persona_prompt=setup.persona_prompt,
                 context_files=setup.extracted_context_files,
                 persona=setup.persona,
                 user_memory_context=setup.user_memory_context,

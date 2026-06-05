@@ -137,12 +137,12 @@ def calculate_reserved_tokens(
     Calculate reserved token count for system prompt and user files.
 
     This is used for token estimation purposes to reserve space for:
-    - The system prompt (base + custom agent prompt + all guidance)
+    - The system prompt (base + persona prompt + all guidance)
     - User files attached to the message
 
     Args:
         db_session: Database session
-        persona_system_prompt: Custom agent system prompt (can be empty string)
+        persona_system_prompt: Persona system prompt (can be empty string)
         token_counter: Function that counts tokens in text
         files: List of file descriptors from the chat message (optional)
         user_memory_context: User memory context (optional)
@@ -162,11 +162,11 @@ def calculate_reserved_tokens(
         include_all_guidance=True,
     )
 
-    custom_agent_prompt = persona_system_prompt if persona_system_prompt else ""
+    persona_prompt = persona_system_prompt if persona_system_prompt else ""
 
     reserved_token_count = token_counter(
         # Annoying that the dict has no attributes now
-        custom_agent_prompt + " " + fake_system_prompt
+        persona_prompt + " " + fake_system_prompt
     )
 
     # Calculate total token count for files in the last message
@@ -272,7 +272,7 @@ def build_system_prompt(
     include_all_guidance: bool = False,
 ) -> str:
     """Should only be called with the default behavior system prompt.
-    If the user has replaced the default behavior prompt with their custom agent prompt, do not call this function.
+    If the user has replaced the default behavior prompt with their persona prompt, do not call this function.
     """
     system_prompt = handle_date_awareness(base_system_prompt, datetime_aware)
 
