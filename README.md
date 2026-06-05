@@ -27,7 +27,6 @@ A retrieval-backed agent platform for building high-quality search, research, an
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/backend/servers/retrieval/hybrid_rerank.py` |
-| 🔬 Deep Research | `src/agents/deep_research/`, `src/context/`, `src/retrieval/` |
 | 🤖 Custom Agents | `src/agents/custom.py`, `src/tools/`, `src/backend/servers/query_and_chat/` |
 | 🌍 Web Search | `src/backend/servers/retrieval/google.py`, `serp.py`, `browser.py` |
 | 📚 Document Indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py`, `src/retrieval/indexing_pipeline.py` |
@@ -131,9 +130,6 @@ All examples run without a live model or retrieval server unless noted.
 **Agent loops**
 
 ```bash
-python3 -m examples.run_search_trace_workflow          # deterministic trace (no GPU)
-python3 -m examples.run_search_trace_workflow --sft    # build SFT record from trace
-python3 -m examples.run_search_agent_loop              # minimal SearchAgentLoop usage
 python3 -m examples.run_search_pipeline                # pipeline with access filters
 ```
 
@@ -162,17 +158,6 @@ python3 -m examples.run_agentic_search \
 
 ```bash
 python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRPO (no GPU)
-```
-
-**Intent classifier**
-
-```bash
-python3 -m examples.run_intent_training generate \
-  --corpus data/corpus.jsonl --vocabulary data/vocabulary_corpus.json \
-  --output data/intent_examples.json
-
-python3 -m examples.run_intent_training train \
-  --examples data/intent_examples.json --output models/intent_classifier.pt
 ```
 
 **Dataset preparation**
@@ -375,8 +360,6 @@ The training pipeline is modular: generate trajectories → score with rewards �
 
 | Task | Entry point |
 |------|-------------|
-| Deterministic trace | `python3 -m examples.run_search_trace_workflow` |
-| SFT record from trace | `python3 -m examples.run_search_trace_workflow --sft` |
 | QA parquet preparation | `python3 -m examples.prepare_search_qa_dataset` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Reward function | `src/training/reward.py` |
