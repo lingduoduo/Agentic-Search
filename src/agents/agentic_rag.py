@@ -92,12 +92,17 @@ class AgenticRAGLoop:
         current_queries = bundle.all_queries()
 
         accumulated: dict[str, ContextDocument] = {}
+        seen_queries: set[str] = set()
         rounds_used = 0
 
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
+            novel_queries = [q for q in current_queries if q not in seen_queries]
+            if not novel_queries:
+                break
+            seen_queries.update(novel_queries)
 
-            for q in current_queries:
+            for q in novel_queries:
                 try:
                     ctx = await retrieve_context(
                         q,
@@ -120,10 +125,10 @@ class AgenticRAGLoop:
                 if self._is_sufficient(question, merged):
                     break
                 follow_ups = self._generate_followup(question, merged)
-                if follow_ups:
-                    current_queries = follow_ups
-                else:
+                novel_follow_ups = [q for q in follow_ups if q not in seen_queries]
+                if not novel_follow_ups:
                     break
+                current_queries = novel_follow_ups
 
         gen_result = generate_answer(
             AnswerGenerationRequest(

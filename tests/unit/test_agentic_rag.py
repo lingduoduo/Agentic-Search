@@ -32,9 +32,13 @@ def _llm_responses(*responses: str) -> MagicMock:
 @pytest.mark.asyncio
 async def test_run_returns_result_on_single_round():
     bundle = _make_bundle(["d1", "d2"])
-    # LLM: decompose → ["what is FAISS"], hyde → "FAISS is a lib", sufficiency → "yes"
+    # LLM: decompose → ["what is FAISS"], hyde → "FAISS is a lib", step_back, sufficiency → "yes"
     llm = _llm_responses(
-        "what is FAISS", "FAISS is a vector search library.", "yes", "Answer text [D1]."
+        "what is FAISS",
+        "FAISS is a vector search library.",
+        "broader query",
+        "yes",
+        "Answer text [D1].",
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
@@ -58,10 +62,11 @@ async def test_run_returns_result_on_single_round():
 @pytest.mark.asyncio
 async def test_run_iterates_when_insufficient():
     bundle = _make_bundle(["d1"])
-    # decompose, hyde, sufficiency round 1 → "no", follow-up, sufficiency round 2 → "yes", answer
+    # decompose, hyde, step_back, sufficiency round 1 → "no", follow-up, sufficiency round 2 → "yes", answer
     llm = _llm_responses(
         "sub-query 1",  # decompose
         "HyDE text",  # hyde
+        "broader question",  # step_back
         "no",  # sufficiency round 1
         "follow-up query",  # follow-up generation
         "yes",  # sufficiency round 2
@@ -90,6 +95,7 @@ async def test_run_caps_at_max_rounds():
     llm = _llm_responses(
         "sub",  # decompose
         "hyde",  # hyde
+        "broader",  # step_back
         "no",  # sufficiency round 1
         "follow-up",  # follow-up
         "no",  # sufficiency round 2 (max_rounds=2 → no check, just synth)
@@ -138,7 +144,7 @@ async def test_accumulates_unique_docs_across_rounds():
     bundle_r2 = _make_bundle(["d2"])
     bundles = [bundle_r1, bundle_r2]
 
-    llm = _llm_responses("sub", "hyde", "no", "follow-up", "yes", "answer")
+    llm = _llm_responses("sub", "hyde", "broader", "no", "follow-up", "yes", "answer")
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     call_count = 0
@@ -176,3 +182,35 @@ async def test_run_handles_retrieval_error_gracefully():
 
     assert isinstance(result, AgenticRAGResult)
     assert result.rounds_used >= 1  # attempted at least once
+
+
+# ---------------------------------------------------------------------------
+# Seen-query deduplication
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_no_duplicate_retrieval_queries_across_rounds():
+    """Follow-up queries that duplicate earlier queries should not trigger new retrievals."""
+    bundle = _make_bundle(["d1"])
+    llm = _llm_responses(
+        "unique sub-query",  # decompose
+        "HyDE text",  # hyde
+        "broader question",  # step_back
+        "no",  # sufficiency round 1
+        "unique sub-query",  # follow-up returns a duplicate → filtered → loop breaks
+        "answer",  # generate_answer
+    )
+    config = AgenticRAGConfig(max_rounds=3, topk=5)
+    retrieval_calls: list[str] = []
+
+    async def _track_retrieve(query, **kwargs):
+        retrieval_calls.append(query)
+        return bundle
+
+    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track_retrieve):
+        loop = AgenticRAGLoop(config, llm=llm)
+        result = await loop.run("what is FAISS?")
+
+    assert retrieval_calls.count("unique sub-query") == 1
+    assert result.rounds_used >= 1
