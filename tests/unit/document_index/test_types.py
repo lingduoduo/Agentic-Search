@@ -90,3 +90,35 @@ def test_external_access_defaults():
     assert ea.external_user_emails == []
     assert ea.external_user_group_ids == []
     assert ea.is_public is False
+
+
+def test_constants_importable():
+    from src.backend.configs.constants import (
+        PUBLIC_DOC_PAT,
+        RETURN_SEPARATOR,
+        INDEX_SEPARATOR,
+        SOURCE_TYPE,
+    )
+
+    assert PUBLIC_DOC_PAT == "PUBLIC"
+    assert isinstance(RETURN_SEPARATOR, str)
+    assert isinstance(INDEX_SEPARATOR, str)
+    assert SOURCE_TYPE == "source_type"
+
+
+def test_vector_db_settings_defaults():
+    from src.backend.configs.app_configs import VectorDbSettings
+
+    s = VectorDbSettings()
+    assert s.disable_vector_db is False
+    assert s.disable_vespa is False
+    assert s.enable_opensearch is False
+    assert "localhost" in s.vespa_host
+    assert "localhost" in s.opensearch_host
+
+
+def test_vector_db_settings_custom():
+    from src.backend.configs.app_configs import VectorDbSettings
+
+    s = VectorDbSettings(disable_vector_db=True)
+    assert s.disable_vector_db is True

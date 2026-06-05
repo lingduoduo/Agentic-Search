@@ -45,3 +45,30 @@ class FileOrigin(str, Enum):
 class MilestoneRecordType(str, Enum):
     CHAT = "chat"
     SEARCH = "search"
+
+
+# Document index and retrieval constants
+# Represents a document accessible to all users (no access restriction).
+PUBLIC_DOC_PAT = "PUBLIC"
+
+# Separator used when joining multi-part content (title + body, etc.)
+RETURN_SEPARATOR = "\n\n"
+
+# Separator used when building index names
+INDEX_SEPARATOR = "__"
+
+# Field name for source type in Vespa YQL and OpenSearch schema
+SOURCE_TYPE = "source_type"
+
+# Key for the reindex flag in the key-value store
+KV_REINDEX_KEY = "kv_reindex_key"
+
+# Redis lock name for Vespa reindex coordination
+VESPA_REINDEX_REDIS_LOCK = "vespa_reindex_lock"
+
+# Blurb size used for title prefix matching during content cleanup
+BLURB_SIZE = 250
+
+# OpenSearch migration constants
+OPENSEARCH_MIGRATION_ENABLED_KEY = "opensearch_migration_enabled"
+OPENSEARCH_RETRIEVAL_ENABLED_KEY = "opensearch_retrieval_enabled"
