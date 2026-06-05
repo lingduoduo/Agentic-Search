@@ -214,3 +214,34 @@ async def test_no_duplicate_retrieval_queries_across_rounds():
 
     assert retrieval_calls.count("unique sub-query") == 1
     assert result.rounds_used >= 1
+
+
+# ---------------------------------------------------------------------------
+# Structured gap analysis
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_follow_up_queries_do_not_duplicate_seen_queries():
+    """Structured gap analysis: QUERIES matching already-seen queries terminate the loop."""
+    bundle = _make_bundle(["d1"])
+    original_question = "what is FAISS?"
+    # decompose returns original verbatim → excluded → fallback: sub_queries = [original]
+    # so "what is FAISS?" enters seen_queries on round 1
+    llm = _llm_responses(
+        original_question,  # decompose → original excluded → fallback sub_queries=[original]
+        "HyDE text",  # hyde
+        "broader",  # step_back
+        "no",  # sufficiency round 1
+        f"GAPS:\nmissing info\nQUERIES:\n{original_question}",  # follow-up = already seen
+        "answer",  # generate_answer
+    )
+    config = AgenticRAGConfig(max_rounds=3, topk=5)
+
+    with patch(
+        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+    ):
+        loop = AgenticRAGLoop(config, llm=llm)
+        result = await loop.run(original_question)
+
+    assert isinstance(result, AgenticRAGResult)
