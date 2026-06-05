@@ -122,3 +122,70 @@ def test_vector_db_settings_custom():
 
     s = VectorDbSettings(disable_vector_db=True)
     assert s.disable_vector_db is True
+
+
+def test_utils_importable():
+    from src.backend.document_index.utils import (
+        setup_logger,
+        batch_generator,
+        remove_invalid_unicode_chars,
+        convert_metadata_list_of_strings_to_dict,
+        get_experts_stores_representations,
+        split_relationship_id,
+    )
+
+    assert callable(setup_logger)
+    assert callable(batch_generator)
+    assert callable(remove_invalid_unicode_chars)
+    assert callable(convert_metadata_list_of_strings_to_dict)
+    assert callable(get_experts_stores_representations)
+    assert callable(split_relationship_id)
+
+
+def test_batch_generator():
+    from src.backend.document_index.utils import batch_generator
+
+    items = list(range(10))
+    batches = list(batch_generator(items, 3))
+    assert batches == [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
+
+
+def test_batch_generator_exact():
+    from src.backend.document_index.utils import batch_generator
+
+    batches = list(batch_generator([1, 2, 3], 3))
+    assert batches == [[1, 2, 3]]
+
+
+def test_remove_invalid_unicode_chars():
+    from src.backend.document_index.utils import remove_invalid_unicode_chars
+
+    assert remove_invalid_unicode_chars("hello\x00world") == "helloworld"
+    assert remove_invalid_unicode_chars("normal text") == "normal text"
+
+
+def test_convert_metadata_list_of_strings_to_dict():
+    from src.backend.document_index.utils import (
+        convert_metadata_list_of_strings_to_dict,
+    )
+
+    result = convert_metadata_list_of_strings_to_dict(["key1:val1", "key2:val2"])
+    assert result == {"key1": "val1", "key2": "val2"}
+
+
+def test_convert_metadata_dict_passthrough():
+    from src.backend.document_index.utils import (
+        convert_metadata_list_of_strings_to_dict,
+    )
+
+    result = convert_metadata_list_of_strings_to_dict({"key": "val"})
+    assert result == {"key": "val"}
+
+
+def test_split_relationship_id():
+    from src.backend.document_index.utils import split_relationship_id
+
+    source, rel, target = split_relationship_id("doc1:RELATED:doc2")
+    assert source == "doc1"
+    assert rel == "RELATED"
+    assert target == "doc2"
