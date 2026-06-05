@@ -5,15 +5,15 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import model_validator
 
-from onyx.access.models import DocumentAccess
-from onyx.configs.constants import PUBLIC_DOC_PAT
-from onyx.context.search.enums import QueryType
-from onyx.context.search.models import IndexFilters
-from onyx.context.search.models import InferenceChunk
-from onyx.db.enums import EmbeddingPrecision
-from onyx.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
-from onyx.indexing.models import DocMetadataAwareIndexChunk
-from shared_configs.model_server_models import Embedding
+from src.retrieval.models import DocMetadataAwareIndexChunk
+from src.retrieval.models import DocumentAccess
+from src.retrieval.models import EmbeddingPrecision
+from src.retrieval.models import Embedding
+from src.retrieval.models import IndexFilters
+from src.retrieval.models import InferenceChunk
+from src.retrieval.models import QueryType
+from src.backend.configs.constants import PUBLIC_DOC_PAT
+from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
 
 # NOTE: "Document" in the naming convention is used to refer to the entire
 # document as represented in Onyx. What is actually stored in the index is the

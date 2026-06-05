@@ -7,17 +7,17 @@ out against a nonexistent Vespa/OpenSearch instance.
 
 from collections.abc import Iterable
 
-from onyx.context.search.enums import QueryType
-from onyx.context.search.models import IndexFilters
-from onyx.context.search.models import InferenceChunk
-from onyx.db.enums import EmbeddingPrecision
-from onyx.document_index.interfaces_new import DocumentIndex
-from onyx.document_index.interfaces_new import DocumentInsertionRecord
-from onyx.document_index.interfaces_new import DocumentSectionRequest
-from onyx.document_index.interfaces_new import IndexingMetadata
-from onyx.document_index.interfaces_new import MetadataUpdateRequest
-from onyx.indexing.models import DocMetadataAwareIndexChunk
-from shared_configs.model_server_models import Embedding
+from src.retrieval.models import DocMetadataAwareIndexChunk
+from src.retrieval.models import EmbeddingPrecision
+from src.retrieval.models import Embedding
+from src.retrieval.models import IndexFilters
+from src.retrieval.models import InferenceChunk
+from src.retrieval.models import QueryType
+from src.backend.document_index.interfaces_new import DocumentIndex
+from src.backend.document_index.interfaces_new import DocumentInsertionRecord
+from src.backend.document_index.interfaces_new import DocumentSectionRequest
+from src.backend.document_index.interfaces_new import IndexingMetadata
+from src.backend.document_index.interfaces_new import MetadataUpdateRequest
 
 VECTOR_DB_DISABLED_ERROR = "Vector DB is disabled (DISABLE_VECTOR_DB=true). This operation requires a vector database."
 

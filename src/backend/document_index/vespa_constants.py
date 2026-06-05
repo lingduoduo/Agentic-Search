@@ -1,9 +1,12 @@
-from onyx.configs.app_configs import VESPA_CLOUD_URL
-from onyx.configs.app_configs import VESPA_CONFIG_SERVER_HOST
-from onyx.configs.app_configs import VESPA_HOST
-from onyx.configs.app_configs import VESPA_PORT
-from onyx.configs.app_configs import VESPA_TENANT_PORT
-from onyx.configs.constants import SOURCE_TYPE
+import os
+
+from src.backend.configs.constants import SOURCE_TYPE  # noqa: F401 — re-exported
+
+VESPA_CLOUD_URL: str | None = os.environ.get("VESPA_CLOUD_URL") or None
+VESPA_CONFIG_SERVER_HOST: str = os.environ.get("VESPA_CONFIG_SERVER_HOST", "localhost")
+VESPA_HOST: str = os.environ.get("VESPA_HOST", "localhost")
+VESPA_PORT: int = int(os.environ.get("VESPA_PORT", "8080"))
+VESPA_TENANT_PORT: int = int(os.environ.get("VESPA_TENANT_PORT", "19071"))
 
 # config server
 
