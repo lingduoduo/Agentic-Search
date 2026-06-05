@@ -317,3 +317,56 @@ def test_split_sentences_preserves_long_sentences():
     text = "This is a sufficiently long first sentence about vector search. This is another sentence about BM25 ranking."
     sentences = _split_sentences(text)
     assert len(sentences) == 2
+
+
+# ---------------------------------------------------------------------------
+# build_answer_prompt — synthesis quality
+# ---------------------------------------------------------------------------
+
+
+from src.context.models import ContextDocument  # noqa: E402
+
+
+def _make_bundle_for_prompt() -> SearchContextBundle:
+    return SearchContextBundle(
+        query="What is FAISS?",
+        documents=[
+            ContextDocument(
+                id="D1",
+                title="FAISS Overview",
+                content="FAISS is a library for efficient similarity search.",
+                score=0.9,
+            )
+        ],
+    )
+
+
+def test_answer_prompt_instructs_on_uncertainty():
+    prompt = build_answer_prompt("What is FAISS?", _make_bundle_for_prompt())
+    full_text = prompt.system + prompt.user
+    assert "uncertain" in full_text.lower() or "missing" in full_text.lower()
+
+
+def test_answer_prompt_instructs_on_citation_format():
+    prompt = build_answer_prompt("What is FAISS?", _make_bundle_for_prompt())
+    full_text = prompt.system + prompt.user
+    assert "[D" in full_text
+
+
+def test_answer_prompt_instructs_on_conflicting_evidence():
+    prompt = build_answer_prompt("What is FAISS?", _make_bundle_for_prompt())
+    assert (
+        "conflict" in prompt.system.lower()
+        or "contradict" in prompt.system.lower()
+        or "disagree" in prompt.system.lower()
+    )
+
+
+def test_answer_prompt_forbids_fabrication():
+    prompt = build_answer_prompt("What is FAISS?", _make_bundle_for_prompt())
+    full_text = prompt.system + prompt.user
+    assert (
+        "fabricat" in full_text.lower()
+        or "not in the context" in full_text.lower()
+        or "only" in full_text.lower()
+    )

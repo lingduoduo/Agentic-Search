@@ -45,14 +45,23 @@ def build_answer_prompt(
 ) -> PromptBundle:
     config = config or AgentBehaviorConfig()
     system = (
-        "You are a retrieval-grounded assistant.\n"
-        f"{build_agent_behavior_prompt(config)}\n"
-        "If the context is insufficient, say what is missing."
+        "You are a retrieval-grounded research assistant.\n"
+        f"{build_agent_behavior_prompt(config)}\n\n"
+        "Synthesis rules:\n"
+        "1. Base every claim on the retrieved context. Do not fabricate facts not present in the context.\n"
+        "2. Cite each claim inline using the document label, e.g. [D1] or [D2].\n"
+        "3. If the context contains conflicting or contradictory information, note the disagreement "
+        "and cite both sides rather than choosing one silently.\n"
+        "4. For multi-step questions, reason through each step explicitly before stating the conclusion.\n"
+        "5. If the context is insufficient to answer fully, state exactly what information is missing "
+        "rather than speculating."
     )
     user = (
         f"Question:\n{question}\n\n"
         f"Retrieved context:\n{context.to_context_text()}\n\n"
-        "Answer using only the retrieved context unless the context is explicitly insufficient."
+        "Answer using only the retrieved context. "
+        "For anything not covered by the context, say: "
+        "'The retrieved context does not contain information about [topic].'"
     )
     messages = [
         ChatMessage(role="system", content=system),
