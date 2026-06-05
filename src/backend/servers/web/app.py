@@ -623,7 +623,7 @@ def _source_providers_for(source_provider: str) -> list[str]:
     return [source_provider]
 
 
-_WEB_PROVIDERS = {"serpapi", "google"}
+_WEB_PROVIDERS = {"serpapi"}
 
 
 def _is_web_provider(source_provider: str) -> bool:
