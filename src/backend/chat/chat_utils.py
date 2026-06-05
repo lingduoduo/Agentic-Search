@@ -21,7 +21,6 @@ from src.backend.chat.models import FileToolMetadata
 from src.backend.chat.models import ToolCallSimple
 from src.backend.configs.constants import DEFAULT_PERSONA_ID
 from src.backend.servers.query_history.models import MessageType
-from src.backend.configs.constants import TMP_DRALPHA_PERSONA_NAME
 from src.retrieval.models import SearchDoc
 from src.backend.db.models import ChatMessage
 from src.backend.db.models import ChatSession
@@ -277,8 +276,7 @@ def process_kg_commands(
     db_session: Session,
 ) -> None:
     # KG config and setup are not available in this repo; this is a no-op.
-    if not persona_name.startswith(TMP_DRALPHA_PERSONA_NAME):
-        return
+    return
 
 
 @log_function_time(print_only=True)
@@ -663,8 +661,8 @@ def get_custom_agent_prompt(persona: Persona, chat_session: ChatSession) -> str 
 def is_last_assistant_message_clarification(chat_history: list[ChatMessage]) -> bool:
     """Check if the last assistant message in chat history was a clarification question.
 
-    This is used in the deep research flow to determine whether to skip the
-    clarification step when the user has already responded to a clarification.
+    Used to determine whether to skip the clarification step when the user
+    has already responded to a clarification.
 
     Args:
         chat_history: List of ChatMessage objects in chronological order

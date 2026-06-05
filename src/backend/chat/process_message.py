@@ -484,18 +484,6 @@ def get_cache_backend() -> _InMemoryCache:
 
 
 # ---------------------------------------------------------------------------
-# Deep research stub
-# ---------------------------------------------------------------------------
-
-
-def run_deep_research_llm_loop(**kwargs: Any) -> None:
-    logger.warning(
-        "run_deep_research_llm_loop is not implemented in this repo; "
-        "falling back to standard LLM loop."
-    )
-
-
-# ---------------------------------------------------------------------------
 # Telemetry / cost stubs
 # ---------------------------------------------------------------------------
 
@@ -1091,7 +1079,6 @@ def build_chat_turn(
             "has_files": len(new_msg_req.file_descriptors) > 0,
             "has_project": chat_session.project_id is not None,
             "has_persona": persona is not None and persona.id != DEFAULT_PERSONA_ID,
-            "deep_research": new_msg_req.deep_research,
         },
     )
 
@@ -1237,7 +1224,7 @@ def build_chat_turn(
         # Filter chat_history to only messages after the cutoff
         chat_history = [m for m in chat_history if m.id > cutoff_id]
 
-    # Compute skip-clarification flag for deep research path (cheap, always available)
+    # Compute skip-clarification flag (cheap, always available)
     skip_clarification = is_last_assistant_message_clarification(chat_history)
 
     user_memory_context = get_memories(user, db_session)
@@ -1575,42 +1562,25 @@ def _run_models(
                 )
 
             # Per-thread copy: run_llm_loop mutates simple_chat_history in-place.
-            if n_models == 1 and setup.new_msg_req.deep_research:
-                if setup.chat_session.project_id:
-                    raise RuntimeError("Deep research is not supported for projects")
-                run_deep_research_llm_loop(
-                    emitter=model_emitter,
-                    state_container=sc,
-                    simple_chat_history=list(setup.simple_chat_history),
-                    tools=model_tools,
-                    custom_agent_prompt=setup.custom_agent_prompt,
-                    llm=model_llm,
-                    token_counter=get_llm_token_counter(model_llm),
-                    skip_clarification=setup.skip_clarification,
-                    user_identity=setup.user_identity,
-                    chat_session_id=str(setup.chat_session.id),
-                    all_injected_file_metadata=setup.all_injected_file_metadata,
-                )
-            else:
-                run_llm_loop(
-                    emitter=model_emitter,
-                    state_container=sc,
-                    simple_chat_history=list(setup.simple_chat_history),
-                    tools=model_tools,
-                    custom_agent_prompt=setup.custom_agent_prompt,
-                    context_files=setup.extracted_context_files,
-                    persona=setup.persona,
-                    user_memory_context=setup.user_memory_context,
-                    llm=model_llm,
-                    token_counter=get_llm_token_counter(model_llm),
-                    forced_tool_id=setup.forced_tool_id,
-                    user_identity=setup.user_identity,
-                    chat_session_id=str(setup.chat_session.id),
-                    chat_files=setup.chat_files_for_tools,
-                    include_citations=setup.new_msg_req.include_citations,
-                    all_injected_file_metadata=setup.all_injected_file_metadata,
-                    inject_memories_in_prompt=user.use_memories,
-                )
+            run_llm_loop(
+                emitter=model_emitter,
+                state_container=sc,
+                simple_chat_history=list(setup.simple_chat_history),
+                tools=model_tools,
+                custom_agent_prompt=setup.custom_agent_prompt,
+                context_files=setup.extracted_context_files,
+                persona=setup.persona,
+                user_memory_context=setup.user_memory_context,
+                llm=model_llm,
+                token_counter=get_llm_token_counter(model_llm),
+                forced_tool_id=setup.forced_tool_id,
+                user_identity=setup.user_identity,
+                chat_session_id=str(setup.chat_session.id),
+                chat_files=setup.chat_files_for_tools,
+                include_citations=setup.new_msg_req.include_citations,
+                all_injected_file_metadata=setup.all_injected_file_metadata,
+                inject_memories_in_prompt=user.use_memories,
+            )
 
             model_succeeded[model_idx] = True
 
@@ -2048,7 +2018,7 @@ def handle_multi_model_stream(
     which handles both single-model and multi-model execution via the same path.
 
     Args:
-        new_msg_req: The incoming chat request. ``deep_research`` must be ``False``.
+        new_msg_req: The incoming chat request.
         user: Authenticated user making the request.
         llm_overrides: Exactly 2 or 3 ``LLMOverride`` objects — one per model to run.
         litellm_additional_headers: Extra headers forwarded to each LLM provider.
@@ -2063,13 +2033,6 @@ def handle_multi_model_stream(
     if n_models < 2 or n_models > 3:
         yield StreamingError(
             error="Multi-model requires 2-3 overrides, got %d" % n_models,
-            error_code="VALIDATION_ERROR",
-            is_retryable=False,
-        )
-        return
-    if new_msg_req.deep_research:
-        yield StreamingError(
-            error="Multi-model is not supported with deep research",
             error_code="VALIDATION_ERROR",
             is_retryable=False,
         )

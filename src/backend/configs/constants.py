@@ -32,9 +32,6 @@ class DocumentSource(str, Enum):
 # Persona IDs
 DEFAULT_PERSONA_ID: int = 0
 
-# Misc constants used across the codebase
-TMP_DRALPHA_PERSONA_NAME: str = "__deep_research__"
-
 
 # FileOrigin enum
 class FileOrigin(str, Enum):

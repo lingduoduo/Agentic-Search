@@ -140,8 +140,6 @@ def test_tool_seeding_migration() -> None:
 
         # Check PythonTool
 
-        # Check ResearchAgent (Deep Research as a tool)
-
         # Check FileReaderTool
 
         # Check MemoryTool
