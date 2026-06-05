@@ -154,6 +154,39 @@ class EvidenceSnippet:
 
 
 @dataclass(frozen=True)
+class CitationVerdict:
+    """Grounding verdict for a single [Dx] citation in a generated answer."""
+
+    citation: str
+    document_found: bool
+    overlap_score: float
+    is_grounded: bool
+    sentence: str
+
+
+@dataclass(frozen=True)
+class GroundingReport:
+    """Per-answer report produced by GroundingVerifier."""
+
+    verdicts: list[CitationVerdict]
+    answer_clean: str
+
+    @property
+    def dangling_citations(self) -> list[str]:
+        return [v.citation for v in self.verdicts if not v.document_found]
+
+    @property
+    def ungrounded_citations(self) -> list[str]:
+        return [v.citation for v in self.verdicts if not v.is_grounded]
+
+    @property
+    def grounding_rate(self) -> float:
+        if not self.verdicts:
+            return 1.0
+        return sum(1 for v in self.verdicts if v.is_grounded) / len(self.verdicts)
+
+
+@dataclass(frozen=True)
 class SearchContextBundle:
     query: str
     documents: list[ContextDocument]
@@ -192,6 +225,7 @@ class AnswerGenerationRequest:
     context: SearchContextBundle
     chat_history: list[ChatMessage] = field(default_factory=list)
     behavior: AgentBehaviorConfig = field(default_factory=AgentBehaviorConfig)
+    verify_grounding: bool = False
 
 
 @dataclass(frozen=True)
@@ -200,6 +234,7 @@ class AnswerGenerationResult:
     citations: list[str]
     context: SearchContextBundle
     prompt: PromptBundle
+    grounding_report: GroundingReport | None = None
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

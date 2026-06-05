@@ -47,11 +47,21 @@ def generate_answer(
     else:
         raw = llm.complete(prompt.messages)
         answer = raw.text if isinstance(raw, LLMResponse) else str(raw)
+
+    grounding_report = None
+    if request.verify_grounding:
+        from .grounding import GroundingVerifier
+
+        report = GroundingVerifier().verify(answer, request.context)
+        answer = report.answer_clean
+        grounding_report = report
+
     return AnswerGenerationResult(
         answer=answer,
         citations=extract_citations(answer),
         context=request.context,
         prompt=prompt,
+        grounding_report=grounding_report,
     )
 
 
