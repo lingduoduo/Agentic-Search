@@ -23,6 +23,7 @@ from src.backend.llm.interfaces import LLMConfig
 from src.backend.llm.providers import OpenAICompatibleLLM
 from src.backend.search.process_search_query import run_expanded_search
 from src.backend.secondary_llm_flows import expand_keywords
+from src.backend.secondary_llm_flows.query_expansion import with_temporal_context
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient
@@ -719,6 +720,8 @@ async def _run_hybrid_search(
                 search_url=search_url,
                 page_size=top_k,
             )
+            if _is_web_provider(provider):
+                pages = await fetch_pages_concurrently(pages, max_chars=2000)
             documents.extend(
                 _documents_from_search_pages(
                     pages,
@@ -738,13 +741,18 @@ async def _run_hybrid_search(
 
 def _expanded_queries(query: str, llm: LLMClient | None) -> list[str]:
     if llm is None:
-        return [query]
-    try:
-        expansions = expand_keywords(query, llm)
-    except Exception:
-        logger.exception("Query expansion failed for hybrid web search")
         expansions = []
-    return [query] + [expanded for expanded in expansions if expanded != query]
+    else:
+        try:
+            expansions = expand_keywords(query, llm)
+        except Exception:
+            logger.exception("Query expansion failed for hybrid web search")
+            expansions = []
+    queries = [query] + [e for e in expansions if e != query]
+    temporal = with_temporal_context(query)
+    if temporal != query and temporal not in queries:
+        queries.append(temporal)
+    return queries
 
 
 def _documents_from_search_pages(

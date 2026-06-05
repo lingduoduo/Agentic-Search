@@ -272,3 +272,80 @@ def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
         )
     )
     assert not fetch_called
+
+
+def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
+    """Hybrid search fetches full page content for serpapi results."""
+    from src.tools.search import SearchPage
+    from src.backend.servers.web.app import _run_hybrid_search
+    import asyncio
+
+    pages = [SearchPage(title="T", summary="snippet", url="https://t.test")]
+    fetched = [SearchPage(title="T", summary="full article body", url="https://t.test")]
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return pages
+
+    async def _fake_fetch_pages(pgs, *, max_chars, timeout_seconds=10):
+        return fetched
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.expand_keywords",
+        lambda query, llm: [],
+    )
+
+    result = asyncio.run(
+        _run_hybrid_search(
+            "latest AI news",
+            llm=None,
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="serpapi",
+        )
+    )
+    assert any("full article body" in doc.content for doc in result.documents)
+
+
+def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkeypatch):
+    """Temporal variant is added to executed queries for time-sensitive queries."""
+    from src.backend.servers.web.app import _run_hybrid_search
+    from src.tools.search import SearchPage
+    import asyncio
+
+    executed: list[str] = []
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        executed.append(query)
+        return [SearchPage(title="T", summary="s", url="https://t.test")]
+
+    async def _fake_fetch_pages(pages, **kwargs):
+        return pages
+
+    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+    )
+    monkeypatch.setattr(
+        "src.backend.servers.web.app.expand_keywords",
+        lambda query, llm: [],
+    )
+
+    result = asyncio.run(
+        _run_hybrid_search(
+            "latest AI models",
+            llm=None,
+            search_url="http://localhost:8000/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="serpapi",
+        )
+    )
+    from datetime import datetime
+
+    year = str(datetime.now().year)
+    assert any(year in q for q in result.executed_queries)
