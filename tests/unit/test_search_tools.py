@@ -7,6 +7,7 @@ import asyncio
 from src.tools.search import (
     SearchPage,
     build_search_tool,
+    fetch_pages_concurrently,
     format_search_pages,
     google_custom_search,
     search_for_detail,
@@ -184,3 +185,78 @@ def test_search_for_detail_fetches_pages_concurrently(monkeypatch):
     detail = asyncio.run(search_for_detail("query", chunk_size=20))
 
     assert detail == "Title: T\nURL: https://t\nContent: content"
+
+
+def test_html_to_text_prefers_article_element():
+    """_html_to_text should extract <article> content before falling back to <p> tags."""
+    from src.tools.search import _html_to_text
+
+    html = """
+    <html><body>
+      <header><p>Navigation noise</p></header>
+      <article><p>Main article paragraph one.</p><p>Paragraph two.</p></article>
+      <footer><p>Footer noise</p></footer>
+    </body></html>
+    """
+    text = _html_to_text(html)
+    assert "Main article paragraph one." in text
+    # Should NOT include noise from header/footer when article has enough content
+    assert "Navigation noise" not in text
+
+
+def test_html_to_text_falls_back_to_p_tags_when_no_article():
+    from src.tools.search import _html_to_text
+
+    html = (
+        "<html><body><div><p>Content here.</p><p>More content.</p></div></body></html>"
+    )
+    text = _html_to_text(html)
+    assert "Content here." in text
+    assert "More content." in text
+
+
+def test_fetch_pages_concurrently_replaces_summary_with_fetched_content(monkeypatch):
+    async def _fake_fetch_url(url, *, max_length, timeout_seconds):
+        return f"fetched:{url}"
+
+    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+
+    pages = [
+        SearchPage(title="A", summary="short", url="https://a.test"),
+        SearchPage(title="B", summary="short", url="https://b.test"),
+    ]
+    enriched = asyncio.run(fetch_pages_concurrently(pages, max_chars=2000))
+
+    assert enriched[0].summary == "fetched:https://a.test"
+    assert enriched[1].summary == "fetched:https://b.test"
+    assert enriched[0].title == "A"  # title preserved
+
+
+def test_fetch_pages_concurrently_skips_error_and_empty_url_pages(monkeypatch):
+    async def _fake_fetch_url(url, **kwargs):
+        return "fetched"
+
+    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+
+    pages = [
+        SearchPage(error="oops"),
+        SearchPage(title="NoURL", summary="s", url=""),
+        SearchPage(title="OK", summary="s", url="https://ok.test"),
+    ]
+    enriched = asyncio.run(fetch_pages_concurrently(pages, max_chars=2000))
+
+    assert enriched[0].error == "oops"  # error page unchanged
+    assert enriched[1].summary == "s"  # no-URL page unchanged
+    assert enriched[2].summary == "fetched"
+
+
+def test_fetch_pages_concurrently_keeps_original_on_fetch_error(monkeypatch):
+    async def _fake_fetch_url(url, **kwargs):
+        return "[fetch error] timeout"
+
+    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+
+    pages = [SearchPage(title="T", summary="original", url="https://t.test")]
+    enriched = asyncio.run(fetch_pages_concurrently(pages, max_chars=2000))
+
+    assert enriched[0].summary == "original"
