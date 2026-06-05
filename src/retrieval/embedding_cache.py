@@ -1,11 +1,12 @@
-"""Redis-backed cache for query embeddings.
+"""Redis-backed cache for query embeddings + OpenAI embedding provider.
 
-Cache key: ``emb:{sha256(model_path + ":" + text)}``.
-Value: raw numpy bytes prefixed with a 4-byte shape header so no extra
-dependencies (pickle, msgpack) are needed.
+Cache key: ``emb:{sha256(text)}``.
+Value: raw numpy bytes prefixed with a 4-byte shape header (no pickle needed).
 
-Falls back silently when Redis is unavailable — retrieval continues
-without caching and a warning is logged once on first failure.
+``EmbeddingCache`` — low-level Redis get/set.
+``OpenAIEmbedder``  — high-level: Redis first, OpenAI on miss, write back.
+
+Both classes degrade silently when Redis / OpenAI are unavailable.
 """
 
 from __future__ import annotations
@@ -115,3 +116,71 @@ class EmbeddingCache:
             pipe.execute()
         except Exception as exc:
             logger.debug("Cache pipeline set failed: %s", exc)
+
+
+class OpenAIEmbedder:
+    """Embed texts via OpenAI API with Redis as a look-aside cache.
+
+    Flow for every ``embed()`` call:
+      1. ``mget`` all keys from Redis — return hits immediately.
+      2. Call OpenAI only for cache misses (batched, ≤ 100 per request).
+      3. ``pipeline setex`` new embeddings back to Redis.
+      4. Return a stacked numpy array in original input order.
+
+    Args:
+        model: OpenAI embedding model name.
+        redis_url: Redis URL.  ``None`` disables caching (always calls OpenAI).
+        ttl_seconds: Redis TTL for stored embeddings.
+        api_key: Override ``OPENAI_API_KEY`` env var.
+    """
+
+    _BATCH_SIZE = 100  # OpenAI recommends ≤ 2048 inputs; 100 keeps latency low
+
+    def __init__(
+        self,
+        *,
+        model: str = "text-embedding-3-small",
+        redis_url: str | None = None,
+        ttl_seconds: int = 7 * 24 * 3600,
+        api_key: str | None = None,
+    ) -> None:
+        self.model = model
+        self._api_key = api_key  # None → openai reads OPENAI_API_KEY from env
+        self._cache = (
+            EmbeddingCache(redis_url=redis_url, ttl_seconds=ttl_seconds)
+            if redis_url
+            else None
+        )
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        """Return an (N, D) float32 array — one row per input text."""
+        if not texts:
+            return np.empty((0, 0), dtype=np.float32)
+
+        cached: list[np.ndarray | None] = (
+            self._cache.get_batch(texts) if self._cache else [None] * len(texts)
+        )
+
+        miss_indices = [i for i, v in enumerate(cached) if v is None]
+        if miss_indices:
+            miss_texts = [texts[i] for i in miss_indices]
+            fresh = self._call_openai(miss_texts)
+            if self._cache:
+                self._cache.set_batch(miss_texts, fresh)
+            for i, row in zip(miss_indices, fresh):
+                cached[i] = row
+
+        return np.stack(cached)  # type: ignore[arg-type]
+
+    def _call_openai(self, texts: list[str]) -> np.ndarray:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=self._api_key)
+        rows: list[list[float]] = []
+        for start in range(0, len(texts), self._BATCH_SIZE):
+            batch = texts[start : start + self._BATCH_SIZE]
+            response = client.embeddings.create(input=batch, model=self.model)
+            rows.extend(
+                item.embedding for item in sorted(response.data, key=lambda x: x.index)
+            )
+        return np.array(rows, dtype=np.float32)

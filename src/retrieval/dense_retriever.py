@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from .embedding_cache import EmbeddingCache
+from .embedding_cache import EmbeddingCache, OpenAIEmbedder
 from .index_builder import (
     _encode_batch,
     _normalize_embedding_rows,
@@ -50,6 +50,10 @@ class DenseRetrieverConfig:
     device: str = "cpu"
     # Optional Redis URL for query-embedding cache.  None disables caching.
     redis_url: str | None = None
+    # When set, use OpenAI embeddings instead of the local model.
+    # Requires OPENAI_API_KEY in env (or pass via openai_api_key).
+    openai_embedding_model: str | None = None
+    openai_api_key: str | None = None
 
     def validate(self) -> None:
         if not self.model_path:
@@ -134,15 +138,28 @@ class DenseRetriever:
             clone_options.shard = True
             self.index = faiss.index_cpu_to_all_gpus(self.index, clone_options)
         self.corpus = load_corpus(config.corpus_path)
-        self._cache = (
-            EmbeddingCache(redis_url=config.redis_url) if config.redis_url else None
-        )
+        if config.openai_embedding_model:
+            self._openai_embedder = OpenAIEmbedder(
+                model=config.openai_embedding_model,
+                redis_url=config.redis_url,
+                api_key=config.openai_api_key,
+            )
+            self._cache = None
+        else:
+            self._openai_embedder = None
+            self._cache = (
+                EmbeddingCache(redis_url=config.redis_url) if config.redis_url else None
+            )
 
     def encode_queries(self, queries: list[str]) -> np.ndarray:
         torch = _require_torch()
         non_empty = [q.strip() for q in queries if q.strip()]
         if not non_empty:
             return np.empty((0, 0), dtype=np.float32)
+
+        # OpenAI path: Redis cache is handled inside OpenAIEmbedder.
+        if self._openai_embedder is not None:
+            return self._openai_embedder.embed(non_empty)
 
         # --- Redis cache: resolve hits, collect misses ---
         if self._cache is not None:
