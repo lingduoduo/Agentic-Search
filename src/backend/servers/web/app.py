@@ -19,6 +19,8 @@ from src.backend.auth import user_from_headers
 from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
+from src.backend.llm.interfaces import LLMConfig
+from src.backend.llm.providers import OpenAICompatibleLLM
 from src.backend.search.process_search_query import run_expanded_search
 from src.backend.secondary_llm_flows import expand_keywords
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
@@ -240,6 +242,20 @@ def create_web_app(
     settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
     db = store or AgenticSearchStore(settings.db_path)
+    if llm is None:
+        import os
+
+        api_key = resolved.llm.api_key or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            llm = OpenAICompatibleLLM(
+                LLMConfig(
+                    model_provider=resolved.llm.model_provider,
+                    model_name=resolved.llm.model_name,
+                    api_key=api_key,
+                    api_base=resolved.llm.api_base,
+                    max_input_tokens=resolved.llm.max_input_tokens,
+                )
+            )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
