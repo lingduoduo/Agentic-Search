@@ -633,6 +633,7 @@ except ImportError:
         access_control_list: list | None = None
         document_set: list | None = None
         source_type: list | None = None
+        tags: dict | None = None
         time_cutoff: Any = None
         is_public: bool | None = None
         tenant_id: str | None = None
