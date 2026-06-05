@@ -18,15 +18,13 @@ _ARTIFACT_RE = re.compile(r'[\[\]"\'`]')
 # Strips leading list markers: "1.", "2)", "-", "*"
 _LIST_MARKER_RE = re.compile(r"^\s*(?:\d+[.)]\s*|[-*]\s*)")
 
-_TEMPORAL_KEYWORDS = frozenset(
+_TEMPORAL_SINGLE_WORDS = frozenset(
     {
         "latest",
         "recent",
         "current",
         "today",
         "now",
-        "this year",
-        "this month",
         "newest",
         "new",
         "updated",
@@ -35,12 +33,23 @@ _TEMPORAL_KEYWORDS = frozenset(
         "2026",
     }
 )
+_TEMPORAL_PHRASES = frozenset({"this year", "this month"})
+_TEMPORAL_WORD_RE = re.compile(
+    r"\b("
+    + "|".join(
+        re.escape(w) for w in sorted(_TEMPORAL_SINGLE_WORDS, key=len, reverse=True)
+    )
+    + r")\b",
+    re.IGNORECASE,
+)
 
 
 def is_time_sensitive(query: str) -> bool:
     """Return True when the query contains temporal keywords that suggest recency matters."""
+    if _TEMPORAL_WORD_RE.search(query):
+        return True
     lower = query.lower()
-    return any(kw in lower for kw in _TEMPORAL_KEYWORDS)
+    return any(phrase in lower for phrase in _TEMPORAL_PHRASES)
 
 
 def with_temporal_context(query: str) -> str:

@@ -147,3 +147,17 @@ def test_with_temporal_context_appends_date_to_time_sensitive_queries():
 def test_with_temporal_context_leaves_non_temporal_queries_unchanged():
     result = with_temporal_context("what is FAISS")
     assert result == "what is FAISS"
+
+
+def test_is_time_sensitive_no_false_positive_substring_match():
+    # "now" as a substring of common words should NOT trigger time sensitivity
+    assert is_time_sensitive("knowledge management") is False
+    assert is_time_sensitive("snowflake architecture") is False
+    assert is_time_sensitive("renewal policy") is False
+    assert is_time_sensitive("renowned scientist") is False
+
+
+def test_is_time_sensitive_detects_whole_word_now():
+    # "now" as a standalone word SHOULD trigger time sensitivity
+    assert is_time_sensitive("what is happening now") is True
+    assert is_time_sensitive("NOW is the time") is True

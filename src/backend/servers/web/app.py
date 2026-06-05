@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -713,15 +715,28 @@ async def _run_hybrid_search(
     executed_queries = _expanded_queries(query, llm)
     documents: list[ContextDocument] = []
     for provider in _source_providers_for(source_provider):
-        for expanded_query in executed_queries:
-            pages = await search_tool(
-                expanded_query,
-                provider=_tool_provider_for(provider),
-                search_url=search_url,
-                page_size=top_k,
+        tool_provider = _tool_provider_for(provider)
+        # Run all expanded queries concurrently for this provider
+        page_lists: list[list[SearchPage]] = list(
+            await asyncio.gather(
+                *[
+                    search_tool(
+                        expanded_query,
+                        provider=tool_provider,
+                        search_url=search_url,
+                        page_size=top_k,
+                    )
+                    for expanded_query in executed_queries
+                ]
             )
-            if _is_web_provider(provider):
-                pages = await fetch_pages_concurrently(pages, max_chars=2000)
+        )
+        if _is_web_provider(provider):
+            all_pages = [p for pages in page_lists for p in pages]
+            enriched = await fetch_pages_concurrently(all_pages, max_chars=2000)
+            # Re-partition enriched pages back into per-query slices
+            it = iter(enriched)
+            page_lists = [list(islice(it, len(pages))) for pages in page_lists]
+        for expanded_query, pages in zip(executed_queries, page_lists):
             documents.extend(
                 _documents_from_search_pages(
                     pages,
