@@ -123,6 +123,8 @@ class AgenticRAGLoop:
         bundle = self._enhancer.enhance(question)
         current_queries = bundle.all_queries()
 
+        # Key by content fingerprint so docs from different retrieve_context() calls
+        # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
         accumulated: dict[str, ContextDocument] = {}
         seen_queries: set[str] = set()
         rounds_used = 0
@@ -142,14 +144,25 @@ class AgenticRAGLoop:
                         top_k=self.config.topk,
                     )
                     for doc in ctx.documents:
-                        if doc.id not in accumulated:
-                            accumulated[doc.id] = doc
+                        key = doc.url or doc.content[:120]
+                        if key not in accumulated:
+                            accumulated[key] = doc
                 except Exception as exc:
                     logger.warning("Retrieval failed for query %r: %s", q, exc)
 
-            merged = SearchContextBundle(
-                query=question, documents=list(accumulated.values())
-            )
+            # Re-assign stable D1..DN IDs so citations are consistent across rounds.
+            stable_docs = [
+                ContextDocument(
+                    id=f"D{i}",
+                    title=doc.title,
+                    content=doc.content,
+                    url=doc.url,
+                    score=doc.score,
+                    metadata=doc.metadata,
+                )
+                for i, doc in enumerate(accumulated.values(), 1)
+            ]
+            merged = SearchContextBundle(query=question, documents=stable_docs)
 
             # On the last round always proceed to synthesis; otherwise check sufficiency.
             is_last = round_idx == self.config.max_rounds - 1

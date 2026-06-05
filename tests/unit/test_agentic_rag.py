@@ -159,9 +159,8 @@ async def test_accumulates_unique_docs_across_rounds():
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("multi-hop question?")
 
-    doc_ids = {doc.id for doc in result.context.documents}
-    assert "d1" in doc_ids
-    assert "d2" in doc_ids
+    # After accumulation docs are re-indexed to stable D1..DN IDs.
+    assert len(result.context.documents) == 2
 
 
 # ---------------------------------------------------------------------------
