@@ -29,14 +29,29 @@ Question: {question}
 Retrieved context (first 1500 chars):
 {context}""".strip()
 
-_FOLLOWUP_PROMPT = """The retrieved documents are not yet sufficient to answer the question.
-Generate 1-3 focused follow-up search queries that would fill the missing information.
-Return one query per line. No numbering, no extra text.
+_GAP_ANALYSIS_PROMPT = """You are analyzing whether retrieved documents fully answer a question.
 
 Question: {question}
 
-What was retrieved so far (first 800 chars):
-{context}""".strip()
+Retrieved context (first 1000 chars):
+{context}
+
+Step 1 — List the specific pieces of information the question requires but the context does NOT provide.
+         Write each gap as a short phrase (e.g. "training cost of GPT-4").
+         If nothing is missing, write "none".
+
+Step 2 — For each gap, write one focused search query that would retrieve the missing information.
+         Format: one query per line, no numbering, no extra text.
+         Queries only — do not repeat the gap phrases.
+
+Output format:
+GAPS:
+<gap 1>
+<gap 2>
+
+QUERIES:
+<query 1>
+<query 2>""".strip()
 
 
 def _llm_text(response: object) -> str:
@@ -49,6 +64,23 @@ def _llm_text(response: object) -> str:
 
 def _clean_line(line: str) -> str:
     return _ARTIFACT_RE.sub("", _LIST_MARKER_RE.sub("", line)).strip()
+
+
+def _parse_gap_queries(raw: str) -> list[str]:
+    """Extract the QUERIES section from a structured gap-analysis response.
+
+    Falls back to treating every non-empty line as a query when the
+    structured format is absent (e.g. legacy LLM response).
+    """
+    if "QUERIES:" in raw:
+        queries_section = raw.split("QUERIES:", 1)[1]
+    elif "GAPS:" in raw:
+        return []
+    else:
+        queries_section = raw
+    return [
+        _clean_line(line) for line in queries_section.splitlines() if _clean_line(line)
+    ]
 
 
 @dataclass(frozen=True)
@@ -91,13 +123,20 @@ class AgenticRAGLoop:
         bundle = self._enhancer.enhance(question)
         current_queries = bundle.all_queries()
 
+        # Key by content fingerprint so docs from different retrieve_context() calls
+        # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
         accumulated: dict[str, ContextDocument] = {}
+        seen_queries: set[str] = set()
         rounds_used = 0
 
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
+            novel_queries = [q for q in current_queries if q not in seen_queries]
+            if not novel_queries:
+                break
+            seen_queries.update(novel_queries)
 
-            for q in current_queries:
+            for q in novel_queries:
                 try:
                     ctx = await retrieve_context(
                         q,
@@ -105,14 +144,25 @@ class AgenticRAGLoop:
                         top_k=self.config.topk,
                     )
                     for doc in ctx.documents:
-                        if doc.id not in accumulated:
-                            accumulated[doc.id] = doc
+                        key = doc.url or doc.content[:120]
+                        if key not in accumulated:
+                            accumulated[key] = doc
                 except Exception as exc:
                     logger.warning("Retrieval failed for query %r: %s", q, exc)
 
-            merged = SearchContextBundle(
-                query=question, documents=list(accumulated.values())
-            )
+            # Re-assign stable D1..DN IDs so citations are consistent across rounds.
+            stable_docs = [
+                ContextDocument(
+                    id=f"D{i}",
+                    title=doc.title,
+                    content=doc.content,
+                    url=doc.url,
+                    score=doc.score,
+                    metadata=doc.metadata,
+                )
+                for i, doc in enumerate(accumulated.values(), 1)
+            ]
+            merged = SearchContextBundle(query=question, documents=stable_docs)
 
             # On the last round always proceed to synthesis; otherwise check sufficiency.
             is_last = round_idx == self.config.max_rounds - 1
@@ -120,10 +170,10 @@ class AgenticRAGLoop:
                 if self._is_sufficient(question, merged):
                     break
                 follow_ups = self._generate_followup(question, merged)
-                if follow_ups:
-                    current_queries = follow_ups
-                else:
+                novel_follow_ups = [q for q in follow_ups if q not in seen_queries]
+                if not novel_follow_ups:
                     break
+                current_queries = novel_follow_ups
 
         gen_result = generate_answer(
             AnswerGenerationRequest(
@@ -165,15 +215,15 @@ class AgenticRAGLoop:
     ) -> list[str]:
         if self.llm is None:
             return []
-        prompt = _FOLLOWUP_PROMPT.format(
+        prompt = _GAP_ANALYSIS_PROMPT.format(
             question=question,
-            context=context.to_context_text()[:800],
+            context=context.to_context_text()[:1000],
         )
         try:
             raw = _llm_text(
                 self.llm.complete([ChatMessage(role="user", content=prompt)])
             ).strip()
-            return [_clean_line(line) for line in raw.splitlines() if _clean_line(line)]
+            return _parse_gap_queries(raw)
         except Exception as exc:
-            logger.warning("Follow-up generation failed: %s", exc)
+            logger.warning("Gap analysis failed: %s", exc)
             return []

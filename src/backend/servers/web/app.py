@@ -19,6 +19,8 @@ from src.backend.auth import user_from_headers
 from src.backend.db.models import UserRecord
 from src.backend.configs import AppSettings
 from src.backend.configs import load_app_settings
+from src.backend.llm.interfaces import LLMConfig
+from src.backend.llm.providers import OpenAICompatibleLLM
 from src.backend.search.process_search_query import run_expanded_search
 from src.backend.secondary_llm_flows import expand_keywords
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
@@ -26,6 +28,7 @@ from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
 from src.context import build_context_bundle
+from src.context.utils import mmr_rerank
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.models import SearchFilters
@@ -239,6 +242,20 @@ def create_web_app(
     settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
     db = store or AgenticSearchStore(settings.db_path)
+    if llm is None:
+        import os
+
+        api_key = resolved.llm.api_key or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            llm = OpenAICompatibleLLM(
+                LLMConfig(
+                    model_provider=resolved.llm.model_provider,
+                    model_name=resolved.llm.model_name,
+                    api_key=api_key,
+                    api_base=resolved.llm.api_base,
+                    max_input_tokens=resolved.llm.max_input_tokens,
+                )
+            )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -620,13 +637,15 @@ async def _run_direct_search(
     search_url: str,
     top_k: int,
 ) -> list[ContextDocument]:
+    # Over-fetch so MMR has candidates beyond top_k to diversify from.
+    fetch_k = top_k * 2
     documents: list[ContextDocument] = []
     for provider in _source_providers_for(source_provider):
         pages = await search_tool(
             query,
             provider=_tool_provider_for(provider),
             search_url=search_url,
-            page_size=top_k,
+            page_size=fetch_k,
         )
         documents.extend(
             _documents_from_search_pages(
@@ -636,7 +655,9 @@ async def _run_direct_search(
                 start_index=len(documents) + 1,
             )
         )
-    return _reindex_documents(_dedupe_documents(documents))
+    deduped = _dedupe_documents(documents)
+    diversified = mmr_rerank(deduped, topk=top_k)
+    return _reindex_documents(diversified)
 
 
 async def _run_hybrid_search(
@@ -649,19 +670,21 @@ async def _run_hybrid_search(
     source_provider: str,
 ) -> _HybridSearchResult:
     if source_provider in {"retrieval", "browser"}:
+        # Over-fetch so MMR has candidates beyond top_k to diversify from.
         search_result = await run_expanded_search(
             query,
             llm=llm,
             search_url=search_url,
-            top_k=top_k,
+            top_k=top_k * 2,
             filters=filters,
             expand=True,
         )
         context = build_context_bundle(
             query,
             search_result.results,
-            max_documents=top_k,
+            max_documents=top_k * 2,
         )
+        diversified = mmr_rerank(context.documents, topk=top_k)
         return _HybridSearchResult(
             executed_queries=search_result.executed_queries,
             documents=[
@@ -671,7 +694,7 @@ async def _run_hybrid_search(
                     query=query,
                     entry_point="hybrid_search",
                 )
-                for doc in context.documents
+                for doc in diversified
             ],
         )
 
@@ -694,9 +717,11 @@ async def _run_hybrid_search(
                     entry_point="hybrid_search",
                 )
             )
+    deduped = _dedupe_documents(documents)
+    diversified = mmr_rerank(deduped, topk=top_k)
     return _HybridSearchResult(
         executed_queries=executed_queries,
-        documents=_reindex_documents(_dedupe_documents(documents)),
+        documents=_reindex_documents(diversified),
     )
 
 

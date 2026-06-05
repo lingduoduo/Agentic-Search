@@ -112,6 +112,7 @@ def test_enhance_returns_bundle():
     llm.complete.side_effect = [
         "FAISS vector search\nFacebook similarity search",  # decompose call
         "FAISS is a fast similarity search library.",  # hyde call
+        "What are vector similarity search algorithms?",  # step_back call
     ]
     enhancer = QueryEnhancer(llm)
     bundle = enhancer.enhance("what is FAISS?")
@@ -126,3 +127,61 @@ def test_enhance_no_llm_returns_passthrough_bundle():
     assert bundle.original == "what is FAISS?"
     assert bundle.sub_queries == ["what is FAISS?"]
     assert bundle.hyde_text is None
+
+
+# ---------------------------------------------------------------------------
+# step_back
+# ---------------------------------------------------------------------------
+
+
+def test_step_back_returns_broader_query():
+    broader = "What are approximate nearest-neighbour search algorithms?"
+    enhancer = QueryEnhancer(_llm(broader))
+    result = enhancer.step_back(
+        "How does FAISS handle GPU indexing for billion-scale datasets?"
+    )
+    assert result == broader
+
+
+def test_step_back_returns_none_when_llm_none():
+    enhancer = QueryEnhancer(llm=None)
+    assert enhancer.step_back("any query") is None
+
+
+def test_step_back_returns_none_on_llm_failure():
+    llm = MagicMock()
+    llm.complete.side_effect = RuntimeError("timeout")
+    enhancer = QueryEnhancer(llm)
+    assert enhancer.step_back("any query") is None
+
+
+def test_step_back_returns_none_on_empty_response():
+    enhancer = QueryEnhancer(_llm(""))
+    assert enhancer.step_back("any query") is None
+
+
+def test_query_bundle_includes_step_back_in_all_queries():
+    b = QueryBundle(
+        original="How does FAISS handle GPU indexing?",
+        sub_queries=["FAISS GPU index", "FAISS IVF flat GPU"],
+        hyde_text="FAISS supports GPU indexes via the faiss-gpu package.",
+        step_back_query="What are approximate nearest-neighbour search algorithms?",
+    )
+    queries = b.all_queries()
+    assert "What are approximate nearest-neighbour search algorithms?" in queries
+    assert (
+        queries.count("What are approximate nearest-neighbour search algorithms?") == 1
+    )
+
+
+def test_enhance_includes_step_back():
+    llm = MagicMock()
+    llm.complete.side_effect = [
+        "FAISS GPU index\nFAISS IVF GPU",  # decompose
+        "FAISS is a library by Facebook.",  # hyde
+        "What are ANN search algorithms?",  # step_back
+    ]
+    enhancer = QueryEnhancer(llm)
+    bundle = enhancer.enhance("How does FAISS handle GPU indexing?")
+    assert bundle.step_back_query == "What are ANN search algorithms?"
+    assert "What are ANN search algorithms?" in bundle.all_queries()

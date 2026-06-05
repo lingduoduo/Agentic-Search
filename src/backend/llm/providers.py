@@ -248,3 +248,25 @@ class OpenAICompatibleLLM(LLM):
         if isinstance(prompt, str):
             return [{"role": "user", "content": prompt}]
         return [{"role": "user", "content": str(prompt)}]
+
+    def complete(self, messages: list[Any], **kwargs: Any) -> str:
+        """Non-streaming completion — used for short utility calls (e.g. query expansion)."""
+        normalised = self._normalise_messages(messages)
+        body: dict[str, Any] = {
+            "model": self._config.model_name,
+            "messages": normalised,
+            "stream": False,
+        }
+        max_tokens = kwargs.get("max_tokens")
+        if max_tokens:
+            body["max_tokens"] = max_tokens
+        timeout = kwargs.get("timeout_override") or 30
+        resp = self._session.post(
+            self._endpoint,
+            headers=self._headers,
+            json=body,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"] or ""

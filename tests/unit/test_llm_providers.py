@@ -233,3 +233,44 @@ def test_get_llm_for_persona_partial_override(monkeypatch):
     llm = get_llm_for_persona(persona=None, user=None, llm_override=override)
     assert llm.config.model_provider == "openai"
     assert llm.config.model_name == "gpt-4o"
+
+
+# ---------------------------------------------------------------------------
+# complete() — non-streaming path
+# ---------------------------------------------------------------------------
+
+
+def test_complete_returns_message_content():
+    config = LLMConfig(
+        model_provider="openai", model_name="gpt-4o-mini", api_key="sk-test"
+    )
+    llm = OpenAICompatibleLLM(config)
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": "Dense retrieval uses vectors."}}]
+    }
+    mock_resp.raise_for_status.return_value = None
+
+    with patch.object(llm._session, "post", return_value=mock_resp):
+        result = llm.complete([{"role": "user", "content": "What is dense retrieval?"}])
+
+    assert result == "Dense retrieval uses vectors."
+
+
+def test_complete_passes_messages_to_api():
+    config = LLMConfig(
+        model_provider="openai", model_name="gpt-4o-mini", api_key="sk-test"
+    )
+    llm = OpenAICompatibleLLM(config)
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+    mock_resp.raise_for_status.return_value = None
+
+    with patch.object(llm._session, "post", return_value=mock_resp) as mock_post:
+        llm.complete([{"role": "user", "content": "hello"}])
+
+    body = mock_post.call_args[1]["json"]
+    assert body["stream"] is False
+    assert body["messages"] == [{"role": "user", "content": "hello"}]

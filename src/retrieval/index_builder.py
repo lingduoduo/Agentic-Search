@@ -65,6 +65,8 @@ __all__ = [
     "IndexingPipelineConfig",
     "IndexingPipelineResult",
     "IndexWriterConfig",
+    "_split_paragraphs",
+    "_split_sentences_in_paragraph",
     "chunk_document",
     "chunk_documents",
     "deterministic_embedding_fn",
@@ -446,6 +448,7 @@ def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChun
                 metadata_suffix_semantic=metadata_suffix_semantic,
                 metadata_suffix_keyword=metadata_suffix_keyword,
                 mini_chunk_texts=mini_chunk_texts,
+                section_continuation=chunk_id > 0,
             )
         )
 
@@ -976,16 +979,25 @@ def _make_mini_chunk_texts(
 
 
 def _split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
-    """Split text on sentence boundaries, falling back to token windows."""
+    """Split text into chunks, respecting paragraph and section boundaries."""
+    return _split_text_paragraphs(text, chunk_size, chunk_overlap)
 
-    sentences = _split_sentences(text)
-    if not sentences:
+
+def _split_paragraphs(text: str) -> list[str]:
+    """Split text on paragraph and section boundaries without destroying internal whitespace.
+
+    Splits on two or more consecutive newlines (blank-line paragraph breaks) or a
+    newline immediately followed by a markdown heading marker (#).
+    """
+    if not text or not text.strip():
         return []
-    return _pack_sentences(sentences, chunk_size, chunk_overlap)
+    parts = re.split(r"\n{2,}|\n(?=#)", text)
+    return [p.strip() for p in parts if p.strip()]
 
 
-def _split_sentences(text: str) -> list[str]:
-    normalized = re.sub(r"\s+", " ", text).strip()
+def _split_sentences_in_paragraph(para: str) -> list[str]:
+    """Sentence-split within a single paragraph, preserving intra-paragraph whitespace."""
+    normalized = re.sub(r"[ \t]+", " ", para).strip()
     if not normalized:
         return []
     return [
@@ -995,36 +1007,48 @@ def _split_sentences(text: str) -> list[str]:
     ]
 
 
-def _pack_sentences(
-    sentences: Sequence[str],
-    chunk_size: int,
-    chunk_overlap: int,
-) -> list[str]:
+def _split_text_paragraphs(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Paragraph-aware chunking: flush at section boundaries when chunk is ≥ 50% full."""
+    paragraphs = _split_paragraphs(text)
+    if not paragraphs:
+        return []
+
     chunks: list[str] = []
     current: list[str] = []
     current_tokens = 0
 
-    for sentence in sentences:
-        sentence_tokens = _token_count(sentence)
-        if sentence_tokens > chunk_size:
-            if current:
-                chunks.append(" ".join(current).strip())
-                current = []
-                current_tokens = 0
-            chunks.extend(_split_token_window(sentence, chunk_size, chunk_overlap))
+    for para_idx, para in enumerate(paragraphs):
+        para_sentences = _split_sentences_in_paragraph(para)
+        if not para_sentences:
             continue
 
-        would_exceed = current and current_tokens + sentence_tokens > chunk_size
-        if would_exceed:
+        if current and current_tokens >= chunk_size // 2 and para_idx > 0:
             chunks.append(" ".join(current).strip())
             current = _overlap_tail(current, chunk_overlap)
             current_tokens = _token_count(" ".join(current))
-            if current and current_tokens + sentence_tokens > chunk_size:
-                current = []
-                current_tokens = 0
 
-        current.append(sentence)
-        current_tokens += sentence_tokens
+        for sentence in para_sentences:
+            sentence_tokens = _token_count(sentence)
+
+            if sentence_tokens > chunk_size:
+                if current:
+                    chunks.append(" ".join(current).strip())
+                    current = []
+                    current_tokens = 0
+                chunks.extend(_split_token_window(sentence, chunk_size, chunk_overlap))
+                continue
+
+            would_exceed = current and current_tokens + sentence_tokens > chunk_size
+            if would_exceed:
+                chunks.append(" ".join(current).strip())
+                current = _overlap_tail(current, chunk_overlap)
+                current_tokens = _token_count(" ".join(current))
+                if current and current_tokens + sentence_tokens > chunk_size:
+                    current = []
+                    current_tokens = 0
+
+            current.append(sentence)
+            current_tokens += sentence_tokens
 
     if current:
         chunks.append(" ".join(current).strip())
