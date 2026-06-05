@@ -627,24 +627,14 @@ def convert_chat_history(
     )
 
 
-def get_custom_agent_prompt(persona: Persona, chat_session: ChatSession) -> str | None:
-    """Get the custom agent prompt from persona or project instructions. If it's replacing the base system prompt,
-    it does not count as a custom agent prompt (logic exists later also to drop it in this case).
+def get_persona_prompt(persona: Persona, chat_session: ChatSession) -> str | None:
+    """Return the persona's system prompt or project-level instructions, or None.
 
-    Chat Sessions in Projects that are using a custom agent will retain the custom agent prompt.
-    Priority: persona.system_prompt (if not default Agent) > chat_session.project.instructions
+    Priority: persona.system_prompt (non-default persona) > chat_session.project.instructions
 
-    # NOTE: Logic elsewhere allows saving empty strings for potentially other purposes but for constructing the prompts
-    # we never want to return an empty string for a prompt so it's translated into an explicit None.
-
-    Args:
-        persona: The Persona object
-        chat_session: The ChatSession object
-
-    Returns:
-        The prompt to use for the custom Agent part of the prompt.
+    Returns None when the persona replaces the base system prompt entirely (handled
+    separately) or when neither source provides non-empty text.
     """
-    # If using a custom Agent, always respect its prompt, even if in a Project, and even if it's an empty custom prompt.
     if persona.id != DEFAULT_PERSONA_ID:
         # Logic exists later also to drop it in this case but this is strictly correct anyhow.
         if persona.replace_base_system_prompt:

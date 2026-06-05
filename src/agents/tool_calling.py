@@ -49,11 +49,6 @@ from .base import (
     register,
     simple_timer,
 )
-from .custom import (
-    CustomAgentConfig,
-    build_custom_agent_messages,
-    filter_tools_for_agent,
-)
 from ..tools.base import Tool
 from ..tools.parsers import FunctionCall, ToolParser
 from .state import PerformanceMetrics, TaskStatus, ToolExecutionResult
@@ -104,7 +99,6 @@ class ToolAgentLoop(AgentLoopBase):
         server_manager: Any,
         tools: list[Tool] | None = None,
         config: ToolAgentLoopConfig | None = None,
-        agent_config: CustomAgentConfig | None = None,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         cfg = config or ToolAgentLoopConfig()
@@ -115,8 +109,7 @@ class ToolAgentLoop(AgentLoopBase):
             loop=loop,
         )
         self.tool_config = cfg
-        self.agent_config = agent_config
-        _tools = filter_tools_for_agent(tools or [], agent_config)
+        _tools = list(tools or [])
         self.tools: dict[str, Tool] = {t.name: t for t in _tools}
         self.tool_schemas: list[dict[str, Any]] = [t.schema.to_dict() for t in _tools]
         self.tool_parser: ToolParser = ToolParser.get_tool_parser(
@@ -211,8 +204,6 @@ class ToolAgentLoop(AgentLoopBase):
         metrics: dict[str, float] = {}
         request_id = uuid4().hex
         event_loop = await self.get_loop()
-        messages = build_custom_agent_messages(messages, self.agent_config)
-
         prompt_ids: list[int] = await event_loop.run_in_executor(
             None,
             lambda: self._build_prompt_ids_with_tools_sync(messages),
