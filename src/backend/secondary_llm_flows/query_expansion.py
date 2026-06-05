@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 
 from src.context.models import ChatMessage
 from src.context.models import LLMClient
@@ -16,6 +17,38 @@ logger = logging.getLogger(__name__)
 _ARTIFACT_RE = re.compile(r'[\[\]"\'`]')
 # Strips leading list markers: "1.", "2)", "-", "*"
 _LIST_MARKER_RE = re.compile(r"^\s*(?:\d+[.)]\s*|[-*]\s*)")
+
+_TEMPORAL_KEYWORDS = frozenset(
+    {
+        "latest",
+        "recent",
+        "current",
+        "today",
+        "now",
+        "this year",
+        "this month",
+        "newest",
+        "new",
+        "updated",
+        "2024",
+        "2025",
+        "2026",
+    }
+)
+
+
+def is_time_sensitive(query: str) -> bool:
+    """Return True when the query contains temporal keywords that suggest recency matters."""
+    lower = query.lower()
+    return any(kw in lower for kw in _TEMPORAL_KEYWORDS)
+
+
+def with_temporal_context(query: str) -> str:
+    """Append current month and year to time-sensitive queries; return query unchanged otherwise."""
+    if not is_time_sensitive(query):
+        return query
+    date_str = datetime.now().strftime("%B %Y")
+    return f"{query} {date_str}"
 
 
 def _clean_keyword_line(line: str) -> str:
@@ -64,4 +97,4 @@ def expand_keywords(user_query: str, llm: LLMClient) -> list[str]:
     return expanded
 
 
-__all__ = ["expand_keywords"]
+__all__ = ["expand_keywords", "is_time_sensitive", "with_temporal_context"]
