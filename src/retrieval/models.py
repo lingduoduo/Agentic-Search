@@ -515,10 +515,8 @@ class IndexingBatchAdapter(Protocol):
 
 try:
     from datetime import datetime as _dt
-    from pydantic import BaseModel as _PydanticBase3
-    from pydantic import Field as _Field3
 
-    class InferenceChunk(_PydanticBase3):
+    class InferenceChunk(_PydanticBase):
         """A retrieved chunk returned from a DocumentIndex retrieval method."""
 
         document_id: str
@@ -531,16 +529,16 @@ try:
         boost: int = 0
         hidden: bool = False
         score: float | None = None
-        metadata: dict[str, Any] = _Field3(default_factory=dict)
-        match_highlights: list[str] = _Field3(default_factory=list)
-        document_sets: set[str] = _Field3(default_factory=set)
+        metadata: dict[str, Any] = _Field(default_factory=dict)
+        match_highlights: list[str] = _Field(default_factory=list)
+        document_sets: set[str] = _Field(default_factory=set)
         access_control_list: list[str] | None = None
         title: str | None = None
         source_type: str = ""
         large_chunk_id: int | None = None
         large_chunk_reference_ids: list[int] | None = None
 
-    class InferenceChunkUncleaned(_PydanticBase3):
+    class InferenceChunkUncleaned(_PydanticBase):
         """Mutable InferenceChunk used during content cleanup pipeline."""
 
         document_id: str
@@ -554,9 +552,9 @@ try:
         boost: int = 0
         hidden: bool = False
         score: float | None = None
-        metadata: dict[str, Any] = _Field3(default_factory=dict)
-        match_highlights: list[str] = _Field3(default_factory=list)
-        document_sets: set[str] = _Field3(default_factory=set)
+        metadata: dict[str, Any] = _Field(default_factory=dict)
+        match_highlights: list[str] = _Field(default_factory=list)
+        document_sets: set[str] = _Field(default_factory=set)
         access_control_list: list[str] | None = None
         source_type: str = ""
         metadata_suffix: str = ""
@@ -582,7 +580,7 @@ try:
                 source_type=self.source_type,
             )
 
-    class IndexFilters(_PydanticBase3):
+    class IndexFilters(_PydanticBase):
         """Filters passed to DocumentIndex retrieval methods."""
 
         model_config = {"frozen": True}
@@ -603,13 +601,20 @@ except ImportError:
         chunk_ind: int
         blurb: str = ""
         content: str = ""
-        score: float | None = None
+        source_links: dict | None = None
+        section_continuation: bool = False
+        semantic_identifier: str = ""
+        boost: int = 0
+        hidden: bool = False
         metadata: dict = field(default_factory=dict)
+        score: float | None = None
         match_highlights: list = field(default_factory=list)
         document_sets: set = field(default_factory=set)
         access_control_list: list | None = None
         title: str | None = None
         source_type: str = ""
+        large_chunk_id: int | None = None
+        large_chunk_reference_ids: list | None = None
 
     @dataclass  # type: ignore[no-redef]
     class InferenceChunkUncleaned:  # type: ignore[no-redef]
@@ -617,6 +622,18 @@ except ImportError:
         chunk_ind: int
         content: str = ""
         title: str | None = None
+        blurb: str = ""
+        source_links: dict | None = None
+        section_continuation: bool = False
+        semantic_identifier: str = ""
+        boost: int = 0
+        hidden: bool = False
+        metadata: dict = field(default_factory=dict)
+        score: float | None = None
+        match_highlights: list = field(default_factory=list)
+        document_sets: set = field(default_factory=set)
+        access_control_list: list | None = None
+        source_type: str = ""
         metadata_suffix: str = ""
         doc_summary: str = ""
         chunk_context: str = ""
@@ -625,6 +642,7 @@ except ImportError:
             return InferenceChunk(
                 document_id=self.document_id,
                 chunk_ind=self.chunk_ind,
+                blurb=self.blurb,
                 content=self.content,
             )
 
