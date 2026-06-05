@@ -10,6 +10,7 @@ from src.retrieval.hybrid_retriever import (
     HybridRetriever,
     HybridRetrieverConfig,
     combine_retrieval_results,
+    maximal_marginal_relevance,
 )
 from src.retrieval.dense_retriever import DenseRetrieverConfig
 from src.retrieval.sparse_retriever import SparseRetrieverConfig
@@ -176,3 +177,59 @@ def test_batch_search_with_scores():
 
     assert docs == [[{"id": "a", "contents": "text"}]]
     assert len(scores[0]) == 1
+
+
+# ---------------------------------------------------------------------------
+# maximal_marginal_relevance
+# ---------------------------------------------------------------------------
+
+
+def test_mmr_lambda_one_preserves_relevance_order():
+    """At lambda=1.0 MMR is pure relevance — order matches input."""
+    results = [_result("a", 0.9), _result("b", 0.5), _result("c", 0.1)]
+    out = maximal_marginal_relevance(results, topk=3, mmr_lambda=1.0)
+    assert [r["document"]["id"] for r in out] == ["a", "b", "c"]
+
+
+def test_mmr_lambda_zero_maximises_diversity():
+    """At lambda=0.0 MMR picks items maximally distant from what's already selected."""
+    results = [
+        {"document": {"id": "src-1-chunk-0", "contents": "text"}, "score": 0.9},
+        {"document": {"id": "src-1-chunk-1", "contents": "text"}, "score": 0.8},
+        {"document": {"id": "src-2-chunk-0", "contents": "text"}, "score": 0.3},
+    ]
+    out = maximal_marginal_relevance(results, topk=2, mmr_lambda=0.0)
+    ids = [r["document"]["id"] for r in out]
+    assert ids[0] == "src-1-chunk-0"
+    assert ids[1] == "src-2-chunk-0"
+
+
+def test_mmr_returns_topk_results():
+    results = [_result(str(i), 1.0 / (i + 1)) for i in range(10)]
+    out = maximal_marginal_relevance(results, topk=3, mmr_lambda=0.5)
+    assert len(out) == 3
+
+
+def test_mmr_returns_all_when_topk_exceeds_input():
+    results = [_result("a", 0.9), _result("b", 0.5)]
+    out = maximal_marginal_relevance(results, topk=10, mmr_lambda=0.5)
+    assert len(out) == 2
+
+
+def test_mmr_empty_input_returns_empty():
+    assert maximal_marginal_relevance([], topk=5, mmr_lambda=0.5) == []
+
+
+def test_hybrid_retriever_applies_mmr_when_configured():
+    retriever = _make_hybrid(0.5)
+    retriever._dense.retrieve.return_value = [
+        [_result("a", 0.9), _result("b", 0.8), _result("c", 0.3)]
+    ]
+    retriever._sparse.retrieve.return_value = [
+        [_result("b", 8.0), _result("c", 6.0), _result("d", 2.0)]
+    ]
+    retriever.config = retriever.config.__class__(
+        **{**retriever.config.__dict__, "mmr_lambda": 0.7, "mmr_topk": 2}
+    )
+    results = retriever.retrieve(["q"])
+    assert len(results[0]) == 2

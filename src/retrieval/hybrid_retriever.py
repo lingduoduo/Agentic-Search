@@ -46,6 +46,69 @@ def combine_retrieval_results(
     )
 
 
+def _doc_source_prefix(doc_id: str) -> str:
+    """Return the source-level prefix of a document id for similarity estimation.
+
+    Convention used in the demo corpus: ids are 'source-name-chunk-N'.
+    Prefix = everything before the last '-' separator.  When the id has no
+    separator the full id is used (no similarity penalty applied).
+    """
+    sep = doc_id.rfind("-")
+    return doc_id[:sep] if sep > 0 else doc_id
+
+
+def maximal_marginal_relevance(
+    results: list[dict[str, Any]],
+    *,
+    topk: int,
+    mmr_lambda: float = 0.5,
+) -> list[dict[str, Any]]:
+    """Re-rank `results` with Maximal Marginal Relevance to balance relevance and diversity.
+
+    Uses the RRF/retrieval score as relevance and source-prefix matching as a cheap
+    proxy for inter-document similarity (no embeddings required).
+
+    Args:
+        results: Ranked list of {"document": dict, "score": float} items.
+        topk: Maximum number of results to return.
+        mmr_lambda: 1.0 = pure relevance order; 0.0 = maximum diversity.
+    """
+    if not results:
+        return []
+    if mmr_lambda == 1.0:
+        return results[:topk]
+
+    max_score = max(r["score"] for r in results) or 1.0
+    normalized = [(r, r["score"] / max_score) for r in results]
+
+    selected: list[dict[str, Any]] = []
+    selected_prefixes: list[str] = []
+    remaining = list(normalized)
+
+    while remaining and len(selected) < topk:
+        if not selected:
+            best = max(remaining, key=lambda x: x[1])
+        else:
+
+            def mmr_score(item: tuple[dict[str, Any], float]) -> float:
+                result, rel = item
+                doc_id = str(result["document"].get("id", ""))
+                prefix = _doc_source_prefix(doc_id)
+                sim = 1.0 if prefix in selected_prefixes else 0.0
+                return mmr_lambda * rel - (1.0 - mmr_lambda) * sim
+
+            best = max(remaining, key=mmr_score)
+
+        result, _ = best
+        selected.append(result)
+        selected_prefixes.append(
+            _doc_source_prefix(str(result["document"].get("id", "")))
+        )
+        remaining.remove(best)
+
+    return selected
+
+
 @dataclass(frozen=True)
 class HybridRetrieverConfig:
     """Config for a retriever that fuses dense and sparse search.
@@ -54,18 +117,25 @@ class HybridRetrieverConfig:
         0.0  — pure BM25 (sparse only, no embedding computed)
         1.0  — pure dense (embedding only, BM25 index not loaded)
         0 < alpha < 1 — both run in parallel and results are fused with RRF
+
+    mmr_lambda: 1.0 = pure relevance (no diversity), 0.5 = balanced.
+    mmr_topk: number of results to return after MMR (None = return all fused results).
     """
 
     dense: DenseRetrieverConfig
     sparse: SparseRetrieverConfig | None = None
     hybrid_alpha: float = 0.5
     rrf_k: int = _RRF_K
+    mmr_lambda: float = 1.0
+    mmr_topk: int | None = None
 
     def validate(self) -> None:
         if not 0.0 <= self.hybrid_alpha <= 1.0:
             raise ValueError("hybrid_alpha must be between 0.0 and 1.0.")
         if self.rrf_k < 1:
             raise ValueError("rrf_k must be at least 1.")
+        if not 0.0 <= self.mmr_lambda <= 1.0:
+            raise ValueError("mmr_lambda must be between 0.0 and 1.0.")
         if self.hybrid_alpha < 1.0 and self.sparse is None:
             raise ValueError(
                 "sparse config is required when hybrid_alpha < 1.0 "
@@ -101,33 +171,44 @@ class HybridRetriever:
         queries: list[str],
         topk: int | None = None,
     ) -> list[list[dict[str, Any]]]:
-        """Return one ranked result list per query.
-
-        Each result is {"document": dict, "score": float}.  In pure-dense or
-        pure-BM25 mode scores are the retriever's native scores; in hybrid mode
-        scores are fused RRF values (not directly comparable to either native scale).
-        """
+        """Return one ranked result list per query, optionally MMR-diversified."""
         # Pure modes — single retriever, no fusion overhead.
         if self._sparse is None:
             assert self._dense is not None
-            return self._dense.retrieve(queries, topk)
-        if self._dense is None:
-            return self._sparse.retrieve(queries, topk)
+            raw_results = self._dense.retrieve(queries, topk)
+        elif self._dense is None:
+            raw_results = self._sparse.retrieve(queries, topk)
+        else:
+            # Hybrid — dispatch both retrievers concurrently then fuse per query.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                dense_fut = pool.submit(self._dense.retrieve, queries, topk)
+                sparse_fut = pool.submit(self._sparse.retrieve, queries, topk)
+                dense_results = dense_fut.result()
+                sparse_results = sparse_fut.result()
 
-        # Hybrid — dispatch both retrievers concurrently then fuse per query.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            dense_fut = pool.submit(self._dense.retrieve, queries, topk)
-            sparse_fut = pool.submit(self._sparse.retrieve, queries, topk)
-            dense_results = dense_fut.result()
-            sparse_results = sparse_fut.result()
+            raw_results = [
+                combine_retrieval_results(
+                    [dense_results[i], sparse_results[i]],
+                    rrf_k=self.config.rrf_k,
+                )
+                for i in range(len(queries))
+            ]
 
-        return [
-            combine_retrieval_results(
-                [dense_results[i], sparse_results[i]],
-                rrf_k=self.config.rrf_k,
+        # Apply MMR when lambda < 1.0 or an explicit mmr_topk is set.
+        if self.config.mmr_lambda < 1.0 or self.config.mmr_topk is not None:
+            mmr_topk = self.config.mmr_topk or (
+                topk or len(raw_results[0] if raw_results else [])
             )
-            for i in range(len(queries))
-        ]
+            return [
+                maximal_marginal_relevance(
+                    result_list,
+                    topk=mmr_topk,
+                    mmr_lambda=self.config.mmr_lambda,
+                )
+                for result_list in raw_results
+            ]
+
+        return raw_results
 
     def batch_search(
         self,
