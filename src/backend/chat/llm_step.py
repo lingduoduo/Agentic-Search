@@ -1180,7 +1180,6 @@ def run_llm_step_pkt_generator(
     max_tokens: int | None = None,
     # TODO: Temporary handling of nested tool calls with agents, figure out a better way to handle this
     use_existing_tab_index: bool = False,
-    is_deep_research: bool = False,
     pre_answer_processing_time: float | None = None,
     timeout_override: int | None = None,
 ) -> Generator[Packet, None, tuple[LlmStepResult, bool]]:
@@ -1213,8 +1212,6 @@ def run_llm_step_pkt_generator(
         max_tokens: Optional maximum number of tokens for the LLM response.
         use_existing_tab_index: If True, use the tab_index from placement for all
             tool calls instead of auto-incrementing.
-        is_deep_research: If True, treat content before tool calls as reasoning
-            when tool_choice is REQUIRED.
         pre_answer_processing_time: Optional time spent processing before the
             answer started, recorded in state_container for analytics.
         timeout_override: Optional timeout override for the LLM call.
@@ -1341,25 +1338,6 @@ def run_llm_step_pkt_generator(
             nonlocal turn_index
             nonlocal sub_turn_index
 
-            # When tool_choice is REQUIRED, content before tool calls is reasoning/thinking
-            # about which tool to call, not an actual answer to the user.
-            # Treat this content as reasoning instead of answer.
-            if is_deep_research and tool_choice == ToolChoiceOptions.REQUIRED:
-                accumulated_reasoning += content_chunk
-                if state_container:
-                    state_container.set_reasoning_tokens(accumulated_reasoning)
-                if not reasoning_start:
-                    yield Packet(
-                        placement=_current_placement(),
-                        obj=ReasoningStart(),
-                    )
-                yield Packet(
-                    placement=_current_placement(),
-                    obj=ReasoningDelta(reasoning=content_chunk),
-                )
-                reasoning_start = True
-                return
-
             # Normal flow for AUTO or NONE tool choice
             yield from _close_reasoning_if_active()
 
@@ -1472,7 +1450,7 @@ def run_llm_step_pkt_generator(
 
             if delta.content:
                 # Keep raw content for fallback extraction. Display content can be
-                # filtered and, in deep-research REQUIRED mode, routed as reasoning.
+                # filtered before display.
                 accumulated_raw_answer += delta.content
                 filtered_content = xml_tool_call_content_filter.process(delta.content)
                 if filtered_content:
@@ -1619,7 +1597,6 @@ def run_llm_step(
     ) = None,
     max_tokens: int | None = None,
     use_existing_tab_index: bool = False,
-    is_deep_research: bool = False,
     pre_answer_processing_time: float | None = None,
     timeout_override: int | None = None,
 ) -> tuple[LlmStepResult, bool]:
@@ -1642,7 +1619,6 @@ def run_llm_step(
         custom_token_processor=custom_token_processor,
         max_tokens=max_tokens,
         use_existing_tab_index=use_existing_tab_index,
-        is_deep_research=is_deep_research,
         pre_answer_processing_time=pre_answer_processing_time,
         timeout_override=timeout_override,
     )

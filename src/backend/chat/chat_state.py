@@ -51,7 +51,7 @@ class ChatStateContainer:
         self.answer_tokens: str | None = None
         # Store citation mapping for building citation_docs_info during partial saves
         self.citation_to_doc: CitationMapping = {}
-        # True if this turn is a clarification question (deep research flow)
+        # True if this turn is a clarification question
         self.is_clarification: bool = False
         # Pre-answer processing time (time before answer starts) in seconds
         self.pre_answer_processing_time: float | None = None
@@ -212,7 +212,7 @@ class ChatTurnSetup:
     chat_files_for_tools: list[ChatFile]
     custom_agent_prompt: str | None
     user_memory_context: UserMemoryContext
-    # For deep research: was the last assistant message a clarification request?
+    # Was the last assistant message a clarification request?
     skip_clarification: bool
     check_is_connected: Callable[[], bool]
     cache: CacheBackend

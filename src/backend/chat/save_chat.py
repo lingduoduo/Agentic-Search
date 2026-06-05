@@ -365,7 +365,7 @@ def save_chat_turn(
         all_search_docs: Pre-deduplicated search docs from ChatStateContainer
         db_session: Database session for persistence
         assistant_message: The ChatMessage object to populate (should already exist in DB)
-        is_clarification: Whether this assistant message is a clarification question (deep research flow)
+        is_clarification: Whether this assistant message is a clarification question
         emitted_citations: Set of citation numbers that were actually emitted during streaming.
             If provided, only citations in this set will be saved; others are filtered out.
         pre_answer_processing_time: Duration of processing before answer starts (in seconds)
