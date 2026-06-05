@@ -25,6 +25,13 @@ Write as if you are an expert. Be factual and specific. Do not say "I" or ask fo
 Question: {query}
 Answer:""".strip()
 
+_STEP_BACK_PROMPT = """Rewrite the following question as a broader, more general question that
+would help retrieve background knowledge useful for answering the original.
+Return only the rewritten question, no explanation.
+
+Question: {query}
+Broader question:""".strip()
+
 
 def _clean_line(line: str) -> str:
     return _ARTIFACT_RE.sub("", _LIST_MARKER_RE.sub("", line)).strip()
@@ -43,9 +50,10 @@ class QueryBundle:
     original: str
     sub_queries: list[str] = field(default_factory=list)
     hyde_text: str | None = None
+    step_back_query: str | None = None
 
     def all_queries(self) -> list[str]:
-        """Return deduplicated list: sub_queries first, then hyde_text appended."""
+        """Return deduplicated list: sub_queries first, then hyde_text, then step_back_query."""
         seen: set[str] = set()
         result: list[str] = []
         for q in self.sub_queries:
@@ -53,7 +61,10 @@ class QueryBundle:
                 seen.add(q)
                 result.append(q)
         if self.hyde_text and self.hyde_text not in seen:
+            seen.add(self.hyde_text)
             result.append(self.hyde_text)
+        if self.step_back_query and self.step_back_query not in seen:
+            result.append(self.step_back_query)
         return result or [self.original]
 
 
@@ -115,10 +126,31 @@ class QueryEnhancer:
             logger.warning("HyDE generation failed: %s", exc)
             return None
 
+    def step_back(self, query: str) -> str | None:
+        """Generate a broader, more abstract version of the query for wider retrieval coverage.
+        Returns None on failure or when no LLM is configured."""
+        if self.llm is None:
+            return None
+        try:
+            raw = _llm_text(
+                self.llm.complete(
+                    [
+                        ChatMessage(
+                            role="user", content=_STEP_BACK_PROMPT.format(query=query)
+                        )
+                    ]
+                )
+            ).strip()
+            return raw or None
+        except Exception as exc:
+            logger.warning("Step-back generation failed: %s", exc)
+            return None
+
     def enhance(self, query: str) -> QueryBundle:
-        """Run decompose + HyDE and return a QueryBundle."""
+        """Run decompose + HyDE + step-back and return a QueryBundle."""
         return QueryBundle(
             original=query,
             sub_queries=self.decompose(query),
             hyde_text=self.hyde(query),
+            step_back_query=self.step_back(query),
         )
