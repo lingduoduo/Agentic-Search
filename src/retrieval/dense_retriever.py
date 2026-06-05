@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from .embedding_cache import EmbeddingCache
 from .index_builder import (
     _encode_batch,
     _normalize_embedding_rows,
@@ -47,6 +48,8 @@ class DenseRetrieverConfig:
     # for GPU memory.  Set to "cuda" (or "cuda:N") only when the retrieval
     # server is deployed on a dedicated GPU that the trainer does not use.
     device: str = "cpu"
+    # Optional Redis URL for query-embedding cache.  None disables caching.
+    redis_url: str | None = None
 
     def validate(self) -> None:
         if not self.model_path:
@@ -131,6 +134,11 @@ class DenseRetriever:
             clone_options.shard = True
             self.index = faiss.index_cpu_to_all_gpus(self.index, clone_options)
         self.corpus = load_corpus(config.corpus_path)
+        self._cache = (
+            EmbeddingCache(config.model_path, redis_url=config.redis_url)
+            if config.redis_url
+            else None
+        )
 
     def encode_queries(self, queries: list[str]) -> np.ndarray:
         torch = _require_torch()
@@ -138,26 +146,43 @@ class DenseRetriever:
         if not non_empty:
             return np.empty((0, 0), dtype=np.float32)
 
-        texts = prepare_texts(
-            non_empty,
-            self.config.retrieval_method,
-            is_query=True,
-            query_prefix=self.config.query_prefix,
-            passage_prefix=self.config.passage_prefix,
-        )
-        with torch.no_grad():
-            embeddings = _encode_batch(
-                self.model,
-                self.tokenizer,
-                texts,
-                self.config.retrieval_method.lower(),
-                self.config.max_length,
-                self.pooling_method,
-                self.device,
+        # --- Redis cache: resolve hits, collect misses ---
+        if self._cache is not None:
+            cached = self._cache.get_batch(non_empty)
+            miss_indices = [i for i, v in enumerate(cached) if v is None]
+            miss_texts = [non_empty[i] for i in miss_indices]
+        else:
+            cached = [None] * len(non_empty)
+            miss_indices = list(range(len(non_empty)))
+            miss_texts = non_empty
+
+        # --- Encode only cache misses ---
+        if miss_texts:
+            texts = prepare_texts(
+                miss_texts,
+                self.config.retrieval_method,
+                is_query=True,
+                query_prefix=self.config.query_prefix,
+                passage_prefix=self.config.passage_prefix,
             )
-        if self.config.normalize_query_embeddings:
-            embeddings = _normalize_embedding_rows(embeddings)
-        return embeddings
+            with torch.no_grad():
+                fresh = _encode_batch(
+                    self.model,
+                    self.tokenizer,
+                    texts,
+                    self.config.retrieval_method.lower(),
+                    self.config.max_length,
+                    self.pooling_method,
+                    self.device,
+                )
+            if self.config.normalize_query_embeddings:
+                fresh = _normalize_embedding_rows(fresh)
+            if self._cache is not None:
+                self._cache.set_batch(miss_texts, fresh)
+            for i, row in zip(miss_indices, fresh):
+                cached[i] = row
+
+        return np.stack(cached)  # type: ignore[arg-type]
 
     def _encode_query_batch(
         self,
