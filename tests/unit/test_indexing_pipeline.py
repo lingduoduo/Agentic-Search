@@ -442,3 +442,99 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
         "hnsw_ef_construction": 64,
         "hnsw_ef_search": 32,
     }
+
+
+# ---------------------------------------------------------------------------
+# Paragraph-aware chunking
+# ---------------------------------------------------------------------------
+
+from src.retrieval.index_builder import _split_paragraphs, _split_sentences_in_paragraph  # noqa: E402
+
+
+def test_split_paragraphs_splits_on_double_newline():
+    text = "First paragraph with sentences.\n\nSecond paragraph here."
+    result = _split_paragraphs(text)
+    assert len(result) == 2
+    assert result[0] == "First paragraph with sentences."
+    assert result[1] == "Second paragraph here."
+
+
+def test_split_paragraphs_splits_on_markdown_header():
+    text = "Intro text here.\n## Section Two\nSection two content."
+    result = _split_paragraphs(text)
+    assert len(result) == 2
+    assert "Intro text" in result[0]
+    assert "Section Two" in result[1] or "Section two" in result[1]
+
+
+def test_split_paragraphs_single_paragraph_returns_one_item():
+    text = "Just one sentence. And another. And a third."
+    result = _split_paragraphs(text)
+    assert len(result) == 1
+
+
+def test_split_paragraphs_empty_returns_empty():
+    assert _split_paragraphs("") == []
+    assert _split_paragraphs("   \n\n  ") == []
+
+
+def test_split_sentences_in_paragraph_splits_on_punctuation():
+    para = "First sentence. Second sentence! Third sentence?"
+    result = _split_sentences_in_paragraph(para)
+    assert len(result) == 3
+    assert result[0] == "First sentence."
+
+
+def test_split_sentences_in_paragraph_does_not_collapse_paragraphs():
+    para = "One sentence. Two sentence."
+    result = _split_sentences_in_paragraph(para)
+    assert len(result) == 2
+
+
+def test_chunk_document_does_not_span_section_boundary():
+    """Chunks should respect paragraph boundaries — no chunk should span two unrelated sections."""
+    section_a = " ".join(["word"] * 60)
+    section_b = " ".join(["term"] * 60)
+    document = Document(
+        id="doc-sections",
+        title="Test",
+        contents=f"{section_a}\n\n{section_b}",
+        metadata={},
+        permissions={},
+    )
+    chunks = chunk_document(
+        document,
+        ChunkingConfig(
+            chunk_size=50, chunk_overlap=5, include_title=False, include_metadata=False
+        ),
+    )
+    for chunk in chunks:
+        word_count = chunk.text.count("word")
+        term_count = chunk.text.count("term")
+        if word_count > 0 and term_count > 0:
+            assert min(word_count, term_count) <= 5, (
+                f"Chunk spans sections: {word_count} 'word' tokens and {term_count} 'term' tokens"
+            )
+
+
+def test_chunk_document_sets_section_continuation_on_non_first_chunks():
+    """section_continuation should be True for every chunk after the first."""
+    document = Document(
+        id="doc-cont",
+        title="Title",
+        contents=" ".join(["sentence."] * 30),
+        metadata={},
+        permissions={},
+    )
+    chunks = chunk_document(
+        document,
+        ChunkingConfig(
+            chunk_size=10, chunk_overlap=2, include_title=False, include_metadata=False
+        ),
+    )
+    assert len(chunks) >= 2, "Need at least 2 chunks to test continuation flag"
+    assert chunks[0].section_continuation is False
+    for chunk in chunks[1:]:
+        assert chunk.section_continuation is True, (
+            f"chunk_id={chunk.chunk_id} should have section_continuation=True"
+        )
