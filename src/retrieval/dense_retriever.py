@@ -135,9 +135,7 @@ class DenseRetriever:
             self.index = faiss.index_cpu_to_all_gpus(self.index, clone_options)
         self.corpus = load_corpus(config.corpus_path)
         self._cache = (
-            EmbeddingCache(config.model_path, redis_url=config.redis_url)
-            if config.redis_url
-            else None
+            EmbeddingCache(redis_url=config.redis_url) if config.redis_url else None
         )
 
     def encode_queries(self, queries: list[str]) -> np.ndarray:

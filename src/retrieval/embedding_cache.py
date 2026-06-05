@@ -47,20 +47,16 @@ class EmbeddingCache:
     """Thin Redis wrapper for caching dense query embeddings.
 
     Args:
-        model_path: Embedding model identifier scoped into every cache key so
-            embeddings from different models never collide.
         redis_url: Redis connection URL, e.g. ``redis://localhost:6379/0``.
         ttl_seconds: How long to keep cached embeddings (default 7 days).
     """
 
     def __init__(
         self,
-        model_path: str,
         *,
         redis_url: str = "redis://localhost:6379/0",
         ttl_seconds: int = 7 * 24 * 3600,
     ) -> None:
-        self.model_path = model_path
         self.ttl_seconds = ttl_seconds
         self._client = None
         self._unavailable = False
@@ -76,8 +72,7 @@ class EmbeddingCache:
             self._unavailable = True
 
     def _key(self, text: str) -> str:
-        digest = hashlib.sha256(f"{self.model_path}:{text}".encode()).hexdigest()
-        return f"emb:{digest}"
+        return f"emb:{hashlib.sha256(text.encode()).hexdigest()}"
 
     def get(self, text: str) -> np.ndarray | None:
         if self._unavailable or self._client is None:

@@ -31,7 +31,7 @@ def test_pack_unpack_1d():
 
 def _make_unavailable_cache() -> EmbeddingCache:
     with patch("redis.Redis.from_url", side_effect=ConnectionRefusedError("no redis")):
-        return EmbeddingCache("model", redis_url="redis://localhost:6379/0")
+        return EmbeddingCache(redis_url="redis://localhost:6379/0")
 
 
 def test_cache_get_returns_none_when_unavailable():
@@ -60,7 +60,7 @@ def _make_cache_with_mock_redis() -> tuple[EmbeddingCache, MagicMock]:
     mock_redis.ping.return_value = True
 
     with patch("redis.Redis.from_url", return_value=mock_redis):
-        cache = EmbeddingCache("mymodel", redis_url="redis://localhost:6379/0")
+        cache = EmbeddingCache(redis_url="redis://localhost:6379/0")
 
     return cache, mock_redis
 
@@ -91,16 +91,10 @@ def test_cache_set_calls_setex():
     assert np.allclose(_unpack(data), arr)
 
 
-def test_cache_key_is_model_scoped():
-    cache1, _ = _make_cache_with_mock_redis()
-    cache2 = EmbeddingCache.__new__(EmbeddingCache)
-    cache2.model_path = "other_model"
-    cache2._unavailable = False
-    cache2._client = None
-
-    key1 = cache1._key("hello")
-    key2 = cache2._key("hello")
-    assert key1 != key2
+def test_cache_key_is_text_based():
+    cache, _ = _make_cache_with_mock_redis()
+    assert cache._key("hello") == cache._key("hello")
+    assert cache._key("hello") != cache._key("world")
 
 
 def test_get_batch_uses_mget():
