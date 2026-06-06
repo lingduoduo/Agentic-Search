@@ -1339,7 +1339,7 @@ class DocumentQuery:
                     # The number of snippets to return per field per document
                     # hit.
                     "number_of_fragments": 4,
-                    # These tags wrap matched keywords.
+                    # These tags wrap matched keywords (preserve for backward compatibility).
                     "pre_tags": ["<hi>"],
                     "post_tags": ["</hi>"],
                 }

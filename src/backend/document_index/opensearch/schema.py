@@ -470,7 +470,7 @@ class DocumentSchema:
                         "parameters": {"ef_construction": EF_CONSTRUCTION, "m": M},
                     },
                 },
-                # TODO(andrei): Look at feature parity for these other method fields.
+                # TODO(andrei): Verify vector field type and look at feature parity for these other method fields.
                 CONTENT_VECTOR_FIELD_NAME: {
                     "type": "knn_vector",
                     "dimension": vector_dimension,
