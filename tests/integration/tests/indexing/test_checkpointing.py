@@ -31,12 +31,12 @@ from tests.integration.common_utils.test_document_utils import (  # noqa: E402
     create_test_document_failure,
 )
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 
 
 def test_mock_connector_basic_flow(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that the mock connector can successfully process documents and failures"""
@@ -95,7 +95,7 @@ def test_mock_connector_basic_flow(
         chunks = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(chunks) == 1
     assert chunks[0].id == test_doc.id
@@ -109,7 +109,7 @@ def test_mock_connector_basic_flow(
 
 def test_mock_connector_with_failures(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that the mock connector processes both successes and failures properly."""
@@ -168,7 +168,7 @@ def test_mock_connector_with_failures(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(documents) == 1
     assert documents[0].id == doc1.id
@@ -185,7 +185,7 @@ def test_mock_connector_with_failures(
 
 def test_mock_connector_failure_recovery(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that a failed document can be successfully indexed in a subsequent attempt
@@ -258,7 +258,7 @@ def test_mock_connector_failure_recovery(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(documents) == 1
     assert documents[0].id == doc1.id
@@ -322,7 +322,7 @@ def test_mock_connector_failure_recovery(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(documents) == 2
     document_ids = {doc.id for doc in documents}
@@ -344,7 +344,7 @@ def test_mock_connector_failure_recovery(
 
 def test_mock_connector_checkpoint_recovery(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that checkpointing works correctly when an unhandled exception occurs
@@ -443,7 +443,7 @@ def test_mock_connector_checkpoint_recovery(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     # This is no longer guaranteed because docfetching and docprocessing are decoupled!
     # Some batches may not be processed when docfetching fails, but they should still stick around
@@ -516,7 +516,7 @@ def test_mock_connector_checkpoint_recovery(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(documents) == 102  # 100 docs from first batch + doc2 + doc3
     document_ids = {doc.id for doc in documents}

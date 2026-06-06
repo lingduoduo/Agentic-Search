@@ -8,7 +8,7 @@ pytestmark = pytest.mark.skip(
 """
 This file contains tests for the following:
 - Ensuring deletion of a connector also:
-    - deletes the documents in vespa for that connector
+    - deletes the documents in the document index for that connector
     - updates the document sets and user groups to remove the connector
 - Ensure that deleting a connector that is part of an overlapping document set and/or user group works as expected
 """
@@ -36,12 +36,12 @@ from tests.integration.common_utils.managers.document_set import DocumentSetMana
 from tests.integration.common_utils.managers.user_group import UserGroupManager  # noqa: E402
 from tests.integration.common_utils.test_models import DATestAPIKey  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUserGroup  # noqa: E402
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 
 
 def test_connector_deletion(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
 ) -> None:
     user_group_1: DATestUserGroup
     user_group_2: DATestUserGroup
@@ -179,9 +179,9 @@ def test_connector_deletion(
         user_performing_action=admin_user,
     )
 
-    # validate vespa documents
+    # validate index documents
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_1,
         doc_set_names=[],
         group_names=[],
@@ -196,7 +196,7 @@ def test_connector_deletion(
         ]
 
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_2,
         doc_set_names=[doc_set_2.name],
         group_names=cc_pair_2_group_name_expected,
@@ -239,7 +239,7 @@ def test_connector_deletion(
 
 def test_connector_deletion_for_overlapping_connectors(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
 ) -> None:
     """Checks to make sure that connectors with overlapping documents work properly. Specifically, that the overlapping
     document (1) still exists and (2) has the right document set / group post-deletion of one of the connectors.
@@ -279,16 +279,16 @@ def test_connector_deletion_for_overlapping_connectors(
         api_key=api_key,
     )
 
-    # verify vespa document exists and that it is not in any document sets or groups
+    # verify index document exists and that it is not in any document sets or groups
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_1,
         doc_set_names=[],
         group_names=[],
         doc_creating_user=admin_user,
     )
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_2,
         doc_set_names=[],
         group_names=[],
@@ -308,15 +308,15 @@ def test_connector_deletion_for_overlapping_connectors(
 
     print("Document set 1 created and synced")
 
-    # verify vespa document is in the document set
+    # verify index document is in the document set
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_1,
         doc_set_names=[doc_set_1.name],
         doc_creating_user=admin_user,
     )
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_2,
         doc_creating_user=admin_user,
     )
@@ -350,15 +350,15 @@ def test_connector_deletion_for_overlapping_connectors(
 
         print("User group 2 created and synced")
 
-        # verify vespa document is in the user group
+        # verify index document is in the user group
         DocumentManager.verify(
-            vespa_client=vespa_client,
+            index_client=index_client,
             cc_pair=cc_pair_1,
             group_names=[user_group_1.name, user_group_2.name],
             doc_creating_user=admin_user,
         )
         DocumentManager.verify(
-            vespa_client=vespa_client,
+            index_client=index_client,
             cc_pair=cc_pair_2,
             group_names=[user_group_1.name, user_group_2.name],
             doc_creating_user=admin_user,
@@ -403,7 +403,7 @@ def test_connector_deletion_for_overlapping_connectors(
         ]
 
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_2,
         doc_set_names=[],
         group_names=group_names_expected,

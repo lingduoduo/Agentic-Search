@@ -33,7 +33,7 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 from tests.integration.connector_job_tests.slack.conftest import SLACK_ADMIN_EMAIL  # noqa: E402
 from tests.integration.connector_job_tests.slack.conftest import SLACK_TEST_USER_1_EMAIL  # noqa: E402
 from tests.integration.connector_job_tests.slack.conftest import SLACK_TEST_USER_2_EMAIL  # noqa: E402
@@ -48,7 +48,7 @@ from tests.integration.connector_job_tests.slack.slack_api_utils import SlackMan
 )
 def test_slack_permission_sync(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    index_client: IndexFixture,  # noqa: ARG001
     slack_perm_sync_test_setup: tuple[ChannelType, ChannelType],
 ) -> None:
     public_channel, private_channel = slack_perm_sync_test_setup
@@ -150,7 +150,7 @@ def test_slack_permission_sync(
         number_of_updated_docs=0,
         user_performing_action=admin_user,
         should_wait_for_group_sync=False,
-        should_wait_for_vespa_sync=False,
+        should_wait_for_doc_sync=False,
     )
 
     # Verify admin can see messages from both channels
@@ -216,7 +216,7 @@ def test_slack_permission_sync(
 )
 def test_slack_group_permission_sync(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    index_client: IndexFixture,  # noqa: ARG001
     slack_perm_sync_test_setup: tuple[ChannelType, ChannelType],
 ) -> None:
     """
@@ -320,7 +320,7 @@ def test_slack_group_permission_sync(
         number_of_updated_docs=0,
         user_performing_action=admin_user,
         should_wait_for_group_sync=False,
-        should_wait_for_vespa_sync=False,
+        should_wait_for_doc_sync=False,
     )
 
     # Verify admin can see the message

@@ -18,7 +18,7 @@ from tests.integration.common_utils.managers.credential import CredentialManager
 from tests.integration.common_utils.managers.file import FileManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import vespa_fixture
+from tests.integration.common_utils.index_fixture import IndexFixture
 
 # This is a placeholder - you'll need to create this zip file with actual test files
 TEST_FILES_BASE = "tests/integration/tests/indexing/file_connector/test_files"
@@ -36,7 +36,7 @@ TEST_METADATA_FILE = f"{TEST_FILES_BASE}/.metadata.json"
 )
 def test_zip_metadata_handling(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    index_client: IndexFixture,  # noqa: ARG001
     zip_path: str,
     has_metadata: bool,
 ) -> None:

@@ -13,7 +13,7 @@ include = ["src*"]
 
 [tool.pytest.ini_options]
 # Default run covers unit + regression tests only.
-# Integration tests require a live server stack (Postgres, Vespa, Redis, etc.)
+# Integration tests require a live server stack (Postgres, OpenSearch, Redis, etc.)
 # and are opt-in:  pytest tests/integration/
 testpaths = ["tests/unit", "tests/regression"]
 addopts = "-v --tb=short"

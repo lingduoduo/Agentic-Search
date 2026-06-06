@@ -51,7 +51,7 @@ def get_default_document_index(
 
     Returns DisabledDocumentIndex when DISABLE_VECTOR_DB=true.
     Returns OpenSearchDocumentIndex when ENABLE_OPENSEARCH_INDEXING=true.
-    Returns DisabledDocumentIndex otherwise (no Vespa backend in this repo).
+    Returns DisabledDocumentIndex as fallback.
     """
     if _is_vector_db_disabled():
         return DisabledDocumentIndex()

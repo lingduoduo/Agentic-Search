@@ -2,7 +2,7 @@
 
 These tests are intended to run against an deployment started with
 DISABLE_VECTOR_DB=true.  They are automatically **skipped** when the
-server reports vector_db_enabled=true (i.e. when Vespa is available).
+server reports vector_db_enabled=true (i.e. when OpenSearch is available).
 """
 
 import pytest

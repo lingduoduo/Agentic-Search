@@ -1,9 +1,6 @@
 """Local index fixture backed by AgenticSearchStore (SQLite).
 
-Named ``vespa_fixture`` for backwards compatibility with existing tests that
-accept it as a pytest parameter. The class previously wrapped an OpenSearch
-client; it now reads directly from the same SQLite database that the running
-API server uses.
+Reads directly from the same SQLite database that the running API server uses.
 
 Set AGENTIC_SEARCH_WEB_DB_PATH to the file path used when launching the server.
 With the default in-memory DB (":memory:") the fixture will always return empty
@@ -19,7 +16,7 @@ from typing import Any
 SQLITE_DB_PATH = os.getenv("AGENTIC_SEARCH_WEB_DB_PATH", ":memory:")
 
 
-class vespa_fixture:
+class IndexFixture:
     """Test fixture for inspecting the document index via the local SQLite store."""
 
     def __init__(self, index_name: str | None = None) -> None:

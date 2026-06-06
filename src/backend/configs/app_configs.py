@@ -103,21 +103,11 @@ class LLMSettings:
 
 @dataclass(frozen=True)
 class VectorDbSettings:
-    """Settings for Vespa and OpenSearch vector database backends."""
+    """Settings for the OpenSearch vector database backend."""
 
     disable_vector_db: bool = False
-    disable_vespa: bool = False
     enable_opensearch: bool = False
     multi_tenant: bool = False
-
-    # Vespa connection
-    vespa_host: str = "localhost"
-    vespa_port: int = 8080
-    vespa_tenant_port: int = 19071
-    vespa_cloud_url: str | None = None
-    vespa_timeout: str = "10s"
-    vespa_language_override: str | None = None
-    vespa_searcher_threads: int = 8
 
     # OpenSearch connection
     opensearch_host: str = "localhost"
@@ -204,18 +194,8 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         ),
         vector_db=VectorDbSettings(
             disable_vector_db=get_env_bool(source, "DISABLE_VECTOR_DB", False),
-            disable_vespa=get_env_bool(source, "DISABLE_VESPA", False),
             enable_opensearch=get_env_bool(source, "ENABLE_OPENSEARCH_INDEXING", False),
             multi_tenant=get_env_bool(source, "MULTI_TENANT", False),
-            vespa_host=get_env_str(source, "VESPA_HOST", "localhost"),
-            vespa_port=get_env_int(source, "VESPA_PORT", 8080),
-            vespa_tenant_port=get_env_int(source, "VESPA_TENANT_PORT", 19071),
-            vespa_cloud_url=get_env_str(source, "VESPA_CLOUD_URL", None),
-            vespa_timeout=get_env_str(source, "VESPA_TIMEOUT", "10s"),
-            vespa_language_override=get_env_str(
-                source, "VESPA_LANGUAGE_OVERRIDE", None
-            ),
-            vespa_searcher_threads=get_env_int(source, "VESPA_SEARCHER_THREADS", 8),
             opensearch_host=get_env_str(source, "OPENSEARCH_HOST", "localhost"),
             opensearch_port=get_env_int(source, "OPENSEARCH_PORT", 9200),
             opensearch_user=get_env_str(source, "OPENSEARCH_USER", None),
