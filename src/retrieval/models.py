@@ -102,6 +102,16 @@ class EmbeddingProvider(StrEnum):
     CUSTOM = "custom"
 
 
+class QueryType(StrEnum):
+    SEMANTIC = "semantic"
+    KEYWORD = "keyword"
+    HYBRID = "hybrid"
+
+
+# Type alias matching shared_configs.model_server_models.Embedding
+Embedding = list[float]
+
+
 @dataclass(frozen=True)
 class ChunkEmbedding:
     """Full and optional mini-chunk embeddings for one indexed chunk."""
@@ -236,6 +246,9 @@ class IndexChunk:
     mini_chunk_texts: list[str] | None = None
     large_chunk_reference_ids: list[int] | None = None
     large_chunk_id: int | None = None
+    title_prefix: str = ""
+    doc_summary: str = ""
+    chunk_context: str = ""
 
     @property
     def content(self) -> str:
@@ -272,6 +285,15 @@ class DocumentAccess:
     is_public: bool = True
     user_ids: set[str] = field(default_factory=set)
     group_ids: set[str] = field(default_factory=set)
+
+
+@dataclass
+class ExternalAccess:
+    """External (third-party) access control metadata for a document."""
+
+    external_user_emails: list[str] = field(default_factory=list)
+    external_user_group_ids: list[str] = field(default_factory=list)
+    is_public: bool = False
 
 
 @dataclass(frozen=True)
@@ -313,6 +335,38 @@ class DocMetadataAwareIndexChunk:
             tenant_id=tenant_id,
             ancestor_hierarchy_node_ids=ancestor_hierarchy_node_ids or [],
         )
+
+    @property
+    def title_prefix(self) -> str:
+        return self.embedded_chunk.chunk.title_prefix
+
+    @property
+    def doc_summary(self) -> str:
+        return self.embedded_chunk.chunk.doc_summary
+
+    @property
+    def chunk_context(self) -> str:
+        return self.embedded_chunk.chunk.chunk_context
+
+    @property
+    def content(self) -> str:
+        return self.embedded_chunk.chunk.text
+
+    @property
+    def metadata_suffix_keyword(self) -> str:
+        return self.embedded_chunk.chunk.metadata_suffix_keyword
+
+    @property
+    def metadata_suffix_semantic(self) -> str:
+        return self.embedded_chunk.chunk.metadata_suffix_semantic
+
+    @property
+    def chunk_id(self) -> int:
+        return self.embedded_chunk.chunk.chunk_id
+
+    @property
+    def large_chunk_id(self) -> int | None:
+        return self.embedded_chunk.chunk.large_chunk_id
 
 
 @dataclass(frozen=True)
@@ -399,8 +453,10 @@ class IndexingSetting(EmbeddingModelDetail):
 
 @dataclass(frozen=True)
 class MultipassConfig:
-    multipass_indexing: bool
-    enable_large_chunks: bool
+    """Configuration for multipass indexing (large + mini chunks)."""
+
+    multipass_indexing: bool = False
+    enable_large_chunks: bool = False
 
 
 @dataclass(frozen=True)
@@ -451,3 +507,155 @@ class IndexingBatchAdapter(Protocol):
         enrichment: ChunkEnrichmentContext,
         db_session: Any,
     ) -> None: ...
+
+
+# ---------------------------------------------------------------------------
+# DocumentIndex retrieval types (Pydantic for schema validation)
+# ---------------------------------------------------------------------------
+
+try:
+    from datetime import datetime as _dt
+
+    class InferenceChunk(_PydanticBase):
+        """A retrieved chunk returned from a DocumentIndex retrieval method."""
+
+        document_id: str
+        chunk_ind: int
+        blurb: str = ""
+        content: str = ""
+        source_links: dict[int, str] | None = None
+        section_continuation: bool = False
+        semantic_identifier: str = ""
+        boost: int = 0
+        hidden: bool = False
+        score: float | None = None
+        metadata: dict[str, Any] = _Field(default_factory=dict)
+        match_highlights: list[str] = _Field(default_factory=list)
+        document_sets: set[str] = _Field(default_factory=set)
+        access_control_list: list[str] | None = None
+        title: str | None = None
+        source_type: str = ""
+        large_chunk_id: int | None = None
+        large_chunk_reference_ids: list[int] | None = None
+
+    class InferenceChunkUncleaned(_PydanticBase):
+        """Mutable InferenceChunk used during content cleanup pipeline."""
+
+        document_id: str
+        chunk_ind: int
+        content: str = ""
+        title: str | None = None
+        blurb: str = ""
+        source_links: dict[int, str] | None = None
+        section_continuation: bool = False
+        semantic_identifier: str = ""
+        boost: int = 0
+        hidden: bool = False
+        score: float | None = None
+        metadata: dict[str, Any] = _Field(default_factory=dict)
+        match_highlights: list[str] = _Field(default_factory=list)
+        document_sets: set[str] = _Field(default_factory=set)
+        access_control_list: list[str] | None = None
+        source_type: str = ""
+        metadata_suffix: str = ""
+        doc_summary: str = ""
+        chunk_context: str = ""
+
+        def to_inference_chunk(self) -> "InferenceChunk":
+            return InferenceChunk(
+                document_id=self.document_id,
+                chunk_ind=self.chunk_ind,
+                blurb=self.blurb,
+                content=self.content,
+                source_links=self.source_links,
+                section_continuation=self.section_continuation,
+                semantic_identifier=self.semantic_identifier,
+                boost=self.boost,
+                hidden=self.hidden,
+                score=self.score,
+                metadata=self.metadata,
+                match_highlights=self.match_highlights,
+                document_sets=self.document_sets,
+                access_control_list=self.access_control_list,
+                source_type=self.source_type,
+            )
+
+    class IndexFilters(_PydanticBase):
+        """Filters passed to DocumentIndex retrieval methods."""
+
+        model_config = {"frozen": True}
+
+        access_control_list: list[str] | None = None
+        document_set: list[str] | None = None
+        source_type: list[str] | None = None
+        tags: dict[str, list[str]] | None = None
+        time_cutoff: _dt | None = None
+        is_public: bool | None = None
+        tenant_id: str | None = None
+
+except ImportError:
+
+    @dataclass  # type: ignore[no-redef]
+    class InferenceChunk:  # type: ignore[no-redef]
+        document_id: str
+        chunk_ind: int
+        blurb: str = ""
+        content: str = ""
+        source_links: dict | None = None
+        section_continuation: bool = False
+        semantic_identifier: str = ""
+        boost: int = 0
+        hidden: bool = False
+        metadata: dict = field(default_factory=dict)
+        score: float | None = None
+        match_highlights: list = field(default_factory=list)
+        document_sets: set = field(default_factory=set)
+        access_control_list: list | None = None
+        title: str | None = None
+        source_type: str = ""
+        large_chunk_id: int | None = None
+        large_chunk_reference_ids: list | None = None
+
+    @dataclass  # type: ignore[no-redef]
+    class InferenceChunkUncleaned:  # type: ignore[no-redef]
+        document_id: str
+        chunk_ind: int
+        content: str = ""
+        title: str | None = None
+        blurb: str = ""
+        source_links: dict | None = None
+        section_continuation: bool = False
+        semantic_identifier: str = ""
+        boost: int = 0
+        hidden: bool = False
+        metadata: dict = field(default_factory=dict)
+        score: float | None = None
+        match_highlights: list = field(default_factory=list)
+        document_sets: set = field(default_factory=set)
+        access_control_list: list | None = None
+        source_type: str = ""
+        metadata_suffix: str = ""
+        doc_summary: str = ""
+        chunk_context: str = ""
+
+        def to_inference_chunk(self) -> "InferenceChunk":
+            return InferenceChunk(
+                document_id=self.document_id,
+                chunk_ind=self.chunk_ind,
+                blurb=self.blurb,
+                content=self.content,
+            )
+
+    @dataclass  # type: ignore[no-redef]
+    class IndexFilters:  # type: ignore[no-redef]
+        access_control_list: list | None = None
+        document_set: list | None = None
+        source_type: list | None = None
+        tags: dict | None = None
+        time_cutoff: Any = None
+        is_public: bool | None = None
+        tenant_id: str | None = None
+
+
+# Alias used by chunk_content_enrichment.py
+DocAwareChunk = DocMetadataAwareIndexChunk
