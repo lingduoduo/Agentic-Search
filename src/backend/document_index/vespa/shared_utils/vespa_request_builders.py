@@ -1,24 +1,27 @@
+import os
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
-from onyx.configs.constants import INDEX_SEPARATOR
-from onyx.context.search.models import IndexFilters
-from onyx.document_index.vespa.internal_types import VespaChunkRequest
-from onyx.document_index.vespa_constants import ACCESS_CONTROL_LIST
-from onyx.document_index.vespa_constants import CHUNK_ID
-from onyx.document_index.vespa_constants import DOC_UPDATED_AT
-from onyx.document_index.vespa_constants import DOCUMENT_ID
-from onyx.document_index.vespa_constants import DOCUMENT_SETS
-from onyx.document_index.vespa_constants import HIDDEN
-from onyx.document_index.vespa_constants import METADATA_LIST
-from onyx.document_index.vespa_constants import PERSONAS
-from onyx.document_index.vespa_constants import SOURCE_TYPE
-from onyx.document_index.vespa_constants import TENANT_ID
-from onyx.document_index.vespa_constants import USER_PROJECT
-from onyx.kg.utils.formatting_utils import split_relationship_id
-from onyx.utils.logger import setup_logger
-from shared_configs.configs import MULTI_TENANT
+from src.backend.configs.constants import INDEX_SEPARATOR
+from src.retrieval.models import IndexFilters
+from src.backend.document_index.vespa.internal_types import VespaChunkRequest
+from src.backend.document_index.vespa_constants import ACCESS_CONTROL_LIST
+from src.backend.document_index.vespa_constants import CHUNK_ID
+from src.backend.document_index.vespa_constants import DOC_UPDATED_AT
+from src.backend.document_index.vespa_constants import DOCUMENT_ID
+from src.backend.document_index.vespa_constants import DOCUMENT_SETS
+from src.backend.document_index.vespa_constants import HIDDEN
+from src.backend.document_index.vespa_constants import METADATA_LIST
+from src.backend.document_index.vespa_constants import PERSONAS
+from src.backend.document_index.vespa_constants import SOURCE_TYPE
+from src.backend.document_index.vespa_constants import TENANT_ID
+from src.backend.document_index.vespa_constants import USER_PROJECT
+from src.backend.document_index.utils import split_relationship_id
+from src.backend.document_index.utils import setup_logger
+
+# Inline env-var stub replacing shared_configs.configs import
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 
 logger = setup_logger()
 

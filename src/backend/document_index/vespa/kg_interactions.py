@@ -1,11 +1,28 @@
-from onyx.db.document import get_document_kg_entities_and_relationships
-from onyx.db.document import get_num_chunks_for_document
-from onyx.db.engine.sql_engine import get_session_with_current_tenant
-from onyx.document_index.interfaces_new import TenantState
-from onyx.document_index.vespa.vespa_document_index import KGUChunkUpdateRequest
-from onyx.document_index.vespa.vespa_document_index import VespaDocumentIndex
-from onyx.utils.logger import setup_logger
-from shared_configs.configs import MULTI_TENANT
+import os
+from typing import Any
+
+from src.backend.db.store import get_session_with_current_tenant
+from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.vespa.vespa_document_index import KGUChunkUpdateRequest
+from src.backend.document_index.vespa.vespa_document_index import VespaDocumentIndex
+from src.backend.document_index.utils import setup_logger
+
+# Inline env-var stub replacing shared_configs.configs import
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
+
+
+# Stubs for onyx.db functions not ported to this codebase
+def get_document_kg_entities_and_relationships(
+    db_session: Any, document_id: str
+) -> tuple[list, list]:
+    raise NotImplementedError(
+        "get_document_kg_entities_and_relationships not implemented"
+    )
+
+
+def get_num_chunks_for_document(db_session: Any, document_id: str) -> int:
+    raise NotImplementedError("get_num_chunks_for_document not implemented")
+
 
 logger = setup_logger()
 

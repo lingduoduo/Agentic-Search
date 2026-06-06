@@ -1,4 +1,5 @@
 import json
+import os
 import string
 import time
 from collections.abc import Callable
@@ -11,58 +12,60 @@ from typing import cast
 import httpx
 from retry import retry
 
-from onyx.background.celery.tasks.opensearch_migration.constants import (
-    FINISHED_VISITING_SLICE_CONTINUATION_TOKEN,
-)
-from onyx.background.celery.tasks.opensearch_migration.transformer import (
-    FIELDS_NEEDED_FOR_TRANSFORMATION,
-)
-from onyx.configs.app_configs import LOG_VESPA_TIMING_INFORMATION
-from onyx.configs.app_configs import VESPA_LANGUAGE_OVERRIDE
-from onyx.configs.app_configs import VESPA_MIGRATION_REQUEST_TIMEOUT_S
-from onyx.configs.app_configs import VESPA_MIGRATION_SERVER_SIDE_REQUEST_TIMEOUT
-from onyx.context.search.models import IndexFilters
-from onyx.context.search.models import InferenceChunkUncleaned
-from onyx.document_index.interfaces_new import TenantState
-from onyx.document_index.vespa.internal_types import VespaChunkRequest
-from onyx.document_index.vespa.shared_utils.utils import get_vespa_http_client
-from onyx.document_index.vespa.shared_utils.vespa_request_builders import (
+from src.retrieval.models import IndexFilters
+from src.retrieval.models import InferenceChunkUncleaned
+from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.vespa.internal_types import VespaChunkRequest
+from src.backend.document_index.vespa.shared_utils.utils import get_vespa_http_client
+from src.backend.document_index.vespa.shared_utils.vespa_request_builders import (
     build_vespa_filters,
 )
-from onyx.document_index.vespa.shared_utils.vespa_request_builders import (
+from src.backend.document_index.vespa.shared_utils.vespa_request_builders import (
     build_vespa_id_based_retrieval_yql,
 )
-from onyx.document_index.vespa_constants import ACCESS_CONTROL_LIST
-from onyx.document_index.vespa_constants import BLURB
-from onyx.document_index.vespa_constants import BOOST
-from onyx.document_index.vespa_constants import CHUNK_CONTEXT
-from onyx.document_index.vespa_constants import CHUNK_ID
-from onyx.document_index.vespa_constants import CONTENT
-from onyx.document_index.vespa_constants import CONTENT_SUMMARY
-from onyx.document_index.vespa_constants import DOC_SUMMARY
-from onyx.document_index.vespa_constants import DOC_UPDATED_AT
-from onyx.document_index.vespa_constants import DOCUMENT_ID
-from onyx.document_index.vespa_constants import DOCUMENT_ID_ENDPOINT
-from onyx.document_index.vespa_constants import HIDDEN
-from onyx.document_index.vespa_constants import IMAGE_FILE_NAME
-from onyx.document_index.vespa_constants import LARGE_CHUNK_REFERENCE_IDS
-from onyx.document_index.vespa_constants import MAX_ID_SEARCH_QUERY_SIZE
-from onyx.document_index.vespa_constants import MAX_OR_CONDITIONS
-from onyx.document_index.vespa_constants import METADATA
-from onyx.document_index.vespa_constants import METADATA_SUFFIX
-from onyx.document_index.vespa_constants import PRIMARY_OWNERS
-from onyx.document_index.vespa_constants import SEARCH_ENDPOINT
-from onyx.document_index.vespa_constants import SECONDARY_OWNERS
-from onyx.document_index.vespa_constants import SECTION_CONTINUATION
-from onyx.document_index.vespa_constants import SEMANTIC_IDENTIFIER
-from onyx.document_index.vespa_constants import SOURCE_LINKS
-from onyx.document_index.vespa_constants import SOURCE_TYPE
-from onyx.document_index.vespa_constants import TENANT_ID
-from onyx.document_index.vespa_constants import TITLE
-from onyx.document_index.vespa_constants import YQL_BASE
-from onyx.utils.logger import setup_logger
-from onyx.utils.threadpool_concurrency import run_functions_tuples_in_parallel
-from shared_configs.configs import MULTI_TENANT
+from src.backend.document_index.vespa_constants import ACCESS_CONTROL_LIST
+from src.backend.document_index.vespa_constants import BLURB
+from src.backend.document_index.vespa_constants import BOOST
+from src.backend.document_index.vespa_constants import CHUNK_CONTEXT
+from src.backend.document_index.vespa_constants import CHUNK_ID
+from src.backend.document_index.vespa_constants import CONTENT
+from src.backend.document_index.vespa_constants import CONTENT_SUMMARY
+from src.backend.document_index.vespa_constants import DOC_SUMMARY
+from src.backend.document_index.vespa_constants import DOC_UPDATED_AT
+from src.backend.document_index.vespa_constants import DOCUMENT_ID
+from src.backend.document_index.vespa_constants import DOCUMENT_ID_ENDPOINT
+from src.backend.document_index.vespa_constants import HIDDEN
+from src.backend.document_index.vespa_constants import IMAGE_FILE_NAME
+from src.backend.document_index.vespa_constants import LARGE_CHUNK_REFERENCE_IDS
+from src.backend.document_index.vespa_constants import MAX_ID_SEARCH_QUERY_SIZE
+from src.backend.document_index.vespa_constants import MAX_OR_CONDITIONS
+from src.backend.document_index.vespa_constants import METADATA
+from src.backend.document_index.vespa_constants import METADATA_SUFFIX
+from src.backend.document_index.vespa_constants import PRIMARY_OWNERS
+from src.backend.document_index.vespa_constants import SEARCH_ENDPOINT
+from src.backend.document_index.vespa_constants import SECONDARY_OWNERS
+from src.backend.document_index.vespa_constants import SECTION_CONTINUATION
+from src.backend.document_index.vespa_constants import SEMANTIC_IDENTIFIER
+from src.backend.document_index.vespa_constants import SOURCE_LINKS
+from src.backend.document_index.vespa_constants import SOURCE_TYPE
+from src.backend.document_index.vespa_constants import TENANT_ID
+from src.backend.document_index.vespa_constants import TITLE
+from src.backend.document_index.vespa_constants import YQL_BASE
+from src.backend.document_index.utils import setup_logger
+from src.backend.chat.chat_utils import run_functions_tuples_in_parallel
+
+# OpenSearch migration transformer — stub for non-migration use
+FINISHED_VISITING_SLICE_CONTINUATION_TOKEN: str = "__FINISHED__"
+FIELDS_NEEDED_FOR_TRANSFORMATION: list[str] = []
+
+# Inline env-var stubs replacing onyx.configs.app_configs imports
+LOG_VESPA_TIMING_INFORMATION: bool = False
+VESPA_LANGUAGE_OVERRIDE: str | None = os.environ.get("VESPA_LANGUAGE_OVERRIDE")
+VESPA_MIGRATION_REQUEST_TIMEOUT_S: int = int(
+    os.environ.get("VESPA_MIGRATION_REQUEST_TIMEOUT_S", "30")
+)
+VESPA_MIGRATION_SERVER_SIDE_REQUEST_TIMEOUT: int = 120
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 
 logger = setup_logger()
 

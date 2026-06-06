@@ -1,14 +1,21 @@
+import os
 import time
 from typing import cast
 
 import httpx
 
-from onyx.configs.app_configs import MANAGED_VESPA
-from onyx.configs.app_configs import VESPA_CLOUD_CERT_PATH
-from onyx.configs.app_configs import VESPA_CLOUD_KEY_PATH
-from onyx.configs.app_configs import VESPA_REQUEST_TIMEOUT
-from onyx.document_index.vespa_constants import VESPA_APP_CONTAINER_URL
-from onyx.utils.logger import setup_logger
+from src.backend.document_index.vespa_constants import VESPA_APP_CONTAINER_URL
+from src.backend.document_index.utils import setup_logger
+
+# Inline env-var stubs replacing onyx.configs.app_configs imports
+MANAGED_VESPA: bool = os.environ.get("MANAGED_VESPA", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+VESPA_CLOUD_CERT_PATH: str | None = os.environ.get("VESPA_CLOUD_CERT_PATH")
+VESPA_CLOUD_KEY_PATH: str | None = os.environ.get("VESPA_CLOUD_KEY_PATH")
+VESPA_REQUEST_TIMEOUT: int = int(os.environ.get("VESPA_REQUEST_TIMEOUT", "10"))
 
 logger = setup_logger()
 

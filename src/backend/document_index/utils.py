@@ -16,7 +16,7 @@ _T = TypeVar("_T")
 _F = TypeVar("_F", bound=Callable[..., Any])
 
 
-def setup_logger(name: str) -> logging.Logger:
+def setup_logger(name: str = __name__) -> logging.Logger:
     """Drop-in replacement for onyx.utils.logger.setup_logger."""
     return logging.getLogger(name)
 

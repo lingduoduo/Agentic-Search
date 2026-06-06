@@ -22,67 +22,77 @@ import requests
 from pydantic import BaseModel
 from retry import retry
 
-from onyx.configs.app_configs import MAX_CHUNKS_PER_DOC_BATCH
-from onyx.configs.app_configs import RECENCY_BIAS_MULTIPLIER
-from onyx.configs.app_configs import RERANK_COUNT
-from onyx.configs.chat_configs import DOC_TIME_DECAY
-from onyx.configs.chat_configs import HYBRID_ALPHA
-from onyx.configs.chat_configs import TITLE_CONTENT_RATIO
-from onyx.configs.chat_configs import VESPA_SEARCHER_THREADS
-from onyx.configs.constants import KV_REINDEX_KEY
-from onyx.context.search.enums import QueryType
-from onyx.context.search.models import IndexFilters
-from onyx.context.search.models import InferenceChunk
-from onyx.db.enums import EmbeddingPrecision
-from onyx.document_index.chunk_content_enrichment import cleanup_content_for_chunks
-from onyx.document_index.document_index_utils import get_document_chunk_ids
-from onyx.document_index.document_index_utils import get_uuid_from_chunk_info
-from onyx.document_index.interfaces_new import DocumentIndex
-from onyx.document_index.interfaces_new import DocumentInsertionRecord
-from onyx.document_index.interfaces_new import DocumentSectionRequest
-from onyx.document_index.interfaces_new import IndexingMetadata
-from onyx.document_index.interfaces_new import MetadataUpdateRequest
-from onyx.document_index.interfaces_new import TenantState
-from onyx.document_index.vespa.chunk_retrieval import batch_search_api_retrieval
-from onyx.document_index.vespa.chunk_retrieval import get_all_chunks_paginated
-from onyx.document_index.vespa.chunk_retrieval import get_chunks_via_visit_api
-from onyx.document_index.vespa.chunk_retrieval import parallel_visit_api_retrieval
-from onyx.document_index.vespa.chunk_retrieval import query_vespa
-from onyx.document_index.vespa.deletion import delete_vespa_chunks
-from onyx.document_index.vespa.indexing_utils import BaseHTTPXClientContext
-from onyx.document_index.vespa.indexing_utils import batch_index_vespa_chunks
-from onyx.document_index.vespa.indexing_utils import check_for_final_chunk_existence
-from onyx.document_index.vespa.indexing_utils import clean_chunk_id_copy
-from onyx.document_index.vespa.indexing_utils import GlobalHTTPXClientContext
-from onyx.document_index.vespa.indexing_utils import TemporaryHTTPXClientContext
-from onyx.document_index.vespa.internal_types import EnrichedDocumentIndexingInfo
-from onyx.document_index.vespa.internal_types import MinimalDocumentIndexingInfo
-from onyx.document_index.vespa.internal_types import VespaChunkRequest
-from onyx.document_index.vespa.shared_utils.utils import get_vespa_http_client
-from onyx.document_index.vespa.shared_utils.utils import (
+from src.retrieval.models import QueryType
+from src.retrieval.models import IndexFilters
+from src.retrieval.models import InferenceChunk
+from src.retrieval.models import EmbeddingPrecision
+from src.retrieval.models import DocMetadataAwareIndexChunk
+from src.retrieval.models import Embedding
+from src.backend.configs.constants import KV_REINDEX_KEY
+from src.backend.document_index.chunk_content_enrichment import (
+    cleanup_content_for_chunks,
+)
+from src.backend.document_index.document_index_utils import get_document_chunk_ids
+from src.backend.document_index.document_index_utils import get_uuid_from_chunk_info
+from src.backend.document_index.interfaces_new import DocumentIndex
+from src.backend.document_index.interfaces_new import DocumentInsertionRecord
+from src.backend.document_index.interfaces_new import DocumentSectionRequest
+from src.backend.document_index.interfaces_new import IndexingMetadata
+from src.backend.document_index.interfaces_new import MetadataUpdateRequest
+from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.vespa.chunk_retrieval import batch_search_api_retrieval
+from src.backend.document_index.vespa.chunk_retrieval import get_all_chunks_paginated
+from src.backend.document_index.vespa.chunk_retrieval import get_chunks_via_visit_api
+from src.backend.document_index.vespa.chunk_retrieval import (
+    parallel_visit_api_retrieval,
+)
+from src.backend.document_index.vespa.chunk_retrieval import query_vespa
+from src.backend.document_index.vespa.deletion import delete_vespa_chunks
+from src.backend.document_index.vespa.indexing_utils import BaseHTTPXClientContext
+from src.backend.document_index.vespa.indexing_utils import batch_index_vespa_chunks
+from src.backend.document_index.vespa.indexing_utils import (
+    check_for_final_chunk_existence,
+)
+from src.backend.document_index.vespa.indexing_utils import clean_chunk_id_copy
+from src.backend.document_index.vespa.indexing_utils import GlobalHTTPXClientContext
+from src.backend.document_index.vespa.indexing_utils import TemporaryHTTPXClientContext
+from src.backend.document_index.vespa.internal_types import EnrichedDocumentIndexingInfo
+from src.backend.document_index.vespa.internal_types import MinimalDocumentIndexingInfo
+from src.backend.document_index.vespa.internal_types import VespaChunkRequest
+from src.backend.document_index.vespa.shared_utils.utils import get_vespa_http_client
+from src.backend.document_index.vespa.shared_utils.utils import (
     replace_invalid_doc_id_characters,
 )
-from onyx.document_index.vespa.shared_utils.vespa_request_builders import (
+from src.backend.document_index.vespa.shared_utils.vespa_request_builders import (
     build_vespa_filters,
 )
-from onyx.document_index.vespa_constants import BATCH_SIZE
-from onyx.document_index.vespa_constants import CHUNK_ID
-from onyx.document_index.vespa_constants import CONTENT_SUMMARY
-from onyx.document_index.vespa_constants import DOCUMENT_ID
-from onyx.document_index.vespa_constants import DOCUMENT_ID_ENDPOINT
-from onyx.document_index.vespa_constants import NUM_THREADS
-from onyx.document_index.vespa_constants import SEARCH_ENDPOINT
-from onyx.document_index.vespa_constants import VESPA_APPLICATION_ENDPOINT
-from onyx.document_index.vespa_constants import VESPA_TIMEOUT
-from onyx.document_index.vespa_constants import YQL_BASE
-from onyx.indexing.models import DocMetadataAwareIndexChunk
-from onyx.key_value_store.factory import get_shared_kv_store
-from onyx.kg.utils.formatting_utils import split_relationship_id
-from onyx.tools.tool_implementations.search.constants import KEYWORD_QUERY_HYBRID_ALPHA
-from onyx.utils.batching import batch_generator
-from onyx.utils.logger import setup_logger
-from shared_configs.configs import MULTI_TENANT
-from shared_configs.model_server_models import Embedding
+from src.backend.document_index.vespa_constants import BATCH_SIZE
+from src.backend.document_index.vespa_constants import CHUNK_ID
+from src.backend.document_index.vespa_constants import CONTENT_SUMMARY
+from src.backend.document_index.vespa_constants import DOCUMENT_ID
+from src.backend.document_index.vespa_constants import DOCUMENT_ID_ENDPOINT
+from src.backend.document_index.vespa_constants import NUM_THREADS
+from src.backend.document_index.vespa_constants import SEARCH_ENDPOINT
+from src.backend.document_index.vespa_constants import VESPA_APPLICATION_ENDPOINT
+from src.backend.document_index.vespa_constants import VESPA_TIMEOUT
+from src.backend.document_index.vespa_constants import YQL_BASE
+from src.backend.document_index.utils import get_shared_kv_store
+from src.backend.document_index.utils import split_relationship_id
+from src.backend.document_index.utils import batch_generator
+from src.backend.document_index.utils import setup_logger
+
+# Inline env-var stubs replacing onyx.configs.app_configs / chat_configs imports
+MAX_CHUNKS_PER_DOC_BATCH: int = int(os.environ.get("MAX_CHUNKS_PER_DOC_BATCH", "512"))
+RECENCY_BIAS_MULTIPLIER: float = float(os.environ.get("RECENCY_BIAS_MULTIPLIER", "1.0"))
+RERANK_COUNT: int = int(os.environ.get("RERANK_COUNT", "0"))
+DOC_TIME_DECAY: float = float(os.environ.get("DOC_TIME_DECAY", "0.5"))
+HYBRID_ALPHA: float = float(os.environ.get("HYBRID_ALPHA", "0.5"))
+TITLE_CONTENT_RATIO: float = float(os.environ.get("TITLE_CONTENT_RATIO", "0.1"))
+VESPA_SEARCHER_THREADS: int = int(os.environ.get("VESPA_SEARCHER_THREADS", "8"))
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
+KEYWORD_QUERY_HYBRID_ALPHA: float = float(
+    os.environ.get("KEYWORD_QUERY_HYBRID_ALPHA", "0.2")
+)
 
 logger = setup_logger(__name__)
 # Set the logging level to WARNING to ignore INFO and DEBUG logs from httpx. By
