@@ -68,7 +68,7 @@ OPENSEARCH_PROFILING_DISABLED: bool = os.environ.get(
 ).lower() in {"1", "true", "yes"}
 
 
-# Tag stub
+# Tag stub (not present in this repo)
 @dataclass
 class Tag:
     """Minimal stub for a metadata tag filter."""

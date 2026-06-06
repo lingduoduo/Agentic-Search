@@ -1,7 +1,4 @@
-"""Utility helpers for the document index layer.
-
-Utility stubs for the document index layer.
-"""
+"""Utility stubs for the document index layer."""
 
 from __future__ import annotations
 

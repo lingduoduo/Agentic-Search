@@ -414,7 +414,7 @@ class OpenSearchIndexClient(OpenSearchClient):
 
     OpenSearch's Python module has pretty bad typing support so this client
     attempts to protect the rest of the codebase from this. As a consequence,
-    most methods here return the minimum data needed, and
+    most methods here return the minimum data needed by the rest of the system, and
     tend to rely on Exceptions to handle errors.
 
     TODO(andrei): This class currently assumes the structure of the database
