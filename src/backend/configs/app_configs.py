@@ -102,6 +102,36 @@ class LLMSettings:
 
 
 @dataclass(frozen=True)
+class VectorDbSettings:
+    """Settings for Vespa and OpenSearch vector database backends."""
+
+    disable_vector_db: bool = False
+    disable_vespa: bool = False
+    enable_opensearch: bool = False
+    multi_tenant: bool = False
+
+    # Vespa connection
+    vespa_host: str = "localhost"
+    vespa_port: int = 8080
+    vespa_tenant_port: int = 19071
+    vespa_cloud_url: str | None = None
+    vespa_timeout: str = "10s"
+    vespa_language_override: str | None = None
+    vespa_searcher_threads: int = 8
+
+    # OpenSearch connection
+    opensearch_host: str = "localhost"
+    opensearch_port: int = 9200
+    opensearch_user: str | None = None
+    opensearch_password: str | None = None
+
+    # Indexing behaviour
+    max_chunks_per_doc_batch: int = 512
+    enable_multipass_indexing: bool = False
+    verify_create_opensearch_index_on_init: bool = False
+
+
+@dataclass(frozen=True)
 class AppSettings:
     """Top-level process settings for Agentic Search."""
 
@@ -110,6 +140,7 @@ class AppSettings:
     permissions: PermissionSyncSettings = field(default_factory=PermissionSyncSettings)
     telemetry: TelemetrySettings = field(default_factory=TelemetrySettings)
     llm: LLMSettings = field(default_factory=LLMSettings)
+    vector_db: VectorDbSettings = field(default_factory=VectorDbSettings)
     license_enforcement_enabled: bool = False
     cloud_data_plane_url: str | None = None
     # Billing / Stripe configuration (optional; only needed when using billing endpoints)
@@ -169,6 +200,36 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
             ),
             posthog_debug_logs_enabled=get_env_bool(
                 source, "POSTHOG_DEBUG_LOGS_ENABLED", False
+            ),
+        ),
+        vector_db=VectorDbSettings(
+            disable_vector_db=get_env_bool(source, "DISABLE_VECTOR_DB", False),
+            disable_vespa=get_env_bool(source, "ONYX_DISABLE_VESPA", False),
+            enable_opensearch=get_env_bool(
+                source, "ENABLE_OPENSEARCH_INDEXING_FOR_ONYX", False
+            ),
+            multi_tenant=get_env_bool(source, "MULTI_TENANT", False),
+            vespa_host=get_env_str(source, "VESPA_HOST", "localhost"),
+            vespa_port=get_env_int(source, "VESPA_PORT", 8080),
+            vespa_tenant_port=get_env_int(source, "VESPA_TENANT_PORT", 19071),
+            vespa_cloud_url=get_env_str(source, "VESPA_CLOUD_URL", None),
+            vespa_timeout=get_env_str(source, "VESPA_TIMEOUT", "10s"),
+            vespa_language_override=get_env_str(
+                source, "VESPA_LANGUAGE_OVERRIDE", None
+            ),
+            vespa_searcher_threads=get_env_int(source, "VESPA_SEARCHER_THREADS", 8),
+            opensearch_host=get_env_str(source, "OPENSEARCH_HOST", "localhost"),
+            opensearch_port=get_env_int(source, "OPENSEARCH_PORT", 9200),
+            opensearch_user=get_env_str(source, "OPENSEARCH_USER", None),
+            opensearch_password=get_env_str(source, "OPENSEARCH_PASSWORD", None),
+            max_chunks_per_doc_batch=get_env_int(
+                source, "MAX_CHUNKS_PER_DOC_BATCH", 512
+            ),
+            enable_multipass_indexing=get_env_bool(
+                source, "ENABLE_MULTIPASS_INDEXING", False
+            ),
+            verify_create_opensearch_index_on_init=get_env_bool(
+                source, "VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT", False
             ),
         ),
         license_enforcement_enabled=get_env_bool(
@@ -301,9 +362,11 @@ __all__ = [
     "DEFAULT_FETCH_URL",
     "DEFAULT_RETRIEVAL_URL",
     "DEFAULT_WEB_DB_PATH",
+    "LLMSettings",
     "PermissionSyncSettings",
     "ServiceSettings",
     "TelemetrySettings",
+    "VectorDbSettings",
     "get_env_bool",
     "get_env_float",
     "get_env_int",
@@ -311,6 +374,9 @@ __all__ = [
     "get_env_str",
     "load_app_settings",
     "load_permission_sync_settings",
+    "MULTI_TENANT",
 ]
 
 INTEGRATION_TESTS_MODE: bool = False
+
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
