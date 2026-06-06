@@ -1,9 +1,9 @@
-# ruff: noqa: F821
 import time
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
+import generated.agentic_search_openapi_client.agentic_search_openapi_client as api  # type: ignore[unresolved-import]
 import requests
 
 from tests.integration.common_utils.types import InputType

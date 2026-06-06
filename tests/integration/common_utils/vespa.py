@@ -62,7 +62,3 @@ class IndexFixture:
                 }
             )
         return {"documents": documents}
-
-
-# Backwards-compatibility alias — use IndexFixture in new code.
-vespa_fixture = IndexFixture
