@@ -111,9 +111,7 @@ def test_vector_db_settings_defaults():
 
     s = VectorDbSettings()
     assert s.disable_vector_db is False
-    assert s.disable_vespa is False
     assert s.enable_opensearch is False
-    assert "localhost" in s.vespa_host
     assert "localhost" in s.opensearch_host
 
 
