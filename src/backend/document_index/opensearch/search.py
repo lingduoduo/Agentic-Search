@@ -53,7 +53,7 @@ from src.backend.document_index.opensearch.schema import TITLE_FIELD_NAME
 from src.backend.document_index.opensearch.schema import TITLE_VECTOR_FIELD_NAME
 from src.backend.document_index.opensearch.schema import USER_PROJECTS_FIELD_NAME
 
-# Read from environment — replaces onyx.configs.app_configs imports
+# Read from environment
 DEFAULT_OPENSEARCH_QUERY_TIMEOUT_S: int = int(
     os.environ.get("DEFAULT_OPENSEARCH_QUERY_TIMEOUT_S", "30")
 )
@@ -68,7 +68,7 @@ OPENSEARCH_PROFILING_DISABLED: bool = os.environ.get(
 ).lower() in {"1", "true", "yes"}
 
 
-# Stub for onyx.context.search.models.Tag (not present in this repo)
+# Tag stub
 @dataclass
 class Tag:
     """Minimal stub for a metadata tag filter."""
@@ -227,8 +227,8 @@ class DocumentQuery:
         time for results so that we can return arbitrarily-many IDs.
 
         Args:
-            document_id: Onyx document ID. Notably not an OpenSearch document
-                ID, which points to what Onyx would refer to as a chunk.
+            document_id: Document ID. Notably not an OpenSearch document
+                ID, which points to what the system calls a chunk.
             tenant_state: Tenant state containing the tenant ID.
             index_filters: Filters for the document retrieval query.
             include_hidden: Whether to include hidden documents.
@@ -306,8 +306,8 @@ class DocumentQuery:
         implementing batching.
 
         Args:
-            document_id: Onyx document ID. Notably not an OpenSearch document
-                ID, which points to what Onyx would refer to as a chunk.
+            document_id: Document ID. Notably not an OpenSearch document
+                ID, which points to what the system calls a chunk.
             tenant_state: Tenant state containing the tenant ID.
 
         Returns:

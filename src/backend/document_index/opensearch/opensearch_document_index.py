@@ -64,7 +64,7 @@ from src.backend.connectors.models import Document
 # MULTI_TENANT read from env
 MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 
-# Read from environment — replaces onyx.configs.app_configs imports
+# Read from environment
 MAX_CHUNKS_PER_DOC_BATCH: int = int(os.environ.get("MAX_CHUNKS_PER_DOC_BATCH", "512"))
 VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT: bool = os.environ.get(
     "VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT", ""
@@ -119,7 +119,7 @@ def set_cluster_state(client: OpenSearchClient) -> None:
             "Failed to put cluster settings. If the settings have never been set before, "
             "this may cause unexpected index creation when indexing documents into an "
             "index that does not exist, or may cause expected logs to not appear. If this "
-            "is not the first time running Onyx against this instance of OpenSearch, these "
+            "is not the first time running against this instance of OpenSearch, these "
             "settings have likely already been set. Not taking any further action..."
         )
     min_max_normalization_pipeline_name, min_max_normalization_pipeline_config = (
@@ -158,7 +158,7 @@ def _convert_retrieved_opensearch_chunk_to_inference_chunk_uncleaned(
             other thing").
 
     Returns:
-        An Onyx inference chunk representation.
+        An inference chunk representation.
     """
     return InferenceChunkUncleaned(
         chunk_id=chunk.chunk_index,
@@ -527,7 +527,7 @@ class OpenSearchDocumentIndex(DocumentIndex):
 
         Args:
             document_id: The unique identifier for the document as represented
-                in Onyx, not necessarily in the document index.
+                in the system, not necessarily in the document index.
             chunk_count: The number of chunks in OpenSearch for the document.
                 Defaults to None.
 

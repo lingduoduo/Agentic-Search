@@ -16,7 +16,7 @@ from src.backend.configs.constants import PUBLIC_DOC_PAT
 from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
 
 # NOTE: "Document" in the naming convention is used to refer to the entire
-# document as represented in Onyx. What is actually stored in the index is the
+# document as represented in this system. What is actually stored in the index is the
 # document chunks. By the terminology of most search engines / vector databases,
 # the individual objects stored are called documents, but in this case it refers
 # to a chunk.
@@ -156,7 +156,7 @@ class IndexRetrievalFilters(BaseModel):
     """
     Filters for retrieving chunks from the index.
 
-    Used to filter on permissions and other Onyx-specific metadata rather than
+    Used to filter on permissions and other system-specific metadata rather than
     chunk content. Should be passed in for every retrieval method.
 
     TODO(andrei): Currently unused, use this when making retrieval methods more
@@ -266,7 +266,7 @@ class Deletable(abc.ABC):
 
         Args:
             document_id: The unique identifier for the document as represented
-                in Onyx, not necessarily in the document index.
+                in the system, not necessarily in the document index.
             chunk_count: The number of chunks in the document. May be useful for
                 improving the efficiency of the delete operation. Defaults to
                 None.
@@ -471,7 +471,7 @@ class DocumentIndex(
     abc.ABC,
 ):
     """
-    A valid document index that can plug into all Onyx flows must implement all
+    A valid document index implementation must implement all
     of these functionalities.
 
     As a high-level summary, document indices need to be able to:

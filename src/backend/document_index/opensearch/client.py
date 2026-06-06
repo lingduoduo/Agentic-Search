@@ -27,7 +27,7 @@ from src.backend.document_index.utils import record_opensearch_search_error
 from src.backend.document_index.utils import setup_logger
 from src.backend.document_index.utils import track_opensearch_search
 
-# Read from environment — replaces onyx.configs.app_configs imports
+# Read from environment
 DEFAULT_OPENSEARCH_CLIENT_TIMEOUT_S: int = int(
     os.environ.get("DEFAULT_OPENSEARCH_CLIENT_TIMEOUT_S", "30")
 )
@@ -414,7 +414,7 @@ class OpenSearchIndexClient(OpenSearchClient):
 
     OpenSearch's Python module has pretty bad typing support so this client
     attempts to protect the rest of the codebase from this. As a consequence,
-    most methods here return the minimum data needed for the rest of Onyx, and
+    most methods here return the minimum data needed, and
     tend to rely on Exceptions to handle errors.
 
     TODO(andrei): This class currently assumes the structure of the database
@@ -765,7 +765,7 @@ class OpenSearchIndexClient(OpenSearchClient):
         """Indexes a document.
 
         Args:
-            document: The document to index. In Onyx this is a chunk of a
+            document: The document to index. In this system each is a chunk of a
                 document, OpenSearch simply refers to this as a document as
                 well.
             tenant_state: The tenant state of the caller.
@@ -850,7 +850,7 @@ class OpenSearchIndexClient(OpenSearchClient):
         Retries on 429 too many requests.
 
         Args:
-            documents: The documents to index. In Onyx this is a chunk of a
+            documents: The documents to index. In this system each is a chunk of a
                 document, OpenSearch simply refers to this as a document as
                 well.
             tenant_state: The tenant state of the caller.
