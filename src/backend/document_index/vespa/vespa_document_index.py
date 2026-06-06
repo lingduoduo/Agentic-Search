@@ -76,6 +76,7 @@ from src.backend.document_index.vespa_constants import SEARCH_ENDPOINT
 from src.backend.document_index.vespa_constants import VESPA_APPLICATION_ENDPOINT
 from src.backend.document_index.vespa_constants import VESPA_TIMEOUT
 from src.backend.document_index.vespa_constants import YQL_BASE
+from src.backend.configs.app_configs import MULTI_TENANT
 from src.backend.document_index.utils import get_shared_kv_store
 from src.backend.document_index.utils import split_relationship_id
 from src.backend.document_index.utils import batch_generator
@@ -84,12 +85,12 @@ from src.backend.document_index.utils import setup_logger
 # Inline env-var stubs replacing onyx.configs.app_configs / chat_configs imports
 MAX_CHUNKS_PER_DOC_BATCH: int = int(os.environ.get("MAX_CHUNKS_PER_DOC_BATCH", "512"))
 RECENCY_BIAS_MULTIPLIER: float = float(os.environ.get("RECENCY_BIAS_MULTIPLIER", "1.0"))
-RERANK_COUNT: int = int(os.environ.get("RERANK_COUNT", "0"))
+RERANK_COUNT: int = int(os.environ.get("RERANK_COUNT", "10000"))
 DOC_TIME_DECAY: float = float(os.environ.get("DOC_TIME_DECAY", "0.5"))
 HYBRID_ALPHA: float = float(os.environ.get("HYBRID_ALPHA", "0.5"))
 TITLE_CONTENT_RATIO: float = float(os.environ.get("TITLE_CONTENT_RATIO", "0.1"))
 VESPA_SEARCHER_THREADS: int = int(os.environ.get("VESPA_SEARCHER_THREADS", "8"))
-MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
+
 KEYWORD_QUERY_HYBRID_ALPHA: float = float(
     os.environ.get("KEYWORD_QUERY_HYBRID_ALPHA", "0.2")
 )
@@ -214,9 +215,7 @@ def deploy_vespa_schemas(
     deploy_url = f"{VESPA_APPLICATION_ENDPOINT}/tenant/default/prepareandactivate"
     logger.notice("Deploying Vespa application package to %s", deploy_url)
 
-    vespa_schema_path = os.path.join(
-        os.getcwd(), "onyx", "document_index", "vespa", "app_config"
-    )
+    vespa_schema_path = os.path.join(os.path.dirname(__file__), "app_config")
     schema_jinja_file = os.path.join(
         vespa_schema_path, "schemas", VESPA_SCHEMA_JINJA_FILENAME
     )
@@ -304,9 +303,7 @@ def register_multitenant_vespa_indices(
     deploy_url = f"{VESPA_APPLICATION_ENDPOINT}/tenant/default/prepareandactivate"
     logger.info("Deploying Vespa application package to %s", deploy_url)
 
-    vespa_schema_path = os.path.join(
-        os.getcwd(), "onyx", "document_index", "vespa", "app_config"
-    )
+    vespa_schema_path = os.path.join(os.path.dirname(__file__), "app_config")
     schema_jinja_file = os.path.join(
         vespa_schema_path, "schemas", VESPA_SCHEMA_JINJA_FILENAME
     )
@@ -504,7 +501,7 @@ def _update_single_chunk(
         model_config = {"frozen": True}
         # The names of these fields are based the Vespa schema. Changes to the
         # schema require changes here. These names were originally found in
-        # backend/onyx/document_index/vespa_constants.py.
+        # src/backend/document_index/vespa_constants.py.
         boost: _Boost | None = None
         document_sets: _DocumentSets | None = None
         access_control_list: _AccessControl | None = None

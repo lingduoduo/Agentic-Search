@@ -11,9 +11,6 @@ from src.backend.document_index.utils import setup_logger
 logger = setup_logger()
 
 
-CONTENT_SUMMARY = "content_summary"
-
-
 @retry(tries=10, delay=1, backoff=2)
 def _retryable_http_delete(http_client: httpx.Client, url: str) -> None:
     res = http_client.delete(url)

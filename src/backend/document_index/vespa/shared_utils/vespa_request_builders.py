@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -17,11 +16,9 @@ from src.backend.document_index.vespa_constants import PERSONAS
 from src.backend.document_index.vespa_constants import SOURCE_TYPE
 from src.backend.document_index.vespa_constants import TENANT_ID
 from src.backend.document_index.vespa_constants import USER_PROJECT
+from src.backend.configs.app_configs import MULTI_TENANT
 from src.backend.document_index.utils import split_relationship_id
 from src.backend.document_index.utils import setup_logger
-
-# Inline env-var stub replacing shared_configs.configs import
-MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 
 logger = setup_logger()
 

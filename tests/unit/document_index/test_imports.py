@@ -68,3 +68,7 @@ def test_vespa_indexing_utils_importable():
 
 def test_vespa_document_index_importable():
     import src.backend.document_index.vespa.vespa_document_index  # noqa: F401
+
+
+def test_vespa_kg_interactions_importable():
+    import src.backend.document_index.vespa.kg_interactions  # noqa: F401

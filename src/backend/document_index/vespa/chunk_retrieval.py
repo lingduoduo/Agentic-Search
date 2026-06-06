@@ -51,6 +51,7 @@ from src.backend.document_index.vespa_constants import SOURCE_TYPE
 from src.backend.document_index.vespa_constants import TENANT_ID
 from src.backend.document_index.vespa_constants import TITLE
 from src.backend.document_index.vespa_constants import YQL_BASE
+from src.backend.configs.app_configs import MULTI_TENANT
 from src.backend.document_index.utils import setup_logger
 from src.backend.chat.chat_utils import run_functions_tuples_in_parallel
 
@@ -59,13 +60,14 @@ FINISHED_VISITING_SLICE_CONTINUATION_TOKEN: str = "__FINISHED__"
 FIELDS_NEEDED_FOR_TRANSFORMATION: list[str] = []
 
 # Inline env-var stubs replacing onyx.configs.app_configs imports
-LOG_VESPA_TIMING_INFORMATION: bool = False
+LOG_VESPA_TIMING_INFORMATION: bool = os.environ.get(
+    "LOG_VESPA_TIMING_INFORMATION", ""
+).lower() in {"1", "true", "yes"}
 VESPA_LANGUAGE_OVERRIDE: str | None = os.environ.get("VESPA_LANGUAGE_OVERRIDE")
 VESPA_MIGRATION_REQUEST_TIMEOUT_S: int = int(
     os.environ.get("VESPA_MIGRATION_REQUEST_TIMEOUT_S", "30")
 )
 VESPA_MIGRATION_SERVER_SIDE_REQUEST_TIMEOUT: int = 120
-MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 
 logger = setup_logger()
 

@@ -374,6 +374,9 @@ __all__ = [
     "get_env_str",
     "load_app_settings",
     "load_permission_sync_settings",
+    "MULTI_TENANT",
 ]
 
 INTEGRATION_TESTS_MODE: bool = False
+
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
