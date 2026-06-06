@@ -1,6 +1,3 @@
-import importlib
-
-
 def test_factory_importable():
     import src.backend.document_index.factory  # noqa: F401
 
@@ -8,8 +5,6 @@ def test_factory_importable():
 def test_get_default_index_disabled(monkeypatch):
     monkeypatch.setenv("DISABLE_VECTOR_DB", "true")
     import src.backend.document_index.factory as factory_mod
-
-    importlib.reload(factory_mod)
     from src.backend.document_index.disabled import DisabledDocumentIndex
 
     idx = factory_mod.get_default_document_index(
@@ -22,8 +17,6 @@ def test_get_default_index_disabled(monkeypatch):
 def test_disabled_verify_is_noop(monkeypatch):
     monkeypatch.setenv("DISABLE_VECTOR_DB", "true")
     import src.backend.document_index.factory as factory_mod
-
-    importlib.reload(factory_mod)
 
     idx = factory_mod.get_default_document_index(
         primary_index_name="test_index",
@@ -40,8 +33,6 @@ def test_disabled_verify_is_noop(monkeypatch):
 def test_get_all_indices_disabled_returns_list(monkeypatch):
     monkeypatch.setenv("DISABLE_VECTOR_DB", "true")
     import src.backend.document_index.factory as factory_mod
-
-    importlib.reload(factory_mod)
     from src.backend.document_index.disabled import DisabledDocumentIndex
 
     indices = factory_mod.get_all_document_indices(
@@ -57,7 +48,8 @@ def test_factory_no_db_session_param():
     import inspect
     import src.backend.document_index.factory as factory_mod
 
-    importlib.reload(factory_mod)
-    sig = inspect.signature(factory_mod.get_default_document_index)
-    assert "db_session" not in sig.parameters
-    assert "session" not in sig.parameters
+    for func_name in ("get_default_document_index", "get_all_document_indices"):
+        func = getattr(factory_mod, func_name)
+        sig = inspect.signature(func)
+        assert "db_session" not in sig.parameters, f"{func_name} has db_session"
+        assert "session" not in sig.parameters, f"{func_name} has session"

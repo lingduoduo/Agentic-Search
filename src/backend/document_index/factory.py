@@ -9,19 +9,19 @@ import os
 from src.backend.document_index.disabled import DisabledDocumentIndex
 from src.backend.document_index.interfaces_new import DocumentIndex
 
-_DISABLE_VECTOR_DB: bool = os.environ.get("DISABLE_VECTOR_DB", "").lower() in {
-    "1",
-    "true",
-    "yes",
-}
-_ONYX_DISABLE_VESPA: bool = os.environ.get("ONYX_DISABLE_VESPA", "").lower() in {
-    "1",
-    "true",
-    "yes",
-}
-_ENABLE_OPENSEARCH: bool = os.environ.get(
-    "ENABLE_OPENSEARCH_INDEXING_FOR_ONYX", ""
-).lower() in {"1", "true", "yes"}
+_TRUTHY = {"1", "true", "yes"}
+
+
+def _is_vector_db_disabled() -> bool:
+    return os.environ.get("DISABLE_VECTOR_DB", "").lower() in _TRUTHY
+
+
+def _is_vespa_disabled() -> bool:
+    return os.environ.get("ONYX_DISABLE_VESPA", "").lower() in _TRUTHY
+
+
+def _is_opensearch_enabled() -> bool:
+    return os.environ.get("ENABLE_OPENSEARCH_INDEXING_FOR_ONYX", "").lower() in _TRUTHY
 
 
 def _build_tenant_state():
@@ -57,10 +57,10 @@ def get_default_document_index(
     Returns OpenSearchDocumentIndex when ENABLE_OPENSEARCH_INDEXING_FOR_ONYX=true.
     Otherwise returns VespaDocumentIndex.
     """
-    if _DISABLE_VECTOR_DB:
+    if _is_vector_db_disabled():
         return DisabledDocumentIndex()
 
-    if _ENABLE_OPENSEARCH:
+    if _is_opensearch_enabled():
         from src.backend.document_index.opensearch.opensearch_document_index import (
             OpenSearchDocumentIndex,
             OpenSearchIndexPair,
@@ -130,27 +130,46 @@ def get_all_document_indices(
     secondary_embedding_dim: int | None = None,
 ) -> list[DocumentIndex]:
     """Get every document index that should be written to during indexing."""
-    if _DISABLE_VECTOR_DB:
+    if _is_vector_db_disabled():
         return [DisabledDocumentIndex()]
 
-    if _ONYX_DISABLE_VESPA and not _ENABLE_OPENSEARCH:
+    if _is_vespa_disabled() and not _is_opensearch_enabled():
         raise ValueError(
             "ONYX_DISABLE_VESPA is set but ENABLE_OPENSEARCH_INDEXING_FOR_ONYX is not."
         )
 
     result: list[DocumentIndex] = []
-    if not _ONYX_DISABLE_VESPA:
+    if not _is_vespa_disabled():
+        from src.backend.document_index.vespa.vespa_document_index import (
+            VespaDocumentIndex,
+            VespaIndexPair,
+        )
+
+        tenant_state = _build_tenant_state()
+        vespa_primary = VespaDocumentIndex(
+            index_name=primary_index_name,
+            tenant_state=tenant_state,
+            large_chunks_enabled=large_chunks_enabled,
+        )
+        vespa_secondary = None
+        if secondary_index_name:
+            vespa_secondary = VespaDocumentIndex(
+                index_name=secondary_index_name,
+                tenant_state=tenant_state,
+                large_chunks_enabled=secondary_large_chunks_enabled,
+            )
         result.append(
-            get_default_document_index(
-                primary_index_name=primary_index_name,
+            VespaIndexPair(
+                primary=vespa_primary,
+                secondary=vespa_secondary,
                 secondary_index_name=secondary_index_name,
-                large_chunks_enabled=large_chunks_enabled,
-                secondary_large_chunks_enabled=secondary_large_chunks_enabled,
-                embedding_dim=embedding_dim,
                 secondary_embedding_dim=secondary_embedding_dim,
+                secondary_embedding_precision=_get_embedding_precision()
+                if vespa_secondary
+                else None,
             )
         )
-    if _ENABLE_OPENSEARCH:
+    if _is_opensearch_enabled():
         from src.backend.document_index.opensearch.opensearch_document_index import (
             OpenSearchDocumentIndex,
             OpenSearchIndexPair,
