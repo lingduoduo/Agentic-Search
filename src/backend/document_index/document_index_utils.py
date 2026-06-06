@@ -1,12 +1,25 @@
 import math
 import os
 import uuid
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
 from src.retrieval.models import DocMetadataAwareIndexChunk
 from src.retrieval.models import MultipassConfig
-from src.backend.document_index.vespa.internal_types import EnrichedDocumentIndexingInfo
+
+
+@dataclass
+class MinimalDocumentIndexingInfo:
+    doc_id: str
+    chunk_start_index: int
+
+
+@dataclass
+class EnrichedDocumentIndexingInfo(MinimalDocumentIndexingInfo):
+    old_version: bool
+    chunk_end_index: int
+
 
 MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 ENABLE_MULTIPASS_INDEXING: bool = os.environ.get(

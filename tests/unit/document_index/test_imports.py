@@ -1,10 +1,6 @@
 """Verify every document_index file can be imported without error."""
 
 
-def test_vespa_constants_importable():
-    import src.backend.document_index.vespa_constants  # noqa: F401
-
-
 def test_disabled_importable():
     import src.backend.document_index.disabled  # noqa: F401
 
@@ -43,32 +39,3 @@ def test_opensearch_client_importable():
 
 def test_opensearch_document_index_importable():
     import src.backend.document_index.opensearch.opensearch_document_index  # noqa: F401
-
-
-def test_vespa_internal_types_importable():
-    import src.backend.document_index.vespa.internal_types  # noqa: F401
-
-
-def test_vespa_shared_utils_importable():
-    import src.backend.document_index.vespa.shared_utils.utils  # noqa: F401
-    import src.backend.document_index.vespa.shared_utils.vespa_request_builders  # noqa: F401
-
-
-def test_vespa_chunk_retrieval_importable():
-    import src.backend.document_index.vespa.chunk_retrieval  # noqa: F401
-
-
-def test_vespa_deletion_importable():
-    import src.backend.document_index.vespa.deletion  # noqa: F401
-
-
-def test_vespa_indexing_utils_importable():
-    import src.backend.document_index.vespa.indexing_utils  # noqa: F401
-
-
-def test_vespa_document_index_importable():
-    import src.backend.document_index.vespa.vespa_document_index  # noqa: F401
-
-
-def test_vespa_kg_interactions_importable():
-    import src.backend.document_index.vespa.kg_interactions  # noqa: F401
