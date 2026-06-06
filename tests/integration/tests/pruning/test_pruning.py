@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.managers.api_key import APIKeyManager
 from tests.integration.common_utils.managers.cc_pair import CCPairManager
-from tests.integration.common_utils.vespa import IndexFixture
+from tests.integration.common_utils.index_fixture import IndexFixture
 
 logger = logging.getLogger(__name__)
 

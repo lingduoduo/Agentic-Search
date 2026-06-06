@@ -19,7 +19,7 @@ from tests.integration.common_utils.managers.llm_provider import LLMProviderMana
 from tests.integration.common_utils.managers.settings import SettingsManager
 from tests.integration.common_utils.test_models import DATestSettings
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import IndexFixture
+from tests.integration.common_utils.index_fixture import IndexFixture
 
 FILE_NAME = "Sample.pdf"
 FILE_PATH = "tests/integration/common_utils/test_files"

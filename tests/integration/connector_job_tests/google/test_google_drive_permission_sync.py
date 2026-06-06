@@ -30,7 +30,7 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 from tests.integration.connector_job_tests.google.google_drive_api_utils import (  # noqa: E402
     GoogleDriveManager,
 )

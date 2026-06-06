@@ -9,7 +9,7 @@ from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.document_set import DocumentSetManager
 from tests.integration.common_utils.test_models import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import IndexFixture
+from tests.integration.common_utils.index_fixture import IndexFixture
 
 
 def test_multiple_document_sets_syncing_same_connnector(

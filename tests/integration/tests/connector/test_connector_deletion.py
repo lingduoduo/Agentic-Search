@@ -36,7 +36,7 @@ from tests.integration.common_utils.managers.document_set import DocumentSetMana
 from tests.integration.common_utils.managers.user_group import UserGroupManager  # noqa: E402
 from tests.integration.common_utils.test_models import DATestAPIKey  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUserGroup  # noqa: E402
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 
 
 def test_connector_deletion(

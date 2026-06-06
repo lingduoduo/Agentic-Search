@@ -26,7 +26,7 @@ from tests.integration.common_utils.test_models import DATestDocumentSet
 from tests.integration.common_utils.test_models import DATestLLMProvider
 from tests.integration.common_utils.test_models import DATestPersona
 from tests.integration.common_utils.test_models import DATestUserGroup
-from tests.integration.common_utils.vespa import IndexFixture
+from tests.integration.common_utils.index_fixture import IndexFixture
 
 
 @pytest.mark.skipif(

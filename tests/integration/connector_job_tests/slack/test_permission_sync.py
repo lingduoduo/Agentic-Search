@@ -33,7 +33,7 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 from tests.integration.connector_job_tests.slack.conftest import SLACK_ADMIN_EMAIL  # noqa: E402
 from tests.integration.connector_job_tests.slack.conftest import SLACK_TEST_USER_1_EMAIL  # noqa: E402
 from tests.integration.connector_job_tests.slack.conftest import SLACK_TEST_USER_2_EMAIL  # noqa: E402

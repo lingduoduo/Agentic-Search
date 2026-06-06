@@ -25,7 +25,7 @@ from tests.integration.common_utils.managers.cc_pair import CCPairManager  # noq
 from tests.integration.common_utils.managers.document import DocumentManager  # noqa: E402
 from tests.integration.common_utils.managers.index_attempt import IndexAttemptManager  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 
 
 def test_repeated_error_state_detection_and_recovery(

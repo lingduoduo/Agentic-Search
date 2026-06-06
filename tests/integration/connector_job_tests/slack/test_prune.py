@@ -32,7 +32,7 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 from tests.integration.connector_job_tests.slack.slack_api_utils import SlackManager  # noqa: E402
 
 

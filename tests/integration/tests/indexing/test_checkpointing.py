@@ -31,7 +31,7 @@ from tests.integration.common_utils.test_document_utils import (  # noqa: E402
     create_test_document_failure,
 )
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 
 
 def test_mock_connector_basic_flow(

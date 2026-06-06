@@ -37,7 +37,7 @@ from tests.integration.common_utils.managers.index_attempt import IndexAttemptMa
 from tests.integration.common_utils.test_document_utils import create_test_document  # noqa: E402
 from tests.integration.common_utils.test_models import DATestCCPair  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
+from tests.integration.common_utils.index_fixture import IndexFixture  # noqa: E402
 
 
 def _setup_mock_connector(

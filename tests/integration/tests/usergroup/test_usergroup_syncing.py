@@ -11,7 +11,7 @@ from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.user_group import UserGroupManager
 from tests.integration.common_utils.test_models import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestUserGroup
-from tests.integration.common_utils.vespa import IndexFixture
+from tests.integration.common_utils.index_fixture import IndexFixture
 
 
 @pytest.mark.skipif(
