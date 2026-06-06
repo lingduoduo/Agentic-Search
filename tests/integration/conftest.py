@@ -42,7 +42,7 @@ from tests.integration.common_utils.managers.user import DEFAULT_PASSWORD  # noq
 from tests.integration.common_utils.reset import _seed_dev_license_if_set  # noqa: E402
 from tests.integration.common_utils.reset import reset_all  # noqa: E402
 from tests.integration.common_utils.reset import reset_all_multitenant  # noqa: E402
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
 from tests.integration.common_utils.test_models import DATestAPIKey  # noqa: E402
 from tests.integration.common_utils.test_models import DATestLLMProvider  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
@@ -164,8 +164,8 @@ def api_key(admin_user: DATestUser) -> DATestAPIKey:
 
 
 @pytest.fixture
-def vespa_client() -> vespa_fixture:
-    return vespa_fixture()
+def index_client() -> IndexFixture:
+    return IndexFixture()
 
 
 @pytest.fixture

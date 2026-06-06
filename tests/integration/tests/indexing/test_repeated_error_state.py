@@ -25,12 +25,12 @@ from tests.integration.common_utils.managers.cc_pair import CCPairManager  # noq
 from tests.integration.common_utils.managers.document import DocumentManager  # noqa: E402
 from tests.integration.common_utils.managers.index_attempt import IndexAttemptManager  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
 
 
 def test_repeated_error_state_detection_and_recovery(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that a connector is marked as in a repeated error state after
@@ -187,7 +187,7 @@ def test_repeated_error_state_detection_and_recovery(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(documents) == 1
     assert documents[0].id == test_doc.id

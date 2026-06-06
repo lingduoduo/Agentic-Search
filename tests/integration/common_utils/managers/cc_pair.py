@@ -1,9 +1,9 @@
+# ruff: noqa: F821
 import time
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-import generated.agentic_search_openapi_client.agentic_search_openapi_client as app_api  # ty: ignore[unresolved-import]
 import requests
 
 from tests.integration.common_utils.types import InputType
@@ -550,7 +550,7 @@ class CCPairManager:
         timeout: float = MAX_DELAY,
         number_of_updated_docs: int = 0,
         # Sometimes waiting for a group sync is not necessary
-        # Sometimes waiting for a vespa sync is not necessary
+        # Sometimes waiting for a doc index sync is not necessary
     ) -> None:
         """after: The task register time must be after this time."""
         doc_synced = False
@@ -594,11 +594,11 @@ class CCPairManager:
         # TODO: remove this sleep,
         # this shouldnt be necessary but something is off with the timing for the sync jobs
 
-        if not should_wait_for_vespa_sync:  # noqa: F821,F841
+        if not should_wait_for_doc_sync:  # noqa: F821,F841
             return
 
-        print("waiting for vespa sync")
-        # wait for the vespa sync to complete once the permission sync is complete
+        print("waiting for doc index sync")
+        # wait for the doc index sync to complete once the permission sync is complete
         while True:
             doc_sync_statuses = CCPairManager.get_doc_sync_statuses(
                 cc_pair=cc_pair,
@@ -622,11 +622,11 @@ class CCPairManager:
             elapsed = time.monotonic() - start
             if elapsed > timeout:
                 raise TimeoutError(
-                    f"Vespa sync was not completed within {timeout} seconds"
+                    f"Doc index sync was not completed within {timeout} seconds"
                 )
 
             print(
-                f"Waiting for vespa sync to complete. elapsed={elapsed:.2f} timeout={timeout}"
+                f"Waiting for doc index sync to complete. elapsed={elapsed:.2f} timeout={timeout}"
             )
             time.sleep(5)
 

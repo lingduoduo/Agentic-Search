@@ -9,11 +9,11 @@ from tests.integration.common_utils.managers.document import DocumentManager
 from tests.integration.common_utils.managers.document_set import DocumentSetManager
 from tests.integration.common_utils.test_models import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestUser
-from tests.integration.common_utils.vespa import vespa_fixture
+from tests.integration.common_utils.vespa import IndexFixture
 
 
 def test_multiple_document_sets_syncing_same_connnector(
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     # create api key
@@ -59,7 +59,7 @@ def test_multiple_document_sets_syncing_same_connnector(
 
     # make sure documents are as expected
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_1,
         doc_set_names=[doc_set_1.name, doc_set_2.name],
         doc_creating_user=admin_user,
@@ -67,7 +67,7 @@ def test_multiple_document_sets_syncing_same_connnector(
 
 
 def test_removing_connector(
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     # create api key
@@ -115,7 +115,7 @@ def test_removing_connector(
 
     # make sure cc_pair_1 docs are doc_set_1 only
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_1,
         doc_set_names=[doc_set_1.name],
         doc_creating_user=admin_user,
@@ -123,7 +123,7 @@ def test_removing_connector(
 
     # make sure cc_pair_2 docs are doc_set_1 only
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_2,
         doc_set_names=[doc_set_1.name],
         doc_creating_user=admin_user,
@@ -142,7 +142,7 @@ def test_removing_connector(
 
     # make sure cc_pair_1 docs are doc_set_1 only
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_1,
         doc_set_names=[doc_set_1.name],
         doc_creating_user=admin_user,
@@ -150,7 +150,7 @@ def test_removing_connector(
 
     # make sure cc_pair_2 docs have no doc set
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair_2,
         doc_set_names=[],
         doc_creating_user=admin_user,
@@ -158,7 +158,7 @@ def test_removing_connector(
 
 
 def test_renaming_document_set(
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     api_key: DATestAPIKey = APIKeyManager.create(
@@ -203,7 +203,7 @@ def test_renaming_document_set(
     )
 
     DocumentManager.verify(
-        vespa_client=vespa_client,
+        index_client=index_client,
         cc_pair=cc_pair,
         doc_set_names=[new_name],
         doc_creating_user=admin_user,

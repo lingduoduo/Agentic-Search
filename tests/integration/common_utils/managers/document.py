@@ -13,7 +13,7 @@ from tests.integration.common_utils.managers.api_key import DATestAPIKey
 from tests.integration.common_utils.test_models import DATestCCPair
 from tests.integration.common_utils.test_models import DATestUser
 from tests.integration.common_utils.test_models import SimpleTestDocument
-from tests.integration.common_utils.vespa import vespa_fixture
+from tests.integration.common_utils.vespa import IndexFixture
 
 
 def _verify_document_permissions(
@@ -163,7 +163,7 @@ class DocumentManager:
 
     @staticmethod
     def verify(
-        vespa_client: vespa_fixture,
+        index_client: IndexFixture,
         cc_pair: DATestCCPair,
         doc_creating_user: DATestUser,
         # If None, will not check doc sets or groups
@@ -172,7 +172,7 @@ class DocumentManager:
         verify_deleted: bool = False,
     ) -> None:
         doc_ids = [document.id for document in cc_pair.documents]
-        retrieved_docs_dict = vespa_client.get_documents_by_id(doc_ids)["documents"]
+        retrieved_docs_dict = index_client.get_documents_by_id(doc_ids)["documents"]
 
         retrieved_docs = {
             doc["fields"]["document_id"]: doc["fields"] for doc in retrieved_docs_dict
@@ -216,7 +216,7 @@ class DocumentManager:
     def fetch_documents_for_cc_pair(
         cc_pair_id: int,
         db_session: object = None,
-        vespa_client: object = None,
+        index_client: object = None,
     ) -> list[SimpleTestDocument]:
         """Stub: DB-based fetch removed. Use HTTP API for document retrieval."""
         return []

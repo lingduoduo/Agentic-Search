@@ -37,7 +37,7 @@ from tests.integration.common_utils.managers.index_attempt import IndexAttemptMa
 from tests.integration.common_utils.test_document_utils import create_test_document  # noqa: E402
 from tests.integration.common_utils.test_models import DATestCCPair  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
 
 
 def _setup_mock_connector(
@@ -100,7 +100,7 @@ def _setup_mock_connector(
 )
 def test_mock_connector_initial_permission_sync(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,
+    index_client: IndexFixture,
     admin_user: DATestUser,
 ) -> None:
     """Test that the MockConnector fetches and sets permissions during initial indexing
@@ -112,7 +112,7 @@ def test_mock_connector_initial_permission_sync(
         documents = DocumentManager.fetch_documents_for_cc_pair(
             cc_pair_id=cc_pair.id,
             db_session=db_session,
-            vespa_client=vespa_client,
+            index_client=index_client,
         )
     assert len(documents) == 1
     assert documents[0].id == test_doc.id
@@ -150,7 +150,7 @@ def test_mock_connector_initial_permission_sync(
         number_of_updated_docs=1,
         user_performing_action=admin_user,
         should_wait_for_group_sync=False,
-        should_wait_for_vespa_sync=False,
+        should_wait_for_doc_sync=False,
     )
 
     updated_cc_pair_info = CCPairManager.get_single(
@@ -166,7 +166,7 @@ def test_mock_connector_initial_permission_sync(
 )
 def test_permission_sync_attempt_tracking_integration(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    index_client: IndexFixture,  # noqa: ARG001
     admin_user: DATestUser,
 ) -> None:
     """Test that permission sync attempts are properly tracked during real sync workflows."""
@@ -185,7 +185,7 @@ def test_permission_sync_attempt_tracking_integration(
         number_of_updated_docs=1,
         user_performing_action=admin_user,
         should_wait_for_group_sync=False,
-        should_wait_for_vespa_sync=False,
+        should_wait_for_doc_sync=False,
     )
 
     with get_session_with_current_tenant() as db_session:
@@ -213,7 +213,7 @@ def test_permission_sync_attempt_tracking_integration(
 )
 def test_permission_sync_attempt_status_success(
     mock_server_client: httpx.Client,
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    index_client: IndexFixture,  # noqa: ARG001
     admin_user: DATestUser,
 ) -> None:
     """Test that permission sync attempts are marked as SUCCESS when sync completes without errors."""
@@ -232,7 +232,7 @@ def test_permission_sync_attempt_status_success(
         number_of_updated_docs=1,
         user_performing_action=admin_user,
         should_wait_for_group_sync=False,
-        should_wait_for_vespa_sync=False,
+        should_wait_for_doc_sync=False,
     )
 
     with get_session_with_current_tenant() as db_session:

@@ -1,7 +1,7 @@
 """Reset helpers for integration tests.
 
 In this deployment tests run against a live FastAPI server backed by SQLite.
-There is no Postgres or Vespa to reset — the server manages its own state.
+There is no Postgres or OpenSearch to reset — the server manages its own state.
 reset_all() and reset_all_multitenant() are no-ops unless SKIP_RESET is
 explicitly set, matching the original behaviour when that flag is set.
 """

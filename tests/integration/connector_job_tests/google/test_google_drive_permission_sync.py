@@ -30,7 +30,7 @@ from tests.integration.common_utils.test_models import DATestConnector  # noqa: 
 from tests.integration.common_utils.test_models import DATestCredential  # noqa: E402
 from tests.integration.common_utils.test_models import DATestUser  # noqa: E402
 
-from tests.integration.common_utils.vespa import vespa_fixture  # noqa: E402
+from tests.integration.common_utils.vespa import IndexFixture  # noqa: E402
 from tests.integration.connector_job_tests.google.google_drive_api_utils import (  # noqa: E402
     GoogleDriveManager,
 )
@@ -111,7 +111,7 @@ def google_drive_test_env_setup() -> Generator[
 @pytest.mark.xfail(reason="Needs to be tested for flakiness")
 def test_google_permission_sync(
     reset: None,  # noqa: ARG001
-    vespa_client: vespa_fixture,  # noqa: ARG001
+    index_client: IndexFixture,  # noqa: ARG001
     google_drive_test_env_setup: tuple[
         GoogleDriveService, str, DATestCCPair, DATestUser, DATestUser, DATestUser
     ],
@@ -279,7 +279,7 @@ def test_google_permission_sync(
         number_of_updated_docs=2,
         user_performing_action=admin_user,
         # if we are only updating the group definition for this test we use this varaiable,
-        # since it doesn't result in a vespa sync so we don't want to wait for it
+        # since it doesn't result in a doc index sync so we don't want to wait for it
     )
 
     # Verify user 1 can access both documents
