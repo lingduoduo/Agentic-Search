@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 from contextlib import AbstractContextManager
 from contextlib import nullcontext
@@ -12,23 +13,33 @@ from opensearchpy import TransportError
 from opensearchpy.helpers import bulk
 from pydantic import BaseModel
 
-from onyx.configs.app_configs import DEFAULT_OPENSEARCH_CLIENT_TIMEOUT_S
-from onyx.configs.app_configs import OPENSEARCH_ADMIN_PASSWORD
-from onyx.configs.app_configs import OPENSEARCH_ADMIN_USERNAME
-from onyx.configs.app_configs import OPENSEARCH_HOST
-from onyx.configs.app_configs import OPENSEARCH_REST_API_PORT
-from onyx.configs.app_configs import OPENSEARCH_USE_SSL
-from onyx.document_index.interfaces_new import TenantState
-from onyx.document_index.opensearch.constants import OpenSearchSearchType
-from onyx.document_index.opensearch.schema import DocumentChunk
-from onyx.document_index.opensearch.schema import DocumentChunkWithoutVectors
-from onyx.document_index.opensearch.schema import get_opensearch_doc_chunk_id
-from onyx.document_index.opensearch.search import DEFAULT_OPENSEARCH_MAX_RESULT_WINDOW
-from onyx.server.metrics.opensearch_search import observe_opensearch_search
-from onyx.server.metrics.opensearch_search import record_opensearch_search_error
-from onyx.server.metrics.opensearch_search import track_opensearch_search
-from onyx.utils.logger import setup_logger
-from onyx.utils.timing import log_function_time
+from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.opensearch.constants import OpenSearchSearchType
+from src.backend.document_index.opensearch.schema import DocumentChunk
+from src.backend.document_index.opensearch.schema import DocumentChunkWithoutVectors
+from src.backend.document_index.opensearch.schema import get_opensearch_doc_chunk_id
+from src.backend.document_index.opensearch.search import (
+    DEFAULT_OPENSEARCH_MAX_RESULT_WINDOW,
+)
+from src.backend.document_index.utils import log_function_time
+from src.backend.document_index.utils import observe_opensearch_search
+from src.backend.document_index.utils import record_opensearch_search_error
+from src.backend.document_index.utils import setup_logger
+from src.backend.document_index.utils import track_opensearch_search
+
+# Read from environment — replaces onyx.configs.app_configs imports
+DEFAULT_OPENSEARCH_CLIENT_TIMEOUT_S: int = int(
+    os.environ.get("DEFAULT_OPENSEARCH_CLIENT_TIMEOUT_S", "30")
+)
+OPENSEARCH_ADMIN_PASSWORD: str = os.environ.get("OPENSEARCH_ADMIN_PASSWORD", "admin")
+OPENSEARCH_ADMIN_USERNAME: str = os.environ.get("OPENSEARCH_ADMIN_USERNAME", "admin")
+OPENSEARCH_HOST: str = os.environ.get("OPENSEARCH_HOST", "localhost")
+OPENSEARCH_REST_API_PORT: int = int(os.environ.get("OPENSEARCH_REST_API_PORT", "9200"))
+OPENSEARCH_USE_SSL: bool = os.environ.get("OPENSEARCH_USE_SSL", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 CLIENT_THRESHOLD_TO_LOG_SLOW_SEARCH_MS = 2000
 DEFAULT_INDEX_SETTINGS_TIMEOUT_S = 15

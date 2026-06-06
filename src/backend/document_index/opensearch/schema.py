@@ -1,4 +1,5 @@
 import hashlib
+import os
 from datetime import datetime
 from datetime import timezone
 from typing import Any
@@ -12,25 +13,50 @@ from pydantic import model_serializer
 from pydantic import model_validator
 from pydantic import SerializerFunctionWrapHandler
 
-from onyx.configs.app_configs import OPENSEARCH_INDEX_NUM_REPLICAS
-from onyx.configs.app_configs import OPENSEARCH_INDEX_NUM_SHARDS
-from onyx.configs.app_configs import OPENSEARCH_TEXT_ANALYZER
-from onyx.configs.app_configs import USING_AWS_MANAGED_OPENSEARCH
-from onyx.document_index.interfaces_new import TenantState
-from onyx.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
-from onyx.document_index.opensearch.constants import EF_CONSTRUCTION
-from onyx.document_index.opensearch.constants import EF_SEARCH
-from onyx.document_index.opensearch.constants import M
-from onyx.document_index.opensearch.string_filtering import DocumentIDTooLongError
-from onyx.document_index.opensearch.string_filtering import (
+from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
+from src.backend.document_index.opensearch.constants import EF_CONSTRUCTION
+from src.backend.document_index.opensearch.constants import EF_SEARCH
+from src.backend.document_index.opensearch.constants import M
+from src.backend.document_index.opensearch.string_filtering import (
+    DocumentIDTooLongError,
+)
+from src.backend.document_index.opensearch.string_filtering import (
     filter_and_validate_document_id,
 )
-from onyx.document_index.opensearch.string_filtering import (
+from src.backend.document_index.opensearch.string_filtering import (
     MAX_DOCUMENT_ID_ENCODED_LENGTH,
 )
-from onyx.utils.tenant import get_tenant_id_short_string
-from shared_configs.configs import MULTI_TENANT
-from shared_configs.contextvars import get_current_tenant_id
+
+# Read from environment — replaces onyx.configs.app_configs imports
+OPENSEARCH_INDEX_NUM_REPLICAS: int | None = (
+    int(os.environ["OPENSEARCH_INDEX_NUM_REPLICAS"])
+    if os.environ.get("OPENSEARCH_INDEX_NUM_REPLICAS")
+    else None
+)
+OPENSEARCH_INDEX_NUM_SHARDS: int | None = (
+    int(os.environ["OPENSEARCH_INDEX_NUM_SHARDS"])
+    if os.environ.get("OPENSEARCH_INDEX_NUM_SHARDS")
+    else None
+)
+OPENSEARCH_TEXT_ANALYZER: str = os.environ.get("OPENSEARCH_TEXT_ANALYZER", "english")
+USING_AWS_MANAGED_OPENSEARCH: bool = os.environ.get(
+    "USING_AWS_MANAGED_OPENSEARCH", ""
+).lower() in {"1", "true", "yes"}
+
+# MULTI_TENANT read from env
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
+
+
+def get_current_tenant_id() -> str:
+    """Stub — returns a default tenant ID string."""
+    return os.environ.get("CURRENT_TENANT_ID", "default")
+
+
+def get_tenant_id_short_string(tenant_id: str) -> str:
+    """Stub — returns tenant_id truncated to 8 chars."""
+    return tenant_id[:8]
+
 
 TITLE_FIELD_NAME = "title"
 TITLE_VECTOR_FIELD_NAME = "title_vector"

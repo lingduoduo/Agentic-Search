@@ -23,3 +23,23 @@ def test_document_index_utils_importable():
 
 def test_chunk_content_enrichment_importable():
     import src.backend.document_index.chunk_content_enrichment  # noqa: F401
+
+
+def test_opensearch_constants_importable():
+    import src.backend.document_index.opensearch.constants  # noqa: F401
+
+
+def test_opensearch_schema_importable():
+    import src.backend.document_index.opensearch.schema  # noqa: F401
+
+
+def test_opensearch_search_importable():
+    import src.backend.document_index.opensearch.search  # noqa: F401
+
+
+def test_opensearch_client_importable():
+    import src.backend.document_index.opensearch.client  # noqa: F401
+
+
+def test_opensearch_document_index_importable():
+    import src.backend.document_index.opensearch.opensearch_document_index  # noqa: F401

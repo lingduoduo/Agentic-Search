@@ -6,12 +6,14 @@ Replaces imports previously satisfied by onyx.utils.* and onyx.connectors.*.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import re
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from typing import Any, TypeVar
 
 _T = TypeVar("_T")
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 
 def setup_logger(name: str) -> logging.Logger:
@@ -57,11 +59,10 @@ def convert_metadata_list_of_strings_to_dict(
 
 
 def get_experts_stores_representations(
-    primary_owners: list[str] | None,
-    secondary_owners: list[str] | None,
-) -> tuple[list[str], list[str]]:
-    """Return expert email lists. Stub — returns inputs unchanged."""
-    return primary_owners or [], secondary_owners or []
+    owners: list[str] | None,
+) -> list[str]:
+    """Return expert representation list. Stub — returns input unchanged."""
+    return owners or []
 
 
 def split_relationship_id(relationship_id: str) -> tuple[str, str, str]:
@@ -78,7 +79,7 @@ def split_relationship_id(relationship_id: str) -> tuple[str, str, str]:
 
 
 @contextlib.contextmanager
-def redis_shared_lock(lock_name: str, *, ttl: int = 60, timeout: int = 60):
+def redis_shared_lock(lock_name: str, **kwargs: Any):
     """Stub lock context manager. Does not acquire a real Redis lock."""
     yield
 
@@ -99,3 +100,43 @@ class _NullKVStore:
 def get_shared_kv_store() -> _NullKVStore:
     """Stub — returns a no-op KV store. Replace with real Redis KV when needed."""
     return _NullKVStore()
+
+
+def log_function_time(
+    *,
+    print_only: bool = False,
+    debug_only: bool = False,
+    include_args: bool = False,
+    include_args_subset: dict[str, Any] | None = None,
+) -> Callable[[_F], _F]:
+    """No-op decorator stub replacing onyx.utils.timing.log_function_time."""
+
+    def decorator(func: _F) -> _F:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
+# Stub OpenSearch metrics functions (replace onyx.server.metrics.opensearch_search)
+# ---------------------------------------------------------------------------
+
+
+def observe_opensearch_search(
+    search_type: Any, client_duration_s: float, time_took: int | None
+) -> None:
+    """Stub — no-op Prometheus observation."""
+
+
+def record_opensearch_search_error(search_type: Any, exc: BaseException) -> None:
+    """Stub — no-op Prometheus error recording."""
+
+
+@contextlib.contextmanager
+def track_opensearch_search(search_type: Any):  # type: ignore[return]
+    """Stub context manager — no-op search tracking."""
+    yield

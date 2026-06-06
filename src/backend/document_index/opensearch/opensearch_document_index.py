@@ -1,67 +1,82 @@
 import json
+import os
 from collections.abc import Iterable
 from typing import Any
 
 from opensearchpy.helpers.errors import BulkIndexError
 
-from onyx.access.models import DocumentAccess
-from onyx.configs.app_configs import MAX_CHUNKS_PER_DOC_BATCH
-from onyx.configs.app_configs import VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT
-from onyx.configs.constants import OnyxRedisLocks
-from onyx.configs.constants import PUBLIC_DOC_PAT
-from onyx.connectors.cross_connector_utils.miscellaneous_utils import (
-    get_experts_stores_representations,
+from src.retrieval.models import DocumentAccess
+from src.retrieval.models import QueryType
+from src.retrieval.models import IndexFilters
+from src.retrieval.models import InferenceChunk
+from src.retrieval.models import InferenceChunkUncleaned
+from src.retrieval.models import EmbeddingPrecision
+from src.retrieval.models import DocMetadataAwareIndexChunk
+from src.retrieval.models import Embedding
+from src.backend.configs.constants import PUBLIC_DOC_PAT
+from src.backend.document_index.chunk_content_enrichment import (
+    cleanup_content_for_chunks,
 )
-from onyx.connectors.models import convert_metadata_list_of_strings_to_dict
-from onyx.context.search.enums import QueryType
-from onyx.context.search.models import IndexFilters
-from onyx.context.search.models import InferenceChunk
-from onyx.context.search.models import InferenceChunkUncleaned
-from onyx.db.enums import EmbeddingPrecision
-from onyx.db.models import DocumentSource
-from onyx.document_index.chunk_content_enrichment import cleanup_content_for_chunks
-from onyx.document_index.chunk_content_enrichment import (
+from src.backend.document_index.chunk_content_enrichment import (
     generate_enriched_content_for_chunk_text,
 )
-from onyx.document_index.interfaces_new import DocumentIndex
-from onyx.document_index.interfaces_new import DocumentInsertionRecord
-from onyx.document_index.interfaces_new import DocumentSectionRequest
-from onyx.document_index.interfaces_new import IndexingMetadata
-from onyx.document_index.interfaces_new import MetadataUpdateRequest
-from onyx.document_index.interfaces_new import TenantState
-from onyx.document_index.opensearch.client import OpenSearchClient
-from onyx.document_index.opensearch.client import OpenSearchIndexClient
-from onyx.document_index.opensearch.client import SearchHit
-from onyx.document_index.opensearch.cluster_settings import OPENSEARCH_CLUSTER_SETTINGS
-from onyx.document_index.opensearch.constants import OpenSearchSearchType
-from onyx.document_index.opensearch.schema import ACCESS_CONTROL_LIST_FIELD_NAME
-from onyx.document_index.opensearch.schema import CONTENT_FIELD_NAME
-from onyx.document_index.opensearch.schema import DOCUMENT_SETS_FIELD_NAME
-from onyx.document_index.opensearch.schema import DocumentChunk
-from onyx.document_index.opensearch.schema import DocumentChunkWithoutVectors
-from onyx.document_index.opensearch.schema import DocumentSchema
-from onyx.document_index.opensearch.schema import get_opensearch_doc_chunk_id
-from onyx.document_index.opensearch.schema import GLOBAL_BOOST_FIELD_NAME
-from onyx.document_index.opensearch.schema import HIDDEN_FIELD_NAME
-from onyx.document_index.opensearch.schema import PERSONAS_FIELD_NAME
-from onyx.document_index.opensearch.schema import USER_PROJECTS_FIELD_NAME
-from onyx.document_index.opensearch.search import DocumentQuery
-from onyx.document_index.opensearch.search import (
+from src.backend.document_index.interfaces_new import DocumentIndex
+from src.backend.document_index.interfaces_new import DocumentInsertionRecord
+from src.backend.document_index.interfaces_new import DocumentSectionRequest
+from src.backend.document_index.interfaces_new import IndexingMetadata
+from src.backend.document_index.interfaces_new import MetadataUpdateRequest
+from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.opensearch.client import OpenSearchClient
+from src.backend.document_index.opensearch.client import OpenSearchIndexClient
+from src.backend.document_index.opensearch.client import SearchHit
+from src.backend.document_index.opensearch.cluster_settings import (
+    OPENSEARCH_CLUSTER_SETTINGS,
+)
+from src.backend.document_index.opensearch.constants import OpenSearchSearchType
+from src.backend.document_index.opensearch.schema import ACCESS_CONTROL_LIST_FIELD_NAME
+from src.backend.document_index.opensearch.schema import CONTENT_FIELD_NAME
+from src.backend.document_index.opensearch.schema import DOCUMENT_SETS_FIELD_NAME
+from src.backend.document_index.opensearch.schema import DocumentChunk
+from src.backend.document_index.opensearch.schema import DocumentChunkWithoutVectors
+from src.backend.document_index.opensearch.schema import DocumentSchema
+from src.backend.document_index.opensearch.schema import get_opensearch_doc_chunk_id
+from src.backend.document_index.opensearch.schema import GLOBAL_BOOST_FIELD_NAME
+from src.backend.document_index.opensearch.schema import HIDDEN_FIELD_NAME
+from src.backend.document_index.opensearch.schema import PERSONAS_FIELD_NAME
+from src.backend.document_index.opensearch.schema import USER_PROJECTS_FIELD_NAME
+from src.backend.document_index.opensearch.search import DocumentQuery
+from src.backend.document_index.opensearch.search import (
     get_min_max_normalization_pipeline_name_and_config,
 )
-from onyx.document_index.opensearch.search import (
+from src.backend.document_index.opensearch.search import (
     get_normalization_pipeline_name_and_config,
 )
-from onyx.document_index.opensearch.search import (
+from src.backend.document_index.opensearch.search import (
     get_zscore_normalization_pipeline_name_and_config,
 )
-from onyx.indexing.models import DocMetadataAwareIndexChunk
-from onyx.indexing.models import Document
-from onyx.redis.lock_context import redis_shared_lock
-from onyx.utils.logger import setup_logger
-from onyx.utils.text_processing import remove_invalid_unicode_chars
-from shared_configs.configs import MULTI_TENANT
-from shared_configs.model_server_models import Embedding
+from src.backend.document_index.utils import convert_metadata_list_of_strings_to_dict
+from src.backend.document_index.utils import get_experts_stores_representations
+from src.backend.document_index.utils import redis_shared_lock
+from src.backend.document_index.utils import remove_invalid_unicode_chars
+from src.backend.document_index.utils import setup_logger
+from src.backend.connectors.models import Document
+
+# MULTI_TENANT read from env
+MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
+
+# Read from environment — replaces onyx.configs.app_configs imports
+MAX_CHUNKS_PER_DOC_BATCH: int = int(os.environ.get("MAX_CHUNKS_PER_DOC_BATCH", "512"))
+VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT: bool = os.environ.get(
+    "VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT", ""
+).lower() in {"1", "true", "yes"}
+
+# Stub for onyx.configs.constants.OnyxRedisLocks
+DocumentSource = str  # stub — source type is a plain string in this repo
+
+
+class OnyxRedisLocks:
+    OPENSEARCH_VERIFY_INDEX_LOCK_PREFIX = "opensearch_verify_index"
+
 
 logger = setup_logger(__name__)
 
