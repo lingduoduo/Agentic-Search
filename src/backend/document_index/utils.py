@@ -1,7 +1,4 @@
-"""Utility helpers for the document index layer.
-
-Replaces imports previously satisfied by onyx.utils.* and onyx.connectors.*.
-"""
+"""Utility stubs for the document index layer."""
 
 from __future__ import annotations
 
@@ -17,7 +14,7 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 
 def setup_logger(name: str = __name__) -> logging.Logger:
-    """Drop-in replacement for onyx.utils.logger.setup_logger."""
+    """Set up a standard logger for the given name."""
     return logging.getLogger(name)
 
 
@@ -109,7 +106,7 @@ def log_function_time(
     include_args: bool = False,
     include_args_subset: dict[str, Any] | None = None,
 ) -> Callable[[_F], _F]:
-    """No-op decorator stub replacing onyx.utils.timing.log_function_time."""
+    """No-op timing decorator stub."""
 
     def decorator(func: _F) -> _F:
         @functools.wraps(func)
@@ -122,7 +119,7 @@ def log_function_time(
 
 
 # ---------------------------------------------------------------------------
-# Stub OpenSearch metrics functions (replace onyx.server.metrics.opensearch_search)
+# Stub OpenSearch metrics functions
 # ---------------------------------------------------------------------------
 
 

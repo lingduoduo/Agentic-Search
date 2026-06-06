@@ -28,7 +28,7 @@ from src.backend.document_index.opensearch.string_filtering import (
     MAX_DOCUMENT_ID_ENCODED_LENGTH,
 )
 
-# Read from environment — replaces onyx.configs.app_configs imports
+# Read from environment
 OPENSEARCH_INDEX_NUM_REPLICAS: int | None = (
     int(os.environ["OPENSEARCH_INDEX_NUM_REPLICAS"])
     if os.environ.get("OPENSEARCH_INDEX_NUM_REPLICAS")

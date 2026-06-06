@@ -204,10 +204,8 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         ),
         vector_db=VectorDbSettings(
             disable_vector_db=get_env_bool(source, "DISABLE_VECTOR_DB", False),
-            disable_vespa=get_env_bool(source, "ONYX_DISABLE_VESPA", False),
-            enable_opensearch=get_env_bool(
-                source, "ENABLE_OPENSEARCH_INDEXING_FOR_ONYX", False
-            ),
+            disable_vespa=get_env_bool(source, "DISABLE_VESPA", False),
+            enable_opensearch=get_env_bool(source, "ENABLE_OPENSEARCH_INDEXING", False),
             multi_tenant=get_env_bool(source, "MULTI_TENANT", False),
             vespa_host=get_env_str(source, "VESPA_HOST", "localhost"),
             vespa_port=get_env_int(source, "VESPA_PORT", 8080),

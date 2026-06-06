@@ -17,7 +17,7 @@ def _is_vector_db_disabled() -> bool:
 
 
 def _is_opensearch_enabled() -> bool:
-    return os.environ.get("ENABLE_OPENSEARCH_INDEXING_FOR_ONYX", "").lower() in _TRUTHY
+    return os.environ.get("ENABLE_OPENSEARCH_INDEXING", "").lower() in _TRUTHY
 
 
 def _build_tenant_state():
@@ -50,7 +50,7 @@ def get_default_document_index(
     """Get the primary document index for retrieval.
 
     Returns DisabledDocumentIndex when DISABLE_VECTOR_DB=true.
-    Returns OpenSearchDocumentIndex when ENABLE_OPENSEARCH_INDEXING_FOR_ONYX=true.
+    Returns OpenSearchDocumentIndex when ENABLE_OPENSEARCH_INDEXING=true.
     Returns DisabledDocumentIndex otherwise (no Vespa backend in this repo).
     """
     if _is_vector_db_disabled():
