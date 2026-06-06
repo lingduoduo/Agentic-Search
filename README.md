@@ -50,7 +50,7 @@ src/
 │   ├── configs/                 # Environment-based configuration (AppSettings)
 │   ├── connectors/              # Data source connectors
 │   ├── db/                      # SQLite store (AgenticSearchStore)
-│   ├── document_index/          # Vespa integration
+│   ├── document_index/          # Document index (OpenSearch / disabled)
 │   ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
 │   ├── file_store/              # In-memory chat file handling
 │   ├── hooks/                   # Outbound webhook execution

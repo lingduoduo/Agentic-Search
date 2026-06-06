@@ -53,8 +53,8 @@ def cleanup_content_for_chunks(
 
     def _remove_title(chunk: InferenceChunkUncleaned) -> str:
         # TODO(andrei): This was ported over from
-        # See upstream Vespa implementation, but
-        # I don't think this logic is correct. In Vespa at least we set the title field
+        # See upstream implementation, but
+        # I don't think this logic is correct. We set the title field
         # from the output of get_title_for_document_index, which is not
         # necessarily the same data that is prepended to the content; that comes
         # from title_prefix.

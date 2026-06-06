@@ -470,8 +470,7 @@ class DocumentSchema:
                         "parameters": {"ef_construction": EF_CONSTRUCTION, "m": M},
                     },
                 },
-                # TODO(andrei): This is a tensor in Vespa. Also look at feature
-                # parity for these other method fields.
+                # TODO(andrei): Look at feature parity for these other method fields.
                 CONTENT_VECTOR_FIELD_NAME: {
                     "type": "knn_vector",
                     "dimension": vector_dimension,
