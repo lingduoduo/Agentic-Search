@@ -15,3 +15,11 @@ def test_interfaces_new_importable():
 
 def test_document_metadata_importable():
     import src.backend.document_index.document_metadata  # noqa: F401
+
+
+def test_document_index_utils_importable():
+    import src.backend.document_index.document_index_utils  # noqa: F401
+
+
+def test_chunk_content_enrichment_importable():
+    import src.backend.document_index.chunk_content_enrichment  # noqa: F401
