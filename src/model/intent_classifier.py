@@ -104,7 +104,7 @@ class IntentPipeline:
         embedding_dim: int = 128,
         hidden_dim: int = 256,
     ) -> None:
-        from src.retrieval.vocabulary import Vocabulary
+        from src.backend.document_index.text import Vocabulary
 
         self._vocab = Vocabulary()
         self._model = _IntentClassifier(
@@ -135,7 +135,7 @@ class IntentPipeline:
         return self._model.predict_batch([encoded])[0]
 
     def predict_text(self, text: str) -> IntentPrediction:
-        from src.retrieval.vocabulary import tokenize_text
+        from src.backend.document_index.text import tokenize_text
 
         return self.predict(tokenize_text(text))
 
@@ -165,7 +165,7 @@ class IntentPipeline:
     @classmethod
     def load(cls, path: str) -> "IntentPipeline":
         import torch
-        from src.retrieval.vocabulary import Vocabulary
+        from src.backend.document_index.text import Vocabulary
 
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         if checkpoint.get("version") != 1:
@@ -226,7 +226,7 @@ IntentionClassificationPipeline = IntentPipeline
 
 
 def load_training_data(path: str) -> list[tuple[list[str], str]]:
-    from src.retrieval.vocabulary import tokenize_text
+    from src.backend.document_index.text import tokenize_text
 
     try:
         with open(path, encoding="utf-8") as fh:

@@ -1,6 +1,6 @@
-"""Unit tests for src/retrieval/vocabulary.py."""
+"""Unit tests for document-index text handling."""
 
-from src.retrieval.vocabulary import (
+from src.backend.document_index.text import (
     EOS_token,
     SOS_token,
     Vocabulary,
@@ -11,7 +11,7 @@ from src.retrieval.vocabulary import (
     tokenize_document,
     tokenize_text,
 )
-from src.retrieval.text_processor import TextProcessor
+from src.backend.document_index.text import TextProcessor
 
 
 class TestVocabulary:
@@ -245,3 +245,26 @@ class TestTextProcessor:
             }
         )
         assert result == ["Email now", "Visit today"]
+
+    def test_supports_legacy_nested_config(self, tmp_path):
+        config = tmp_path / "text.yaml"
+        config.write_text(
+            """
+dify:
+  process_rules:
+    pre_processing:
+      - id: remove_extra_spaces
+        enabled: true
+      - id: remove_urls_emails
+        enabled: false
+    segmentation:
+      separator: "\\\\|"
+""".strip()
+        )
+
+        processor = TextProcessor(str(config))
+
+        assert processor.process("Email test@example.com|Next") == [
+            "Email test@example.com",
+            "Next",
+        ]
