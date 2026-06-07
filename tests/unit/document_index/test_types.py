@@ -203,3 +203,39 @@ def test_get_shared_kv_store_interface():
     assert kv.get("k") is None
     kv.set("k", "v")
     kv.delete("k")
+
+
+def test_log_function_time_logs_timing(caplog):
+    import logging
+    from src.backend.document_index.utils import log_function_time
+
+    @log_function_time(debug_only=True)
+    def slow_fn():
+        return 42
+
+    with caplog.at_level(logging.DEBUG):
+        result = slow_fn()
+
+    assert result == 42
+    assert any(
+        "slow_fn" in r.message and "took" in r.message and r.levelno == logging.DEBUG
+        for r in caplog.records
+    )
+
+
+def test_log_function_time_logs_info_when_not_debug_only(caplog):
+    import logging
+    from src.backend.document_index.utils import log_function_time
+
+    @log_function_time(debug_only=False)
+    def info_fn():
+        return 99
+
+    with caplog.at_level(logging.INFO):
+        result = info_fn()
+
+    assert result == 99
+    assert any(
+        "info_fn" in r.message and "took" in r.message and r.levelno == logging.INFO
+        for r in caplog.records
+    )

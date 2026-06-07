@@ -13,11 +13,11 @@ from src.retrieval.models import Embedding
 from src.retrieval.models import IndexFilters
 from src.retrieval.models import InferenceChunk
 from src.retrieval.models import QueryType
-from src.backend.document_index.interfaces_new import DocumentIndex
-from src.backend.document_index.interfaces_new import DocumentInsertionRecord
-from src.backend.document_index.interfaces_new import DocumentSectionRequest
-from src.backend.document_index.interfaces_new import IndexingMetadata
-from src.backend.document_index.interfaces_new import MetadataUpdateRequest
+from src.backend.document_index.interfaces import DocumentIndex
+from src.backend.document_index.interfaces import DocumentInsertionRecord
+from src.backend.document_index.interfaces import DocumentSectionRequest
+from src.backend.document_index.interfaces import IndexingMetadata
+from src.backend.document_index.interfaces import MetadataUpdateRequest
 
 VECTOR_DB_DISABLED_ERROR = "Vector DB is disabled (DISABLE_VECTOR_DB=true). This operation requires a vector database."
 

@@ -7,7 +7,7 @@ environment variables. No DB session required.
 import os
 
 from src.backend.document_index.disabled import DisabledDocumentIndex
-from src.backend.document_index.interfaces_new import DocumentIndex
+from src.backend.document_index.interfaces import DocumentIndex
 
 _TRUTHY = {"1", "true", "yes"}
 
@@ -21,7 +21,7 @@ def _is_opensearch_enabled() -> bool:
 
 
 def _build_tenant_state():
-    from src.backend.document_index.interfaces_new import TenantState
+    from src.backend.document_index.interfaces import TenantState
 
     tenant_id = os.environ.get("CURRENT_TENANT_ID", "default")
     multi_tenant = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
