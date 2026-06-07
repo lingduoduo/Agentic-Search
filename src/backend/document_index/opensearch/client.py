@@ -1402,6 +1402,8 @@ class OpenSearchIndexClient(OpenSearchClient):
 
         all_hits: list[list[SearchHit[DocumentChunkWithoutVectors]]] = []
         for response in responses:
+            if "error" in response:
+                raise RuntimeError(f"msearch sub-request failed: {response['error']}")
             hits_raw: list[Any] = response.get("hits", {}).get("hits", [])
             hits: list[SearchHit[DocumentChunkWithoutVectors]] = []
             for hit in hits_raw:
@@ -1417,6 +1419,7 @@ class OpenSearchIndexClient(OpenSearchClient):
                         ),
                         score=hit.get("_score"),
                         match_highlights=hit.get("highlight", {}),
+                        explanation=hit.get("_explanation"),
                     )
                 )
             all_hits.append(hits)

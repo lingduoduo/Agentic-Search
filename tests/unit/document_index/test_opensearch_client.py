@@ -80,9 +80,39 @@ def test_msearch_issues_single_http_call():
         result = client.msearch(queries)
 
     mock_os_instance.msearch.assert_called_once()
+    expected_body = [
+        {"index": "test-index"},
+        {"query": {"term": {"document_id": "doc-1"}}},
+        {"index": "test-index"},
+        {"query": {"term": {"document_id": "doc-2"}}},
+    ]
+    mock_os_instance.msearch.assert_called_once_with(body=expected_body)
     assert len(result) == 2
     assert len(result[0]) == 1
     assert len(result[1]) == 2
+
+
+def test_msearch_raises_on_per_response_error():
+    """msearch must raise RuntimeError when a sub-response contains an 'error' key."""
+    mock_os_instance = MagicMock()
+    mock_os_instance.msearch.return_value = {
+        "responses": [
+            {
+                "error": {
+                    "type": "index_not_found_exception",
+                    "reason": "no such index",
+                },
+                "status": 404,
+            },
+        ]
+    }
+
+    with patch(_PATCH_TARGET, return_value=mock_os_instance):
+        client = OpenSearchIndexClient(index_name="test-index")
+        import pytest
+
+        with pytest.raises(RuntimeError, match="msearch sub-request failed"):
+            client.msearch([{"query": {"match_all": {}}}])
 
 
 def test_msearch_returns_empty_for_empty_queries():
