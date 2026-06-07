@@ -255,20 +255,26 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "create_base_app": (".backend.servers.retrieval.app", "create_base_app"),
     "create_search_app": (".backend.servers.retrieval.app", "create_search_app"),
     "format_document": (".backend.servers.retrieval.app", "format_document"),
-    # retrieval.index_builder
-    "IndexBuilder": (".retrieval.index_builder", "IndexBuilder"),
-    "IndexBuilderConfig": (".retrieval.index_builder", "IndexBuilderConfig"),
-    "prepare_texts": (".retrieval.index_builder", "prepare_texts"),
+    # backend.document_index.index_builder
+    "IndexBuilder": (".backend.document_index.index_builder", "IndexBuilder"),
+    "IndexBuilderConfig": (
+        ".backend.document_index.index_builder",
+        "IndexBuilderConfig",
+    ),
+    "prepare_texts": (".backend.document_index.index_builder", "prepare_texts"),
     "resolve_pooling_method": (
-        ".retrieval.index_builder",
+        ".backend.document_index.index_builder",
         "resolve_pooling_method",
     ),
-    "pooling": (".retrieval.index_builder", "pooling"),
+    "pooling": (".backend.document_index.index_builder", "pooling"),
     "set_hnsw_ef_construction": (
-        ".retrieval.index_builder",
+        ".backend.document_index.index_builder",
         "set_hnsw_ef_construction",
     ),
-    "set_hnsw_ef_search": (".retrieval.index_builder", "set_hnsw_ef_search"),
+    "set_hnsw_ef_search": (
+        ".backend.document_index.index_builder",
+        "set_hnsw_ef_search",
+    ),
     # backend.document_index.retrieval
     "DenseRetriever": (".backend.document_index.retrieval", "DenseRetriever"),
     "DenseRetrieverConfig": (

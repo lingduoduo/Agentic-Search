@@ -28,7 +28,7 @@ A retrieval-backed agent platform for building high-quality search, research, an
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/backend/servers/retrieval/hybrid_rerank.py` |
 | 🌍 Web Search | `src/backend/servers/retrieval/google.py`, `serp.py`, `browser.py` |
-| 📚 Document Indexing | `src/backend/servers/backgroundworker/`, `src/retrieval/index_builder.py`, `src/retrieval/indexing_pipeline.py` |
+| 📚 Document Indexing | `src/backend/document_index/`, `src/backend/servers/backgroundworker/` |
 | 🔗 Connectors | `src/backend/connectors/`, `src/backend/servers/documents/`, `src/backend/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/backend/chat/process_message.py`, `src/backend/chat/llm_loop.py`, `src/backend/chat/citation_processor.py`, `src/backend/chat/compression.py` |
@@ -189,7 +189,7 @@ python3 -m examples.prepare_search_rag_dataset \
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli
-- FAISS and BM25 index builders from a JSONL corpus (`src/retrieval/index_builder.py`)
+- FAISS and BM25 index builders from a JSONL corpus (`src/backend/document_index/index_builder.py`)
 - Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index; supports mini-chunks, vector-write retries, and document prefiltering
 - **Connectors** (`src/backend/connectors/`) — collect documents from multiple sources:
   - `LocalFileConnector` / `LocalFilePollConnector` — UTF-8 files from paths, directories, or globs
@@ -333,11 +333,11 @@ python3 -m src.backend.servers.retrieval.retrieval \
 **Build indexes:**
 
 ```bash
-python3 -m src.retrieval.index_builder \
+python3 -m src.backend.document_index.index_builder \
   --retrieval_method e5 --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl --faiss_type Flat --save_dir indexes/
 
-python3 -m src.retrieval.index_builder \
+python3 -m src.backend.document_index.index_builder \
   --retrieval_method bm25 --corpus_path data/corpus.jsonl --save_dir indexes/
 ```
 

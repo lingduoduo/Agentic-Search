@@ -38,7 +38,7 @@ from src.backend.connectors.models import (
     Document,
     HierarchyNode,
 )
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
+from src.backend.document_index.index_builder import IndexingHeartbeatInterface
 
 logger = logging.getLogger(__name__)
 

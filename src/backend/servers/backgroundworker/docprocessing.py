@@ -25,7 +25,7 @@ from src.backend.db.store import AgenticSearchStore
 from src.backend.document_index import ChunkSink
 from src.backend.document_index import DefaultIndexingEmbedder
 from src.backend.document_index import index_documents
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
+from src.backend.document_index.index_builder import IndexingHeartbeatInterface
 from src.retrieval.models import ChunkingConfig, EmbeddingConfig
 
 logger = logging.getLogger(__name__)
