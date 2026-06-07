@@ -45,6 +45,27 @@ class StatusResponse(BaseModel):
     message: str
 
 
+def _require_connector(store: AgenticSearchStore, connector_id: str) -> None:
+    if store.get_connector(connector_id) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Connector {connector_id!r} not found.",
+        )
+
+
+def _get_latest_sync_at(
+    store: AgenticSearchStore,
+    connector_id: str,
+) -> datetime | None:
+    attempts = store.list_index_attempts(connector_id=connector_id)
+    timestamps = [
+        datetime.fromisoformat(attempt.created_at)
+        for attempt in attempts
+        if attempt.created_at
+    ]
+    return max(timestamps, default=None)
+
+
 def create_documents_router(
     store: AgenticSearchStore,
     app_settings: AppSettings,
@@ -55,27 +76,14 @@ def create_documents_router(
 
     _require_admin = make_require_admin(app_settings)
 
-    def _get_connector_or_404(connector_id: str) -> None:
-        if store.get_connector(connector_id) is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Connector {connector_id!r} not found.",
-            )
-
     @router.get("/admin/connector/{connector_id}/last-sync")
     def get_connector_last_sync(
         connector_id: str,
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> datetime | None:
         """Return the timestamp of the most recent index attempt, or None."""
-        _get_connector_or_404(connector_id)
-        attempts = store.list_index_attempts(connector_id=connector_id)
-        if not attempts:
-            return None
-        latest = max(attempts, key=lambda a: a.created_at or "")
-        if not latest.created_at:
-            return None
-        return datetime.fromisoformat(latest.created_at)
+        _require_connector(store, connector_id)
+        return _get_latest_sync_at(store, connector_id)
 
     @router.post("/admin/connector/{connector_id}/sync")
     def trigger_connector_sync(
@@ -87,7 +95,7 @@ def create_documents_router(
         The actual indexing work is performed by a background process that
         polls for ``not_started`` attempts. This endpoint only enqueues the job.
         """
-        _get_connector_or_404(connector_id)
+        _require_connector(store, connector_id)
         attempt = store.create_index_attempt(connector_id=connector_id)
         logger.info(
             "Sync attempt created: connector=%s attempt=%s", connector_id, attempt.id
@@ -103,6 +111,7 @@ def create_documents_router(
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> None:
         """External group sync is not supported in this single-tenant deployment."""
+        _require_connector(store, connector_id)
         raise HTTPException(
             status_code=501,
             detail="External group sync is not available in this deployment.",
@@ -114,6 +123,7 @@ def create_documents_router(
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> None:
         """External group sync is not supported in this single-tenant deployment."""
+        _require_connector(store, connector_id)
         raise HTTPException(
             status_code=501,
             detail="External group sync is not available in this deployment.",
