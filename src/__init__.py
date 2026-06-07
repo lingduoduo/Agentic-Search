@@ -91,8 +91,10 @@ from .retrieval.client import SearchClientConfig as SearchClientConfig
 from .retrieval.context import AgentContext as AgentContext
 from .retrieval.context import SearchContext as SearchContext
 from .retrieval.context import SearchResult as SearchResult
-from .retrieval.sparse_retriever import SparseRetriever as SparseRetriever
-from .retrieval.sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig
+from .backend.document_index.retrieval import SparseRetriever as SparseRetriever
+from .backend.document_index.retrieval import (
+    SparseRetrieverConfig as SparseRetrieverConfig,
+)
 from .tools.base import FunctionTool as FunctionTool
 from .tools.base import Tool as Tool
 from .tools.base import ToolSchema as ToolSchema
@@ -267,10 +269,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "set_hnsw_ef_construction",
     ),
     "set_hnsw_ef_search": (".retrieval.index_builder", "set_hnsw_ef_search"),
-    # retrieval.dense_retriever
-    "DenseRetriever": (".retrieval.dense_retriever", "DenseRetriever"),
+    # backend.document_index.retrieval
+    "DenseRetriever": (".backend.document_index.retrieval", "DenseRetriever"),
     "DenseRetrieverConfig": (
-        ".retrieval.dense_retriever",
+        ".backend.document_index.retrieval",
         "DenseRetrieverConfig",
     ),
     # retrieval.rerank

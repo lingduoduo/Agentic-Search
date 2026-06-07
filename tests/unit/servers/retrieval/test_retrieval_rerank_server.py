@@ -6,13 +6,13 @@ import sys
 
 from fastapi.testclient import TestClient
 
-from src.retrieval.dense_retriever import DenseRetrieverConfig
+from src.backend.document_index.retrieval import DenseRetrieverConfig
 from src.retrieval.rerank import RerankerConfig
 from src.backend.servers.retrieval.retrieval_rerank import (
     RetrievalRerankConfig,
     create_app,
 )
-from src.retrieval.sparse_retriever import SparseRetrieverConfig
+from src.backend.document_index.retrieval import SparseRetrieverConfig
 
 
 class _FakeRetriever:

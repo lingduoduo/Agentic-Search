@@ -9,10 +9,12 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from src.retrieval.dense_retriever import DenseRetrieverConfig
+from src.backend.document_index.retrieval import (
+    DenseRetrieverConfig,
+    SparseRetrieverConfig,
+)
 from src.retrieval.hybrid_retriever import HybridRetriever, HybridRetrieverConfig
 from src.retrieval.rerank import RerankerConfig, get_reranker
-from src.retrieval.sparse_retriever import SparseRetrieverConfig
 
 from .app import add_host_port_args, create_base_app, load_environment, run_uvicorn_app
 

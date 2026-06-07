@@ -4,8 +4,14 @@ from .context import SearchResult as SearchResult
 from .client import SearchClient as SearchClient
 from .client import SearchClientConfig as SearchClientConfig
 from .rerank import get_reranker as get_reranker
-from .dense_retriever import DenseRetriever as DenseRetriever
-from .dense_retriever import DenseRetrieverConfig as DenseRetrieverConfig
+from src.backend.document_index.retrieval import DenseRetriever as DenseRetriever
+from src.backend.document_index.retrieval import (
+    DenseRetrieverConfig as DenseRetrieverConfig,
+)
+from src.backend.document_index.retrieval import SparseRetriever as SparseRetriever
+from src.backend.document_index.retrieval import (
+    SparseRetrieverConfig as SparseRetrieverConfig,
+)
 from .index_builder import chunk_document as chunk_document
 from .index_builder import chunk_documents as chunk_documents
 from .index_builder import deterministic_embedding_fn as deterministic_embedding_fn
@@ -38,8 +44,6 @@ from .models import IndexWriterConfig as IndexWriterConfig
 from .models import MultipassConfig as MultipassConfig
 from .models import SwitchoverType as SwitchoverType
 from .models import UpdatableChunkData as UpdatableChunkData
-from .sparse_retriever import SparseRetriever as SparseRetriever
-from .sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig
 from .hybrid_retriever import HybridRetriever as HybridRetriever
 from .hybrid_retriever import HybridRetrieverConfig as HybridRetrieverConfig
 from .hybrid_retriever import combine_retrieval_results as combine_retrieval_results

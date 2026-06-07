@@ -10,8 +10,10 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from src.retrieval import build_retriever
-from src.retrieval.dense_retriever import DenseRetrieverConfig
-from src.retrieval.sparse_retriever import SparseRetrieverConfig
+from src.backend.document_index.retrieval import (
+    DenseRetrieverConfig,
+    SparseRetrieverConfig,
+)
 from src.retrieval.rerank import RerankerConfig, get_reranker
 from .app import (
     add_host_port_args,
