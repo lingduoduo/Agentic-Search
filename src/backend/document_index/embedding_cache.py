@@ -144,8 +144,12 @@ class OpenAIEmbedder:
         ttl_seconds: int = 7 * 24 * 3600,
         api_key: str | None = None,
     ) -> None:
+        from openai import OpenAI
+
         self.model = model
-        self._api_key = api_key  # None → openai reads OPENAI_API_KEY from env
+        self._openai_client = OpenAI(
+            api_key=api_key
+        )  # created once; api_key=None → reads OPENAI_API_KEY from env
         self._cache = (
             EmbeddingCache(redis_url=redis_url, ttl_seconds=ttl_seconds)
             if redis_url
@@ -173,13 +177,12 @@ class OpenAIEmbedder:
         return np.stack(cached)  # type: ignore[arg-type]
 
     def _call_openai(self, texts: list[str]) -> np.ndarray:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=self._api_key)
         rows: list[list[float]] = []
         for start in range(0, len(texts), self._BATCH_SIZE):
             batch = texts[start : start + self._BATCH_SIZE]
-            response = client.embeddings.create(input=batch, model=self.model)
+            response = self._openai_client.embeddings.create(
+                input=batch, model=self.model
+            )
             rows.extend(
                 item.embedding for item in sorted(response.data, key=lambda x: x.index)
             )

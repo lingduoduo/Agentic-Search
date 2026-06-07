@@ -135,3 +135,55 @@ def test_index_attempt_lifecycle(tmp_path):
         assert updated.total_chunks == 21
         assert updated.metadata == {"checkpoint": "done"}
         assert store.list_index_attempts(connector_id="conn") == [updated]
+
+
+def test_upsert_documents_bulk_single_transaction(tmp_path):
+    """upsert_documents_bulk must commit exactly once, not once per document."""
+
+    db_path = tmp_path / "bulk.sqlite3"
+    with AgenticSearchStore(db_path) as store:
+        commit_calls = []
+
+        class _TrackingConn:
+            """Thin wrapper that counts commit() calls."""
+
+            def __init__(self, conn):
+                self._real = conn
+
+            def commit(self):
+                commit_calls.append(1)
+                return self._real.commit()
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
+        store._conn = _TrackingConn(store._conn)
+
+        docs = [
+            StoredDocument(id=f"doc-{i}", title=f"T{i}", contents=f"C{i}")
+            for i in range(10)
+        ]
+        result = store.upsert_documents_bulk(docs)
+
+        assert len(result) == 10
+        assert commit_calls == [1]  # exactly one commit
+        for doc in result:
+            assert store.get_document(doc.id) is not None
+
+
+def test_upsert_documents_bulk_preserves_created_at(tmp_path):
+    """Re-upserting via bulk must not overwrite created_at for existing docs."""
+    db_path = tmp_path / "bulk_ts.sqlite3"
+    with AgenticSearchStore(db_path) as store:
+        store.upsert_document(
+            StoredDocument(id="doc-1", title="Old", contents="old content")
+        )
+        original_created_at = store.get_document("doc-1").created_at
+
+        store.upsert_documents_bulk(
+            [StoredDocument(id="doc-1", title="New", contents="new content")]
+        )
+
+        updated = store.get_document("doc-1")
+        assert updated.title == "New"
+        assert updated.created_at == original_created_at

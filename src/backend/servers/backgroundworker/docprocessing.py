@@ -109,8 +109,8 @@ class DocprocessingWorker:
         # 1. SQL upsert — persist raw documents before any processing so they
         #    survive a subsequent embedding or vector DB failure.
         if self._store is not None:
-            for doc in documents:
-                self._store.upsert_document(
+            self._store.upsert_documents_bulk(
+                [
                     StoredDocument(
                         id=doc.id,
                         title=doc.title or "",
@@ -119,7 +119,9 @@ class DocprocessingWorker:
                         connector_id=self._config.connector_id,
                         metadata=dict(doc.metadata or {}),
                     )
-                )
+                    for doc in documents
+                ]
+            )
 
         # 2-5. Filter, chunk, embed, and write to the configured index.
         indexing_result = index_documents(
@@ -137,22 +139,23 @@ class DocprocessingWorker:
         # 6. Metadata update — record chunk count on successfully indexed docs.
         if self._store is not None:
             chunks_by_doc = indexing_result.successful_chunk_counts
-            for doc in indexing_result.documents:
-                if doc.id in chunks_by_doc:
-                    updated_metadata = {
+            metadata_updates = [
+                StoredDocument(
+                    id=doc.id,
+                    title=doc.title or "",
+                    contents=doc.contents or "",
+                    url=doc.url,
+                    connector_id=self._config.connector_id,
+                    metadata={
                         **(doc.metadata or {}),
                         "indexed_chunks": chunks_by_doc[doc.id],
-                    }
-                    self._store.upsert_document(
-                        StoredDocument(
-                            id=doc.id,
-                            title=doc.title or "",
-                            contents=doc.contents or "",
-                            url=doc.url,
-                            connector_id=self._config.connector_id,
-                            metadata=updated_metadata,
-                        )
-                    )
+                    },
+                )
+                for doc in indexing_result.documents
+                if doc.id in chunks_by_doc
+            ]
+            if metadata_updates:
+                self._store.upsert_documents_bulk(metadata_updates)
 
         return result
 

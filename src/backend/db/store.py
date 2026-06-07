@@ -412,6 +412,75 @@ class AgenticSearchStore:
         self._conn.commit()
         return record
 
+    def upsert_documents_bulk(
+        self, documents: list[StoredDocument]
+    ) -> list[StoredDocument]:
+        """Upsert multiple documents in a single transaction."""
+        if not documents:
+            return []
+        now = _now()
+        doc_ids = [d.id for d in documents]
+        placeholders = ", ".join("?" * len(doc_ids))
+        existing_created_at: dict[str, str] = {
+            row["id"]: str(row["created_at"])
+            for row in self._conn.execute(
+                f"SELECT id, created_at FROM documents WHERE id IN ({placeholders})",
+                tuple(doc_ids),
+            ).fetchall()
+        }
+        records: list[StoredDocument] = []
+        params: list[tuple] = []
+        for document in documents:
+            fetched = existing_created_at.get(document.id)
+            created_at = (
+                fetched if fetched is not None else (document.created_at or now)
+            )
+            record = StoredDocument(
+                id=document.id,
+                title=document.title,
+                contents=document.contents,
+                url=document.url,
+                connector_id=document.connector_id,
+                metadata=dict(document.metadata),
+                created_at=created_at,
+                updated_at=now,
+            )
+            records.append(record)
+            params.append(
+                (
+                    record.id,
+                    record.title,
+                    record.contents,
+                    record.url,
+                    record.connector_id,
+                    _json_dumps(record.metadata),
+                    record.created_at,
+                    record.updated_at,
+                )
+            )
+        try:
+            self._conn.executemany(
+                """
+                INSERT INTO documents (
+                    id, title, contents, url, connector_id, metadata_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    contents = excluded.contents,
+                    url = excluded.url,
+                    connector_id = excluded.connector_id,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                params,
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return records
+
     def get_document(self, document_id: str) -> StoredDocument | None:
         row = self._conn.execute(
             "SELECT * FROM documents WHERE id = ?", (document_id,)
@@ -439,6 +508,22 @@ class AgenticSearchStore:
         )
         self._conn.commit()
         return cursor.rowcount > 0
+
+    def delete_documents_bulk(self, doc_ids: list[str]) -> int:
+        """Delete multiple documents by ID in a single transaction. Returns count deleted."""
+        if not doc_ids:
+            return 0
+        placeholders = ", ".join("?" * len(doc_ids))
+        try:
+            cursor = self._conn.execute(
+                f"DELETE FROM documents WHERE id IN ({placeholders})",
+                tuple(doc_ids),
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return cursor.rowcount
 
     def upsert_user(self, user: UserRecord) -> UserRecord:
         now = _now()
@@ -607,6 +692,38 @@ class AgenticSearchStore:
             access=permission.access,
             created_at=now,
         )
+
+    def grant_document_access_bulk(self, permissions: list[DocumentPermission]) -> int:
+        """Write multiple permission grants in a single transaction. Returns count written."""
+        if not permissions:
+            return 0
+        now = _now()
+        params = [
+            (
+                p.document_id,
+                p.principal_type,
+                p.principal_id or "",
+                p.access,
+                p.created_at or now,
+            )
+            for p in permissions
+        ]
+        try:
+            self._conn.executemany(
+                """
+                INSERT OR REPLACE INTO document_permissions (
+                    document_id, principal_type, principal_id, access, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                params,
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        # INSERT OR REPLACE always writes one row per entry; len(params) == rows written.
+        return len(params)
 
     def get_document_permissions(self, document_id: str) -> list[DocumentPermission]:
         rows = self._conn.execute(
