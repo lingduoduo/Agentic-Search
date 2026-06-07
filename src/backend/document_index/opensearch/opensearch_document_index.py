@@ -684,10 +684,12 @@ class OpenSearchDocumentIndex(DocumentIndex):
             len(chunk_requests),
             self._index_name,
         )
-        results: list[InferenceChunk] = []
-        for chunk_request in chunk_requests:
-            search_hits: list[SearchHit[DocumentChunkWithoutVectors]] = []
-            query_body = DocumentQuery.get_from_document_id_query(
+        if not chunk_requests:
+            return []
+
+        # Build one query per request.
+        queries = [
+            DocumentQuery.get_from_document_id_query(
                 document_id=chunk_request.document_id,
                 tenant_state=self._tenant_state,
                 # NOTE: Index filters includes metadata tags which were filtered
@@ -702,21 +704,21 @@ class OpenSearchDocumentIndex(DocumentIndex):
                 min_chunk_index=chunk_request.min_chunk_ind,
                 max_chunk_index=chunk_request.max_chunk_ind,
             )
-            search_hits = self._client.search(
-                body=query_body,
-                search_pipeline_id=None,
-                search_type=OpenSearchSearchType.DOC_ID_RETRIEVAL,
-            )
-            inference_chunks_uncleaned: list[InferenceChunkUncleaned] = [
+            for chunk_request in chunk_requests
+        ]
+
+        # Fire all queries in one HTTP round-trip.
+        all_hit_lists = self._client.msearch(queries)
+
+        results: list[InferenceChunk] = []
+        for hit_list in all_hit_lists:
+            uncleaned: list[InferenceChunkUncleaned] = [
                 _convert_retrieved_opensearch_chunk_to_inference_chunk_uncleaned(
-                    search_hit.document_chunk, None, {}
+                    hit.document_chunk, None, {}
                 )
-                for search_hit in search_hits
+                for hit in hit_list
             ]
-            inference_chunks: list[InferenceChunk] = cleanup_content_for_chunks(
-                inference_chunks_uncleaned
-            )
-            results.extend(inference_chunks)
+            results.extend(cleanup_content_for_chunks(uncleaned))
         return results
 
     def hybrid_retrieval(

@@ -1375,6 +1375,54 @@ class OpenSearchIndexClient(OpenSearchClient):
         return search_hits
 
     @log_function_time(print_only=True, debug_only=True)
+    def msearch(
+        self,
+        queries: list[dict[str, Any]],
+    ) -> list[list[SearchHit[DocumentChunkWithoutVectors]]]:
+        """Execute multiple search queries in a single HTTP call via OpenSearch msearch API.
+
+        Args:
+            queries: List of query bodies (same format as the ``body`` arg to
+                ``search()``). Each query runs against ``self._index_name``.
+
+        Returns:
+            One list of SearchHit per input query, in the same order.
+        """
+        if not queries:
+            return []
+
+        # Build NDJSON body: alternating header + query dicts.
+        body: list[dict[str, Any]] = []
+        for query_body in queries:
+            body.append({"index": self._index_name})
+            body.append(query_body)
+
+        result: dict[str, Any] = self._client.msearch(body=body)
+        responses: list[dict[str, Any]] = result.get("responses", [])
+
+        all_hits: list[list[SearchHit[DocumentChunkWithoutVectors]]] = []
+        for response in responses:
+            hits_raw: list[Any] = response.get("hits", {}).get("hits", [])
+            hits: list[SearchHit[DocumentChunkWithoutVectors]] = []
+            for hit in hits_raw:
+                source: dict[str, Any] | None = hit.get("_source")
+                if not source:
+                    raise RuntimeError(
+                        f'Document chunk with ID "{hit.get("_id", "")}" has no data.'
+                    )
+                hits.append(
+                    SearchHit[DocumentChunkWithoutVectors](
+                        document_chunk=DocumentChunkWithoutVectors.model_validate(
+                            source
+                        ),
+                        score=hit.get("_score"),
+                        match_highlights=hit.get("highlight", {}),
+                    )
+                )
+            all_hits.append(hits)
+        return all_hits
+
+    @log_function_time(print_only=True, debug_only=True)
     def search_for_document_ids(
         self,
         body: dict[str, Any],
