@@ -5,7 +5,7 @@ from src.retrieval.models import (
     IndexFilters,
     QueryType,
 )
-from src.backend.document_index.interfaces_new import (
+from src.backend.document_index.interfaces import (
     IndexingMetadata,
 )
 

@@ -5,8 +5,8 @@ def test_disabled_importable():
     import src.backend.document_index.disabled  # noqa: F401
 
 
-def test_interfaces_new_importable():
-    import src.backend.document_index.interfaces_new  # noqa: F401
+def test_interfaces_importable():
+    import src.backend.document_index.interfaces  # noqa: F401
 
 
 def test_document_metadata_importable():
