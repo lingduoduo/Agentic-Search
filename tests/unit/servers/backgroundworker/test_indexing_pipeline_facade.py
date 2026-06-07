@@ -1,19 +1,21 @@
-"""Tests for the indexing pipeline facade (moved from src.backend.servers.indexing to src.retrieval)."""
+"""Tests for the consolidated document-indexing facade."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from src.backend.connectors import Document
-from src.retrieval import ChunkBatchStore
-from src.retrieval import Chunker
-from src.retrieval import DefaultIndexingEmbedder
-from src.retrieval import embed_and_stream
-from src.retrieval import filter_documents
-from src.retrieval import index_document_batch
+from src.backend.document_index import ChunkBatchStore
+from src.backend.document_index import Chunker
+from src.backend.document_index import DefaultIndexingEmbedder
+from src.backend.document_index import embed_and_stream
+from src.backend.document_index import filter_documents
+from src.backend.document_index import index_document_batch
+from src.backend.document_index import index_documents
+from src.backend.document_index import write_chunks_with_backoff
+from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
 from src.retrieval.models import ChunkingConfig
 from src.retrieval.models import EmbeddingConfig
-from src.retrieval.vector_db_insertion import write_chunks_with_backoff
 
 
 def test_chunker_and_embedder_facade_support_mini_chunks():
@@ -168,3 +170,52 @@ def test_write_chunks_with_backoff_isolates_document_failures():
 
     assert records == ["ok::chunk-0"]
     assert [failure.document_id for failure in failures] == ["bad"]
+
+
+def test_index_documents_runs_the_complete_pipeline():
+    indexed_document_ids: list[str] = []
+
+    class Sink:
+        def index(self, chunks):
+            rows = list(chunks)
+            indexed_document_ids.extend(row.chunk.document_id for row in rows)
+            return [row.chunk.id for row in rows]
+
+    result = index_documents(
+        [
+            Document(id="empty", contents=" "),
+            Document(id="ok", contents="alpha"),
+        ],
+        sink=Sink(),
+        chunking=ChunkingConfig(chunk_size=10, chunk_overlap=0, include_title=False),
+        embedder=DefaultIndexingEmbedder(
+            embedding_fn=lambda texts: np.ones((len(texts), 2), dtype=np.float32),
+            config=EmbeddingConfig(retrieval_method="contriever"),
+        ),
+    )
+
+    assert indexed_document_ids == ["ok"]
+    assert result.successful_chunk_counts == {"ok": 1}
+    assert [failure.document_id for failure in result.failures] == ["empty"]
+
+
+def test_index_documents_does_not_report_stopped_chunks_as_successful():
+    class StopAfterChunking(IndexingHeartbeatInterface):
+        def __init__(self):
+            self.checks = 0
+
+        def should_stop(self):
+            self.checks += 1
+            return self.checks >= 3
+
+        def progress(self, tag, amount):
+            pass
+
+    result = index_documents(
+        [Document(id="doc", contents="alpha")],
+        callback=StopAfterChunking(),
+        chunking=ChunkingConfig(chunk_size=10, chunk_overlap=0, include_title=False),
+    )
+
+    assert result.stopped is True
+    assert result.successful_chunk_counts == {}
