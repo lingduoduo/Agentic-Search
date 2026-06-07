@@ -13,7 +13,7 @@ from pydantic import model_serializer
 from pydantic import model_validator
 from pydantic import SerializerFunctionWrapHandler
 
-from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.interfaces import TenantState
 from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
 from src.backend.document_index.opensearch.constants import EF_CONSTRUCTION
 from src.backend.document_index.opensearch.constants import EF_SEARCH

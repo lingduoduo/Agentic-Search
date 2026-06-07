@@ -13,7 +13,7 @@ from opensearchpy import TransportError
 from opensearchpy.helpers import bulk
 from pydantic import BaseModel
 
-from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.interfaces import TenantState
 from src.backend.document_index.opensearch.constants import OpenSearchSearchType
 from src.backend.document_index.opensearch.schema import DocumentChunk
 from src.backend.document_index.opensearch.schema import DocumentChunkWithoutVectors

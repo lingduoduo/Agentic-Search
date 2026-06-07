@@ -20,12 +20,12 @@ from src.backend.document_index.chunk_content_enrichment import (
 from src.backend.document_index.chunk_content_enrichment import (
     generate_enriched_content_for_chunk_text,
 )
-from src.backend.document_index.interfaces_new import DocumentIndex
-from src.backend.document_index.interfaces_new import DocumentInsertionRecord
-from src.backend.document_index.interfaces_new import DocumentSectionRequest
-from src.backend.document_index.interfaces_new import IndexingMetadata
-from src.backend.document_index.interfaces_new import MetadataUpdateRequest
-from src.backend.document_index.interfaces_new import TenantState
+from src.backend.document_index.interfaces import DocumentIndex
+from src.backend.document_index.interfaces import DocumentInsertionRecord
+from src.backend.document_index.interfaces import DocumentSectionRequest
+from src.backend.document_index.interfaces import IndexingMetadata
+from src.backend.document_index.interfaces import MetadataUpdateRequest
+from src.backend.document_index.interfaces import TenantState
 from src.backend.document_index.opensearch.client import OpenSearchClient
 from src.backend.document_index.opensearch.client import OpenSearchIndexClient
 from src.backend.document_index.opensearch.client import SearchHit
