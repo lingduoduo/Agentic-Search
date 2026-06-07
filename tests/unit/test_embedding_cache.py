@@ -237,3 +237,4 @@ def test_openai_client_reused_across_calls():
     assert mock_cls.call_count == 1, (
         "OpenAI client must be created once, not per embed() call"
     )
+    assert embedder._openai_client is mock_client
