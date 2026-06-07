@@ -154,8 +154,10 @@ def test_openai_embedder_uses_redis_cache_on_hit():
     mock_redis.ping.return_value = True
     mock_redis.mget.return_value = [_pack(cached_vec)]
 
+    mock_client = MagicMock()
+
     with patch("redis.Redis.from_url", return_value=mock_redis):
-        with patch("openai.OpenAI") as mock_openai_cls:
+        with patch("openai.OpenAI", return_value=mock_client):
             embedder = OpenAIEmbedder(
                 model="text-embedding-3-small",
                 redis_url="redis://localhost:6379/0",
@@ -163,7 +165,7 @@ def test_openai_embedder_uses_redis_cache_on_hit():
             result = embedder.embed(["hello"])
 
     assert np.allclose(result[0], cached_vec)
-    mock_openai_cls.assert_not_called()  # OpenAI never instantiated
+    mock_client.embeddings.create.assert_not_called()  # API never called on a full cache hit
 
 
 def test_openai_embedder_writes_misses_to_redis():
@@ -216,6 +218,22 @@ def test_openai_embedder_partial_cache_hit():
 
 
 def test_openai_embedder_empty_input():
-    embedder = OpenAIEmbedder(model="text-embedding-3-small")
+    with patch("openai.OpenAI"):
+        embedder = OpenAIEmbedder(model="text-embedding-3-small")
     result = embedder.embed([])
     assert result.shape[0] == 0
+
+
+def test_openai_client_reused_across_calls():
+    """OpenAI() must be instantiated once and reused, not recreated per embed() call."""
+    mock_client = MagicMock()
+    mock_client.embeddings.create.return_value = _fake_openai_response(["a"])
+
+    with patch("openai.OpenAI", return_value=mock_client) as mock_cls:
+        embedder = OpenAIEmbedder(model="text-embedding-3-small")
+        embedder.embed(["a"])
+        embedder.embed(["a"])
+
+    assert mock_cls.call_count == 1, (
+        "OpenAI client must be created once, not per embed() call"
+    )
