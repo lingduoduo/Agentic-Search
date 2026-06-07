@@ -6,6 +6,7 @@ import contextlib
 import functools
 import logging
 import re
+import time
 from collections.abc import Callable, Generator, Iterable
 from typing import Any, TypeVar
 
@@ -109,9 +110,9 @@ def log_function_time(
     """Decorator that logs the wall-clock time of the wrapped function.
 
     Logs at DEBUG when debug_only=True, otherwise at INFO.
-    print_only is accepted for call-site compatibility but has no effect.
+    print_only, include_args, and include_args_subset are accepted for
+    call-site compatibility but have no effect.
     """
-    import time
 
     def decorator(func: _F) -> _F:
         logger = logging.getLogger(func.__module__)
