@@ -316,3 +316,13 @@ def test_group_sync_returns_501(tmp_path):
     )
     assert response.status_code == 501
     store.close()
+
+
+def test_group_sync_404_for_missing_connector(tmp_path):
+    client, store = _admin_client(tmp_path)
+    response = client.post(
+        "/manage/admin/connector/nonexistent/sync-groups",
+        headers=_bearer(_ADMIN_ID),
+    )
+    assert response.status_code == 404
+    store.close()

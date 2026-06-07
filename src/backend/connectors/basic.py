@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from stat import S_ISREG
@@ -63,6 +64,46 @@ def _expand_path(path: Path, *, glob: bool = True) -> Iterator[Path]:
         yield from path.rglob("*")
     else:
         yield path
+
+
+@dataclass(frozen=True)
+class _DiscoveredFile:
+    path: Path
+    stat: os.stat_result
+
+
+def _discover_files(
+    paths: Iterable[Path],
+    *,
+    allowed_extensions: frozenset[str],
+    root: Path | None = None,
+    glob: bool = True,
+    mtime_start: float | None = None,
+    mtime_end: float | None = None,
+) -> Iterator[_DiscoveredFile]:
+    """Resolve, deduplicate, and filter local files for all connector modes."""
+
+    seen: set[Path] = set()
+    for raw_path in paths:
+        base = (root / raw_path) if root and not raw_path.is_absolute() else raw_path
+        for candidate in _expand_path(base, glob=glob):
+            resolved = candidate.expanduser().resolve()
+            if resolved in seen:
+                continue
+            try:
+                stat = resolved.stat()
+            except OSError:
+                continue
+            if not S_ISREG(stat.st_mode):
+                continue
+            if resolved.suffix.lower() not in allowed_extensions:
+                continue
+            if mtime_start is not None and stat.st_mtime < mtime_start:
+                continue
+            if mtime_end is not None and stat.st_mtime > mtime_end:
+                continue
+            seen.add(resolved)
+            yield _DiscoveredFile(path=resolved, stat=stat)
 
 
 class InMemoryConnector(LoadConnector):
@@ -159,22 +200,19 @@ class LocalFileConnector(LoadConnector):
         mtime_start: float | None = None,
         mtime_end: float | None = None,
     ) -> Iterator[Document]:
-        for index, path in enumerate(self._iter_files()):
-            if path.suffix.lower() not in self.allowed_extensions:
-                continue
-            if mtime_start is not None or mtime_end is not None:
-                try:
-                    mtime = path.stat().st_mtime
-                except OSError:
-                    continue
-                if mtime_start is not None and mtime < mtime_start:
-                    continue
-                if mtime_end is not None and mtime > mtime_end:
-                    continue
+        discovered_files = _discover_files(
+            self.paths,
+            allowed_extensions=self.allowed_extensions,
+            root=self.root,
+            glob=self.glob,
+            mtime_start=mtime_start,
+            mtime_end=mtime_end,
+        )
+        for index, discovered in enumerate(discovered_files):
+            path = discovered.path
             text = path.read_text(encoding=self.encoding)
             if not text.strip():
                 continue
-            resolved = path.resolve()
             fallback_name = (
                 self.file_names[index] if index < len(self.file_names) else path.name
             )
@@ -186,8 +224,8 @@ class LocalFileConnector(LoadConnector):
             processed = self._process_metadata(
                 metadata=file_metadata,
                 fallback_name=fallback_name,
-                fallback_id=str(resolved),
-                fallback_url=resolved.as_uri(),
+                fallback_id=str(path),
+                fallback_url=path.as_uri(),
             )
             yield Document(
                 id=processed["document_id"],
@@ -196,28 +234,13 @@ class LocalFileConnector(LoadConnector):
                 contents=text,
                 metadata={
                     "source": "local_file",
-                    "path": str(resolved),
+                    "path": str(path),
                     "suffix": path.suffix,
                     "display_name": processed["file_display_name"],
                     "doc_updated_at": processed["doc_updated_at"],
                     **processed["custom_metadata"],
                 },
             )
-
-    def _iter_files(self) -> Iterator[Path]:
-        seen: set[Path] = set()
-        for raw_path in self.paths:
-            base = (
-                (self.root / raw_path)
-                if self.root and not raw_path.is_absolute()
-                else raw_path
-            )
-            for candidate in _expand_path(base, glob=self.glob):
-                resolved = candidate.expanduser().resolve()
-                if resolved in seen or not resolved.is_file():
-                    continue
-                seen.add(resolved)
-                yield resolved
 
     def _load_metadata_by_name(self) -> dict[str, Any]:
         loaded: dict[str, Any] = {}
@@ -416,6 +439,8 @@ class LocalFileSlimConnector(SlimConnector):
         self.batch_size = batch_size
 
     def validate_connector_settings(self) -> None:
+        if not self.paths:
+            raise ValueError("LocalFileSlimConnector requires at least one path.")
         if self.batch_size <= 0:
             raise ValueError("batch_size must be greater than zero.")
 
@@ -442,38 +467,27 @@ class LocalFileSlimConnector(SlimConnector):
         end: float | None,
         _include_permissions: bool = False,
     ) -> Iterator[SlimDocument]:
-        seen: set[Path] = set()
-        for raw_path in self.paths:
-            for candidate in _expand_path(raw_path):
-                resolved = candidate.expanduser().resolve()
-                if resolved in seen:
-                    continue
-                try:
-                    st = resolved.stat()
-                except OSError:
-                    continue
-                if not S_ISREG(st.st_mode):
-                    continue
-                if resolved.suffix.lower() not in self.allowed_extensions:
-                    continue
-                if start is not None and st.st_mtime < start:
-                    continue
-                if end is not None and st.st_mtime > end:
-                    continue
-                seen.add(resolved)
-                yield SlimDocument(
-                    id=str(resolved),
-                    metadata={
-                        "path": str(resolved),
-                        "mtime": st.st_mtime,
-                        "size": st.st_size,
-                    },
-                    permissions=(
-                        self._permissions_for_path(resolved, st)
-                        if _include_permissions
-                        else {}
-                    ),
-                )
+        for discovered in _discover_files(
+            self.paths,
+            allowed_extensions=self.allowed_extensions,
+            mtime_start=start,
+            mtime_end=end,
+        ):
+            resolved = discovered.path
+            stat = discovered.stat
+            yield SlimDocument(
+                id=str(resolved),
+                metadata={
+                    "path": str(resolved),
+                    "mtime": stat.st_mtime,
+                    "size": stat.st_size,
+                },
+                permissions=(
+                    self._permissions_for_path(resolved, stat)
+                    if _include_permissions
+                    else {}
+                ),
+            )
 
 
 class LocalFileSlimConnectorWithPermSync(

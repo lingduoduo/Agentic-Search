@@ -6,6 +6,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
 
 from src.backend.connectors import (
     LocalFileConnector,
@@ -142,6 +143,21 @@ def test_slim_connector_skips_unsupported_extensions(tmp_path):
     docs = _slim_docs(LocalFileSlimConnector([tmp_path]))
     assert len(docs) == 1
     assert docs[0].metadata["path"].endswith("keep.txt")
+
+
+def test_full_and_slim_connectors_deduplicate_overlapping_paths(tmp_path):
+    file = _write(tmp_path / "a.txt")
+
+    full_docs = _docs(LocalFileConnector([tmp_path, file]))
+    slim_docs = _slim_docs(LocalFileSlimConnector([tmp_path, file]))
+
+    assert [doc.id for doc in full_docs] == [str(file.resolve())]
+    assert [doc.id for doc in slim_docs] == [str(file.resolve())]
+
+
+def test_slim_connector_requires_paths():
+    with pytest.raises(ValueError, match="at least one path"):
+        list(LocalFileSlimConnector().retrieve_all_slim_docs())
 
 
 def test_slim_connector_time_window_filtering(tmp_path):
