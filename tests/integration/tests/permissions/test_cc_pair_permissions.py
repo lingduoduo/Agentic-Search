@@ -6,7 +6,7 @@ the permissions of the curator manipulating connector-credential pairs.
 import os
 
 import pytest
-from generated.agentic_search_openapi_client.exceptions import ApiException  # ty: ignore[unresolved-import]
+from requests import HTTPError
 
 from tests.integration.common_utils.types import AccessType
 from tests.integration.common_utils.types import DocumentSource
@@ -93,7 +93,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
 
     # Curators should not be able to create a cc
     # pair for a user group they are not a curator of
-    with pytest.raises(ApiException):
+    with pytest.raises(HTTPError):
         CCPairManager.create(
             connector_id=connector_1.id,
             credential_id=credential_1.id,
@@ -105,7 +105,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
 
     # Curators should not be able to create a cc
     # pair without an attached user group
-    with pytest.raises(ApiException):
+    with pytest.raises(HTTPError):
         CCPairManager.create(
             connector_id=connector_1.id,
             credential_id=credential_1.id,
@@ -131,7 +131,7 @@ def test_cc_pair_permissions(reset: None) -> None:  # noqa: ARG001
 
     # Curators should not be able to create a cc
     # pair for a user group that the credential does not belong to
-    with pytest.raises(ApiException):
+    with pytest.raises(HTTPError):
         CCPairManager.create(
             connector_id=connector_1.id,
             credential_id=credential_2.id,

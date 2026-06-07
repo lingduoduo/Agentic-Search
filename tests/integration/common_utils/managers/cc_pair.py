@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-import generated.agentic_search_openapi_client.agentic_search_openapi_client as api  # type: ignore[unresolved-import]
 import requests
 
 from tests.integration.common_utils.types import InputType
@@ -15,7 +14,6 @@ from tests.integration.common_utils.types import ConnectorIndexingStatusLite
 from tests.integration.common_utils.types import ConnectorStatus
 from tests.integration.common_utils.types import DocumentSource
 from tests.integration.common_utils.types import DocumentSyncStatus
-from tests.integration.common_utils.config import api_config
 from tests.integration.common_utils.constants import API_SERVER_URL
 from tests.integration.common_utils.constants import MAX_DELAY
 from tests.integration.common_utils.managers.connector import ConnectorManager
@@ -33,23 +31,14 @@ def _cc_pair_creator(
     groups: list[int] | None = None,
 ) -> DATestCCPair:
     name = f"{name}-cc-pair" if name else f"test-cc-pair-{uuid4()}"
-
-    with api.ApiClient(api_config) as api_client:
-        api_instance = api.DefaultApi(api_client)
-        connector_credential_pair_metadata = api.ConnectorCredentialPairMetadata(
-            name=name, access_type=access_type, groups=groups or []
-        )
-        api_response: api.StatusResponseInt = (
-            api_instance.associate_credential_to_connector(
-                connector_id,
-                credential_id,
-                connector_credential_pair_metadata,
-                _headers=user_performing_action.headers,
-            )
-        )
-
+    response = requests.put(
+        url=f"{API_SERVER_URL}/manage/admin/connector/{connector_id}/credential/{credential_id}",
+        json={"name": name, "access_type": access_type, "groups": groups or []},
+        headers=user_performing_action.headers,
+    )
+    response.raise_for_status()
     return DATestCCPair(
-        id=int(api_response.data),
+        id=int(response.json()["data"]),
         name=name,
         connector_id=connector_id,
         credential_id=credential_id,
