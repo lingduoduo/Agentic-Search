@@ -412,6 +412,68 @@ class AgenticSearchStore:
         self._conn.commit()
         return record
 
+    def upsert_documents_bulk(
+        self, documents: list[StoredDocument]
+    ) -> list[StoredDocument]:
+        """Upsert multiple documents in a single transaction."""
+        if not documents:
+            return []
+        now = _now()
+        doc_ids = [d.id for d in documents]
+        placeholders = ", ".join("?" * len(doc_ids))
+        existing_created_at: dict[str, str] = {
+            row["id"]: str(row["created_at"])
+            for row in self._conn.execute(
+                f"SELECT id, created_at FROM documents WHERE id IN ({placeholders})",
+                tuple(doc_ids),
+            ).fetchall()
+        }
+        records: list[StoredDocument] = []
+        params: list[tuple] = []
+        for document in documents:
+            created_at = existing_created_at.get(document.id, now)
+            record = StoredDocument(
+                id=document.id,
+                title=document.title,
+                contents=document.contents,
+                url=document.url,
+                connector_id=document.connector_id,
+                metadata=dict(document.metadata),
+                created_at=created_at,
+                updated_at=now,
+            )
+            records.append(record)
+            params.append(
+                (
+                    record.id,
+                    record.title,
+                    record.contents,
+                    record.url,
+                    record.connector_id,
+                    _json_dumps(record.metadata),
+                    record.created_at,
+                    record.updated_at,
+                )
+            )
+        self._conn.executemany(
+            """
+            INSERT INTO documents (
+                id, title, contents, url, connector_id, metadata_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                contents = excluded.contents,
+                url = excluded.url,
+                connector_id = excluded.connector_id,
+                metadata_json = excluded.metadata_json,
+                updated_at = excluded.updated_at
+            """,
+            params,
+        )
+        self._conn.commit()
+        return records
+
     def get_document(self, document_id: str) -> StoredDocument | None:
         row = self._conn.execute(
             "SELECT * FROM documents WHERE id = ?", (document_id,)
