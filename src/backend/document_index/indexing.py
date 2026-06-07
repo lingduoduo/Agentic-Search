@@ -383,8 +383,6 @@ def _should_stop(callback: IndexingHeartbeatInterface | None) -> bool:
     return bool(callback and callback.should_stop())
 
 
-write_chunks_to_vector_db_with_backoff = write_chunks_with_backoff
-
 __all__ = [
     "ChunkBatchStore",
     "ChunkSink",
@@ -398,6 +396,5 @@ __all__ = [
     "index_document_batch",
     "index_documents",
     "numpy_embedding_fn",
-    "write_chunks_to_vector_db_with_backoff",
     "write_chunks_with_backoff",
 ]
