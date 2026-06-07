@@ -43,5 +43,17 @@ def test_process_batch_uses_bulk_upsert(tmp_path):
         worker.process_batch(docs)
 
     mock_single.assert_not_called()
-    assert mock_bulk.call_count >= 1
+    assert mock_bulk.call_count == 2
+
+    # Verify all docs were persisted to the store
+    for i in range(5):
+        stored = store.get_document(f"doc-{i}")
+        assert stored is not None, f"doc-{i} not persisted"
+
+    # Verify at least one doc has indexed_chunks written back
+    indexed = [store.get_document(f"doc-{i}") for i in range(5)]
+    assert any("indexed_chunks" in (d.metadata or {}) for d in indexed), (
+        "No doc had indexed_chunks written back to the store"
+    )
+
     store.close()
