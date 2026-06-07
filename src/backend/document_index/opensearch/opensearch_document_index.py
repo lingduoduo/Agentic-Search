@@ -3,7 +3,13 @@ import os
 from collections.abc import Iterable
 from typing import Any
 
-from opensearchpy.helpers.errors import BulkIndexError
+try:
+    from opensearchpy.helpers.errors import BulkIndexError
+except ImportError:  # pragma: no cover - depends on optional backend dependency
+
+    class BulkIndexError(Exception):
+        """Fallback type used when the optional OpenSearch client is absent."""
+
 
 from src.retrieval.models import DocumentAccess
 from src.retrieval.models import QueryType
