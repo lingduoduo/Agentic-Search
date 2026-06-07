@@ -1397,6 +1397,9 @@ class OpenSearchIndexClient(OpenSearchClient):
             body.append({"index": self._index_name})
             body.append(query_body)
 
+        # TODO: thread a search_type label through to observe_opensearch_search /
+        # record_opensearch_search_error when Prometheus stubs are wired up, so
+        # DOC_ID_RETRIEVAL latency metrics are preserved.
         result: dict[str, Any] = self._client.msearch(body=body)
         responses: list[dict[str, Any]] = result.get("responses", [])
 

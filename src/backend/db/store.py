@@ -431,8 +431,9 @@ class AgenticSearchStore:
         records: list[StoredDocument] = []
         params: list[tuple] = []
         for document in documents:
+            fetched = existing_created_at.get(document.id)
             created_at = (
-                existing_created_at.get(document.id) or document.created_at or now
+                fetched if fetched is not None else (document.created_at or now)
             )
             record = StoredDocument(
                 id=document.id,
