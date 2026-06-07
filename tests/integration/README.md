@@ -10,30 +10,12 @@ The integration tests are designed with a "manager" class and a "test" class for
 The idea is that each test can use the manager class to create (.create()) a "test*" object. It can then perform an operation on the object (e.g., send a request to the API) and then check if the "test*" object is in the expected state by using the manager class (.verify()) function.
 
 ## Instructions for Running Integration Tests Locally
-0. Generate dependencies
-First install openap-generator
-```sh
-brew install openapi-generator
-```
-
-Then, using the VSCode/Cursor debugger, run the `OpenAPI Schema Generator` task (see `CONTRIBUTING_VSCODE.md` for `launch.json` setup instructions).
-The task automatically generates the Python client needed for integration tests.
-
-If the client generation fails, try running this command manually:
-```sh
-openapi-generator generate -i backend/generated/openapi.json -g python \
-  -o backend/generated/agentic_search_openapi_client \
-  --package-name agentic_search_openapi_client \
-  --skip-validate-spec \
-  --openapi-normalizer "SIMPLIFY_ONEOF_ANYOF=true,SET_OAS3_NULLABLE=true"
-```
-
-1. Launch the API server (using Docker or a debugger), ensuring it is running on port 8080.
+0. Launch the API server (using Docker or a debugger), ensuring it is running on port 8080.
    - If you'd like to set environment variables, create a `.env` file in the `tests/integration/` directory.
    - The server MUST be launched with `AUTH_TYPE=basic` and `ENABLE_PAID_ENTERPRISE_EDITION_FEATURES=true`.
    - Tests that use `mock_llm_response` also require `INTEGRATION_TESTS_MODE=true` on the API server process.
-2. Navigate to the repo root.
-3. Run the following command in the terminal:
+1. Navigate to the repo root.
+2. Run the following command in the terminal:
    ```sh
    python -m dotenv -f .env run -- pytest -s tests/integration/tests/
    ```
