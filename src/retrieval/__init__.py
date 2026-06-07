@@ -45,18 +45,31 @@ from .sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig
 from .hybrid_retriever import HybridRetriever as HybridRetriever
 from .hybrid_retriever import HybridRetrieverConfig as HybridRetrieverConfig
 from .hybrid_retriever import combine_retrieval_results as combine_retrieval_results
-from .chunk_batch_store import ChunkBatchStore as ChunkBatchStore
-from .chunker import Chunker as Chunker
-from .embedder import DefaultIndexingEmbedder as DefaultIndexingEmbedder
-from .embedder import IndexingEmbedder as IndexingEmbedder
-from .indexing_pipeline import (
-    DocumentBatchPrepareContext as DocumentBatchPrepareContext,
-)
-from .indexing_pipeline import embed_and_stream as embed_and_stream
-from .indexing_pipeline import filter_documents as filter_documents
-from .indexing_pipeline import index_document_batch as index_document_batch
-from .vector_db_insertion import ChunkSink as ChunkSink
-from .vector_db_insertion import write_chunks_with_backoff as write_chunks_with_backoff
+
+_INDEXING_EXPORTS = {
+    "ChunkBatchStore",
+    "ChunkSink",
+    "Chunker",
+    "DefaultIndexingEmbedder",
+    "DocumentBatchPrepareContext",
+    "DocumentIndexingResult",
+    "IndexingEmbedder",
+    "embed_and_stream",
+    "filter_documents",
+    "index_document_batch",
+    "index_documents",
+    "write_chunks_with_backoff",
+}
+
+
+def __getattr__(name: str):
+    """Lazily preserve legacy indexing imports from ``src.retrieval``."""
+
+    if name in _INDEXING_EXPORTS:
+        from src.backend.document_index import indexing
+
+        return getattr(indexing, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def build_retriever(

@@ -288,6 +288,23 @@ Loop flow:
 
 ## Retrieval Setup
 
+**Index documents from Python:**
+
+Use `src.backend.document_index` as the single indexing entry point. It handles
+filtering, chunking, embedding, retry-isolated writes, and failure reporting:
+
+```python
+from src.backend.document_index import index_documents
+
+result = index_documents(documents, sink=my_chunk_sink)
+print(result.successful_chunk_counts)
+print(result.failures)
+```
+
+Query-time search, vocabulary, and text normalization remain in `src.retrieval`.
+Legacy indexing imports from `src.retrieval` still work, but new code should use
+`src.backend.document_index`.
+
 **Retrieval servers** (`src/backend/servers/retrieval/`):
 
 | Module | Description |

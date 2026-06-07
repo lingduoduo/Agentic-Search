@@ -1,40 +1,10 @@
-"""Object-oriented chunking facade for the retrieval indexing pipeline."""
+"""Compatibility imports for document-index chunking."""
 
-from __future__ import annotations
-
-from collections.abc import Iterable
-
-from src.backend.connectors.models import Document
-from .index_builder import chunk_document
-from .index_builder import chunk_documents
-from .index_builder import filter_indexable_documents
-from .index_builder import generate_large_chunks
-from .indexing_heartbeat import IndexingHeartbeatInterface
-from .models import ChunkingConfig
-from .models import IndexChunk
-
-
-class Chunker:
-    """Chunk documents with the repo's indexing configuration.
-
-    This keeps the sampled ``Chunker`` ergonomics while delegating the actual
-    chunking rules to :mod:`src.retrieval.index_builder`.
-    """
-
-    def __init__(
-        self,
-        config: ChunkingConfig | None = None,
-        *,
-        callback: IndexingHeartbeatInterface | None = None,
-    ) -> None:
-        self.config = config or ChunkingConfig()
-        self.callback = callback
-
-    def chunk_document(self, document: Document) -> list[IndexChunk]:
-        return chunk_document(document, self.config)
-
-    def chunk(self, documents: Iterable[Document]) -> list[IndexChunk]:
-        return chunk_documents(documents, self.config, callback=self.callback)
+from src.backend.document_index.indexing import Chunker as Chunker
+from .index_builder import chunk_document as chunk_document
+from .index_builder import chunk_documents as chunk_documents
+from .index_builder import filter_indexable_documents as filter_indexable_documents
+from .index_builder import generate_large_chunks as generate_large_chunks
 
 
 __all__ = [

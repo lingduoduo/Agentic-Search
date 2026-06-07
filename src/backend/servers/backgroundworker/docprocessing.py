@@ -22,16 +22,11 @@ from dataclasses import dataclass, field
 from src.backend.connectors.models import ConnectorFailure, Document
 from src.backend.db.models import StoredDocument
 from src.backend.db.store import AgenticSearchStore
-from src.retrieval.index_builder import embed_chunks_with_failure_handling
-from src.retrieval.index_builder import filter_indexable_documents
+from src.backend.document_index import ChunkSink
+from src.backend.document_index import DefaultIndexingEmbedder
+from src.backend.document_index import index_documents
 from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
 from src.retrieval.models import ChunkingConfig, EmbeddingConfig
-from src.retrieval.chunker import Chunker
-from src.retrieval.embedder import DefaultIndexingEmbedder
-from src.retrieval.vector_db_insertion import (
-    ChunkSink,
-    write_chunks_with_backoff,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -126,74 +121,23 @@ class DocprocessingWorker:
                     )
                 )
 
-        # 2. Filter
-        indexable, filter_failures = filter_indexable_documents(
+        # 2-5. Filter, chunk, embed, and write to the configured index.
+        indexing_result = index_documents(
             documents,
-            max_document_chars=self._config.chunking.max_document_chars,
-        )
-        result.failures.extend(filter_failures)
-
-        if not indexable:
-            return result
-
-        # 3. Chunk — ChunkingConfig.include_metadata injects contextual metadata
-        #    text into each chunk at construction time.
-        if self._callback and self._callback.should_stop():
-            return result
-
-        chunker = Chunker(self._config.chunking, callback=self._callback)
-        chunks = chunker.chunk(indexable)
-        result.total_chunks = len(chunks)
-
-        if not chunks:
-            return result
-
-        # 4. Embed with per-document failure isolation: one bad document does not
-        #    block the rest of the batch.
-        if self._callback and self._callback.should_stop():
-            return result
-
-        embedded, embed_failures = embed_chunks_with_failure_handling(
-            chunks,
-            embedding_fn=self._embedder.embedding_fn,
-            config=self._config.embedding,
+            sink=self._sink,
+            chunking=self._config.chunking,
+            embedding=self._config.embedding,
+            embedder=self._embedder,
             callback=self._callback,
+            retry_sleep_seconds=self._config.vector_db_retry_sleep_secs,
         )
-        result.failures.extend(embed_failures)
-        failed_doc_ids = {f.document_id for f in embed_failures if f.document_id}
-
-        if not embedded:
-            return result
-
-        # 5. Vector DB write with per-document backoff retry.
-        if self._sink is not None:
-            if self._callback and self._callback.should_stop():
-                return result
-
-            def _make_chunks():
-                return (
-                    c for c in embedded if c.chunk.document_id not in failed_doc_ids
-                )
-
-            _, write_failures = write_chunks_with_backoff(
-                self._sink,
-                _make_chunks,
-                retry_sleep_seconds=self._config.vector_db_retry_sleep_secs,
-            )
-            result.failures.extend(write_failures)
-            failed_doc_ids.update(
-                f.document_id for f in write_failures if f.document_id
-            )
+        result.total_chunks = len(indexing_result.chunks)
+        result.failures.extend(indexing_result.failures)
 
         # 6. Metadata update — record chunk count on successfully indexed docs.
         if self._store is not None:
-            chunks_by_doc: dict[str, int] = {}
-            for chunk in chunks:
-                if chunk.document_id not in failed_doc_ids:
-                    chunks_by_doc[chunk.document_id] = (
-                        chunks_by_doc.get(chunk.document_id, 0) + 1
-                    )
-            for doc in indexable:
+            chunks_by_doc = indexing_result.successful_chunk_counts
+            for doc in indexing_result.documents:
                 if doc.id in chunks_by_doc:
                     updated_metadata = {
                         **(doc.metadata or {}),
