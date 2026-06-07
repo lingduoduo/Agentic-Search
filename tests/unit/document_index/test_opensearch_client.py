@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from unittest.mock import MagicMock, patch
 
 import src.backend.document_index.opensearch.client as _client_mod
@@ -109,7 +110,6 @@ def test_msearch_raises_on_per_response_error():
 
     with patch(_PATCH_TARGET, return_value=mock_os_instance):
         client = OpenSearchIndexClient(index_name="test-index")
-        import pytest
 
         with pytest.raises(RuntimeError, match="msearch sub-request failed"):
             client.msearch([{"query": {"match_all": {}}}])
