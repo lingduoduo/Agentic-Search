@@ -3,7 +3,6 @@ import os
 from datetime import datetime
 from datetime import timezone
 from typing import Any
-from typing import Self
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -12,6 +11,7 @@ from pydantic import field_validator
 from pydantic import model_serializer
 from pydantic import model_validator
 from pydantic import SerializerFunctionWrapHandler
+from typing_extensions import Self
 
 from src.backend.document_index.interfaces import TenantState
 from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE

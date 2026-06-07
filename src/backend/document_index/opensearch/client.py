@@ -8,10 +8,27 @@ from typing import Any
 from typing import Generic
 from typing import TypeVar
 
-from opensearchpy import OpenSearch
-from opensearchpy import TransportError
-from opensearchpy.helpers import bulk
 from pydantic import BaseModel
+
+try:
+    from opensearchpy import OpenSearch
+    from opensearchpy import TransportError
+    from opensearchpy.helpers import bulk
+except ImportError:  # pragma: no cover - depends on optional backend dependency
+
+    class TransportError(Exception):
+        """Fallback type used when the optional OpenSearch client is absent."""
+
+    def OpenSearch(*_args: Any, **_kwargs: Any) -> Any:  # noqa: N802
+        raise RuntimeError(
+            "OpenSearch support requires the optional 'opensearch-py' package."
+        )
+
+    def bulk(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(
+            "OpenSearch support requires the optional 'opensearch-py' package."
+        )
+
 
 from src.backend.document_index.interfaces import TenantState
 from src.backend.document_index.opensearch.constants import OpenSearchSearchType

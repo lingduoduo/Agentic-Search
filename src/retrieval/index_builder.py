@@ -34,6 +34,12 @@ import numpy as np
 
 from src.backend.connectors.models import ConnectorFailure
 from src.backend.connectors.models import Document
+from src.backend.document_index.text import (
+    MAX_LENGTH as DEFAULT_VOCAB_MAX_LENGTH,
+    Vocabulary,
+    normalize_document,
+    tokenize_text,
+)
 from .indexing_heartbeat import IndexingHeartbeatInterface
 from .models import ChunkingConfig
 from .models import EmbeddedChunk
@@ -42,12 +48,6 @@ from .models import IndexChunk
 from .models import IndexingPipelineConfig
 from .models import IndexingPipelineResult
 from .models import IndexWriterConfig
-from .vocabulary import (
-    MAX_LENGTH as DEFAULT_VOCAB_MAX_LENGTH,
-    Vocabulary,
-    normalize_document,
-    tokenize_text,
-)
 
 # Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")

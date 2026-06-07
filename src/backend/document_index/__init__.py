@@ -1,14 +1,24 @@
-"""Document index backends and the public document-indexing pipeline."""
+"""Document-index backends, text handling, and indexing entry points."""
 
-from .indexing import ChunkBatchStore as ChunkBatchStore
-from .indexing import ChunkSink as ChunkSink
-from .indexing import Chunker as Chunker
-from .indexing import DefaultIndexingEmbedder as DefaultIndexingEmbedder
-from .indexing import DocumentBatchPrepareContext as DocumentBatchPrepareContext
-from .indexing import DocumentIndexingResult as DocumentIndexingResult
-from .indexing import IndexingEmbedder as IndexingEmbedder
-from .indexing import embed_and_stream as embed_and_stream
-from .indexing import filter_documents as filter_documents
-from .indexing import index_document_batch as index_document_batch
-from .indexing import index_documents as index_documents
-from .indexing import write_chunks_with_backoff as write_chunks_with_backoff
+_INDEXING_EXPORTS = {
+    "ChunkBatchStore",
+    "ChunkSink",
+    "Chunker",
+    "DefaultIndexingEmbedder",
+    "DocumentBatchPrepareContext",
+    "DocumentIndexingResult",
+    "IndexingEmbedder",
+    "embed_and_stream",
+    "filter_documents",
+    "index_document_batch",
+    "index_documents",
+    "write_chunks_with_backoff",
+}
+
+
+def __getattr__(name: str):
+    if name in _INDEXING_EXPORTS:
+        from . import indexing
+
+        return getattr(indexing, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
