@@ -14,8 +14,8 @@ from src.backend.document_index import index_document_batch
 from src.backend.document_index import index_documents
 from src.backend.document_index import write_chunks_with_backoff
 from src.backend.document_index.index_builder import IndexingHeartbeatInterface
-from src.retrieval.models import ChunkingConfig
-from src.retrieval.models import EmbeddingConfig
+from src.backend.document_index.models import ChunkingConfig
+from src.backend.document_index.models import EmbeddingConfig
 
 
 def test_chunker_and_embedder_facade_support_mini_chunks():

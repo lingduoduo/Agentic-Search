@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from src.retrieval.models import DocMetadataAwareIndexChunk
-from src.retrieval.models import MultipassConfig
+from src.backend.document_index.models import DocMetadataAwareIndexChunk
+from src.backend.document_index.models import MultipassConfig
 
 
 @dataclass

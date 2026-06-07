@@ -1,9 +1,9 @@
 from src.backend.configs.constants import BLURB_SIZE
 from src.backend.configs.constants import RETURN_SEPARATOR
-from src.retrieval.models import InferenceChunk
-from src.retrieval.models import InferenceChunkUncleaned
-from src.retrieval.models import DocAwareChunk
-from src.retrieval.models import DocMetadataAwareIndexChunk
+from src.backend.document_index.models import InferenceChunk
+from src.backend.document_index.models import InferenceChunkUncleaned
+from src.backend.document_index.models import DocAwareChunk
+from src.backend.document_index.models import DocMetadataAwareIndexChunk
 
 
 def generate_enriched_content_for_chunk_text(chunk: DocMetadataAwareIndexChunk) -> str:

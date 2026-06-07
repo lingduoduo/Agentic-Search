@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from src.retrieval.models import ExternalAccess
+from src.backend.document_index.models import ExternalAccess
 
 
 @dataclass

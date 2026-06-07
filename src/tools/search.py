@@ -12,8 +12,8 @@ from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
-from ..retrieval.context import SearchResult
-from ..retrieval.client import SearchClient, SearchClientConfig, aiohttp
+from ..context.search import SearchResult
+from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
 from .base import FunctionTool
 
 SearchProvider = Literal["retrieval", "google", "serpapi"]

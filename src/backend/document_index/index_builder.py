@@ -40,13 +40,13 @@ from src.backend.document_index.text import (
     normalize_document,
     tokenize_text,
 )
-from src.retrieval.models import ChunkingConfig
-from src.retrieval.models import EmbeddedChunk
-from src.retrieval.models import EmbeddingConfig
-from src.retrieval.models import IndexChunk
-from src.retrieval.models import IndexingPipelineConfig
-from src.retrieval.models import IndexingPipelineResult
-from src.retrieval.models import IndexWriterConfig
+from src.backend.document_index.models import ChunkingConfig
+from src.backend.document_index.models import EmbeddedChunk
+from src.backend.document_index.models import EmbeddingConfig
+from src.backend.document_index.models import IndexChunk
+from src.backend.document_index.models import IndexingPipelineConfig
+from src.backend.document_index.models import IndexingPipelineResult
+from src.backend.document_index.models import IndexWriterConfig
 
 # Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")

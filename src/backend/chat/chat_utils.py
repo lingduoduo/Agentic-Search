@@ -21,12 +21,12 @@ from src.backend.chat.models import FileToolMetadata
 from src.backend.chat.models import ToolCallSimple
 from src.backend.configs.constants import DEFAULT_PERSONA_ID
 from src.backend.servers.query_history.models import MessageType
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.db.models import ChatMessage
 from src.backend.db.models import ChatSession
 from src.backend.db.models import Persona
 from src.backend.db.models import User
-from src.retrieval.models import SearchDoc as DbSearchDoc
+from src.backend.document_index.models import SearchDoc as DbSearchDoc
 from src.backend.file_store.models import ChatFileType
 from src.backend.file_store.models import FileDescriptor
 from src.backend.servers.query_and_chat.models import (

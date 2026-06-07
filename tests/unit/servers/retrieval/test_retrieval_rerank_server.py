@@ -7,7 +7,7 @@ import sys
 from fastapi.testclient import TestClient
 
 from src.backend.document_index.retrieval import DenseRetrieverConfig
-from src.retrieval.rerank import RerankerConfig
+from src.backend.servers.retrieval.rerank import RerankerConfig
 from src.backend.servers.retrieval.retrieval_rerank import (
     RetrievalRerankConfig,
     create_app,
@@ -92,7 +92,9 @@ def test_retrieval_rerank_batches_retrieval_once(monkeypatch):
         rerankers.append(reranker)
         return reranker
 
-    monkeypatch.setattr("src.retrieval.DenseRetriever", _retriever_factory)
+    monkeypatch.setattr(
+        "src.backend.document_index.retrieval.DenseRetriever", _retriever_factory
+    )
     monkeypatch.setattr(
         "src.backend.servers.retrieval.retrieval_rerank.get_reranker", _reranker_factory
     )
@@ -117,7 +119,9 @@ def test_retrieval_rerank_batches_retrieval_once(monkeypatch):
 
 
 def test_retrieval_rerank_can_return_rerank_scores(monkeypatch):
-    monkeypatch.setattr("src.retrieval.DenseRetriever", _FakeRetriever)
+    monkeypatch.setattr(
+        "src.backend.document_index.retrieval.DenseRetriever", _FakeRetriever
+    )
     monkeypatch.setattr(
         "src.backend.servers.retrieval.retrieval_rerank.get_reranker",
         lambda config: _FakeReranker(),
@@ -144,8 +148,12 @@ def test_retrieval_rerank_supports_bm25_retriever(monkeypatch):
         sparse_calls.append(config)
         return _FakeRetriever(config)
 
-    monkeypatch.setattr("src.retrieval.DenseRetriever", _dense_factory)
-    monkeypatch.setattr("src.retrieval.SparseRetriever", _sparse_factory)
+    monkeypatch.setattr(
+        "src.backend.document_index.retrieval.DenseRetriever", _dense_factory
+    )
+    monkeypatch.setattr(
+        "src.backend.document_index.retrieval.SparseRetriever", _sparse_factory
+    )
     monkeypatch.setattr(
         "src.backend.servers.retrieval.retrieval_rerank.get_reranker",
         lambda config: _FakeReranker(),

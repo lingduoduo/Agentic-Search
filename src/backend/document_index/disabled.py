@@ -7,12 +7,12 @@ out against a nonexistent OpenSearch instance.
 
 from collections.abc import Iterable
 
-from src.retrieval.models import DocMetadataAwareIndexChunk
-from src.retrieval.models import EmbeddingPrecision
-from src.retrieval.models import Embedding
-from src.retrieval.models import IndexFilters
-from src.retrieval.models import InferenceChunk
-from src.retrieval.models import QueryType
+from src.backend.document_index.models import DocMetadataAwareIndexChunk
+from src.backend.document_index.models import EmbeddingPrecision
+from src.backend.document_index.models import Embedding
+from src.backend.document_index.models import IndexFilters
+from src.backend.document_index.models import InferenceChunk
+from src.backend.document_index.models import QueryType
 from src.backend.document_index.interfaces import DocumentIndex
 from src.backend.document_index.interfaces import DocumentInsertionRecord
 from src.backend.document_index.interfaces import DocumentSectionRequest

@@ -301,9 +301,9 @@ print(result.successful_chunk_counts)
 print(result.failures)
 ```
 
-Query-time search, vocabulary, and text normalization remain in `src.retrieval`.
-Legacy indexing imports from `src.retrieval` still work, but new code should use
-`src.backend.document_index`.
+Query-time indexing and local retrievers live in `src.backend.document_index`.
+Search context contracts and the retrieval HTTP client live in `src.context`.
+Reranker utilities live beside their server in `src.backend.servers.retrieval`.
 
 **Retrieval servers** (`src/backend/servers/retrieval/`):
 

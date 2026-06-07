@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from src.backend.servers.query_history.models import MessageType
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.file_store.models import ChatFileType
 from src.backend.file_store.models import InMemoryChatFile
 from src.backend.servers.query_and_chat.streaming_models import MessageResponseIDInfo

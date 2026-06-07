@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from src.backend.chat.chat_state import ChatStateContainer
 from src.backend.chat.chat_state import SearchDocKey
 from src.backend.configs.constants import DocumentSource
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.db.models import ChatMessage
 from src.backend.db.models import ToolCall
 from src.backend.file_store.models import FileDescriptor

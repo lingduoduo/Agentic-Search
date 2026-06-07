@@ -13,7 +13,7 @@ from src.backend.configs import AuthSettings
 from src.backend.db import AgenticSearchStore
 from src.backend.db.models import ConnectorConfig
 from src.backend.db.models import UserRecord
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 from src.backend.servers.query_and_chat.models import SearchDocWithContent
 from src.backend.servers.query_and_chat.models import SendSearchQueryRequest
 from src.backend.servers.query_and_chat.streaming_models import SearchErrorPacket
@@ -154,7 +154,7 @@ def test_search_flow_classification_long_query_is_chat(tmp_path):
 def test_send_search_message_non_streaming(tmp_path, monkeypatch):
     async def fake_run_expanded_search(query, **_):
         from src.backend.search.process_search_query import SearchQueryResult
-        from src.retrieval.context import SearchResult
+        from src.context.search import SearchResult
 
         return SearchQueryResult(
             original_query=query,

@@ -29,7 +29,7 @@ def _build_tenant_state():
 
 
 def _get_embedding_precision():
-    from src.retrieval.models import EmbeddingPrecision
+    from src.backend.document_index.models import EmbeddingPrecision
 
     raw = os.environ.get("EMBEDDING_PRECISION", "float")
     return (

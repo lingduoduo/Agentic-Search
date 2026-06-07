@@ -10,7 +10,7 @@ from typing import TypeVar
 
 from src.backend.configs.constants import DocumentSource
 from src.backend.configs.constants import INDEX_SEPARATOR
-from src.retrieval.models import IndexFilters
+from src.backend.document_index.models import IndexFilters
 from src.backend.document_index.interfaces import TenantState
 from src.backend.document_index.opensearch.constants import ASSUMED_DOCUMENT_AGE_DAYS
 from src.backend.document_index.opensearch.constants import (

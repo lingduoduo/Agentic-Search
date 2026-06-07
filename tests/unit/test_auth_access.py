@@ -15,7 +15,7 @@ from src.backend.db import DocumentPermission
 from src.backend.db import GroupRecord
 from src.backend.db import StoredDocument
 from src.backend.db import UserRecord
-from src.retrieval.models import DocumentAccess
+from src.backend.document_index.models import DocumentAccess
 
 
 def test_user_jwt_round_trips_identity_and_groups():

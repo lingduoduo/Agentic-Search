@@ -11,14 +11,14 @@ except ImportError:  # pragma: no cover - depends on optional backend dependency
         """Fallback type used when the optional OpenSearch client is absent."""
 
 
-from src.retrieval.models import DocumentAccess
-from src.retrieval.models import QueryType
-from src.retrieval.models import IndexFilters
-from src.retrieval.models import InferenceChunk
-from src.retrieval.models import InferenceChunkUncleaned
-from src.retrieval.models import EmbeddingPrecision
-from src.retrieval.models import DocMetadataAwareIndexChunk
-from src.retrieval.models import Embedding
+from src.backend.document_index.models import DocumentAccess
+from src.backend.document_index.models import QueryType
+from src.backend.document_index.models import IndexFilters
+from src.backend.document_index.models import InferenceChunk
+from src.backend.document_index.models import InferenceChunkUncleaned
+from src.backend.document_index.models import EmbeddingPrecision
+from src.backend.document_index.models import DocMetadataAwareIndexChunk
+from src.backend.document_index.models import Embedding
 from src.backend.configs.constants import PUBLIC_DOC_PAT
 from src.backend.document_index.chunk_content_enrichment import (
     cleanup_content_for_chunks,

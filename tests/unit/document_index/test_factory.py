@@ -23,7 +23,7 @@ def test_disabled_verify_is_noop(monkeypatch):
         secondary_index_name=None,
     )
     # verify_and_create_index_if_necessary should be a no-op
-    from src.retrieval.models import EmbeddingPrecision
+    from src.backend.document_index.models import EmbeddingPrecision
 
     idx.verify_and_create_index_if_necessary(
         embedding_dim=768, embedding_precision=EmbeddingPrecision.FLOAT

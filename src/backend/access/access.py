@@ -8,7 +8,7 @@ from typing import Any
 from src.backend.auth import AuthenticatedUser
 from src.backend.db import AgenticSearchStore
 from src.backend.db import DocumentPermission
-from src.retrieval.models import DocumentAccess
+from src.backend.document_index.models import DocumentAccess
 
 PUBLIC_ACL = "public"
 USER_PREFIX = "user:"

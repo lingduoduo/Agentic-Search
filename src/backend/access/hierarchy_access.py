@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from src.retrieval.models import DocumentAccess
+from src.backend.document_index.models import DocumentAccess
 
 
 def merge_document_access(

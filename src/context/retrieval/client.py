@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from urllib.parse import urlparse, urlunparse
 
-from .context import SearchResult
+from src.context.search import SearchResult
 
 
 class _LazyAiohttp:

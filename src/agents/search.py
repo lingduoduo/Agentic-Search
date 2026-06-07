@@ -19,13 +19,13 @@ from .base import (
     register,
     simple_timer,
 )
-from ..retrieval.context import AgentContext, SearchContext, SearchResult
+from ..context.search import AgentContext, SearchContext, SearchResult
 from ..training.evaluation import (
     SearchEvaluationConfig,
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from ..retrieval.client import SearchClient, SearchClientConfig
+from ..context.retrieval.client import SearchClient, SearchClientConfig
 
 # ---------------------------------------------------------------------------
 # Search tool-call types

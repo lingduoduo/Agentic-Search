@@ -15,7 +15,7 @@ from src.context.retrieval.search_runner import run_search
 from src.backend.prompts.query_expansion import QUERY_TYPE_PROMPT
 from src.backend.prompts.search_flow_classification import CHAT_CLASS
 from src.backend.prompts.search_flow_classification import SEARCH_CLASS
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 from src.backend.secondary_llm_flows import classify_is_search_flow
 from src.backend.secondary_llm_flows import expand_keywords
 
