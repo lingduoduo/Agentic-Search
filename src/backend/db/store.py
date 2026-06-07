@@ -721,6 +721,7 @@ class AgenticSearchStore:
         except Exception:
             self._conn.rollback()
             raise
+        # INSERT OR REPLACE always writes one row per entry; len(params) == rows written.
         return len(params)
 
     def get_document_permissions(self, document_id: str) -> list[DocumentPermission]:
