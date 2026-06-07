@@ -431,7 +431,9 @@ class AgenticSearchStore:
         records: list[StoredDocument] = []
         params: list[tuple] = []
         for document in documents:
-            created_at = existing_created_at.get(document.id, now)
+            created_at = (
+                existing_created_at.get(document.id) or document.created_at or now
+            )
             record = StoredDocument(
                 id=document.id,
                 title=document.title,
@@ -455,23 +457,27 @@ class AgenticSearchStore:
                     record.updated_at,
                 )
             )
-        self._conn.executemany(
-            """
-            INSERT INTO documents (
-                id, title, contents, url, connector_id, metadata_json, created_at, updated_at
+        try:
+            self._conn.executemany(
+                """
+                INSERT INTO documents (
+                    id, title, contents, url, connector_id, metadata_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    contents = excluded.contents,
+                    url = excluded.url,
+                    connector_id = excluded.connector_id,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                params,
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title = excluded.title,
-                contents = excluded.contents,
-                url = excluded.url,
-                connector_id = excluded.connector_id,
-                metadata_json = excluded.metadata_json,
-                updated_at = excluded.updated_at
-            """,
-            params,
-        )
-        self._conn.commit()
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
         return records
 
     def get_document(self, document_id: str) -> StoredDocument | None:
