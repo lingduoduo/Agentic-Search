@@ -27,7 +27,7 @@ from src.backend.connectors import (
     StaticCredentialsProvider,
     batched,
 )
-from src.retrieval.index_builder import (
+from src.backend.document_index.index_builder import (
     dump_connector_to_jsonl,
     load_corpus_from_connector,
 )

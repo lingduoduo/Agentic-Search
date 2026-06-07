@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from src.retrieval.embedding_cache import EmbeddingCache, OpenAIEmbedder
-from src.retrieval.index_builder import (
+from src.backend.document_index.index_builder import (
     _encode_batch,
     _normalize_embedding_rows,
     _require_faiss,

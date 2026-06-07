@@ -13,7 +13,7 @@ from src.backend.document_index import filter_documents
 from src.backend.document_index import index_document_batch
 from src.backend.document_index import index_documents
 from src.backend.document_index import write_chunks_with_backoff
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
+from src.backend.document_index.index_builder import IndexingHeartbeatInterface
 from src.retrieval.models import ChunkingConfig
 from src.retrieval.models import EmbeddingConfig
 

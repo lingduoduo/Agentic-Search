@@ -12,16 +12,22 @@ from src.backend.document_index.retrieval import SparseRetriever as SparseRetrie
 from src.backend.document_index.retrieval import (
     SparseRetrieverConfig as SparseRetrieverConfig,
 )
-from .index_builder import chunk_document as chunk_document
-from .index_builder import chunk_documents as chunk_documents
-from .index_builder import deterministic_embedding_fn as deterministic_embedding_fn
-from .index_builder import embed_chunks as embed_chunks
-from .index_builder import (
+from src.backend.document_index.index_builder import chunk_document as chunk_document
+from src.backend.document_index.index_builder import chunk_documents as chunk_documents
+from src.backend.document_index.index_builder import (
+    deterministic_embedding_fn as deterministic_embedding_fn,
+)
+from src.backend.document_index.index_builder import embed_chunks as embed_chunks
+from src.backend.document_index.index_builder import (
     embed_chunks_with_failure_handling as embed_chunks_with_failure_handling,
 )
-from .index_builder import generate_large_chunks as generate_large_chunks
-from .index_builder import run_indexing_pipeline as run_indexing_pipeline
-from .indexing_heartbeat import (
+from src.backend.document_index.index_builder import (
+    generate_large_chunks as generate_large_chunks,
+)
+from src.backend.document_index.index_builder import (
+    run_indexing_pipeline as run_indexing_pipeline,
+)
+from src.backend.document_index.index_builder import (
     IndexingHeartbeatInterface as IndexingHeartbeatInterface,
 )
 from .models import BaseChunk as BaseChunk
