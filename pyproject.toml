@@ -32,7 +32,7 @@ norecursedirs = [
 ]
 # Add src/ to sys.path so shared_configs and other src-level packages are importable
 # without the src. prefix (matching their package structure).
-pythonpath = ["src", "generated"]
+pythonpath = ["src"]
 markers = [
     "slow: marks tests as slow (deselect with '-m not slow')",
     "load: marks tests as load/performance tests",
