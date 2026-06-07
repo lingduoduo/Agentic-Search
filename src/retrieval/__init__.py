@@ -4,18 +4,30 @@ from .context import SearchResult as SearchResult
 from .client import SearchClient as SearchClient
 from .client import SearchClientConfig as SearchClientConfig
 from .rerank import get_reranker as get_reranker
-from .dense_retriever import DenseRetriever as DenseRetriever
-from .dense_retriever import DenseRetrieverConfig as DenseRetrieverConfig
-from .index_builder import chunk_document as chunk_document
-from .index_builder import chunk_documents as chunk_documents
-from .index_builder import deterministic_embedding_fn as deterministic_embedding_fn
-from .index_builder import embed_chunks as embed_chunks
-from .index_builder import (
+from src.backend.document_index.retrieval import DenseRetriever as DenseRetriever
+from src.backend.document_index.retrieval import (
+    DenseRetrieverConfig as DenseRetrieverConfig,
+)
+from src.backend.document_index.retrieval import SparseRetriever as SparseRetriever
+from src.backend.document_index.retrieval import (
+    SparseRetrieverConfig as SparseRetrieverConfig,
+)
+from src.backend.document_index.index_builder import chunk_document as chunk_document
+from src.backend.document_index.index_builder import chunk_documents as chunk_documents
+from src.backend.document_index.index_builder import (
+    deterministic_embedding_fn as deterministic_embedding_fn,
+)
+from src.backend.document_index.index_builder import embed_chunks as embed_chunks
+from src.backend.document_index.index_builder import (
     embed_chunks_with_failure_handling as embed_chunks_with_failure_handling,
 )
-from .index_builder import generate_large_chunks as generate_large_chunks
-from .index_builder import run_indexing_pipeline as run_indexing_pipeline
-from .indexing_heartbeat import (
+from src.backend.document_index.index_builder import (
+    generate_large_chunks as generate_large_chunks,
+)
+from src.backend.document_index.index_builder import (
+    run_indexing_pipeline as run_indexing_pipeline,
+)
+from src.backend.document_index.index_builder import (
     IndexingHeartbeatInterface as IndexingHeartbeatInterface,
 )
 from .models import BaseChunk as BaseChunk
@@ -38,8 +50,6 @@ from .models import IndexWriterConfig as IndexWriterConfig
 from .models import MultipassConfig as MultipassConfig
 from .models import SwitchoverType as SwitchoverType
 from .models import UpdatableChunkData as UpdatableChunkData
-from .sparse_retriever import SparseRetriever as SparseRetriever
-from .sparse_retriever import SparseRetrieverConfig as SparseRetrieverConfig
 from .hybrid_retriever import HybridRetriever as HybridRetriever
 from .hybrid_retriever import HybridRetrieverConfig as HybridRetrieverConfig
 from .hybrid_retriever import combine_retrieval_results as combine_retrieval_results

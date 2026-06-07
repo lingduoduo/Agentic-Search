@@ -7,8 +7,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from .dense_retriever import DenseRetriever, DenseRetrieverConfig
-from .sparse_retriever import SparseRetriever, SparseRetrieverConfig
+from src.backend.document_index.retrieval import (
+    DenseRetriever,
+    DenseRetrieverConfig,
+    SparseRetriever,
+    SparseRetrieverConfig,
+)
 
 # Standard RRF constant — larger k reduces sensitivity to rank differences at the top.
 _RRF_K = 60

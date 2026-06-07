@@ -12,8 +12,10 @@ from src.retrieval.hybrid_retriever import (
     combine_retrieval_results,
     maximal_marginal_relevance,
 )
-from src.retrieval.dense_retriever import DenseRetrieverConfig
-from src.retrieval.sparse_retriever import SparseRetrieverConfig
+from src.backend.document_index.retrieval import (
+    DenseRetrieverConfig,
+    SparseRetrieverConfig,
+)
 
 
 # ---------------------------------------------------------------------------

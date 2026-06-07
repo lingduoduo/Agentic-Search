@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
@@ -40,14 +40,13 @@ from src.backend.document_index.text import (
     normalize_document,
     tokenize_text,
 )
-from .indexing_heartbeat import IndexingHeartbeatInterface
-from .models import ChunkingConfig
-from .models import EmbeddedChunk
-from .models import EmbeddingConfig
-from .models import IndexChunk
-from .models import IndexingPipelineConfig
-from .models import IndexingPipelineResult
-from .models import IndexWriterConfig
+from src.retrieval.models import ChunkingConfig
+from src.retrieval.models import EmbeddedChunk
+from src.retrieval.models import EmbeddingConfig
+from src.retrieval.models import IndexChunk
+from src.retrieval.models import IndexingPipelineConfig
+from src.retrieval.models import IndexingPipelineResult
+from src.retrieval.models import IndexWriterConfig
 
 # Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -62,6 +61,7 @@ __all__ = [
     "EmbeddedChunk",
     "EmbeddingConfig",
     "IndexChunk",
+    "IndexingHeartbeatInterface",
     "IndexingPipelineConfig",
     "IndexingPipelineResult",
     "IndexWriterConfig",
@@ -92,6 +92,14 @@ RETURN_SEPARATOR = "\n\n"
 SECTION_SEPARATOR = "\n\n---\n\n"
 MAX_METADATA_PERCENTAGE = 0.25
 CHUNK_MIN_CONTENT = 16
+
+
+class IndexingHeartbeatInterface(Protocol):
+    """Reports progress and cancellation for long-running indexing jobs."""
+
+    def should_stop(self) -> bool: ...
+
+    def progress(self, tag: str, amount: int) -> None: ...
 
 
 def _require_torch():

@@ -1,4 +1,4 @@
-"""Unit tests for src.retrieval.dense_retriever_server."""
+"""Unit tests for the local document-index retrieval server."""
 
 from __future__ import annotations
 
@@ -6,8 +6,11 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from src.retrieval.dense_retriever import DenseRetrieverConfig
-from src.retrieval.sparse_retriever import SparseRetrieverConfig
+from src.backend.document_index.retrieval import (
+    DenseRetriever,
+    DenseRetrieverConfig,
+    SparseRetrieverConfig,
+)
 from src.backend.servers.retrieval.retrieval import RetrievalServerConfig, create_app
 
 
@@ -188,7 +191,7 @@ def test_dense_retriever_config_defaults_device_to_cpu():
 
 
 def test_dense_retriever_config_rejects_zero_query_batch_size():
-    from src.retrieval.dense_retriever import DenseRetrieverConfig
+    from src.backend.document_index.retrieval import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig(
         model_path="/m",
@@ -205,7 +208,7 @@ def test_dense_retriever_config_rejects_zero_query_batch_size():
 
 
 def test_dense_retriever_config_rejects_zero_hnsw_ef_search():
-    from src.retrieval.dense_retriever import DenseRetrieverConfig
+    from src.backend.document_index.retrieval import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig(
         model_path="/m",
@@ -223,7 +226,6 @@ def test_dense_retriever_config_rejects_zero_hnsw_ef_search():
 
 def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
     import numpy as np
-    from src.retrieval.dense_retriever import DenseRetriever
 
     class _FakeIndex:
         def search(self, embeddings, k):
@@ -258,7 +260,6 @@ def test_dense_retriever_retrieve_batches_queries_and_preserves_empty_rows():
 
 def test_dense_retriever_deduplicates_queries_within_batch():
     import numpy as np
-    from src.retrieval.dense_retriever import DenseRetriever
 
     class _FakeIndex:
         def search(self, embeddings, k):
@@ -291,7 +292,7 @@ def test_dense_retriever_deduplicates_queries_within_batch():
 
 
 def test_dense_retriever_config_for_e5_base_v2_sets_e5_method_and_cpu():
-    from src.retrieval.dense_retriever import DenseRetrieverConfig
+    from src.backend.document_index.retrieval import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig.for_e5_base_v2(index_path="/idx", corpus_path="/corpus")
     assert cfg.retrieval_method == "e5"
@@ -300,7 +301,7 @@ def test_dense_retriever_config_for_e5_base_v2_sets_e5_method_and_cpu():
 
 
 def test_dense_retriever_config_for_e5_base_v2_accepts_custom_device():
-    from src.retrieval.dense_retriever import DenseRetrieverConfig
+    from src.backend.document_index.retrieval import DenseRetrieverConfig
 
     cfg = DenseRetrieverConfig.for_e5_base_v2(
         index_path="/idx", corpus_path="/corpus", device="cuda:1"

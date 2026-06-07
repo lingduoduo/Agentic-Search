@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from src.backend.connectors import Document
-from src.retrieval.index_builder import (
+from src.backend.document_index.index_builder import (
     ChunkingConfig,
     EmbeddingConfig,
     IndexChunk,
@@ -21,8 +21,8 @@ from src.retrieval.index_builder import (
     filter_indexable_documents,
     run_indexing_pipeline,
     write_faiss_index,
+    IndexingHeartbeatInterface,
 )
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
 
 
 class RecordingHeartbeat(IndexingHeartbeatInterface):
@@ -422,7 +422,7 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
         index_path.write_text("index", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.retrieval.index_builder.write_dense_faiss_index",
+        "src.backend.document_index.index_builder.write_dense_faiss_index",
         fake_write_dense_faiss_index,
     )
 
@@ -448,7 +448,10 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
 # Paragraph-aware chunking
 # ---------------------------------------------------------------------------
 
-from src.retrieval.index_builder import _split_paragraphs, _split_sentences_in_paragraph  # noqa: E402
+from src.backend.document_index.index_builder import (  # noqa: E402
+    _split_paragraphs,
+    _split_sentences_in_paragraph,
+)
 
 
 def test_split_paragraphs_splits_on_double_newline():

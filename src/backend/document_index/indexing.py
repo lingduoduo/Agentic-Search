@@ -22,8 +22,9 @@ from typing import Protocol, TypeVar
 import numpy as np
 
 from src.backend.connectors.models import ConnectorFailure, Document
-from src.retrieval.index_builder import (
+from src.backend.document_index.index_builder import (
     EmbeddingFn,
+    IndexingHeartbeatInterface,
     chunk_document,
     chunk_documents,
     deterministic_embedding_fn,
@@ -32,7 +33,6 @@ from src.retrieval.index_builder import (
     filter_indexable_documents,
     run_indexing_pipeline,
 )
-from src.retrieval.indexing_heartbeat import IndexingHeartbeatInterface
 from src.retrieval.models import (
     ChunkingConfig,
     EmbeddedChunk,

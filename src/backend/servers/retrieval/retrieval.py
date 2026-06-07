@@ -10,8 +10,12 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from src.retrieval import build_retriever
-from src.retrieval.dense_retriever import DenseRetriever, DenseRetrieverConfig
-from src.retrieval.sparse_retriever import SparseRetriever, SparseRetrieverConfig
+from src.backend.document_index.retrieval import (
+    DenseRetriever,
+    DenseRetrieverConfig,
+    SparseRetriever,
+    SparseRetrieverConfig,
+)
 from .app import (
     add_host_port_args,
     create_base_app,
