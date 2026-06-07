@@ -106,12 +106,28 @@ def log_function_time(
     include_args: bool = False,
     include_args_subset: dict[str, Any] | None = None,
 ) -> Callable[[_F], _F]:
-    """No-op timing decorator stub."""
+    """Decorator that logs the wall-clock time of the wrapped function.
+
+    Logs at DEBUG when debug_only=True, otherwise at INFO.
+    print_only is accepted for call-site compatibility but has no effect.
+    """
+    import time
 
     def decorator(func: _F) -> _F:
+        logger = logging.getLogger(func.__module__)
+
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return func(*args, **kwargs)
+            start = time.perf_counter()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                elapsed = time.perf_counter() - start
+                msg = f"{func.__qualname__} took {elapsed:.3f}s"
+                if debug_only:
+                    logger.debug(msg)
+                else:
+                    logger.info(msg)
 
         return wrapper  # type: ignore[return-value]
 
