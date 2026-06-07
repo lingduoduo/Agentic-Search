@@ -25,7 +25,7 @@ from src.backend.chat.models import ChatMessageSimple
 from src.backend.chat.models import LlmStepResult
 from src.backend.chat.tool_call_args_streaming import maybe_emit_argument_delta
 from src.backend.servers.query_history.models import MessageType
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.file_store.models import ChatFileType
 from src.backend.llm.interfaces import LanguageModelInput
 from src.backend.llm.interfaces import LLM

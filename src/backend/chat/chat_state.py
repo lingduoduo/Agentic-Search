@@ -12,7 +12,7 @@ from src.backend.chat.models import ChatMessageSimple
 from src.backend.chat.models import ExtractedContextFiles
 from src.backend.chat.models import FileToolMetadata
 from src.backend.chat.models import SearchParams
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.db.memory import UserMemoryContext
 from src.backend.db.models import ChatMessage
 from src.backend.db.models import ChatSession

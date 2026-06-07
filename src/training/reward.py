@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..agents.base import AgentLoopOutput
-from ..retrieval.context import AgentContext
+from ..context.search import AgentContext
 
 # Type aliases for judge callables.
 JudgeFn = Callable[[str, str], float]

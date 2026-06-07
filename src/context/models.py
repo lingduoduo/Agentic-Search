@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 
 from .enums import AgentBehavior
 from .enums import AnswerStyle

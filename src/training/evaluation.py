@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..retrieval.context import SearchContext
+from ..context.search import SearchContext
 
 
 @dataclass(frozen=True)

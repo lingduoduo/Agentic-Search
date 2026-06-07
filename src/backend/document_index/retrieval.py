@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from src.retrieval.embedding_cache import EmbeddingCache, OpenAIEmbedder
+from src.backend.document_index.embedding_cache import EmbeddingCache, OpenAIEmbedder
 from src.backend.document_index.index_builder import (
     _encode_batch,
     _normalize_embedding_rows,
@@ -371,7 +371,28 @@ class SparseRetriever:
         )
 
 
+def build_retriever(config: Any) -> DenseRetriever | SparseRetriever | Any:
+    """Instantiate the local retriever matching the supplied configuration."""
+    from .hybrid_retriever import HybridRetriever, HybridRetrieverConfig
+
+    if isinstance(config, HybridRetrieverConfig):
+        return HybridRetriever(config)
+    if isinstance(config, SparseRetrieverConfig):
+        return SparseRetriever(config)
+    if config.retrieval_method.lower() == "bm25":
+        return SparseRetriever(
+            SparseRetrieverConfig(
+                index_path=config.index_path,
+                corpus_path=config.corpus_path,
+                retrieval_method=config.retrieval_method,
+                topk=config.topk,
+            )
+        )
+    return DenseRetriever(config)
+
+
 __all__ = [
+    "build_retriever",
     "DenseRetriever",
     "DenseRetrieverConfig",
     "SparseRetriever",

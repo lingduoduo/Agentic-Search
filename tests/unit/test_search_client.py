@@ -1,4 +1,4 @@
-"""Unit tests for src.retrieval.client."""
+"""Unit tests for src.context.retrieval.client."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def test_search_client_reuses_session_across_requests(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.retrieval.client.aiohttp.ClientSession",
+        "src.context.retrieval.client.aiohttp.ClientSession",
         _session_factory,
     )
 

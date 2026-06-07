@@ -16,7 +16,7 @@ from enum import Enum
 from typing import TypeAlias
 
 from src.backend.configs.chat_configs import STOP_STREAM_PAT
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.prompts.constants import TRIPLE_BACKTICK
 from src.backend.servers.query_and_chat.streaming_models import CitationInfo
 

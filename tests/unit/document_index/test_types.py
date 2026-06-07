@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from src.retrieval.models import (
+from src.backend.document_index.models import (
     QueryType,
     Embedding,
     InferenceChunk,

@@ -245,7 +245,7 @@ def test_eval_run_with_fake_search(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENTIC_SEARCH_DATA_DIR", str(tmp_path))
 
     async def fake_run_expanded_search(query, **_):
-        from src.retrieval.context import SearchResult
+        from src.context.search import SearchResult
         from src.backend.search.process_search_query import SearchQueryResult
 
         return SearchQueryResult(

@@ -9,12 +9,12 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from src.retrieval import build_retriever
+from src.backend.document_index.retrieval import build_retriever
 from src.backend.document_index.retrieval import (
     DenseRetrieverConfig,
     SparseRetrieverConfig,
 )
-from src.retrieval.rerank import RerankerConfig, get_reranker
+from src.backend.servers.retrieval.rerank import RerankerConfig, get_reranker
 from .app import (
     add_host_port_args,
     create_base_app,

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from src.retrieval.client import SearchClient
-from src.retrieval.client import SearchClientConfig
-from src.retrieval.context import SearchResult
+from src.context.retrieval.client import SearchClient
+from src.context.retrieval.client import SearchClientConfig
+from src.context.search import SearchResult
 from src.tools.search import google_custom_search
 from src.tools.search import serpapi_search
 

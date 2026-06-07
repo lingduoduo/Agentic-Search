@@ -11,7 +11,7 @@ from src.backend.prompts import KEYWORD_EXPANSION_PROMPT
 from src.backend.prompts import QUERY_TYPE_PROMPT
 from src.backend.prompts import SEARCH_CHAT_PROMPT
 from src.backend.prompts import SEARCH_CLASS
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 from src.backend.search import SearchQueryResult
 from src.backend.search import classify_query_type
 from src.backend.search import classify_search_flow
@@ -103,7 +103,9 @@ def test_run_expanded_search_no_llm_runs_single_search(monkeypatch):
     ):
         return [SearchResult(contents=f"result for {request.query}", score=0.9)]
 
-    monkeypatch.setattr("src.backend.search.process_search_query.run_search", fake_run_search)
+    monkeypatch.setattr(
+        "src.backend.search.process_search_query.run_search", fake_run_search
+    )
 
     result = asyncio.run(
         run_expanded_search("what is ML?", search_url="http://test/retrieve")
@@ -128,7 +130,9 @@ def test_run_expanded_search_merges_expansions_with_rrf(monkeypatch):
             )
         ]
 
-    monkeypatch.setattr("src.backend.search.process_search_query.run_search", fake_run_search)
+    monkeypatch.setattr(
+        "src.backend.search.process_search_query.run_search", fake_run_search
+    )
 
     llm = _FakeLLM("keyword one\nkeyword two")
     result = asyncio.run(run_expanded_search("original query", llm=llm, top_k=5))
@@ -150,7 +154,9 @@ def test_run_expanded_search_skips_failed_parallel_search(monkeypatch):
             raise RuntimeError("search backend down")
         return [SearchResult(contents="good result", score=0.9, url="u1")]
 
-    monkeypatch.setattr("src.backend.search.process_search_query.run_search", fake_run_search)
+    monkeypatch.setattr(
+        "src.backend.search.process_search_query.run_search", fake_run_search
+    )
 
     llm = _FakeLLM("expansion one")
     result = asyncio.run(run_expanded_search("original", llm=llm))
@@ -164,7 +170,9 @@ def test_run_expanded_search_respects_expand_false(monkeypatch):
     async def fake_run_search(request, **_):
         return [SearchResult(contents="r", score=0.5)]
 
-    monkeypatch.setattr("src.backend.search.process_search_query.run_search", fake_run_search)
+    monkeypatch.setattr(
+        "src.backend.search.process_search_query.run_search", fake_run_search
+    )
 
     llm = _FakeLLM("should not be called")
     result = asyncio.run(run_expanded_search("q", llm=llm, expand=False))

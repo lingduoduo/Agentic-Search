@@ -28,8 +28,8 @@ from .base import (
     register,
     simple_timer,
 )
-from ..retrieval.context import AgentContext
-from ..retrieval.client import SearchClient, SearchClientConfig
+from ..context.search import AgentContext
+from ..context.retrieval.client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
 logger.setLevel(

@@ -1,6 +1,6 @@
 import pytest
 from src.backend.document_index.disabled import DisabledDocumentIndex
-from src.retrieval.models import (
+from src.backend.document_index.models import (
     EmbeddingPrecision,
     IndexFilters,
     QueryType,

@@ -2,7 +2,7 @@
 
 This module is the single entry point for turning connector documents into
 embedded chunks and writing them to an index sink. Query-time retrieval
-stays in :mod:`src.retrieval`.
+lives in :mod:`src.backend.document_index.models`.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from src.backend.document_index.index_builder import (
     filter_indexable_documents,
     run_indexing_pipeline,
 )
-from src.retrieval.models import (
+from src.backend.document_index.models import (
     ChunkingConfig,
     EmbeddedChunk,
     EmbeddingConfig,

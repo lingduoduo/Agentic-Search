@@ -2,7 +2,7 @@ import re
 
 from src.backend.chat.citation_processor import CitationMapping
 from src.backend.chat.citation_processor import DynamicCitationProcessor
-from src.retrieval.models import SearchDocsResponse
+from src.backend.document_index.models import SearchDocsResponse
 from src.backend.tools.built_in_tools import CITEABLE_TOOLS_NAMES
 from src.backend.tools.models import ToolResponse
 

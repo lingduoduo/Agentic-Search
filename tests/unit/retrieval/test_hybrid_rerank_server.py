@@ -53,9 +53,9 @@ def _make_app(retriever_results, reranker_results):
             HybridRerankConfig,
             create_app,
         )
-        from src.retrieval.hybrid_retriever import HybridRetrieverConfig
+        from src.backend.document_index.hybrid_retriever import HybridRetrieverConfig
         from src.backend.document_index.retrieval import DenseRetrieverConfig
-        from src.retrieval.rerank import RerankerConfig
+        from src.backend.servers.retrieval.rerank import RerankerConfig
 
         config = HybridRerankConfig(
             retriever=HybridRetrieverConfig(
@@ -125,9 +125,9 @@ def test_retriever_exception_returns_500():
             HybridRerankConfig,
             create_app,
         )
-        from src.retrieval.hybrid_retriever import HybridRetrieverConfig
+        from src.backend.document_index.hybrid_retriever import HybridRetrieverConfig
         from src.backend.document_index.retrieval import DenseRetrieverConfig
-        from src.retrieval.rerank import RerankerConfig
+        from src.backend.servers.retrieval.rerank import RerankerConfig
 
         config = HybridRerankConfig(
             retriever=HybridRetrieverConfig(

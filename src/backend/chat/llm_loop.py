@@ -27,8 +27,8 @@ from src.backend.configs.app_configs import INTEGRATION_TESTS_MODE
 from src.backend.configs.chat_configs import MAX_LLM_CYCLES
 from src.backend.configs.constants import DocumentSource
 from src.backend.servers.query_history.models import MessageType
-from src.retrieval.models import SearchDoc
-from src.retrieval.models import SearchDocsResponse
+from src.backend.document_index.models import SearchDoc
+from src.backend.document_index.models import SearchDocsResponse
 from src.backend.db.memory import add_memory
 from src.backend.db.memory import update_memory_at_index
 from src.backend.db.memory import UserMemoryContext

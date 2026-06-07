@@ -66,7 +66,7 @@ from src.backend.configs.constants import DEFAULT_PERSONA_ID
 from src.backend.configs.constants import DocumentSource
 from src.backend.servers.query_history.models import MessageType
 from src.backend.configs.constants import MilestoneRecordType
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 from src.backend.db.memory import get_memories
 from src.backend.db.store import get_session_with_current_tenant
 from src.backend.db.models import ChatMessage

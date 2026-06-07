@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
-from ..retrieval.client import aiohttp
+from ..context.retrieval.client import aiohttp
 from .base import Tool, ToolSchema
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}

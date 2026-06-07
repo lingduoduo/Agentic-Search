@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.retrieval.hybrid_retriever import (
+from src.backend.document_index.hybrid_retriever import (
     HybridRetriever,
     HybridRetrieverConfig,
     combine_retrieval_results,
@@ -114,8 +114,12 @@ def _make_hybrid(alpha: float, *, with_sparse: bool = True) -> HybridRetriever:
     cfg = HybridRetrieverConfig(dense=dense_cfg, sparse=sparse_cfg, hybrid_alpha=alpha)
 
     with (
-        patch("src.retrieval.hybrid_retriever.DenseRetriever") as mock_dense_cls,
-        patch("src.retrieval.hybrid_retriever.SparseRetriever") as mock_sparse_cls,
+        patch(
+            "src.backend.document_index.hybrid_retriever.DenseRetriever"
+        ) as mock_dense_cls,
+        patch(
+            "src.backend.document_index.hybrid_retriever.SparseRetriever"
+        ) as mock_sparse_cls,
     ):
         mock_dense_cls.return_value = MagicMock()
         mock_sparse_cls.return_value = MagicMock()

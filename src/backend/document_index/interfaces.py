@@ -10,13 +10,13 @@ else:
 from pydantic import BaseModel
 from pydantic import model_validator
 
-from src.retrieval.models import DocMetadataAwareIndexChunk
-from src.retrieval.models import DocumentAccess
-from src.retrieval.models import EmbeddingPrecision
-from src.retrieval.models import Embedding
-from src.retrieval.models import IndexFilters
-from src.retrieval.models import InferenceChunk
-from src.retrieval.models import QueryType
+from src.backend.document_index.models import DocMetadataAwareIndexChunk
+from src.backend.document_index.models import DocumentAccess
+from src.backend.document_index.models import EmbeddingPrecision
+from src.backend.document_index.models import Embedding
+from src.backend.document_index.models import IndexFilters
+from src.backend.document_index.models import InferenceChunk
+from src.backend.document_index.models import QueryType
 from src.backend.configs.constants import PUBLIC_DOC_PAT
 from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
 

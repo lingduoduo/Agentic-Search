@@ -86,11 +86,11 @@ from .backend.db import GroupRecord as GroupRecord
 from .backend.db import IndexAttemptRecord as IndexAttemptRecord
 from .backend.db import StoredDocument as StoredDocument
 from .backend.db import UserRecord as UserRecord
-from .retrieval.client import SearchClient as SearchClient
-from .retrieval.client import SearchClientConfig as SearchClientConfig
-from .retrieval.context import AgentContext as AgentContext
-from .retrieval.context import SearchContext as SearchContext
-from .retrieval.context import SearchResult as SearchResult
+from .context.retrieval.client import SearchClient as SearchClient
+from .context.retrieval.client import SearchClientConfig as SearchClientConfig
+from .context.search import AgentContext as AgentContext
+from .context.search import SearchContext as SearchContext
+from .context.search import SearchResult as SearchResult
 from .backend.document_index.retrieval import SparseRetriever as SparseRetriever
 from .backend.document_index.retrieval import (
     SparseRetrieverConfig as SparseRetrieverConfig,
@@ -251,7 +251,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".backend.servers.retrieval.retrieval_rerank",
         "RetrievalRerankConfig",
     ),
-    "RerankerConfig": (".retrieval.rerank", "RerankerConfig"),
+    "RerankerConfig": (".backend.servers.retrieval.rerank", "RerankerConfig"),
     "create_base_app": (".backend.servers.retrieval.app", "create_base_app"),
     "create_search_app": (".backend.servers.retrieval.app", "create_search_app"),
     "format_document": (".backend.servers.retrieval.app", "format_document"),
@@ -281,14 +281,14 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".backend.document_index.retrieval",
         "DenseRetrieverConfig",
     ),
-    # retrieval.rerank
+    # backend.servers.retrieval.rerank
     "SentenceTransformerReranker": (
-        ".retrieval.rerank",
+        ".backend.servers.retrieval.rerank",
         "SentenceTransformerReranker",
     ),
-    "get_reranker": (".retrieval.rerank", "get_reranker"),
-    "passage_to_string": (".retrieval.rerank", "passage_to_string"),
-    "string_to_document": (".retrieval.rerank", "string_to_document"),
+    "get_reranker": (".backend.servers.retrieval.rerank", "get_reranker"),
+    "passage_to_string": (".backend.servers.retrieval.rerank", "passage_to_string"),
+    "string_to_document": (".backend.servers.retrieval.rerank", "string_to_document"),
     # backend.document_index.text
     "SOS_token": (".backend.document_index.text", "SOS_token"),
     "EOS_token": (".backend.document_index.text", "EOS_token"),

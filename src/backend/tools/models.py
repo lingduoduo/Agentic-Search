@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.retrieval.models import SearchDoc
+from src.backend.document_index.models import SearchDoc
 
 # Type alias for custom tool results (string, dict, or list).
 ToolResultType = str | dict[str, Any] | list[Any]

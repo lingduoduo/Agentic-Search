@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from src.retrieval import build_retriever
+from src.backend.document_index.retrieval import build_retriever
 from src.backend.document_index.retrieval import (
     DenseRetriever,
     DenseRetrieverConfig,

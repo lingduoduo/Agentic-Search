@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 
 from .models import ContextDocument
 from .models import ContextSection

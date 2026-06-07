@@ -20,7 +20,7 @@ from src.context import rank_evidence_snippets
 from src.context import synthesize_answer_from_context
 from src.context.retrieval.search_runner import combine_search_results
 from src.context.retrieval.search_runner import run_search
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 
 
 def _results() -> list[SearchResult]:

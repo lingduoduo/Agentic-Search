@@ -2,7 +2,7 @@
 
 These models mirror the structure of the query_and_chat models
 but are built on top of the types that exist in this repo:
-  - SearchResult  (src/retrieval/context.py)
+  - SearchResult  (src/context/search.py)
   - SearchFilters (src/context/models.py)
   - SearchQueryResult (src/search/process_search_query.py)
 
@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from src.context.models import SearchFilters
-from src.retrieval.context import SearchResult
+from src.context.search import SearchResult
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,7 @@ from src.backend.document_index import ChunkSink
 from src.backend.document_index import DefaultIndexingEmbedder
 from src.backend.document_index import index_documents
 from src.backend.document_index.index_builder import IndexingHeartbeatInterface
-from src.retrieval.models import ChunkingConfig, EmbeddingConfig
+from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
 
 logger = logging.getLogger(__name__)
 
