@@ -508,6 +508,22 @@ class AgenticSearchStore:
         self._conn.commit()
         return cursor.rowcount > 0
 
+    def delete_documents_bulk(self, doc_ids: list[str]) -> int:
+        """Delete multiple documents by ID in a single transaction. Returns count deleted."""
+        if not doc_ids:
+            return 0
+        placeholders = ", ".join("?" * len(doc_ids))
+        try:
+            cursor = self._conn.execute(
+                f"DELETE FROM documents WHERE id IN ({placeholders})",
+                tuple(doc_ids),
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return cursor.rowcount
+
     def upsert_user(self, user: UserRecord) -> UserRecord:
         now = _now()
         created_at = user.created_at or self._created_at("users", user.id, now)
@@ -675,6 +691,37 @@ class AgenticSearchStore:
             access=permission.access,
             created_at=now,
         )
+
+    def grant_document_access_bulk(self, permissions: list[DocumentPermission]) -> int:
+        """Write multiple permission grants in a single transaction. Returns count written."""
+        if not permissions:
+            return 0
+        now = _now()
+        params = [
+            (
+                p.document_id,
+                p.principal_type,
+                p.principal_id or "",
+                p.access,
+                p.created_at or now,
+            )
+            for p in permissions
+        ]
+        try:
+            self._conn.executemany(
+                """
+                INSERT OR REPLACE INTO document_permissions (
+                    document_id, principal_type, principal_id, access, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                params,
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return len(params)
 
     def get_document_permissions(self, document_id: str) -> list[DocumentPermission]:
         rows = self._conn.execute(

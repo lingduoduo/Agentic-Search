@@ -175,8 +175,7 @@ class HeavyWorker:
         """Delete stored documents that are absent from *current_doc_ids*."""
         stored = self._store.list_documents(connector_id=task.connector_id)
         stale = [doc.id for doc in stored if doc.id not in task.current_doc_ids]
-        for doc_id in stale:
-            self._store.delete_document(doc_id)
+        self._store.delete_documents_bulk(stale)
         logger.info(
             "prune_connector: connector=%r stale=%d total=%d",
             task.connector_id,
@@ -186,11 +185,10 @@ class HeavyWorker:
 
     def sync_doc_permissions(self, task: SyncDocPermissionsTask) -> None:
         """Overwrite ACL entries for documents in *permissions_by_doc*."""
-        total = 0
-        for doc_id, permissions in task.permissions_by_doc.items():
-            for permission in permissions:
-                self._store.grant_document_access(permission)
-                total += 1
+        all_permissions = [
+            p for perms in task.permissions_by_doc.values() for p in perms
+        ]
+        total = self._store.grant_document_access_bulk(all_permissions)
         logger.info(
             "sync_doc_permissions: connector=%r docs=%d entries=%d",
             task.connector_id,
