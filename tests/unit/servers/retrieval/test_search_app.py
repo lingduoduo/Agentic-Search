@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
-from src.backend.servers.retrieval.app import (
+from src.backend.servers.app import (
     create_base_app,
     create_search_app,
     format_document,
@@ -137,13 +137,13 @@ class TestCreateSearchApp:
 
 
 def test_google_search_server_import_does_not_require_google_client():
-    from src.backend.servers.retrieval import google as google_search_server
+    from src.backend.servers import google as google_search_server
 
     assert google_search_server.DEFAULT_TOPK >= 1
 
 
 def test_local_retrieval_server_applies_acl_filters(monkeypatch):
-    from src.backend.servers.retrieval import retrieval as retrieval_server
+    from src.backend.servers import retrieval_server
 
     class FakeRetriever:
         config = type("Config", (), {"topk": 5})()

@@ -81,7 +81,7 @@ pip install -r requirements.txt
 
 ```bash
 # Terminal 1 — retrieval server (demo, port 8000)
-python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
+python3 -m src.backend.servers.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend (port 7860)
 uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
@@ -132,11 +132,12 @@ Modes: `single` (PlainGenerationLoop), `search` (SearchAgentLoop), `tool` (ToolA
 
 The system has three layers that run as separate processes:
 
-**1. Retrieval servers** (`src/backend/servers/retrieval/`)
+**1. Retrieval servers** (`src/backend/servers/`)
 Multiple interchangeable backends behind the same `/retrieve` API:
 - `demo.py` — TF-IDF over a local corpus.jsonl, no Java required
-- `retrieval.py` — BM25 (pyserini/Java) or dense (e5/sentence-transformers) via FAISS
+- `retrieval_server.py` — BM25 (pyserini/Java) or dense (e5/sentence-transformers) via FAISS
 - `retrieval_rerank.py` — retrieval + cross-encoder reranker
+- `rerank.py` — standalone cross-encoder reranker
 - `google.py` — Google Custom Search API proxy (requires `GOOGLE_API_KEY` + `GOOGLE_CSE_ID`)
 - `serp.py` — SerpAPI proxy (requires `SERP_API_KEY`)
 - `browser.py` — playwright-cli browser automation; no API key needed, slower (~5–10s/query)

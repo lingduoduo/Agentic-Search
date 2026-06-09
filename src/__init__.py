@@ -238,23 +238,23 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "save_training_batch_jsonl": (".model.generation", "save_training_batch_jsonl"),
     "score_group_rollout": (".model.generation", "score_group_rollout"),
     "trajectory_log_prob_pack": (".model.generation", "trajectory_log_prob_pack"),
-    # servers.retrieval
-    "OnlineSearchConfig": (".backend.servers.retrieval.google", "OnlineSearchConfig"),
-    "OnlineSearchEngine": (".backend.servers.retrieval.google", "OnlineSearchEngine"),
-    "SerpSearchConfig": (".backend.servers.retrieval.serp", "SerpSearchConfig"),
-    "SerpSearchEngine": (".backend.servers.retrieval.serp", "SerpSearchEngine"),
+    # servers
+    "OnlineSearchConfig": (".backend.servers.google", "OnlineSearchConfig"),
+    "OnlineSearchEngine": (".backend.servers.google", "OnlineSearchEngine"),
+    "SerpSearchConfig": (".backend.servers.serp", "SerpSearchConfig"),
+    "SerpSearchEngine": (".backend.servers.serp", "SerpSearchEngine"),
     "RetrievalServerConfig": (
-        ".backend.servers.retrieval.retrieval",
+        ".backend.servers.retrieval_server",
         "RetrievalServerConfig",
     ),
     "RetrievalRerankConfig": (
-        ".backend.servers.retrieval.retrieval_rerank",
+        ".backend.servers.retrieval_rerank",
         "RetrievalRerankConfig",
     ),
-    "RerankerConfig": (".backend.servers.retrieval.rerank", "RerankerConfig"),
-    "create_base_app": (".backend.servers.retrieval.app", "create_base_app"),
-    "create_search_app": (".backend.servers.retrieval.app", "create_search_app"),
-    "format_document": (".backend.servers.retrieval.app", "format_document"),
+    "RerankerConfig": (".backend.servers.rerank", "RerankerConfig"),
+    "create_base_app": (".backend.servers.app", "create_base_app"),
+    "create_search_app": (".backend.servers.app", "create_search_app"),
+    "format_document": (".backend.servers.app", "format_document"),
     # backend.document_index.index_builder
     "IndexBuilder": (".backend.document_index.index_builder", "IndexBuilder"),
     "IndexBuilderConfig": (
@@ -281,14 +281,14 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".backend.document_index.retrieval",
         "DenseRetrieverConfig",
     ),
-    # backend.servers.retrieval.rerank
+    # backend.servers.rerank
     "SentenceTransformerReranker": (
-        ".backend.servers.retrieval.rerank",
+        ".backend.servers.rerank",
         "SentenceTransformerReranker",
     ),
-    "get_reranker": (".backend.servers.retrieval.rerank", "get_reranker"),
-    "passage_to_string": (".backend.servers.retrieval.rerank", "passage_to_string"),
-    "string_to_document": (".backend.servers.retrieval.rerank", "string_to_document"),
+    "get_reranker": (".backend.servers.rerank", "get_reranker"),
+    "passage_to_string": (".backend.servers.rerank", "passage_to_string"),
+    "string_to_document": (".backend.servers.rerank", "string_to_document"),
     # backend.document_index.text
     "SOS_token": (".backend.document_index.text", "SOS_token"),
     "EOS_token": (".backend.document_index.text", "EOS_token"),
