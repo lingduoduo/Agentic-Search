@@ -1,70 +1,78 @@
 """Abstract LLM interface.
 
-Defines the Protocol that all LLM backends must implement so that the chat
-pipeline (llm_loop, llm_step, compression) stays provider-agnostic.
+Defines the abstract base class that all LLM backends must implement so that
+the chat pipeline stays provider-agnostic.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+import abc
 from collections.abc import Iterator
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel
+
+from .constants import LlmProviderNames
+from .models import LanguageModelInput, ReasoningEffort, ToolChoiceOptions
+
+if TYPE_CHECKING:
+    from .model_response import ModelResponse
 
 
-class ToolChoiceOptions(str, Enum):
-    AUTO = "auto"
-    NONE = "none"
-    REQUIRED = "required"
+class LLMUserIdentity(BaseModel):
+    user_id: str | None = None
+    session_id: str | None = None
 
 
-@dataclass(frozen=True)
-class LLMConfig:
+class LLMConfig(BaseModel):
     model_provider: str
     model_name: str
-    max_input_tokens: int = 8192
+    temperature: float = 0.0
     api_key: str | None = None
     api_base: str | None = None
-    extra: dict[str, Any] = field(default_factory=dict)
+    api_version: str | None = None
+    deployment_name: str | None = None
+    custom_config: dict[str, str] | None = None
+    max_input_tokens: int = 8192
+    # Disable Pydantic's protected "model_" namespace guard so fields like
+    # model_provider / model_name are accepted without warnings.
+    model_config = {"protected_namespaces": ()}
 
 
-@dataclass(frozen=True)
-class LLMUserIdentity:
-    user_id: str | None = None
-    email: str | None = None
-
-
-class LLM(ABC):
-    """Minimal abstract LLM interface used by the chat pipeline."""
+class LLM(abc.ABC):
+    """Abstract base for every LLM backend used by the chat pipeline."""
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def config(self) -> LLMConfig: ...
 
-    @abstractmethod
+    def invoke(
+        self,
+        prompt: LanguageModelInput,
+        tools: list[dict] | None = None,
+        tool_choice: ToolChoiceOptions | None = None,
+        structured_response_format: dict | None = None,
+        timeout_override: int | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
+        user_identity: LLMUserIdentity | None = None,
+    ) -> "ModelResponse":
+        raise NotImplementedError
+
     def stream(
         self,
-        prompt: Any,
-        *,
+        prompt: LanguageModelInput,
         tools: list[dict] | None = None,
-        tool_choice: ToolChoiceOptions = ToolChoiceOptions.AUTO,
-        **kwargs: Any,
-    ) -> Iterator[Any]: ...
-
-
-# Alias used in some callers
-LanguageModelInput = Any
-
-
-class LlmProviderNames:
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    AZURE = "azure"
-    GOOGLE = "google"
-    COHERE = "cohere"
-    OLLAMA_CHAT = "ollama_chat"
+        tool_choice: ToolChoiceOptions | None = None,
+        structured_response_format: dict | None = None,
+        timeout_override: int | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
+        user_identity: LLMUserIdentity | None = None,
+    ) -> Iterator[Any]:
+        raise NotImplementedError
 
 
 def is_true_openai_model(provider: str, model: str) -> bool:
-    return provider == LlmProviderNames.OPENAI
+    """Returns True only for native OpenAI (not OpenAI-compatible proxies)."""
+    return str(provider) == str(LlmProviderNames.OPENAI)
