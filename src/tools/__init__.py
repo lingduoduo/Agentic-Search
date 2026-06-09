@@ -18,3 +18,6 @@ from .search import fetch_pages_concurrently as fetch_pages_concurrently
 from .search import fetch_url as fetch_url
 from .search import format_search_pages as format_search_pages
 from .search import search_tool as search_tool
+from .search import MultiQueryWebSearchTool as MultiQueryWebSearchTool
+from .search import brave_search as brave_search
+from .search import serper_dev_search as serper_dev_search
