@@ -194,7 +194,8 @@ async def brave_search(
                 response.raise_for_status()
                 data = await response.json()
     except Exception as exc:
-        return [SearchPage(error=_redact_secret_params(str(exc)))]
+        err = str(exc).replace(api_key, "[REDACTED]") if api_key else str(exc)
+        return [SearchPage(error=_redact_secret_params(err))]
 
     results = (data.get("web") or {}).get("results") or []
     return [
@@ -232,7 +233,8 @@ async def serper_dev_search(
                 response.raise_for_status()
                 data = await response.json()
     except Exception as exc:
-        return [SearchPage(error=_redact_secret_params(str(exc)))]
+        err = str(exc).replace(api_key, "[REDACTED]") if api_key else str(exc)
+        return [SearchPage(error=_redact_secret_params(err))]
 
     results = data.get("organic") or []
     return [
