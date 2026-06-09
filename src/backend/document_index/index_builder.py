@@ -1327,18 +1327,21 @@ class IndexBuilder:
                 check=True,
             )
 
-    def _load_embedding(self, embedding_path: str, corpus_size: int) -> np.memmap:
+    def _load_embedding(
+        self, embedding_path: str, corpus_size: int, hidden_size: int | None = None
+    ) -> np.memmap:
         if corpus_size < 1:
             raise ValueError("Cannot infer embedding dimensions for an empty corpus.")
 
-        embedding_bytes = Path(embedding_path).stat().st_size
-        row_bytes = np.dtype(np.float32).itemsize * corpus_size
-        if embedding_bytes % row_bytes != 0:
-            raise ValueError(
-                "Embedding file size is not divisible by corpus size and float32 size."
-            )
+        if hidden_size is None:
+            embedding_bytes = Path(embedding_path).stat().st_size
+            row_bytes = np.dtype(np.float32).itemsize * corpus_size
+            if embedding_bytes % row_bytes != 0:
+                raise ValueError(
+                    "Embedding file size is not divisible by corpus size and float32 size."
+                )
+            hidden_size = embedding_bytes // row_bytes
 
-        hidden_size = embedding_bytes // row_bytes
         if hidden_size < 1:
             raise ValueError("Embedding file does not contain any float32 vectors.")
 
@@ -1447,7 +1450,15 @@ class IndexBuilder:
 
         if self.embedding_path is not None:
             corpus_size = len(self.corpus)
-            all_embeddings = self._load_embedding(self.embedding_path, corpus_size)
+            hidden_size: int | None = None
+            if self.model_path:
+                auto_config, _, _ = _require_transformers()
+                hidden_size = auto_config.from_pretrained(
+                    self.model_path, trust_remote_code=True
+                ).hidden_size
+            all_embeddings = self._load_embedding(
+                self.embedding_path, corpus_size, hidden_size
+            )
         else:
             encoder, tokenizer = load_model(
                 model_path=self.model_path or "",
