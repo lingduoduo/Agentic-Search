@@ -14,6 +14,7 @@ from src.tools.search import (
     search_for_detail,
     search_for_list,
     search_for_tool_string,
+    serper_dev_search,
     serpapi_search,
     _normalize_queries_input,
     _sanitize_query,
@@ -431,5 +432,48 @@ class TestBraveSearch:
         monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp_error())
 
         pages = asyncio.run(brave_search("test", api_key="k"))
+        assert len(pages) == 1
+        assert pages[0].error is not None
+
+
+class TestSerperDevSearch:
+    def test_returns_mapped_results(self, monkeypatch):
+        import src.tools.search as mod
+
+        payload = {
+            "organic": [
+                {
+                    "title": "SerperOne",
+                    "link": "https://serper.test/1",
+                    "snippet": "snip1",
+                },
+                {
+                    "title": "SerperTwo",
+                    "link": "https://serper.test/2",
+                    "snippet": "snip2",
+                },
+            ]
+        }
+        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp(payload))
+
+        pages = asyncio.run(serper_dev_search("test", api_key="key"))
+        assert len(pages) == 2
+        assert pages[0].title == "SerperOne"
+        assert pages[0].url == "https://serper.test/1"
+        assert pages[0].summary == "snip1"
+
+    def test_returns_error_on_missing_api_key(self, monkeypatch):
+        monkeypatch.delenv("SERPER_API_KEY", raising=False)
+
+        pages = asyncio.run(serper_dev_search("test", api_key=None))
+        assert len(pages) == 1
+        assert pages[0].error is not None
+
+    def test_returns_error_page_on_http_failure(self, monkeypatch):
+        import src.tools.search as mod
+
+        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp_error())
+
+        pages = asyncio.run(serper_dev_search("test", api_key="k"))
         assert len(pages) == 1
         assert pages[0].error is not None
