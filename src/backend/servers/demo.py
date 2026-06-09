@@ -5,7 +5,7 @@ Exposes the same /retrieve API as the full retrieval server so the
 web frontend works out of the box for local demos.
 
 Usage:
-    python3 -m src.servers.retrieval.demo --corpus_path data/corpus.jsonl
+    python3 -m src.backend.servers.demo --corpus_path data/corpus.jsonl
 """
 
 from __future__ import annotations

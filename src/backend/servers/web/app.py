@@ -508,7 +508,7 @@ def create_web_app(
             detail = (
                 (
                     f"Cannot reach retrieval server at {search_url}. "
-                    "Start it with: python3 -m src.servers.retrieval.retrieval "
+                    "Start it with: python3 -m src.backend.servers.retrieval_server "
                     "--retrieval_method bm25"
                 )
                 if "connect" in str(exc).lower() or "retriev" in str(exc).lower()

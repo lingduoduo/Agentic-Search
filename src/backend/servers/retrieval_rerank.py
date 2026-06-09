@@ -14,7 +14,7 @@ from src.backend.document_index.retrieval import (
     DenseRetrieverConfig,
     SparseRetrieverConfig,
 )
-from src.backend.servers.retrieval.rerank import RerankerConfig, get_reranker
+from src.backend.servers.rerank import RerankerConfig, get_reranker
 from .app import (
     add_host_port_args,
     create_base_app,

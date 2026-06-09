@@ -17,7 +17,7 @@ from src.backend.document_index.hybrid_retriever import (
     HybridRetriever,
     HybridRetrieverConfig,
 )
-from src.backend.servers.retrieval.rerank import RerankerConfig, get_reranker
+from src.backend.servers.rerank import RerankerConfig, get_reranker
 
 from .app import add_host_port_args, create_base_app, load_environment, run_uvicorn_app
 
