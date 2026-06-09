@@ -17,7 +17,12 @@ from pydantic import BaseModel
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from .app import add_host_port_args, create_base_app, load_environment, run_uvicorn_app
+from src.backend.servers.app import (
+    add_host_port_args,
+    create_base_app,
+    load_environment,
+    run_uvicorn_app,
+)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000

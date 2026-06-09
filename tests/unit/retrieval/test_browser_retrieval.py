@@ -3,7 +3,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from src.backend.servers.browser import (
+from src.backend.servers.web_search.browser import (
     BrowserSearchEngine,
     BrowserSearchConfig,
 )
@@ -33,7 +33,7 @@ def _make_proc(stdout: str = "", returncode: int = 0):
 
 def test_search_query_returns_formatted_documents():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2))
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),  # open about:blank
             _make_proc(),  # goto search URL
@@ -51,7 +51,7 @@ def test_search_query_returns_formatted_documents():
 
 def test_empty_results_when_eval_returns_empty_list():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),  # open
             _make_proc(),  # goto Google
@@ -71,7 +71,7 @@ def test_empty_results_when_eval_returns_empty_list():
 
 def test_subprocess_timeout_returns_empty_and_closes():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),
             subprocess.TimeoutExpired(cmd="playwright-cli", timeout=30),
@@ -92,7 +92,7 @@ def test_topk_truncates_results():
             for i in range(5)
         ]
     )
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),
             _make_proc(),
@@ -108,7 +108,7 @@ def test_topk_truncates_results():
 def test_batch_search_runs_queries_in_parallel():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2, batch_workers=2))
     single = json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         # 5 calls per query × 2 queries = 10 calls
         mock_run.side_effect = [
             _make_proc(),
@@ -133,7 +133,7 @@ def test_non_dict_eval_items_are_filtered():
     mixed = json.dumps(
         ["unexpected string", {"title": "T", "url": "https://t.com", "snippet": "s"}]
     )
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),
             _make_proc(),
@@ -151,7 +151,7 @@ def test_quoted_json_eval_output_is_decoded():
     quoted = json.dumps(
         json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
     )
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),
             _make_proc(),
@@ -175,7 +175,7 @@ def test_google_empty_falls_back_to_wikipedia_article():
             }
         ]
     )
-    with patch("src.backend.servers.browser.subprocess.run") as mock_run:
+    with patch("src.backend.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),  # open
             _make_proc(),  # goto Google

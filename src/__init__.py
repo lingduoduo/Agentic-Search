@@ -239,19 +239,19 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "score_group_rollout": (".model.generation", "score_group_rollout"),
     "trajectory_log_prob_pack": (".model.generation", "trajectory_log_prob_pack"),
     # servers
-    "OnlineSearchConfig": (".backend.servers.google", "OnlineSearchConfig"),
-    "OnlineSearchEngine": (".backend.servers.google", "OnlineSearchEngine"),
-    "SerpSearchConfig": (".backend.servers.serp", "SerpSearchConfig"),
-    "SerpSearchEngine": (".backend.servers.serp", "SerpSearchEngine"),
+    "OnlineSearchConfig": (".backend.servers.web_search.google", "OnlineSearchConfig"),
+    "OnlineSearchEngine": (".backend.servers.web_search.google", "OnlineSearchEngine"),
+    "SerpSearchConfig": (".backend.servers.web_search.serp", "SerpSearchConfig"),
+    "SerpSearchEngine": (".backend.servers.web_search.serp", "SerpSearchEngine"),
     "RetrievalServerConfig": (
-        ".backend.servers.retrieval_server",
+        ".backend.servers.retrieval.retrieval_server",
         "RetrievalServerConfig",
     ),
     "RetrievalRerankConfig": (
-        ".backend.servers.retrieval_rerank",
+        ".backend.servers.retrieval.retrieval_rerank",
         "RetrievalRerankConfig",
     ),
-    "RerankerConfig": (".backend.servers.rerank", "RerankerConfig"),
+    "RerankerConfig": (".backend.servers.retrieval.rerank", "RerankerConfig"),
     "create_base_app": (".backend.servers.app", "create_base_app"),
     "create_search_app": (".backend.servers.app", "create_search_app"),
     "format_document": (".backend.servers.app", "format_document"),
@@ -281,14 +281,14 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".backend.document_index.retrieval",
         "DenseRetrieverConfig",
     ),
-    # backend.servers.rerank
+    # backend.servers.retrieval.rerank
     "SentenceTransformerReranker": (
-        ".backend.servers.rerank",
+        ".backend.servers.retrieval.rerank",
         "SentenceTransformerReranker",
     ),
-    "get_reranker": (".backend.servers.rerank", "get_reranker"),
-    "passage_to_string": (".backend.servers.rerank", "passage_to_string"),
-    "string_to_document": (".backend.servers.rerank", "string_to_document"),
+    "get_reranker": (".backend.servers.retrieval.rerank", "get_reranker"),
+    "passage_to_string": (".backend.servers.retrieval.rerank", "passage_to_string"),
+    "string_to_document": (".backend.servers.retrieval.rerank", "string_to_document"),
     # backend.document_index.text
     "SOS_token": (".backend.document_index.text", "SOS_token"),
     "EOS_token": (".backend.document_index.text", "EOS_token"),

@@ -18,7 +18,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     bs4 = None
 
-from .app import (
+from src.backend.servers.app import (
     add_host_port_args,
     create_search_app,
     format_document,

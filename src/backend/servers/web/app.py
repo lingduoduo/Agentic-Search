@@ -43,8 +43,8 @@ from src.backend.hooks import HookSoftFailed
 from src.backend.hooks import execute_hook
 from src.backend.servers.admin_surface.api import create_admin_surface_router
 from src.backend.servers.analytics.api import create_analytics_router
-from src.backend.servers.auth_check import PUBLIC_ENDPOINT_SPECS
-from src.backend.servers.auth_check import check_router_auth
+from src.backend.servers.web.auth_check import PUBLIC_ENDPOINT_SPECS
+from src.backend.servers.web.auth_check import check_router_auth
 from src.backend.servers.billing.api import create_billing_router
 from src.backend.servers.documents.cc_pair import create_documents_router
 from src.backend.servers.enterprise_settings.api import (
@@ -70,7 +70,7 @@ from src.backend.servers.query_history.api import create_query_history_router
 from src.backend.servers.reporting.api import create_reporting_router
 from src.backend.servers.scim.api import create_scim_router
 from src.backend.servers.scim.api import register_scim_exception_handlers
-from src.backend.servers.seeding import seed_db
+from src.backend.servers.web.seeding import seed_db
 from src.backend.servers.settings.api import create_settings_router
 from src.backend.servers.tenants.api import router as tenants_router
 from src.backend.servers.token_rate_limits.api import create_token_rate_limits_router
@@ -508,7 +508,7 @@ def create_web_app(
             detail = (
                 (
                     f"Cannot reach retrieval server at {search_url}. "
-                    "Start it with: python3 -m src.backend.servers.retrieval_server "
+                    "Start it with: python3 -m src.backend.servers.retrieval.retrieval_server "
                     "--retrieval_method bm25"
                 )
                 if "connect" in str(exc).lower() or "retriev" in str(exc).lower()

@@ -81,7 +81,7 @@ pip install -r requirements.txt
 
 ```bash
 # Terminal 1 — retrieval server (demo, port 8000)
-python3 -m src.backend.servers.demo --corpus_path data/corpus.jsonl
+python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend (port 7860)
 uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
