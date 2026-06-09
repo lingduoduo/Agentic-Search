@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from src.tools.search import (
+    MultiQueryWebSearchTool,
     SearchPage,
     brave_search,
     build_search_tool,
@@ -477,3 +478,73 @@ class TestSerperDevSearch:
         pages = asyncio.run(serper_dev_search("test", api_key="k"))
         assert len(pages) == 1
         assert pages[0].error is not None
+
+
+class TestMultiQueryWebSearchTool:
+    def test_schema_has_queries_field(self):
+        async def _noop(q, **kw):
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_noop)
+        schema = tool.schema
+        assert schema.name == "web_search"
+        props = schema.parameters["properties"]
+        assert "queries" in props
+        assert props["queries"]["type"] == "array"
+
+    def test_execute_runs_queries_in_parallel(self):
+        seen = []
+
+        async def _fake(query, **kwargs):
+            seen.append(query)
+            return [SearchPage(title=query, summary="s", url=f"https://{query}.test")]
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        result_str, raw, meta = asyncio.run(
+            tool.execute("inst1", {"queries": ["alpha", "beta"]})
+        )
+        assert "alpha" in result_str
+        assert "beta" in result_str
+        assert set(seen) == {"alpha", "beta"}
+
+    def test_execute_deduplicates_by_url(self):
+        async def _fake(query, **kwargs):
+            return [SearchPage(title="Same", summary="s", url="https://same.test")]
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        result_str, raw, _ = asyncio.run(
+            tool.execute("inst1", {"queries": ["q1", "q2"]})
+        )
+        assert result_str.count("https://same.test") == 1
+
+    def test_execute_sanitizes_queries(self):
+        seen = []
+
+        async def _fake(query, **kwargs):
+            seen.append(query)
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        asyncio.run(tool.execute("inst1", {"queries": ["hello\x00world", "  ok  "]}))
+        assert seen == ["hello world", "ok"]
+
+    def test_execute_returns_no_results_string_when_empty(self):
+        async def _fake(query, **kwargs):
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        result_str, raw, _ = asyncio.run(
+            tool.execute("inst1", {"queries": ["nothing"]})
+        )
+        assert result_str == "No results found."
+
+    def test_execute_accepts_string_queries(self):
+        seen = []
+
+        async def _fake(query, **kwargs):
+            seen.append(query)
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        asyncio.run(tool.execute("inst1", {"queries": "single query"}))
+        assert seen == ["single query"]

@@ -14,7 +14,7 @@ from urllib.parse import urlunsplit
 
 from ..context.search import SearchResult
 from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
-from .base import FunctionTool
+from .base import FunctionTool, Tool, ToolSchema
 
 SearchProvider = Literal["retrieval", "google", "serpapi", "brave", "serper"]
 
@@ -465,6 +465,89 @@ async def search_for_detail(
             f"Title: {page.title}\nURL: {page.url}\nContent: {next(content_iter, '')}"
         )
     return "\n\n".join(sections) if sections else "No results found."
+
+
+class MultiQueryWebSearchTool(Tool):
+    """Tool that accepts multiple queries and runs them in parallel.
+
+    Designed for use with ToolAgentLoop. The LLM passes {"queries": ["q1", "q2"]}
+    and all queries execute concurrently, with results deduplicated by URL.
+    """
+
+    def __init__(
+        self,
+        search_fn: Any = None,
+        *,
+        provider: SearchProvider = "retrieval",
+        search_url: str = "http://localhost:8000/retrieve",
+        page_size: int = 5,
+        timeout_seconds: int = 15,
+    ) -> None:
+        self._search_fn = search_fn or search_tool
+        self._provider = provider
+        self._search_url = search_url
+        self._page_size = page_size
+        self._timeout_seconds = timeout_seconds
+        self._schema = ToolSchema(
+            name="web_search",
+            description=(
+                "Search the web for information. Pass multiple queries to search in parallel."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "One or more search queries to run in parallel.",
+                    }
+                },
+                "required": ["queries"],
+            },
+        )
+
+    @property
+    def name(self) -> str:
+        return "web_search"
+
+    @property
+    def schema(self) -> ToolSchema:
+        return self._schema
+
+    async def execute(
+        self, instance_id: str, arguments: dict[str, Any]
+    ) -> tuple[str, Any, Any]:
+        del instance_id
+        raw_queries = arguments.get("queries", [])
+        queries = _normalize_queries_input(raw_queries)
+
+        if not queries:
+            return "No results found.", [], {}
+
+        results_per_query: list[list[SearchPage]] = await asyncio.gather(
+            *[
+                self._search_fn(
+                    q,
+                    provider=self._provider,
+                    search_url=self._search_url,
+                    page_size=self._page_size,
+                    timeout_seconds=self._timeout_seconds,
+                )
+                for q in queries
+            ]
+        )
+
+        seen_urls: set[str] = set()
+        merged: list[SearchPage] = []
+        for pages in results_per_query:
+            for page in pages:
+                if page.url and page.url in seen_urls:
+                    continue
+                if page.url:
+                    seen_urls.add(page.url)
+                merged.append(page)
+
+        return format_search_pages(merged), merged, {"queries": queries}
 
 
 def build_search_tool(
