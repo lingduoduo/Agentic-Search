@@ -56,7 +56,7 @@ def test_factory_no_db_session_param():
 
 
 def test_is_opensearch_enabled_reads_new_env_var(monkeypatch):
-    """Factory must respond to ENABLE_OPENSEARCH_INDEXING (not the old ONYX name)."""
+    """Factory must respond to ENABLE_OPENSEARCH_INDEXING."""
     import src.backend.document_index.factory as factory_mod
 
     monkeypatch.setenv("ENABLE_OPENSEARCH_INDEXING", "true")
