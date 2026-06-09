@@ -7,7 +7,6 @@ import asyncio
 from src.tools.search import (
     MultiQueryWebSearchTool,
     SearchPage,
-    brave_search,
     build_search_tool,
     fetch_pages_concurrently,
     format_search_pages,
@@ -390,51 +389,6 @@ class TestNormalizeQueriesInput:
 
     def test_none_items_dropped(self):
         assert _normalize_queries_input(["a", None, "b"]) == ["a", "b"]
-
-
-class TestBraveSearch:
-    def test_returns_mapped_results(self, monkeypatch):
-        import src.tools.search as mod
-
-        payload = {
-            "web": {
-                "results": [
-                    {
-                        "title": "BraveOne",
-                        "url": "https://brave.test/1",
-                        "description": "desc1",
-                    },
-                    {
-                        "title": "BraveTwo",
-                        "url": "https://brave.test/2",
-                        "description": "desc2",
-                    },
-                ]
-            }
-        }
-        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp(payload))
-
-        pages = asyncio.run(brave_search("test query", api_key="fake-key"))
-        assert len(pages) == 2
-        assert pages[0].title == "BraveOne"
-        assert pages[0].url == "https://brave.test/1"
-        assert pages[0].summary == "desc1"
-
-    def test_returns_error_page_on_missing_api_key(self, monkeypatch):
-        monkeypatch.delenv("BRAVE_API_KEY", raising=False)
-
-        pages = asyncio.run(brave_search("test", api_key=None))
-        assert len(pages) == 1
-        assert pages[0].error is not None
-
-    def test_returns_error_page_on_http_failure(self, monkeypatch):
-        import src.tools.search as mod
-
-        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp_error())
-
-        pages = asyncio.run(brave_search("test", api_key="k"))
-        assert len(pages) == 1
-        assert pages[0].error is not None
 
 
 class TestSerperDevSearch:

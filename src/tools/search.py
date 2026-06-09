@@ -16,11 +16,10 @@ from ..context.search import SearchResult
 from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
 from .base import FunctionTool, Tool, ToolSchema
 
-SearchProvider = Literal["retrieval", "google", "serpapi", "brave", "serper"]
+SearchProvider = Literal["retrieval", "google", "serpapi", "serper"]
 
 GOOGLE_SEARCH_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
 SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
-BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 SERPER_DEV_ENDPOINT = "https://google.serper.dev/search"
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -166,48 +165,6 @@ async def serpapi_search(
     return pages[:page_size]
 
 
-async def brave_search(
-    query: str,
-    *,
-    page_size: int = 5,
-    api_key: str | None = None,
-    timeout_seconds: int = 10,
-) -> list[SearchPage]:
-    """Search Brave Search API and return normalized pages."""
-
-    api_key = api_key or os.getenv("BRAVE_API_KEY")
-    if not api_key:
-        return [SearchPage(error="BRAVE_API_KEY is required.")]
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        headers = {
-            "Accept": "application/json",
-            "X-Subscription-Token": api_key,
-        }
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(
-                BRAVE_SEARCH_ENDPOINT,
-                params={"q": query, "count": page_size},
-                headers=headers,
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-    except Exception as exc:
-        err = str(exc).replace(api_key, "[REDACTED]") if api_key else str(exc)
-        return [SearchPage(error=_redact_secret_params(err))]
-
-    results = (data.get("web") or {}).get("results") or []
-    return [
-        SearchPage(
-            title=item.get("title", ""),
-            summary=item.get("description", ""),
-            url=item.get("url", ""),
-        )
-        for item in results[:page_size]
-    ]
-
-
 async def serper_dev_search(
     query: str,
     *,
@@ -311,12 +268,6 @@ async def search_tool(
         return await serpapi_search(
             query,
             page=page,
-            page_size=page_size,
-            timeout_seconds=timeout_seconds,
-        )
-    if provider == "brave":
-        return await brave_search(
-            query,
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
