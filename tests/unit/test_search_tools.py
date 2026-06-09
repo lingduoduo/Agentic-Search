@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from src.tools.search import (
+    MultiQueryWebSearchTool,
     SearchPage,
     build_search_tool,
     fetch_pages_concurrently,
@@ -13,7 +14,10 @@ from src.tools.search import (
     search_for_detail,
     search_for_list,
     search_for_tool_string,
+    serper_dev_search,
     serpapi_search,
+    _normalize_queries_input,
+    _sanitize_query,
 )
 
 
@@ -56,6 +60,93 @@ class _FakeSession:
     def get(self, url, **kwargs):
         self._calls.append((url, kwargs))
         return _FakeResponse(payload=self._payload, text=self._text)
+
+
+def _make_fake_aiohttp(payload):
+    import types
+    import aiohttp as real_aiohttp
+
+    class _FakeResp:
+        def __init__(self):
+            self.headers = {"content-type": "application/json"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        async def json(self):
+            return payload
+
+        async def text(self):
+            return ""
+
+    class _FakeSess:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, url, **kw):
+            return _FakeResp()
+
+        def post(self, url, **kw):
+            return _FakeResp()
+
+    return types.SimpleNamespace(
+        ClientSession=_FakeSess,
+        ClientTimeout=real_aiohttp.ClientTimeout,
+    )
+
+
+def _make_fake_aiohttp_error():
+    import types
+    import aiohttp as real_aiohttp
+
+    class _FakeErrResp:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            raise Exception("HTTP error")
+
+        async def json(self):
+            raise Exception("HTTP error")
+
+        async def text(self):
+            return ""
+
+    class _FakeSess:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, url, **kw):
+            return _FakeErrResp()
+
+        def post(self, url, **kw):
+            return _FakeErrResp()
+
+    return types.SimpleNamespace(
+        ClientSession=_FakeSess,
+        ClientTimeout=real_aiohttp.ClientTimeout,
+    )
 
 
 def test_format_search_pages_handles_errors_and_empty_results():
@@ -260,3 +351,154 @@ def test_fetch_pages_concurrently_keeps_original_on_fetch_error(monkeypatch):
     enriched = asyncio.run(fetch_pages_concurrently(pages, max_chars=2000))
 
     assert enriched[0].summary == "original"
+
+
+class TestSanitizeQuery:
+    def test_removes_null_bytes(self):
+        assert _sanitize_query("hello\x00world") == "hello world"
+
+    def test_removes_control_chars(self):
+        assert _sanitize_query("a\x01b\x1fc") == "a b c"
+
+    def test_removes_del_char(self):
+        assert _sanitize_query("abc\x7fdef") == "abcdef"
+
+    def test_normalizes_whitespace(self):
+        assert _sanitize_query("  foo   bar  ") == "foo bar"
+
+    def test_passthrough_clean_query(self):
+        assert _sanitize_query("What is FAISS?") == "What is FAISS?"
+
+
+class TestNormalizeQueriesInput:
+    def test_string_becomes_list(self):
+        assert _normalize_queries_input("hello") == ["hello"]
+
+    def test_list_passthrough(self):
+        assert _normalize_queries_input(["a", "b"]) == ["a", "b"]
+
+    def test_drops_empty_strings(self):
+        assert _normalize_queries_input(["ok", "", "  "]) == ["ok"]
+
+    def test_non_list_non_string_returns_empty(self):
+        assert _normalize_queries_input(42) == []
+        assert _normalize_queries_input(None) == []
+
+    def test_sanitizes_each_entry(self):
+        assert _normalize_queries_input(["hello\x00world"]) == ["hello world"]
+
+    def test_none_items_dropped(self):
+        assert _normalize_queries_input(["a", None, "b"]) == ["a", "b"]
+
+
+class TestSerperDevSearch:
+    def test_returns_mapped_results(self, monkeypatch):
+        import src.tools.search as mod
+
+        payload = {
+            "organic": [
+                {
+                    "title": "SerperOne",
+                    "link": "https://serper.test/1",
+                    "snippet": "snip1",
+                },
+                {
+                    "title": "SerperTwo",
+                    "link": "https://serper.test/2",
+                    "snippet": "snip2",
+                },
+            ]
+        }
+        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp(payload))
+
+        pages = asyncio.run(serper_dev_search("test", api_key="key"))
+        assert len(pages) == 2
+        assert pages[0].title == "SerperOne"
+        assert pages[0].url == "https://serper.test/1"
+        assert pages[0].summary == "snip1"
+
+    def test_returns_error_on_missing_api_key(self, monkeypatch):
+        monkeypatch.delenv("SERPER_API_KEY", raising=False)
+
+        pages = asyncio.run(serper_dev_search("test", api_key=None))
+        assert len(pages) == 1
+        assert pages[0].error is not None
+
+    def test_returns_error_page_on_http_failure(self, monkeypatch):
+        import src.tools.search as mod
+
+        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp_error())
+
+        pages = asyncio.run(serper_dev_search("test", api_key="k"))
+        assert len(pages) == 1
+        assert pages[0].error is not None
+
+
+class TestMultiQueryWebSearchTool:
+    def test_schema_has_queries_field(self):
+        async def _noop(q, **kw):
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_noop)
+        schema = tool.schema
+        assert schema.name == "web_search"
+        props = schema.parameters["properties"]
+        assert "queries" in props
+        assert props["queries"]["type"] == "array"
+
+    def test_execute_runs_queries_in_parallel(self):
+        seen = []
+
+        async def _fake(query, **kwargs):
+            seen.append(query)
+            return [SearchPage(title=query, summary="s", url=f"https://{query}.test")]
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        result_str, raw, meta = asyncio.run(
+            tool.execute("inst1", {"queries": ["alpha", "beta"]})
+        )
+        assert "alpha" in result_str
+        assert "beta" in result_str
+        assert set(seen) == {"alpha", "beta"}
+
+    def test_execute_deduplicates_by_url(self):
+        async def _fake(query, **kwargs):
+            return [SearchPage(title="Same", summary="s", url="https://same.test")]
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        result_str, raw, _ = asyncio.run(
+            tool.execute("inst1", {"queries": ["q1", "q2"]})
+        )
+        assert result_str.count("https://same.test") == 1
+
+    def test_execute_sanitizes_queries(self):
+        seen = []
+
+        async def _fake(query, **kwargs):
+            seen.append(query)
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        asyncio.run(tool.execute("inst1", {"queries": ["hello\x00world", "  ok  "]}))
+        assert seen == ["hello world", "ok"]
+
+    def test_execute_returns_no_results_string_when_empty(self):
+        async def _fake(query, **kwargs):
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        result_str, raw, _ = asyncio.run(
+            tool.execute("inst1", {"queries": ["nothing"]})
+        )
+        assert result_str == "No results found."
+
+    def test_execute_accepts_string_queries(self):
+        seen = []
+
+        async def _fake(query, **kwargs):
+            seen.append(query)
+            return []
+
+        tool = MultiQueryWebSearchTool(search_fn=_fake)
+        asyncio.run(tool.execute("inst1", {"queries": "single query"}))
+        assert seen == ["single query"]

@@ -14,6 +14,9 @@ from .api import ApiToolRegistry as ApiToolRegistry
 from .api import ApiToolSpec as ApiToolSpec
 from .search import SearchPage as SearchPage
 from .search import build_search_tool as build_search_tool
+from .search import fetch_pages_concurrently as fetch_pages_concurrently
 from .search import fetch_url as fetch_url
 from .search import format_search_pages as format_search_pages
 from .search import search_tool as search_tool
+from .search import MultiQueryWebSearchTool as MultiQueryWebSearchTool
+from .search import serper_dev_search as serper_dev_search

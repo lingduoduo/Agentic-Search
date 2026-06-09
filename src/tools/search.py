@@ -14,16 +14,47 @@ from urllib.parse import urlunsplit
 
 from ..context.search import SearchResult
 from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
-from .base import FunctionTool
+from .base import FunctionTool, Tool, ToolSchema
 
-SearchProvider = Literal["retrieval", "google", "serpapi"]
+SearchProvider = Literal["retrieval", "google", "serpapi", "serper"]
 
 GOOGLE_SEARCH_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
 SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
+SERPER_DEV_ENDPOINT = "https://google.serper.dev/search"
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
+
+
+def _sanitize_query(query: str) -> str:
+    parts = []
+    for c in query:
+        code = ord(c)
+        if code >= 32 and code != 127:
+            parts.append(c)
+        elif code != 127:
+            parts.append(" ")
+    sanitized = "".join(parts)
+    return " ".join(sanitized.split())
+
+
+def _normalize_queries_input(raw: Any) -> list[str]:
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            return []
+        raw = [raw]
+    elif not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    for q in raw:
+        if q is None:
+            continue
+        sanitized = _sanitize_query(str(q))
+        if sanitized:
+            result.append(sanitized)
+    return result
 
 
 @dataclass(frozen=True)
@@ -134,6 +165,45 @@ async def serpapi_search(
     return pages[:page_size]
 
 
+async def serper_dev_search(
+    query: str,
+    *,
+    page_size: int = 5,
+    api_key: str | None = None,
+    timeout_seconds: int = 10,
+) -> list[SearchPage]:
+    """Search via Serper.dev (Google results) and return normalized pages."""
+
+    api_key = api_key or os.getenv("SERPER_API_KEY")
+    if not api_key:
+        return [SearchPage(error="SERPER_API_KEY is required.")]
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                SERPER_DEV_ENDPOINT,
+                json={"q": query, "num": page_size},
+                headers=headers,
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+    except Exception as exc:
+        err = str(exc).replace(api_key, "[REDACTED]") if api_key else str(exc)
+        return [SearchPage(error=_redact_secret_params(err))]
+
+    results = data.get("organic") or []
+    return [
+        SearchPage(
+            title=item.get("title", ""),
+            summary=item.get("snippet", ""),
+            url=item.get("link", ""),
+        )
+        for item in results[:page_size]
+    ]
+
+
 async def retrieval_search(
     query: str,
     *,
@@ -201,7 +271,15 @@ async def search_tool(
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
-    raise ValueError("provider must be 'retrieval', 'google', or 'serpapi'")
+    if provider == "serper":
+        return await serper_dev_search(
+            query,
+            page_size=page_size,
+            timeout_seconds=timeout_seconds,
+        )
+    raise ValueError(
+        "provider must be 'retrieval', 'google', 'serpapi', 'brave', or 'serper'"
+    )
 
 
 async def search_for_list(
@@ -340,6 +418,89 @@ async def search_for_detail(
             f"Title: {page.title}\nURL: {page.url}\nContent: {next(content_iter, '')}"
         )
     return "\n\n".join(sections) if sections else "No results found."
+
+
+class MultiQueryWebSearchTool(Tool):
+    """Tool that accepts multiple queries and runs them in parallel.
+
+    Designed for use with ToolAgentLoop. The LLM passes {"queries": ["q1", "q2"]}
+    and all queries execute concurrently, with results deduplicated by URL.
+    """
+
+    def __init__(
+        self,
+        search_fn: Any = None,
+        *,
+        provider: SearchProvider = "retrieval",
+        search_url: str = "http://localhost:8000/retrieve",
+        page_size: int = 5,
+        timeout_seconds: int = 15,
+    ) -> None:
+        self._search_fn = search_fn or search_tool
+        self._provider = provider
+        self._search_url = search_url
+        self._page_size = page_size
+        self._timeout_seconds = timeout_seconds
+        self._schema = ToolSchema(
+            name="web_search",
+            description=(
+                "Search the web for information. Pass multiple queries to search in parallel."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "One or more search queries to run in parallel.",
+                    }
+                },
+                "required": ["queries"],
+            },
+        )
+
+    @property
+    def name(self) -> str:
+        return "web_search"
+
+    @property
+    def schema(self) -> ToolSchema:
+        return self._schema
+
+    async def execute(
+        self, instance_id: str, arguments: dict[str, Any]
+    ) -> tuple[str, Any, Any]:
+        del instance_id
+        raw_queries = arguments.get("queries", [])
+        queries = _normalize_queries_input(raw_queries)
+
+        if not queries:
+            return "No results found.", [], {}
+
+        results_per_query: list[list[SearchPage]] = await asyncio.gather(
+            *[
+                self._search_fn(
+                    q,
+                    provider=self._provider,
+                    search_url=self._search_url,
+                    page_size=self._page_size,
+                    timeout_seconds=self._timeout_seconds,
+                )
+                for q in queries
+            ]
+        )
+
+        seen_urls: set[str] = set()
+        merged: list[SearchPage] = []
+        for pages in results_per_query:
+            for page in pages:
+                if page.url and page.url in seen_urls:
+                    continue
+                if page.url:
+                    seen_urls.add(page.url)
+                merged.append(page)
+
+        return format_search_pages(merged), merged, {"queries": queries}
 
 
 def build_search_tool(
