@@ -14,6 +14,8 @@ from src.tools.search import (
     search_for_list,
     search_for_tool_string,
     serpapi_search,
+    _normalize_queries_input,
+    _sanitize_query,
 )
 
 
@@ -260,3 +262,41 @@ def test_fetch_pages_concurrently_keeps_original_on_fetch_error(monkeypatch):
     enriched = asyncio.run(fetch_pages_concurrently(pages, max_chars=2000))
 
     assert enriched[0].summary == "original"
+
+
+class TestSanitizeQuery:
+    def test_removes_null_bytes(self):
+        assert _sanitize_query("hello\x00world") == "hello world"
+
+    def test_removes_control_chars(self):
+        assert _sanitize_query("a\x01b\x1fc") == "a b c"
+
+    def test_removes_del_char(self):
+        assert _sanitize_query("abc\x7fdef") == "abcdef"
+
+    def test_normalizes_whitespace(self):
+        assert _sanitize_query("  foo   bar  ") == "foo bar"
+
+    def test_passthrough_clean_query(self):
+        assert _sanitize_query("What is FAISS?") == "What is FAISS?"
+
+
+class TestNormalizeQueriesInput:
+    def test_string_becomes_list(self):
+        assert _normalize_queries_input("hello") == ["hello"]
+
+    def test_list_passthrough(self):
+        assert _normalize_queries_input(["a", "b"]) == ["a", "b"]
+
+    def test_drops_empty_strings(self):
+        assert _normalize_queries_input(["ok", "", "  "]) == ["ok"]
+
+    def test_non_list_non_string_returns_empty(self):
+        assert _normalize_queries_input(42) == []
+        assert _normalize_queries_input(None) == []
+
+    def test_sanitizes_each_entry(self):
+        assert _normalize_queries_input(["hello\x00world"]) == ["hello world"]
+
+    def test_none_items_dropped(self):
+        assert _normalize_queries_input(["a", None, "b"]) == ["a", "b"]

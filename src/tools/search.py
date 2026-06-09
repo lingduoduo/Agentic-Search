@@ -26,6 +26,36 @@ DEFAULT_USER_AGENT = (
 )
 
 
+def _sanitize_query(query: str) -> str:
+    parts = []
+    for c in query:
+        code = ord(c)
+        if code >= 32 and code != 127:
+            parts.append(c)
+        elif code != 127:
+            parts.append(" ")
+    sanitized = "".join(parts)
+    return " ".join(sanitized.split())
+
+
+def _normalize_queries_input(raw: Any) -> list[str]:
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            return []
+        raw = [raw]
+    elif not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    for q in raw:
+        if q is None:
+            continue
+        sanitized = _sanitize_query(str(q))
+        if sanitized:
+            result.append(sanitized)
+    return result
+
+
 @dataclass(frozen=True)
 class SearchPage:
     title: str = ""
