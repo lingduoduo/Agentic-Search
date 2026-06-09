@@ -7,6 +7,10 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Any
 
 
+class ConnectorStopSignal(Exception):
+    """Raised to signal a connector run should stop cleanly."""
+
+
 @dataclass(frozen=True)
 class Document:
     """One source document emitted by a connector."""

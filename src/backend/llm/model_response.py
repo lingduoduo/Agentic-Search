@@ -176,7 +176,7 @@ def from_litellm_model_response_stream(
     response: "LiteLLMModelResponseStream",
 ) -> ModelResponseStream:
     """
-    Convert a LiteLLM ModelResponseStream into the simplified Onyx representation.
+    Convert a LiteLLM ModelResponseStream into the simplified internal representation.
     """
     response_data = response.model_dump()
     response_id, created = _extract_id_and_created(
@@ -215,7 +215,7 @@ def from_litellm_model_response(
     response: "LiteLLMModelResponse",
 ) -> ModelResponse:
     """
-    Convert a LiteLLM ModelResponse into the simplified Onyx representation.
+    Convert a LiteLLM ModelResponse into the simplified internal representation.
     """
     response_data = response.model_dump()
     response_id, created = _extract_id_and_created(response_data, "LiteLLM response")
