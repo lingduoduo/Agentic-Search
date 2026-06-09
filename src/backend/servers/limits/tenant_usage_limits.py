@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 
-from src.backend.servers.usage_limits import NO_LIMIT
-from src.backend.servers.usage_limits import TenantUsageLimitOverrides
+from src.backend.servers.limits.usage_limits import NO_LIMIT
+from src.backend.servers.limits.usage_limits import TenantUsageLimitOverrides
 
 logger = logging.getLogger(__name__)
 

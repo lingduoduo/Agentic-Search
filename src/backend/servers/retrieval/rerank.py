@@ -14,7 +14,7 @@ import numpy as np
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from .app import add_host_port_args, create_base_app, run_uvicorn_app
+from src.backend.servers.app import add_host_port_args, create_base_app, run_uvicorn_app
 
 logger = logging.getLogger(__name__)
 

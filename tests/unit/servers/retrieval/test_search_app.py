@@ -137,13 +137,13 @@ class TestCreateSearchApp:
 
 
 def test_google_search_server_import_does_not_require_google_client():
-    from src.backend.servers import google as google_search_server
+    from src.backend.servers.web_search import google as google_search_server
 
     assert google_search_server.DEFAULT_TOPK >= 1
 
 
 def test_local_retrieval_server_applies_acl_filters(monkeypatch):
-    from src.backend.servers import retrieval_server
+    from src.backend.servers.retrieval import retrieval_server
 
     class FakeRetriever:
         config = type("Config", (), {"topk": 5})()

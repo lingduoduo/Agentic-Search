@@ -16,7 +16,7 @@ from src.backend.document_index.retrieval import (
     SparseRetriever,
     SparseRetrieverConfig,
 )
-from .app import (
+from src.backend.servers.app import (
     add_host_port_args,
     create_base_app,
     load_environment,

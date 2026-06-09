@@ -7,8 +7,8 @@ import sys
 from fastapi.testclient import TestClient
 
 from src.backend.document_index.retrieval import DenseRetrieverConfig
-from src.backend.servers.rerank import RerankerConfig
-from src.backend.servers.retrieval_rerank import (
+from src.backend.servers.retrieval.rerank import RerankerConfig
+from src.backend.servers.retrieval.retrieval_rerank import (
     RetrievalRerankConfig,
     create_app,
 )
@@ -96,7 +96,7 @@ def test_retrieval_rerank_batches_retrieval_once(monkeypatch):
         "src.backend.document_index.retrieval.DenseRetriever", _retriever_factory
     )
     monkeypatch.setattr(
-        "src.backend.servers.retrieval_rerank.get_reranker", _reranker_factory
+        "src.backend.servers.retrieval.retrieval_rerank.get_reranker", _reranker_factory
     )
 
     client = TestClient(create_app(_dense_config()))
@@ -123,7 +123,7 @@ def test_retrieval_rerank_can_return_rerank_scores(monkeypatch):
         "src.backend.document_index.retrieval.DenseRetriever", _FakeRetriever
     )
     monkeypatch.setattr(
-        "src.backend.servers.retrieval_rerank.get_reranker",
+        "src.backend.servers.retrieval.retrieval_rerank.get_reranker",
         lambda config: _FakeReranker(),
     )
 
@@ -155,7 +155,7 @@ def test_retrieval_rerank_supports_bm25_retriever(monkeypatch):
         "src.backend.document_index.retrieval.SparseRetriever", _sparse_factory
     )
     monkeypatch.setattr(
-        "src.backend.servers.retrieval_rerank.get_reranker",
+        "src.backend.servers.retrieval.retrieval_rerank.get_reranker",
         lambda config: _FakeReranker(),
     )
 
@@ -169,7 +169,7 @@ def test_retrieval_rerank_supports_bm25_retriever(monkeypatch):
 
 
 def test_retrieval_rerank_parse_args_allows_bm25_without_model():
-    from src.backend.servers.retrieval_rerank import parse_args
+    from src.backend.servers.retrieval.retrieval_rerank import parse_args
 
     saved = sys.argv
     sys.argv = [
@@ -191,7 +191,7 @@ def test_retrieval_rerank_parse_args_allows_bm25_without_model():
 
 
 def test_retrieval_rerank_parse_args_exposes_batch_and_device_flags():
-    from src.backend.servers.retrieval_rerank import parse_args
+    from src.backend.servers.retrieval.retrieval_rerank import parse_args
 
     saved = sys.argv
     sys.argv = [
