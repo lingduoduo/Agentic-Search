@@ -6,6 +6,7 @@ import asyncio
 
 from src.tools.search import (
     SearchPage,
+    brave_search,
     build_search_tool,
     fetch_pages_concurrently,
     format_search_pages,
@@ -58,6 +59,93 @@ class _FakeSession:
     def get(self, url, **kwargs):
         self._calls.append((url, kwargs))
         return _FakeResponse(payload=self._payload, text=self._text)
+
+
+def _make_fake_aiohttp(payload):
+    import types
+    import aiohttp as real_aiohttp
+
+    class _FakeResp:
+        def __init__(self):
+            self.headers = {"content-type": "application/json"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        async def json(self):
+            return payload
+
+        async def text(self):
+            return ""
+
+    class _FakeSess:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, url, **kw):
+            return _FakeResp()
+
+        def post(self, url, **kw):
+            return _FakeResp()
+
+    return types.SimpleNamespace(
+        ClientSession=_FakeSess,
+        ClientTimeout=real_aiohttp.ClientTimeout,
+    )
+
+
+def _make_fake_aiohttp_error():
+    import types
+    import aiohttp as real_aiohttp
+
+    class _FakeErrResp:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            raise Exception("HTTP error")
+
+        async def json(self):
+            raise Exception("HTTP error")
+
+        async def text(self):
+            return ""
+
+    class _FakeSess:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, url, **kw):
+            return _FakeErrResp()
+
+        def post(self, url, **kw):
+            return _FakeErrResp()
+
+    return types.SimpleNamespace(
+        ClientSession=_FakeSess,
+        ClientTimeout=real_aiohttp.ClientTimeout,
+    )
 
 
 def test_format_search_pages_handles_errors_and_empty_results():
@@ -300,3 +388,48 @@ class TestNormalizeQueriesInput:
 
     def test_none_items_dropped(self):
         assert _normalize_queries_input(["a", None, "b"]) == ["a", "b"]
+
+
+class TestBraveSearch:
+    def test_returns_mapped_results(self, monkeypatch):
+        import src.tools.search as mod
+
+        payload = {
+            "web": {
+                "results": [
+                    {
+                        "title": "BraveOne",
+                        "url": "https://brave.test/1",
+                        "description": "desc1",
+                    },
+                    {
+                        "title": "BraveTwo",
+                        "url": "https://brave.test/2",
+                        "description": "desc2",
+                    },
+                ]
+            }
+        }
+        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp(payload))
+
+        pages = asyncio.run(brave_search("test query", api_key="fake-key"))
+        assert len(pages) == 2
+        assert pages[0].title == "BraveOne"
+        assert pages[0].url == "https://brave.test/1"
+        assert pages[0].summary == "desc1"
+
+    def test_returns_error_page_on_missing_api_key(self, monkeypatch):
+        monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+
+        pages = asyncio.run(brave_search("test", api_key=None))
+        assert len(pages) == 1
+        assert pages[0].error is not None
+
+    def test_returns_error_page_on_http_failure(self, monkeypatch):
+        import src.tools.search as mod
+
+        monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp_error())
+
+        pages = asyncio.run(brave_search("test", api_key="k"))
+        assert len(pages) == 1
+        assert pages[0].error is not None
