@@ -1,7 +1,7 @@
 {
     "mcpServers": {
-      "Onyx": {
-        "url": "https://cloud.onyx.app/mcp",
+      "agentic-search": {
+        "url": "https://[YOUR_DOMAIN]:8090/",
         "headers": {
           "Authorization": "Bearer [YOUR PAT OR API KEY HERE]"
         }

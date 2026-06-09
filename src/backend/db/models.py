@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from shared_configs.enums import EmbeddingProvider
+
 JsonObject = dict[str, Any]
 PrincipalType = Literal["public", "user", "group"]
 IndexAttemptStatus = Literal["not_started", "in_progress", "success", "failed"]
@@ -222,3 +224,20 @@ class SlackContext:
 
     channel_id: str = ""
     thread_ts: str | None = None
+
+
+@dataclass
+class SearchSettings:
+    """Settings for an embedding model used during indexing and search."""
+
+    id: int = 0
+    model_name: str | None = None
+    normalize: bool = True
+    query_prefix: str | None = None
+    passage_prefix: str | None = None
+    api_key: str | None = None
+    provider_type: EmbeddingProvider | None = None
+    api_url: str | None = None
+    api_version: str | None = None
+    deployment_name: str | None = None
+    reduced_dimension: int | None = None

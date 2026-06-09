@@ -844,7 +844,7 @@ class LitellmLLM(LLM):
 
             model_response = from_litellm_model_response(response)
 
-            # Track LLM cost for Onyx-managed API keys
+            # Track LLM cost for managed API keys
             if model_response.usage:
                 self._track_llm_cost(model_response.usage)
 
