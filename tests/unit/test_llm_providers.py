@@ -84,7 +84,7 @@ def test_parse_sse_chunk_tool_call():
     chunk = _parse_sse_chunk(f"data: {line}")
     assert chunk is not None
     tc = chunk.choice.delta.tool_calls[0]
-    assert tc.function_name == "search"
+    assert tc.function.name == "search"
     assert tc.id == "call_abc"
 
 
