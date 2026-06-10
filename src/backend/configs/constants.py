@@ -25,6 +25,7 @@ class DocumentSource(str, Enum):
     LINEAR = "linear"
     SALESFORCE = "salesforce"
     ZENDESK = "zendesk"
+    GMAIL = "gmail"
     INGESTION_API = "ingestion_api"
     NOT_APPLICABLE = "not_applicable"
 
@@ -65,6 +66,9 @@ KV_REINDEX_KEY = "kv_reindex_key"
 
 # Blurb size used for title prefix matching during content cleanup
 BLURB_SIZE = 250
+
+# Separator used when combining multiple sections into a large chunk
+SECTION_SEPARATOR = "\n\n---\n\n"
 
 # OpenSearch migration constants
 OPENSEARCH_MIGRATION_ENABLED_KEY = "opensearch_migration_enabled"
