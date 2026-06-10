@@ -20,3 +20,12 @@ TOOL_CALL_FAILURE_PROMPT: str = (
 )
 TOOL_CALL_RESPONSE_CROSS_MESSAGE: str = "Tool response:"
 ADDITIONAL_CONTEXT_PROMPT: str = "Additional context:\n{additional_context}"
+
+CHAT_NAMING_SYSTEM_PROMPT = (
+    "Given a conversation, generate a short and descriptive title that captures the main topic. "
+    "The title should be concise (3-6 words), clear, and specific to the conversation content. "
+    "Do not use generic titles like 'Chat Session' or 'New Conversation'. "
+    "Respond with ONLY the title — no quotes, no punctuation at the end."
+)
+
+CHAT_NAMING_REMINDER = "Now generate a short, descriptive title for this conversation (3-6 words, no quotes)."

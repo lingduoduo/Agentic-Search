@@ -13,9 +13,7 @@ from src.backend.prompts.query_expansion import KEYWORD_EXPANSION_PROMPT
 
 logger = logging.getLogger(__name__)
 
-# Strips brackets, quotes, and backticks that LLMs often add unintentionally.
 _ARTIFACT_RE = re.compile(r'[\[\]"\'`]')
-# Strips leading list markers: "1.", "2)", "-", "*"
 _LIST_MARKER_RE = re.compile(r"^\s*(?:\d+[.)]\s*|[-*]\s*)")
 
 _TEMPORAL_SINGLE_WORDS = frozenset(
@@ -73,9 +71,7 @@ def _llm_text(response: LLMResponse | str) -> str:
 def expand_keywords(user_query: str, llm: LLMClient) -> list[str]:
     """Expand a user query into keyword-only queries suitable for BM25 search.
 
-    Returns expanded queries only — the original query is excluded. Returns an
-    empty list when the LLM call fails, the response is empty, or all lines
-    duplicate the original query.
+    Returns expanded queries only — the original query is excluded.
     """
     prompt = KEYWORD_EXPANSION_PROMPT.format(user_query=user_query)
     try:
