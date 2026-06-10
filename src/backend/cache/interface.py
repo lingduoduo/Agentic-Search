@@ -9,16 +9,7 @@ from typing import Any
 TTL_KEY_NOT_FOUND = -2
 TTL_NO_EXPIRY = -1
 
-try:
-    from redis.exceptions import RedisError as _RedisError
-    from sqlalchemy.exc import SQLAlchemyError as _SQLAlchemyError
-
-    CACHE_TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
-        _RedisError,
-        _SQLAlchemyError,
-    )
-except ImportError:
-    CACHE_TRANSIENT_ERRORS = (Exception,)
+CACHE_TRANSIENT_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 
 class CacheBackendType(str, Enum):
