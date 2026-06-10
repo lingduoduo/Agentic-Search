@@ -15,7 +15,7 @@ All metrics are labeled by tenant_id. cc_pair_id is intentionally excluded
 to avoid unbounded cardinality.
 
 Usage:
-    from onyx.server.metrics.deletion_metrics import (
+    from src.backend.metrics.deletion_metrics import (
         inc_deletion_started,
         inc_deletion_completed,
         observe_deletion_taskset_duration,

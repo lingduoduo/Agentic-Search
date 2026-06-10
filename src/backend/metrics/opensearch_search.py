@@ -4,9 +4,9 @@ Tracks client-side round-trip latency, server-side execution time (from
 OpenSearch's ``took`` field), total search attempts, in-flight concurrency, and
 per-error-type failure counts.
 
-``onyx_opensearch_search_total`` counts attempts (incremented on entry to the
+``agentic_search_opensearch_search_total`` counts attempts (incremented on entry to the
 ``track_opensearch_search`` context manager that wraps every request), so
-``onyx_opensearch_search_errors_total / onyx_opensearch_search_total`` is a
+``agentic_search_opensearch_search_errors_total / agentic_search_opensearch_search_total`` is a
 meaningful failure rate.
 """
 
@@ -160,8 +160,8 @@ def track_opensearch_search(
 ) -> Generator[None, None, None]:
     """Wraps an OpenSearch search call.
 
-    On entry: increments ``onyx_opensearch_search_total`` (the attempt
-    counter) and ``onyx_opensearch_searches_in_progress`` (the in-flight
+    On entry: increments ``agentic_search_opensearch_search_total`` (the attempt
+    counter) and ``agentic_search_opensearch_searches_in_progress`` (the in-flight
     gauge). On exit: decrements the gauge. Both increments are best-effort —
     a metrics failure must not break the underlying search.
     """

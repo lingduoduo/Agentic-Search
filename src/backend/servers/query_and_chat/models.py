@@ -130,7 +130,65 @@ class Placement(BaseModel):
     tab_index: int | None = None
 
 
+# ---------------------------------------------------------------------------
+# Chat session / message models
+# ---------------------------------------------------------------------------
+
+
+class ChatSessionCreationRequest(BaseModel):
+    title: str | None = None
+
+
+class ChatSessionDetails(BaseModel):
+    id: str
+    title: str | None
+    created_at: str
+    updated_at: str
+
+
+class ChatSessionsResponse(BaseModel):
+    sessions: list[ChatSessionDetails]
+    has_more: bool = False
+
+
+class ChatMessageDetail(BaseModel):
+    id: str
+    session_id: str
+    role: str
+    content: str
+    created_at: str
+
+
+class ChatSessionDetailResponse(BaseModel):
+    session_id: str
+    title: str | None
+    messages: list[ChatMessageDetail]
+
+
+class ChatRenameRequest(BaseModel):
+    chat_session_id: str
+    name: str
+
+
+class RenameChatSessionResponse(BaseModel):
+    new_name: str
+
+
+class ChatFeedbackRequest(BaseModel):
+    chat_message_id: str
+    is_positive: bool | None = None
+    feedback_text: str | None = None
+
+
 __all__ = [
+    "ChatFeedbackRequest",
+    "ChatMessageDetail",
+    "ChatRenameRequest",
+    "ChatSessionCreationRequest",
+    "ChatSessionDetailResponse",
+    "ChatSessionDetails",
+    "ChatSessionsResponse",
+    "RenameChatSessionResponse",
     "SearchDocWithContent",
     "SearchFlowClassificationRequest",
     "SearchFlowClassificationResponse",

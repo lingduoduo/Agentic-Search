@@ -20,7 +20,7 @@ are the most expensive to sync. cc_pair_id is intentionally excluded to avoid
 unbounded cardinality.
 
 Usage:
-    from onyx.server.metrics.perm_sync_metrics import (
+    from src.backend.metrics.perm_sync_metrics import (
         observe_doc_perm_sync_duration,
         observe_doc_perm_sync_db_update_duration,
         inc_doc_perm_sync_docs_processed,

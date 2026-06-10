@@ -126,7 +126,76 @@ class LLMSelectedDocsPacket(BaseModel):
     llm_selected_doc_ids: list[str] | None
 
 
+# ---------------------------------------------------------------------------
+# Agent response packets
+# ---------------------------------------------------------------------------
+
+
+class SectionEnd(BaseModel):
+    type: Literal["section_end"] = "section_end"
+
+
+class AgentResponseStart(BaseModel):
+    type: Literal["message_start"] = "message_start"
+    final_documents: list[SearchDocWithContent] | None = None
+
+
+class AgentResponseDelta(BaseModel):
+    type: Literal["message_delta"] = "message_delta"
+    content: str
+
+
+# ---------------------------------------------------------------------------
+# Reasoning packets
+# ---------------------------------------------------------------------------
+
+
+class ReasoningStart(BaseModel):
+    type: Literal["reasoning_start"] = "reasoning_start"
+
+
+class ReasoningDelta(BaseModel):
+    type: Literal["reasoning_delta"] = "reasoning_delta"
+    reasoning: str
+
+
+class ReasoningDone(BaseModel):
+    type: Literal["reasoning_done"] = "reasoning_done"
+
+
+# ---------------------------------------------------------------------------
+# Search tool packets
+# ---------------------------------------------------------------------------
+
+
+class SearchToolStart(BaseModel):
+    type: Literal["search_tool_start"] = "search_tool_start"
+    is_internet_search: bool = False
+
+
+class SearchToolQueriesDelta(BaseModel):
+    type: Literal["search_tool_queries_delta"] = "search_tool_queries_delta"
+    queries: list[str]
+
+
+class SearchToolDocumentsDelta(BaseModel):
+    type: Literal["search_tool_documents_delta"] = "search_tool_documents_delta"
+    documents: list[SearchDocWithContent]
+
+
+# ---------------------------------------------------------------------------
+# Error packet
+# ---------------------------------------------------------------------------
+
+
+class PacketException(BaseModel):
+    type: Literal["error"] = "error"
+    message: str
+
+
 __all__ = [
+    "AgentResponseDelta",
+    "AgentResponseStart",
     "CitationInfo",
     "GeneratedImage",
     "LLMSelectedDocsPacket",
@@ -134,9 +203,17 @@ __all__ = [
     "MultiModelMessageResponseIDInfo",
     "OverallStop",
     "Packet",
+    "PacketException",
+    "ReasoningDelta",
+    "ReasoningDone",
+    "ReasoningStart",
     "SearchDocsPacket",
     "SearchErrorPacket",
     "SearchQueriesPacket",
+    "SearchToolDocumentsDelta",
+    "SearchToolQueriesDelta",
+    "SearchToolStart",
+    "SectionEnd",
     "ToolCallArgumentDelta",
     "ToolCallDebug",
     "TopLevelBranching",
