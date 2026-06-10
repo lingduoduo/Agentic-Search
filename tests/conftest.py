@@ -9,7 +9,6 @@ _TOP_LEVEL_COLLECTION_IGNORE_DIRS = {
     "agentic_search.egg-info",
     "data",
     "dist",
-    "indexes",
     "models",
 }
 
