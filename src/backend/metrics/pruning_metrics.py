@@ -10,7 +10,7 @@ are the most expensive to prune. cc_pair_id is intentionally excluded to avoid
 unbounded cardinality.
 
 Usage:
-    from onyx.server.metrics.pruning_metrics import (
+    from src.backend.metrics.pruning_metrics import (
         observe_pruning_enumeration_duration,
         observe_pruning_diff_duration,
         inc_pruning_rate_limit_error,

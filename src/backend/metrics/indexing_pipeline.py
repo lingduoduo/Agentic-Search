@@ -67,7 +67,7 @@ class _CeleryQueues:
     OPENSEARCH_MIGRATION = "opensearch_migration"
 
 
-OnyxCeleryQueues = _CeleryQueues
+CeleryQueues = _CeleryQueues
 
 logger = setup_logger()
 
@@ -81,32 +81,32 @@ _DEFAULT_CACHE_TTL = 30.0
 _DEFAULT_COLLECT_TIMEOUT = 120.0
 
 _QUEUE_LABEL_MAP: dict[str, str] = {
-    OnyxCeleryQueues.PRIMARY: "primary",
-    OnyxCeleryQueues.DOCPROCESSING: "docprocessing",
-    OnyxCeleryQueues.CONNECTOR_DOC_FETCHING: "docfetching",
-    OnyxCeleryQueues.VESPA_METADATA_SYNC: "vespa_metadata_sync",
-    OnyxCeleryQueues.CONNECTOR_DELETION: "connector_deletion",
-    OnyxCeleryQueues.CONNECTOR_PRUNING: "connector_pruning",
-    OnyxCeleryQueues.CONNECTOR_DOC_PERMISSIONS_SYNC: "permissions_sync",
-    OnyxCeleryQueues.CONNECTOR_EXTERNAL_GROUP_SYNC: "external_group_sync",
-    OnyxCeleryQueues.DOC_PERMISSIONS_UPSERT: "permissions_upsert",
-    OnyxCeleryQueues.CONNECTOR_HIERARCHY_FETCHING: "hierarchy_fetching",
-    OnyxCeleryQueues.LLM_MODEL_UPDATE: "llm_model_update",
-    OnyxCeleryQueues.CHECKPOINT_CLEANUP: "checkpoint_cleanup",
-    OnyxCeleryQueues.INDEX_ATTEMPT_CLEANUP: "index_attempt_cleanup",
-    OnyxCeleryQueues.CSV_GENERATION: "csv_generation",
-    OnyxCeleryQueues.USER_FILE_PROCESSING: "user_file_processing",
-    OnyxCeleryQueues.USER_FILE_PROJECT_SYNC: "user_file_project_sync",
-    OnyxCeleryQueues.USER_FILE_DELETE: "user_file_delete",
-    OnyxCeleryQueues.MONITORING: "monitoring",
-    OnyxCeleryQueues.SANDBOX: "sandbox",
-    OnyxCeleryQueues.OPENSEARCH_MIGRATION: "opensearch_migration",
+    CeleryQueues.PRIMARY: "primary",
+    CeleryQueues.DOCPROCESSING: "docprocessing",
+    CeleryQueues.CONNECTOR_DOC_FETCHING: "docfetching",
+    CeleryQueues.VESPA_METADATA_SYNC: "vespa_metadata_sync",
+    CeleryQueues.CONNECTOR_DELETION: "connector_deletion",
+    CeleryQueues.CONNECTOR_PRUNING: "connector_pruning",
+    CeleryQueues.CONNECTOR_DOC_PERMISSIONS_SYNC: "permissions_sync",
+    CeleryQueues.CONNECTOR_EXTERNAL_GROUP_SYNC: "external_group_sync",
+    CeleryQueues.DOC_PERMISSIONS_UPSERT: "permissions_upsert",
+    CeleryQueues.CONNECTOR_HIERARCHY_FETCHING: "hierarchy_fetching",
+    CeleryQueues.LLM_MODEL_UPDATE: "llm_model_update",
+    CeleryQueues.CHECKPOINT_CLEANUP: "checkpoint_cleanup",
+    CeleryQueues.INDEX_ATTEMPT_CLEANUP: "index_attempt_cleanup",
+    CeleryQueues.CSV_GENERATION: "csv_generation",
+    CeleryQueues.USER_FILE_PROCESSING: "user_file_processing",
+    CeleryQueues.USER_FILE_PROJECT_SYNC: "user_file_project_sync",
+    CeleryQueues.USER_FILE_DELETE: "user_file_delete",
+    CeleryQueues.MONITORING: "monitoring",
+    CeleryQueues.SANDBOX: "sandbox",
+    CeleryQueues.OPENSEARCH_MIGRATION: "opensearch_migration",
 }
 
 # Queues where prefetched (unacked) task counts are meaningful
 _UNACKED_QUEUES: list[str] = [
-    OnyxCeleryQueues.CONNECTOR_DOC_FETCHING,
-    OnyxCeleryQueues.DOCPROCESSING,
+    CeleryQueues.CONNECTOR_DOC_FETCHING,
+    CeleryQueues.DOCPROCESSING,
 ]
 
 

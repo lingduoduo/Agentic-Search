@@ -7,7 +7,7 @@ These fire for ALL tasks on the worker — no per-connector enrichment
 (see indexing_task_metrics.py for that).
 
 Usage in a worker app module:
-    from onyx.server.metrics.celery_task_metrics import (
+    from src.backend.metrics.celery_task_metrics import (
         on_celery_task_prerun,
         on_celery_task_postrun,
         on_celery_task_retry,

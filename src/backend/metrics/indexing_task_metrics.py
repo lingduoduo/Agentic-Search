@@ -15,7 +15,7 @@ Connectors never change source type, and names change rarely, so the
 cache is safe to hold for the worker's lifetime.
 
 Usage in a worker app module:
-    from onyx.server.metrics.indexing_task_metrics import (
+    from src.backend.metrics.indexing_task_metrics import (
         on_indexing_task_prerun,
         on_indexing_task_postrun,
     )
@@ -38,7 +38,7 @@ class _CeleryTasks:
     DOCPROCESSING_TASK = "docprocessing_task"
 
 
-OnyxCeleryTask = _CeleryTasks
+CeleryTask = _CeleryTasks
 
 logger = setup_logger()
 
@@ -65,8 +65,8 @@ _connector_cache_lock = threading.Lock()
 # Only enrich these task types with per-connector labels
 _INDEXING_TASK_NAMES: frozenset[str] = frozenset(
     {
-        OnyxCeleryTask.CONNECTOR_DOC_FETCHING_TASK,
-        OnyxCeleryTask.DOCPROCESSING_TASK,
+        CeleryTask.CONNECTOR_DOC_FETCHING_TASK,
+        CeleryTask.DOCPROCESSING_TASK,
     }
 )
 
@@ -141,37 +141,9 @@ def _resolve_connector(cc_pair_id: int, tenant_id: str) -> ConnectorInfo:
         if cached is not None:
             return cached
 
-    try:
-        from onyx.db.connector_credential_pair import (
-            get_connector_credential_pair_from_id,
-        )
-        from onyx.db.engine.sql_engine import get_session_with_tenant
-
-        with get_session_with_tenant(tenant_id=tenant_id) as db_session:
-            cc_pair = get_connector_credential_pair_from_id(
-                db_session,
-                cc_pair_id,
-                eager_load_connector=True,
-            )
-            if cc_pair is None:
-                # DB lookup succeeded but cc_pair doesn't exist — don't cache,
-                # it may appear later (race with connector creation).
-                return _UNKNOWN_CONNECTOR
-
-            info = ConnectorInfo(
-                source=cc_pair.connector.source.value,
-                name=cc_pair.name,
-            )
-            with _connector_cache_lock:
-                _connector_cache[cache_key] = info
-            return info
-    except Exception:
-        logger.debug(
-            "Failed to resolve connector info for cc_pair_id=%s",
-            cc_pair_id,
-            exc_info=True,
-        )
-        return _UNKNOWN_CONNECTOR
+    # This repo uses AgenticSearchStore (SQLite) with string connector IDs.
+    # Celery-based cc_pair_id lookups against Postgres are not applicable here.
+    return _UNKNOWN_CONNECTOR
 
 
 def on_indexing_task_prerun(

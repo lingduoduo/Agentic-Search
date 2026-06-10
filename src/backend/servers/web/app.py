@@ -62,6 +62,7 @@ from src.backend.servers.middleware.tenant_tracking import (
 )
 from src.backend.servers.middleware.tier_gate import add_tier_gate_middleware
 from src.backend.servers.oauth.api import create_oauth_router
+from src.backend.servers.query_and_chat.chat_backend import create_chat_router
 from src.backend.servers.query_and_chat.query_backend import (
     basic_router as query_basic_router,
 )
@@ -189,6 +190,7 @@ def _register_routers(
     app.include_router(create_users_router(db, settings))
 
     # --- Core search & chat ---
+    app.include_router(create_chat_router(db))
     app.include_router(create_search_router(db, search_url=search_url))
     app.include_router(query_basic_router)
     app.include_router(create_query_history_router(db, settings))

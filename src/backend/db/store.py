@@ -1047,6 +1047,22 @@ class AgenticSearchStore:
         ).fetchone()
         return str(row["created_at"]) if row else default
 
+    def update_chat_session_title(self, session_id: str, title: str) -> bool:
+        now = _now()
+        cursor = self._conn.execute(
+            "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now, session_id),
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_chat_session(self, session_id: str) -> bool:
+        cursor = self._conn.execute(
+            "DELETE FROM chat_sessions WHERE id = ?", (session_id,)
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
     def list_sessions_for_user(
         self,
         user_id: str,
