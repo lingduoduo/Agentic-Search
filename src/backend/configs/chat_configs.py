@@ -17,3 +17,47 @@ MAX_LLM_CYCLES: int = int(os.environ.get("MAX_LLM_CYCLES", "6"))
 COMPRESSION_TRIGGER_RATIO: float = float(
     os.environ.get("COMPRESSION_TRIGGER_RATIO", "0.8")
 )
+
+NUM_RETURNED_HITS: int = int(os.environ.get("NUM_RETURNED_HITS", "50"))
+MAX_CHUNKS_FED_TO_CHAT: int = int(os.environ.get("MAX_CHUNKS_FED_TO_CHAT", "25"))
+
+# 1 / (1 + DOC_TIME_DECAY * doc-age-in-years), set to 0 for no decay (capped at 0.5 in Vespa)
+DOC_TIME_DECAY: float = float(os.environ.get("DOC_TIME_DECAY", "0.5"))
+BASE_RECENCY_DECAY: float = 0.5
+FAVOR_RECENT_DECAY_MULTIPLIER: float = 2.0
+
+CONTEXT_CHUNKS_ABOVE: int = int(os.environ.get("CONTEXT_CHUNKS_ABOVE", "1"))
+CONTEXT_CHUNKS_BELOW: int = int(os.environ.get("CONTEXT_CHUNKS_BELOW", "1"))
+
+LLM_SOCKET_READ_TIMEOUT: int = int(os.environ.get("LLM_SOCKET_READ_TIMEOUT", "60"))
+
+# Weighting between vector and keyword search; 1 = pure vector, 0 = pure keyword.
+HYBRID_ALPHA: float = max(0, min(1, float(os.environ.get("HYBRID_ALPHA", "0.5"))))
+
+# Weighting between title and content fields during search (0–1).
+TITLE_CONTENT_RATIO: float = max(
+    0, min(1, float(os.environ.get("TITLE_CONTENT_RATIO", "0.10")))
+)
+
+HARD_DELETE_CHATS: bool = os.environ.get("HARD_DELETE_CHATS", "").lower() == "true"
+
+NUM_INTERNET_SEARCH_RESULTS: int = int(
+    os.environ.get("NUM_INTERNET_SEARCH_RESULTS", "10")
+)
+NUM_INTERNET_SEARCH_CHUNKS: int = int(
+    os.environ.get("NUM_INTERNET_SEARCH_CHUNKS", "50")
+)
+
+VESPA_SEARCHER_THREADS: int = int(os.environ.get("VESPA_SEARCHER_THREADS", "2"))
+
+USE_SEMANTIC_KEYWORD_EXPANSIONS_BASIC_SEARCH: bool = (
+    os.environ.get("USE_SEMANTIC_KEYWORD_EXPANSIONS_BASIC_SEARCH", "false").lower()
+    == "true"
+)
+
+SKIP_DEEP_RESEARCH_CLARIFICATION: bool = (
+    os.environ.get("SKIP_DEEP_RESEARCH_CLARIFICATION", "false").lower() == "true"
+)
+
+PROMPTS_YAML: str = os.environ.get("PROMPTS_YAML", "./data/seeding/prompts.yaml")
+PERSONAS_YAML: str = os.environ.get("PERSONAS_YAML", "./data/seeding/personas.yaml")
