@@ -240,7 +240,7 @@ def clear_hierarchy_cache(
 
 
 # ---------------------------------------------------------------------------
-# DB-dependent functions — stubbed; require SQLAlchemy session from onyx.db.*
+# DB-dependent functions — stubbed; require a SQLAlchemy session (not yet wired)
 # ---------------------------------------------------------------------------
 
 
@@ -250,7 +250,7 @@ def refresh_hierarchy_cache_from_db(
     source: DocumentSource,
 ) -> None:
     raise NotImplementedError(
-        "refresh_hierarchy_cache_from_db requires onyx.db — not available in this repo"
+        "refresh_hierarchy_cache_from_db requires a DB session — not yet wired to src.backend.db"
     )
 
 
@@ -261,7 +261,7 @@ def _walk_ancestor_chain(
     db_session: object,
 ) -> list[int]:
     raise NotImplementedError(
-        "_walk_ancestor_chain requires onyx.db — not available in this repo"
+        "_walk_ancestor_chain requires a DB session — not yet wired to src.backend.db"
     )
 
 
@@ -272,7 +272,7 @@ def get_ancestors_from_raw_id(
     db_session: object,
 ) -> list[int]:
     raise NotImplementedError(
-        "get_ancestors_from_raw_id requires onyx.db — not available in this repo"
+        "get_ancestors_from_raw_id requires a DB session — not yet wired to src.backend.db"
     )
 
 
@@ -282,7 +282,7 @@ def get_source_node_id_from_cache(
     source: DocumentSource,
 ) -> int | None:
     raise NotImplementedError(
-        "get_source_node_id_from_cache requires onyx.db — not available in this repo"
+        "get_source_node_id_from_cache requires a DB session — not yet wired to src.backend.db"
     )
 
 
@@ -292,5 +292,5 @@ def ensure_source_node_exists(
     source: DocumentSource,
 ) -> int:
     raise NotImplementedError(
-        "ensure_source_node_exists requires onyx.db — not available in this repo"
+        "ensure_source_node_exists requires a DB session — not yet wired to src.backend.db"
     )

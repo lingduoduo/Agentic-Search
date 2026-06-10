@@ -1,8 +1,7 @@
 """Auth endpoint rate limiting — in-memory sliding window, no Redis required.
 
-Replaces the fastapi-limiter/Redis version that depended on onyx packages.
-Configuration is read from environment variables; defaults match the original
-onyx values (100 requests per 60 seconds).
+Configuration is read from environment variables; defaults are 100 requests
+per 60 seconds.
 """
 
 from __future__ import annotations
