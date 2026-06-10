@@ -24,8 +24,10 @@ from src.backend.configs import load_app_settings
 from src.backend.llm.interfaces import LLMConfig
 from src.backend.llm.providers import OpenAICompatibleLLM
 from src.backend.search.process_search_query import run_expanded_search
-from src.backend.secondary_llm_flows import expand_keywords
-from src.backend.secondary_llm_flows.query_expansion import with_temporal_context
+from src.backend.servers.secondary_llm_flows import expand_keywords
+from src.backend.servers.secondary_llm_flows.query_expansion import (
+    with_temporal_context,
+)
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.context import ChatMessage
 from src.context import LLMClient

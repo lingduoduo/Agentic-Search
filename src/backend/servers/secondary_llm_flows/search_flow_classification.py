@@ -20,13 +20,7 @@ def _llm_text(response: LLMResponse | str) -> str:
 
 
 def classify_is_search_flow(query: str, llm: LLMClient) -> bool:
-    """Return True if the query should be routed to document search, False for chat.
-
-    The function defaults to False (chat) whenever the response is empty,
-    unexpected, or contains both class names — chat is the safer fallback
-    because a mislabelled search query is more disruptive than a mislabelled
-    chat query.
-    """
+    """Return True if the query should be routed to document search, False for chat."""
     t0 = time.monotonic()
     prompt = SEARCH_CHAT_PROMPT.format(user_query=query)
     content = (
@@ -44,7 +38,6 @@ def classify_is_search_flow(query: str, llm: LLMClient) -> bool:
         )
         return False
 
-    # When both labels appear prefer chat — it is the safer default.
     if CHAT_CLASS in content:
         return False
     if SEARCH_CLASS in content:

@@ -25,3 +25,32 @@ CRITICAL: It must only be 1 single word - EITHER "keyword" or "semantic".
 The user query is:
 {user_query}
 """.strip()
+
+REPHRASE_CONTEXT_PROMPT = """
+# Additional Context
+User information: {user_info}
+User memories:
+{memories}
+""".strip()
+
+SEMANTIC_QUERY_REPHRASE_SYSTEM_PROMPT = """
+You are a search query rewriter. Today is {current_date}.
+Given a conversation history and a user query, rewrite the query into a standalone, self-contained search query.
+The rephrased query should incorporate necessary context from the conversation history and be optimized for semantic search.
+Respond with ONLY the rephrased query — no explanation, no quotes.
+""".strip()
+
+SEMANTIC_QUERY_REPHRASE_USER_PROMPT = """{additional_context}
+Rephrase the following query into a standalone search query:
+{user_query}""".strip()
+
+KEYWORD_REPHRASE_SYSTEM_PROMPT = """
+You are a keyword query generator. Today is {current_date}.
+Given a conversation history and a user query, generate up to 3 keyword-only search queries.
+Each query should consist of only keywords (no natural language filler words), be on a separate line, and be optimized for keyword/BM25-based search.
+Respond with ONLY the keyword queries, one per line, no explanations.
+""".strip()
+
+KEYWORD_REPHRASE_USER_PROMPT = """{additional_context}
+Generate keyword search queries for:
+{user_query}""".strip()

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from src.context.models import ChatMessage
-from src.backend.secondary_llm_flows import classify_is_search_flow
-from src.backend.secondary_llm_flows import expand_keywords
-from src.backend.secondary_llm_flows.query_expansion import _clean_keyword_line
-from src.backend.secondary_llm_flows.query_expansion import is_time_sensitive
-from src.backend.secondary_llm_flows.query_expansion import with_temporal_context
+from src.backend.servers.secondary_llm_flows import classify_is_search_flow
+from src.backend.servers.secondary_llm_flows import expand_keywords
+from src.backend.servers.secondary_llm_flows.query_expansion import _clean_keyword_line
+from src.backend.servers.secondary_llm_flows.query_expansion import is_time_sensitive
+from src.backend.servers.secondary_llm_flows.query_expansion import (
+    with_temporal_context,
+)
 
 
 class _FakeLLM:
