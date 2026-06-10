@@ -322,12 +322,12 @@ Reranker utilities live beside their server in `src.backend.servers.retrieval`.
 ```bash
 # Dense (E5)
 python3 -m src.backend.servers.retrieval.retrieval \
-  --model_path intfloat/e5-base-v2 --index_path indexes/e5_Flat.index \
+  --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl --retrieval_method e5 --device cpu --topk 5
 
 # Sparse BM25
 python3 -m src.backend.servers.retrieval.retrieval \
-  --index_path indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
+  --index_path data/indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
 ```
 
 **Build indexes:**
@@ -335,19 +335,19 @@ python3 -m src.backend.servers.retrieval.retrieval \
 ```bash
 python3 -m src.backend.document_index.index_builder \
   --retrieval_method e5 --model_path intfloat/e5-base-v2 \
-  --corpus_path data/corpus.jsonl --faiss_type Flat --save_dir indexes/
+  --corpus_path data/corpus.jsonl --faiss_type Flat --save_dir data/indexes/
 
 python3 -m src.backend.document_index.index_builder \
-  --retrieval_method bm25 --corpus_path data/corpus.jsonl --save_dir indexes/
+  --retrieval_method bm25 --corpus_path data/corpus.jsonl --save_dir data/indexes/
 ```
 
 **Hybrid + rerank:**
 
 ```bash
 python3 -m src.backend.servers.retrieval.hybrid_rerank \
-  --dense_model intfloat/e5-base-v2 --index_path indexes/e5_Flat.index \
+  --dense_model intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
-  --sparse_index_path indexes/bm25 --hybrid_alpha 0.5 \
+  --sparse_index_path data/indexes/bm25 --hybrid_alpha 0.5 \
   --retrieval_topk 10 --rerank_topk 5
 ```
 
