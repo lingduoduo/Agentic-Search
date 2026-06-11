@@ -744,7 +744,7 @@ curl -s http://localhost:7860/admin/connectors                     -H "Authoriza
 curl -s -X POST http://localhost:7860/admin/connectors \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
   -d '{"name":"my-files","source":"local_file","input_type":"load_state","connector_specific_config":{}}'
-curl -s -X POST http://localhost:7860/admin/connector/1/sync       -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:7860/manage/admin/connector/1/sync -H "Authorization: Bearer $TOKEN"
 ```
 
 **Tools (admin)**
