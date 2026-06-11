@@ -343,7 +343,9 @@ def create_hooks_router(
         )
         return _record_to_response(updated)
 
-    @router.delete("/{hook_id}", status_code=204, response_class=Response)
+    @router.delete(
+        "/{hook_id}", status_code=204, response_class=Response, response_model=None
+    )
     def delete_hook(
         hook_id: str,
         _: AuthenticatedUser = Depends(_require_admin),

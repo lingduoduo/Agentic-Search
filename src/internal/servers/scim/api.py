@@ -442,7 +442,12 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
             )
         )
 
-    @scim_router.delete("/Users/{user_id}", status_code=204, response_model=None)
+    @scim_router.delete(
+        "/Users/{user_id}",
+        status_code=204,
+        response_class=Response,
+        response_model=None,
+    )
     def delete_user(
         user_id: str,
         _token: dict = Depends(_auth),
@@ -611,7 +616,12 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
             )
         )
 
-    @scim_router.delete("/Groups/{group_id}", status_code=204, response_model=None)
+    @scim_router.delete(
+        "/Groups/{group_id}",
+        status_code=204,
+        response_class=Response,
+        response_model=None,
+    )
     def delete_group(
         group_id: str,
         _token: dict = Depends(_auth),
@@ -661,7 +671,12 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
             for t in dal.list_tokens()
         ]
 
-    @scim_router.delete("/tokens/{token_id}", status_code=204)
+    @scim_router.delete(
+        "/tokens/{token_id}",
+        status_code=204,
+        response_class=Response,
+        response_model=None,
+    )
     def revoke_token(token_id: str) -> Response:
         dal.revoke_token(token_id)
         return Response(status_code=204)

@@ -1,7 +1,9 @@
 # Server/runtime dependencies for FastAPI search services.
-# fastapi==0.110.1
+fastapi>=0.136.1
 faiss-cpu==1.13.2
 uvicorn>=0.31.1
+python-multipart>=0.0.9
+prometheus-client>=0.20.0
 
 # Core client / utility dependencies.
 requests==2.32.3
@@ -10,6 +12,7 @@ chardet>=3.0
 aiohttp==3.9.3
 beautifulsoup4==4.13.4
 numpy==1.26.4
+redis>=4.0.0
 
 # Local model inference stack used by `python -m src.run_agentic_search --local`.
 torch==2.2.2
@@ -25,11 +28,15 @@ python-dotenv
 pyserini
 google-api-python-client
 
+# Test dependencies.
+pytest-asyncio>=0.23.0
+faiss-cpu==1.13.2
 # Notes:
 # - `uvicorn` is only needed for FastAPI server entry points under
-#   `src/backend/servers/retrieval/`.
+#   `src/internal/servers/retrieval/`.
 #   It is not used by the local single-turn / search / tool CLI path in
 #   `examples/run_agentic_search.py`.
+# - `fastmcp` is an optional dep for MCP server support; install via: pip install -e ".[mcp]"
 # - On macOS Apple Silicon, local Hugging Face causal-LM inference is safest on CPU in this repo.
 #   The MPS backend can segfault for some models / torch / transformers combinations.
 # faiss-cpu: install via conda to avoid OpenMP conflict with PyTorch on macOS:

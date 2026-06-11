@@ -74,7 +74,10 @@ def create_manage_router(
         return StandardAnswer.from_record(record)
 
     @router.delete(
-        "/admin/standard-answer/{answer_id}", status_code=204, response_class=Response
+        "/admin/standard-answer/{answer_id}",
+        status_code=204,
+        response_class=Response,
+        response_model=None,
     )
     def delete_standard_answer(
         answer_id: str,

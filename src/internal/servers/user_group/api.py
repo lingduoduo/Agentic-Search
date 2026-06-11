@@ -152,6 +152,7 @@ def create_user_group_router(
         "/admin/user-group/{group_id}",
         status_code=204,
         response_class=Response,
+        response_model=None,
     )
     def delete_user_group(
         group_id: str,

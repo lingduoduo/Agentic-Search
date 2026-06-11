@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from src.internal.auth import AuthenticatedUser
@@ -120,7 +120,12 @@ def create_tools_router(settings: AppSettings) -> APIRouter:
 
         return OpenAPIRegisterResponse(provider_id=provider_id, tool_names=tool_names)
 
-    @router.delete("/openapi/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)
+    @router.delete(
+        "/openapi/{provider_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        response_class=Response,
+        response_model=None,
+    )
     async def delete_openapi_provider(
         provider_id: str,
         _: AuthenticatedUser = Depends(require_admin),

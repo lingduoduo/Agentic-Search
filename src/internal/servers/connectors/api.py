@@ -22,7 +22,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from src.internal.auth import AuthenticatedUser
@@ -259,7 +259,9 @@ def create_connectors_router(
         logger.info("Connector updated: %s", connector_id)
         return _connector_view(saved, store)  # type: ignore[return-value]
 
-    @router.delete("/{connector_id}", status_code=204)
+    @router.delete(
+        "/{connector_id}", status_code=204, response_class=Response, response_model=None
+    )
     def delete_connector(
         connector_id: str,
         _: AuthenticatedUser = Depends(_require_admin),

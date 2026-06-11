@@ -246,6 +246,7 @@ def create_admin_router(
         "/search-providers/{provider_id}",
         status_code=204,
         response_class=Response,
+        response_model=None,
     )
     def delete_search_provider(provider_id: int) -> Response:
         store.delete_search_provider(provider_id)
@@ -287,6 +288,7 @@ def create_admin_router(
         "/content-providers/{provider_id}",
         status_code=204,
         response_class=Response,
+        response_model=None,
     )
     def delete_content_provider(provider_id: int) -> Response:
         store.delete_content_provider(provider_id)
