@@ -498,18 +498,19 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Benchmark eval helpers | `src/training/eval/bamboogle.py` |
 | Rollout orchestration | `src/model/generation.py` |
 
-**Reward components** (`SearchRewardFunction`):
+**Reward components** (`SearchRewardFunction.reward_components()`):
 
 | Component | What it measures |
 |-----------|-----------------|
-| `correctness` | Token-overlap exact-match against reference answers |
-| `format` | Well-formed XML trace with required action tags |
-| `search_use` | Agent issued at least one search action |
-| `answer_length` | Answer within acceptable token bounds |
-| `citation_quality` | Claims grounded in retrieved passages |
-| `unnecessary_search_penalty` | Penalises search when the answer was already known |
-| `rounds_used` | Efficiency — fewer retrieval rounds is better |
-| `subquestion_coverage` | Sub-queries covered across the trajectory |
+| `correctness` | `judge_fn(answer, ground_truth)` × `correctness_weight`; judge can be exact-match, token-F1, or an LLM |
+| `citation_support` | Fraction of retrieved documents cited in the final answer |
+| `subquestion_coverage` | Fraction of decomposed sub-queries with sufficient evidence |
+| `search_quality` | Sufficiency verdict + average query quality across search rounds |
+| `format_reward` | Inline `[D1]` citation markers present in the answer |
+| `per_search_penalty` | Flat penalty × number of search rounds used |
+| `unnecessary_search_penalty` | Additional penalty × rounds beyond the first |
+| `duplicate_query_penalty` | Penalty × repeated queries issued across turns |
+| `unsupported_claim_penalty` | Fires when agent searched, got results, but cited none |
 
 Preset configs (zero-param shortcuts via `SearchRewardConfig`):
 
@@ -530,8 +531,14 @@ reward_fn = SearchRewardFunction(SearchRewardConfig.third_pass_with_format())
 ```python
 from src.training.grpo import score_prompt_group, compute_grpo_outcome_advantage
 
-scored = score_prompt_group(rollouts, reward_fn, reference_answer)
-advantages = compute_grpo_outcome_advantage(scored)
+scored = score_prompt_group(
+    rollouts,                         # list[GRPORolloutSample]
+    ground_truth=reference_answer,
+    judge_fn=exact_match_fn,
+    reward_fn=reward_fn,
+)
+rewards = [s.reward for s in scored]
+advantages = compute_grpo_outcome_advantage(rewards)  # list[float], group-relative
 ```
 
 **SearchAgentGRPOTrainer** — GRPO with real agent-loop rollouts (all shaped rewards fire):
