@@ -671,10 +671,11 @@ npx @modelcontextprotocol/inspector http://localhost:8090/
 
 | Var | Default | Description |
 |-----|---------|-------------|
-| `MCP_SERVER_ENABLED` | `false` | Set to `true` to enable |
-| `MCP_SERVER_PORT` | `8090` | Bind port |
-| `MCP_SERVER_CORS_ORIGINS` | — | Comma-separated allowed origins |
-| `API_SERVER_HOST` | `127.0.0.1` | Host of the main API server |
+| `MCP_SERVER_CORS_ORIGINS` | — | Comma-separated allowed origins for CORS |
+| `API_SERVER_HOST` | `127.0.0.1` | Host of the web backend (`build_web_base_url`) |
+| `API_SERVER_PROTOCOL` | `http` | Protocol for the web backend URL |
+| `AGENTIC_SEARCH_WEB_PORT` | `7860` | Port of the web backend |
+| `API_SERVER_URL_OVERRIDE_FOR_HTTP_REQUESTS` | — | Override the full web backend URL (takes precedence over the three above) |
 
 
 ## API Reference
