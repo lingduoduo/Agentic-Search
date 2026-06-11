@@ -71,7 +71,7 @@ Phase 5: Wire into /api/agent + README
 - Follows same `batch_search` → `create_search_app` pattern as `serp.py`, `google.py`, `browser.py`
 - CLI: `python3 -m src.internal.servers.retrieval.hybrid_rerank --dense_model intfloat/e5-base-v2 --index_path indexes/e5_Flat.index --corpus_path data/corpus.jsonl`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -88,7 +88,7 @@ Phase 5: Wire into /api/agent + README
 - `QueryBundle` dataclass: `original`, `sub_queries`, `hyde_text`
 - Both LLM calls are optional/gracefully degraded (return original query on failure)
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -108,7 +108,7 @@ Phase 5: Wire into /api/agent + README
 - `AgenticRAGConfig`: `max_rounds`, `sufficiency_threshold`, `topk`, `retrieval_url`
 - `AgenticRAGResult`: `answer`, `citations`, `rounds_used`, `all_contexts`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -118,7 +118,7 @@ Phase 5: Wire into /api/agent + README
 - Modify: `src/internal/servers/web/app.py` or `src/internal/servers/query_and_chat/`
 - Add `mode=agentic_rag` to `POST /api/agent`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -127,7 +127,7 @@ Phase 5: Wire into /api/agent + README
 **Files:**
 - Modify: `README.md`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
