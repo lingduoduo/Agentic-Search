@@ -13,10 +13,10 @@ DEFAULT_CONFIG: dict = {
     # -------------------------------------------------------------------------
     # Services — retrieval server, web backend, persistence
     # -------------------------------------------------------------------------
-    "AGENTIC_SEARCH_RETRIEVAL_URL": "http://localhost:8000/retrieve",
+    "AGENTIC_SEARCH_RETRIEVAL_URL": "http://localhost:8001/retrieve",
     "AGENTIC_SEARCH_FETCH_URL": "",
     "AGENTIC_SEARCH_RETRIEVAL_HOST": "0.0.0.0",
-    "AGENTIC_SEARCH_RETRIEVAL_PORT": 8000,
+    "AGENTIC_SEARCH_RETRIEVAL_PORT": 8001,
     "AGENTIC_SEARCH_WEB_HOST": "0.0.0.0",
     "AGENTIC_SEARCH_WEB_PORT": 8080,
     "AGENTIC_SEARCH_WEB_DB_PATH": ":memory:",
