@@ -174,6 +174,9 @@ class AgenticSearchStore:
                 user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
                 title TEXT,
                 metadata_json TEXT NOT NULL,
+                llm_name TEXT,
+                persona_id TEXT,
+                flow_type TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -302,12 +305,38 @@ class AgenticSearchStore:
                 ON document_permissions(principal_type, principal_id, document_id);
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated
                 ON chat_sessions(user_id, updated_at DESC, id);
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_llm
+                ON chat_sessions(llm_name, created_at);
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_persona
+                ON chat_sessions(persona_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_flow
+                ON chat_sessions(flow_type, created_at);
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
                 ON chat_messages(session_id, created_at, id);
             CREATE INDEX IF NOT EXISTS idx_index_attempts_connector_updated
                 ON index_attempts(connector_id, updated_at DESC, id);
             """
         )
+        self._conn.commit()
+        self._migrate_schema()
+
+    def _migrate_schema(self) -> None:
+        """Idempotent migrations for databases created before column additions."""
+        for col, ddl in [
+            ("llm_name", "ALTER TABLE chat_sessions ADD COLUMN llm_name TEXT"),
+            ("persona_id", "ALTER TABLE chat_sessions ADD COLUMN persona_id TEXT"),
+            ("flow_type", "ALTER TABLE chat_sessions ADD COLUMN flow_type TEXT"),
+        ]:
+            try:
+                self._conn.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
+        for idx_ddl in [
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_llm ON chat_sessions(llm_name, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_persona ON chat_sessions(persona_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_flow ON chat_sessions(flow_type, created_at)",
+        ]:
+            self._conn.execute(idx_ddl)
         self._conn.commit()
 
     def upsert_connector(self, connector: ConnectorConfig) -> ConnectorConfig:
@@ -787,15 +816,22 @@ class AgenticSearchStore:
         self._conn.execute(
             """
             INSERT INTO chat_sessions (
-                id, user_id, title, metadata_json, created_at, updated_at
+                id, user_id, title, metadata_json,
+                llm_name, persona_id, flow_type,
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.id,
                 record.user_id,
                 record.title,
                 _json_dumps(record.metadata),
+                record.metadata.get("llm_name"),
+                str(record.metadata["persona_id"])
+                if record.metadata.get("persona_id") is not None
+                else None,
+                record.metadata.get("flow_type"),
                 record.created_at,
                 record.updated_at,
             ),
@@ -1151,6 +1187,66 @@ class AgenticSearchStore:
             (start, end),
         ).fetchall()
         return [(row["day"], row["active_users"]) for row in rows]
+
+    def query_analytics_by_llm(
+        self,
+        start: str,
+        end: str,
+    ) -> list[tuple[str, int]]:
+        """Return ``(llm_name, session_count)`` totals between start and end."""
+        rows = self._conn.execute(
+            """
+            SELECT
+                COALESCE(llm_name, 'unknown') AS llm,
+                COUNT(DISTINCT id) AS cnt
+            FROM chat_sessions
+            WHERE created_at >= ? AND created_at < ?
+            GROUP BY llm
+            ORDER BY cnt DESC
+            """,
+            (start, end),
+        ).fetchall()
+        return [(row["llm"], row["cnt"]) for row in rows]
+
+    def query_analytics_by_persona(
+        self,
+        start: str,
+        end: str,
+    ) -> list[tuple[str, int]]:
+        """Return ``(persona_id, session_count)`` totals between start and end."""
+        rows = self._conn.execute(
+            """
+            SELECT
+                COALESCE(persona_id, 'default') AS persona,
+                COUNT(DISTINCT id) AS cnt
+            FROM chat_sessions
+            WHERE created_at >= ? AND created_at < ?
+            GROUP BY persona
+            ORDER BY cnt DESC
+            """,
+            (start, end),
+        ).fetchall()
+        return [(row["persona"], row["cnt"]) for row in rows]
+
+    def query_analytics_by_flow(
+        self,
+        start: str,
+        end: str,
+    ) -> list[tuple[str, int]]:
+        """Return ``(flow_type, session_count)`` totals between start and end."""
+        rows = self._conn.execute(
+            """
+            SELECT
+                COALESCE(flow_type, 'chat') AS flow,
+                COUNT(DISTINCT id) AS cnt
+            FROM chat_sessions
+            WHERE created_at >= ? AND created_at < ?
+            GROUP BY flow
+            ORDER BY cnt DESC
+            """,
+            (start, end),
+        ).fetchall()
+        return [(row["flow"], row["cnt"]) for row in rows]
 
     # ------------------------------------------------------------------
     # Hooks

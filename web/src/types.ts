@@ -84,3 +84,14 @@ export interface AdminSurfaceSummary {
   metrics: AdminSurfaceMetric[];
   sections: AdminSurfaceSection[];
 }
+
+export interface BreakdownItem {
+  label: string;
+  session_count: number;
+}
+
+export interface BreakdownAnalytics {
+  dimension: string;
+  items: BreakdownItem[];
+  total_sessions: number;
+}

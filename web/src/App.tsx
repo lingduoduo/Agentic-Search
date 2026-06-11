@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Bot, FileSearch, MessageSquarePlus, Search } from "lucide-react";
-import { createSession, getAdminSummary, runAgent } from "./api";
+import {
+  createSession,
+  getAdminSummary,
+  getAnalyticsByFlow,
+  getAnalyticsByLLM,
+  getAnalyticsByPersona,
+  runAgent,
+} from "./api";
 import { AdminOverview } from "./components/AdminOverview";
+import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
@@ -11,6 +19,7 @@ import type {
   AdminSurfaceSummary,
   AgentExperienceResponse,
   AgentMode,
+  BreakdownAnalytics,
   ChatMessageView,
   SearchSourceProvider,
   SourceDocumentView,
@@ -34,10 +43,16 @@ export function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adminSummary, setAdminSummary] = useState<AdminSurfaceSummary | null>(null);
+  const [analyticsByLLM, setAnalyticsByLLM] = useState<BreakdownAnalytics | null>(null);
+  const [analyticsByPersona, setAnalyticsByPersona] = useState<BreakdownAnalytics | null>(null);
+  const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     getAdminSummary().then(setAdminSummary).catch(() => undefined);
+    getAnalyticsByLLM().then(setAnalyticsByLLM).catch(() => undefined);
+    getAnalyticsByPersona().then(setAnalyticsByPersona).catch(() => undefined);
+    getAnalyticsByFlow().then(setAnalyticsByFlow).catch(() => undefined);
   }, []);
 
   const status = useMemo(() => {
@@ -170,6 +185,13 @@ export function App() {
         {error && <div className="error-banner">{error}</div>}
 
         {adminSummary && <AdminOverview summary={adminSummary} />}
+        {(analyticsByLLM || analyticsByPersona || analyticsByFlow) && (
+          <AnalyticsDashboard
+            byLLM={analyticsByLLM}
+            byPersona={analyticsByPersona}
+            byFlow={analyticsByFlow}
+          />
+        )}
 
         <div className="results-layout">
           <section className="answer-column" aria-label={isChatMode ? "Answer" : "Search Summary"}>
