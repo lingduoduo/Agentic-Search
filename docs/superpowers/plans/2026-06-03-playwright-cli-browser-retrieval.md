@@ -40,7 +40,7 @@
 
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Create | `src/backend/servers/retrieval/browser.py` | Engine + CLI entrypoint |
+| Create | `src/internal/servers/retrieval/browser.py` | Engine + CLI entrypoint |
 | Create | `tests/unit/retrieval/test_browser_retrieval.py` | Unit tests (subprocess mocked) |
 | Modify | `.claude/skills/playwright-cli/SKILL.md` | Add browser-retrieval example |
 
@@ -49,7 +49,7 @@
 ### Task 1: Skeleton — `BrowserSearchEngine` with subprocess calls
 
 **Files:**
-- Create: `src/backend/servers/retrieval/browser.py`
+- Create: `src/internal/servers/retrieval/browser.py`
 
 - [ ] **Step 1: Write the failing test for single-query extraction**
 
@@ -62,7 +62,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.backend.servers.retrieval.browser import BrowserSearchEngine, BrowserSearchConfig
+from src.internal.servers.retrieval.browser import BrowserSearchEngine, BrowserSearchConfig
 
 FAKE_RESULTS = json.dumps([
     {"title": "FAISS - Wikipedia", "url": "https://en.wikipedia.org/wiki/FAISS", "snippet": "A library for similarity search."},
@@ -79,7 +79,7 @@ def _make_proc(stdout: str = "", returncode: int = 0):
 
 def test_search_query_returns_formatted_documents():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2))
-    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+    with patch("src.internal.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),             # open
             _make_proc(),             # snapshot (page load)
@@ -108,7 +108,7 @@ Expected: `ModuleNotFoundError` — `browser.py` does not exist yet.
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
-# src/backend/servers/retrieval/browser.py
+# src/internal/servers/retrieval/browser.py
 """FastAPI retrieval server that uses playwright-cli for browser-based search."""
 
 from __future__ import annotations
@@ -255,7 +255,7 @@ Expected: `PASSED`
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/servers/retrieval/browser.py tests/unit/retrieval/test_browser_retrieval.py
+git add src/internal/servers/retrieval/browser.py tests/unit/retrieval/test_browser_retrieval.py
 git commit -m "feat: add BrowserSearchEngine using playwright-cli subprocess"
 ```
 
@@ -275,7 +275,7 @@ Each call sequence is 6 per query: open, snapshot, fill, snapshot, eval, close.
 
 def test_empty_results_when_eval_returns_empty_list():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
-    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+    with patch("src.internal.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),      # open
             _make_proc(),      # snapshot
@@ -290,7 +290,7 @@ def test_empty_results_when_eval_returns_empty_list():
 
 def test_subprocess_timeout_returns_empty_and_closes():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
-    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+    with patch("src.internal.servers.retrieval.browser.subprocess.run") as mock_run:
         # open succeeds, snapshot times out, close still called in finally
         mock_run.side_effect = [
             _make_proc(),
@@ -308,7 +308,7 @@ def test_topk_truncates_results():
         {"title": f"Result {i}", "url": f"https://example{i}.com", "snippet": "x"}
         for i in range(5)
     ])
-    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+    with patch("src.internal.servers.retrieval.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(), _make_proc(), _make_proc(), _make_proc(),
             _make_proc(many), _make_proc(),
@@ -321,7 +321,7 @@ def test_topk_truncates_results():
 def test_batch_search_runs_queries_in_parallel():
     engine = BrowserSearchEngine(BrowserSearchConfig(topk=2, batch_workers=2))
     single = json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
-    with patch("src.backend.servers.retrieval.browser.subprocess.run") as mock_run:
+    with patch("src.internal.servers.retrieval.browser.subprocess.run") as mock_run:
         # 6 calls per query × 2 queries = 12 calls
         mock_run.side_effect = [
             _make_proc(), _make_proc(), _make_proc(), _make_proc(), _make_proc(single), _make_proc(),
@@ -352,12 +352,12 @@ git commit -m "test: add edge-case coverage for BrowserSearchEngine"
 ### Task 3: Wire into module and verify server starts
 
 **Files:**
-- Check: `src/backend/servers/retrieval/__init__.py` (empty — no changes needed)
+- Check: `src/internal/servers/retrieval/__init__.py` (empty — no changes needed)
 
 - [ ] **Step 1: Verify the module entry point is runnable**
 
 ```bash
-python3 -m src.backend.servers.retrieval.browser --help
+python3 -m src.internal.servers.retrieval.browser --help
 ```
 
 Expected output includes `--topk`, `--host`, `--port`, `--workers`.
@@ -365,7 +365,7 @@ Expected output includes `--topk`, `--host`, `--port`, `--workers`.
 - [ ] **Step 2: Smoke-test the server starts**
 
 ```bash
-timeout 3 python3 -m src.backend.servers.retrieval.browser --port 8099 2>&1 || true
+timeout 3 python3 -m src.internal.servers.retrieval.browser --port 8099 2>&1 || true
 ```
 
 Expected: logs `Uvicorn running on ...`, killed by timeout. No import errors.
@@ -375,7 +375,7 @@ Expected: logs `Uvicorn running on ...`, killed by timeout. No import errors.
 If `__init__.py` was empty (it is), skip. Otherwise:
 
 ```bash
-git add src/backend/servers/retrieval/__init__.py
+git add src/internal/servers/retrieval/__init__.py
 git commit -m "feat: expose BrowserSearchEngine in retrieval package"
 ```
 
@@ -394,7 +394,7 @@ playwright-cli kill-all 2>/dev/null || true
 - [ ] **Step 2: Start the server**
 
 ```bash
-python3 -m src.backend.servers.retrieval.browser --port 8099 &
+python3 -m src.internal.servers.retrieval.browser --port 8099 &
 SERVER_PID=$!
 sleep 2
 ```
@@ -431,7 +431,7 @@ Add the following section at the end of `.claude/skills/playwright-cli/SKILL.md`
 ## Example: Scripted search and result extraction
 
 Drive a Google search and extract top results as JSON using playwright-cli subprocess calls
-(as used by `src/backend/servers/retrieval/browser.py`):
+(as used by `src/internal/servers/retrieval/browser.py`):
 
 ```bash
 SESSION="search-$(openssl rand -hex 4)"

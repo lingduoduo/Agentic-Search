@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.backend.auth import generate_user_jwt_token
-from src.backend.configs import AppSettings
-from src.backend.configs import AuthSettings
-from src.backend.db import AgenticSearchStore
-from src.backend.db.models import HookRecord
-from src.backend.db.models import UserRecord
-from src.backend.servers.middleware.tenant_tracking import add_api_server_tenant_id_middleware
-from src.backend.servers.middleware.tier_gate import add_tier_gate_middleware
-from src.backend.servers.web.app import SearchExperienceSettings
-from src.backend.servers.web.app import create_web_app
+from src.internal.auth import generate_user_jwt_token
+from src.internal.configs import AppSettings
+from src.internal.configs import AuthSettings
+from src.internal.db import AgenticSearchStore
+from src.internal.db.models import HookRecord
+from src.internal.db.models import UserRecord
+from src.internal.servers.middleware.tenant_tracking import (
+    add_api_server_tenant_id_middleware,
+)
+from src.internal.servers.middleware.tier_gate import add_tier_gate_middleware
+from src.internal.servers.web.app import SearchExperienceSettings
+from src.internal.servers.web.app import create_web_app
 
 _ADMIN = "admin-user"
 _USER = "regular-user"
@@ -190,8 +192,8 @@ def test_hooks_require_admin(tmp_path):
 
 
 def test_license_status_response_defaults():
-    from src.backend.servers.license.models import LicenseStatusResponse
-    from src.backend.utils.license_expiry import ExpiryWarningStage
+    from src.internal.servers.license.models import LicenseStatusResponse
+    from src.internal.utils.license_expiry import ExpiryWarningStage
 
     resp = LicenseStatusResponse(has_license=False)
     assert resp.expiry_warning_stage == ExpiryWarningStage.NONE
@@ -204,14 +206,14 @@ def test_license_status_response_defaults():
 
 
 def test_strip_pem_removes_delimiters():
-    from src.backend.servers.license.api import _strip_pem
+    from src.internal.servers.license.api import _strip_pem
 
     content = "-----BEGIN AGENTIC SEARCH LICENSE-----\nabc123\n-----END AGENTIC SEARCH LICENSE-----"
     assert _strip_pem(content) == "abc123"
 
 
 def test_strip_pem_passthrough_for_plain():
-    from src.backend.servers.license.api import _strip_pem
+    from src.internal.servers.license.api import _strip_pem
 
     assert _strip_pem("abc123") == "abc123"
 
@@ -286,7 +288,7 @@ def test_license_claim_returns_501_without_cloud_url(tmp_path, monkeypatch):
 def test_tenant_tracking_middleware_noop():
     from fastapi import FastAPI
 
-    from src.backend.configs import load_app_settings
+    from src.internal.configs import load_app_settings
 
     app = FastAPI()
     settings = load_app_settings({})
@@ -300,7 +302,7 @@ def test_tenant_tracking_middleware_noop():
 def test_tier_gate_middleware_registered_when_gates_exist():
     from fastapi import FastAPI
 
-    from src.backend.configs import load_app_settings
+    from src.internal.configs import load_app_settings
 
     app = FastAPI()
     settings = load_app_settings({})

@@ -1,5 +1,5 @@
 """
-Integration tests for src.backend.db.engine.get_schemas_needing_migration.
+Integration tests for src.internal.db.engine.get_schemas_needing_migration.
 
 These tests require a live database and exercise the function directly,
 independent of the alembic migration runner script.

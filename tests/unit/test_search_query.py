@@ -6,18 +6,18 @@ import asyncio
 
 
 from src.context.models import ChatMessage
-from src.backend.prompts import CHAT_CLASS
-from src.backend.prompts import KEYWORD_EXPANSION_PROMPT
-from src.backend.prompts import QUERY_TYPE_PROMPT
-from src.backend.prompts import SEARCH_CHAT_PROMPT
-from src.backend.prompts import SEARCH_CLASS
+from src.internal.prompts import CHAT_CLASS
+from src.internal.prompts import KEYWORD_EXPANSION_PROMPT
+from src.internal.prompts import QUERY_TYPE_PROMPT
+from src.internal.prompts import SEARCH_CHAT_PROMPT
+from src.internal.prompts import SEARCH_CLASS
 from src.context.search import SearchResult
-from src.backend.search import SearchQueryResult
-from src.backend.search import classify_query_type
-from src.backend.search import classify_search_flow
-from src.backend.search import expand_keywords
-from src.backend.search import run_expanded_search
-from src.backend.search import weighted_reciprocal_rank_fusion
+from src.internal.search import SearchQueryResult
+from src.internal.search import classify_query_type
+from src.internal.search import classify_search_flow
+from src.internal.search import expand_keywords
+from src.internal.search import run_expanded_search
+from src.internal.search import weighted_reciprocal_rank_fusion
 
 
 class _FakeLLM:
@@ -104,7 +104,7 @@ def test_run_expanded_search_no_llm_runs_single_search(monkeypatch):
         return [SearchResult(contents=f"result for {request.query}", score=0.9)]
 
     monkeypatch.setattr(
-        "src.backend.search.process_search_query.run_search", fake_run_search
+        "src.internal.search.process_search_query.run_search", fake_run_search
     )
 
     result = asyncio.run(
@@ -131,7 +131,7 @@ def test_run_expanded_search_merges_expansions_with_rrf(monkeypatch):
         ]
 
     monkeypatch.setattr(
-        "src.backend.search.process_search_query.run_search", fake_run_search
+        "src.internal.search.process_search_query.run_search", fake_run_search
     )
 
     llm = _FakeLLM("keyword one\nkeyword two")
@@ -155,7 +155,7 @@ def test_run_expanded_search_skips_failed_parallel_search(monkeypatch):
         return [SearchResult(contents="good result", score=0.9, url="u1")]
 
     monkeypatch.setattr(
-        "src.backend.search.process_search_query.run_search", fake_run_search
+        "src.internal.search.process_search_query.run_search", fake_run_search
     )
 
     llm = _FakeLLM("expansion one")
@@ -171,7 +171,7 @@ def test_run_expanded_search_respects_expand_false(monkeypatch):
         return [SearchResult(contents="r", score=0.5)]
 
     monkeypatch.setattr(
-        "src.backend.search.process_search_query.run_search", fake_run_search
+        "src.internal.search.process_search_query.run_search", fake_run_search
     )
 
     llm = _FakeLLM("should not be called")

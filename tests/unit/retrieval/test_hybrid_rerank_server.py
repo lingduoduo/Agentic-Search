@@ -41,21 +41,21 @@ def _make_app(retriever_results, reranker_results):
 
     with (
         patch(
-            "src.backend.servers.retrieval.hybrid_rerank.HybridRetriever",
+            "src.internal.servers.retrieval.hybrid_rerank.HybridRetriever",
             return_value=mock_retriever,
         ),
         patch(
-            "src.backend.servers.retrieval.hybrid_rerank.get_reranker",
+            "src.internal.servers.retrieval.hybrid_rerank.get_reranker",
             return_value=mock_reranker,
         ),
     ):
-        from src.backend.servers.retrieval.hybrid_rerank import (
+        from src.internal.servers.retrieval.hybrid_rerank import (
             HybridRerankConfig,
             create_app,
         )
-        from src.backend.document_index.hybrid_retriever import HybridRetrieverConfig
-        from src.backend.document_index.retrieval import DenseRetrieverConfig
-        from src.backend.servers.retrieval.rerank import RerankerConfig
+        from src.internal.document_index.hybrid_retriever import HybridRetrieverConfig
+        from src.internal.document_index.retrieval import DenseRetrieverConfig
+        from src.internal.servers.retrieval.rerank import RerankerConfig
 
         config = HybridRerankConfig(
             retriever=HybridRetrieverConfig(
@@ -113,21 +113,21 @@ def test_retriever_exception_returns_500():
 
     with (
         patch(
-            "src.backend.servers.retrieval.hybrid_rerank.HybridRetriever",
+            "src.internal.servers.retrieval.hybrid_rerank.HybridRetriever",
             return_value=mock_retriever,
         ),
         patch(
-            "src.backend.servers.retrieval.hybrid_rerank.get_reranker",
+            "src.internal.servers.retrieval.hybrid_rerank.get_reranker",
             return_value=mock_reranker,
         ),
     ):
-        from src.backend.servers.retrieval.hybrid_rerank import (
+        from src.internal.servers.retrieval.hybrid_rerank import (
             HybridRerankConfig,
             create_app,
         )
-        from src.backend.document_index.hybrid_retriever import HybridRetrieverConfig
-        from src.backend.document_index.retrieval import DenseRetrieverConfig
-        from src.backend.servers.retrieval.rerank import RerankerConfig
+        from src.internal.document_index.hybrid_retriever import HybridRetrieverConfig
+        from src.internal.document_index.retrieval import DenseRetrieverConfig
+        from src.internal.servers.retrieval.rerank import RerankerConfig
 
         config = HybridRerankConfig(
             retriever=HybridRetrieverConfig(

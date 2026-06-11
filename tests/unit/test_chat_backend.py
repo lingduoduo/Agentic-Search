@@ -1,4 +1,4 @@
-"""Unit tests for src.backend.servers.query_and_chat.chat_backend."""
+"""Unit tests for src.internal.servers.query_and_chat.chat_backend."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.backend.auth import AuthenticatedUser
-from src.backend.db import AgenticSearchStore, UserRecord
-from src.backend.servers.query_and_chat.chat_backend import create_chat_router
+from src.internal.auth import AuthenticatedUser
+from src.internal.db import AgenticSearchStore, UserRecord
+from src.internal.servers.query_and_chat.chat_backend import create_chat_router
 
 _USER_ID = "u-test-1"
 _USER = AuthenticatedUser(id=_USER_ID, email="test@example.com")
@@ -26,7 +26,7 @@ def store() -> AgenticSearchStore:
 def client(store: AgenticSearchStore, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """TestClient with a real store and a patched-in authenticated user."""
     monkeypatch.setattr(
-        "src.backend.servers.query_and_chat.chat_backend.user_from_headers",
+        "src.internal.servers.query_and_chat.chat_backend.user_from_headers",
         lambda _headers: _USER,
     )
     app = FastAPI()
@@ -40,7 +40,7 @@ def anon_client(
 ) -> TestClient:
     """TestClient where every request appears anonymous."""
     monkeypatch.setattr(
-        "src.backend.servers.query_and_chat.chat_backend.user_from_headers",
+        "src.internal.servers.query_and_chat.chat_backend.user_from_headers",
         lambda _headers: _ANON,
     )
     app = FastAPI()

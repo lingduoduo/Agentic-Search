@@ -1,0 +1,733 @@
+from __future__ import annotations
+
+import logging as _logging
+
+import json
+import re
+from collections.abc import Callable
+from typing import cast
+from uuid import UUID, uuid4
+from fastapi.datastructures import Headers
+from pydantic import BaseModel
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+from src.internal.chat.models import ChatHistoryResult
+from src.internal.chat.models import ChatLoadedFile
+from src.internal.chat.models import ChatMessageSimple
+from src.internal.chat.models import FileToolMetadata
+from src.internal.chat.models import ToolCallSimple
+from src.internal.configs.constants import DEFAULT_PERSONA_ID
+from src.internal.servers.query_history.models import MessageType
+from src.internal.document_index.models import SearchDoc
+from src.internal.db.models import ChatMessage
+from src.internal.db.models import ChatSession
+from src.internal.db.models import Persona
+from src.internal.db.models import User
+from src.internal.document_index.models import SearchDoc as DbSearchDoc
+from src.internal.file_store.models import ChatFileType
+from src.internal.file_store.models import FileDescriptor
+from src.internal.servers.query_and_chat.models import (
+    SendMessageRequest as ChatSessionCreationRequest,
+)
+from src.internal.servers.query_and_chat.streaming_models import CitationInfo
+from src.internal.tools.models import ChatFile
+from src.internal.tools.models import ToolCallKickoff
+from src.internal.prompts.chat_prompts import ADDITIONAL_CONTEXT_PROMPT
+from src.internal.prompts.chat_prompts import TOOL_CALL_FAILURE_PROMPT
+from src.internal.prompts.chat_prompts import TOOL_CALL_RESPONSE_CROSS_MESSAGE
+
+
+def setup_logger():
+    return _logging.getLogger(__name__)
+
+
+def log_function_time(print_only: bool = False):
+    """No-op timing decorator — replace with a real implementation if needed."""
+
+    def decorator(fn):
+        return fn
+
+    return decorator
+
+
+def run_functions_tuples_in_parallel(fn_args_list, max_workers=None):
+    """Run (fn, args) tuples sequentially (parallel execution requires real impl)."""
+    return [fn(*args) for fn, args in fn_args_list]
+
+
+logger = setup_logger()
+IMAGE_GENERATION_TOOL_NAME = "generate_image"
+
+
+class FileContextResult(BaseModel):
+    """Result of building a file's LLM context representation."""
+
+    message: ChatMessageSimple
+    tool_metadata: FileToolMetadata
+
+
+def build_file_context(
+    tool_file_id: str,
+    filename: str,
+    file_type: ChatFileType,
+    content_text: str | None = None,
+    token_count: int = 0,
+    approx_char_count: int | None = None,
+) -> FileContextResult:
+    """Build the LLM context representation for a single file.
+
+    Centralises how files should appear in the LLM prompt
+    — the ID that FileReaderTool accepts (``UserFile.id`` for user files).
+    """
+    if file_type.use_metadata_only():
+        message_text = (
+            f"File: {filename} (id={tool_file_id})\n"
+            "Use the file_reader or python tools to access "
+            "this file's contents."
+        )
+        message = ChatMessageSimple(
+            message=message_text,
+            token_count=max(1, len(message_text) // 4),
+            message_type=MessageType.USER,
+            file_id=tool_file_id,
+        )
+    else:
+        message_text = f"File: {filename}\n{content_text or ''}\nEnd of File"
+        message = ChatMessageSimple(
+            message=message_text,
+            token_count=token_count,
+            message_type=MessageType.USER,
+            file_id=tool_file_id,
+        )
+
+    metadata = FileToolMetadata(
+        file_id=tool_file_id,
+        filename=filename,
+        approx_char_count=(
+            approx_char_count
+            if approx_char_count is not None
+            else len(content_text or "")
+        ),
+    )
+
+    return FileContextResult(message=message, tool_metadata=metadata)
+
+
+def create_chat_session_from_request(
+    chat_session_request: ChatSessionCreationRequest,
+    user: User,
+    db_session: Session,
+) -> ChatSession:
+    """Create a chat session from a ChatSessionCreationRequest."""
+    return ChatSession(
+        id=uuid4(),
+        user_id=user.id,
+        persona_id=chat_session_request.persona_id,
+        description=chat_session_request.description or "",
+    )
+
+
+def create_chat_history_chain(
+    chat_session_id: UUID,
+    db_session: Session,
+    prefetch_top_two_level_tool_calls: bool = True,
+    prefetch_message_details: bool = False,
+    stop_at_message_id: int | None = None,
+) -> list[ChatMessage]:
+    """Build the linear chain of messages without including the root message.
+
+    Returns an empty list in this repo — no SQLAlchemy session means no persisted
+    message tree to walk. History is managed in-memory per request.
+    """
+    return []
+
+
+def reorganize_citations(
+    answer: str, citations: list[CitationInfo]
+) -> tuple[str, list[CitationInfo]]:
+    """For a complete, citation-aware response, we want to reorganize the citations so that
+    they are in the order of the documents that were used in the response. This just looks nicer / avoids
+    confusion ("Why is there [7] when only 2 documents are cited?")."""
+
+    # Regular expression to find all instances of [[x]](LINK)
+    pattern = r"\[\[(.*?)\]\]\((.*?)\)"
+
+    all_citation_matches = re.findall(pattern, answer)
+
+    new_citation_info: dict[int, CitationInfo] = {}
+    for citation_match in all_citation_matches:
+        try:
+            citation_num = int(citation_match[0])
+            if citation_num in new_citation_info:
+                continue
+
+            matching_citation = next(
+                iter([c for c in citations if c.citation_number == int(citation_num)]),
+                None,
+            )
+            if matching_citation is None:
+                continue
+
+            new_citation_info[citation_num] = CitationInfo(
+                citation_number=len(new_citation_info) + 1,
+                document_id=matching_citation.document_id,
+            )
+        except Exception:
+            pass
+
+    # Function to replace citations with their new number
+    def slack_link_format(match: re.Match) -> str:
+        link_text = match.group(1)
+        try:
+            citation_num = int(link_text)
+            if citation_num in new_citation_info:
+                link_text = new_citation_info[citation_num].citation_number
+        except Exception:
+            pass
+
+        link_url = match.group(2)
+        return f"[[{link_text}]]({link_url})"
+
+    # Substitute all matches in the input text
+    new_answer = re.sub(pattern, slack_link_format, answer)
+
+    # if any citations weren't parsable, just add them back to be safe
+    for citation in citations:
+        if citation.citation_number not in new_citation_info:
+            new_citation_info[citation.citation_number] = citation
+
+    return new_answer, list(new_citation_info.values())
+
+
+def build_citation_map_from_infos(
+    citations_list: list[CitationInfo], db_docs: list[DbSearchDoc]
+) -> dict[int, int]:
+    """Translate a list of streaming CitationInfo objects into a mapping of
+    citation number -> saved search doc DB id.
+
+    Always cites the first instance of a document_id and assumes db_docs are
+    ordered as shown to the user (display order).
+    """
+    doc_id_to_saved_doc_id_map: dict[str, int] = {}
+    for db_doc in db_docs:
+        if db_doc.document_id not in doc_id_to_saved_doc_id_map:
+            doc_id_to_saved_doc_id_map[db_doc.document_id] = db_doc.id
+
+    citation_to_saved_doc_id_map: dict[int, int] = {}
+    for citation in citations_list:
+        if citation.citation_number not in citation_to_saved_doc_id_map:
+            saved_id = doc_id_to_saved_doc_id_map.get(citation.document_id)
+            if saved_id is not None:
+                citation_to_saved_doc_id_map[citation.citation_number] = saved_id
+
+    return citation_to_saved_doc_id_map
+
+
+def build_citation_map_from_numbers(
+    cited_numbers: list[int] | set[int], db_docs: list[DbSearchDoc]
+) -> dict[int, int]:
+    """Translate parsed citation numbers (e.g., from [[n]]) into a mapping of
+    citation number -> saved search doc DB id by positional index.
+    """
+    citation_to_saved_doc_id_map: dict[int, int] = {}
+    for num in sorted(set(cited_numbers)):
+        idx = num - 1
+        if 0 <= idx < len(db_docs):
+            citation_to_saved_doc_id_map[num] = db_docs[idx].id
+
+    return citation_to_saved_doc_id_map
+
+
+def extract_headers(
+    headers: dict[str, str] | Headers, pass_through_headers: list[str] | None
+) -> dict[str, str]:
+    """
+    Extract headers specified in pass_through_headers from input headers.
+    Handles both dict and FastAPI Headers objects, accounting for lowercase keys.
+
+    Args:
+        headers: Input headers as dict or Headers object.
+
+    Returns:
+        dict: Filtered headers based on pass_through_headers.
+    """
+    if not pass_through_headers:
+        return {}
+
+    extracted_headers: dict[str, str] = {}
+    for key in pass_through_headers:
+        if key in headers:
+            extracted_headers[key] = headers[key]
+        else:
+            # fastapi makes all header keys lowercase, handling that here
+            lowercase_key = key.lower()
+            if lowercase_key in headers:
+                extracted_headers[lowercase_key] = headers[lowercase_key]
+    return extracted_headers
+
+
+def process_kg_commands(
+    message: str,
+    persona_name: str,
+    tenant_id: str,  # noqa: ARG001
+    db_session: Session,
+) -> None:
+    # KG config and setup are not available in this repo; this is a no-op.
+    return
+
+
+@log_function_time(print_only=True)
+def load_chat_file(
+    file_descriptor: FileDescriptor, db_session: Session
+) -> ChatLoadedFile:
+    """Build a ChatLoadedFile for a file descriptor.
+
+    No remote file store is available in this repo, so content is always empty.
+    The lazy loader returns empty bytes so downstream code that accesses
+    ``.content`` does not raise.
+    """
+    file_id = file_descriptor["id"]
+    file_type = ChatFileType(file_descriptor["type"])
+    filename = file_descriptor.get("name")
+
+    return ChatLoadedFile.lazy_loaded(
+        file_id=file_id,
+        file_type=file_type,
+        filename=filename,
+        content_text=None,
+        token_count=0,
+        loader=lambda: b"",
+    )
+
+
+_MAX_PARALLEL_CHAT_FILE_LOADS = 16
+
+
+def load_all_chat_files(
+    chat_messages: list[ChatMessage],
+    db_session: Session,
+) -> list[ChatLoadedFile]:
+    # Returns lazy ChatLoadedFile instances — raw bytes are not read here.
+    # Defense-in-depth: even though per-file work is now cheap (DB lookup +
+    # optional cached-plaintext fetch), cap fan-out so no future regression
+    # can re-introduce a 500-thread storm.
+    file_descriptors_for_history: list[FileDescriptor] = []
+    for chat_message in chat_messages:
+        if chat_message.files:
+            file_descriptors_for_history.extend(chat_message.files)
+
+    files = cast(
+        list[ChatLoadedFile],
+        run_functions_tuples_in_parallel(
+            [
+                (load_chat_file, (file, db_session))
+                for file in file_descriptors_for_history
+            ],
+            max_workers=_MAX_PARALLEL_CHAT_FILE_LOADS,
+        ),
+    )
+    return files
+
+
+def convert_chat_history_basic(
+    chat_history: list[ChatMessage],
+    token_counter: Callable[[str], int],
+    max_individual_message_tokens: int | None = None,
+    max_total_tokens: int | None = None,
+) -> list[ChatMessageSimple]:
+    """Convert ChatMessage history to ChatMessageSimple format with no tool calls or files included.
+
+    Args:
+        chat_history: List of ChatMessage objects to convert
+        token_counter: Function to count tokens in a message string
+        max_individual_message_tokens: If set, messages exceeding this number of tokens are dropped.
+            If None, no messages are dropped based on individual token count.
+        max_total_tokens: If set, maximum number of tokens allowed for the entire history.
+            If None, the history is not trimmed based on total token count.
+
+    Returns:
+        List of ChatMessageSimple objects
+    """
+    # Defensive: treat a non-positive total budget as "no history".
+    if max_total_tokens is not None and max_total_tokens <= 0:
+        return []
+
+    # Convert only the core USER/ASSISTANT messages; omit files and tool calls.
+    converted: list[ChatMessageSimple] = []
+    for chat_message in chat_history:
+        if chat_message.message_type not in (MessageType.USER, MessageType.ASSISTANT):
+            continue
+
+        message = chat_message.message or ""
+        token_count = getattr(chat_message, "token_count", None)
+        if token_count is None:
+            token_count = token_counter(message)
+
+        # Drop any single message that would dominate the context window.
+        if (
+            max_individual_message_tokens is not None
+            and token_count > max_individual_message_tokens
+        ):
+            continue
+
+        converted.append(
+            ChatMessageSimple(
+                message=message,
+                token_count=token_count,
+                message_type=chat_message.message_type,
+                image_files=None,
+            )
+        )
+
+    if max_total_tokens is None:
+        return converted
+
+    # Enforce a max total budget by keeping a contiguous suffix of the conversation.
+    trimmed_reversed: list[ChatMessageSimple] = []
+    total_tokens = 0
+    for msg in reversed(converted):
+        if total_tokens + msg.token_count > max_total_tokens:
+            break
+        trimmed_reversed.append(msg)
+        total_tokens += msg.token_count
+
+    return list(reversed(trimmed_reversed))
+
+
+def _build_tool_call_response_history_message(
+    tool_name: str,
+    generated_images: list[dict] | None,
+    tool_call_response: str | None,
+) -> str:
+    if tool_name != IMAGE_GENERATION_TOOL_NAME:
+        return TOOL_CALL_RESPONSE_CROSS_MESSAGE
+
+    if generated_images:
+        llm_image_context: list[dict[str, str]] = []
+        for image in generated_images:
+            file_id = image.get("file_id")
+            revised_prompt = image.get("revised_prompt")
+            if not isinstance(file_id, str):
+                continue
+
+            llm_image_context.append(
+                {
+                    "file_id": file_id,
+                    "revised_prompt": (
+                        revised_prompt if isinstance(revised_prompt, str) else ""
+                    ),
+                }
+            )
+
+        if llm_image_context:
+            return json.dumps(llm_image_context)
+
+    if tool_call_response:
+        return tool_call_response
+
+    return TOOL_CALL_RESPONSE_CROSS_MESSAGE
+
+
+def convert_chat_history(
+    chat_history: list[ChatMessage],
+    files: list[ChatLoadedFile],
+    context_image_files: list[ChatLoadedFile],
+    additional_context: str | None,
+    token_counter: Callable[[str], int],
+    tool_id_to_name_map: dict[int, str],
+) -> ChatHistoryResult:
+    """Convert ChatMessage history to ChatMessageSimple format.
+
+    For user messages: includes attached files (images attached to message, text files as separate messages)
+    For assistant messages with tool calls: creates ONE ASSISTANT message with tool_calls array,
+        followed by N TOOL_CALL_RESPONSE messages (OpenAI parallel tool calling format)
+    For assistant messages without tool calls: creates a simple ASSISTANT message
+
+    Every injected text-file message is tagged with ``file_id`` and its
+    metadata is collected in ``ChatHistoryResult.all_injected_file_metadata``.
+    After context-window truncation, callers compare surviving ``file_id`` tags
+    against this map to discover "forgotten" files and provide their metadata
+    to the FileReaderTool.
+    """
+    simple_messages: list[ChatMessageSimple] = []
+    all_injected_file_metadata: dict[str, FileToolMetadata] = {}
+
+    # Create a mapping of file IDs to loaded files for quick lookup
+    file_map = {str(f.file_id): f for f in files}
+
+    # Find the index of the last USER message
+    last_user_message_idx = None
+    for i in range(len(chat_history) - 1, -1, -1):
+        if chat_history[i].message_type == MessageType.USER:
+            last_user_message_idx = i
+            break
+
+    for idx, chat_message in enumerate(chat_history):
+        if chat_message.message_type == MessageType.USER:
+            # Process files attached to this message
+            text_files: list[tuple[ChatLoadedFile, FileDescriptor]] = []
+            image_files: list[ChatLoadedFile] = []
+
+            if chat_message.files:
+                for file_descriptor in chat_message.files:
+                    file_id = file_descriptor["id"]
+                    loaded_file = file_map.get(file_id)
+                    if loaded_file:
+                        if loaded_file.file_type == ChatFileType.IMAGE:
+                            image_files.append(loaded_file)
+                        else:
+                            # Text files (DOC, PLAIN_TEXT, TABULAR) are added as separate messages
+                            text_files.append((loaded_file, file_descriptor))
+
+            # Add text files as separate messages before the user message.
+            # Each message is tagged with ``file_id`` so that forgotten files
+            # can be detected after context-window truncation.
+            for text_file, fd in text_files:
+                # Use user_file_id as the FileReaderTool accepts that.
+                # Fall back to the file-store path id.
+                tool_id = fd.get("user_file_id") or text_file.file_id
+                filename = text_file.filename or "unknown"
+                ctx = build_file_context(
+                    tool_file_id=tool_id,
+                    filename=filename,
+                    file_type=text_file.file_type,
+                    content_text=text_file.content_text,
+                    token_count=text_file.token_count,
+                )
+                simple_messages.append(ctx.message)
+                all_injected_file_metadata[tool_id] = ctx.tool_metadata
+
+            # Sum token counts from image files (excluding project image files)
+            image_token_count = (
+                sum(img.token_count for img in image_files) if image_files else 0
+            )
+
+            # Add the user message with image files attached
+            # If this is the last USER message, also include context_image_files
+            # Note: context image file tokens are NOT counted in the token count
+            if idx == last_user_message_idx:
+                if context_image_files:
+                    image_files.extend(context_image_files)
+
+                if additional_context:
+                    simple_messages.append(
+                        ChatMessageSimple(
+                            message=ADDITIONAL_CONTEXT_PROMPT.format(
+                                additional_context=additional_context
+                            ),
+                            token_count=token_counter(additional_context),
+                            message_type=MessageType.USER,
+                            image_files=None,
+                        )
+                    )
+
+            simple_messages.append(
+                ChatMessageSimple(
+                    message=chat_message.message,
+                    token_count=chat_message.token_count + image_token_count,
+                    message_type=MessageType.USER,
+                    image_files=image_files if image_files else None,
+                )
+            )
+
+        elif chat_message.message_type == MessageType.ASSISTANT:
+            # Handle tool calls if present using OpenAI parallel tool calling format:
+            # 1. Group tool calls by turn_number
+            # 2. For each turn: ONE ASSISTANT message with tool_calls array
+            # 3. Followed by N TOOL_CALL_RESPONSE messages (one per tool call)
+            if chat_message.tool_calls:
+                # Group tool calls by turn number
+                tool_calls_by_turn: dict[int, list] = {}
+                for tool_call in chat_message.tool_calls:
+                    if tool_call.turn_number not in tool_calls_by_turn:
+                        tool_calls_by_turn[tool_call.turn_number] = []
+                    tool_calls_by_turn[tool_call.turn_number].append(tool_call)
+
+                # Sort turns and process each turn
+                for turn_number in sorted(tool_calls_by_turn.keys()):
+                    turn_tool_calls = tool_calls_by_turn[turn_number]
+                    # Sort by tool_id within the turn for consistent ordering
+                    turn_tool_calls.sort(key=lambda tc: tc.tool_id)
+
+                    # Build ToolCallSimple list for this turn
+                    tool_calls_simple: list[ToolCallSimple] = []
+                    for tool_call in turn_tool_calls:
+                        tool_name = tool_id_to_name_map.get(
+                            tool_call.tool_id, "unknown"
+                        )
+                        tool_calls_simple.append(
+                            ToolCallSimple(
+                                tool_call_id=tool_call.tool_call_id,
+                                tool_name=tool_name,
+                                tool_arguments=tool_call.tool_call_arguments or {},
+                                token_count=tool_call.tool_call_tokens,
+                            )
+                        )
+
+                    # Create ONE ASSISTANT message with all tool calls for this turn
+                    total_tool_call_tokens = sum(
+                        tc.token_count for tc in tool_calls_simple
+                    )
+                    simple_messages.append(
+                        ChatMessageSimple(
+                            message="",  # No text content when making tool calls
+                            token_count=total_tool_call_tokens,
+                            message_type=MessageType.ASSISTANT,
+                            tool_calls=tool_calls_simple,
+                            image_files=None,
+                        )
+                    )
+
+                    # Add TOOL_CALL_RESPONSE messages for each tool call in this turn
+                    for tool_call in turn_tool_calls:
+                        tool_name = tool_id_to_name_map.get(
+                            tool_call.tool_id, "unknown"
+                        )
+                        tool_response_message = (
+                            _build_tool_call_response_history_message(
+                                tool_name=tool_name,
+                                generated_images=tool_call.generated_images,
+                                tool_call_response=tool_call.tool_call_response,
+                            )
+                        )
+                        simple_messages.append(
+                            ChatMessageSimple(
+                                message=tool_response_message,
+                                token_count=(
+                                    token_counter(tool_response_message)
+                                    if tool_name == IMAGE_GENERATION_TOOL_NAME
+                                    else 20
+                                ),
+                                message_type=MessageType.TOOL_CALL_RESPONSE,
+                                tool_call_id=tool_call.tool_call_id,
+                                image_files=None,
+                            )
+                        )
+
+            # Add the assistant message itself (the final answer)
+            simple_messages.append(
+                ChatMessageSimple(
+                    message=chat_message.message,
+                    token_count=chat_message.token_count,
+                    message_type=MessageType.ASSISTANT,
+                    image_files=None,
+                )
+            )
+        else:
+            raise ValueError(
+                f"Invalid message type when constructing simple history: {chat_message.message_type}"
+            )
+
+    return ChatHistoryResult(
+        simple_messages=simple_messages,
+        all_injected_file_metadata=all_injected_file_metadata,
+    )
+
+
+def get_persona_prompt(persona: Persona, chat_session: ChatSession) -> str | None:
+    """Return the persona's system prompt or project-level instructions, or None.
+
+    Priority: persona.system_prompt (non-default persona) > chat_session.project.instructions
+
+    Returns None when the persona replaces the base system prompt entirely (handled
+    separately) or when neither source provides non-empty text.
+    """
+    if persona.id != DEFAULT_PERSONA_ID:
+        # Logic exists later also to drop it in this case but this is strictly correct anyhow.
+        if persona.replace_base_system_prompt:
+            return None
+        return persona.system_prompt or None
+
+    # If in a project and using the default Agent, respect the project instructions.
+    if chat_session.project and chat_session.project.instructions:
+        return chat_session.project.instructions
+
+    return None
+
+
+def is_last_assistant_message_clarification(chat_history: list[ChatMessage]) -> bool:
+    """Check if the last assistant message in chat history was a clarification question.
+
+    Used to determine whether to skip the clarification step when the user
+    has already responded to a clarification.
+
+    Args:
+        chat_history: List of ChatMessage objects in chronological order
+
+    Returns:
+        True if the last assistant message has is_clarification=True, False otherwise
+    """
+    for message in reversed(chat_history):
+        if message.message_type == MessageType.ASSISTANT:
+            return message.is_clarification
+    return False
+
+
+def create_tool_call_failure_messages(
+    tool_calls: list[ToolCallKickoff], token_counter: Callable[[str], int]
+) -> list[ChatMessageSimple]:
+    """Create ChatMessageSimple objects for failed tool calls.
+
+    Creates messages using OpenAI parallel tool calling format:
+    1. An ASSISTANT message with tool_calls field containing all failed tool calls
+    2. A TOOL_CALL_RESPONSE failure message for each tool call
+
+    Args:
+        tool_calls: List of ToolCallKickoff objects representing the failed tool calls
+        token_counter: Function to count tokens in a message string
+
+    Returns:
+        List containing ChatMessageSimple objects: one assistant message with all tool calls
+        followed by a failure response for each tool call
+    """
+    if not tool_calls:
+        return []
+
+    # Create ToolCallSimple for each failed tool call
+    tool_calls_simple: list[ToolCallSimple] = []
+    for tool_call in tool_calls:
+        tool_call_token_count = token_counter(tool_call.to_msg_str())
+        tool_calls_simple.append(
+            ToolCallSimple(
+                tool_call_id=tool_call.tool_call_id,
+                tool_name=tool_call.tool_name,
+                tool_arguments=tool_call.tool_args,
+                token_count=tool_call_token_count,
+            )
+        )
+
+    total_token_count = sum(tc.token_count for tc in tool_calls_simple)
+
+    # Create ONE ASSISTANT message with all tool_calls (OpenAI format)
+    assistant_msg = ChatMessageSimple(
+        message="",  # No text content when making tool calls
+        token_count=total_token_count,
+        message_type=MessageType.ASSISTANT,
+        tool_calls=tool_calls_simple,
+        image_files=None,
+    )
+
+    messages: list[ChatMessageSimple] = [assistant_msg]
+
+    # Create a TOOL_CALL_RESPONSE failure message for each tool call
+    for tool_call in tool_calls:
+        failure_response_msg = ChatMessageSimple(
+            message=TOOL_CALL_FAILURE_PROMPT,
+            token_count=50,  # Tiny overestimate
+            message_type=MessageType.TOOL_CALL_RESPONSE,
+            tool_call_id=tool_call.tool_call_id,
+            image_files=None,
+        )
+        messages.append(failure_response_msg)
+
+    return messages
+
+
+def build_python_chat_files_from_search_docs(
+    search_docs: list[SearchDoc],
+) -> list[ChatFile]:
+    """No remote file store is available in this repo; always returns an empty list."""
+    return []

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.backend.servers.middleware.license_enforcement import _load_payload
+from src.internal.servers.middleware.license_enforcement import _load_payload
 
 
 class TestIsPathAllowedForTier:
@@ -20,13 +20,13 @@ class TestIsPathAllowedForTier:
         ["/auth/callback", "/health", "/assets/app.js", "/admin/billing/checkout"],
     )
     def test_allowed_paths_pass(self, path: str) -> None:
-        from src.backend.configs import is_license_enforcement_exempt
+        from src.internal.configs import is_license_enforcement_exempt
 
         assert is_license_enforcement_exempt(path) is True
 
     @pytest.mark.parametrize("path", ["/api/chat", "/search", "/admin/connectors"])
     def test_gated_paths_are_not_exempt(self, path: str) -> None:
-        from src.backend.configs import is_license_enforcement_exempt
+        from src.internal.configs import is_license_enforcement_exempt
 
         assert is_license_enforcement_exempt(path) is False
 
@@ -50,11 +50,14 @@ class TestLicenseEnforcementMiddlewareIntegration:
     def _make_client(self, tmp_path, *, enforcement: bool = False):
         from fastapi.testclient import TestClient
 
-        from src.backend.auth import generate_user_jwt_token
-        from src.backend.configs import AppSettings, AuthSettings
-        from src.backend.db import AgenticSearchStore
-        from src.backend.db.models import UserRecord
-        from src.backend.servers.web.app import SearchExperienceSettings, create_web_app
+        from src.internal.auth import generate_user_jwt_token
+        from src.internal.configs import AppSettings, AuthSettings
+        from src.internal.db import AgenticSearchStore
+        from src.internal.db.models import UserRecord
+        from src.internal.servers.web.app import (
+            SearchExperienceSettings,
+            create_web_app,
+        )
 
         store = AgenticSearchStore(tmp_path / "db.sqlite3")
         store.upsert_user(UserRecord(id="admin", email="admin@test.local"))

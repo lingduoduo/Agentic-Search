@@ -187,7 +187,7 @@ FASTAPI_USERS_AUTH_COOKIE_NAME = "fastapiusersauth"
 DEFAULT_PERSONA_ID = 0
 PUBLIC_DOC_PAT = "__public__"
 
-# Redis / Postgres config — read from env (mirrors src.backend.configs.app_configs)
+# Redis / Postgres config — read from env (mirrors src.internal.configs.app_configs)
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB_NUMBER = int(os.getenv("REDIS_DB_NUMBER", "0"))
@@ -479,21 +479,21 @@ class UpsertUserCredentialsRequest(BaseModel):
 # Query-history models (re-exported from src for convenience)
 # ---------------------------------------------------------------------------
 
-from src.backend.servers.query_history.models import ChatSessionMinimal  # noqa: E402
-from src.backend.servers.query_history.models import ChatSessionSnapshot  # noqa: E402
+from src.internal.servers.query_history.models import ChatSessionMinimal  # noqa: E402
+from src.internal.servers.query_history.models import ChatSessionSnapshot  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Reporting models
 # ---------------------------------------------------------------------------
 
-from src.backend.servers.reporting.models import UsageReportMetadata  # noqa: E402
+from src.internal.servers.reporting.models import UsageReportMetadata  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # License models
 # ---------------------------------------------------------------------------
 
-from src.backend.servers.license.models import LicenseSource  # noqa: E402
-from src.backend.servers.license.models import PlanType  # noqa: E402
+from src.internal.servers.license.models import LicenseSource  # noqa: E402
+from src.internal.servers.license.models import PlanType  # noqa: E402
 
 
 class LicenseMetadata(BaseModel):

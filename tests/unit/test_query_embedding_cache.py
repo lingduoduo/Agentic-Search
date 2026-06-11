@@ -1,12 +1,12 @@
-"""Unit tests for src.backend.natural_language_processing.query_embedding_cache."""
+"""Unit tests for src.internal.natural_language_processing.query_embedding_cache."""
 
 from __future__ import annotations
 
 import pytest
 from shared_configs.enums import EmbeddingProvider
 
-from src.backend.cache.interface import InMemoryCache, set_cache_backend
-from src.backend.natural_language_processing.query_embedding_cache import (
+from src.internal.cache.interface import InMemoryCache, set_cache_backend
+from src.internal.natural_language_processing.query_embedding_cache import (
     _build_key,
     _safe_pack_or_none,
     _safe_unpack_or_none,
@@ -139,7 +139,7 @@ def test_empty_queries_is_noop():
 
 
 def test_get_fails_open_when_backend_raises(monkeypatch):
-    from src.backend.cache import interface
+    from src.internal.cache import interface
 
     monkeypatch.setattr(interface, "_default_cache", None)
 

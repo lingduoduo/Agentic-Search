@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.backend.document_index.index_builder import (
+from src.internal.document_index.index_builder import (
     IndexBuilder,
     IndexBuilderConfig,
     _Corpus,
@@ -211,7 +211,7 @@ class TestPooling:
     )
 
     def test_cls_pooling_returns_first_token(self):
-        from src.backend.document_index.index_builder import pooling
+        from src.internal.document_index.index_builder import pooling
 
         last_hidden = self.torch.arange(12, dtype=self.torch.float).reshape(2, 3, 2)
         result = pooling(None, last_hidden, pooling_method="cls")
@@ -219,21 +219,21 @@ class TestPooling:
         assert self.torch.allclose(result, expected)
 
     def test_pooler_pooling_returns_pooler_output(self):
-        from src.backend.document_index.index_builder import pooling
+        from src.internal.document_index.index_builder import pooling
 
         pooler_out = self.torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         result = pooling(pooler_out, None, pooling_method="pooler")
         assert self.torch.allclose(result, pooler_out)
 
     def test_mean_pooling_requires_attention_mask(self):
-        from src.backend.document_index.index_builder import pooling
+        from src.internal.document_index.index_builder import pooling
 
         last_hidden = self.torch.ones(2, 3, 4)
         with pytest.raises(ValueError, match="attention_mask"):
             pooling(None, last_hidden, attention_mask=None, pooling_method="mean")
 
     def test_mean_pooling_basic(self):
-        from src.backend.document_index.index_builder import pooling
+        from src.internal.document_index.index_builder import pooling
 
         # 1 sequence, 3 tokens, 2 dims; all tokens attended
         last_hidden = self.torch.tensor([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]])
@@ -243,7 +243,7 @@ class TestPooling:
         assert self.torch.allclose(result, expected)
 
     def test_mean_pooling_with_padding(self):
-        from src.backend.document_index.index_builder import pooling
+        from src.internal.document_index.index_builder import pooling
 
         # 2nd token is padding (mask=0)
         last_hidden = self.torch.tensor([[[1.0, 0.0], [99.0, 99.0], [3.0, 0.0]]])
@@ -253,7 +253,7 @@ class TestPooling:
         assert self.torch.allclose(result, expected)
 
     def test_invalid_pooling_method_raises(self):
-        from src.backend.document_index.index_builder import pooling
+        from src.internal.document_index.index_builder import pooling
 
         with pytest.raises(NotImplementedError):
             pooling(None, None, pooling_method="unknown")
@@ -301,10 +301,10 @@ class TestIndexBuilderInternals:
 
     def test_faiss_gpu_with_hnsw_raises_in_build_dense_index(self, monkeypatch):
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._require_faiss", lambda: object()
+            "src.internal.document_index.index_builder._require_faiss", lambda: object()
         )
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._require_torch", lambda: object()
+            "src.internal.document_index.index_builder._require_torch", lambda: object()
         )
         builder = IndexBuilder.__new__(IndexBuilder)
         builder.faiss_type = "HNSW64"
@@ -354,10 +354,10 @@ class TestIndexBuilderInternals:
         )
 
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._require_torch", lambda: object()
+            "src.internal.document_index.index_builder._require_torch", lambda: object()
         )
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._require_tqdm",
+            "src.internal.document_index.index_builder._require_tqdm",
             lambda: (lambda seq, **_: seq),
         )
 
@@ -373,7 +373,7 @@ class TestIndexBuilderInternals:
             )
 
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._encode_batch", fake_encode_batch
+            "src.internal.document_index.index_builder._encode_batch", fake_encode_batch
         )
 
         embeddings = builder.encode_all(encoder=object(), tokenizer=object())
@@ -404,10 +404,10 @@ class TestIndexBuilderInternals:
         )
 
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._require_torch", lambda: object()
+            "src.internal.document_index.index_builder._require_torch", lambda: object()
         )
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._require_tqdm",
+            "src.internal.document_index.index_builder._require_tqdm",
             lambda: (lambda seq, **_: seq),
         )
 
@@ -423,7 +423,7 @@ class TestIndexBuilderInternals:
             )
 
         monkeypatch.setattr(
-            "src.backend.document_index.index_builder._encode_batch", fake_encode_batch
+            "src.internal.document_index.index_builder._encode_batch", fake_encode_batch
         )
 
         embeddings = builder.encode_all_to_memmap(encoder=object(), tokenizer=object())

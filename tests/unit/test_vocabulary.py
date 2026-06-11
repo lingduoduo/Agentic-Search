@@ -1,6 +1,6 @@
 """Unit tests for document-index text handling."""
 
-from src.backend.document_index.text import (
+from src.internal.document_index.text import (
     EOS_token,
     SOS_token,
     Vocabulary,
@@ -11,7 +11,7 @@ from src.backend.document_index.text import (
     tokenize_document,
     tokenize_text,
 )
-from src.backend.document_index.text import TextProcessor
+from src.internal.document_index.text import TextProcessor
 
 
 class TestVocabulary:

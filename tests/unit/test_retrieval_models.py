@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.backend.document_index.models import ChunkEmbedding
-from src.backend.document_index.models import DocMetadataAwareIndexChunk
-from src.backend.document_index.models import DocumentAccess
-from src.backend.document_index.models import EmbeddedChunk
-from src.backend.document_index.models import EmbeddingModelDetail
-from src.backend.document_index.models import IndexChunk
-from src.backend.document_index.models import IndexingSetting
+from src.internal.document_index.models import ChunkEmbedding
+from src.internal.document_index.models import DocMetadataAwareIndexChunk
+from src.internal.document_index.models import DocumentAccess
+from src.internal.document_index.models import EmbeddedChunk
+from src.internal.document_index.models import EmbeddingModelDetail
+from src.internal.document_index.models import IndexChunk
+from src.internal.document_index.models import IndexingSetting
 
 
 def test_embedded_chunk_exposes_chunk_embedding_view():

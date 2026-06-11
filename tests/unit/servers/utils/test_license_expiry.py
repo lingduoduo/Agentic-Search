@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.backend.utils.license_expiry import (
+from src.internal.utils.license_expiry import (
     LICENSE_GRACE_PERIOD_DAYS,
     ExpiryWarningStage,
     get_expiry_warning_stage,
@@ -49,28 +49,28 @@ NOW = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
 def test_get_expiry_warning_stage_boundaries(
     delta: timedelta, expected: ExpiryWarningStage
 ) -> None:
-    with patch("src.backend.utils.license_expiry.datetime") as mock_dt:
+    with patch("src.internal.utils.license_expiry.datetime") as mock_dt:
         mock_dt.now.return_value = NOW
         assert get_expiry_warning_stage(NOW + delta) == expected
 
 
 def test_grace_days_remaining_full_window() -> None:
     just_expired = NOW - timedelta(seconds=1)
-    with patch("src.backend.utils.license_expiry.datetime") as mock_dt:
+    with patch("src.internal.utils.license_expiry.datetime") as mock_dt:
         mock_dt.now.return_value = NOW
         assert get_grace_days_remaining(just_expired) == LICENSE_GRACE_PERIOD_DAYS
 
 
 def test_grace_days_remaining_one_day_left() -> None:
     expires = NOW - timedelta(days=LICENSE_GRACE_PERIOD_DAYS - 1)
-    with patch("src.backend.utils.license_expiry.datetime") as mock_dt:
+    with patch("src.internal.utils.license_expiry.datetime") as mock_dt:
         mock_dt.now.return_value = NOW
         assert get_grace_days_remaining(expires) == 1
 
 
 def test_grace_days_remaining_exhausted() -> None:
     expires = NOW - timedelta(days=LICENSE_GRACE_PERIOD_DAYS)
-    with patch("src.backend.utils.license_expiry.datetime") as mock_dt:
+    with patch("src.internal.utils.license_expiry.datetime") as mock_dt:
         mock_dt.now.return_value = NOW
         assert get_grace_days_remaining(expires) == 0
 

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 
-from src.backend.connectors.models import Document
-from src.backend.document_index.index_builder import deterministic_embedding_fn
-from src.backend.servers.indexing import (
+from src.internal.connectors.models import Document
+from src.internal.document_index.index_builder import deterministic_embedding_fn
+from src.internal.servers.indexing import (
     BatchIndexingResult,
     ChunkBatchStore,
     StreamingIndexingConfig,
@@ -26,7 +26,7 @@ def _make_doc(doc_id: str, contents: str = "hello world foo bar baz") -> Documen
 
 
 def _tiny_cfg() -> StreamingIndexingConfig:
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     return StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=2, min_content_tokens=1),
@@ -41,7 +41,7 @@ def _tiny_cfg() -> StreamingIndexingConfig:
 
 
 def test_chunk_batch_store_save_and_stream():
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -126,7 +126,7 @@ def test_stream_pipeline_batch_indices_are_sequential():
 
 def test_stream_pipeline_counts_correct():
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -152,7 +152,7 @@ def test_stream_pipeline_counts_correct():
 
 def test_stream_pipeline_prefilter_empty_doc():
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -180,7 +180,7 @@ def test_stream_pipeline_prefilter_empty_doc():
 
 def test_stream_pipeline_prefilter_duplicate_doc():
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -205,7 +205,7 @@ def test_stream_pipeline_prefilter_duplicate_doc():
 
 def test_stream_pipeline_all_prefilter_failures_yields_result():
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -273,7 +273,7 @@ def test_stream_pipeline_progress_reported():
             self.events.append((tag, amount))
 
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -318,7 +318,7 @@ def test_run_pipeline_returns_aggregate():
 
 def test_run_pipeline_reports_prefilter_failures():
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -357,7 +357,7 @@ def test_run_pipeline_empty_documents():
 
 def test_run_pipeline_store_has_all_embedded_chunks():
     embed_fn = deterministic_embedding_fn(8)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),
@@ -378,7 +378,7 @@ def test_run_pipeline_store_has_all_embedded_chunks():
 def test_run_pipeline_embedded_chunk_shape():
     dim = 16
     embed_fn = deterministic_embedding_fn(dim)
-    from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+    from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
     cfg = StreamingIndexingConfig(
         chunking=ChunkingConfig(chunk_size=8, chunk_overlap=0, min_content_tokens=1),

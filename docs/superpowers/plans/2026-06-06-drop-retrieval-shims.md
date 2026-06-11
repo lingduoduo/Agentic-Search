@@ -4,7 +4,7 @@
 
 **Goal:** Delete the four zero-caller compatibility shim files from `src/retrieval/` that re-export names already accessible through canonical source modules.
 
-**Architecture:** `src/retrieval/` has four thin shims — `chunker.py`, `chunk_batch_store.py`, `indexing_pipeline.py`, `embedder.py` — that were created as bridge layers but are never imported by any code in the repo. All names they re-export are already accessible either directly from `src.retrieval.index_builder`, `src.backend.document_index.indexing`, or through the lazy `__getattr__` in `src/retrieval/__init__.py`. Deleting them is a pure subtraction with no callers to update.
+**Architecture:** `src/retrieval/` has four thin shims — `chunker.py`, `chunk_batch_store.py`, `indexing_pipeline.py`, `embedder.py` — that were created as bridge layers but are never imported by any code in the repo. All names they re-export are already accessible either directly from `src.retrieval.index_builder`, `src.internal.document_index.indexing`, or through the lazy `__getattr__` in `src/retrieval/__init__.py`. Deleting them is a pure subtraction with no callers to update.
 
 **Tech Stack:** Python 3.11, pytest, ruff, git
 
@@ -14,12 +14,12 @@
 
 | File | Lines | What it re-exports | Canonical source |
 |------|-------|-------------------|-----------------|
-| `src/retrieval/chunker.py` | 17 | `Chunker`, `chunk_document`, `chunk_documents`, `filter_indexable_documents`, `generate_large_chunks` | `src.backend.document_index.indexing` + `src.retrieval.index_builder` |
-| `src/retrieval/chunk_batch_store.py` | 7 | `ChunkBatchStore` | `src.backend.document_index.indexing` |
-| `src/retrieval/indexing_pipeline.py` | 21 | `DocumentBatchPrepareContext`, `embed_and_stream`, `filter_documents`, `index_document_batch`, `run_indexing_pipeline` | `src.backend.document_index.indexing` + `src.retrieval.index_builder` |
-| `src/retrieval/embedder.py` | 21 | `DefaultIndexingEmbedder`, `IndexingEmbedder`, `numpy_embedding_fn`, `embed_chunks`, `embed_chunks_with_failure_handling` | `src.backend.document_index.indexing` + `src.retrieval.index_builder` |
+| `src/retrieval/chunker.py` | 17 | `Chunker`, `chunk_document`, `chunk_documents`, `filter_indexable_documents`, `generate_large_chunks` | `src.internal.document_index.indexing` + `src.retrieval.index_builder` |
+| `src/retrieval/chunk_batch_store.py` | 7 | `ChunkBatchStore` | `src.internal.document_index.indexing` |
+| `src/retrieval/indexing_pipeline.py` | 21 | `DocumentBatchPrepareContext`, `embed_and_stream`, `filter_documents`, `index_document_batch`, `run_indexing_pipeline` | `src.internal.document_index.indexing` + `src.retrieval.index_builder` |
+| `src/retrieval/embedder.py` | 21 | `DefaultIndexingEmbedder`, `IndexingEmbedder`, `numpy_embedding_fn`, `embed_chunks`, `embed_chunks_with_failure_handling` | `src.internal.document_index.indexing` + `src.retrieval.index_builder` |
 
-**`src/retrieval/__init__.py` already covers all these names** — either via eager imports from `index_builder.py` or via lazy `__getattr__` redirecting to `src.backend.document_index.indexing`. No callers will break.
+**`src/retrieval/__init__.py` already covers all these names** — either via eager imports from `index_builder.py` or via lazy `__getattr__` redirecting to `src.internal.document_index.indexing`. No callers will break.
 
 ---
 
@@ -40,7 +40,7 @@ grep -rn \
   --include="*.py" | grep -v "__pycache__"
 ```
 
-Expected: **no output**. If any lines appear, update those callers to import from the canonical source (`src.retrieval.index_builder` or `src.backend.document_index.indexing`) before continuing.
+Expected: **no output**. If any lines appear, update those callers to import from the canonical source (`src.retrieval.index_builder` or `src.internal.document_index.indexing`) before continuing.
 
 - [ ] **Step 2: Delete the four files**
 
@@ -93,4 +93,4 @@ No TBD or vague steps found.
 No new types introduced.
 
 ### Out-of-scope note
-`src/retrieval/__init__.py` is **not modified** — its lazy `__getattr__` for `Chunker`, `ChunkBatchStore`, etc. still works correctly because it redirects to the canonical `src.backend.document_index.indexing`, not to the shim files.
+`src/retrieval/__init__.py` is **not modified** — its lazy `__getattr__` for `Chunker`, `ChunkBatchStore`, etc. still works correctly because it redirects to the canonical `src.internal.document_index.indexing`, not to the shim files.

@@ -17,7 +17,7 @@ from src.tools.search import SearchPage
 
 
 def test_build_web_base_url_defaults():
-    from src.backend.mcp_server.utils import build_web_base_url
+    from src.internal.mcp_server.utils import build_web_base_url
 
     with patch.dict(os.environ, {}, clear=False):
         for var in (
@@ -32,7 +32,7 @@ def test_build_web_base_url_defaults():
 
 
 def test_build_web_base_url_override():
-    from src.backend.mcp_server.utils import build_web_base_url
+    from src.internal.mcp_server.utils import build_web_base_url
 
     with patch.dict(
         os.environ,
@@ -43,7 +43,7 @@ def test_build_web_base_url_override():
 
 
 def test_build_web_base_url_custom_port():
-    from src.backend.mcp_server.utils import build_web_base_url
+    from src.internal.mcp_server.utils import build_web_base_url
 
     with patch.dict(os.environ, {"AGENTIC_SEARCH_WEB_PORT": "9999"}, clear=False):
         os.environ.pop("API_SERVER_URL_OVERRIDE_FOR_HTTP_REQUESTS", None)
@@ -57,7 +57,7 @@ def test_build_web_base_url_custom_port():
 
 
 def test_get_cors_origins_empty():
-    from src.backend.mcp_server.api import _get_cors_origins
+    from src.internal.mcp_server.api import _get_cors_origins
 
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("MCP_SERVER_CORS_ORIGINS", None)
@@ -65,7 +65,7 @@ def test_get_cors_origins_empty():
 
 
 def test_get_cors_origins_multiple():
-    from src.backend.mcp_server.api import _get_cors_origins
+    from src.internal.mcp_server.api import _get_cors_origins
 
     with patch.dict(
         os.environ,
@@ -96,10 +96,10 @@ _FAKE_PAGES = [
 
 @pytest.mark.asyncio
 async def test_search_indexed_documents_returns_results():
-    from src.backend.mcp_server.tools.search import search_indexed_documents
+    from src.internal.mcp_server.tools.search import search_indexed_documents
 
     with patch(
-        "src.backend.mcp_server.tools.search.retrieval_search",
+        "src.internal.mcp_server.tools.search.retrieval_search",
         new=AsyncMock(return_value=_FAKE_PAGES),
     ):
         result = await search_indexed_documents(query="dense retrieval")
@@ -113,10 +113,10 @@ async def test_search_indexed_documents_returns_results():
 
 @pytest.mark.asyncio
 async def test_search_indexed_documents_empty():
-    from src.backend.mcp_server.tools.search import search_indexed_documents
+    from src.internal.mcp_server.tools.search import search_indexed_documents
 
     with patch(
-        "src.backend.mcp_server.tools.search.retrieval_search",
+        "src.internal.mcp_server.tools.search.retrieval_search",
         new=AsyncMock(return_value=[]),
     ):
         result = await search_indexed_documents(query="nothing")
@@ -127,10 +127,10 @@ async def test_search_indexed_documents_empty():
 
 @pytest.mark.asyncio
 async def test_search_indexed_documents_error():
-    from src.backend.mcp_server.tools.search import search_indexed_documents
+    from src.internal.mcp_server.tools.search import search_indexed_documents
 
     with patch(
-        "src.backend.mcp_server.tools.search.retrieval_search",
+        "src.internal.mcp_server.tools.search.retrieval_search",
         new=AsyncMock(side_effect=ConnectionError("retrieval server down")),
     ):
         result = await search_indexed_documents(query="test")
@@ -146,11 +146,11 @@ async def test_search_indexed_documents_error():
 
 @pytest.mark.asyncio
 async def test_search_web_google_provider():
-    from src.backend.mcp_server.tools.search import search_web
+    from src.internal.mcp_server.tools.search import search_web
 
     with patch.dict(os.environ, {"MCP_WEB_SEARCH_PROVIDER": "google"}):
         with patch(
-            "src.backend.mcp_server.tools.search.google_custom_search",
+            "src.internal.mcp_server.tools.search.google_custom_search",
             new=AsyncMock(return_value=_FAKE_PAGES),
         ):
             result = await search_web(query="FAISS", limit=2)
@@ -162,11 +162,11 @@ async def test_search_web_google_provider():
 
 @pytest.mark.asyncio
 async def test_search_web_serpapi_provider():
-    from src.backend.mcp_server.tools.search import search_web
+    from src.internal.mcp_server.tools.search import search_web
 
     with patch.dict(os.environ, {"MCP_WEB_SEARCH_PROVIDER": "serpapi"}):
         with patch(
-            "src.backend.mcp_server.tools.search.serpapi_search",
+            "src.internal.mcp_server.tools.search.serpapi_search",
             new=AsyncMock(return_value=_FAKE_PAGES),
         ):
             result = await search_web(query="BM25")
@@ -176,7 +176,7 @@ async def test_search_web_serpapi_provider():
 
 @pytest.mark.asyncio
 async def test_search_web_filters_error_pages():
-    from src.backend.mcp_server.tools.search import search_web
+    from src.internal.mcp_server.tools.search import search_web
 
     pages_with_error = [
         SearchPage(title="OK", summary="good result", url="http://ex.com/ok"),
@@ -184,7 +184,7 @@ async def test_search_web_filters_error_pages():
     ]
     with patch.dict(os.environ, {"MCP_WEB_SEARCH_PROVIDER": "google"}):
         with patch(
-            "src.backend.mcp_server.tools.search.google_custom_search",
+            "src.internal.mcp_server.tools.search.google_custom_search",
             new=AsyncMock(return_value=pages_with_error),
         ):
             result = await search_web(query="test")
@@ -196,11 +196,11 @@ async def test_search_web_filters_error_pages():
 
 @pytest.mark.asyncio
 async def test_search_web_provider_exception():
-    from src.backend.mcp_server.tools.search import search_web
+    from src.internal.mcp_server.tools.search import search_web
 
     with patch.dict(os.environ, {"MCP_WEB_SEARCH_PROVIDER": "google"}):
         with patch(
-            "src.backend.mcp_server.tools.search.google_custom_search",
+            "src.internal.mcp_server.tools.search.google_custom_search",
             new=AsyncMock(side_effect=RuntimeError("network error")),
         ):
             result = await search_web(query="test")
@@ -216,13 +216,13 @@ async def test_search_web_provider_exception():
 
 @pytest.mark.asyncio
 async def test_open_urls_fetches_each():
-    from src.backend.mcp_server.tools.search import open_urls
+    from src.internal.mcp_server.tools.search import open_urls
 
     async def _fake_fetch(url: str, **kwargs: object) -> str:
         return f"content of {url}"
 
     with patch(
-        "src.backend.mcp_server.tools.search.fetch_url", side_effect=_fake_fetch
+        "src.internal.mcp_server.tools.search.fetch_url", side_effect=_fake_fetch
     ):
         result = await open_urls(urls=["http://a.com", "http://b.com"])
 
@@ -235,10 +235,10 @@ async def test_open_urls_fetches_each():
 
 @pytest.mark.asyncio
 async def test_open_urls_error():
-    from src.backend.mcp_server.tools.search import open_urls
+    from src.internal.mcp_server.tools.search import open_urls
 
     with patch(
-        "src.backend.mcp_server.tools.search.fetch_url",
+        "src.internal.mcp_server.tools.search.fetch_url",
         side_effect=RuntimeError("timeout"),
     ):
         result = await open_urls(urls=["http://ex.com"])
@@ -253,7 +253,7 @@ async def test_open_urls_error():
 
 @pytest.mark.asyncio
 async def test_indexed_sources_retrieval_only():
-    from src.backend.mcp_server.resources.indexed_sources import (
+    from src.internal.mcp_server.resources.indexed_sources import (
         indexed_sources_resource,
     )
 
@@ -274,7 +274,7 @@ async def test_indexed_sources_retrieval_only():
 
 @pytest.mark.asyncio
 async def test_indexed_sources_with_google():
-    from src.backend.mcp_server.resources.indexed_sources import (
+    from src.internal.mcp_server.resources.indexed_sources import (
         indexed_sources_resource,
     )
 
@@ -295,7 +295,7 @@ async def test_indexed_sources_with_google():
 
 @pytest.mark.asyncio
 async def test_document_sets_returns_empty():
-    from src.backend.mcp_server.resources.document_sets import document_sets_resource
+    from src.internal.mcp_server.resources.document_sets import document_sets_resource
 
     result = json.loads(await document_sets_resource())
     assert result == []

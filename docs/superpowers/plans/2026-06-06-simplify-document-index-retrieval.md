@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Eliminate backward-compat shims, rename a misnamed interface file, and replace a no-op timing decorator stub with a real implementation across `src/backend/document_index/` and `src/retrieval/`.
+**Goal:** Eliminate backward-compat shims, rename a misnamed interface file, and replace a no-op timing decorator stub with a real implementation across `src/internal/document_index/` and `src/retrieval/`.
 
 **Architecture:** Three focused changes with zero behavior-breaking impact: (1) delete the 15-line `vector_db_insertion.py` shim that no caller imports; (2) rename `interfaces_new.py` to `interfaces.py` and update the 8 files that import it; (3) swap the `log_function_time` no-op decorator in `utils.py` for a real `time.perf_counter` timer so the 25+ decorated methods in `client.py` actually log timing at DEBUG level. `text_processor.py` stays in `src/retrieval/` — it's correctly integrated there via `vocabulary.py` and is unrelated to the OpenSearch indexing pipeline.
 
@@ -15,27 +15,27 @@
 | Change | File |
 |--------|------|
 | Delete | `src/retrieval/vector_db_insertion.py` |
-| Modify | `src/backend/document_index/indexing.py` — remove compat alias + `__all__` entry |
-| Rename (git mv) | `src/backend/document_index/interfaces_new.py` → `interfaces.py` |
-| Update imports | `src/backend/document_index/disabled.py` |
-| Update imports | `src/backend/document_index/factory.py` |
-| Update imports | `src/backend/document_index/opensearch/client.py` |
-| Update imports | `src/backend/document_index/opensearch/opensearch_document_index.py` |
-| Update imports | `src/backend/document_index/opensearch/schema.py` |
-| Update imports | `src/backend/document_index/opensearch/search.py` |
+| Modify | `src/internal/document_index/indexing.py` — remove compat alias + `__all__` entry |
+| Rename (git mv) | `src/internal/document_index/interfaces_new.py` → `interfaces.py` |
+| Update imports | `src/internal/document_index/disabled.py` |
+| Update imports | `src/internal/document_index/factory.py` |
+| Update imports | `src/internal/document_index/opensearch/client.py` |
+| Update imports | `src/internal/document_index/opensearch/opensearch_document_index.py` |
+| Update imports | `src/internal/document_index/opensearch/schema.py` |
+| Update imports | `src/internal/document_index/opensearch/search.py` |
 | Update test | `tests/unit/document_index/test_imports.py` |
 | Update test | `tests/unit/document_index/test_disabled.py` |
-| Modify | `src/backend/document_index/utils.py` — replace `log_function_time` no-op with real timer |
+| Modify | `src/internal/document_index/utils.py` — replace `log_function_time` no-op with real timer |
 
 ---
 
 ## Task 1: Delete `vector_db_insertion.py` and the compat alias in `indexing.py`
 
-**Context:** `src/retrieval/vector_db_insertion.py` is a 15-line shim that re-exports `ChunkSink`, `write_chunks_with_backoff`, and an alias `write_chunks_to_vector_db_with_backoff` from `src/backend/document_index/indexing.py`. A full codebase grep confirms zero files import from this shim. The alias also exists inside `indexing.py` itself (line 386) and is listed in `__all__`. Both the shim file and the alias are dead code.
+**Context:** `src/retrieval/vector_db_insertion.py` is a 15-line shim that re-exports `ChunkSink`, `write_chunks_with_backoff`, and an alias `write_chunks_to_vector_db_with_backoff` from `src/internal/document_index/indexing.py`. A full codebase grep confirms zero files import from this shim. The alias also exists inside `indexing.py` itself (line 386) and is listed in `__all__`. Both the shim file and the alias are dead code.
 
 **Files:**
 - Delete: `src/retrieval/vector_db_insertion.py`
-- Modify: `src/backend/document_index/indexing.py` (lines 386, 388-403)
+- Modify: `src/internal/document_index/indexing.py` (lines 386, 388-403)
 
 - [ ] **Step 1: Confirm no imports of `vector_db_insertion`**
 
@@ -43,10 +43,10 @@
 grep -rn "vector_db_insertion\|write_chunks_to_vector_db_with_backoff" \
   --include="*.py" | grep -v "__pycache__" \
   | grep -v "src/retrieval/vector_db_insertion.py" \
-  | grep -v "src/backend/document_index/indexing.py"
+  | grep -v "src/internal/document_index/indexing.py"
 ```
 
-Expected: no output. If any lines appear, update those callers to import from `src.backend.document_index.indexing` before continuing.
+Expected: no output. If any lines appear, update those callers to import from `src.internal.document_index.indexing` before continuing.
 
 - [ ] **Step 2: Delete the shim file**
 
@@ -56,7 +56,7 @@ git rm src/retrieval/vector_db_insertion.py
 
 - [ ] **Step 3: Remove the compat alias and `__all__` entry from `indexing.py`**
 
-In `src/backend/document_index/indexing.py`, replace:
+In `src/internal/document_index/indexing.py`, replace:
 
 ```python
 write_chunks_to_vector_db_with_backoff = write_chunks_with_backoff
@@ -102,7 +102,7 @@ __all__ = [
 - [ ] **Step 4: Run linter**
 
 ```bash
-ruff check src/retrieval/ src/backend/document_index/indexing.py --fix && ruff format src/backend/document_index/indexing.py
+ruff check src/retrieval/ src/internal/document_index/indexing.py --fix && ruff format src/internal/document_index/indexing.py
 ```
 
 Expected: no errors.
@@ -118,7 +118,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/backend/document_index/indexing.py
+git add src/internal/document_index/indexing.py
 git commit -m "chore: delete vector_db_insertion compat shim and alias"
 ```
 
@@ -129,107 +129,107 @@ git commit -m "chore: delete vector_db_insertion compat shim and alias"
 **Context:** The file is named `interfaces_new.py` — a temporary suffix from when it replaced an older interface file. The "old" file is long gone, so the `_new` suffix is misleading. Eight files import from `interfaces_new`; all must be updated atomically in one commit.
 
 **Files:**
-- Rename: `src/backend/document_index/interfaces_new.py` → `src/backend/document_index/interfaces.py`
+- Rename: `src/internal/document_index/interfaces_new.py` → `src/internal/document_index/interfaces.py`
 - Update imports in: `disabled.py`, `factory.py`, `opensearch/client.py`, `opensearch/opensearch_document_index.py`, `opensearch/schema.py`, `opensearch/search.py`
 - Update tests in: `tests/unit/document_index/test_imports.py`, `tests/unit/document_index/test_disabled.py`
 
 - [ ] **Step 1: Rename the file**
 
 ```bash
-git mv src/backend/document_index/interfaces_new.py src/backend/document_index/interfaces.py
+git mv src/internal/document_index/interfaces_new.py src/internal/document_index/interfaces.py
 ```
 
 - [ ] **Step 2: Update `disabled.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import DocumentIndex
-from src.backend.document_index.interfaces_new import DocumentInsertionRecord
-from src.backend.document_index.interfaces_new import DocumentSectionRequest
-from src.backend.document_index.interfaces_new import IndexingMetadata
-from src.backend.document_index.interfaces_new import MetadataUpdateRequest
+from src.internal.document_index.interfaces_new import DocumentIndex
+from src.internal.document_index.interfaces_new import DocumentInsertionRecord
+from src.internal.document_index.interfaces_new import DocumentSectionRequest
+from src.internal.document_index.interfaces_new import IndexingMetadata
+from src.internal.document_index.interfaces_new import MetadataUpdateRequest
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import DocumentIndex
-from src.backend.document_index.interfaces import DocumentInsertionRecord
-from src.backend.document_index.interfaces import DocumentSectionRequest
-from src.backend.document_index.interfaces import IndexingMetadata
-from src.backend.document_index.interfaces import MetadataUpdateRequest
+from src.internal.document_index.interfaces import DocumentIndex
+from src.internal.document_index.interfaces import DocumentInsertionRecord
+from src.internal.document_index.interfaces import DocumentSectionRequest
+from src.internal.document_index.interfaces import IndexingMetadata
+from src.internal.document_index.interfaces import MetadataUpdateRequest
 ```
 
 - [ ] **Step 3: Update `factory.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import DocumentIndex
+from src.internal.document_index.interfaces_new import DocumentIndex
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import DocumentIndex
+from src.internal.document_index.interfaces import DocumentIndex
 ```
 
 And the deferred import inside `_build_tenant_state()`:
 ```python
-    from src.backend.document_index.interfaces_new import TenantState
+    from src.internal.document_index.interfaces_new import TenantState
 ```
 with:
 ```python
-    from src.backend.document_index.interfaces import TenantState
+    from src.internal.document_index.interfaces import TenantState
 ```
 
 - [ ] **Step 4: Update `opensearch/client.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import TenantState
+from src.internal.document_index.interfaces_new import TenantState
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import TenantState
+from src.internal.document_index.interfaces import TenantState
 ```
 
 - [ ] **Step 5: Update `opensearch/opensearch_document_index.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import DocumentIndex
-from src.backend.document_index.interfaces_new import DocumentInsertionRecord
-from src.backend.document_index.interfaces_new import DocumentSectionRequest
-from src.backend.document_index.interfaces_new import IndexingMetadata
-from src.backend.document_index.interfaces_new import MetadataUpdateRequest
-from src.backend.document_index.interfaces_new import TenantState
+from src.internal.document_index.interfaces_new import DocumentIndex
+from src.internal.document_index.interfaces_new import DocumentInsertionRecord
+from src.internal.document_index.interfaces_new import DocumentSectionRequest
+from src.internal.document_index.interfaces_new import IndexingMetadata
+from src.internal.document_index.interfaces_new import MetadataUpdateRequest
+from src.internal.document_index.interfaces_new import TenantState
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import DocumentIndex
-from src.backend.document_index.interfaces import DocumentInsertionRecord
-from src.backend.document_index.interfaces import DocumentSectionRequest
-from src.backend.document_index.interfaces import IndexingMetadata
-from src.backend.document_index.interfaces import MetadataUpdateRequest
-from src.backend.document_index.interfaces import TenantState
+from src.internal.document_index.interfaces import DocumentIndex
+from src.internal.document_index.interfaces import DocumentInsertionRecord
+from src.internal.document_index.interfaces import DocumentSectionRequest
+from src.internal.document_index.interfaces import IndexingMetadata
+from src.internal.document_index.interfaces import MetadataUpdateRequest
+from src.internal.document_index.interfaces import TenantState
 ```
 
 - [ ] **Step 6: Update `opensearch/schema.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import TenantState
+from src.internal.document_index.interfaces_new import TenantState
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import TenantState
+from src.internal.document_index.interfaces import TenantState
 ```
 
 - [ ] **Step 7: Update `opensearch/search.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import TenantState
+from src.internal.document_index.interfaces_new import TenantState
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import TenantState
+from src.internal.document_index.interfaces import TenantState
 ```
 
 - [ ] **Step 8: Update `tests/unit/document_index/test_imports.py`**
@@ -237,25 +237,25 @@ from src.backend.document_index.interfaces import TenantState
 Replace:
 ```python
 def test_interfaces_new_importable():
-    import src.backend.document_index.interfaces_new  # noqa: F401
+    import src.internal.document_index.interfaces_new  # noqa: F401
 ```
 with:
 ```python
 def test_interfaces_importable():
-    import src.backend.document_index.interfaces  # noqa: F401
+    import src.internal.document_index.interfaces  # noqa: F401
 ```
 
 - [ ] **Step 9: Update `tests/unit/document_index/test_disabled.py`**
 
 Replace:
 ```python
-from src.backend.document_index.interfaces_new import (
+from src.internal.document_index.interfaces_new import (
     IndexingMetadata,
 )
 ```
 with:
 ```python
-from src.backend.document_index.interfaces import (
+from src.internal.document_index.interfaces import (
     IndexingMetadata,
 )
 ```
@@ -271,8 +271,8 @@ Expected: no output.
 - [ ] **Step 11: Run linter**
 
 ```bash
-ruff check src/backend/document_index/ tests/unit/document_index/ --fix && \
-ruff format src/backend/document_index/ tests/unit/document_index/
+ruff check src/internal/document_index/ tests/unit/document_index/ --fix && \
+ruff format src/internal/document_index/ tests/unit/document_index/
 ```
 
 Expected: no errors.
@@ -288,13 +288,13 @@ Expected: all pass.
 - [ ] **Step 13: Commit**
 
 ```bash
-git add src/backend/document_index/interfaces.py \
-  src/backend/document_index/disabled.py \
-  src/backend/document_index/factory.py \
-  src/backend/document_index/opensearch/client.py \
-  src/backend/document_index/opensearch/opensearch_document_index.py \
-  src/backend/document_index/opensearch/schema.py \
-  src/backend/document_index/opensearch/search.py \
+git add src/internal/document_index/interfaces.py \
+  src/internal/document_index/disabled.py \
+  src/internal/document_index/factory.py \
+  src/internal/document_index/opensearch/client.py \
+  src/internal/document_index/opensearch/opensearch_document_index.py \
+  src/internal/document_index/opensearch/schema.py \
+  src/internal/document_index/opensearch/search.py \
   tests/unit/document_index/test_imports.py \
   tests/unit/document_index/test_disabled.py
 git commit -m "refactor: rename interfaces_new.py to interfaces.py"
@@ -304,12 +304,12 @@ git commit -m "refactor: rename interfaces_new.py to interfaces.py"
 
 ## Task 3: Replace `log_function_time` no-op stub with real timer
 
-**Context:** `src/backend/document_index/utils.py` defines `log_function_time` as a no-op decorator factory (it wraps functions but does nothing). This decorator is applied to 25+ methods in `opensearch/client.py`. Making it a real timer (logging elapsed time at DEBUG level) costs zero import changes and gives operators actual timing data when they set `DEBUG` logging.
+**Context:** `src/internal/document_index/utils.py` defines `log_function_time` as a no-op decorator factory (it wraps functions but does nothing). This decorator is applied to 25+ methods in `opensearch/client.py`. Making it a real timer (logging elapsed time at DEBUG level) costs zero import changes and gives operators actual timing data when they set `DEBUG` logging.
 
 The existing signature is `log_function_time(*, print_only, debug_only, include_args, include_args_subset)`. The replacement must match this signature exactly so `client.py` call sites need no changes.
 
 **Files:**
-- Modify: `src/backend/document_index/utils.py`
+- Modify: `src/internal/document_index/utils.py`
 - Modify: `tests/unit/document_index/test_types.py` (update test to assert timing is logged)
 
 - [ ] **Step 1: Write failing test**
@@ -319,7 +319,7 @@ In `tests/unit/document_index/test_types.py`, add a new test:
 ```python
 def test_log_function_time_logs_timing(caplog):
     import logging
-    from src.backend.document_index.utils import log_function_time
+    from src.internal.document_index.utils import log_function_time
 
     @log_function_time(debug_only=True)
     def slow_fn():
@@ -342,7 +342,7 @@ Expected: FAIL — `assert any(...)` is False because the no-op logs nothing.
 
 - [ ] **Step 3: Replace the `log_function_time` stub in `utils.py`**
 
-In `src/backend/document_index/utils.py`, find and replace the `log_function_time` function (the entire function body, roughly lines 100–120):
+In `src/internal/document_index/utils.py`, find and replace the `log_function_time` function (the entire function body, roughly lines 100–120):
 
 ```python
 def log_function_time(
@@ -424,7 +424,7 @@ Expected: all pass.
 - [ ] **Step 6: Run linter**
 
 ```bash
-ruff check src/backend/document_index/utils.py --fix && ruff format src/backend/document_index/utils.py
+ruff check src/internal/document_index/utils.py --fix && ruff format src/internal/document_index/utils.py
 ```
 
 Expected: no errors.
@@ -432,7 +432,7 @@ Expected: no errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/backend/document_index/utils.py tests/unit/document_index/test_types.py
+git add src/internal/document_index/utils.py tests/unit/document_index/test_types.py
 git commit -m "feat(utils): replace log_function_time no-op with real perf_counter timer"
 ```
 

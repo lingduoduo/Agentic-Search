@@ -22,7 +22,7 @@ class IndexFixture:
     def __init__(self, index_name: str | None = None) -> None:
         # index_name is accepted for backwards compat but ignored.
         del index_name
-        from src.backend.db.store import AgenticSearchStore
+        from src.internal.db.store import AgenticSearchStore
 
         self._store = AgenticSearchStore(SQLITE_DB_PATH)
 

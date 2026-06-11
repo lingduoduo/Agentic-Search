@@ -128,7 +128,7 @@ services:
     environment:
       <<: *app-env
     command: >
-      python -m src.backend.servers.retrieval.demo
+      python -m src.internal.servers.retrieval.demo
       --corpus_path /data/corpus.jsonl
       --host 0.0.0.0
       --port 8000
@@ -178,7 +178,7 @@ services:
     environment:
       <<: *app-env
     command: >
-      python -m src.backend.servers.backgroundworker.light_worker
+      python -m src.internal.servers.backgroundworker.light_worker
     volumes:
       - app_data:/data
     depends_on:
@@ -197,7 +197,7 @@ services:
     environment:
       <<: *app-env
     command: >
-      python -m src.backend.servers.backgroundworker.heavy_worker
+      python -m src.internal.servers.backgroundworker.heavy_worker
     volumes:
       - app_data:/data
     depends_on:

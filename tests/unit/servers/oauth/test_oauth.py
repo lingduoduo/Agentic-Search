@@ -6,10 +6,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.backend.auth import generate_user_jwt_token
-from src.backend.configs import AppSettings, AuthSettings
-from src.backend.servers.oauth import OAUTH_PROVIDERS, OAuthSession
-from src.backend.servers.oauth.api import create_oauth_router
+from src.internal.auth import generate_user_jwt_token
+from src.internal.configs import AppSettings, AuthSettings
+from src.internal.servers.oauth import OAUTH_PROVIDERS, OAuthSession
+from src.internal.servers.oauth.api import create_oauth_router
 
 _ADMIN_ID = "admin-user"
 

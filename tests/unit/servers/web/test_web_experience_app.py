@@ -7,14 +7,14 @@ from src.context.models import ChatMessage
 from src.context.models import ContextDocument
 from src.context.models import PromptBundle
 from src.context.models import SearchContextBundle
-from src.backend.db import AgenticSearchStore
-from src.backend.hooks import HookConfig
-from src.backend.hooks import HookPoint
-from src.backend.hooks import HookRegistry
-from src.backend.servers.web.app import SearchExperienceSettings
-from src.backend.servers.web.app import create_web_app
-from src.backend.servers.web.app import _normalize_source_provider
-from src.backend.servers.web.app import _source_providers_for
+from src.internal.db import AgenticSearchStore
+from src.internal.hooks import HookConfig
+from src.internal.hooks import HookPoint
+from src.internal.hooks import HookRegistry
+from src.internal.servers.web.app import SearchExperienceSettings
+from src.internal.servers.web.app import create_web_app
+from src.internal.servers.web.app import _normalize_source_provider
+from src.internal.servers.web.app import _source_providers_for
 
 
 def _answer_result(question: str) -> AnswerGenerationResult:
@@ -82,7 +82,7 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         return _answer_result(question)
 
     monkeypatch.setattr(
-        "src.backend.servers.web.app.answer_with_retrieval",
+        "src.internal.servers.web.app.answer_with_retrieval",
         fake_answer_with_retrieval,
     )
     store = AgenticSearchStore(tmp_path / "state.sqlite3")
@@ -129,7 +129,7 @@ def test_agent_endpoint_reuses_existing_session_history(monkeypatch, tmp_path):
         return _answer_result(question)
 
     monkeypatch.setattr(
-        "src.backend.servers.web.app.answer_with_retrieval",
+        "src.internal.servers.web.app.answer_with_retrieval",
         fake_answer_with_retrieval,
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "state.sqlite3"))
@@ -176,11 +176,11 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
         return _answer_result(question)
 
     monkeypatch.setattr(
-        "src.backend.servers.web.app.answer_with_retrieval",
+        "src.internal.servers.web.app.answer_with_retrieval",
         fake_answer_with_retrieval,
     )
     monkeypatch.setattr(
-        "src.backend.hooks.executor.urllib.request.urlopen",
+        "src.internal.hooks.executor.urllib.request.urlopen",
         lambda request, timeout: FakeHookResponse(),
     )
     registry = HookRegistry(
@@ -208,7 +208,7 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
 def test_direct_search_enriches_web_provider_content(monkeypatch):
     """Content fetching is called for serpapi/google providers, not for retrieval."""
     from src.tools.search import SearchPage
-    from src.backend.servers.web.app import _run_direct_search
+    from src.internal.servers.web.app import _run_direct_search
     import asyncio
 
     serpapi_pages = [
@@ -227,9 +227,9 @@ def test_direct_search_enriches_web_provider_content(monkeypatch):
         assert pages == serpapi_pages
         return fetched_pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+        "src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
     )
 
     docs = asyncio.run(
@@ -246,7 +246,7 @@ def test_direct_search_enriches_web_provider_content(monkeypatch):
 def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
     """Content fetching is NOT called for the local retrieval provider."""
     from src.tools.search import SearchPage
-    from src.backend.servers.web.app import _run_direct_search
+    from src.internal.servers.web.app import _run_direct_search
     import asyncio
 
     fetch_called = []
@@ -258,9 +258,9 @@ def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
         fetch_called.append(True)
         return pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+        "src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
     )
 
     asyncio.run(
@@ -277,7 +277,7 @@ def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
 def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
     """Hybrid search fetches full page content for serpapi results."""
     from src.tools.search import SearchPage
-    from src.backend.servers.web.app import _run_hybrid_search
+    from src.internal.servers.web.app import _run_hybrid_search
     import asyncio
 
     pages = [SearchPage(title="T", summary="snippet", url="https://t.test")]
@@ -289,12 +289,12 @@ def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
     async def _fake_fetch_pages(pgs, *, max_chars, timeout_seconds=10):
         return fetched
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+        "src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
     )
     monkeypatch.setattr(
-        "src.backend.servers.web.app.expand_keywords",
+        "src.internal.servers.web.app.expand_keywords",
         lambda query, llm: [],
     )
 
@@ -313,7 +313,7 @@ def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
 
 def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkeypatch):
     """Temporal variant is added to executed queries for time-sensitive queries."""
-    from src.backend.servers.web.app import _run_hybrid_search
+    from src.internal.servers.web.app import _run_hybrid_search
     from src.tools.search import SearchPage
     import asyncio
 
@@ -326,12 +326,12 @@ def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkey
     async def _fake_fetch_pages(pages, **kwargs):
         return pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+        "src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
     )
     monkeypatch.setattr(
-        "src.backend.servers.web.app.expand_keywords",
+        "src.internal.servers.web.app.expand_keywords",
         lambda query, llm: [],
     )
 
@@ -353,7 +353,7 @@ def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkey
 
 def test_hybrid_search_runs_search_tool_calls_concurrently(monkeypatch):
     """All search tool calls for expanded queries run concurrently (asyncio.gather)."""
-    from src.backend.servers.web.app import _run_hybrid_search
+    from src.internal.servers.web.app import _run_hybrid_search
     from src.tools.search import SearchPage
     import asyncio
 
@@ -366,12 +366,12 @@ def test_hybrid_search_runs_search_tool_calls_concurrently(monkeypatch):
     async def _fake_fetch_pages(pages, **kwargs):
         return pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
+        "src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages
     )
     monkeypatch.setattr(
-        "src.backend.servers.web.app.expand_keywords",
+        "src.internal.servers.web.app.expand_keywords",
         lambda query, llm: ["AI news expanded"],
     )
 

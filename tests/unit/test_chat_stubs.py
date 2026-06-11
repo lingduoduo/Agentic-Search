@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.backend.chat.process_message import (
+from src.internal.chat.process_message import (
     AppError,
     AppErrorCode,
     _provider_token_windows,
     check_llm_cost_limit_for_provider,
     verify_user_files,
 )
-from src.backend.chat.save_chat import (
+from src.internal.chat.save_chat import (
     add_search_docs_to_chat_message,
     add_search_docs_to_tool_call,
 )
@@ -60,7 +60,7 @@ def test_verify_user_files_passes_when_file_exists():
             return {"id": fid}
 
     with patch(
-        "src.backend.chat.process_message.get_default_file_store",
+        "src.internal.chat.process_message.get_default_file_store",
         return_value=_StoreWithFile(),
     ):
         verify_user_files(
@@ -150,7 +150,7 @@ def test_add_search_docs_to_tool_call_empty_list_noop():
 
 
 def test_add_search_docs_to_tool_call_sets_attr_when_available():
-    from src.backend.db.models import ToolCall
+    from src.internal.db.models import ToolCall
 
     obj = ToolCall(id=1)
     obj.search_doc_ids = []  # type: ignore[attr-defined]

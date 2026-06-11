@@ -4,7 +4,7 @@
 
 **Goal:** Expose `search_tool` and `fetch_pages_concurrently` through the `src/tools` package `__init__.py` and update the web backend to import from the package rather than directly from the module.
 
-**Architecture:** `src/tools/__init__.py` is the public interface for the tools package. Two functions (`search_tool`, `fetch_pages_concurrently`) are used by `src/backend/servers/web/app.py` but imported directly from `src.tools.search`, bypassing the package API. Adding them to `__init__.py` and updating the backend import fixes the inconsistency without changing any behavior.
+**Architecture:** `src/tools/__init__.py` is the public interface for the tools package. Two functions (`search_tool`, `fetch_pages_concurrently`) are used by `src/internal/servers/web/app.py` but imported directly from `src.tools.search`, bypassing the package API. Adding them to `__init__.py` and updating the backend import fixes the inconsistency without changing any behavior.
 
 **Tech Stack:** Python 3.12, pytest
 
@@ -15,7 +15,7 @@
 | File | Change |
 |---|---|
 | `src/tools/__init__.py` | Add two re-exports: `search_tool`, `fetch_pages_concurrently` |
-| `src/backend/servers/web/app.py` | Change `from src.tools.search import ...` → `from src.tools import ...` for these two names |
+| `src/internal/servers/web/app.py` | Change `from src.tools.search import ...` → `from src.tools import ...` for these two names |
 
 ---
 
@@ -80,7 +80,7 @@ EOF
 ## Task 2: Update the web backend to import from the package, not the module
 
 **Files:**
-- Modify: `src/backend/servers/web/app.py`
+- Modify: `src/internal/servers/web/app.py`
 
 - [ ] **Step 1: Update the three-line import block in `app.py`**
 
@@ -109,7 +109,7 @@ Expected: 1228 tests pass (same as baseline from previous session).
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/backend/servers/web/app.py
+git add src/internal/servers/web/app.py
 git commit -m "$(cat <<'EOF'
 refactor: import search_tool and fetch_pages_concurrently via src.tools package
 

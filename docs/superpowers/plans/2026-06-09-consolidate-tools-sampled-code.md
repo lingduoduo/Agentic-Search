@@ -22,7 +22,7 @@
 | `utils.py` | Imports `onyx.configs.*`, `onyx.db.*` — broken |
 | `tool_constructor.py` | Imports `onyx.*` throughout — broken |
 | `tool_runner.py` | Imports `onyx.*` throughout — broken |
-| `tool_name.py` | Standalone but unused; `src/backend/chat/llm_step.py` has its own copy |
+| `tool_name.py` | Standalone but unused; `src/internal/chat/llm_step.py` has its own copy |
 | `constants.py` | Standalone but unused; no working-code consumer |
 | `tool_implementations/` | All files import `from onyx.*` — broken |
 | `fake_tools/` | All files import `from onyx.*` — broken |
@@ -39,7 +39,7 @@
 
 ### Unaffected
 
-`src/backend/tools/` — the web-backend tool layer (`models.py`, `built_in_tools.py`, `interface.py`) has no `onyx.*` imports and is used by `src/backend/chat/`. No changes needed there.
+`src/internal/tools/` — the web-backend tool layer (`models.py`, `built_in_tools.py`, `interface.py`) has no `onyx.*` imports and is used by `src/internal/chat/`. No changes needed there.
 
 ---
 
@@ -62,7 +62,7 @@ grep -r "from.*tools\.interface\|from.*tools\.models\|from.*tools\.tool_construc
   src/ --include="*.py" | grep -v "__pycache__" | grep -v "from onyx\."
 ```
 
-Expected: output matches only the sampled files themselves cross-referencing each other (no hits inside `src/agents/`, `src/backend/`, or `src/context/`).
+Expected: output matches only the sampled files themselves cross-referencing each other (no hits inside `src/agents/`, `src/internal/`, or `src/context/`).
 
 - [ ] **Step 3: Commit baseline marker**
 

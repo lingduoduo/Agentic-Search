@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from src.backend.feature_flags import EnvFeatureFlagProvider
-from src.backend.feature_flags import PostHogFeatureFlagProvider
-from src.backend.feature_flags import StaticFeatureFlagProvider
-from src.backend.feature_flags import get_feature_flag_provider
-from src.backend.feature_flags import is_feature_enabled
-from src.backend.feature_flags import normalize_flag_key
+from src.internal.feature_flags import EnvFeatureFlagProvider
+from src.internal.feature_flags import PostHogFeatureFlagProvider
+from src.internal.feature_flags import StaticFeatureFlagProvider
+from src.internal.feature_flags import get_feature_flag_provider
+from src.internal.feature_flags import is_feature_enabled
+from src.internal.feature_flags import normalize_flag_key
 
 
 def test_env_feature_flags_use_agentic_and_fallback_prefixes():

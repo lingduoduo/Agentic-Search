@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from src.backend.document_index.models import (
+from src.internal.document_index.models import (
     QueryType,
     Embedding,
     InferenceChunk,
@@ -93,7 +93,7 @@ def test_external_access_defaults():
 
 
 def test_constants_importable():
-    from src.backend.configs.constants import (
+    from src.internal.configs.constants import (
         PUBLIC_DOC_PAT,
         RETURN_SEPARATOR,
         INDEX_SEPARATOR,
@@ -107,7 +107,7 @@ def test_constants_importable():
 
 
 def test_vector_db_settings_defaults():
-    from src.backend.configs.app_configs import VectorDbSettings
+    from src.internal.configs.app_configs import VectorDbSettings
 
     s = VectorDbSettings()
     assert s.disable_vector_db is False
@@ -116,14 +116,14 @@ def test_vector_db_settings_defaults():
 
 
 def test_vector_db_settings_custom():
-    from src.backend.configs.app_configs import VectorDbSettings
+    from src.internal.configs.app_configs import VectorDbSettings
 
     s = VectorDbSettings(disable_vector_db=True)
     assert s.disable_vector_db is True
 
 
 def test_utils_importable():
-    from src.backend.document_index.utils import (
+    from src.internal.document_index.utils import (
         setup_logger,
         batch_generator,
         remove_invalid_unicode_chars,
@@ -141,7 +141,7 @@ def test_utils_importable():
 
 
 def test_batch_generator():
-    from src.backend.document_index.utils import batch_generator
+    from src.internal.document_index.utils import batch_generator
 
     items = list(range(10))
     batches = list(batch_generator(items, 3))
@@ -149,21 +149,21 @@ def test_batch_generator():
 
 
 def test_batch_generator_exact():
-    from src.backend.document_index.utils import batch_generator
+    from src.internal.document_index.utils import batch_generator
 
     batches = list(batch_generator([1, 2, 3], 3))
     assert batches == [[1, 2, 3]]
 
 
 def test_remove_invalid_unicode_chars():
-    from src.backend.document_index.utils import remove_invalid_unicode_chars
+    from src.internal.document_index.utils import remove_invalid_unicode_chars
 
     assert remove_invalid_unicode_chars("hello\x00world") == "helloworld"
     assert remove_invalid_unicode_chars("normal text") == "normal text"
 
 
 def test_convert_metadata_list_of_strings_to_dict():
-    from src.backend.document_index.utils import (
+    from src.internal.document_index.utils import (
         convert_metadata_list_of_strings_to_dict,
     )
 
@@ -172,7 +172,7 @@ def test_convert_metadata_list_of_strings_to_dict():
 
 
 def test_convert_metadata_dict_passthrough():
-    from src.backend.document_index.utils import (
+    from src.internal.document_index.utils import (
         convert_metadata_list_of_strings_to_dict,
     )
 
@@ -181,7 +181,7 @@ def test_convert_metadata_dict_passthrough():
 
 
 def test_split_relationship_id():
-    from src.backend.document_index.utils import split_relationship_id
+    from src.internal.document_index.utils import split_relationship_id
 
     source, rel, target = split_relationship_id("doc1:RELATED:doc2")
     assert source == "doc1"
@@ -190,14 +190,14 @@ def test_split_relationship_id():
 
 
 def test_redis_shared_lock_no_raise():
-    from src.backend.document_index.utils import redis_shared_lock
+    from src.internal.document_index.utils import redis_shared_lock
 
     with redis_shared_lock("test"):
         pass  # must not raise
 
 
 def test_get_shared_kv_store_interface():
-    from src.backend.document_index.utils import get_shared_kv_store
+    from src.internal.document_index.utils import get_shared_kv_store
 
     kv = get_shared_kv_store()
     assert kv.get("k") is None
@@ -207,7 +207,7 @@ def test_get_shared_kv_store_interface():
 
 def test_log_function_time_logs_timing(caplog):
     import logging
-    from src.backend.document_index.utils import log_function_time
+    from src.internal.document_index.utils import log_function_time
 
     @log_function_time(debug_only=True)
     def slow_fn():
@@ -225,7 +225,7 @@ def test_log_function_time_logs_timing(caplog):
 
 def test_log_function_time_logs_info_when_not_debug_only(caplog):
     import logging
-    from src.backend.document_index.utils import log_function_time
+    from src.internal.document_index.utils import log_function_time
 
     @log_function_time(debug_only=False)
     def info_fn():

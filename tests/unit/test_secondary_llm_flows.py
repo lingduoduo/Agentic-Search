@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from src.context.models import ChatMessage
-from src.backend.servers.secondary_llm_flows import classify_is_search_flow
-from src.backend.servers.secondary_llm_flows import expand_keywords
-from src.backend.servers.secondary_llm_flows.query_expansion import _clean_keyword_line
-from src.backend.servers.secondary_llm_flows.query_expansion import is_time_sensitive
-from src.backend.servers.secondary_llm_flows.query_expansion import (
+from src.internal.servers.secondary_llm_flows import classify_is_search_flow
+from src.internal.servers.secondary_llm_flows import expand_keywords
+from src.internal.servers.secondary_llm_flows.query_expansion import _clean_keyword_line
+from src.internal.servers.secondary_llm_flows.query_expansion import is_time_sensitive
+from src.internal.servers.secondary_llm_flows.query_expansion import (
     with_temporal_context,
 )
 
@@ -81,7 +81,7 @@ def test_expand_keywords_returns_empty_on_llm_exception():
 
 
 def test_expand_keywords_includes_prompt_in_llm_call():
-    from src.backend.prompts.query_expansion import KEYWORD_EXPANSION_PROMPT
+    from src.internal.prompts.query_expansion import KEYWORD_EXPANSION_PROMPT
 
     llm = _FakeLLM("keyword")
     expand_keywords("my query", llm)
@@ -114,7 +114,7 @@ def test_classify_is_search_flow_defaults_to_false_on_unexpected_response():
 
 
 def test_classify_is_search_flow_includes_query_in_prompt():
-    from src.backend.prompts.search_flow_classification import SEARCH_CHAT_PROMPT
+    from src.internal.prompts.search_flow_classification import SEARCH_CHAT_PROMPT
 
     llm = _FakeLLM("search")
     classify_is_search_flow("my question", llm)

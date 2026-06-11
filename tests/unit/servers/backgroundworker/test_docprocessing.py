@@ -5,14 +5,14 @@ from __future__ import annotations
 from unittest.mock import patch
 import numpy as np
 
-from src.backend.connectors.models import Document
-from src.backend.db.store import AgenticSearchStore
-from src.backend.servers.backgroundworker.docprocessing import (
+from src.internal.connectors.models import Document
+from src.internal.db.store import AgenticSearchStore
+from src.internal.servers.backgroundworker.docprocessing import (
     DocprocessingWorker,
     DocprocessingConfig,
 )
-from src.backend.document_index import DefaultIndexingEmbedder
-from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+from src.internal.document_index import DefaultIndexingEmbedder
+from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
 
 def test_process_batch_uses_bulk_upsert(tmp_path):

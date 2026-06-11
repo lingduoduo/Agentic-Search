@@ -90,7 +90,7 @@ Expected: `ModuleNotFoundError` — `src/cli/_auth` does not exist yet.
 # src/cli/_auth.py
 from __future__ import annotations
 
-from src.backend.auth import generate_user_jwt_token
+from src.internal.auth import generate_user_jwt_token
 
 
 def resolve_token(
@@ -640,10 +640,10 @@ Expected: no new failures. If failures exist in pre-existing tests, investigate 
 
 ```bash
 # Terminal 1 — retrieval server
-python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl &
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl &
 
 # Terminal 2 — web backend
-uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860 &
+uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860 &
 
 sleep 3
 curl -s http://localhost:7860/health
@@ -654,7 +654,7 @@ Expected: `{"status":"ok"}`
 
 ```bash
 python3 - <<'EOF'
-from src.backend.auth import generate_user_jwt_token
+from src.internal.auth import generate_user_jwt_token
 print(generate_user_jwt_token(user_id="dev-user", email="dev@local"))
 EOF
 ```

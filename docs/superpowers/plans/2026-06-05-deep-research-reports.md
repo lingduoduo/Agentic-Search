@@ -15,7 +15,7 @@
 | File | Change |
 |------|--------|
 | `src/agents/deep_research.py` | Create: all agent code — models, prompts, parsers, `DeepResearchAgent` |
-| `src/backend/servers/web/app.py` | Add `"deep_report"` to `_VALID_AGENT_MODES`; handle in `run_agent()` |
+| `src/internal/servers/web/app.py` | Add `"deep_report"` to `_VALID_AGENT_MODES`; handle in `run_agent()` |
 | `tests/unit/test_deep_research.py` | Create: full unit test suite |
 
 ---
@@ -728,7 +728,7 @@ git commit -m "feat: add DeepResearchAgent.run() with section assembly and cross
 Add `"deep_report"` as a valid agent mode in `app.py`. The handler calls `DeepResearchAgent.run()` and maps the result into the existing `AgentExperienceResponse` shape — no new endpoint or response type needed.
 
 **Files:**
-- Modify: `src/backend/servers/web/app.py`
+- Modify: `src/internal/servers/web/app.py`
 - Modify: `tests/unit/servers/test_web_app_agent.py` (if it exists — check first; add a new test file if not)
 
 - [ ] **Step 1: Check whether a web-app agent test file exists**
@@ -753,7 +753,7 @@ from fastapi.testclient import TestClient
 
 from src.agents.deep_research import DeepResearchConfig, DeepResearchResult, ResearchPlan, ReportSection, SectionSpec
 from src.context.models import ContextDocument, SearchContextBundle
-from src.backend.servers.web.app import create_web_app
+from src.internal.servers.web.app import create_web_app
 
 
 def _make_research_result() -> DeepResearchResult:
@@ -778,7 +778,7 @@ def test_deep_report_mode_returns_full_report():
     mock_result = _make_research_result()
 
     with patch(
-        "src.backend.servers.web.app.DeepResearchAgent"
+        "src.internal.servers.web.app.DeepResearchAgent"
     ) as MockAgent:
         mock_instance = MagicMock()
         mock_instance.run = AsyncMock(return_value=mock_result)
@@ -805,7 +805,7 @@ Expected: FAIL — `422 Unprocessable Entity` because `"deep_report"` is not a v
 
 - [ ] **Step 4: Add the import and mode to `app.py`**
 
-At the top of `src/backend/servers/web/app.py`, add the import after the existing agent imports:
+At the top of `src/internal/servers/web/app.py`, add the import after the existing agent imports:
 
 ```python
 from src.agents.deep_research import DeepResearchAgent, DeepResearchConfig
@@ -825,7 +825,7 @@ _VALID_AGENT_MODES = {
 
 - [ ] **Step 5: Add the `deep_report` handler block in `run_agent()`**
 
-In `src/backend/servers/web/app.py`, insert the following block inside `run_agent()`, immediately after the `if mode == "chat_loop":` block (around line 461 in the current file, before the `result = await answer_with_retrieval(...)` call):
+In `src/internal/servers/web/app.py`, insert the following block inside `run_agent()`, immediately after the `if mode == "chat_loop":` block (around line 461 in the current file, before the `result = await answer_with_retrieval(...)` call):
 
 ```python
             if mode == "deep_report":
@@ -875,7 +875,7 @@ Expected: ALL PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/agents/deep_research.py src/backend/servers/web/app.py tests/unit/test_web_app_agent.py
+git add src/agents/deep_research.py src/internal/servers/web/app.py tests/unit/test_web_app_agent.py
 git commit -m "feat: wire deep_report agent mode into web API"
 ```
 
@@ -904,7 +904,7 @@ Expected: No errors.
 Start the demo retrieval server in a separate terminal:
 
 ```bash
-python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 ```
 
 Then in the project root:

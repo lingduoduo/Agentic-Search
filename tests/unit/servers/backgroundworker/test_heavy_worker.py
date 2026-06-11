@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from src.backend.db.models import ConnectorConfig, DocumentPermission, StoredDocument
-from src.backend.db.store import AgenticSearchStore
-from src.backend.servers.backgroundworker.heavy_worker import (
+from src.internal.db.models import ConnectorConfig, DocumentPermission, StoredDocument
+from src.internal.db.store import AgenticSearchStore
+from src.internal.servers.backgroundworker.heavy_worker import (
     HeavyWorker,
     PruneConnectorTask,
     SyncDocPermissionsTask,
