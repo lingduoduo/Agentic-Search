@@ -1,9 +1,9 @@
-import json
 from typing import Any
 from typing import Optional
 from typing import Type
 
 from pydantic import BaseModel
+from pydantic import TypeAdapter
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import TypeDecorator
 
@@ -15,7 +15,7 @@ class PydanticType(TypeDecorator):
         self, pydantic_model: Type[BaseModel], *args: Any, **kwargs: Any
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.pydantic_model = pydantic_model
+        self._adapter: TypeAdapter[BaseModel] = TypeAdapter(pydantic_model)
 
     def process_bind_param(
         self,
@@ -23,7 +23,7 @@ class PydanticType(TypeDecorator):
         dialect: Any,  # noqa: ARG002
     ) -> Optional[dict]:
         if value is not None:
-            return json.loads(value.model_dump_json())
+            return self._adapter.dump_python(value, mode="json")
         return None
 
     def process_result_value(
@@ -32,7 +32,7 @@ class PydanticType(TypeDecorator):
         dialect: Any,  # noqa: ARG002
     ) -> Optional[BaseModel]:
         if value is not None:
-            return self.pydantic_model.model_validate(value)
+            return self._adapter.validate_python(value)
         return None
 
 
@@ -43,7 +43,7 @@ class PydanticListType(TypeDecorator):
         self, pydantic_model: Type[BaseModel], *args: Any, **kwargs: Any
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.pydantic_model = pydantic_model
+        self._adapter: TypeAdapter[list[BaseModel]] = TypeAdapter(list[pydantic_model])
 
     def process_bind_param(
         self,
@@ -51,7 +51,7 @@ class PydanticListType(TypeDecorator):
         dialect: Any,  # noqa: ARG002
     ) -> Optional[list[dict]]:
         if value is not None:
-            return [json.loads(item.model_dump_json()) for item in value]
+            return self._adapter.dump_python(value, mode="json")
         return None
 
     def process_result_value(
@@ -60,5 +60,5 @@ class PydanticListType(TypeDecorator):
         dialect: Any,  # noqa: ARG002
     ) -> Optional[list[BaseModel]]:
         if value is not None:
-            return [self.pydantic_model.model_validate(item) for item in value]
+            return self._adapter.validate_python(value)
         return None

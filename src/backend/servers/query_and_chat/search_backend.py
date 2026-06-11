@@ -14,7 +14,6 @@ This implementation uses the repo's own types:
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncGenerator
 
@@ -133,7 +132,7 @@ def create_search_router(
                 queries_packet = SearchQueriesPacket(
                     all_executed_queries=[body.search_query]
                 )
-                yield json.dumps(queries_packet.model_dump()) + "\n"
+                yield queries_packet.model_dump_json() + "\n"
 
                 result = await _run()
 
@@ -142,7 +141,7 @@ def create_search_router(
                     updated = SearchQueriesPacket(
                         all_executed_queries=result.executed_queries
                     )
-                    yield json.dumps(updated.model_dump()) + "\n"
+                    yield updated.model_dump_json() + "\n"
 
                 docs_packet = SearchDocsPacket(
                     search_docs=[
@@ -150,13 +149,13 @@ def create_search_router(
                         for r in result.results
                     ]
                 )
-                yield json.dumps(docs_packet.model_dump()) + "\n"
+                yield docs_packet.model_dump_json() + "\n"
             except Exception as exc:
                 logger.exception(
                     "Streaming search failed for query: %r", body.search_query
                 )
                 error_packet = SearchErrorPacket(error=str(exc))
-                yield json.dumps(error_packet.model_dump()) + "\n"
+                yield error_packet.model_dump_json() + "\n"
 
         return StreamingResponse(_stream_generator(), media_type="application/x-ndjson")
 
