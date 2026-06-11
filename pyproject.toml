@@ -47,6 +47,6 @@ markers = [
 ]
 filterwarnings = [
     "ignore:Please use `import python_multipart` instead\\.:PendingDeprecationWarning:starlette\\.formparsers",
-    "ignore::requests.exceptions.RequestsDependencyWarning",
+    "ignore:urllib3.*or chardet.*doesn't match a supported version",
     "ignore:Using `httpx` with `starlette\\.testclient` is deprecated.*:DeprecationWarning",
 ]
