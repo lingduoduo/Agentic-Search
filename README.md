@@ -649,7 +649,6 @@ uvicorn src.internal.mcp_server.api:mcp_app --port 8090
 | `search_web` | Web search via Google Custom Search or SerpAPI |
 | `open_urls` | Fetch full page text from a list of URLs |
 | `ask_agentic_search` | Full `SearchAgentLoop` answer with citations |
-| `deep_research` | Multi-round iterative RAG via `AgenticRAGLoop` |
 | `retrieve_documents` | Raw retrieval — returns full document content and relevance scores |
 | `expand_query` | Query decomposition and HyDE expansion |
 
