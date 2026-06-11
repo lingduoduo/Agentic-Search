@@ -104,6 +104,7 @@ Requires Python 3.10+.
 conda activate agentic-search-local
 pip install -e .          # one-time; makes src importable as a package
 pip install -r requirements.txt
+pip install -e ".[mcp]"   # optional: MCP server (fastmcp, httpx2)
 ```
 
 For BM25, Java must be available. On Apple Silicon, install FAISS via conda:
@@ -519,9 +520,10 @@ value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
 
 The MCP server exposes Agentic Search capabilities as [Model Context Protocol](https://modelcontextprotocol.io/) tools, letting any MCP-compatible client (Claude Desktop, Cursor, etc.) query your knowledge base directly.
 
-**Start the server** (requires `MCP_SERVER_ENABLED=true`):
+**Start the server** (requires the `mcp` extra and `MCP_SERVER_ENABLED=true`):
 
 ```bash
+pip install -e ".[mcp]"   # fastmcp + httpx2
 MCP_SERVER_ENABLED=true uvicorn src.internal.mcp_server.api:app --port 8090
 ```
 
