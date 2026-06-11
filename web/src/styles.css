@@ -767,3 +767,177 @@ option:disabled,
   background: var(--accent);
   color: #fff;
 }
+
+/* ── Connector Panel ─────────────────────────────────────────────── */
+
+.connector-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 0 0 20px;
+}
+
+.connector-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.connector-panel-header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.connector-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.connector-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--line);
+  font-weight: 600;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+.connector-table td {
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.connector-row.disabled td {
+  opacity: 0.5;
+}
+
+.connector-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.connector-source {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.connector-meta {
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.connector-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.connector-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.connector-badge[data-tone="good"] { background: #d1fae5; color: #065f46; }
+.connector-badge[data-tone="bad"] { background: #fee2e2; color: #991b1b; }
+.connector-badge[data-tone="active"] { background: #dbeafe; color: #1e40af; }
+.connector-badge[data-tone="neutral"] { background: #f3f4f6; color: #4b5563; }
+
+.connector-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px 0;
+  font-size: 0.9rem;
+}
+
+/* Add connector form */
+
+.add-connector-form {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.add-connector-form h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.form-error {
+  color: var(--rose);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Shared button variants */
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.btn-sm {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+}
+
+.btn-danger {
+  color: var(--rose);
+  border-color: var(--rose);
+}
+
+.btn-run {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-run:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
