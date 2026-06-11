@@ -77,15 +77,6 @@ from .internal.connectors import SlimConnectorWithPermSync as SlimConnectorWithP
 from .internal.connectors import SlimDocument as SlimDocument
 from .internal.connectors import StaticCredentialsProvider as StaticCredentialsProvider
 from .internal.connectors import batched as batched
-from .internal.db import AgenticSearchStore as AgenticSearchStore
-from .internal.db import ChatMessageRecord as ChatMessageRecord
-from .internal.db import ChatSessionRecord as ChatSessionRecord
-from .internal.db import ConnectorConfig as ConnectorConfig
-from .internal.db import DocumentPermission as DocumentPermission
-from .internal.db import GroupRecord as GroupRecord
-from .internal.db import IndexAttemptRecord as IndexAttemptRecord
-from .internal.db import StoredDocument as StoredDocument
-from .internal.db import UserRecord as UserRecord
 from .context.retrieval.client import SearchClient as SearchClient
 from .context.retrieval.client import SearchClientConfig as SearchClientConfig
 from .context.search import AgentContext as AgentContext
@@ -362,6 +353,16 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "HookSkipped": (".backend.hooks", "HookSkipped"),
     "HookSoftFailed": (".backend.hooks", "HookSoftFailed"),
     "execute_hook": (".backend.hooks", "execute_hook"),
+    # internal.db
+    "AgenticSearchStore": (".internal.db", "AgenticSearchStore"),
+    "ChatMessageRecord": (".internal.db", "ChatMessageRecord"),
+    "ChatSessionRecord": (".internal.db", "ChatSessionRecord"),
+    "ConnectorConfig": (".internal.db", "ConnectorConfig"),
+    "DocumentPermission": (".internal.db", "DocumentPermission"),
+    "GroupRecord": (".internal.db", "GroupRecord"),
+    "IndexAttemptRecord": (".internal.db", "IndexAttemptRecord"),
+    "StoredDocument": (".internal.db", "StoredDocument"),
+    "UserRecord": (".internal.db", "UserRecord"),
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
     "RolloutResult": (".training.ppo.controller", "RolloutResult"),
