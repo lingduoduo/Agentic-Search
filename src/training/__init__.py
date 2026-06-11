@@ -1,9 +1,17 @@
+from .grpo import GRPOAdvantageConfig as GRPOAdvantageConfig
 from .grpo import PromptGroupSamplingConfig as PromptGroupSamplingConfig
+from .grpo import compute_dapo_advantages as compute_dapo_advantages
+from .grpo import compute_grpo_outcome_advantage as compute_grpo_outcome_advantage
 from .grpo import score_prompt_group as score_prompt_group
 from .ppo import PPORewardManager as PPORewardManager
+from .ppo import compute_gae_advantages as compute_gae_advantages
+from .ppo import compute_grpo_policy_loss as compute_grpo_policy_loss
 from .reward import BatchJudgeFn as BatchJudgeFn
+from .reward import CompositeRewardConfig as CompositeRewardConfig
 from .reward import JudgeFn as JudgeFn
 from .reward import SearchRewardFunction as SearchRewardFunction
+from .reward import format_compliance_reward as format_compliance_reward
+from .reward import token_f1_score as token_f1_score
 from .sft import SFTExample as SFTExample
 from .sft import build_search_sft_example as build_search_sft_example
 from .data import PromptBatch as PromptBatch

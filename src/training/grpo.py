@@ -49,10 +49,39 @@ class ScoredGRPORollout:
 
 @dataclass(frozen=True)
 class GRPOAdvantageConfig:
-    """How grouped rollout rewards are converted into training advantages."""
+    """How grouped rollout rewards are converted into training advantages.
+
+    Modes
+    -----
+    ``group_outcome``
+        Mean-center within the group; no std normalization.  The original
+        DeepSeek-R1 / GRPO formulation.
+    ``group_std_normalized``
+        Mean-center **and** divide by within-group std + ε.  Reduces gradient
+        variance at the cost of scaling information.
+    ``reinforce_baseline``
+        Alias for ``group_outcome``.  Uses the within-group mean as a running
+        baseline, matching the classical REINFORCE-with-baseline update.
+    ``dapo``
+        Direct Advantage Policy Optimization (DAPO / Dr. GRPO): reward is used
+        as the advantage without any group normalization.  Suitable when group
+        sizes are very small (G=1 or G=2) or when within-group variance is
+        already low.
+
+    Clipping and scaling
+    --------------------
+    ``reward_scale``
+        Multiply each raw reward before advantage computation.
+    ``clip_range``
+        If set, advantages are clipped to ``[-clip_range, clip_range]`` after
+        normalization.  Prevents extreme advantages from dominating gradient
+        updates.
+    """
 
     mode: str = "group_std_normalized"
     reward_component: str = "total"
+    reward_scale: float = 1.0
+    clip_range: float | None = None
 
     @classmethod
     def outcome_only(cls) -> "GRPOAdvantageConfig":
@@ -83,6 +112,50 @@ class GRPOAdvantageConfig:
         :meth:`outcome_only` and pass ``SearchRewardConfig.sparse_final_only()``.
         """
         return cls(mode="group_std_normalized", reward_component="total")
+
+    @classmethod
+    def reinforce_with_baseline(
+        cls,
+        *,
+        reward_component: str = "total",
+    ) -> "GRPOAdvantageConfig":
+        """Preset for REINFORCE with within-group mean as baseline.
+
+        Identical to ``outcome_only`` but uses the full shaped reward by
+        default instead of the terminal-only score.  The within-group mean
+        acts as a control variate that reduces variance without std scaling.
+
+            A_i = r_i - mean(group_rewards)
+
+        Choose this over :meth:`std_normalized` when you want the magnitude
+        of the advantages to reflect actual reward differences (std scaling
+        can suppress useful gradient signal when group variance is low).
+        """
+        return cls(mode="reinforce_baseline", reward_component=reward_component)
+
+    @classmethod
+    def dapo(
+        cls,
+        *,
+        reward_component: str = "total",
+        clip_range: float | None = 1.0,
+    ) -> "GRPOAdvantageConfig":
+        """Preset for DAPO / Dr. GRPO: reward directly as advantage.
+
+        No group centering, no std normalization — each rollout's reward is
+        used as its own advantage.  Apply ``clip_range`` to prevent outlier
+        rewards from producing excessively large gradient steps.
+
+            A_i = clip(reward_i, -clip_range, +clip_range)
+
+        Use this when:
+        - Group size G=1 or G=2 makes within-group statistics unreliable.
+        - You have an absolute reward scale you want to preserve.
+        - You want to debug reward shapes without group-normalization masking.
+        """
+        return cls(
+            mode="dapo", reward_component=reward_component, clip_range=clip_range
+        )
 
 
 def build_grpo_sampling_params(
@@ -225,17 +298,17 @@ def score_prompt_group(
     reward_components: list[dict[str, float]] = []
     group_ids: list[str] = []
 
+    reward_scale = float(resolved_advantage_config.reward_scale)
     for sample, correctness in zip(samples, correctness_scores):
         components = reward_function._reward_components_from_correctness(
             sample.output, correctness
         )
         reward_components.append(components)
-        rewards.append(
-            _select_reward_component(
-                components,
-                component=resolved_advantage_config.reward_component,
-            )
+        raw_reward = _select_reward_component(
+            components,
+            component=resolved_advantage_config.reward_component,
         )
+        rewards.append(raw_reward * reward_scale)
         group_ids.append(sample.group_id)
 
     advantages = _compute_advantages(
@@ -243,6 +316,7 @@ def score_prompt_group(
         rewards,
         group_ids,
         mode=resolved_advantage_config.mode,
+        clip_range=resolved_advantage_config.clip_range,
     )
     return [
         ScoredGRPORollout(
@@ -279,6 +353,29 @@ def compute_grpo_outcome_advantage(rewards: list[float]) -> list[float]:
     return [reward - mean for reward in rewards]
 
 
+def compute_dapo_advantages(
+    rewards: list[float],
+    *,
+    clip_range: float | None = None,
+) -> list[float]:
+    """DAPO / Dr. GRPO advantages: reward used directly, no group normalization.
+
+    Each rollout's reward is its own advantage.  Useful when group sizes are
+    too small for reliable within-group statistics (G=1 or G=2).
+
+    Args:
+        rewards: Raw scalar rewards, one per rollout.
+        clip_range: If given, clip advantages to ``[-clip_range, +clip_range]``.
+
+    Returns:
+        Advantages aligned with *rewards*.
+    """
+    if clip_range is not None:
+        lo, hi = -float(clip_range), float(clip_range)
+        return [max(lo, min(hi, float(r))) for r in rewards]
+    return [float(r) for r in rewards]
+
+
 def _select_reward_component(
     reward_components: dict[str, float],
     *,
@@ -300,16 +397,25 @@ def _compute_advantages(
     group_ids: list[str],
     *,
     mode: str,
+    clip_range: float | None = None,
 ) -> list[float]:
     """Resolve which GRPO advantage transform to apply to rollout rewards."""
-    if mode == "group_outcome":
-        return reward_function.compute_grpo_outcome_advantages(rewards, group_ids)
-    if mode == "group_std_normalized":
-        return reward_function.compute_batch_advantages(rewards, group_ids)
-    raise ValueError(
-        f"Unsupported GRPO advantage mode: {mode!r}. "
-        "Expected 'group_outcome' or 'group_std_normalized'."
-    )
+    if mode in ("group_outcome", "reinforce_baseline"):
+        advantages = reward_function.compute_grpo_outcome_advantages(rewards, group_ids)
+    elif mode == "group_std_normalized":
+        advantages = reward_function.compute_batch_advantages(rewards, group_ids)
+    elif mode == "dapo":
+        advantages = compute_dapo_advantages(rewards, clip_range=None)
+    else:
+        raise ValueError(
+            f"Unsupported GRPO advantage mode: {mode!r}. "
+            "Expected 'group_outcome', 'group_std_normalized', "
+            "'reinforce_baseline', or 'dapo'."
+        )
+    if clip_range is not None and mode != "dapo":
+        lo, hi = -float(clip_range), float(clip_range)
+        advantages = [max(lo, min(hi, a)) for a in advantages]
+    return advantages
 
 
 def score_prompt_batch(
