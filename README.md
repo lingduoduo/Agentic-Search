@@ -174,49 +174,76 @@ To swap in a dense (E5/BGE), sparse (BM25), or hybrid retrieval server instead o
 
 ## Examples
 
-All examples run without a live model or retrieval server unless noted.
+| Script | Needs model | Needs retrieval server | Description |
+|--------|:-----------:|:---------------------:|-------------|
+| `run_search_pipeline.py` | — | — | Filter + permission pipeline reference (no server) |
+| `run_grpo_training_pipeline.py` | — | — | Reward + GRPO advantage helpers smoke test (no GPU) |
+| `run_agentic_search.py` | ✓ | `search` mode only | Agent CLI — single / search / tool modes |
+| `run_bamboogle_eval.py` | ✓ | ✓ | Evaluate `SearchAgentLoop` on Bamboogle two-hop QA |
+| `evaluate_bamboogle.py` | — | — | Template — wire up your own agent (stub, `NotImplementedError`) |
+| `prepare_search_qa_dataset.py` | — | — | Build search-QA parquet from FlashRAG datasets |
+| `prepare_search_rag_dataset.py` | — | — | Build RAG parquet from cached retrieval results |
 
-**Agent loops**
+**Search pipeline reference** (no model, no server)
 
 ```bash
-python3 -m examples.run_search_pipeline                # pipeline with access filters
+python3 -m examples.run_search_pipeline
 ```
 
-**Agent CLI** (requires retrieval server; `--vllm_url` optional)
+Exercises the filter-building → retrieval → permission-filter → chunk-merge pipeline with in-memory fixtures.
+
+**GRPO training smoke test** (no model, no GPU)
 
 ```bash
-# Local CPU inference
+python3 -m examples.run_grpo_training_pipeline
+```
+
+Exercises `SearchRewardFunction`, `score_prompt_group`, and `compute_grpo_outcome_advantage` with fake rollouts. Runs PPO/GRPO policy-loss helpers too if PyTorch is installed.
+
+**Agent CLI**
+
+```bash
+# mode=single — plain generation, no retrieval (local CPU)
 python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
 
-# Server-backed multi-turn search
+# mode=search — multi-turn SearchAgentLoop (requires retrieval server)
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --vllm_url http://localhost:8080 --search_url http://localhost:8001/retrieve
+
+# mode=tool — ToolAgentLoop with Hermes/Llama-3/JSON tool-call format
+python3 -m examples.run_agentic_search \
+  --mode tool --question "What's the weather in Paris?" \
+  --model meta-llama/Llama-3.1-8B-Instruct --local \
+  --tool_format llama3
+
+# Intent-based model routing (routes to fast/balanced/reasoning model)
+python3 -m examples.run_agentic_search \
+  --mode search --question "Explain transformer attention" \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --vllm_url http://localhost:8080 --search_url http://localhost:8001/retrieve \
+  --model_routing intent \
+  --fast_model meta-llama/Llama-3.1-8B-Instruct \
+  --reasoning_model meta-llama/Llama-3.3-70B-Instruct
 ```
 
 | Mode | Loop | Use it for |
 |------|------|------------|
-| `single` | `PlainGenerationLoop` | Local generation smoke tests |
-| `search` | `SearchAgentLoop` | Multi-turn RAG, SFT, and RL traces |
-| `tool` | `ToolAgentLoop` | Generic tool-calling experiments |
+| `single` | `PlainGenerationLoop` | Plain generation, no retrieval — smoke tests and SFT data collection |
+| `search` | `SearchAgentLoop` | Multi-turn RAG, citation-grounded answers, RL trace collection |
+| `tool` | `ToolAgentLoop` | Function-calling experiments with Hermes, Llama-3, or JSON format |
 
-**PPO/GRPO reward**
-
-```bash
-python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRPO (no GPU)
-```
-
-**Bamboogle benchmark evaluation**
+**Bamboogle benchmark evaluation** (requires model + retrieval server)
 
 ```bash
-# Local CPU (no vLLM needed — slow but self-contained)
+# Local CPU — slow but self-contained
 python3 -m examples.run_bamboogle_eval \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --limit 20
 
-# Server-backed (fast, full 125 examples, with shaped reward scoring)
+# Server-backed — full 125 examples with shaped reward scoring
 python3 -m examples.run_bamboogle_eval \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --vllm_url http://localhost:8080 \
@@ -225,7 +252,7 @@ python3 -m examples.run_bamboogle_eval \
   --limit 125 --output results/bamboogle.jsonl
 ```
 
-Reward presets: `sparse_final_only` | `simple_sparse` | `second_pass` | `third_pass`
+Reward presets: `sparse_final_only` → `simple_sparse` → `second_pass` → `third_pass` (curriculum order).
 
 **Dataset preparation**
 
@@ -234,7 +261,7 @@ Reward presets: `sparse_final_only` | `simple_sparse` | `second_pass` | `third_p
 python3 -m examples.prepare_search_qa_dataset \
   --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq --local_dir data/nq_search
 
-# Preview before writing
+# Preview 5 rows before writing
 python3 -m examples.prepare_search_qa_dataset \
   --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
   --splits test --max_examples 20 --preview --preview_rows 5
