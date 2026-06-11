@@ -40,7 +40,16 @@ class QueueEvent(str, Enum):
 class AgentThought:
     """Event placed on the task queue."""
 
-    __slots__ = ("id", "task_id", "event", "observation")
+    __slots__ = (
+        "id",
+        "task_id",
+        "event",
+        "observation",
+        "thought",
+        "answer",
+        "message",
+        "latency",
+    )
 
     def __init__(
         self,
@@ -49,11 +58,19 @@ class AgentThought:
         task_id: UUID,
         event: QueueEvent,
         observation: str | None = None,
+        thought: str = "",
+        answer: str = "",
+        message: list | None = None,
+        latency: float = 0.0,
     ) -> None:
         self.id = id
         self.task_id = task_id
         self.event = event
         self.observation = observation
+        self.thought = thought
+        self.answer = answer
+        self.message = message if message is not None else []
+        self.latency = latency
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +78,9 @@ class AgentThought:
             "task_id": str(self.task_id),
             "event": self.event.value,
             "observation": self.observation,
+            "thought": self.thought,
+            "answer": self.answer,
+            "latency": self.latency,
         }
 
 
