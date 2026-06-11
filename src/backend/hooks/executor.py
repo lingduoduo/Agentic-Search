@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, TypeVar
 
 try:
@@ -25,7 +26,7 @@ except ImportError:
         pass
 
 
-from pydantic import BaseModel
+from pydantic import TypeAdapter
 from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -268,15 +269,18 @@ def _post_json_hook(hook: HookConfig, payload: dict[str, Any]) -> _HttpOutcome:
     )
 
 
+@lru_cache(maxsize=64)
+def _get_adapter(response_type: type[T]) -> TypeAdapter[T]:
+    return TypeAdapter(response_type)
+
+
 def _validate_response(
     payload: dict[str, Any],
     response_type: type[T] | None,
 ) -> T | dict[str, Any]:
     if response_type is None:
         return payload
-    if isinstance(response_type, type) and issubclass(response_type, BaseModel):
-        return response_type.model_validate(payload)
-    return response_type(**payload)  # type: ignore[misc,operator]
+    return _get_adapter(response_type).validate_python(payload)
 
 
 def _handle_failure(
