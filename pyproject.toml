@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 [project.optional-dependencies]
 mcp = [
     "fastmcp>=2.0.0",
-    "httpx>=0.27.0",
+    "httpx2>=0.28.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,4 +47,6 @@ markers = [
 ]
 filterwarnings = [
     "ignore:Please use `import python_multipart` instead\\.:PendingDeprecationWarning:starlette\\.formparsers",
+    "ignore::requests.exceptions.RequestsDependencyWarning",
+    "ignore:Using `httpx` with `starlette\\.testclient` is deprecated.*:DeprecationWarning",
 ]
