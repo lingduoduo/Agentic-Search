@@ -379,7 +379,7 @@ Via the web API:
 ```bash
 curl -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "mode": "chat_loop", "top_k": 5}'
+  -d '{"query": "What is FAISS?", "mode": "agentic_rag", "top_k": 5}'
 ```
 
 Loop flow:
@@ -415,9 +415,14 @@ Reranker utilities live beside their server in `src.internal.servers.retrieval`.
 | Module | Description |
 |--------|-------------|
 | `demo.py` | TF-IDF over corpus.jsonl — no Java required |
-| `retrieval.py` | BM25 or dense (E5/BGE via FAISS) |
+| `retrieval_server.py` | BM25 or dense (E5/BGE via FAISS) |
 | `retrieval_rerank.py` | Retrieval + cross-encoder reranker |
 | `hybrid_rerank.py` | Dense + BM25 RRF fusion + rerank (recommended for `AgenticRAGLoop`) |
+
+**Web search servers** (`src/internal/servers/web_search/`):
+
+| Module | Description |
+|--------|-------------|
 | `google.py` | Google Custom Search proxy |
 | `serp.py` | SerpAPI proxy |
 | `browser.py` | playwright-cli browser automation; no API key, ~5–10s/query |
@@ -426,12 +431,12 @@ Reranker utilities live beside their server in `src.internal.servers.retrieval`.
 
 ```bash
 # Dense (E5)
-python3 -m src.internal.servers.retrieval.retrieval \
+python3 -m src.internal.servers.retrieval.retrieval_server \
   --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl --retrieval_method e5 --device cpu --topk 5
 
 # Sparse BM25
-python3 -m src.internal.servers.retrieval.retrieval \
+python3 -m src.internal.servers.retrieval.retrieval_server \
   --index_path data/indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
 ```
 
@@ -456,13 +461,13 @@ python3 -m src.internal.servers.retrieval.hybrid_rerank \
   --retrieval_topk 10 --rerank_topk 5
 ```
 
-**Web search servers:**
+**Start a web search server:**
 
 ```bash
-python3 -m src.internal.servers.retrieval.serp \
+python3 -m src.internal.servers.web_search.serp \
   --search_url "https://serpapi.com/search" --topk 3 --serp_api_key "$SERP_API_KEY"
 
-python3 -m src.internal.servers.retrieval.google \
+python3 -m src.internal.servers.web_search.google \
   --api_key "$GOOGLE_API_KEY" --topk 5 --cse_id "$GOOGLE_CSE_ID" --snippet_only
 ```
 
