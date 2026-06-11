@@ -384,11 +384,11 @@ curl -X POST http://localhost:7860/api/agent \
 
 Loop flow:
 
-1. **Query enhancement** — decompose into sub-queries; generate HyDE hypothetical answer
-2. **Hybrid+rerank retrieval** — retrieve per enhanced query; accumulate unique documents
-3. **Sufficiency check** — LLM judges if context is enough; break or continue
-4. **Follow-up generation** — LLM proposes targeted follow-up queries if insufficient
-5. **Grounded synthesis** — answer from all accumulated evidence with inline citations
+1. **Query enhancement** — `QueryEnhancer` decomposes the question into sub-queries and generates a HyDE hypothetical answer; runs once before the loop
+2. **Retrieval** — `retrieve_context()` fetches from the configured server (demo, dense, BM25, or hybrid+rerank) for each novel query; unique documents accumulate across rounds
+3. **Sufficiency check** — LLM responds yes/no to `_SUFFICIENCY_PROMPT`; if yes (or on the last round), proceed to synthesis
+4. **Gap analysis** — if insufficient, `_GAP_ANALYSIS_PROMPT` identifies missing information and emits targeted follow-up queries; loop repeats from step 2 up to `max_rounds`
+5. **Grounded synthesis** — `generate_answer()` over all accumulated evidence with inline citations
 
 
 ## Retrieval Setup
