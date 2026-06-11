@@ -279,31 +279,33 @@ Optional metadata flags (both scripts): `--template_type` (default `base`), `--d
 
 ## Features
 
-**Retrieval, Indexing & Search**
+**Agentic RAG**
+- `AgenticRAGLoop` — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
 - **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
-- Web search via Google Custom Search, SerpAPI, and playwright-cli
-- FAISS and BM25 index builders from a JSONL corpus (`src/internal/document_index/index_builder.py`)
-- Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index; supports mini-chunks, vector-write retries, and document prefiltering
-- **Connectors** (`src/internal/connectors/`) — collect documents from multiple sources:
-  - `LocalFileConnector` / `LocalFilePollConnector` — UTF-8 files from paths, directories, or globs
-  - `SearchConnector` — search results as documents via retrieval, Google, or SerpAPI
-  - `InMemoryConnector` — Python objects for testing and prototyping
-  - `OAuthConnector` — authorization-code flow for Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion
-  - `PollConnector` / `CheckpointedConnector` / `SlimConnector` — incremental sync with time-window, checkpoint, and permission-metadata variants
 
-**Agent Loops**
-- **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
+**Custom Agents**
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, `<fetch>`, and `<answer>` actions
 - `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
+- `CustomAgent` — compose agents from instructions, knowledge sources, tools, and memory
 
-**LLM Backends**
-- `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/internal/llm/providers.py`)
-- `VLLMServerManager` — server-backed inference via any OpenAI-compatible endpoint
-- `LocalServerManager` — in-process HuggingFace models (Qwen, Llama, Mistral, etc.) on CPU or GPU
-- Configured via `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
+**Web Search**
+- Google Custom Search, SerpAPI, and playwright-cli browser automation — all behind the same `/retrieve` API (`src/internal/servers/web_search/`)
+- `NUM_INTERNET_SEARCH_RESULTS` / `NUM_INTERNET_SEARCH_CHUNKS` control result volume per query
+
+**Document Indexing**
+- FAISS and BM25 index builders from a JSONL corpus (`src/internal/document_index/index_builder.py`)
+- Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index; supports mini-chunks, vector-write retries, and document prefiltering
+- `ChunkBatchStore` — temp disk buffer decoupling embedding from index insertion for large jobs
+
+**Connectors**
+- `LocalFileConnector` / `LocalFilePollConnector` — UTF-8 files from paths, directories, or globs
+- `SearchConnector` — search results as documents via retrieval, Google, or SerpAPI
+- `InMemoryConnector` — Python objects for testing and prototyping
+- `OAuthConnector` — authorization-code flow for Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion
+- `PollConnector` / `CheckpointedConnector` / `SlimConnector` — incremental sync with time-window, checkpoint, and permission-metadata variants
 
 **Tool Use**
 - Hermes, Llama-3, and JSON tool-call parsers
@@ -311,7 +313,7 @@ Optional metadata flags (both scripts): `--template_type` (default `base`), `--d
 - `FunctionTool` — wrap any Python callable with auto-generated JSON schema
 - `build_search_tool` — ready-made tool dispatching to retrieval, Google, or SerpAPI
 
-**Chat Processing**
+**Chat Orchestration**
 - `process_message` — top-level orchestrator: resolves persona, tools, files, and LLM; dispatches to `run_llm_loop`; persists via `save_chat_turn`
 - `run_llm_loop` — multi-turn loop: message history, tool dispatch, context injection, token streaming
 - `run_llm_step` — single LLM step: prompt → stream → extract tool calls → `LlmStepResult`
@@ -319,20 +321,8 @@ Optional metadata flags (both scripts): `--template_type` (default `base`), `--d
 - `compress_chat_history` — summarises older turns when context exceeds the token budget; branch-aware
 - `Emitter` — routes packets (tokens, tool calls, citations) from worker threads to the HTTP stream
 - `build_system_prompt` — assembles system prompt from persona, tools, knowledge, and memory context
-
-**Cache & Persistence**
-- `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing attempts, usage reports, rate limits, SCIM tokens, standard answers (`src/internal/db/store.py`)
-- Search history per user (`GET /search/search-history`) and query history with CSV export (`GET /admin/query-history/export`)
+- `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing, rate limits, SCIM tokens (`src/internal/db/store.py`)
 - `InMemoryCache` — in-flight chat session state (processing flag, stop signal, cancel) during streaming
-- `ChunkBatchStore` — temp disk buffer decoupling embedding from index insertion for large jobs
-- `InMemoryChatFile` — uploaded files (images, PDFs, text) held in memory for one chat turn
-
-**Prompts**
-- Chat prompt constants — citation reminders, system prompt defaults, file/image/tool templates (`src/internal/prompts/chat_prompts.py`)
-- `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
-- Binary search/chat classification prompt with labelled examples and strict single-word output
-- Agentic RAG prompts — decompose (2–4 sub-questions) and HyDE (hypothetical ideal answer) for `QueryEnhancer`
-- `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop`
 
 **RL Training**
 - Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, exact-match, citation quality, unnecessary-search penalty, and search-efficiency components
@@ -340,17 +330,33 @@ Optional metadata flags (both scripts): `--template_type` (default `base`), `--d
 - Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
+
+**Benchmarking**
 - **Bamboogle evaluation** (`src/training/eval/bamboogle.py`) — two-hop QA benchmark (125 examples) with EM, contains-match, and optional shaped reward scoring
+
+**MCP Server**
+- FastMCP server exposing search, retrieval, and RAG as Model Context Protocol tools (`src/internal/mcp_server/`)
+- Bearer-token auth; optional install via `pip install -e ".[mcp]"`
+- Compatible with Claude Desktop, MCP Inspector, and any OpenAI-tool-compatible client
+
+**LLM Backends**
+- `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/internal/llm/providers.py`)
+- `VLLMServerManager` — server-backed inference via any OpenAI-compatible endpoint
+- `LocalServerManager` — in-process HuggingFace models (Qwen, Llama, Mistral, etc.) on CPU or GPU
+- Configured via `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
 
 **Query Classification**
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/secondary_llm_flows/`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
+- Chat prompt constants — citation reminders, system prompt defaults, file/image/tool templates (`src/internal/prompts/chat_prompts.py`)
+- `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
 
-**Observability & Feature Flags**
+**Admin & Observability**
 - `build_admin_surface_summary` — single-call health snapshot: connectors, indexing, users, auth, models, tools, analytics, enterprise controls with a composite health score
 - `MonitoringWorker` — background poller for process memory (RSS), index queue depth, connector count; ships JSON snapshots to a cloud data-plane URL
 - `event_telemetry` / `identify_user` — PostHog event capture helpers; no-ops when PostHog is not configured
 - Feature flags — composable chain: `EnvFeatureFlagProvider` → `PostHogFeatureFlagProvider`; `StaticFeatureFlagProvider` for tests; single call-site via `is_feature_enabled`
+- Search history per user (`GET /search/search-history`) and query history with CSV export (`GET /admin/query-history/export`)
 
 
 ## Agentic RAG
