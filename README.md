@@ -256,24 +256,25 @@ Reward presets: `sparse_final_only` → `simple_sparse` → `second_pass` → `t
 
 **Dataset preparation**
 
-```bash
-# Search-QA parquet
-python3 -m examples.prepare_search_qa_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq --local_dir data/nq_search
+Both scripts default to `RUC-NLPIR/FlashRAG_datasets` / `nq`; pass `--dataset_name` and `--dataset_config` to use a different HuggingFace dataset. Output parquets are consumed by the SFT and GRPO trainers.
 
-# Preview 5 rows before writing
+```bash
+# Search-agent prompt parquet (question + expected answer, no context)
+python3 -m examples.prepare_search_qa_dataset --local_dir data/nq_search
+
+# Preview before writing (inspect 5 converted rows from the test split)
 python3 -m examples.prepare_search_qa_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
   --splits test --max_examples 20 --preview --preview_rows 5
 
-# RAG parquet from cached retrieval results
+# RAG parquet (question + pre-retrieved context + expected answer)
 python3 -m examples.prepare_search_rag_dataset \
-  --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
   --corpus_path data/wiki-18.jsonl \
   --train_retrieval_cache data/nq_train_retrieval_cache.json \
   --test_retrieval_cache data/nq_test_retrieval_cache.json \
   --topk 3 --local_dir data/nq_rag
 ```
+
+Optional metadata flags (both scripts): `--template_type` (default `base`), `--data_source` (default `nq`), `--ability` (default `fact-reasoning`).
 
 
 ## Features
