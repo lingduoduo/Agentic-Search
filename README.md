@@ -49,46 +49,48 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 ```
 src/
-├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, …)
-├── backend/
-│   ├── access/                  # Access control & ACL helpers
-│   ├── auth/                    # Authentication & authorization
-│   ├── cache/                   # In-memory cache backend (chat session state)
-│   ├── chat/                    # Chat pipeline (loop, steps, citations, compression)
-│   ├── configs/                 # Environment-based configuration (AppSettings)
-│   ├── connectors/              # Data source connectors
-│   ├── db/                      # SQLite store (AgenticSearchStore)
-│   ├── document_index/          # Document index (OpenSearch / disabled)
-│   ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
-│   ├── file_store/              # In-memory chat file handling
-│   ├── hooks/                   # Outbound webhook execution
-│   ├── llm/                     # LLM provider integrations
-│   ├── observability/           # Admin surface summary & health score
-│   ├── prompts/                 # Prompt templates
-│   ├── secondary_llm_flows/     # Search-vs-chat flow classification
-│   ├── servers/
-│   │   ├── backgroundworker/    # Async workers (beat, docfetching, light, heavy, monitoring)
-│   │   ├── analytics/           # Usage analytics API
-│   │   ├── billing/             # Stripe billing proxy
-│   │   ├── documents/           # Connector-credential pair management
-│   │   ├── middleware/          # License enforcement, tier gate, tenant tracking
-│   │   ├── oauth/               # OAuth 2.0 connector authorization
-│   │   ├── query_and_chat/      # Search and chat endpoints
-│   │   ├── reporting/           # Usage report ZIP generation
-│   │   ├── retrieval/           # Dense/sparse/rerank server entry points
-│   │   ├── scim/                # SCIM 2.0 user & group provisioning
-│   │   ├── tenants/             # Multi-tenant provisioning & management
-│   │   └── web/                 # FastAPI app assembly
-│   └── utils/                   # License, encryption, telemetry utilities
-├── context/                     # Retrieval-grounded context & prompt builders
-├── model/                       # LLM generation, intent classifier, tensor helpers
-├── retrieval/                   # Dense/sparse retrievers, indexing pipeline, embedders
-├── tools/                       # Tool schemas, search tools, OpenAPI tool registry
-└── training/
-    ├── eval/                    # Benchmark evaluation (Bamboogle two-hop QA)
-    └── ...                      # SFT, rewards, PPO, GRPO helpers
-tests/                           # Unit and integration test suites
-examples/                        # Runnable CLI examples
+├── agents/              # Agent loops: SearchAgentLoop, ToolAgentLoop, AgenticRAGLoop, CustomAgent
+├── context/             # Retrieval-grounded context builders
+│   ├── preprocessing/   # Permission-aware access filters applied before retrieval
+│   └── retrieval/       # Retrieval client helpers
+├── model/               # LLM generation, intent classifier, tensor utilities
+├── tools/               # Tool schemas, search tools, OpenAPI registry
+├── training/            # RL training utilities
+│   ├── eval/            # Benchmark evaluation (Bamboogle two-hop QA)
+│   └── ppo/             # PPO/GRPO trainers including SearchAgentGRPOTrainer
+└── internal/            # Platform internals
+    ├── access/          # ACL & permission helpers
+    ├── auth/            # Authentication & authorization
+    ├── cache/           # In-memory session state cache
+    ├── chat/            # Chat pipeline: loop, steps, citations, compression
+    ├── configs/         # Typed config dataclasses (AppSettings)
+    ├── connectors/      # Data source connector implementations
+    ├── db/              # SQLite store (AgenticSearchStore)
+    ├── document_index/  # FAISS/BM25 index builders and retrievers
+    ├── feature_flags/   # Feature flag providers (env, PostHog, composite)
+    ├── file_store/      # In-memory file handling for chat turns
+    ├── hooks/           # Outbound webhook execution
+    ├── llm/             # LLM provider integrations (OpenAI, Anthropic, Ollama, vLLM…)
+    ├── mcp_server/      # MCP server — tools and resources for LLM clients
+    ├── observability/   # Admin surface health summary
+    ├── prompts/         # Prompt templates
+    ├── servers/         # FastAPI routers and server entry points
+    │   ├── backgroundworker/  # Async workers (light, heavy, beat, monitoring)
+    │   ├── retrieval/         # Dense/sparse/hybrid/rerank server entry points
+    │   ├── web_search/        # Google, SerpAPI, playwright-cli proxies
+    │   ├── web/               # FastAPI app assembly (create_web_app)
+    │   ├── analytics/         # Usage analytics API
+    │   ├── billing/           # Stripe billing proxy
+    │   ├── connectors/        # Connector-credential management
+    │   ├── middleware/        # License, tier gate, tenant tracking
+    │   ├── oauth/             # OAuth 2.0 connector authorization
+    │   ├── query_and_chat/    # Search and chat API endpoints
+    │   ├── reporting/         # Usage report ZIP generation
+    │   ├── scim/              # SCIM 2.0 user & group provisioning
+    │   └── …                  # tenants, users, settings, limits, license, hooks…
+    └── utils/           # License, encryption, telemetry utilities
+tests/                   # Unit and integration test suites
+examples/                # Runnable CLI scripts
 ```
 
 The FastAPI app is assembled in `src/internal/servers/web/app.py`. Every feature area is a self-contained router factory. `AgenticSearchStore` (SQLite) is the single persistence layer — no Postgres, Redis, or Celery required locally.
