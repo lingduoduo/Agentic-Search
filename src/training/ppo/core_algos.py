@@ -81,8 +81,18 @@ def compute_grpo_outcome_advantage(
     eos_mask: torch.Tensor,
     index: torch.Tensor,
     epsilon: float = 1e-6,
+    clip_advantages: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Group-normalized outcome advantages expanded over response tokens."""
+    """Group-normalized outcome advantages expanded over response tokens.
+
+    Args:
+        token_level_rewards: ``(batch, seq_len)`` sparse reward tensor.
+        eos_mask: ``(batch, seq_len)`` binary mask over response tokens.
+        index: ``(batch,)`` integer group IDs.
+        epsilon: Denominator stabiliser for std normalization.
+        clip_advantages: If given, clip normalized advantages to
+            ``[-clip_advantages, +clip_advantages]`` before expansion.
+    """
     response_length = token_level_rewards.shape[-1]
     scores = token_level_rewards.sum(dim=-1)
     advantages = torch.zeros_like(token_level_rewards)
@@ -100,12 +110,64 @@ def compute_grpo_outcome_advantage(
                 else torch.tensor(1.0, device=scores.device, dtype=scores.dtype)
             )
             normalized = (group_scores - mean) / (std + epsilon)
+            if clip_advantages is not None:
+                normalized = normalized.clamp(
+                    -float(clip_advantages), float(clip_advantages)
+                )
             advantages[group_mask] = (
                 normalized.unsqueeze(-1).expand(-1, response_length)
                 * eos_mask[group_mask]
             )
 
     return advantages, advantages
+
+
+def compute_gae_advantages(
+    rewards: torch.Tensor,
+    values: torch.Tensor,
+    eos_mask: torch.Tensor,
+    gamma: float = 0.99,
+    lam: float = 0.95,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Generalized Advantage Estimation (GAE-λ) for PPO with a value model.
+
+    Computes per-token advantages and λ-returns (targets for the value head):
+
+        δ_t   = r_t + γ · V(s_{t+1}) - V(s_t)
+        A_t   = Σ_{l≥0} (γλ)^l · δ_{t+l}
+        R_t   = A_t + V(s_t)          ← value regression target
+
+    All tensors must be ``(batch, seq_len)`` and on the same device.
+
+    Args:
+        rewards: Per-token reward tensor.
+        values: Per-token value estimates from the critic head.
+        eos_mask: Binary mask — 1 for valid response tokens, 0 for padding /
+            prompt positions.
+        gamma: Discount factor.
+        lam: GAE-λ smoothing coefficient.
+
+    Returns:
+        ``(advantages, returns)`` — both ``(batch, seq_len)``, masked to 0 at
+        invalid positions.
+    """
+    batch_size, seq_len = rewards.shape
+    advantages = torch.zeros_like(rewards)
+    last_gae = torch.zeros(batch_size, device=rewards.device, dtype=rewards.dtype)
+
+    with torch.no_grad():
+        for t in range(seq_len - 1, -1, -1):
+            next_val = (
+                values[:, t + 1] if t + 1 < seq_len else torch.zeros_like(last_gae)
+            )
+            delta = rewards[:, t] + gamma * next_val - values[:, t]
+            last_gae = delta + gamma * lam * last_gae
+            advantages[:, t] = last_gae
+
+    advantages = advantages * eos_mask.to(dtype=advantages.dtype)
+    returns = advantages + values
+    returns = returns * eos_mask.to(dtype=returns.dtype)
+    return advantages, returns
 
 
 def compute_rewards(
@@ -341,4 +403,68 @@ def compute_reinforce_policy_loss(
         "total_loss": loss,
         "mean_reward": float((reward_tensor * mask).sum() / normalizer),
         "mean_advantage": float((advantages * mask).sum() / normalizer),
+    }
+
+
+def compute_grpo_policy_loss(
+    *,
+    new_log_probs: list[float],
+    old_log_probs: list[float],
+    advantages: list[float],
+    response_mask: list[int],
+    ref_log_probs: list[float] | None = None,
+    config: PPOPolicyLossConfig | None = None,
+) -> dict[str, float]:
+    """Convenience wrapper that accepts a :class:`PPOPolicyLossConfig`.
+
+    Combines the clipped policy loss, optional KL penalty, optional entropy
+    bonus, and optional advantage whitening in a single call.  Delegates to
+    :func:`compute_trajectory_policy_loss` for the core arithmetic.
+
+    Args:
+        new_log_probs: Current policy log-probs for response tokens.
+        old_log_probs: Behaviour-policy log-probs (from rollout time).
+        advantages: Per-token advantage values (aligned with response_mask).
+        response_mask: 1 for model-generated tokens, 0 for prompt / padding.
+        ref_log_probs: Reference model log-probs for KL penalty.
+            If ``None`` and ``config.kl_coefficient > 0``, ``old_log_probs``
+            is used as the reference.
+        config: Loss configuration.  Defaults to ``PPOPolicyLossConfig()``.
+
+    Returns:
+        Dict with ``grpo_policy_loss``, ``kl_penalty``, ``entropy_bonus``,
+        ``total_loss``, ``clip_fraction``, and ``mean_ratio`` keys.
+    """
+    cfg = config or PPOPolicyLossConfig()
+
+    adv = list(advantages)
+    if cfg.whiten_advantages:
+        adv_t = torch.tensor(adv, dtype=torch.float32)
+        mask_t = torch.tensor(response_mask, dtype=torch.float32)
+        adv_t = masked_whiten(adv_t, mask_t)
+        adv = adv_t.tolist()
+
+    base = compute_trajectory_policy_loss(
+        new_log_probs=new_log_probs,
+        old_log_probs=old_log_probs,
+        advantages=adv,
+        response_mask=response_mask,
+        ref_log_probs=ref_log_probs,
+        clip_epsilon=cfg.clip_epsilon,
+        kl_beta=cfg.kl_coefficient,
+    )
+
+    entropy_bonus = 0.0
+    if cfg.entropy_coefficient != 0.0:
+        new_lp = torch.tensor(new_log_probs, dtype=torch.float32)
+        mask_t = torch.tensor(response_mask, dtype=torch.float32)
+        # Entropy approximation: H ≈ -E[log p], averaged over masked tokens.
+        h = masked_mean(-new_lp, mask_t)
+        entropy_bonus = float(cfg.entropy_coefficient * h)
+
+    total = base["total_loss"] - entropy_bonus
+    return {
+        **base,
+        "entropy_bonus": entropy_bonus,
+        "total_loss": total,
     }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from ..agents.base import AgentLoopOutput
@@ -14,6 +14,8 @@ from ..context.search import AgentContext
 JudgeFn = Callable[[str, str], float]
 BatchJudgeFn = Callable[[list[str], list[str]], list[float]]
 _WHITESPACE_PATTERN = re.compile(r"\s+")
+_CITATION_RE = re.compile(r"\[D\d+\]")
+_ANSWER_TAG_RE = re.compile(r"<answer>.*?</answer>", re.DOTALL | re.IGNORECASE)
 
 
 def normalize_answer_text(text: str) -> str:
@@ -21,6 +23,110 @@ def normalize_answer_text(text: str) -> str:
     lowered = text.strip().lower()
     lowered = _WHITESPACE_PATTERN.sub(" ", lowered)
     return lowered
+
+
+def token_f1_score(pred: str, gold: str) -> float:
+    """Bag-of-words token F1 between a predicted and gold answer.
+
+    Normalises both strings via :func:`normalize_answer_text`, computes the
+    bag-of-words intersection, and returns the F1 (harmonic mean of precision
+    and recall).  Useful as a soft alternative to exact-match for NQ-style QA.
+
+    Edge cases:
+    - Both empty → 1.0  (both correctly produced nothing)
+    - One empty  → 0.0  (total miss)
+    - No shared tokens → 0.0
+    """
+    pred_tokens = normalize_answer_text(pred).split()
+    gold_tokens = normalize_answer_text(gold).split()
+    if not pred_tokens and not gold_tokens:
+        return 1.0
+    if not pred_tokens or not gold_tokens:
+        return 0.0
+    pred_bag = {}
+    for t in pred_tokens:
+        pred_bag[t] = pred_bag.get(t, 0) + 1
+    gold_bag = {}
+    for t in gold_tokens:
+        gold_bag[t] = gold_bag.get(t, 0) + 1
+    overlap = sum(min(pred_bag.get(t, 0), c) for t, c in gold_bag.items())
+    if overlap == 0:
+        return 0.0
+    precision = overlap / len(pred_tokens)
+    recall = overlap / len(gold_tokens)
+    return 2 * precision * recall / (precision + recall)
+
+
+def format_compliance_reward(
+    response: str,
+    *,
+    require_citations: bool = True,
+    require_answer_tag: bool = False,
+) -> float:
+    """Reward structural compliance in a search-agent response.
+
+    Checks for:
+    - Inline citation markers ``[D1]``, ``[D2]``, … when ``require_citations=True``
+    - An ``<answer>…</answer>`` block when ``require_answer_tag=True``
+
+    Returns the fraction of required checks that pass (0.0, 0.5, or 1.0 when
+    both checks are required; 0.0 or 1.0 when only one is required).
+    """
+    if not response:
+        return 0.0
+    checks = 0
+    passed = 0
+    if require_citations:
+        checks += 1
+        if _CITATION_RE.search(response):
+            passed += 1
+    if require_answer_tag:
+        checks += 1
+        if _ANSWER_TAG_RE.search(response):
+            passed += 1
+    return passed / checks if checks else 1.0
+
+
+@dataclass
+class CompositeRewardConfig:
+    """Blend multiple judge functions into a single scalar reward.
+
+    Each entry in *judges* is a ``(name, weight, judge_fn)`` triple where
+    ``judge_fn(pred, gold) -> float`` must return a value in ``[0, 1]``.
+    Weights need not sum to 1 — they are applied as literal multipliers.
+
+    Usage::
+
+        cfg = CompositeRewardConfig(judges=[
+            ("exact",  0.6, simple_sparse_correctness_reward),
+            ("f1",     0.3, token_f1_score),
+            ("format", 0.1, lambda p, _: format_compliance_reward(p)),
+        ])
+        score = cfg.compute("Paris is the capital", "paris")
+        fn = cfg.as_judge_fn()   # drop-in replacement for a plain JudgeFn
+    """
+
+    judges: list[tuple[str, float, JudgeFn]] = field(default_factory=list)
+
+    def compute(self, pred: str, gold: str) -> float:
+        """Return the weighted sum of all judge scores."""
+        return sum(w * fn(pred, gold) for _, w, fn in self.judges)
+
+    def compute_breakdown(self, pred: str, gold: str) -> dict[str, float]:
+        """Return a per-judge breakdown for logging/debugging."""
+        return {name: w * fn(pred, gold) for name, w, fn in self.judges}
+
+    def as_judge_fn(self) -> JudgeFn:
+        """Return a single ``(pred, gold) -> float`` callable.
+
+        The returned function is suitable anywhere a plain :data:`JudgeFn` is
+        accepted (e.g. :meth:`SearchRewardFunction.compute`).
+        """
+
+        def _judge(pred: str, gold: str) -> float:
+            return self.compute(pred, gold)
+
+        return _judge
 
 
 def simple_sparse_correctness_reward(
@@ -120,6 +226,46 @@ class SearchRewardConfig:
     # value as SearchAgentLoopConfig.max_search_limit when known.
     max_search_rounds: int = 5
 
+    # Reward for structural compliance in the answer.  Uses
+    # :func:`format_compliance_reward` with ``require_citations=True`` by
+    # default.  Set to 0.0 to disable (the default).
+    format_reward_weight: float = 0.0
+
+    # Scale the final total reward before returning.  Useful for aligning
+    # reward magnitudes across training phases without changing all weights.
+    reward_scale: float = 1.0
+
+    @classmethod
+    def _zeroed(
+        cls,
+        *,
+        reward_mode: str = "shaped",
+        correctness_weight: float = 1.0,
+        max_search_rounds: int = 5,
+        reward_scale: float = 1.0,
+    ) -> "SearchRewardConfig":
+        """All shaping weights and penalties disabled — baseline for presets."""
+        return cls(
+            reward_mode=reward_mode,
+            correctness_weight=correctness_weight,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            per_search_penalty=0.0,
+            unnecessary_search_penalty=0.0,
+            duplicate_query_penalty=0.0,
+            budget_penalty_threshold=1.0,
+            budget_penalty=0.0,
+            unnecessary_fetch_penalty=0.0,
+            unsupported_claim_penalty=0.0,
+            answer_when_evidence_insufficient_penalty=0.0,
+            search_budget_exhausted_without_answer_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+            format_reward_weight=0.0,
+            max_search_rounds=max_search_rounds,
+            reward_scale=reward_scale,
+        )
+
     @classmethod
     def sparse_final_only(
         cls,
@@ -132,21 +278,9 @@ class SearchRewardConfig:
         Search, reasoning, and retrieval traces remain available as labelled
         diagnostics, but they do not contribute to the optimisation target.
         """
-        return cls(
+        return cls._zeroed(
             reward_mode="sparse_final_only",
             correctness_weight=correctness_weight,
-            citation_support_weight=0.0,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
-            per_search_penalty=0.0,
-            unnecessary_search_penalty=0.0,
-            duplicate_query_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
         )
 
     @classmethod
@@ -166,21 +300,9 @@ class SearchRewardConfig:
         Use with :func:`simple_sparse_correctness_reward` as the judge for a
         straightforward first training phase.
         """
-        return cls(
-            reward_mode="shaped",
-            correctness_weight=correctness_weight,
-            citation_support_weight=0.0,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
+        return replace(
+            cls._zeroed(correctness_weight=correctness_weight),
             per_search_penalty=per_search_penalty,
-            unnecessary_search_penalty=0.0,
-            duplicate_query_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
         )
 
     @classmethod
@@ -208,22 +330,47 @@ class SearchRewardConfig:
         model reliably produces answers in Phase 1 (policy has converged enough
         to benefit from the finer-grained signal).
         """
-        return cls(
-            reward_mode="shaped",
-            correctness_weight=correctness_weight,
+        return replace(
+            cls._zeroed(correctness_weight=correctness_weight),
             per_search_penalty=per_search_penalty,
             citation_support_weight=citation_support_weight,
             unsupported_claim_penalty=unsupported_claim_penalty,
             duplicate_query_penalty=duplicate_query_penalty,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
-            unnecessary_search_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
+        )
+
+    @classmethod
+    def third_pass_with_format(
+        cls,
+        *,
+        correctness_weight: float = 1.0,
+        per_search_penalty: float = -0.02,
+        citation_support_weight: float = 0.1,
+        unsupported_claim_penalty: float = -0.1,
+        duplicate_query_penalty: float = -0.05,
+        format_reward_weight: float = 0.1,
+    ) -> "SearchRewardConfig":
+        """Phase 3 reward: second-pass formula plus format compliance.
+
+        Adds a structural compliance bonus on top of Phase 2:
+
+            reward = correctness
+                   - 0.02 * num_searches
+                   + 0.1  * citation_support
+                   - 0.1  * unsupported_claim
+                   - 0.05 * repeated_query_count
+                   + 0.1  * format_compliance   ← inline [D1] citations present
+
+        Use :func:`token_f1_score` as the judge alongside
+        :func:`simple_sparse_correctness_reward` via :class:`CompositeRewardConfig`
+        to benefit from both exact-match and partial-match signals in this phase.
+        """
+        return replace(
+            cls._zeroed(correctness_weight=correctness_weight),
+            per_search_penalty=per_search_penalty,
+            citation_support_weight=citation_support_weight,
+            unsupported_claim_penalty=unsupported_claim_penalty,
+            duplicate_query_penalty=duplicate_query_penalty,
+            format_reward_weight=format_reward_weight,
         )
 
 
@@ -466,6 +613,13 @@ class SearchRewardFunction:
         # search results whose URLs were later fetched for deeper inspection.
         fetch_reward = self._fetch_usefulness_reward(answer, ctx)
 
+        # 11. Format compliance: reward for inline [D1] citations in the answer.
+        format_reward = (
+            cfg.format_reward_weight * format_compliance_reward(answer)
+            if cfg.format_reward_weight != 0.0 and answer
+            else 0.0
+        )
+
         terminal_reward = cfg.correctness_weight * correctness
         shaping_total = (
             cfg.citation_support_weight * citation_support
@@ -480,6 +634,7 @@ class SearchRewardFunction:
             + insufficient_answer_pen
             + exhausted_without_answer_pen
             + fetch_reward
+            + format_reward
         )
         total = self._aggregate_total_reward(terminal_reward, shaping_total)
         return {
@@ -499,6 +654,7 @@ class SearchRewardFunction:
                 exhausted_without_answer_pen
             ),
             "fetch_usefulness_reward": fetch_reward,
+            "format_reward": format_reward,
             "terminal_reward": terminal_reward,
             "shaping_total": shaping_total,
             "total": total,
@@ -744,13 +900,19 @@ class SearchRewardFunction:
         terminal_reward: float,
         shaping_total: float,
     ) -> float:
-        """Combine terminal reward and shaping according to the configured mode."""
+        """Combine terminal reward and shaping according to the configured mode.
+
+        ``reward_scale`` is applied to the combined total so callers can align
+        reward magnitudes across training phases without adjusting every weight.
+        """
         mode = self.config.reward_mode
         if mode == "shaped":
-            return terminal_reward + shaping_total
-        if mode == "sparse_final_only":
-            return terminal_reward
-        raise ValueError(
-            f"Unsupported reward_mode: {mode!r}. "
-            "Expected 'shaped' or 'sparse_final_only'."
-        )
+            raw = terminal_reward + shaping_total
+        elif mode == "sparse_final_only":
+            raw = terminal_reward
+        else:
+            raise ValueError(
+                f"Unsupported reward_mode: {mode!r}. "
+                "Expected 'shaped' or 'sparse_final_only'."
+            )
+        return raw * float(self.config.reward_scale)
