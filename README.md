@@ -476,7 +476,7 @@ python3 -m src.internal.servers.web_search.google \
 ```bash
 curl -i -sS http://127.0.0.1:8001/health
 curl -i -sS -X POST http://127.0.0.1:8001/retrieve \
-  -H "Content-Type: application/json" -d '{"query":"What is FAISS?","top_k":5}'
+  -H "Content-Type: application/json" -d '{"query":"What is FAISS?","topk":5}'
 ```
 
 
