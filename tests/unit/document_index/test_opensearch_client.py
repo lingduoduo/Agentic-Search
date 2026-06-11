@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, patch
 
-import src.backend.document_index.opensearch.client as _client_mod
-from src.backend.document_index.opensearch.client import OpenSearchIndexClient
+import src.internal.document_index.opensearch.client as _client_mod
+from src.internal.document_index.opensearch.client import OpenSearchIndexClient
 
 _PATCH_TARGET = f"{_client_mod.__name__}.OpenSearch"
 

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert `src/backend/document_index/` sample code (borrowed from the Onyx repo) from `onyx.*`/`shared_configs.*` imports to this repo's own types, create missing types and utilities, fix all import paths, and make every file importable and unit-testable.
+**Goal:** Convert `src/internal/document_index/` sample code (borrowed from the Onyx repo) from `onyx.*`/`shared_configs.*` imports to this repo's own types, create missing types and utilities, fix all import paths, and make every file importable and unit-testable.
 
-**Architecture:** All `from onyx.*` imports are replaced with local equivalents. New types (`InferenceChunk`, `IndexFilters`, `QueryType`, `Embedding`, etc.) are added to `src/retrieval/models.py`. A new `src/backend/configs/constants.py` holds string/bool constants. A new `src/backend/document_index/utils.py` provides utility stubs. The factory is re-implemented without a DB session, using env-var flags. Backend implementations (OpenSearch, Vespa) get their import paths fixed but their business logic is left intact.
+**Architecture:** All `from onyx.*` imports are replaced with local equivalents. New types (`InferenceChunk`, `IndexFilters`, `QueryType`, `Embedding`, etc.) are added to `src/retrieval/models.py`. A new `src/internal/configs/constants.py` holds string/bool constants. A new `src/internal/document_index/utils.py` provides utility stubs. The factory is re-implemented without a DB session, using env-var flags. Backend implementations (OpenSearch, Vespa) get their import paths fixed but their business logic is left intact.
 
 **Tech Stack:** Python 3.11+, Pydantic v2, dataclasses, stdlib only for new files.
 
@@ -15,27 +15,27 @@
 | Action | File |
 |---|---|
 | **Modify** | `src/retrieval/models.py` — add `QueryType`, `Embedding`, `InferenceChunk`, `InferenceChunkUncleaned`, `IndexFilters`, `MultipassConfig`, `ExternalAccess`, `DocAwareChunk`; update `IndexChunk` with enrichment fields; update `DocMetadataAwareIndexChunk` |
-| **Create** | `src/backend/configs/constants.py` — `PUBLIC_DOC_PAT`, `RETURN_SEPARATOR`, `INDEX_SEPARATOR`, `SOURCE_TYPE`, Redis lock/KV constants |
-| **Modify** | `src/backend/configs/app_configs.py` — add `VectorDbSettings` (Vespa/OpenSearch env vars) and wire into `AppSettings` |
-| **Create** | `src/backend/document_index/utils.py` — `setup_logger`, `batch_generator`, `remove_invalid_unicode_chars`, `convert_metadata_list_of_strings_to_dict`, `get_experts_stores_representations`, `split_relationship_id` |
-| **Modify** | `src/backend/document_index/vespa_constants.py` — replace `from onyx.*` with local equivalents |
-| **Modify** | `src/backend/document_index/disabled.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/interfaces_new.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/document_metadata.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/document_index_utils.py` — replace `from onyx.*`; replace DB-session functions with config-based stubs; fix `chunk.source_document.id` → `chunk.embedded_chunk.chunk.document_id` |
-| **Modify** | `src/backend/document_index/chunk_content_enrichment.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/factory.py` — replace DB session with env-var flags |
-| **Modify** | `src/backend/document_index/opensearch/opensearch_document_index.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/opensearch/schema.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/opensearch/search.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/opensearch/client.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/vespa_document_index.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/chunk_retrieval.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/deletion.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/indexing_utils.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/kg_interactions.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/shared_utils/utils.py` — replace `from onyx.*` |
-| **Modify** | `src/backend/document_index/vespa/shared_utils/vespa_request_builders.py` — replace `from onyx.*` |
+| **Create** | `src/internal/configs/constants.py` — `PUBLIC_DOC_PAT`, `RETURN_SEPARATOR`, `INDEX_SEPARATOR`, `SOURCE_TYPE`, Redis lock/KV constants |
+| **Modify** | `src/internal/configs/app_configs.py` — add `VectorDbSettings` (Vespa/OpenSearch env vars) and wire into `AppSettings` |
+| **Create** | `src/internal/document_index/utils.py` — `setup_logger`, `batch_generator`, `remove_invalid_unicode_chars`, `convert_metadata_list_of_strings_to_dict`, `get_experts_stores_representations`, `split_relationship_id` |
+| **Modify** | `src/internal/document_index/vespa_constants.py` — replace `from onyx.*` with local equivalents |
+| **Modify** | `src/internal/document_index/disabled.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/interfaces_new.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/document_metadata.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/document_index_utils.py` — replace `from onyx.*`; replace DB-session functions with config-based stubs; fix `chunk.source_document.id` → `chunk.embedded_chunk.chunk.document_id` |
+| **Modify** | `src/internal/document_index/chunk_content_enrichment.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/factory.py` — replace DB session with env-var flags |
+| **Modify** | `src/internal/document_index/opensearch/opensearch_document_index.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/opensearch/schema.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/opensearch/search.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/opensearch/client.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/vespa_document_index.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/chunk_retrieval.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/deletion.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/indexing_utils.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/kg_interactions.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/shared_utils/utils.py` — replace `from onyx.*` |
+| **Modify** | `src/internal/document_index/vespa/shared_utils/vespa_request_builders.py` — replace `from onyx.*` |
 | **Create** | `tests/unit/document_index/test_types.py` |
 | **Create** | `tests/unit/document_index/test_disabled.py` |
 | **Create** | `tests/unit/document_index/test_factory.py` |
@@ -398,8 +398,8 @@ git commit -m "feat(models): add InferenceChunk, IndexFilters, QueryType, Embedd
 ## Task 2: Add config constants and vector-DB env vars
 
 **Files:**
-- Create: `src/backend/configs/constants.py`
-- Modify: `src/backend/configs/app_configs.py`
+- Create: `src/internal/configs/constants.py`
+- Modify: `src/internal/configs/app_configs.py`
 - Test: `tests/unit/document_index/test_types.py` (extend)
 
 - [ ] **Step 1: Write failing tests**
@@ -408,7 +408,7 @@ Add to `tests/unit/document_index/test_types.py`:
 
 ```python
 def test_constants_importable():
-    from src.backend.configs.constants import (
+    from src.internal.configs.constants import (
         PUBLIC_DOC_PAT,
         RETURN_SEPARATOR,
         INDEX_SEPARATOR,
@@ -421,7 +421,7 @@ def test_constants_importable():
 
 
 def test_vector_db_settings_defaults():
-    from src.backend.configs.app_configs import VectorDbSettings
+    from src.internal.configs.app_configs import VectorDbSettings
     s = VectorDbSettings()
     assert s.disable_vector_db is False
     assert s.disable_vespa is False
@@ -431,7 +431,7 @@ def test_vector_db_settings_defaults():
 
 
 def test_vector_db_settings_from_env():
-    from src.backend.configs.app_configs import VectorDbSettings, get_env_bool, get_env_str
+    from src.internal.configs.app_configs import VectorDbSettings, get_env_bool, get_env_str
     # Just verify the class can be constructed with all fields
     s = VectorDbSettings(disable_vector_db=True)
     assert s.disable_vector_db is True
@@ -445,7 +445,7 @@ pytest tests/unit/document_index/test_types.py::test_constants_importable tests/
 
 Expected: FAIL with `ImportError`
 
-- [ ] **Step 3: Create `src/backend/configs/constants.py`**
+- [ ] **Step 3: Create `src/internal/configs/constants.py`**
 
 ```python
 """String constants shared by the document index and retrieval layers.
@@ -479,7 +479,7 @@ OPENSEARCH_MIGRATION_ENABLED_KEY = "opensearch_migration_enabled"
 OPENSEARCH_RETRIEVAL_ENABLED_KEY = "opensearch_retrieval_enabled"
 ```
 
-- [ ] **Step 4: Add `VectorDbSettings` to `src/backend/configs/app_configs.py`**
+- [ ] **Step 4: Add `VectorDbSettings` to `src/internal/configs/app_configs.py`**
 
 Add after `class LLMSettings`:
 
@@ -556,7 +556,7 @@ Expected: All tests PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/backend/configs/constants.py src/backend/configs/app_configs.py tests/unit/document_index/test_types.py
+git add src/internal/configs/constants.py src/internal/configs/app_configs.py tests/unit/document_index/test_types.py
 git commit -m "feat(config): add constants.py and VectorDbSettings for document index backends"
 ```
 
@@ -565,7 +565,7 @@ git commit -m "feat(config): add constants.py and VectorDbSettings for document 
 ## Task 3: Create utility helpers module
 
 **Files:**
-- Create: `src/backend/document_index/utils.py`
+- Create: `src/internal/document_index/utils.py`
 - Test: `tests/unit/document_index/test_types.py` (extend)
 
 - [ ] **Step 1: Write failing tests**
@@ -574,7 +574,7 @@ Add to `tests/unit/document_index/test_types.py`:
 
 ```python
 def test_utils_importable():
-    from src.backend.document_index.utils import (
+    from src.internal.document_index.utils import (
         setup_logger,
         batch_generator,
         remove_invalid_unicode_chars,
@@ -585,38 +585,38 @@ def test_utils_importable():
 
 
 def test_batch_generator():
-    from src.backend.document_index.utils import batch_generator
+    from src.internal.document_index.utils import batch_generator
     items = list(range(10))
     batches = list(batch_generator(items, 3))
     assert batches == [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
 
 
 def test_batch_generator_exact():
-    from src.backend.document_index.utils import batch_generator
+    from src.internal.document_index.utils import batch_generator
     batches = list(batch_generator([1, 2, 3], 3))
     assert batches == [[1, 2, 3]]
 
 
 def test_remove_invalid_unicode_chars():
-    from src.backend.document_index.utils import remove_invalid_unicode_chars
+    from src.internal.document_index.utils import remove_invalid_unicode_chars
     assert remove_invalid_unicode_chars("hello\x00world") == "helloworld"
     assert remove_invalid_unicode_chars("normal text") == "normal text"
 
 
 def test_convert_metadata_list_of_strings_to_dict():
-    from src.backend.document_index.utils import convert_metadata_list_of_strings_to_dict
+    from src.internal.document_index.utils import convert_metadata_list_of_strings_to_dict
     result = convert_metadata_list_of_strings_to_dict(["key1:val1", "key2:val2"])
     assert result == {"key1": "val1", "key2": "val2"}
 
 
 def test_convert_metadata_dict_passthrough():
-    from src.backend.document_index.utils import convert_metadata_list_of_strings_to_dict
+    from src.internal.document_index.utils import convert_metadata_list_of_strings_to_dict
     result = convert_metadata_list_of_strings_to_dict({"key": "val"})
     assert result == {"key": "val"}
 
 
 def test_split_relationship_id():
-    from src.backend.document_index.utils import split_relationship_id
+    from src.internal.document_index.utils import split_relationship_id
     source, rel, target = split_relationship_id("doc1:RELATED:doc2")
     assert source == "doc1"
     assert rel == "RELATED"
@@ -631,7 +631,7 @@ pytest tests/unit/document_index/test_types.py::test_utils_importable tests/unit
 
 Expected: FAIL
 
-- [ ] **Step 3: Create `src/backend/document_index/utils.py`**
+- [ ] **Step 3: Create `src/internal/document_index/utils.py`**
 
 ```python
 """Utility helpers for the document index layer.
@@ -722,7 +722,7 @@ Expected: All tests PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/document_index/utils.py tests/unit/document_index/test_types.py
+git add src/internal/document_index/utils.py tests/unit/document_index/test_types.py
 git commit -m "feat(document_index): add utils.py with logger, batch, unicode, metadata helpers"
 ```
 
@@ -731,10 +731,10 @@ git commit -m "feat(document_index): add utils.py with logger, batch, unicode, m
 ## Task 4: Fix simple support files
 
 **Files:**
-- Modify: `src/backend/document_index/vespa_constants.py`
-- Modify: `src/backend/document_index/disabled.py`
-- Modify: `src/backend/document_index/interfaces_new.py`
-- Modify: `src/backend/document_index/document_metadata.py`
+- Modify: `src/internal/document_index/vespa_constants.py`
+- Modify: `src/internal/document_index/disabled.py`
+- Modify: `src/internal/document_index/interfaces_new.py`
+- Modify: `src/internal/document_index/document_metadata.py`
 - Test: `tests/unit/document_index/test_imports.py`
 
 - [ ] **Step 1: Write failing import tests**
@@ -746,19 +746,19 @@ Create `tests/unit/document_index/test_imports.py`:
 
 
 def test_vespa_constants_importable():
-    import src.backend.document_index.vespa_constants  # noqa: F401
+    import src.internal.document_index.vespa_constants  # noqa: F401
 
 
 def test_disabled_importable():
-    import src.backend.document_index.disabled  # noqa: F401
+    import src.internal.document_index.disabled  # noqa: F401
 
 
 def test_interfaces_new_importable():
-    import src.backend.document_index.interfaces_new  # noqa: F401
+    import src.internal.document_index.interfaces_new  # noqa: F401
 
 
 def test_document_metadata_importable():
-    import src.backend.document_index.document_metadata  # noqa: F401
+    import src.internal.document_index.document_metadata  # noqa: F401
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -769,14 +769,14 @@ pytest tests/unit/document_index/test_imports.py -v
 
 Expected: 4 FAIL with `ModuleNotFoundError: No module named 'onyx'`
 
-- [ ] **Step 3: Fix `src/backend/document_index/vespa_constants.py`**
+- [ ] **Step 3: Fix `src/internal/document_index/vespa_constants.py`**
 
 Replace the first 6 lines (the onyx imports) with:
 
 ```python
 import os
 
-from src.backend.configs.constants import SOURCE_TYPE  # noqa: F401 — re-exported
+from src.internal.configs.constants import SOURCE_TYPE  # noqa: F401 — re-exported
 
 _vespa_cloud_url = os.environ.get("VESPA_CLOUD_URL") or None
 _vespa_config_server_host = os.environ.get("VESPA_CONFIG_SERVER_HOST", "localhost")
@@ -791,7 +791,7 @@ VESPA_PORT = _vespa_port
 VESPA_TENANT_PORT = _vespa_tenant_port
 ```
 
-- [ ] **Step 4: Fix `src/backend/document_index/disabled.py`**
+- [ ] **Step 4: Fix `src/internal/document_index/disabled.py`**
 
 Replace all `from onyx.*` imports with:
 
@@ -802,14 +802,14 @@ from src.retrieval.models import Embedding
 from src.retrieval.models import IndexFilters
 from src.retrieval.models import InferenceChunk
 from src.retrieval.models import QueryType
-from src.backend.document_index.interfaces_new import DocumentIndex
-from src.backend.document_index.interfaces_new import DocumentInsertionRecord
-from src.backend.document_index.interfaces_new import DocumentSectionRequest
-from src.backend.document_index.interfaces_new import IndexingMetadata
-from src.backend.document_index.interfaces_new import MetadataUpdateRequest
+from src.internal.document_index.interfaces_new import DocumentIndex
+from src.internal.document_index.interfaces_new import DocumentInsertionRecord
+from src.internal.document_index.interfaces_new import DocumentSectionRequest
+from src.internal.document_index.interfaces_new import IndexingMetadata
+from src.internal.document_index.interfaces_new import MetadataUpdateRequest
 ```
 
-- [ ] **Step 5: Fix `src/backend/document_index/interfaces_new.py`**
+- [ ] **Step 5: Fix `src/internal/document_index/interfaces_new.py`**
 
 Replace all `from onyx.*` and `from shared_configs.*` imports with:
 
@@ -821,11 +821,11 @@ from src.retrieval.models import Embedding
 from src.retrieval.models import IndexFilters
 from src.retrieval.models import InferenceChunk
 from src.retrieval.models import QueryType
-from src.backend.configs.constants import PUBLIC_DOC_PAT
-from src.backend.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
+from src.internal.configs.constants import PUBLIC_DOC_PAT
+from src.internal.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
 ```
 
-- [ ] **Step 6: Fix `src/backend/document_index/document_metadata.py`**
+- [ ] **Step 6: Fix `src/internal/document_index/document_metadata.py`**
 
 Replace `from onyx.access.models import ExternalAccess` with:
 
@@ -844,8 +844,8 @@ Expected: All 4 PASS
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/backend/document_index/vespa_constants.py src/backend/document_index/disabled.py \
-    src/backend/document_index/interfaces_new.py src/backend/document_index/document_metadata.py \
+git add src/internal/document_index/vespa_constants.py src/internal/document_index/disabled.py \
+    src/internal/document_index/interfaces_new.py src/internal/document_index/document_metadata.py \
     tests/unit/document_index/test_imports.py
 git commit -m "fix(document_index): replace onyx imports in vespa_constants, disabled, interfaces_new, document_metadata"
 ```
@@ -855,8 +855,8 @@ git commit -m "fix(document_index): replace onyx imports in vespa_constants, dis
 ## Task 5: Fix `document_index_utils.py` and `chunk_content_enrichment.py`
 
 **Files:**
-- Modify: `src/backend/document_index/document_index_utils.py`
-- Modify: `src/backend/document_index/chunk_content_enrichment.py`
+- Modify: `src/internal/document_index/document_index_utils.py`
+- Modify: `src/internal/document_index/chunk_content_enrichment.py`
 - Test: `tests/unit/document_index/test_document_index_utils.py`
 - Test: `tests/unit/document_index/test_chunk_content_enrichment.py`
 
@@ -869,7 +869,7 @@ import math
 import pytest
 from uuid import UUID
 
-from src.backend.document_index.document_index_utils import (
+from src.internal.document_index.document_index_utils import (
     translate_boost_count_to_multiplier,
     get_uuid_from_chunk_info,
     get_uuid_from_chunk_info_old,
@@ -929,7 +929,7 @@ Create `tests/unit/document_index/test_chunk_content_enrichment.py`:
 
 ```python
 from src.retrieval.models import InferenceChunkUncleaned
-from src.backend.document_index.chunk_content_enrichment import cleanup_content_for_chunks
+from src.internal.document_index.chunk_content_enrichment import cleanup_content_for_chunks
 
 
 def test_cleanup_strips_title():
@@ -993,7 +993,7 @@ pytest tests/unit/document_index/test_document_index_utils.py tests/unit/documen
 
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Fix `src/backend/document_index/document_index_utils.py`**
+- [ ] **Step 3: Fix `src/internal/document_index/document_index_utils.py`**
 
 Replace the import block at the top (lines 1-15) with:
 
@@ -1005,7 +1005,7 @@ from uuid import UUID
 
 from src.retrieval.models import DocMetadataAwareIndexChunk
 from src.retrieval.models import MultipassConfig
-from src.backend.document_index.vespa.internal_types import EnrichedDocumentIndexingInfo
+from src.internal.document_index.vespa.internal_types import EnrichedDocumentIndexingInfo
 
 MULTI_TENANT: bool = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
 ENABLE_MULTIPASS_INDEXING: bool = (
@@ -1092,13 +1092,13 @@ Fix the `MULTI_TENANT` usage in `get_uuid_from_chunk_info`:
 
 (This is already correct once the import is fixed.)
 
-- [ ] **Step 4: Fix `src/backend/document_index/chunk_content_enrichment.py`**
+- [ ] **Step 4: Fix `src/internal/document_index/chunk_content_enrichment.py`**
 
 Replace the entire import block with:
 
 ```python
 import os
-from src.backend.configs.constants import BLURB_SIZE, RETURN_SEPARATOR
+from src.internal.configs.constants import BLURB_SIZE, RETURN_SEPARATOR
 from src.retrieval.models import InferenceChunk
 from src.retrieval.models import InferenceChunkUncleaned
 from src.retrieval.models import DocAwareChunk
@@ -1119,11 +1119,11 @@ Add to `tests/unit/document_index/test_imports.py`:
 
 ```python
 def test_document_index_utils_importable():
-    import src.backend.document_index.document_index_utils  # noqa: F401
+    import src.internal.document_index.document_index_utils  # noqa: F401
 
 
 def test_chunk_content_enrichment_importable():
-    import src.backend.document_index.chunk_content_enrichment  # noqa: F401
+    import src.internal.document_index.chunk_content_enrichment  # noqa: F401
 ```
 
 Run: `pytest tests/unit/document_index/test_imports.py -v` — all PASS.
@@ -1131,7 +1131,7 @@ Run: `pytest tests/unit/document_index/test_imports.py -v` — all PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/backend/document_index/document_index_utils.py src/backend/document_index/chunk_content_enrichment.py \
+git add src/internal/document_index/document_index_utils.py src/internal/document_index/chunk_content_enrichment.py \
     tests/unit/document_index/
 git commit -m "fix(document_index): replace onyx imports in document_index_utils and chunk_content_enrichment"
 ```
@@ -1141,7 +1141,7 @@ git commit -m "fix(document_index): replace onyx imports in document_index_utils
 ## Task 6: Fix `factory.py`
 
 **Files:**
-- Modify: `src/backend/document_index/factory.py`
+- Modify: `src/internal/document_index/factory.py`
 - Test: `tests/unit/document_index/test_factory.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -1153,15 +1153,15 @@ import pytest
 
 
 def test_factory_importable():
-    import src.backend.document_index.factory  # noqa: F401
+    import src.internal.document_index.factory  # noqa: F401
 
 
 def test_get_default_index_disabled(monkeypatch):
     monkeypatch.setenv("DISABLE_VECTOR_DB", "true")
     import importlib
-    import src.backend.document_index.factory as factory_mod
+    import src.internal.document_index.factory as factory_mod
     importlib.reload(factory_mod)
-    from src.backend.document_index.disabled import DisabledDocumentIndex
+    from src.internal.document_index.disabled import DisabledDocumentIndex
 
     idx = factory_mod.get_default_document_index(
         primary_index_name="test_index",
@@ -1177,9 +1177,9 @@ def test_get_default_index_disabled(monkeypatch):
 def test_get_default_index_disabled_returns_list(monkeypatch):
     monkeypatch.setenv("DISABLE_VECTOR_DB", "true")
     import importlib
-    import src.backend.document_index.factory as factory_mod
+    import src.internal.document_index.factory as factory_mod
     importlib.reload(factory_mod)
-    from src.backend.document_index.disabled import DisabledDocumentIndex
+    from src.internal.document_index.disabled import DisabledDocumentIndex
 
     indices = factory_mod.get_all_document_indices(
         primary_index_name="test_index",
@@ -1197,7 +1197,7 @@ pytest tests/unit/document_index/test_factory.py -v
 
 Expected: FAIL
 
-- [ ] **Step 3: Rewrite `src/backend/document_index/factory.py`**
+- [ ] **Step 3: Rewrite `src/internal/document_index/factory.py`**
 
 Replace the entire file with:
 
@@ -1210,8 +1210,8 @@ No DB session required — backend selection is purely config-driven.
 
 import os
 
-from src.backend.document_index.disabled import DisabledDocumentIndex
-from src.backend.document_index.interfaces_new import DocumentIndex
+from src.internal.document_index.disabled import DisabledDocumentIndex
+from src.internal.document_index.interfaces_new import DocumentIndex
 
 _DISABLE_VECTOR_DB = os.environ.get("DISABLE_VECTOR_DB", "").lower() in {
     "1", "true", "yes"
@@ -1242,11 +1242,11 @@ def get_default_document_index(
         return DisabledDocumentIndex()
 
     if _ENABLE_OPENSEARCH:
-        from src.backend.document_index.opensearch.opensearch_document_index import (
+        from src.internal.document_index.opensearch.opensearch_document_index import (
             OpenSearchDocumentIndex,
             OpenSearchIndexPair,
         )
-        from src.backend.document_index.interfaces_new import TenantState
+        from src.internal.document_index.interfaces_new import TenantState
 
         tenant_state = _build_tenant_state()
         primary = OpenSearchDocumentIndex(
@@ -1270,7 +1270,7 @@ def get_default_document_index(
             secondary_embedding_precision=_get_embedding_precision(),
         )
 
-    from src.backend.document_index.vespa.vespa_document_index import (
+    from src.internal.document_index.vespa.vespa_document_index import (
         VespaDocumentIndex,
         VespaIndexPair,
     )
@@ -1333,7 +1333,7 @@ def get_all_document_indices(
             )
         )
     if _ENABLE_OPENSEARCH:
-        from src.backend.document_index.opensearch.opensearch_document_index import (
+        from src.internal.document_index.opensearch.opensearch_document_index import (
             OpenSearchDocumentIndex,
             OpenSearchIndexPair,
         )
@@ -1357,7 +1357,7 @@ def get_all_document_indices(
 
 
 def _build_tenant_state():
-    from src.backend.document_index.interfaces_new import TenantState
+    from src.internal.document_index.interfaces_new import TenantState
     tenant_id = os.environ.get("CURRENT_TENANT_ID", "default")
     multi_tenant = os.environ.get("MULTI_TENANT", "").lower() in {"1", "true", "yes"}
     return TenantState(tenant_id=tenant_id, multitenant=multi_tenant)
@@ -1380,7 +1380,7 @@ Expected: All PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/document_index/factory.py tests/unit/document_index/test_factory.py
+git add src/internal/document_index/factory.py tests/unit/document_index/test_factory.py
 git commit -m "fix(document_index): rewrite factory.py — remove DB session, use env-var backend selection"
 ```
 
@@ -1389,10 +1389,10 @@ git commit -m "fix(document_index): rewrite factory.py — remove DB session, us
 ## Task 7: Fix OpenSearch implementation imports
 
 **Files:**
-- Modify: `src/backend/document_index/opensearch/opensearch_document_index.py`
-- Modify: `src/backend/document_index/opensearch/schema.py`
-- Modify: `src/backend/document_index/opensearch/search.py`
-- Modify: `src/backend/document_index/opensearch/client.py`
+- Modify: `src/internal/document_index/opensearch/opensearch_document_index.py`
+- Modify: `src/internal/document_index/opensearch/schema.py`
+- Modify: `src/internal/document_index/opensearch/search.py`
+- Modify: `src/internal/document_index/opensearch/client.py`
 - Test: `tests/unit/document_index/test_imports.py` (extend)
 
 - [ ] **Step 1: Write failing import tests**
@@ -1401,23 +1401,23 @@ Add to `tests/unit/document_index/test_imports.py`:
 
 ```python
 def test_opensearch_constants_importable():
-    import src.backend.document_index.opensearch.constants  # noqa: F401
+    import src.internal.document_index.opensearch.constants  # noqa: F401
 
 
 def test_opensearch_schema_importable():
-    import src.backend.document_index.opensearch.schema  # noqa: F401
+    import src.internal.document_index.opensearch.schema  # noqa: F401
 
 
 def test_opensearch_search_importable():
-    import src.backend.document_index.opensearch.search  # noqa: F401
+    import src.internal.document_index.opensearch.search  # noqa: F401
 
 
 def test_opensearch_client_importable():
-    import src.backend.document_index.opensearch.client  # noqa: F401
+    import src.internal.document_index.opensearch.client  # noqa: F401
 
 
 def test_opensearch_document_index_importable():
-    import src.backend.document_index.opensearch.opensearch_document_index  # noqa: F401
+    import src.internal.document_index.opensearch.opensearch_document_index  # noqa: F401
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -1438,24 +1438,24 @@ Find all `from onyx.*` lines and apply this substitution table:
 | `from onyx.context.search.models import InferenceChunk` | `from src.retrieval.models import InferenceChunk` |
 | `from onyx.context.search.models import InferenceChunkUncleaned` | `from src.retrieval.models import InferenceChunkUncleaned` |
 | `from onyx.db.enums import EmbeddingPrecision` | `from src.retrieval.models import EmbeddingPrecision` |
-| `from onyx.document_index.interfaces_new import *` | `from src.backend.document_index.interfaces_new import *` |
-| `from onyx.document_index.chunk_content_enrichment import *` | `from src.backend.document_index.chunk_content_enrichment import *` |
-| `from onyx.document_index.opensearch.constants import *` | `from src.backend.document_index.opensearch.constants import *` |
-| `from onyx.document_index.opensearch.schema import *` | `from src.backend.document_index.opensearch.schema import *` |
-| `from onyx.document_index.opensearch.search import *` | `from src.backend.document_index.opensearch.search import *` |
-| `from onyx.document_index.opensearch.client import *` | `from src.backend.document_index.opensearch.client import *` |
+| `from onyx.document_index.interfaces_new import *` | `from src.internal.document_index.interfaces_new import *` |
+| `from onyx.document_index.chunk_content_enrichment import *` | `from src.internal.document_index.chunk_content_enrichment import *` |
+| `from onyx.document_index.opensearch.constants import *` | `from src.internal.document_index.opensearch.constants import *` |
+| `from onyx.document_index.opensearch.schema import *` | `from src.internal.document_index.opensearch.schema import *` |
+| `from onyx.document_index.opensearch.search import *` | `from src.internal.document_index.opensearch.search import *` |
+| `from onyx.document_index.opensearch.client import *` | `from src.internal.document_index.opensearch.client import *` |
 | `from onyx.indexing.models import DocMetadataAwareIndexChunk` | `from src.retrieval.models import DocMetadataAwareIndexChunk` |
-| `from onyx.utils.logger import setup_logger` | `from src.backend.document_index.utils import setup_logger` |
-| `from onyx.utils.text_processing import remove_invalid_unicode_chars` | `from src.backend.document_index.utils import remove_invalid_unicode_chars` |
-| `from onyx.utils.batching import batch_generator` | `from src.backend.document_index.utils import batch_generator` |
-| `from onyx.connectors.models import convert_metadata_list_of_strings_to_dict` | `from src.backend.document_index.utils import convert_metadata_list_of_strings_to_dict` |
-| `from onyx.connectors.cross_connector_utils.miscellaneous_utils import get_experts_stores_representations` | `from src.backend.document_index.utils import get_experts_stores_representations` |
-| `from onyx.configs.constants import PUBLIC_DOC_PAT` | `from src.backend.configs.constants import PUBLIC_DOC_PAT` |
+| `from onyx.utils.logger import setup_logger` | `from src.internal.document_index.utils import setup_logger` |
+| `from onyx.utils.text_processing import remove_invalid_unicode_chars` | `from src.internal.document_index.utils import remove_invalid_unicode_chars` |
+| `from onyx.utils.batching import batch_generator` | `from src.internal.document_index.utils import batch_generator` |
+| `from onyx.connectors.models import convert_metadata_list_of_strings_to_dict` | `from src.internal.document_index.utils import convert_metadata_list_of_strings_to_dict` |
+| `from onyx.connectors.cross_connector_utils.miscellaneous_utils import get_experts_stores_representations` | `from src.internal.document_index.utils import get_experts_stores_representations` |
+| `from onyx.configs.constants import PUBLIC_DOC_PAT` | `from src.internal.configs.constants import PUBLIC_DOC_PAT` |
 | `from onyx.configs.constants import OnyxRedisLocks` | (delete — replace usages with string literals or stubs) |
 | `from onyx.configs.app_configs import MAX_CHUNKS_PER_DOC_BATCH` | `MAX_CHUNKS_PER_DOC_BATCH = int(os.environ.get("MAX_CHUNKS_PER_DOC_BATCH", "512"))` |
 | `from onyx.configs.app_configs import VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT` | `VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT = False` |
 | `from onyx.db.models import DocumentSource` | `DocumentSource = str  # stub` |
-| `from onyx.document_index.document_index_utils import *` | `from src.backend.document_index.document_index_utils import *` |
+| `from onyx.document_index.document_index_utils import *` | `from src.internal.document_index.document_index_utils import *` |
 | `from onyx.redis.lock_context import redis_shared_lock` | (stub — see below) |
 | `from onyx.key_value_store.factory import get_shared_kv_store` | (stub — see below) |
 | `from shared_configs.model_server_models import Embedding` | `from src.retrieval.models import Embedding` |
@@ -1465,7 +1465,7 @@ Find all `from onyx.*` lines and apply this substitution table:
 
 For `redis_shared_lock` and `get_shared_kv_store`, add this stub in `utils.py` and import from there:
 
-Add to `src/backend/document_index/utils.py`:
+Add to `src/internal/document_index/utils.py`:
 
 ```python
 import contextlib
@@ -1506,7 +1506,7 @@ Expected: OpenSearch tests PASS (others may still fail — they'll be fixed in T
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/document_index/opensearch/ src/backend/document_index/utils.py tests/unit/document_index/test_imports.py
+git add src/internal/document_index/opensearch/ src/internal/document_index/utils.py tests/unit/document_index/test_imports.py
 git commit -m "fix(document_index): replace onyx imports in opensearch implementation"
 ```
 
@@ -1515,13 +1515,13 @@ git commit -m "fix(document_index): replace onyx imports in opensearch implement
 ## Task 8: Fix Vespa implementation imports
 
 **Files:**
-- Modify: `src/backend/document_index/vespa/vespa_document_index.py`
-- Modify: `src/backend/document_index/vespa/chunk_retrieval.py`
-- Modify: `src/backend/document_index/vespa/deletion.py`
-- Modify: `src/backend/document_index/vespa/indexing_utils.py`
-- Modify: `src/backend/document_index/vespa/kg_interactions.py`
-- Modify: `src/backend/document_index/vespa/shared_utils/utils.py`
-- Modify: `src/backend/document_index/vespa/shared_utils/vespa_request_builders.py`
+- Modify: `src/internal/document_index/vespa/vespa_document_index.py`
+- Modify: `src/internal/document_index/vespa/chunk_retrieval.py`
+- Modify: `src/internal/document_index/vespa/deletion.py`
+- Modify: `src/internal/document_index/vespa/indexing_utils.py`
+- Modify: `src/internal/document_index/vespa/kg_interactions.py`
+- Modify: `src/internal/document_index/vespa/shared_utils/utils.py`
+- Modify: `src/internal/document_index/vespa/shared_utils/vespa_request_builders.py`
 - Test: `tests/unit/document_index/test_imports.py` (extend)
 
 - [ ] **Step 1: Add failing import tests**
@@ -1530,28 +1530,28 @@ Add to `tests/unit/document_index/test_imports.py`:
 
 ```python
 def test_vespa_internal_types_importable():
-    import src.backend.document_index.vespa.internal_types  # noqa: F401
+    import src.internal.document_index.vespa.internal_types  # noqa: F401
 
 
 def test_vespa_shared_utils_importable():
-    import src.backend.document_index.vespa.shared_utils.utils  # noqa: F401
-    import src.backend.document_index.vespa.shared_utils.vespa_request_builders  # noqa: F401
+    import src.internal.document_index.vespa.shared_utils.utils  # noqa: F401
+    import src.internal.document_index.vespa.shared_utils.vespa_request_builders  # noqa: F401
 
 
 def test_vespa_chunk_retrieval_importable():
-    import src.backend.document_index.vespa.chunk_retrieval  # noqa: F401
+    import src.internal.document_index.vespa.chunk_retrieval  # noqa: F401
 
 
 def test_vespa_deletion_importable():
-    import src.backend.document_index.vespa.deletion  # noqa: F401
+    import src.internal.document_index.vespa.deletion  # noqa: F401
 
 
 def test_vespa_indexing_utils_importable():
-    import src.backend.document_index.vespa.indexing_utils  # noqa: F401
+    import src.internal.document_index.vespa.indexing_utils  # noqa: F401
 
 
 def test_vespa_document_index_importable():
-    import src.backend.document_index.vespa.vespa_document_index  # noqa: F401
+    import src.internal.document_index.vespa.vespa_document_index  # noqa: F401
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -1568,12 +1568,12 @@ Apply the import substitution table from Task 7. Additionally:
 
 For any `from onyx.configs.constants import INDEX_SEPARATOR`:
 ```python
-from src.backend.configs.constants import INDEX_SEPARATOR
+from src.internal.configs.constants import INDEX_SEPARATOR
 ```
 
 For any `from onyx.kg.utils.formatting_utils import split_relationship_id`:
 ```python
-from src.backend.document_index.utils import split_relationship_id
+from src.internal.document_index.utils import split_relationship_id
 ```
 
 For `from onyx.background.celery.tasks.opensearch_migration.constants import ...` (in `chunk_retrieval.py`):
@@ -1601,15 +1601,15 @@ For `vespa_document_index.py` extra replacements:
 
 | Old | New |
 |---|---|
-| `from onyx.key_value_store.factory import get_shared_kv_store` | `from src.backend.document_index.utils import get_shared_kv_store` |
-| `from onyx.redis.lock_context import redis_shared_lock` | `from src.backend.document_index.utils import redis_shared_lock` |
+| `from onyx.key_value_store.factory import get_shared_kv_store` | `from src.internal.document_index.utils import get_shared_kv_store` |
+| `from onyx.redis.lock_context import redis_shared_lock` | `from src.internal.document_index.utils import redis_shared_lock` |
 | `from onyx.configs.chat_configs import DOC_TIME_DECAY` | `DOC_TIME_DECAY = float(os.environ.get("DOC_TIME_DECAY", "0.5"))` |
 | `from onyx.configs.chat_configs import HYBRID_ALPHA` | `HYBRID_ALPHA = float(os.environ.get("HYBRID_ALPHA", "0.5"))` |
 | `from onyx.configs.chat_configs import TITLE_CONTENT_RATIO` | `TITLE_CONTENT_RATIO = float(os.environ.get("TITLE_CONTENT_RATIO", "0.1"))` |
 | `from onyx.configs.chat_configs import VESPA_SEARCHER_THREADS` | `VESPA_SEARCHER_THREADS = int(os.environ.get("VESPA_SEARCHER_THREADS", "8"))` |
 | `from onyx.configs.app_configs import RECENCY_BIAS_MULTIPLIER` | `RECENCY_BIAS_MULTIPLIER = float(os.environ.get("RECENCY_BIAS_MULTIPLIER", "1.0"))` |
 | `from onyx.configs.app_configs import RERANK_COUNT` | `RERANK_COUNT = int(os.environ.get("RERANK_COUNT", "0"))` |
-| `from onyx.configs.constants import KV_REINDEX_KEY` | `from src.backend.configs.constants import KV_REINDEX_KEY` |
+| `from onyx.configs.constants import KV_REINDEX_KEY` | `from src.internal.configs.constants import KV_REINDEX_KEY` |
 
 - [ ] **Step 4: Run all import tests**
 
@@ -1630,7 +1630,7 @@ Expected: All previously passing tests still PASS; new tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/backend/document_index/vespa/ tests/unit/document_index/test_imports.py
+git add src/internal/document_index/vespa/ tests/unit/document_index/test_imports.py
 git commit -m "fix(document_index): replace onyx imports in vespa implementation"
 ```
 
@@ -1647,7 +1647,7 @@ Create `tests/unit/document_index/test_disabled.py`:
 
 ```python
 import pytest
-from src.backend.document_index.disabled import DisabledDocumentIndex
+from src.internal.document_index.disabled import DisabledDocumentIndex
 from src.retrieval.models import EmbeddingPrecision
 
 

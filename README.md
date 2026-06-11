@@ -26,15 +26,15 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 | Feature | Key modules |
 |---------|-------------|
-| 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/backend/servers/retrieval/hybrid_rerank.py` |
-| 🌍 Web Search | `src/backend/servers/retrieval/google.py`, `serp.py`, `browser.py` |
-| 📚 Document Indexing | `src/backend/document_index/`, `src/backend/servers/backgroundworker/` |
-| 🔗 Connectors | `src/backend/connectors/`, `src/backend/servers/documents/`, `src/backend/servers/oauth/` |
+| 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
+| 🌍 Web Search | `src/internal/servers/retrieval/google.py`, `serp.py`, `browser.py` |
+| 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
+| 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
-| 💬 Chat Orchestration | `src/backend/chat/process_message.py`, `src/backend/chat/llm_loop.py`, `src/backend/chat/citation_processor.py`, `src/backend/chat/compression.py` |
+| 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
 | 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
-| 🔒 Permission-Aware Retrieval | `src/backend/access/`, `src/context/preprocessing/`, `src/backend/servers/documents/` |
-| 📊 Admin & Observability | `src/backend/observability/`, `src/backend/servers/analytics/`, `settings/`, `reporting/`, `license/` |
+| 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
+| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
 
 ## Repository Structure
@@ -81,7 +81,7 @@ tests/                           # Unit and integration test suites
 examples/                        # Runnable CLI examples
 ```
 
-The FastAPI app is assembled in `src/backend/servers/web/app.py`. Every feature area is a self-contained router factory. `AgenticSearchStore` (SQLite) is the single persistence layer — no Postgres, Redis, or Celery required locally.
+The FastAPI app is assembled in `src/internal/servers/web/app.py`. Every feature area is a self-contained router factory. `AgenticSearchStore` (SQLite) is the single persistence layer — no Postgres, Redis, or Celery required locally.
 
 
 ## Install
@@ -110,10 +110,10 @@ GOOGLE_API_KEY=...   GOOGLE_CSE_ID=...   SERP_API_KEY=...   JAVA_HOME=/path/to/j
 
 ```bash
 # Terminal 1 — retrieval server (TF-IDF demo, no Java required)
-python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend
-uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
+uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 
 # Terminal 3 — frontend
 cd web && npm install && npm run dev
@@ -189,9 +189,9 @@ python3 -m examples.prepare_search_rag_dataset \
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli
-- FAISS and BM25 index builders from a JSONL corpus (`src/backend/document_index/index_builder.py`)
+- FAISS and BM25 index builders from a JSONL corpus (`src/internal/document_index/index_builder.py`)
 - Background indexing pipeline — async workers fetch, parse, chunk, enrich, embed, and index; supports mini-chunks, vector-write retries, and document prefiltering
-- **Connectors** (`src/backend/connectors/`) — collect documents from multiple sources:
+- **Connectors** (`src/internal/connectors/`) — collect documents from multiple sources:
   - `LocalFileConnector` / `LocalFilePollConnector` — UTF-8 files from paths, directories, or globs
   - `SearchConnector` — search results as documents via retrieval, Google, or SerpAPI
   - `InMemoryConnector` — Python objects for testing and prototyping
@@ -204,7 +204,7 @@ python3 -m examples.prepare_search_rag_dataset \
 - `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
 
 **LLM Backends**
-- `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/backend/llm/providers.py`)
+- `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/internal/llm/providers.py`)
 - `VLLMServerManager` — server-backed inference via any OpenAI-compatible endpoint
 - `LocalServerManager` — in-process HuggingFace models (Qwen, Llama, Mistral, etc.) on CPU or GPU
 - Configured via `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
@@ -225,14 +225,14 @@ python3 -m examples.prepare_search_rag_dataset \
 - `build_system_prompt` — assembles system prompt from persona, tools, knowledge, and memory context
 
 **Cache & Persistence**
-- `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing attempts, usage reports, rate limits, SCIM tokens, standard answers (`src/backend/db/store.py`)
+- `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing attempts, usage reports, rate limits, SCIM tokens, standard answers (`src/internal/db/store.py`)
 - Search history per user (`GET /search/search-history`) and query history with CSV export (`GET /admin/query-history/export`)
 - `InMemoryCache` — in-flight chat session state (processing flag, stop signal, cancel) during streaming
 - `ChunkBatchStore` — temp disk buffer decoupling embedding from index insertion for large jobs
 - `InMemoryChatFile` — uploaded files (images, PDFs, text) held in memory for one chat turn
 
 **Prompts**
-- Chat prompt constants — citation reminders, system prompt defaults, file/image/tool templates (`src/backend/prompts/chat_prompts.py`)
+- Chat prompt constants — citation reminders, system prompt defaults, file/image/tool templates (`src/internal/prompts/chat_prompts.py`)
 - `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
 - Binary search/chat classification prompt with labelled examples and strict single-word output
 - Agentic RAG prompts — decompose (2–4 sub-questions) and HyDE (hypothetical ideal answer) for `QueryEnhancer`
@@ -245,7 +245,7 @@ python3 -m examples.prepare_search_rag_dataset \
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 
 **Query Classification**
-- **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/backend/secondary_llm_flows/`)
+- **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/secondary_llm_flows/`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
 
 **Observability & Feature Flags**
@@ -290,22 +290,22 @@ Loop flow:
 
 **Index documents from Python:**
 
-Use `src.backend.document_index` as the single indexing entry point. It handles
+Use `src.internal.document_index` as the single indexing entry point. It handles
 filtering, chunking, embedding, retry-isolated writes, and failure reporting:
 
 ```python
-from src.backend.document_index import index_documents
+from src.internal.document_index import index_documents
 
 result = index_documents(documents, sink=my_chunk_sink)
 print(result.successful_chunk_counts)
 print(result.failures)
 ```
 
-Query-time indexing and local retrievers live in `src.backend.document_index`.
+Query-time indexing and local retrievers live in `src.internal.document_index`.
 Search context contracts and the retrieval HTTP client live in `src.context`.
-Reranker utilities live beside their server in `src.backend.servers.retrieval`.
+Reranker utilities live beside their server in `src.internal.servers.retrieval`.
 
-**Retrieval servers** (`src/backend/servers/retrieval/`):
+**Retrieval servers** (`src/internal/servers/retrieval/`):
 
 | Module | Description |
 |--------|-------------|
@@ -321,30 +321,30 @@ Reranker utilities live beside their server in `src.backend.servers.retrieval`.
 
 ```bash
 # Dense (E5)
-python3 -m src.backend.servers.retrieval.retrieval \
+python3 -m src.internal.servers.retrieval.retrieval \
   --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl --retrieval_method e5 --device cpu --topk 5
 
 # Sparse BM25
-python3 -m src.backend.servers.retrieval.retrieval \
+python3 -m src.internal.servers.retrieval.retrieval \
   --index_path data/indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
 ```
 
 **Build indexes:**
 
 ```bash
-python3 -m src.backend.document_index.index_builder \
+python3 -m src.internal.document_index.index_builder \
   --retrieval_method e5 --model_path intfloat/e5-base-v2 \
   --corpus_path data/corpus.jsonl --faiss_type Flat --save_dir data/indexes/
 
-python3 -m src.backend.document_index.index_builder \
+python3 -m src.internal.document_index.index_builder \
   --retrieval_method bm25 --corpus_path data/corpus.jsonl --save_dir data/indexes/
 ```
 
 **Hybrid + rerank:**
 
 ```bash
-python3 -m src.backend.servers.retrieval.hybrid_rerank \
+python3 -m src.internal.servers.retrieval.hybrid_rerank \
   --dense_model intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl \
   --sparse_index_path data/indexes/bm25 --hybrid_alpha 0.5 \
@@ -354,10 +354,10 @@ python3 -m src.backend.servers.retrieval.hybrid_rerank \
 **Web search servers:**
 
 ```bash
-python3 -m src.backend.servers.retrieval.serp \
+python3 -m src.internal.servers.retrieval.serp \
   --search_url "https://serpapi.com/search" --topk 3 --serp_api_key "$SERP_API_KEY"
 
-python3 -m src.backend.servers.retrieval.google \
+python3 -m src.internal.servers.retrieval.google \
   --api_key "$GOOGLE_API_KEY" --topk 5 --cse_id "$GOOGLE_CSE_ID" --snippet_only
 ```
 
@@ -439,7 +439,7 @@ Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8000
 
 ```bash
 export TOKEN=$(python3 -c "
-from src.backend.auth import generate_user_jwt_token
+from src.internal.auth import generate_user_jwt_token
 print(generate_user_jwt_token(user_id='dev', email='dev@local'))
 ")
 ```

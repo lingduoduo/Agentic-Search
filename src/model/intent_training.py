@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .intent_classifier import INTENT_LABELS, IntentPipeline, load_training_data
-from src.backend.document_index.text import extract_keywords, tokenize_text
+from src.internal.document_index.text import extract_keywords, tokenize_text
 
 INTENTS = tuple(INTENT_LABELS)  # ordering used for sort key
 STOPWORDS = frozenset(

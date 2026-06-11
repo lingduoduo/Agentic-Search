@@ -1,4 +1,4 @@
-"""Tests for src/backend/servers/middleware/rate_limiting.py."""
+"""Tests for src/internal/servers/middleware/rate_limiting.py."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from src.backend.servers.middleware.rate_limiting import (
+from src.internal.servers.middleware.rate_limiting import (
     _make_key,
     _make_limiter,
     _windows,
@@ -87,7 +87,7 @@ class TestGetAuthRateLimiters:
         monkeypatch.delenv("AUTH_RATE_LIMITING_ENABLED", raising=False)
         # reload to pick up env change
         import importlib
-        import src.backend.servers.middleware.rate_limiting as mod
+        import src.internal.servers.middleware.rate_limiting as mod
 
         importlib.reload(mod)
         assert mod.get_auth_rate_limiters() == []
@@ -95,7 +95,7 @@ class TestGetAuthRateLimiters:
     def test_enabled_returns_one_dependency(self, monkeypatch):
         monkeypatch.setenv("AUTH_RATE_LIMITING_ENABLED", "true")
         import importlib
-        import src.backend.servers.middleware.rate_limiting as mod
+        import src.internal.servers.middleware.rate_limiting as mod
 
         importlib.reload(mod)
         limiters = mod.get_auth_rate_limiters()

@@ -27,4 +27,4 @@ COPY --from=frontend-builder /app/web/dist ./web/dist
 ENV PYTHONUNBUFFERED=1
 EXPOSE 7860
 
-CMD ["uvicorn", "src.backend.servers.web.app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "src.internal.servers.web.app:app", "--host", "0.0.0.0", "--port", "7860"]

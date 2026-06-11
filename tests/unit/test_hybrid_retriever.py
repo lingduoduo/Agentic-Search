@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.backend.document_index.hybrid_retriever import (
+from src.internal.document_index.hybrid_retriever import (
     HybridRetriever,
     HybridRetrieverConfig,
     combine_retrieval_results,
     maximal_marginal_relevance,
 )
-from src.backend.document_index.retrieval import (
+from src.internal.document_index.retrieval import (
     DenseRetrieverConfig,
     SparseRetrieverConfig,
 )
@@ -115,10 +115,10 @@ def _make_hybrid(alpha: float, *, with_sparse: bool = True) -> HybridRetriever:
 
     with (
         patch(
-            "src.backend.document_index.hybrid_retriever.DenseRetriever"
+            "src.internal.document_index.hybrid_retriever.DenseRetriever"
         ) as mock_dense_cls,
         patch(
-            "src.backend.document_index.hybrid_retriever.SparseRetriever"
+            "src.internal.document_index.hybrid_retriever.SparseRetriever"
         ) as mock_sparse_cls,
     ):
         mock_dense_cls.return_value = MagicMock()

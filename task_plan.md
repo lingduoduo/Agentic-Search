@@ -21,8 +21,8 @@
 | `SentenceTransformerReranker` | `src/retrieval/reranker.py` | ✅ ready |
 | `SearchAgentLoop` (XML trace) | `src/agents/search.py` | ✅ ready |
 | `answer_with_retrieval` pipeline | `src/context/pipeline.py` | ✅ ready |
-| `expand_keywords` (BM25 expansion) | `src/backend/secondary_llm_flows/query_expansion.py` | ✅ ready |
-| Retrieval + rerank server | `src/backend/servers/retrieval/retrieval_rerank.py` | ✅ single-backend only |
+| `expand_keywords` (BM25 expansion) | `src/internal/secondary_llm_flows/query_expansion.py` | ✅ ready |
+| Retrieval + rerank server | `src/internal/servers/retrieval/retrieval_rerank.py` | ✅ single-backend only |
 
 **Gap:** No server combines hybrid (dense+sparse) with reranking. No query decomposition or HyDE. No iterative sufficiency check in the RAG loop.
 
@@ -63,13 +63,13 @@ Phase 5: Wire into /api/agent + README
 ## Phase 1: Hybrid + Rerank Retrieval Server
 
 **Files:**
-- Create: `src/backend/servers/retrieval/hybrid_rerank.py`
+- Create: `src/internal/servers/retrieval/hybrid_rerank.py`
 - Create: `tests/unit/retrieval/test_hybrid_rerank_server.py`
 
 **What it does:**
 - `HybridRerankEngine` wraps `HybridRetriever` + `SentenceTransformerReranker`
 - Follows same `batch_search` → `create_search_app` pattern as `serp.py`, `google.py`, `browser.py`
-- CLI: `python3 -m src.backend.servers.retrieval.hybrid_rerank --dense_model intfloat/e5-base-v2 --index_path indexes/e5_Flat.index --corpus_path data/corpus.jsonl`
+- CLI: `python3 -m src.internal.servers.retrieval.hybrid_rerank --dense_model intfloat/e5-base-v2 --index_path indexes/e5_Flat.index --corpus_path data/corpus.jsonl`
 
 **Status:** [ ] pending
 
@@ -115,7 +115,7 @@ Phase 5: Wire into /api/agent + README
 ## Phase 4: Wire into Web API
 
 **Files:**
-- Modify: `src/backend/servers/web/app.py` or `src/backend/servers/query_and_chat/`
+- Modify: `src/internal/servers/web/app.py` or `src/internal/servers/query_and_chat/`
 - Add `mode=agentic_rag` to `POST /api/agent`
 
 **Status:** [ ] pending

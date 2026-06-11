@@ -7,8 +7,8 @@ import json
 import numpy as np
 import pytest
 
-from src.backend.connectors import Document
-from src.backend.document_index.index_builder import (
+from src.internal.connectors import Document
+from src.internal.document_index.index_builder import (
     ChunkingConfig,
     EmbeddingConfig,
     IndexChunk,
@@ -422,7 +422,7 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
         index_path.write_text("index", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.backend.document_index.index_builder.write_dense_faiss_index",
+        "src.internal.document_index.index_builder.write_dense_faiss_index",
         fake_write_dense_faiss_index,
     )
 
@@ -448,7 +448,7 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
 # Paragraph-aware chunking
 # ---------------------------------------------------------------------------
 
-from src.backend.document_index.index_builder import (  # noqa: E402
+from src.internal.document_index.index_builder import (  # noqa: E402
     _split_paragraphs,
     _split_sentences_in_paragraph,
 )

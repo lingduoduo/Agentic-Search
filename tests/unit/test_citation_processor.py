@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from src.backend.chat.citation_processor import (
+from src.internal.chat.citation_processor import (
     CitationMode,
     DynamicCitationProcessor,
     in_code_block,

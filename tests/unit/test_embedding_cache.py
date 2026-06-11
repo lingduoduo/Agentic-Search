@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from src.backend.document_index.embedding_cache import (
+from src.internal.document_index.embedding_cache import (
     EmbeddingCache,
     OpenAIEmbedder,
     _pack,

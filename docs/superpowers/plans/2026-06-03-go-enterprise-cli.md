@@ -691,7 +691,7 @@ Expected: prints `Searching enterprise knowledge… ` then `error: ...connection
 ```bash
 cd /Users/linghuang/Git/Agentic-Search
 TOKEN=$(python3 - <<'EOF'
-from src.backend.auth import generate_user_jwt_token
+from src.internal.auth import generate_user_jwt_token
 print(generate_user_jwt_token(user_id="dev-user", email="dev@local"))
 EOF
 )

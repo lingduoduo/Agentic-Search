@@ -16,11 +16,11 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from src.backend.servers.features.hooks.api import HookValidateResponse
-from src.backend.servers.features.hooks.api import HookValidateStatus
-from src.backend.servers.features.hooks.api import _check_ssrf_safety
-from src.backend.servers.features.hooks.api import _raise_for_validation
-from src.backend.servers.features.hooks.api import _validate_endpoint
+from src.internal.servers.features.hooks.api import HookValidateResponse
+from src.internal.servers.features.hooks.api import HookValidateStatus
+from src.internal.servers.features.hooks.api import _check_ssrf_safety
+from src.internal.servers.features.hooks.api import _raise_for_validation
+from src.internal.servers.features.hooks.api import _validate_endpoint
 
 _URL = "https://example.com/hook"
 _API_KEY = "secret"
@@ -98,28 +98,28 @@ class TestCheckSsrfSafety:
 
 class TestValidateEndpoint:
     def _call(self, *, api_key: str | None = _API_KEY) -> HookValidateResponse:
-        with patch("src.backend.servers.features.hooks.api._check_ssrf_safety"):
+        with patch("src.internal.servers.features.hooks.api._check_ssrf_safety"):
             return _validate_endpoint(
                 endpoint_url=_URL,
                 api_key=api_key,
                 timeout_seconds=_TIMEOUT,
             )
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_2xx_returns_passed(self, mock_client_cls: MagicMock) -> None:
         mock_client_cls.return_value.__enter__.return_value.post.return_value = (
             _mock_response(200)
         )
         assert self._call().status == HookValidateStatus.passed
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_5xx_returns_passed(self, mock_client_cls: MagicMock) -> None:
         mock_client_cls.return_value.__enter__.return_value.post.return_value = (
             _mock_response(500)
         )
         assert self._call().status == HookValidateStatus.passed
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     @pytest.mark.parametrize("status_code", [401, 403])
     def test_401_403_returns_auth_failed(
         self, mock_client_cls: MagicMock, status_code: int
@@ -131,21 +131,21 @@ class TestValidateEndpoint:
         assert result.status == HookValidateStatus.auth_failed
         assert str(status_code) in (result.error_message or "")
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_4xx_non_auth_returns_passed(self, mock_client_cls: MagicMock) -> None:
         mock_client_cls.return_value.__enter__.return_value.post.return_value = (
             _mock_response(422)
         )
         assert self._call().status == HookValidateStatus.passed
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_connect_timeout_returns_timeout(self, mock_client_cls: MagicMock) -> None:
         mock_client_cls.return_value.__enter__.return_value.post.side_effect = (
             httpx.ConnectTimeout("timed out")
         )
         assert self._call().status == HookValidateStatus.timeout
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     @pytest.mark.parametrize(
         "exc",
         [
@@ -160,7 +160,7 @@ class TestValidateEndpoint:
         mock_client_cls.return_value.__enter__.return_value.post.side_effect = exc
         assert self._call().status == HookValidateStatus.timeout
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_connect_error_returns_cannot_connect(
         self, mock_client_cls: MagicMock
     ) -> None:
@@ -169,7 +169,7 @@ class TestValidateEndpoint:
         )
         assert self._call().status == HookValidateStatus.cannot_connect
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_arbitrary_exception_returns_cannot_connect(
         self, mock_client_cls: MagicMock
     ) -> None:
@@ -178,7 +178,7 @@ class TestValidateEndpoint:
         )
         assert self._call().status == HookValidateStatus.cannot_connect
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_api_key_sent_as_bearer(self, mock_client_cls: MagicMock) -> None:
         mock_post = mock_client_cls.return_value.__enter__.return_value.post
         mock_post.return_value = _mock_response(200)
@@ -186,7 +186,7 @@ class TestValidateEndpoint:
         _, kwargs = mock_post.call_args
         assert kwargs["headers"]["Authorization"] == "Bearer mykey"
 
-    @patch("src.backend.servers.features.hooks.api.httpx.Client")
+    @patch("src.internal.servers.features.hooks.api.httpx.Client")
     def test_no_api_key_omits_auth_header(self, mock_client_cls: MagicMock) -> None:
         mock_post = mock_client_cls.return_value.__enter__.return_value.post
         mock_post.return_value = _mock_response(200)

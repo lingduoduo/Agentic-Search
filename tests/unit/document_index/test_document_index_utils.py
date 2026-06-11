@@ -1,7 +1,7 @@
 import pytest
 from uuid import UUID
 
-from src.backend.document_index.document_index_utils import (
+from src.internal.document_index.document_index_utils import (
     translate_boost_count_to_multiplier,
     get_uuid_from_chunk_info,
     get_uuid_from_chunk_info_old,

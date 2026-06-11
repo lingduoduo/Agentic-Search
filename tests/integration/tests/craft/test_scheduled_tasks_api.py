@@ -1,7 +1,7 @@
 """Scheduled tasks tests (integration / HTTP half).
 
 Integration tests for the user-facing scheduled-tasks HTTP API in
-``src.backend.servers.features.build.scheduled_tasks.api``.
+``src.internal.servers.features.build.scheduled_tasks.api``.
 
 Hits the real backend over HTTP. The executor / dispatch state-machine
 half is covered in

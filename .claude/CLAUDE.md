@@ -81,10 +81,10 @@ pip install -r requirements.txt
 
 ```bash
 # Terminal 1 — retrieval server (demo, port 8000)
-python3 -m src.backend.servers.retrieval.demo --corpus_path data/corpus.jsonl
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend (port 7860)
-uvicorn src.backend.servers.web.app:app --host 127.0.0.1 --port 7860
+uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 
 # Terminal 3 — frontend dev server (port 5173)
 cd web && npm install && npm run dev
@@ -132,7 +132,7 @@ Modes: `single` (PlainGenerationLoop), `search` (SearchAgentLoop), `tool` (ToolA
 
 The system has three layers that run as separate processes:
 
-**1. Retrieval servers** (`src/backend/servers/`)
+**1. Retrieval servers** (`src/internal/servers/`)
 Multiple interchangeable backends behind the same `/retrieve` API:
 - `demo.py` — TF-IDF over a local corpus.jsonl, no Java required
 - `retrieval_server.py` — BM25 (pyserini/Java) or dense (e5/sentence-transformers) via FAISS
@@ -142,11 +142,11 @@ Multiple interchangeable backends behind the same `/retrieve` API:
 - `serp.py` — SerpAPI proxy (requires `SERP_API_KEY`)
 - `browser.py` — playwright-cli browser automation; no API key needed, slower (~5–10s/query)
 
-**2. Web backend** (`src/backend/servers/web/app.py`)
+**2. Web backend** (`src/internal/servers/web/app.py`)
 FastAPI app that exposes `POST /api/agent`. On each request it:
 1. Calls `answer_with_retrieval` from `src/context/` which fetches from the retrieval server
 2. Runs the agent loop from `src/agents/`
-3. Persists chat state to `AgenticSearchStore` (SQLite via `src/backend/db/`)
+3. Persists chat state to `AgenticSearchStore` (SQLite via `src/internal/db/`)
 4. Returns streaming JSON with citations and source cards
 
 The backend also mounts a large set of admin/enterprise routers (auth, SCIM, billing, connectors, OAuth, etc.) all registered in `create_web_app()`.
@@ -167,10 +167,10 @@ React 19 + Vite + TypeScript. No component library — custom components only. P
 **Retrieval internals** (`src/retrieval/`)
 Low-level chunking, embedding, FAISS index building, sparse BM25, and hybrid retrieval. Used both by the retrieval servers and the indexing pipeline.
 
-**Indexing pipeline** (`src/backend/servers/backgroundworker/`)
-Async workers: `light_worker` (polling/scheduling), `heavy_worker` (embedding + indexing), `beat_worker` (cron), `monitoring_worker`. Connectors (`src/backend/connectors/`) feed documents into this pipeline.
+**Indexing pipeline** (`src/internal/servers/backgroundworker/`)
+Async workers: `light_worker` (polling/scheduling), `heavy_worker` (embedding + indexing), `beat_worker` (cron), `monitoring_worker`. Connectors (`src/internal/connectors/`) feed documents into this pipeline.
 
-**Configuration** (`src/backend/configs/`)
+**Configuration** (`src/internal/configs/`)
 Typed dataclasses loaded from environment variables. Key env vars:
 - `AGENTIC_SEARCH_RETRIEVAL_PORT` (default 8000)
 - `AGENTIC_SEARCH_WEB_PORT` (default 8080 in config; run on 7860 by convention)

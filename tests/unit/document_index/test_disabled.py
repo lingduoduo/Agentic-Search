@@ -1,18 +1,18 @@
 import pytest
-from src.backend.document_index.disabled import DisabledDocumentIndex
-from src.backend.document_index.models import (
+from src.internal.document_index.disabled import DisabledDocumentIndex
+from src.internal.document_index.models import (
     EmbeddingPrecision,
     IndexFilters,
     QueryType,
 )
-from src.backend.document_index.interfaces import (
+from src.internal.document_index.interfaces import (
     IndexingMetadata,
 )
 
 
 def test_disabled_index_importable():
     """DisabledDocumentIndex imports without error."""
-    from src.backend.document_index.disabled import DisabledDocumentIndex  # noqa: F401
+    from src.internal.document_index.disabled import DisabledDocumentIndex  # noqa: F401
 
 
 def test_verify_and_create_is_noop():

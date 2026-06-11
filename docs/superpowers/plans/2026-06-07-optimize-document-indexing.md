@@ -14,12 +14,12 @@
 
 | Action | File | Change |
 |--------|------|--------|
-| Modify | `src/backend/db/store.py` | Add `upsert_documents_bulk()`, `delete_documents_bulk()`, `grant_document_access_bulk()` |
-| Modify | `src/backend/servers/backgroundworker/docprocessing.py` | Use `upsert_documents_bulk()` in `process_batch()` |
-| Modify | `src/backend/servers/backgroundworker/heavy_worker.py` | Use `delete_documents_bulk()` in `prune_connector()`, `grant_document_access_bulk()` in `sync_doc_permissions()` |
-| Modify | `src/backend/document_index/opensearch/client.py` | Add `msearch()` to `OpenSearchIndexClient` |
-| Modify | `src/backend/document_index/opensearch/opensearch_document_index.py` | Use `msearch()` in `id_based_retrieval()` |
-| Modify | `src/backend/document_index/embedding_cache.py` | Cache `OpenAI` client in `OpenAIEmbedder.__init__()` |
+| Modify | `src/internal/db/store.py` | Add `upsert_documents_bulk()`, `delete_documents_bulk()`, `grant_document_access_bulk()` |
+| Modify | `src/internal/servers/backgroundworker/docprocessing.py` | Use `upsert_documents_bulk()` in `process_batch()` |
+| Modify | `src/internal/servers/backgroundworker/heavy_worker.py` | Use `delete_documents_bulk()` in `prune_connector()`, `grant_document_access_bulk()` in `sync_doc_permissions()` |
+| Modify | `src/internal/document_index/opensearch/client.py` | Add `msearch()` to `OpenSearchIndexClient` |
+| Modify | `src/internal/document_index/opensearch/opensearch_document_index.py` | Use `msearch()` in `id_based_retrieval()` |
+| Modify | `src/internal/document_index/embedding_cache.py` | Cache `OpenAI` client in `OpenAIEmbedder.__init__()` |
 | Modify | `tests/unit/test_db_store.py` | Tests for `upsert_documents_bulk`, `delete_documents_bulk`, `grant_document_access_bulk` |
 | Create | `tests/unit/servers/backgroundworker/test_heavy_worker.py` | Tests for bulk prune and bulk ACL sync |
 | Create | `tests/unit/servers/backgroundworker/test_docprocessing.py` | Tests for bulk upsert in `process_batch()` |
@@ -32,7 +32,7 @@
 **Problem:** `process_batch()` in `docprocessing.py:110-122` calls `upsert_document()` once per document, each of which calls `self._conn.commit()`. A batch of 100 documents triggers 100 separate SQLite write transactions.
 
 **Files:**
-- Modify: `src/backend/db/store.py` — add `upsert_documents_bulk()`
+- Modify: `src/internal/db/store.py` — add `upsert_documents_bulk()`
 - Modify: `tests/unit/test_db_store.py` — add test
 
 - [ ] **Step 1: Write the failing test**
@@ -161,7 +161,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/db/store.py tests/unit/test_db_store.py
+git add src/internal/db/store.py tests/unit/test_db_store.py
 git commit -m "perf: add upsert_documents_bulk to AgenticSearchStore"
 ```
 
@@ -172,7 +172,7 @@ git commit -m "perf: add upsert_documents_bulk to AgenticSearchStore"
 **Problem:** `process_batch()` at `docprocessing.py:110-122` and `:138-155` calls `upsert_document()` in a per-document loop. With 100 docs per batch this is 200 individual commits (one for initial persistence, one for metadata update).
 
 **Files:**
-- Modify: `src/backend/servers/backgroundworker/docprocessing.py`
+- Modify: `src/internal/servers/backgroundworker/docprocessing.py`
 - Create: `tests/unit/servers/backgroundworker/test_docprocessing.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -186,15 +186,15 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch, call
 import numpy as np
 
-from src.backend.connectors.models import Document
-from src.backend.db.models import StoredDocument
-from src.backend.db.store import AgenticSearchStore
-from src.backend.servers.backgroundworker.docprocessing import (
+from src.internal.connectors.models import Document
+from src.internal.db.models import StoredDocument
+from src.internal.db.store import AgenticSearchStore
+from src.internal.servers.backgroundworker.docprocessing import (
     DocprocessingWorker,
     DocprocessingConfig,
 )
-from src.backend.document_index import DefaultIndexingEmbedder
-from src.backend.document_index.models import ChunkingConfig, EmbeddingConfig
+from src.internal.document_index import DefaultIndexingEmbedder
+from src.internal.document_index.models import ChunkingConfig, EmbeddingConfig
 
 
 def _make_docs(n: int) -> list[Document]:
@@ -302,7 +302,7 @@ Expected: all tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/backend/servers/backgroundworker/docprocessing.py tests/unit/servers/backgroundworker/test_docprocessing.py
+git add src/internal/servers/backgroundworker/docprocessing.py tests/unit/servers/backgroundworker/test_docprocessing.py
 git commit -m "perf: use upsert_documents_bulk in DocprocessingWorker.process_batch"
 ```
 
@@ -315,8 +315,8 @@ git commit -m "perf: use upsert_documents_bulk in DocprocessingWorker.process_ba
 - `sync_doc_permissions()` at `heavy_worker.py:187-199` has a nested loop calling `grant_document_access()` once per permission, each committing individually.
 
 **Files:**
-- Modify: `src/backend/db/store.py` — add `delete_documents_bulk()`, `grant_document_access_bulk()`
-- Modify: `src/backend/servers/backgroundworker/heavy_worker.py`
+- Modify: `src/internal/db/store.py` — add `delete_documents_bulk()`, `grant_document_access_bulk()`
+- Modify: `src/internal/servers/backgroundworker/heavy_worker.py`
 - Create: `tests/unit/servers/backgroundworker/test_heavy_worker.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -329,9 +329,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from src.backend.db.models import DocumentPermission, StoredDocument
-from src.backend.db.store import AgenticSearchStore
-from src.backend.servers.backgroundworker.heavy_worker import (
+from src.internal.db.models import DocumentPermission, StoredDocument
+from src.internal.db.store import AgenticSearchStore
+from src.internal.servers.backgroundworker.heavy_worker import (
     HeavyWorker,
     PruneConnectorTask,
     SyncDocPermissionsTask,
@@ -543,7 +543,7 @@ Expected: all tests pass
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/backend/db/store.py src/backend/servers/backgroundworker/heavy_worker.py tests/unit/servers/backgroundworker/test_heavy_worker.py
+git add src/internal/db/store.py src/internal/servers/backgroundworker/heavy_worker.py tests/unit/servers/backgroundworker/test_heavy_worker.py
 git commit -m "perf: bulk delete and ACL writes in HeavyWorker; add store bulk methods"
 ```
 
@@ -554,8 +554,8 @@ git commit -m "perf: bulk delete and ACL writes in HeavyWorker; add store bulk m
 **Problem:** `id_based_retrieval()` at `opensearch_document_index.py:686-720` issues one OpenSearch search per `DocumentSectionRequest`. For N requests this is N sequential HTTP round-trips. OpenSearch's `msearch` API batches N queries into a single HTTP call.
 
 **Files:**
-- Modify: `src/backend/document_index/opensearch/client.py` — add `msearch()` to `OpenSearchIndexClient`
-- Modify: `src/backend/document_index/opensearch/opensearch_document_index.py` — update `id_based_retrieval()`
+- Modify: `src/internal/document_index/opensearch/client.py` — add `msearch()` to `OpenSearchIndexClient`
+- Modify: `src/internal/document_index/opensearch/opensearch_document_index.py` — update `id_based_retrieval()`
 - Create: `tests/unit/document_index/test_opensearch_client.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -617,7 +617,7 @@ def test_msearch_issues_single_http_call():
             ]
         }
 
-        from src.backend.document_index.opensearch.client import OpenSearchIndexClient
+        from src.internal.document_index.opensearch.client import OpenSearchIndexClient
         client = OpenSearchIndexClient(index_name="test-index")
 
         queries = [{"query": {"term": {"document_id": "doc-1"}}},
@@ -636,7 +636,7 @@ def test_msearch_returns_empty_for_empty_queries():
         mock_client = MagicMock()
         MockOS.return_value = mock_client
 
-        from src.backend.document_index.opensearch.client import OpenSearchIndexClient
+        from src.internal.document_index.opensearch.client import OpenSearchIndexClient
         client = OpenSearchIndexClient(index_name="test-index")
         result = client.msearch([])
 
@@ -771,7 +771,7 @@ Expected: all tests pass
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/backend/document_index/opensearch/client.py src/backend/document_index/opensearch/opensearch_document_index.py tests/unit/document_index/test_opensearch_client.py
+git add src/internal/document_index/opensearch/client.py src/internal/document_index/opensearch/opensearch_document_index.py tests/unit/document_index/test_opensearch_client.py
 git commit -m "perf: use msearch in id_based_retrieval to reduce OpenSearch round-trips"
 ```
 
@@ -782,7 +782,7 @@ git commit -m "perf: use msearch in id_based_retrieval to reduce OpenSearch roun
 **Problem:** `_call_openai()` at `embedding_cache.py:178` creates a `new OpenAI(...)` instance on every call. Under load, each miss batch creates a new HTTP connection pool (httpx transport) that is never reused, increasing latency and memory pressure.
 
 **Files:**
-- Modify: `src/backend/document_index/embedding_cache.py`
+- Modify: `src/internal/document_index/embedding_cache.py`
 - Modify: `tests/unit/test_embedding_cache.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -802,8 +802,8 @@ def test_openai_client_reused_across_embed_calls():
                 data=[MagicMock(embedding=[0.1, 0.2], index=0)]
             )
 
-    with patch("src.backend.document_index.embedding_cache.OpenAI", FakeOpenAI, create=True):
-        from src.backend.document_index.embedding_cache import OpenAIEmbedder
+    with patch("src.internal.document_index.embedding_cache.OpenAI", FakeOpenAI, create=True):
+        from src.internal.document_index.embedding_cache import OpenAIEmbedder
 
         # Force re-import to pick up the mock — if the class caches on __init__
         # import_calls should contain exactly one entry after N embed() calls.
@@ -871,7 +871,7 @@ Expected: all tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/backend/document_index/embedding_cache.py tests/unit/test_embedding_cache.py
+git add src/internal/document_index/embedding_cache.py tests/unit/test_embedding_cache.py
 git commit -m "perf: cache OpenAI client instance in OpenAIEmbedder to reuse connection pool"
 ```
 

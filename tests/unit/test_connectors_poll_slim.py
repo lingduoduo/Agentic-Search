@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.backend.connectors import (
+from src.internal.connectors import (
     LocalFileConnector,
     LocalFilePollConnector,
     LocalFileSlimConnector,

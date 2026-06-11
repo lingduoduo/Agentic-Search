@@ -6,13 +6,13 @@ import sys
 
 from fastapi.testclient import TestClient
 
-from src.backend.document_index.retrieval import DenseRetrieverConfig
-from src.backend.servers.retrieval.rerank import RerankerConfig
-from src.backend.servers.retrieval.retrieval_rerank import (
+from src.internal.document_index.retrieval import DenseRetrieverConfig
+from src.internal.servers.retrieval.rerank import RerankerConfig
+from src.internal.servers.retrieval.retrieval_rerank import (
     RetrievalRerankConfig,
     create_app,
 )
-from src.backend.document_index.retrieval import SparseRetrieverConfig
+from src.internal.document_index.retrieval import SparseRetrieverConfig
 
 
 class _FakeRetriever:
@@ -93,10 +93,11 @@ def test_retrieval_rerank_batches_retrieval_once(monkeypatch):
         return reranker
 
     monkeypatch.setattr(
-        "src.backend.document_index.retrieval.DenseRetriever", _retriever_factory
+        "src.internal.document_index.retrieval.DenseRetriever", _retriever_factory
     )
     monkeypatch.setattr(
-        "src.backend.servers.retrieval.retrieval_rerank.get_reranker", _reranker_factory
+        "src.internal.servers.retrieval.retrieval_rerank.get_reranker",
+        _reranker_factory,
     )
 
     client = TestClient(create_app(_dense_config()))
@@ -120,10 +121,10 @@ def test_retrieval_rerank_batches_retrieval_once(monkeypatch):
 
 def test_retrieval_rerank_can_return_rerank_scores(monkeypatch):
     monkeypatch.setattr(
-        "src.backend.document_index.retrieval.DenseRetriever", _FakeRetriever
+        "src.internal.document_index.retrieval.DenseRetriever", _FakeRetriever
     )
     monkeypatch.setattr(
-        "src.backend.servers.retrieval.retrieval_rerank.get_reranker",
+        "src.internal.servers.retrieval.retrieval_rerank.get_reranker",
         lambda config: _FakeReranker(),
     )
 
@@ -149,13 +150,13 @@ def test_retrieval_rerank_supports_bm25_retriever(monkeypatch):
         return _FakeRetriever(config)
 
     monkeypatch.setattr(
-        "src.backend.document_index.retrieval.DenseRetriever", _dense_factory
+        "src.internal.document_index.retrieval.DenseRetriever", _dense_factory
     )
     monkeypatch.setattr(
-        "src.backend.document_index.retrieval.SparseRetriever", _sparse_factory
+        "src.internal.document_index.retrieval.SparseRetriever", _sparse_factory
     )
     monkeypatch.setattr(
-        "src.backend.servers.retrieval.retrieval_rerank.get_reranker",
+        "src.internal.servers.retrieval.retrieval_rerank.get_reranker",
         lambda config: _FakeReranker(),
     )
 
@@ -169,7 +170,7 @@ def test_retrieval_rerank_supports_bm25_retriever(monkeypatch):
 
 
 def test_retrieval_rerank_parse_args_allows_bm25_without_model():
-    from src.backend.servers.retrieval.retrieval_rerank import parse_args
+    from src.internal.servers.retrieval.retrieval_rerank import parse_args
 
     saved = sys.argv
     sys.argv = [
@@ -191,7 +192,7 @@ def test_retrieval_rerank_parse_args_allows_bm25_without_model():
 
 
 def test_retrieval_rerank_parse_args_exposes_batch_and_device_flags():
-    from src.backend.servers.retrieval.retrieval_rerank import parse_args
+    from src.internal.servers.retrieval.retrieval_rerank import parse_args
 
     saved = sys.argv
     sys.argv = [

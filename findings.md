@@ -12,7 +12,7 @@
 - `rerank(query, docs)` → sorted docs
 - Used in `retrieval_rerank.py` server (but that only wraps single-backend retrieval)
 
-### Retrieval Server Pattern (`src/backend/servers/retrieval/app.py`)
+### Retrieval Server Pattern (`src/internal/servers/retrieval/app.py`)
 - `create_search_app(title, engine)` — engine must implement `batch_search(queries)`
 - `format_document(title, content, url)` → `{"document": {"title", "contents", "url"}}`
 - `add_host_port_args`, `load_environment`, `run_uvicorn_app` — all reusable
@@ -23,10 +23,10 @@
 - `generate_answer(request, *, llm)` → `AnswerGenerationResult`
 - `build_chat_prompt(question, context, history, config)` → `ChatPrompt`
 
-### Query Expansion (`src/backend/secondary_llm_flows/query_expansion.py`)
+### Query Expansion (`src/internal/secondary_llm_flows/query_expansion.py`)
 - `expand_keywords(user_query, llm)` → list of expanded BM25 keyword queries
 - LLM-backed, gracefully returns `[]` on failure
-- Uses `KEYWORD_EXPANSION_PROMPT` from `src/backend/prompts/query_expansion.py`
+- Uses `KEYWORD_EXPANSION_PROMPT` from `src/internal/prompts/query_expansion.py`
 
 ### SearchAgentLoop (`src/agents/search.py`)
 - XML protocol: `<think>`, `<search>`, `<information>`, `<answer>`

@@ -20,4 +20,4 @@
 - Phase 5 (README): **pending**
 
 ### Next step
-Start Phase 1: write `tests/unit/retrieval/test_hybrid_rerank_server.py` (TDD), then implement `src/backend/servers/retrieval/hybrid_rerank.py`.
+Start Phase 1: write `tests/unit/retrieval/test_hybrid_rerank_server.py` (TDD), then implement `src/internal/servers/retrieval/hybrid_rerank.py`.

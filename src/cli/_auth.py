@@ -1,7 +1,7 @@
 # src/cli/_auth.py
 from __future__ import annotations
 
-from src.backend.auth import generate_user_jwt_token
+from src.internal.auth import generate_user_jwt_token
 
 
 def resolve_token(

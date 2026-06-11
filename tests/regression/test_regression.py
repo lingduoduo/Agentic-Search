@@ -6,13 +6,13 @@ output changes the test fails — prompting deliberate review before merging.
 
 import pytest
 
-from src.backend.document_index.index_builder import (
+from src.internal.document_index.index_builder import (
     prepare_texts,
     resolve_pooling_method,
 )
-from src.backend.servers.retrieval.rerank import passage_to_string, string_to_document
-from src.backend.servers.app import format_document
-from src.backend.document_index.text import (
+from src.internal.servers.retrieval.rerank import passage_to_string, string_to_document
+from src.internal.servers.app import format_document
+from src.internal.document_index.text import (
     extract_keywords,
     normalize_text,
     tokenize_text,

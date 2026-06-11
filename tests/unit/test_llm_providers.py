@@ -6,8 +6,8 @@ import json
 from unittest.mock import MagicMock, patch
 
 
-from src.backend.llm.interfaces import LLMConfig, ToolChoiceOptions
-from src.backend.llm.providers import (
+from src.internal.llm.interfaces import LLMConfig, ToolChoiceOptions
+from src.internal.llm.providers import (
     OpenAICompatibleLLM,
     _parse_sse_chunk,
 )
@@ -197,7 +197,7 @@ def test_get_llm_for_persona_uses_env_defaults(monkeypatch):
     monkeypatch.setenv("GEN_AI_MODEL_VERSION", "gpt-4o-mini")
     monkeypatch.setenv("GEN_AI_API_KEY", "sk-test")
 
-    from src.backend.chat.process_message import get_llm_for_persona
+    from src.internal.chat.process_message import get_llm_for_persona
 
     llm = get_llm_for_persona(persona=None, user=None)
     assert isinstance(llm, OpenAICompatibleLLM)
@@ -211,7 +211,7 @@ def test_get_llm_for_persona_override_respected(monkeypatch):
     monkeypatch.setenv("GEN_AI_MODEL_VERSION", "gpt-4o-mini")
     monkeypatch.setenv("GEN_AI_API_KEY", "sk-test")
 
-    from src.backend.chat.process_message import LLMOverride, get_llm_for_persona
+    from src.internal.chat.process_message import LLMOverride, get_llm_for_persona
 
     override = LLMOverride(
         model_provider="anthropic", model_version="claude-3-5-haiku-20241022"
@@ -226,7 +226,7 @@ def test_get_llm_for_persona_partial_override(monkeypatch):
     monkeypatch.setenv("GEN_AI_MODEL_VERSION", "gpt-4o-mini")
     monkeypatch.setenv("GEN_AI_API_KEY", "sk-test")
 
-    from src.backend.chat.process_message import LLMOverride, get_llm_for_persona
+    from src.internal.chat.process_message import LLMOverride, get_llm_for_persona
 
     # Only override the model version, keep the provider from defaults
     override = LLMOverride(model_version="gpt-4o")

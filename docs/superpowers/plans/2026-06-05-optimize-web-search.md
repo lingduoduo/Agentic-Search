@@ -15,8 +15,8 @@
 | File | Change |
 |---|---|
 | `src/tools/search.py` | Improve `_html_to_text()` extraction; add `fetch_pages_concurrently()`; bump `fetch_url()` default limit |
-| `src/backend/secondary_llm_flows/query_expansion.py` | Add `is_time_sensitive()` + `with_temporal_context()` |
-| `src/backend/servers/web/app.py` | Wire content fetching into `_run_direct_search()` and `_run_hybrid_search()` for web providers |
+| `src/internal/secondary_llm_flows/query_expansion.py` | Add `is_time_sensitive()` + `with_temporal_context()` |
+| `src/internal/servers/web/app.py` | Wire content fetching into `_run_direct_search()` and `_run_hybrid_search()` for web providers |
 | `tests/unit/test_search_tools.py` | Extend with `fetch_pages_concurrently` tests |
 | `tests/unit/test_secondary_llm_flows.py` | Extend with temporal context tests |
 
@@ -221,7 +221,7 @@ git commit -m "feat: add fetch_pages_concurrently and improve HTML extraction in
 ### Task 2: Add temporal query context injection
 
 **Files:**
-- Modify: `src/backend/secondary_llm_flows/query_expansion.py`
+- Modify: `src/internal/secondary_llm_flows/query_expansion.py`
 - Test: `tests/unit/test_secondary_llm_flows.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -229,7 +229,7 @@ git commit -m "feat: add fetch_pages_concurrently and improve HTML extraction in
 Add to the bottom of `tests/unit/test_secondary_llm_flows.py`:
 
 ```python
-from src.backend.secondary_llm_flows.query_expansion import (
+from src.internal.secondary_llm_flows.query_expansion import (
     is_time_sensitive,
     with_temporal_context,
 )
@@ -273,7 +273,7 @@ pytest tests/unit/test_secondary_llm_flows.py::test_is_time_sensitive_detects_te
 
 Expected: `FAILED` — `is_time_sensitive` and `with_temporal_context` do not exist yet.
 
-- [ ] **Step 3: Implement in `src/backend/secondary_llm_flows/query_expansion.py`**
+- [ ] **Step 3: Implement in `src/internal/secondary_llm_flows/query_expansion.py`**
 
 Add after the existing imports at the top:
 
@@ -334,7 +334,7 @@ Expected: All tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/secondary_llm_flows/query_expansion.py tests/unit/test_secondary_llm_flows.py
+git add src/internal/secondary_llm_flows/query_expansion.py tests/unit/test_secondary_llm_flows.py
 git commit -m "feat: add temporal query context detection and injection"
 ```
 
@@ -343,7 +343,7 @@ git commit -m "feat: add temporal query context detection and injection"
 ### Task 3: Wire content fetching into direct search mode
 
 **Files:**
-- Modify: `src/backend/servers/web/app.py`
+- Modify: `src/internal/servers/web/app.py`
 - Test: `tests/unit/servers/web/test_web_experience_app.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -360,7 +360,7 @@ Then add the following test at the bottom of `tests/unit/servers/web/test_web_ex
 def test_direct_search_enriches_web_provider_content(monkeypatch):
     """Content fetching is called for serpapi/google providers, not for retrieval."""
     from src.tools.search import SearchPage
-    from src.backend.servers.web.app import _run_direct_search
+    from src.internal.servers.web.app import _run_direct_search
     import asyncio
 
     serpapi_pages = [
@@ -377,8 +377,8 @@ def test_direct_search_enriches_web_provider_content(monkeypatch):
         assert pages == serpapi_pages
         return fetched_pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
-    monkeypatch.setattr("src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
 
     docs = asyncio.run(
         _run_direct_search(
@@ -394,7 +394,7 @@ def test_direct_search_enriches_web_provider_content(monkeypatch):
 def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
     """Content fetching is NOT called for the local retrieval provider."""
     from src.tools.search import SearchPage
-    from src.backend.servers.web.app import _run_direct_search
+    from src.internal.servers.web.app import _run_direct_search
     import asyncio
 
     fetch_called = []
@@ -406,8 +406,8 @@ def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
         fetch_called.append(True)
         return pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
-    monkeypatch.setattr("src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
 
     asyncio.run(
         _run_direct_search(
@@ -430,7 +430,7 @@ pytest tests/unit/servers/web/test_web_experience_app.py::test_direct_search_enr
 
 Expected: `FAILED` — `fetch_pages_concurrently` not imported and not wired.
 
-- [ ] **Step 3: Implement the changes in `src/backend/servers/web/app.py`**
+- [ ] **Step 3: Implement the changes in `src/internal/servers/web/app.py`**
 
 Add the import at the top of the file alongside the existing `search_tool` import (around line 77):
 
@@ -497,7 +497,7 @@ Expected: All tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/backend/servers/web/app.py tests/unit/servers/web/test_web_experience_app.py
+git add src/internal/servers/web/app.py tests/unit/servers/web/test_web_experience_app.py
 git commit -m "feat: enrich web provider results with full page content in direct search"
 ```
 
@@ -506,7 +506,7 @@ git commit -m "feat: enrich web provider results with full page content in direc
 ### Task 4: Wire content fetching and temporal context into hybrid search mode
 
 **Files:**
-- Modify: `src/backend/servers/web/app.py`
+- Modify: `src/internal/servers/web/app.py`
 - Test: `tests/unit/servers/web/test_web_experience_app.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -517,7 +517,7 @@ Add to `tests/unit/servers/web/test_web_experience_app.py`:
 def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
     """Hybrid search fetches full page content for serpapi results."""
     from src.tools.search import SearchPage
-    from src.backend.servers.web.app import _run_hybrid_search
+    from src.internal.servers.web.app import _run_hybrid_search
     from src.context.models import LLMResponse
     import asyncio
 
@@ -530,10 +530,10 @@ def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
     async def _fake_fetch_pages(pgs, *, max_chars, timeout_seconds=10):
         return fetched
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
-    monkeypatch.setattr("src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.expand_keywords",
+        "src.internal.servers.web.app.expand_keywords",
         lambda query, llm: [],
     )
 
@@ -552,7 +552,7 @@ def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
 
 def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkeypatch):
     """Temporal variant is added to executed queries for time-sensitive queries."""
-    from src.backend.servers.web.app import _run_hybrid_search
+    from src.internal.servers.web.app import _run_hybrid_search
     from src.tools.search import SearchPage
     import asyncio
 
@@ -565,10 +565,10 @@ def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkey
     async def _fake_fetch_pages(pages, **kwargs):
         return pages
 
-    monkeypatch.setattr("src.backend.servers.web.app.search_tool", _fake_search_tool)
-    monkeypatch.setattr("src.backend.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.servers.web.app.fetch_pages_concurrently", _fake_fetch_pages)
     monkeypatch.setattr(
-        "src.backend.servers.web.app.expand_keywords",
+        "src.internal.servers.web.app.expand_keywords",
         lambda query, llm: [],
     )
 
@@ -597,16 +597,16 @@ pytest tests/unit/servers/web/test_web_experience_app.py::test_hybrid_search_enr
 
 Expected: `FAILED`.
 
-- [ ] **Step 3: Update imports in `src/backend/servers/web/app.py`**
+- [ ] **Step 3: Update imports in `src/internal/servers/web/app.py`**
 
 Add alongside the existing `expand_keywords` import (line 25):
 
 ```python
-from src.backend.secondary_llm_flows import expand_keywords
-from src.backend.secondary_llm_flows.query_expansion import with_temporal_context
+from src.internal.secondary_llm_flows import expand_keywords
+from src.internal.secondary_llm_flows.query_expansion import with_temporal_context
 ```
 
-- [ ] **Step 4: Update `_expanded_queries` and `_run_hybrid_search` in `src/backend/servers/web/app.py`**
+- [ ] **Step 4: Update `_expanded_queries` and `_run_hybrid_search` in `src/internal/servers/web/app.py`**
 
 Replace `_expanded_queries` (lines 728–736):
 
@@ -678,7 +678,7 @@ Expected: All tests PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/backend/servers/web/app.py tests/unit/servers/web/test_web_experience_app.py
+git add src/internal/servers/web/app.py tests/unit/servers/web/test_web_experience_app.py
 git commit -m "feat: enrich hybrid search results with page content and inject temporal context"
 ```
 

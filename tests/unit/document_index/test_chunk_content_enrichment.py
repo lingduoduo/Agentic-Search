@@ -1,5 +1,5 @@
-from src.backend.document_index.models import InferenceChunkUncleaned
-from src.backend.document_index.chunk_content_enrichment import (
+from src.internal.document_index.models import InferenceChunkUncleaned
+from src.internal.document_index.chunk_content_enrichment import (
     cleanup_content_for_chunks,
 )
 
@@ -47,7 +47,7 @@ def test_cleanup_no_title_noop():
 
 
 def test_cleanup_returns_inference_chunk_type():
-    from src.backend.document_index.models import InferenceChunk
+    from src.internal.document_index.models import InferenceChunk
 
     chunk = InferenceChunkUncleaned(
         document_id="d1",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.backend.db import (
+from src.internal.db import (
     AgenticSearchStore,
     ConnectorConfig,
     DocumentPermission,

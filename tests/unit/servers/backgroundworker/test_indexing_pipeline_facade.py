@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.backend.connectors import Document
-from src.backend.document_index import ChunkBatchStore
-from src.backend.document_index import Chunker
-from src.backend.document_index import DefaultIndexingEmbedder
-from src.backend.document_index import embed_and_stream
-from src.backend.document_index import filter_documents
-from src.backend.document_index import index_document_batch
-from src.backend.document_index import index_documents
-from src.backend.document_index import write_chunks_with_backoff
-from src.backend.document_index.index_builder import IndexingHeartbeatInterface
-from src.backend.document_index.models import ChunkingConfig
-from src.backend.document_index.models import EmbeddingConfig
+from src.internal.connectors import Document
+from src.internal.document_index import ChunkBatchStore
+from src.internal.document_index import Chunker
+from src.internal.document_index import DefaultIndexingEmbedder
+from src.internal.document_index import embed_and_stream
+from src.internal.document_index import filter_documents
+from src.internal.document_index import index_document_batch
+from src.internal.document_index import index_documents
+from src.internal.document_index import write_chunks_with_backoff
+from src.internal.document_index.index_builder import IndexingHeartbeatInterface
+from src.internal.document_index.models import ChunkingConfig
+from src.internal.document_index.models import EmbeddingConfig
 
 
 def test_chunker_and_embedder_facade_support_mini_chunks():

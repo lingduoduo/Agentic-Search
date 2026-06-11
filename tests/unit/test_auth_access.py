@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import pytest
 
-from src.backend.access import acl_for_store_user
-from src.backend.access import acl_for_user
-from src.backend.access import can_access_document
-from src.backend.access import get_access_for_document
-from src.backend.access import metadata_with_acl
-from src.backend.auth import AuthenticatedUser
-from src.backend.auth import generate_user_jwt_token
-from src.backend.auth import user_from_jwt_token
-from src.backend.db import AgenticSearchStore
-from src.backend.db import DocumentPermission
-from src.backend.db import GroupRecord
-from src.backend.db import StoredDocument
-from src.backend.db import UserRecord
-from src.backend.document_index.models import DocumentAccess
+from src.internal.access import acl_for_store_user
+from src.internal.access import acl_for_user
+from src.internal.access import can_access_document
+from src.internal.access import get_access_for_document
+from src.internal.access import metadata_with_acl
+from src.internal.auth import AuthenticatedUser
+from src.internal.auth import generate_user_jwt_token
+from src.internal.auth import user_from_jwt_token
+from src.internal.db import AgenticSearchStore
+from src.internal.db import DocumentPermission
+from src.internal.db import GroupRecord
+from src.internal.db import StoredDocument
+from src.internal.db import UserRecord
+from src.internal.document_index.models import DocumentAccess
 
 
 def test_user_jwt_round_trips_identity_and_groups():
