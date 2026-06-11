@@ -32,7 +32,8 @@ A retrieval-backed agent platform for building high-quality search, research, an
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
-| 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
+| 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/`, `src/training/ppo/search_agent_grpo_trainer.py` |
+| 📐 Benchmarking | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py` |
 | 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
 | 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
@@ -76,7 +77,9 @@ src/
 ├── model/                       # LLM generation, intent classifier, tensor helpers
 ├── retrieval/                   # Dense/sparse retrievers, indexing pipeline, embedders
 ├── tools/                       # Tool schemas, search tools, OpenAPI tool registry
-└── training/                    # SFT, rewards, PPO, GRPO helpers
+└── training/
+    ├── eval/                    # Benchmark evaluation (Bamboogle two-hop QA)
+    └── ...                      # SFT, rewards, PPO, GRPO helpers
 tests/                           # Unit and integration test suites
 examples/                        # Runnable CLI examples
 ```
@@ -109,7 +112,7 @@ GOOGLE_API_KEY=...   GOOGLE_CSE_ID=...   SERP_API_KEY=...   JAVA_HOME=/path/to/j
 ## Quick Start
 
 ```bash
-# Terminal 1 — retrieval server (TF-IDF demo, no Java required)
+# Terminal 1 — retrieval server (TF-IDF demo, no Java required; binds to port 8001)
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend
@@ -144,7 +147,7 @@ python3 -m examples.run_agentic_search \
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
+  --vllm_url http://localhost:8080 --search_url http://localhost:8001/retrieve
 ```
 
 | Mode | Loop | Use it for |
@@ -158,6 +161,24 @@ python3 -m examples.run_agentic_search \
 ```bash
 python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRPO (no GPU)
 ```
+
+**Bamboogle benchmark evaluation**
+
+```bash
+# Local CPU (no vLLM needed — slow but self-contained)
+python3 -m examples.run_bamboogle_eval \
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --limit 20
+
+# Server-backed (fast, full 125 examples, with shaped reward scoring)
+python3 -m examples.run_bamboogle_eval \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --vllm_url http://localhost:8080 \
+  --search_url http://localhost:8001/retrieve \
+  --reward_preset second_pass \
+  --limit 125 --output results/bamboogle.jsonl
+```
+
+Reward presets: `sparse_final_only` | `simple_sparse` | `second_pass` | `third_pass`
 
 **Dataset preparation**
 
@@ -239,10 +260,12 @@ python3 -m examples.prepare_search_rag_dataset \
 - `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop`
 
 **RL Training**
-- Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, and exact-match components
+- Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, exact-match, citation quality, unnecessary-search penalty, and search-efficiency components
+- `SearchAgentGRPOTrainer` — GRPO trainer that replaces `model.generate()` rollouts with real `SearchAgentLoop` executions, enabling fully shaped rewards from live search trajectories
 - Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
+- **Bamboogle evaluation** (`src/training/eval/bamboogle.py`) — two-hop QA benchmark (125 examples) with EM, contains-match, and optional shaped reward scoring
 
 **Query Classification**
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/secondary_llm_flows/`)
@@ -261,7 +284,7 @@ python3 -m examples.prepare_search_rag_dataset \
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 
 loop = AgenticRAGLoop(
-    AgenticRAGConfig(max_rounds=3, topk=5, retrieval_url="http://localhost:8000/retrieve"),
+    AgenticRAGConfig(max_rounds=3, topk=5, retrieval_url="http://localhost:8001/retrieve"),
     llm=my_llm_client,  # any LLMClient; pass None for extractive fallback
 )
 result = await loop.run("What is FAISS and how does it compare to ScaNN?")
@@ -364,8 +387,8 @@ python3 -m src.internal.servers.retrieval.google \
 **Health check:**
 
 ```bash
-curl -i -sS http://127.0.0.1:8000/health
-curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
+curl -i -sS http://127.0.0.1:8001/health
+curl -i -sS -X POST http://127.0.0.1:8001/retrieve \
   -H "Content-Type: application/json" -d '{"query":"What is FAISS?","top_k":5}'
 ```
 
@@ -378,27 +401,39 @@ The training pipeline is modular: generate trajectories → score with rewards �
 |------|-------------|
 | QA parquet preparation | `python3 -m examples.prepare_search_qa_dataset` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
+| GRPO with real agent loops | `src/training/ppo/search_agent_grpo_trainer.py` |
+| Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` |
 | Reward function | `src/training/reward.py` |
 | GRPO helpers | `src/training/grpo.py` |
 | PPO helpers | `src/training/ppo/` |
+| Benchmark eval helpers | `src/training/eval/bamboogle.py` |
 | Generation and policy loss | `src/model/generation.py` |
 
 **Reward components** (`SearchRewardFunction`):
 
 | Component | What it measures |
 |-----------|-----------------|
+| `correctness` | Token-overlap exact-match against reference answers |
 | `format` | Well-formed XML trace with required action tags |
 | `search_use` | Agent issued at least one search action |
 | `answer_length` | Answer within acceptable token bounds |
-| `exact_match` | Token-overlap correctness against reference answers |
+| `citation_quality` | Claims grounded in retrieved passages |
+| `unnecessary_search_penalty` | Penalises search when the answer was already known |
+| `rounds_used` | Efficiency — fewer retrieval rounds is better |
+| `subquestion_coverage` | Sub-queries covered across the trajectory |
+
+Preset configs (zero-param shortcuts via `SearchRewardConfig`):
 
 ```python
 from src.training.reward import SearchRewardFunction, SearchRewardConfig
 
-reward_fn = SearchRewardFunction(SearchRewardConfig(
-    format_weight=0.2, search_use_weight=0.3,
-    length_weight=0.1, exact_match_weight=0.4,
-))
+# Minimal: correctness only
+reward_fn = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
+
+# Curriculum stages
+reward_fn = SearchRewardFunction(SearchRewardConfig.simple_sparse_with_search_penalty())
+reward_fn = SearchRewardFunction(SearchRewardConfig.second_pass())
+reward_fn = SearchRewardFunction(SearchRewardConfig.third_pass_with_format())
 ```
 
 **GRPO** — group-relative advantages from G rollouts per prompt:
@@ -408,6 +443,45 @@ from src.training.grpo import score_prompt_group, compute_grpo_outcome_advantage
 
 scored = score_prompt_group(rollouts, reward_fn, reference_answer)
 advantages = compute_grpo_outcome_advantage(scored)
+```
+
+**SearchAgentGRPOTrainer** — GRPO with real agent-loop rollouts (all shaped rewards fire):
+
+```python
+from src.training.ppo import SearchAgentGRPOTrainer
+from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
+
+trainer = SearchAgentGRPOTrainer(
+    policy=policy,
+    reference_policy=ref_policy,
+    tokenizer=tokenizer,
+    optimizer=optimizer,
+    judge_fn=judge_fn,                              # (prediction, ground_truth) -> float
+    loop_factory=lambda: SearchAgentLoop(           # one new loop per rollout
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(search_url="http://localhost:8001/retrieve"),
+    ),
+    reward_fn=SearchRewardFunction(SearchRewardConfig.second_pass()),
+    max_concurrent=4,                               # parallel agent loops per step
+)
+trainer.step(prompts, ground_truths)
+```
+
+**Bamboogle benchmark evaluation** — two-hop QA (125 examples from FlashRAG):
+
+```python
+from src.training.eval.bamboogle import evaluate_bamboogle, load_bamboogle
+
+summary, rows = evaluate_bamboogle(
+    agent,                        # any object with .invoke({"messages": [...]})
+    reward_fn=reward_fn,          # optional: score shaped reward alongside EM
+    limit=125,
+    output_path="results/bamboogle.jsonl",
+)
+print(f"EM: {summary.exact_match:.3f}  Contains: {summary.contains_match:.3f}")
+if summary.avg_reward is not None:
+    print(f"Avg reward: {summary.avg_reward:.3f}")
 ```
 
 **PPO** — clipped policy + value loss with KL penalty:
@@ -433,7 +507,7 @@ value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
 
 ## API Health Checks
 
-Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8000`
+Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8001`
 
 **Generate a dev JWT** (required for admin endpoints):
 
@@ -448,7 +522,7 @@ print(generate_user_jwt_token(user_id='dev', email='dev@local'))
 
 ```bash
 curl -s http://localhost:7860/health                  # web server
-curl -s http://localhost:8000/health                  # retrieval server
+curl -s http://localhost:8001/health                  # retrieval server
 curl -s http://localhost:7860/settings                # tier / license status (no auth)
 ```
 
@@ -461,7 +535,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 
 curl -s http://localhost:7860/api/sessions -H "Authorization: Bearer $TOKEN"
 
-curl -s -X POST http://localhost:8000/retrieve \
+curl -s -X POST http://localhost:8001/retrieve \
   -H "Content-Type: application/json" -d '{"query": "dense retrieval", "top_k": 3}'
 ```
 
@@ -506,7 +580,7 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `AGENTIC_SEARCH_AUTH_SECRET` | `agentic-search-dev-secret` | JWT signing secret |
 | `AGENTIC_SEARCH_SUPER_USERS` | `[]` | JSON list of admin user IDs or emails |
 | `AGENTIC_SEARCH_WEB_DB_PATH` | `:memory:` | SQLite path (`:memory:` for ephemeral) |
-| `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8000/retrieve` | Retrieval server URL |
+| `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8001/retrieve` | Retrieval server URL |
 | `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL` | — | Cloud data plane for billing proxy |
 | `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
 | `AGENTIC_SEARCH_DATA_DIR` | `~/.local/share/agentic_search` | License file directory |
