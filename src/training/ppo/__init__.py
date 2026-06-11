@@ -21,6 +21,14 @@ from .core_algos import (
     masked_whiten,
 )
 from .controller import LocalGRPOController, RolloutResult
+from .grpo_trainer import (
+    GRPOTrainer,
+    Policy,
+    compute_group_advantages,
+    grpo_clipped_policy_loss,
+    make_grpo_trainer,
+    reverse_kl_penalty,
+)
 from .reward_manager import (
     PPORewardManager,
     qa_exact_match_score,
@@ -49,6 +57,12 @@ __all__ = [
     "kl_penalty",
     "masked_mean",
     "masked_whiten",
+    "GRPOTrainer",
+    "Policy",
+    "compute_group_advantages",
+    "grpo_clipped_policy_loss",
+    "make_grpo_trainer",
     "qa_exact_match_score",
+    "reverse_kl_penalty",
     "select_reward_score_fn",
 ]
