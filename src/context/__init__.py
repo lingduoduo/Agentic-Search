@@ -17,6 +17,8 @@ from .models import PromptBundle
 from .models import SearchContextBundle
 from .models import SearchFilters
 from .models import SearchRequest
+from .history import compress_history
+from .history import estimate_tokens
 from .pipeline import answer_with_retrieval
 from .pipeline import generate_answer
 from .pipeline import rank_evidence_snippets
@@ -33,6 +35,8 @@ from .utils import merge_adjacent_documents
 
 __all__ = [
     "AgentBehavior",
+    "compress_history",
+    "estimate_tokens",
     "AgentBehaviorConfig",
     "AnswerGenerationRequest",
     "AnswerGenerationResult",

@@ -11,7 +11,7 @@ from itertools import islice
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -169,6 +169,16 @@ class AgentExperienceResponse(BaseModel):
     documents: list[SourceDocumentView]
     messages: list[ChatMessageView]
     hook_metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class ChatStreamRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    session_id: str | None = None
+    user_id: str | None = None
+    search_url: str | None = None
+    file_content: str | None = None
+    tool_names: list[str] | None = None
+    top_k: int = Field(default=5, ge=1, le=20)
 
 
 class QueryProcessingHookResponse(BaseModel):
@@ -542,6 +552,62 @@ def create_web_app(
         return _response_from_result(
             session_id, result, messages, hook_metadata=hook_metadata
         )
+
+    @app.post("/api/chat/stream")
+    async def stream_chat(
+        request: ChatStreamRequest,
+        http_request: Request,
+    ) -> StreamingResponse:
+        from src.backend.servers.query_and_chat.chat_orchestrator import (
+            stream_chat_response,
+        )
+
+        query = request.query.strip()
+        if not query:
+            raise HTTPException(status_code=422, detail="query is required")
+
+        auth_user = _optional_user_from_request(http_request)
+        user_id = request.user_id or (auth_user.id if auth_user else None)
+        stream_search_url = request.search_url or settings.search_url
+        top_k = request.top_k or settings.top_k
+        filters = (
+            build_user_only_filters(
+                auth_user.id,
+                email=auth_user.email,
+                group_ids=auth_user.group_ids,
+            )
+            if auth_user
+            else (build_user_only_filters(user_id) if user_id else None)
+        )
+
+        # Resolve or create session
+        session_id = request.session_id
+        if session_id and db.get_chat_session(session_id):
+            pass
+        else:
+            session = db.create_chat_session(
+                user_id=user_id,
+                title=query[:80],
+                metadata={"source": "web"},
+                session_id=session_id,
+            )
+            session_id = session.id
+
+        async def generate() -> AsyncIterator[str]:
+            async for line in stream_chat_response(
+                query,
+                session_id=session_id,
+                llm=llm,
+                db=db,
+                search_url=stream_search_url,
+                top_k=top_k,
+                file_content=request.file_content,
+                tool_names=request.tool_names,
+                filters=filters,
+            ):
+                yield line
+
+        return StreamingResponse(generate(), media_type="application/x-ndjson")
 
     return app
 
