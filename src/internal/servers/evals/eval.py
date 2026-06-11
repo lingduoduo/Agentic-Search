@@ -82,7 +82,7 @@ def _get_answer_with_tools(
     get_user_by_email). Raises NotImplementedError until wired to the repo DB layer.
     """
     raise NotImplementedError(
-        "_get_answer_with_tools requires onyx.db — wire to src.internal.db before use"
+        "_get_answer_with_tools requires src.internal.db — wire before use"
     )
 
 
@@ -95,7 +95,7 @@ def _get_multi_turn_answer_with_tools(
     Requires a working DB connection. Raises NotImplementedError until wired.
     """
     raise NotImplementedError(
-        "_get_multi_turn_answer_with_tools requires onyx.db — wire to src.internal.db before use"
+        "_get_multi_turn_answer_with_tools requires src.internal.db — wire before use"
     )
 
 

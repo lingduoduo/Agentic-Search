@@ -109,7 +109,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.remote:
-        api_key: str = args.api_key or os.environ.get("ONYX_EVAL_API_KEY", "")
+        api_key: str = args.api_key or os.environ.get("AGENTIC_SEARCH_EVAL_API_KEY", "")
         print(f"Running evaluation on remote server: {args.base_url}")
         try:
             result = run_remote(
