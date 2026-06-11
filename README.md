@@ -658,7 +658,8 @@ Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored 
 
 | Resource | What it exposes |
 |----------|----------------|
-| `indexed_sources` | All connector types currently indexed (e.g. `"github"`, `"confluence"`) |
+| `indexed_sources` | Available retrieval source types based on configured API keys: always `"retrieval"`; adds `"google"`, `"serpapi"`, `"serper"` when their keys are set |
+| `document_sets` | Document sets scoped for search — returns `[]` (stub, not yet configured) |
 
 **Debug with MCP Inspector:**
 
