@@ -487,14 +487,16 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | Task | Entry point |
 |------|-------------|
 | QA parquet preparation | `python3 -m examples.prepare_search_qa_dataset` |
+| RAG parquet preparation | `python3 -m examples.prepare_search_rag_dataset` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | GRPO with real agent loops | `src/training/ppo/search_agent_grpo_trainer.py` |
-| Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` |
+| Bamboogle eval (local/vLLM) | `python3 -m examples.run_bamboogle_eval` |
+| Bamboogle eval (judge\_fn CLI) | `python3 -m examples.evaluate_bamboogle` |
 | Reward function | `src/training/reward.py` |
 | GRPO helpers | `src/training/grpo.py` |
-| PPO helpers | `src/training/ppo/` |
+| PPO / policy loss helpers | `src/training/ppo/` |
 | Benchmark eval helpers | `src/training/eval/bamboogle.py` |
-| Generation and policy loss | `src/model/generation.py` |
+| Rollout orchestration | `src/model/generation.py` |
 
 **Reward components** (`SearchRewardFunction`):
 
