@@ -538,3 +538,76 @@ option:disabled,
     justify-items: start;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Analytics Dashboard                                                 */
+/* ------------------------------------------------------------------ */
+
+.analytics-dashboard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+
+.analytics-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 20px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.analytics-panel {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.analytics-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.analytics-panel-header h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.analytics-total {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.analytics-empty {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.analytics-bar-label {
+  font-size: 11px;
+  fill: var(--ink);
+  font-family: inherit;
+}
+
+.analytics-bar-count {
+  font-size: 11px;
+  fill: var(--muted);
+  font-family: inherit;
+}

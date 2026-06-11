@@ -2,6 +2,7 @@ import type {
   AdminSurfaceSummary,
   AgentExperienceRequest,
   AgentExperienceResponse,
+  BreakdownAnalytics,
   ChatSessionView,
   SessionCreateRequest,
 } from "./types";
@@ -50,6 +51,30 @@ export function getAdminSummary(
   init?: Pick<RequestInit, "signal">,
 ): Promise<AdminSurfaceSummary> {
   return requestJson<AdminSurfaceSummary>("/admin/observability/summary", {
+    signal: init?.signal,
+  });
+}
+
+export function getAnalyticsByLLM(
+  init?: Pick<RequestInit, "signal">,
+): Promise<BreakdownAnalytics> {
+  return requestJson<BreakdownAnalytics>("/analytics/by-llm", {
+    signal: init?.signal,
+  });
+}
+
+export function getAnalyticsByPersona(
+  init?: Pick<RequestInit, "signal">,
+): Promise<BreakdownAnalytics> {
+  return requestJson<BreakdownAnalytics>("/analytics/by-persona", {
+    signal: init?.signal,
+  });
+}
+
+export function getAnalyticsByFlow(
+  init?: Pick<RequestInit, "signal">,
+): Promise<BreakdownAnalytics> {
+  return requestJson<BreakdownAnalytics>("/analytics/by-flow", {
     signal: init?.signal,
   });
 }

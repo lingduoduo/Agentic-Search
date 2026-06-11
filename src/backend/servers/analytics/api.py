@@ -57,6 +57,21 @@ class UserAnalyticsResponse(BaseModel):
     total_active_users: int
 
 
+class BreakdownItem(BaseModel):
+    """Single dimension-value with its session count."""
+
+    label: str
+    session_count: int
+
+
+class BreakdownAnalyticsResponse(BaseModel):
+    """Session counts grouped by a single dimension (LLM, persona, or flow)."""
+
+    dimension: str
+    items: list[BreakdownItem]
+    total_sessions: int
+
+
 # ---------------------------------------------------------------------------
 # Router factory
 # ---------------------------------------------------------------------------
@@ -66,14 +81,20 @@ def create_analytics_router(
     store: AgenticSearchStore,
     app_settings: AppSettings,
 ) -> APIRouter:
-    """Return an APIRouter with analytics endpoints bound to *store*.
-
-    Dependencies are injected at construction time so endpoints can access
-    the store and settings without FastAPI's DI container.
-    """
+    """Return an APIRouter with analytics endpoints bound to *store*."""
     router = APIRouter(prefix="/analytics", tags=["analytics"])
 
     _require_admin = make_require_admin(app_settings)
+
+    def _resolve_window(
+        start: datetime.datetime | None,
+        end: datetime.datetime | None,
+    ) -> tuple[str, str]:
+        default_start, default_end = _default_window()
+        return (
+            (start or default_start).isoformat(),
+            (end or default_end).isoformat(),
+        )
 
     @router.get("/query")
     def get_query_analytics(
@@ -82,13 +103,8 @@ def create_analytics_router(
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> list[QueryAnalyticsResponse]:
         """Return daily session and message counts for the given date range."""
-        default_start, default_end = _default_window()
-        resolved_start = start or default_start
-        resolved_end = end or default_end
-        rows = store.query_session_analytics(
-            resolved_start.isoformat(),
-            resolved_end.isoformat(),
-        )
+        s, e = _resolve_window(start, end)
+        rows = store.query_session_analytics(s, e)
         return [
             QueryAnalyticsResponse(
                 date=datetime.date.fromisoformat(day),
@@ -105,13 +121,8 @@ def create_analytics_router(
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> list[UserAnalyticsResponse]:
         """Return daily distinct active user counts for the given date range."""
-        default_start, default_end = _default_window()
-        resolved_start = start or default_start
-        resolved_end = end or default_end
-        rows = store.user_session_analytics(
-            resolved_start.isoformat(),
-            resolved_end.isoformat(),
-        )
+        s, e = _resolve_window(start, end)
+        rows = store.user_session_analytics(s, e)
         return [
             UserAnalyticsResponse(
                 date=datetime.date.fromisoformat(day),
@@ -120,10 +131,66 @@ def create_analytics_router(
             for day, active_users in rows
         ]
 
+    @router.get("/by-llm")
+    def get_analytics_by_llm(
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> BreakdownAnalyticsResponse:
+        """Return session counts grouped by LLM model name."""
+        s, e = _resolve_window(start, end)
+        rows = store.query_analytics_by_llm(s, e)
+        items = [
+            BreakdownItem(label=label, session_count=count) for label, count in rows
+        ]
+        return BreakdownAnalyticsResponse(
+            dimension="llm",
+            items=items,
+            total_sessions=sum(i.session_count for i in items),
+        )
+
+    @router.get("/by-persona")
+    def get_analytics_by_persona(
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> BreakdownAnalyticsResponse:
+        """Return session counts grouped by persona / agent."""
+        s, e = _resolve_window(start, end)
+        rows = store.query_analytics_by_persona(s, e)
+        items = [
+            BreakdownItem(label=label, session_count=count) for label, count in rows
+        ]
+        return BreakdownAnalyticsResponse(
+            dimension="persona",
+            items=items,
+            total_sessions=sum(i.session_count for i in items),
+        )
+
+    @router.get("/by-flow")
+    def get_analytics_by_flow(
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> BreakdownAnalyticsResponse:
+        """Return session counts grouped by flow type (chat, slack, etc.)."""
+        s, e = _resolve_window(start, end)
+        rows = store.query_analytics_by_flow(s, e)
+        items = [
+            BreakdownItem(label=label, session_count=count) for label, count in rows
+        ]
+        return BreakdownAnalyticsResponse(
+            dimension="flow",
+            items=items,
+            total_sessions=sum(i.session_count for i in items),
+        )
+
     return router
 
 
 __all__ = [
+    "BreakdownAnalyticsResponse",
+    "BreakdownItem",
     "QueryAnalyticsResponse",
     "UserAnalyticsResponse",
     "create_analytics_router",
