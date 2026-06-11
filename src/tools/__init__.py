@@ -20,3 +20,7 @@ from .search import format_search_pages as format_search_pages
 from .search import search_tool as search_tool
 from .search import MultiQueryWebSearchTool as MultiQueryWebSearchTool
 from .search import serper_dev_search as serper_dev_search
+from .registry import ToolEntry as ToolEntry
+from .registry import ToolRegistry as ToolRegistry
+from .registry import tool as tool
+from .registry import tool_registry as tool_registry

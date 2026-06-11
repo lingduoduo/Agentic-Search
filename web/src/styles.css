@@ -941,3 +941,225 @@ option:disabled,
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* ── Tool panel ─────────────────────────────────────────────────────────────── */
+
+.tool-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin: 12px 0;
+}
+
+.tool-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.tool-panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tool-section-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 14px 0 6px;
+}
+
+.tool-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.tool-table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.75rem;
+}
+
+.tool-row td {
+  padding: 8px 10px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.tool-row:last-child td {
+  border-bottom: none;
+}
+
+.tool-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tool-desc {
+  color: var(--ink);
+  max-width: 280px;
+}
+
+.tool-params {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tool-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.tool-badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tool-badge[data-tone="good"] {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.tool-badge[data-tone="active"] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.tool-badge[data-tone="neutral"] {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.tool-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 12px 0;
+}
+
+.tool-register-form {
+  background: var(--surface, var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-register-form h3 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.tool-register-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tool-register-form input,
+.tool-register-form textarea {
+  font-size: 0.82rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 10px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* ── Invoke modal ────────────────────────────────────────────────────────────── */
+
+.tool-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px 24px;
+  width: min(560px, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tool-modal-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.tool-modal-desc {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.tool-args-input {
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--ink);
+  resize: vertical;
+}
+
+.tool-result {
+  margin-top: 10px;
+}
+
+.tool-result-pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  font-size: 0.78rem;
+  font-family: monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 260px;
+}

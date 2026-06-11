@@ -8,8 +8,13 @@ import type {
   ConnectorCreateRequest,
   ConnectorDetailView,
   ConnectorView,
+  OpenAPIRegisterRequest,
+  OpenAPIRegisterResponse,
   QueryHistoryPage,
   SessionCreateRequest,
+  ToolInvokeRequest,
+  ToolInvokeResponse,
+  ToolView,
 } from "./types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -197,6 +202,52 @@ export function runConnector(
     `/admin/connectors/${connectorId}/run`,
     { method: "POST", signal: init?.signal },
   );
+}
+
+export function listTools(
+  init?: Pick<RequestInit, "signal">,
+): Promise<ToolView[]> {
+  return requestJson<ToolView[]>("/admin/tools", { signal: init?.signal });
+}
+
+export function getTool(
+  name: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<ToolView> {
+  return requestJson<ToolView>(`/admin/tools/${name}`, { signal: init?.signal });
+}
+
+export function registerOpenAPITools(
+  req: OpenAPIRegisterRequest,
+  init?: Pick<RequestInit, "signal">,
+): Promise<OpenAPIRegisterResponse> {
+  return requestJson<OpenAPIRegisterResponse>("/admin/tools/openapi", {
+    method: "POST",
+    body: JSON.stringify(req),
+    signal: init?.signal,
+  });
+}
+
+export function deleteOpenAPIProvider(
+  providerId: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<void> {
+  return requestJson<void>(`/admin/tools/openapi/${providerId}`, {
+    method: "DELETE",
+    signal: init?.signal,
+  });
+}
+
+export function invokeTool(
+  name: string,
+  req: ToolInvokeRequest,
+  init?: Pick<RequestInit, "signal">,
+): Promise<ToolInvokeResponse> {
+  return requestJson<ToolInvokeResponse>(`/admin/tools/${name}/invoke`, {
+    method: "POST",
+    body: JSON.stringify(req),
+    signal: init?.signal,
+  });
 }
 
 export function submitFeedback(

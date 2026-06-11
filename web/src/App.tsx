@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bot, ClipboardList, FileSearch, MessageSquarePlus, Plug, Search } from "lucide-react";
+import { Bot, ClipboardList, FileSearch, MessageSquarePlus, Plug, Search, Wrench } from "lucide-react";
 import {
   createSession,
   getAdminSummary,
@@ -14,6 +14,7 @@ import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { ConnectorPanel } from "./components/ConnectorPanel";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
+import { ToolPanel } from "./components/ToolPanel";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
@@ -50,6 +51,7 @@ export function App() {
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -174,6 +176,15 @@ export function App() {
               <span>Connectors</span>
             </button>
             <button
+              className={`icon-button${showTools ? " active" : ""}`}
+              type="button"
+              onClick={() => setShowTools((v) => !v)}
+              title="Manage tools"
+            >
+              <Wrench size={18} />
+              <span>Tools</span>
+            </button>
+            <button
               className={`icon-button${showQueryHistory ? " active" : ""}`}
               type="button"
               onClick={() => setShowQueryHistory((v) => !v)}
@@ -216,6 +227,8 @@ export function App() {
         )}
 
         {showConnectors && <ConnectorPanel />}
+
+        {showTools && <ToolPanel />}
 
         {showQueryHistory && <QueryHistoryPanel />}
 

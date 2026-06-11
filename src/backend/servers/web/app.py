@@ -49,6 +49,7 @@ from src.backend.servers.web.auth_check import PUBLIC_ENDPOINT_SPECS
 from src.backend.servers.web.auth_check import check_router_auth
 from src.backend.servers.billing.api import create_billing_router
 from src.backend.servers.connectors.api import create_connectors_router
+from src.backend.servers.tools.api import create_tools_router
 from src.backend.servers.documents.cc_pair import create_documents_router
 from src.backend.servers.enterprise_settings.api import (
     create_enterprise_settings_routers,
@@ -201,6 +202,7 @@ def _register_routers(
     # --- Documents & connectors ---
     app.include_router(create_documents_router(db, settings))
     app.include_router(create_connectors_router(db, settings))
+    app.include_router(create_tools_router(settings))
 
     # --- Users & groups ---
     app.include_router(create_user_group_router(db, settings))

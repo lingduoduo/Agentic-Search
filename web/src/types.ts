@@ -159,3 +159,32 @@ export interface BreakdownAnalytics {
   items: BreakdownItem[];
   total_sessions: number;
 }
+
+export interface ToolView {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  source: "function" | "openapi" | string;
+  provider_id: string | null;
+}
+
+export interface OpenAPIRegisterRequest {
+  name: string;
+  openapi_json: string;
+  headers?: Record<string, string>;
+}
+
+export interface OpenAPIRegisterResponse {
+  provider_id: string;
+  tool_names: string[];
+}
+
+export interface ToolInvokeRequest {
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolInvokeResponse {
+  response: string;
+  raw: unknown;
+  errors: string[];
+}
