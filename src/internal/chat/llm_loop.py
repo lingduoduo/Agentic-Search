@@ -49,21 +49,21 @@ from src.internal.servers.query_and_chat.streaming_models import ToolCallDebug
 from src.internal.servers.query_and_chat.streaming_models import TopLevelBranching
 from src.internal.tools.built_in_tools import CITEABLE_TOOLS_NAMES
 from src.internal.tools.built_in_tools import STOPPING_TOOLS_NAMES
-from src.internal.tools.interface import Tool
-from src.internal.tools.models import ChatFile
-from src.internal.tools.models import CustomToolCallSummary
-from src.internal.tools.models import MemoryToolResponseSnapshot
-from src.internal.tools.models import PythonToolRichResponse
-from src.internal.tools.models import ToolCallInfo
-from src.internal.tools.models import ToolCallKickoff
-from src.internal.tools.models import ToolResponse
+from src.internal.tools.interface import ChatTool
+from src.internal.chat.tool_models import ChatFile
+from src.internal.chat.tool_models import CustomToolCallSummary
+from src.internal.chat.tool_models import MemoryToolResponseSnapshot
+from src.internal.chat.tool_models import PythonToolRichResponse
+from src.internal.chat.tool_models import ToolCallInfo
+from src.internal.chat.tool_models import ToolCallKickoff
+from src.internal.chat.tool_models import ToolResponse
 from src.internal.tools.built_in_tools import SearchTool
 from src.internal.tools.built_in_tools import WebSearchTool
 from src.internal.tools.built_in_tools import PythonTool
 from src.internal.tools.built_in_tools import run_tool_calls
 from src.internal.tools.built_in_tools import extract_url_snippet_map
-from src.internal.tools.models import FinalImageGenerationResponse
-from src.internal.tools.models import MemoryToolResponse
+from src.internal.chat.tool_models import FinalImageGenerationResponse
+from src.internal.chat.tool_models import MemoryToolResponse
 from src.internal.db.store import get_session_with_current_tenant
 from src.shared_configs.contextvars import trace
 from src.shared_configs.contextvars import get_current_tenant_id
@@ -619,7 +619,7 @@ def run_llm_loop(
     emitter: Emitter,
     state_container: ChatStateContainer,
     simple_chat_history: list[ChatMessageSimple],
-    tools: list[Tool],
+    tools: list[ChatTool],
     persona_prompt: str | None,
     context_files: ExtractedContextFiles,
     persona: Persona | None,

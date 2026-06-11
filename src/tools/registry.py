@@ -28,11 +28,22 @@ from __future__ import annotations
 import inspect
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Union, get_args, get_origin, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 from uuid import UUID
 
 from .api import ApiToolRegistry, ApiToolNotFoundError
 from .base import FunctionTool, Tool
+
+if TYPE_CHECKING:
+    from src.tools.openapi_schema import OpenAPISchema
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +235,31 @@ class ToolRegistry:
             provider.id,
         )
         return tool_names
+
+    def register_from_schema(
+        self,
+        schema: "OpenAPISchema",
+        *,
+        name: str,
+        headers: dict[str, str] | None = None,
+        icon: str | None = None,
+    ) -> list[str]:
+        """Validate a simplified OpenAPISchema and register its operations as tools.
+
+        Accepts the Pydantic ``OpenAPISchema`` from
+        ``src.internal.tools.openapi_schema`` (already validated), converts it
+        to a standard OpenAPI JSON string, then delegates to
+        ``register_from_openapi()``.  This is the preferred entry point when the
+        schema originates from user input — validation happens before registration.
+
+        Returns the list of tool names registered.
+        """
+        return self.register_from_openapi(
+            schema.to_openapi_json(),
+            name=name,
+            headers=headers,
+            icon=icon,
+        )
 
     def unregister(self, name: str) -> bool:
         """Remove a tool by name. Returns True if it existed."""

@@ -21,8 +21,8 @@ from src.internal.llm.interfaces import LLM
 from src.internal.llm.interfaces import LLMUserIdentity
 from src.internal.db.models import SlackContext
 from src.internal.servers.query_and_chat.models import SendMessageRequest
-from src.internal.tools.models import ChatFile
-from src.internal.tools.models import ToolCallInfo
+from src.internal.chat.tool_models import ChatFile
+from src.internal.chat.tool_models import ToolCallInfo
 
 # Type alias for search doc deduplication key
 # Simple key: just document_id (str)

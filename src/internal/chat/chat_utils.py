@@ -33,8 +33,8 @@ from src.internal.servers.query_and_chat.models import (
     SendMessageRequest as ChatSessionCreationRequest,
 )
 from src.internal.servers.query_and_chat.streaming_models import CitationInfo
-from src.internal.tools.models import ChatFile
-from src.internal.tools.models import ToolCallKickoff
+from src.internal.chat.tool_models import ChatFile
+from src.internal.chat.tool_models import ToolCallKickoff
 from src.internal.prompts.chat_prompts import ADDITIONAL_CONTEXT_PROMPT
 from src.internal.prompts.chat_prompts import TOOL_CALL_FAILURE_PROMPT
 from src.internal.prompts.chat_prompts import TOOL_CALL_RESPONSE_CROSS_MESSAGE

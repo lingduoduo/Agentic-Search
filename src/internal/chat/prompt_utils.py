@@ -24,7 +24,7 @@ from src.internal.tools.built_in_tools import OpenURLTool
 from src.internal.tools.built_in_tools import PythonTool
 from src.internal.tools.built_in_tools import SearchTool
 from src.internal.tools.built_in_tools import WebSearchTool
-from src.internal.tools.interface import Tool
+from src.internal.tools.interface import ChatTool
 
 logger = _log.getLogger(__name__)
 
@@ -267,7 +267,7 @@ def build_system_prompt(
     base_system_prompt: str,
     datetime_aware: bool = False,
     user_memory_context: UserMemoryContext | None = None,
-    tools: Sequence[Tool] | None = None,
+    tools: Sequence[ChatTool] | None = None,
     should_cite_documents: bool = False,
     include_all_guidance: bool = False,
 ) -> str:

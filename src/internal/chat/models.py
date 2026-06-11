@@ -16,9 +16,9 @@ from src.internal.servers.query_and_chat.streaming_models import (
 from src.internal.servers.query_and_chat.streaming_models import CitationInfo
 from src.internal.servers.query_and_chat.streaming_models import GeneratedImage
 from src.internal.servers.query_and_chat.streaming_models import Packet
-from src.internal.tools.models import SearchToolUsage
-from src.internal.tools.models import ToolCallKickoff
-from src.internal.tools.models import ToolResultType
+from src.internal.chat.tool_models import SearchToolUsage
+from src.internal.chat.tool_models import ToolCallKickoff
+from src.internal.chat.tool_models import ToolResultType
 
 
 class StreamingError(BaseModel):

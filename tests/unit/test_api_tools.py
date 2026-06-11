@@ -13,6 +13,8 @@ from src.tools.api import (
     ApiToolRegistry,
     parse_openapi_schema,
 )
+from src.tools.openapi_schema import OpenAPISchema
+from src.tools.registry import ToolRegistry
 
 
 def _schema() -> str:
@@ -218,6 +220,89 @@ def test_api_request_tool_invokes_operation(monkeypatch):
     assert raw["ok"] is True
     assert '"ok": true' in text
     assert meta == {"provider_id": str(provider.id)}
+
+
+def _simplified_schema() -> dict:
+    return {
+        "server": "https://api.example.com",
+        "description": "Test provider",
+        "paths": {
+            "/search": {
+                "get": {
+                    "operationId": "test_search",
+                    "description": "Search the index",
+                    "parameters": [
+                        {
+                            "name": "q",
+                            "in": "query",
+                            "description": "Query string",
+                            "required": True,
+                            "type": "str",
+                        }
+                    ],
+                }
+            },
+            "/count": {
+                "get": {
+                    "operationId": "test_count",
+                    "description": "Count results",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "description": "Max results",
+                            "required": False,
+                            "type": "int",
+                        }
+                    ],
+                }
+            },
+        },
+    }
+
+
+def test_openapi_schema_to_openapi_json():
+    schema = OpenAPISchema.model_validate(_simplified_schema())
+    doc = json.loads(schema.to_openapi_json())
+
+    assert doc["openapi"] == "3.0.0"
+    assert doc["servers"][0]["url"] == "https://api.example.com"
+    assert doc["info"]["title"] == "Test provider"
+
+    get_params = doc["paths"]["/search"]["get"]["parameters"]
+    assert get_params[0]["schema"]["type"] == "string"
+
+    count_params = doc["paths"]["/count"]["get"]["parameters"]
+    assert count_params[0]["schema"]["type"] == "integer"
+
+
+def test_openapi_schema_validation_rejects_bad_inputs():
+    with pytest.raises(Exception):
+        OpenAPISchema.model_validate({"server": "", "description": "x", "paths": {}})
+
+    with pytest.raises(Exception):
+        OpenAPISchema.model_validate(
+            {
+                "server": "https://x.com",
+                "description": "x",
+                "paths": {
+                    "/a": {"get": {"operationId": "op1", "description": "d1"}},
+                    "/b": {"get": {"operationId": "op1", "description": "d2"}},
+                },
+            }
+        )
+
+
+def test_register_from_schema_wires_into_tool_registry():
+    registry = ToolRegistry()
+    schema = OpenAPISchema.model_validate(_simplified_schema())
+
+    names = registry.register_from_schema(schema, name="test_provider")
+
+    assert sorted(names) == ["test_count", "test_search"]
+    assert registry.get("test_search") is not None
+    assert registry.get("test_count") is not None
+    assert registry.tool_summary("test_search")["source"] == "openapi"
 
 
 def test_api_request_tool_posts_json_body(monkeypatch):
