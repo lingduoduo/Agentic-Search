@@ -24,21 +24,25 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 📊 **Admin & Observability** — Health, analytics, rate limits, hooks, billing, SCIM provisioning, and license state via the FastAPI admin API.
 
+------
+
 [Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
+
+------
 
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
-| 🌍 Web Search | `src/internal/servers/retrieval/google.py`, `serp.py`, `browser.py` |
+| 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
-| 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
+| 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/connectors/`, `src/internal/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
-| 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/`, `src/training/ppo/search_agent_grpo_trainer.py` |
+| 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/search_agent_grpo_trainer.py` |
 | 📐 Benchmarking | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py` |
-| 🔌 MCP Server | `src/internal/mcp_server/` |
+| 🔌 MCP Server | `src/internal/mcp_server/tools/`, `src/internal/mcp_server/resources/` |
 | 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
-| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
+| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `src/internal/servers/reporting/`, `src/internal/servers/license/` |
 
 
 ## Repository Structure
