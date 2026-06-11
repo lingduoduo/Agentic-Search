@@ -80,7 +80,7 @@ pip install -r requirements.txt
 ### Running the 3-process local stack
 
 ```bash
-# Terminal 1 — retrieval server (demo, port 8000)
+# Terminal 1 — retrieval server (demo, port 8001)
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend (port 7860)
