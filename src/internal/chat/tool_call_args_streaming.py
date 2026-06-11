@@ -9,7 +9,7 @@ from src.internal.servers.query_and_chat.models import Placement
 from src.internal.servers.query_and_chat.streaming_models import Packet
 from src.internal.servers.query_and_chat.streaming_models import ToolCallArgumentDelta
 from src.internal.tools.built_in_tools import TOOL_NAME_TO_CLASS
-from src.internal.tools.interface import Tool
+from src.internal.tools.interface import ChatTool
 
 
 class Parser:
@@ -34,8 +34,8 @@ class ChatCompletionDeltaToolCall:
 def _get_tool_class(
     tool_calls_in_progress: Mapping[int, Mapping[str, Any]],
     tool_call_delta: ChatCompletionDeltaToolCall,
-) -> Type[Tool] | None:
-    """Look up the Tool subclass for a streaming tool call delta."""
+) -> Type[ChatTool] | None:
+    """Look up the ChatTool subclass for a streaming tool call delta."""
     tool_name = tool_calls_in_progress.get(tool_call_delta.index, {}).get("name")
     if not tool_name:
         return None

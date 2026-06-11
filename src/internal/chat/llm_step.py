@@ -46,7 +46,7 @@ from src.internal.llm.models import UserMessage
 from src.internal.servers.query_and_chat.models import Placement
 from src.internal.servers.query_and_chat.streaming_models import CitationInfo
 from src.internal.servers.query_and_chat.streaming_models import Packet
-from src.internal.tools.models import ToolCallKickoff
+from src.internal.chat.tool_models import ToolCallKickoff
 
 
 def setup_logger():

@@ -96,8 +96,8 @@ from src.internal.hooks.executor import HookPoint
 from src.internal.hooks.executor import HookSkipped
 from src.internal.hooks.executor import HookSoftFailed
 from src.internal.hooks.executor import execute_hook
-from src.internal.tools.models import ChatFile
-from src.internal.tools.models import SearchToolUsage
+from src.internal.chat.tool_models import ChatFile
+from src.internal.chat.tool_models import SearchToolUsage
 from src.shared_configs.contextvars import get_current_tenant_id
 
 

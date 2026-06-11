@@ -43,7 +43,7 @@ from .api import ApiToolRegistry, ApiToolNotFoundError
 from .base import FunctionTool, Tool
 
 if TYPE_CHECKING:
-    from src.internal.tools.openapi_schema import OpenAPISchema
+    from src.tools.openapi_schema import OpenAPISchema
 
 logger = logging.getLogger(__name__)
 

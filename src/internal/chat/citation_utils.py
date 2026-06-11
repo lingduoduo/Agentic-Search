@@ -4,7 +4,7 @@ from src.internal.chat.citation_processor import CitationMapping
 from src.internal.chat.citation_processor import DynamicCitationProcessor
 from src.internal.document_index.models import SearchDocsResponse
 from src.internal.tools.built_in_tools import CITEABLE_TOOLS_NAMES
-from src.internal.tools.models import ToolResponse
+from src.internal.chat.tool_models import ToolResponse
 
 
 def update_citation_processor_from_tool_response(

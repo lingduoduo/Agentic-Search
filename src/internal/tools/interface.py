@@ -1,4 +1,4 @@
-"""Abstract Tool interface."""
+"""Abstract ChatTool interface for the chat loop."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
-class Tool(ABC):
-    """Minimal abstract base for all tool implementations used by the chat loop."""
+class ChatTool(ABC):
+    """Minimal abstract base for tool implementations used by the chat loop."""
 
     id: int | None = None
     name: str = ""

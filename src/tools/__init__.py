@@ -24,3 +24,7 @@ from .registry import ToolEntry as ToolEntry
 from .registry import ToolRegistry as ToolRegistry
 from .registry import tool as tool
 from .registry import tool_registry as tool_registry
+from .openapi_schema import OpenAPISchema as OpenAPISchema
+from .openapi_schema import ParameterIn as ParameterIn
+from .openapi_schema import ParameterType as ParameterType
+from .openapi_schema import ParameterTypeMap as ParameterTypeMap

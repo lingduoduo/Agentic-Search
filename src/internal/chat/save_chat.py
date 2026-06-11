@@ -18,7 +18,7 @@ from src.internal.document_index.models import SearchDoc
 from src.internal.db.models import ChatMessage
 from src.internal.db.models import ToolCall
 from src.internal.file_store.models import FileDescriptor
-from src.internal.tools.models import ToolCallInfo
+from src.internal.chat.tool_models import ToolCallInfo
 
 
 def setup_logger():
