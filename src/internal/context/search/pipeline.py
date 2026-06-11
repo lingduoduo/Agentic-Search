@@ -345,7 +345,7 @@ def search_pipeline(
     )
 
     censored_chunks: list[InferenceChunk] = fetch_ee_implementation_or_noop(
-        "onyx.external_permissions.post_query_censoring",
+        "src.internal.external_permissions.post_query_censoring",
         "_post_query_chunk_censoring",
         retrieved_chunks,
     )(

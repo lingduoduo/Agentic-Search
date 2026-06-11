@@ -93,7 +93,7 @@ class EvalConfigurationOptions(BaseModel):
 
     def get_configuration(self, db_session: object) -> EvalConfiguration:
         raise NotImplementedError(
-            "get_configuration requires onyx.db — use a repo-local tool registry instead"
+            "get_configuration requires src.internal.db — use a repo-local tool registry instead"
         )
 
 

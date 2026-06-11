@@ -252,15 +252,10 @@ class MilestoneRecordType(str, Enum):
     USER_MESSAGE_SENT = "user_message_sent"
     MULTIPLE_ASSISTANTS = "multiple_assistants"
     CREATED_ASSISTANT = "created_assistant"
-    CREATED_ONYX_BOT = "created_onyx_bot"
+    CREATED_SEARCH_BOT = "created_search_bot"
     REQUESTED_CONNECTOR = "requested_connector"
     CHAT = "chat"
     SEARCH = "search"
-
-
-class OnyxCallTypes(str, Enum):
-    FIREFLIES = "FIREFLIES"
-    GONG = "GONG"
 
 
 # Persona IDs
@@ -274,8 +269,8 @@ PUBLIC_API_TAGS: list[str | Enum] = ["public"]
 FASTAPI_USERS_AUTH_COOKIE_NAME: str = (
     os.environ.get("AUTH_COOKIE_NAME") or "fastapiusersauth"
 )
-TENANT_ID_COOKIE_NAME = "onyx_tid"
-ANONYMOUS_USER_COOKIE_NAME = "onyx_anonymous_user"
+TENANT_ID_COOKIE_NAME = "agentic_search_tid"
+ANONYMOUS_USER_COOKIE_NAME = "agentic_search_anonymous_user"
 
 # Anonymous/no-auth user identifiers
 ANONYMOUS_USER_INFO_ID = "__anonymous_user__"
@@ -326,10 +321,10 @@ KV_GMAIL_SERVICE_ACCOUNT_KEY = "gmail_service_account_key"
 KV_GOOGLE_DRIVE_CRED_KEY = "google_drive_app_credential"
 KV_GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY = "google_drive_service_account_key"
 KV_GEN_AI_KEY_CHECK_TIME = "genai_api_key_last_check_time"
-KV_SETTINGS_KEY = "onyx_settings"
+KV_SETTINGS_KEY = "agentic_search_settings"
 KV_CUSTOMER_UUID_KEY = "customer_uuid"
 KV_INSTANCE_DOMAIN_KEY = "instance_domain"
-KV_ENTERPRISE_SETTINGS_KEY = "onyx_enterprise_settings"
+KV_ENTERPRISE_SETTINGS_KEY = "agentic_search_enterprise_settings"
 KV_CUSTOM_ANALYTICS_SCRIPT_KEY = "__custom_analytics_script__"
 KV_KG_CONFIG_KEY = "kg_config"
 

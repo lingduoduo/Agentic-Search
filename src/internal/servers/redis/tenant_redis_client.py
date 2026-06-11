@@ -1174,8 +1174,8 @@ class TenantRedisPipeline:
     """Tenant-aware wrapper around ``redis.client.Pipeline``.
 
     Mirrors the explicit-prefix-on-write contract of ``TenantRedisClient`` for
-    pipeline usage. Only the methods Onyx actually uses inside pipelines are
-    exposed; expand this class when a new pipeline call is needed.
+    pipeline usage. Only the methods used inside pipelines are exposed;
+    expand this class when a new pipeline call is needed.
     """
 
     def __init__(self, prefix: str, pipeline: Pipeline) -> None:

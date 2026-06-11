@@ -267,7 +267,7 @@ class OpenSearchTenantMigrationStatus(str, PyEnum):
     COMPLETED = "completed"
 
 
-# Onyx Build Mode Enums
+# Build Mode Enums
 class BuildSessionStatus(str, PyEnum):
     ACTIVE = "active"
     IDLE = "idle"

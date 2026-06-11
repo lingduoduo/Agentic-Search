@@ -1,9 +1,7 @@
 """Pydantic models for the documents API.
 
-Enums that exist in Onyx's Postgres layer (AccessType, InputType, etc.) are
-defined here as self-contained string enums so these models can be used
-without a SQLAlchemy / Postgres dependency.  SQLAlchemy-based ``from_model()``
-classmethods from the Onyx originals are omitted; models are plain data
+Enums are defined here as self-contained string enums so these models can be
+used without a SQLAlchemy / Postgres dependency. Models are plain data
 containers only.
 """
 
@@ -24,7 +22,7 @@ from src.internal.configs.constants import DocumentSource
 
 
 # ---------------------------------------------------------------------------
-# Local enum definitions (mirror Onyx equivalents, no DB dependency)
+# Local enum definitions (no DB dependency)
 # ---------------------------------------------------------------------------
 
 
