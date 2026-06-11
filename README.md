@@ -93,7 +93,7 @@ tests/                   # Unit and integration test suites
 examples/                # Runnable CLI scripts
 ```
 
-The FastAPI app is assembled in `src/internal/servers/web/app.py`. Every feature area is a self-contained router factory. `AgenticSearchStore` (SQLite) is the single persistence layer — no Postgres, Redis, or Celery required locally.
+The FastAPI app is assembled in `src/internal/servers/web/app.py` using a router-factory pattern (`create_*_router(db, settings)`). `AgenticSearchStore` (SQLite) is the persistence layer for the web backend. The background indexing workers use Redis for inter-process queuing, but Redis is not required for the basic 3-process demo stack.
 
 
 ## Install
