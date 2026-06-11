@@ -713,9 +713,9 @@ curl -s http://localhost:7860/me/permissions          -H "Authorization: Bearer 
 **Search & chat**
 
 ```bash
-# Agentic search (streaming)
+# Agentic search (streaming; auth optional)
 curl -s -X POST http://localhost:7860/api/agent \
-  -H "Content-Type: application/json" -d '{"query":"What is FAISS?","mode":"search"}'
+  -H "Content-Type: application/json" -d '{"query":"What is FAISS?","mode":"search_tool"}'
 
 # Search-flow classification (search vs chat router)
 curl -s -X POST http://localhost:7860/search/search-flow-classification \
@@ -728,13 +728,13 @@ curl -s -X POST http://localhost:7860/search/send-search-message \
   -d '{"query":"dense retrieval","search_doc_ids":[]}'
 
 # Chat sessions
-curl -s -X POST http://localhost:7860/api/sessions    -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/api/sessions            -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/chat/get-user-chat-sessions -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:7860/api/sessions        -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/api/sessions/{session_id}   -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/chat/get-user-chat-sessions  -H "Authorization: Bearer $TOKEN"
 
-# Retrieval server
+# Retrieval server (use topk — top_k is ignored by the demo server)
 curl -s -X POST http://localhost:8001/retrieve \
-  -H "Content-Type: application/json" -d '{"query":"dense retrieval","top_k":3}'
+  -H "Content-Type: application/json" -d '{"query":"dense retrieval","topk":3}'
 ```
 
 **Connectors (admin)**
