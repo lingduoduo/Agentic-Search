@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from ..agents.base import AgentLoopOutput
@@ -236,6 +236,37 @@ class SearchRewardConfig:
     reward_scale: float = 1.0
 
     @classmethod
+    def _zeroed(
+        cls,
+        *,
+        reward_mode: str = "shaped",
+        correctness_weight: float = 1.0,
+        max_search_rounds: int = 5,
+        reward_scale: float = 1.0,
+    ) -> "SearchRewardConfig":
+        """All shaping weights and penalties disabled — baseline for presets."""
+        return cls(
+            reward_mode=reward_mode,
+            correctness_weight=correctness_weight,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            per_search_penalty=0.0,
+            unnecessary_search_penalty=0.0,
+            duplicate_query_penalty=0.0,
+            budget_penalty_threshold=1.0,
+            budget_penalty=0.0,
+            unnecessary_fetch_penalty=0.0,
+            unsupported_claim_penalty=0.0,
+            answer_when_evidence_insufficient_penalty=0.0,
+            search_budget_exhausted_without_answer_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+            format_reward_weight=0.0,
+            max_search_rounds=max_search_rounds,
+            reward_scale=reward_scale,
+        )
+
+    @classmethod
     def sparse_final_only(
         cls,
         *,
@@ -247,21 +278,9 @@ class SearchRewardConfig:
         Search, reasoning, and retrieval traces remain available as labelled
         diagnostics, but they do not contribute to the optimisation target.
         """
-        return cls(
+        return cls._zeroed(
             reward_mode="sparse_final_only",
             correctness_weight=correctness_weight,
-            citation_support_weight=0.0,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
-            per_search_penalty=0.0,
-            unnecessary_search_penalty=0.0,
-            duplicate_query_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
         )
 
     @classmethod
@@ -281,21 +300,9 @@ class SearchRewardConfig:
         Use with :func:`simple_sparse_correctness_reward` as the judge for a
         straightforward first training phase.
         """
-        return cls(
-            reward_mode="shaped",
-            correctness_weight=correctness_weight,
-            citation_support_weight=0.0,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
+        return replace(
+            cls._zeroed(correctness_weight=correctness_weight),
             per_search_penalty=per_search_penalty,
-            unnecessary_search_penalty=0.0,
-            duplicate_query_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
         )
 
     @classmethod
@@ -323,22 +330,12 @@ class SearchRewardConfig:
         model reliably produces answers in Phase 1 (policy has converged enough
         to benefit from the finer-grained signal).
         """
-        return cls(
-            reward_mode="shaped",
-            correctness_weight=correctness_weight,
+        return replace(
+            cls._zeroed(correctness_weight=correctness_weight),
             per_search_penalty=per_search_penalty,
             citation_support_weight=citation_support_weight,
             unsupported_claim_penalty=unsupported_claim_penalty,
             duplicate_query_penalty=duplicate_query_penalty,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
-            unnecessary_search_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
         )
 
     @classmethod
@@ -367,23 +364,13 @@ class SearchRewardConfig:
         :func:`simple_sparse_correctness_reward` via :class:`CompositeRewardConfig`
         to benefit from both exact-match and partial-match signals in this phase.
         """
-        return cls(
-            reward_mode="shaped",
-            correctness_weight=correctness_weight,
+        return replace(
+            cls._zeroed(correctness_weight=correctness_weight),
             per_search_penalty=per_search_penalty,
             citation_support_weight=citation_support_weight,
             unsupported_claim_penalty=unsupported_claim_penalty,
             duplicate_query_penalty=duplicate_query_penalty,
             format_reward_weight=format_reward_weight,
-            subquestion_coverage_weight=0.0,
-            search_quality_weight=0.0,
-            unnecessary_search_penalty=0.0,
-            budget_penalty_threshold=1.0,
-            budget_penalty=0.0,
-            unnecessary_fetch_penalty=0.0,
-            answer_when_evidence_insufficient_penalty=0.0,
-            search_budget_exhausted_without_answer_penalty=0.0,
-            fetch_usefulness_reward=0.0,
         )
 
 
