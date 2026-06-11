@@ -325,10 +325,12 @@ Optional metadata flags (both scripts): `--template_type` (default `base`), `--d
 - `InMemoryCache` — in-flight chat session state (processing flag, stop signal, cancel) during streaming
 
 **RL Training**
-- Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, exact-match, citation quality, unnecessary-search penalty, and search-efficiency components
-- `SearchAgentGRPOTrainer` — GRPO trainer that replaces `model.generate()` rollouts with real `SearchAgentLoop` executions, enabling fully shaped rewards from live search trajectories
-- Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
-- PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
+- Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, exact-match, citation quality, unnecessary-search penalty, and search-efficiency components (`src/training/reward.py`)
+- `PPORewardManager` — batched reward scoring adapter between the GRPO trainer and `SearchRewardFunction` (`src/training/ppo/reward_manager.py`)
+- `SearchAgentGRPOTrainer` — GRPO trainer that replaces `model.generate()` rollouts with real `SearchAgentLoop` executions, enabling fully shaped rewards from live search trajectories (`src/training/ppo/search_agent_grpo_trainer.py`)
+- Group-relative advantage helpers for PPO, GRPO, DAPO, and REINFORCE-style experiments (`src/training/grpo.py`, `src/training/ppo/core_algos.py`)
+- PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers (`src/training/ppo/core_algos.py`)
+- SFT helpers — `build_search_sft_example` converts any `SearchAgentLoop` rollout into a supervised training example; supports full trajectory or completion-only mode (`src/training/sft.py`)
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 
 **Benchmarking**
