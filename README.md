@@ -620,11 +620,11 @@ kl_ctrl = AdaptiveKLController(init_kl_coef=0.1, target_kl=6.0, horizon=10000)
 
 The MCP server exposes Agentic Search capabilities as [Model Context Protocol](https://modelcontextprotocol.io/) tools, letting any MCP-compatible client (Claude Desktop, Cursor, etc.) query your knowledge base directly.
 
-**Start the server** (requires the `mcp` extra and `MCP_SERVER_ENABLED=true`):
+**Start the server** (requires the `mcp` extra):
 
 ```bash
 pip install -e ".[mcp]"   # fastmcp + httpx2
-MCP_SERVER_ENABLED=true uvicorn src.internal.mcp_server.api:app --port 8090
+uvicorn src.internal.mcp_server.api:mcp_app --port 8090
 ```
 
 **Connect Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -633,8 +633,8 @@ MCP_SERVER_ENABLED=true uvicorn src.internal.mcp_server.api:app --port 8090
 {
   "mcpServers": {
     "agentic-search": {
+      "type": "http",
       "url": "http://localhost:8090/",
-      "transport": "http",
       "headers": { "Authorization": "Bearer YOUR_TOKEN_HERE" }
     }
   }
