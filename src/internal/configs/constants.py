@@ -328,6 +328,16 @@ KV_ENTERPRISE_SETTINGS_KEY = "agentic_search_enterprise_settings"
 KV_CUSTOM_ANALYTICS_SCRIPT_KEY = "__custom_analytics_script__"
 KV_KG_CONFIG_KEY = "kg_config"
 
+
+class InvokeFrom(str, Enum):
+    """Identifies the caller context for a task invocation."""
+
+    WEB_APP = "web_app"
+    DEBUGGER = "debugger"
+    ASSISTANT_AGENT = "assistant_agent"
+    SERVICE_API = "service_api"
+
+
 BLURB_SIZE = 250
 OPENSEARCH_MIGRATION_ENABLED_KEY = "opensearch_migration_enabled"
 OPENSEARCH_RETRIEVAL_ENABLED_KEY = "opensearch_retrieval_enabled"
