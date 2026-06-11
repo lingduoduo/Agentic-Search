@@ -1,6 +1,6 @@
-"""Tool interface and shared tool models."""
+"""Tool interface, shared models, and OpenAPI schema validator."""
 
-from .interface import Tool, ToolEntity
+from .interface import Tool
 from .models import (
     ChatFile,
     SearchToolUsage,
@@ -20,6 +20,5 @@ __all__ = [
     "Tool",
     "ToolCallInfo",
     "ToolCallKickoff",
-    "ToolEntity",
     "ToolResponse",
 ]
