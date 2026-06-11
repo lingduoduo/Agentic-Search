@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bot, FileSearch, MessageSquarePlus, Search } from "lucide-react";
+import { Bot, ClipboardList, FileSearch, MessageSquarePlus, Search } from "lucide-react";
 import {
   createSession,
   getAdminSummary,
@@ -12,6 +12,7 @@ import {
 import { AdminOverview } from "./components/AdminOverview";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
+import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
@@ -46,6 +47,7 @@ export function App() {
   const [analyticsByLLM, setAnalyticsByLLM] = useState<BreakdownAnalytics | null>(null);
   const [analyticsByPersona, setAnalyticsByPersona] = useState<BreakdownAnalytics | null>(null);
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
+  const [showQueryHistory, setShowQueryHistory] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -160,6 +162,15 @@ export function App() {
           </div>
           <div className="topbar-actions">
             <span className="status-pill">{status}</span>
+            <button
+              className={`icon-button${showQueryHistory ? " active" : ""}`}
+              type="button"
+              onClick={() => setShowQueryHistory((v) => !v)}
+              title="Query history audit"
+            >
+              <ClipboardList size={18} />
+              <span>History</span>
+            </button>
             <button className="icon-button" type="button" onClick={handleNewSession}>
               <MessageSquarePlus size={18} />
               <span>New</span>
@@ -192,6 +203,8 @@ export function App() {
             byFlow={analyticsByFlow}
           />
         )}
+
+        {showQueryHistory && <QueryHistoryPanel />}
 
         <div className="results-layout">
           <section className="answer-column" aria-label={isChatMode ? "Answer" : "Search Summary"}>
