@@ -45,54 +45,54 @@ from .agents.state import ToolType as ToolType
 from .agents.state import UserRequest as UserRequest
 from .agents.tool_calling import ToolAgentLoop as ToolAgentLoop
 from .agents.tool_calling import ToolAgentLoopConfig as ToolAgentLoopConfig
-from .backend.connectors import BaseConnector as BaseConnector
-from .backend.connectors import CheckpointedConnector as CheckpointedConnector
-from .backend.connectors import (
+from .internal.connectors import BaseConnector as BaseConnector
+from .internal.connectors import CheckpointedConnector as CheckpointedConnector
+from .internal.connectors import (
     CheckpointedConnectorWithPermSync as CheckpointedConnectorWithPermSync,
 )
-from .backend.connectors import ConnectorCheckpoint as ConnectorCheckpoint
-from .backend.connectors import ConnectorFailure as ConnectorFailure
-from .backend.connectors import CredentialsConnector as CredentialsConnector
-from .backend.connectors import (
+from .internal.connectors import ConnectorCheckpoint as ConnectorCheckpoint
+from .internal.connectors import ConnectorFailure as ConnectorFailure
+from .internal.connectors import CredentialsConnector as CredentialsConnector
+from .internal.connectors import (
     CredentialsProviderInterface as CredentialsProviderInterface,
 )
-from .backend.connectors import Document as Document
-from .backend.connectors import EventConnector as EventConnector
-from .backend.connectors import HierarchyConnector as HierarchyConnector
-from .backend.connectors import HierarchyNode as HierarchyNode
-from .backend.connectors import InMemoryConnector as InMemoryConnector
-from .backend.connectors import LoadConnector as LoadConnector
-from .backend.connectors import LocalFileConnector as LocalFileConnector
-from .backend.connectors import LocalFilePollConnector as LocalFilePollConnector
-from .backend.connectors import LocalFileSlimConnector as LocalFileSlimConnector
-from .backend.connectors import (
+from .internal.connectors import Document as Document
+from .internal.connectors import EventConnector as EventConnector
+from .internal.connectors import HierarchyConnector as HierarchyConnector
+from .internal.connectors import HierarchyNode as HierarchyNode
+from .internal.connectors import InMemoryConnector as InMemoryConnector
+from .internal.connectors import LoadConnector as LoadConnector
+from .internal.connectors import LocalFileConnector as LocalFileConnector
+from .internal.connectors import LocalFilePollConnector as LocalFilePollConnector
+from .internal.connectors import LocalFileSlimConnector as LocalFileSlimConnector
+from .internal.connectors import (
     LocalFileSlimConnectorWithPermSync as LocalFileSlimConnectorWithPermSync,
 )
-from .backend.connectors import OAuthConnector as OAuthConnector
-from .backend.connectors import PollConnector as PollConnector
-from .backend.connectors import Resolver as Resolver
-from .backend.connectors import SearchConnector as SearchConnector
-from .backend.connectors import SlimConnector as SlimConnector
-from .backend.connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
-from .backend.connectors import SlimDocument as SlimDocument
-from .backend.connectors import StaticCredentialsProvider as StaticCredentialsProvider
-from .backend.connectors import batched as batched
-from .backend.db import AgenticSearchStore as AgenticSearchStore
-from .backend.db import ChatMessageRecord as ChatMessageRecord
-from .backend.db import ChatSessionRecord as ChatSessionRecord
-from .backend.db import ConnectorConfig as ConnectorConfig
-from .backend.db import DocumentPermission as DocumentPermission
-from .backend.db import GroupRecord as GroupRecord
-from .backend.db import IndexAttemptRecord as IndexAttemptRecord
-from .backend.db import StoredDocument as StoredDocument
-from .backend.db import UserRecord as UserRecord
+from .internal.connectors import OAuthConnector as OAuthConnector
+from .internal.connectors import PollConnector as PollConnector
+from .internal.connectors import Resolver as Resolver
+from .internal.connectors import SearchConnector as SearchConnector
+from .internal.connectors import SlimConnector as SlimConnector
+from .internal.connectors import SlimConnectorWithPermSync as SlimConnectorWithPermSync
+from .internal.connectors import SlimDocument as SlimDocument
+from .internal.connectors import StaticCredentialsProvider as StaticCredentialsProvider
+from .internal.connectors import batched as batched
+from .internal.db import AgenticSearchStore as AgenticSearchStore
+from .internal.db import ChatMessageRecord as ChatMessageRecord
+from .internal.db import ChatSessionRecord as ChatSessionRecord
+from .internal.db import ConnectorConfig as ConnectorConfig
+from .internal.db import DocumentPermission as DocumentPermission
+from .internal.db import GroupRecord as GroupRecord
+from .internal.db import IndexAttemptRecord as IndexAttemptRecord
+from .internal.db import StoredDocument as StoredDocument
+from .internal.db import UserRecord as UserRecord
 from .context.retrieval.client import SearchClient as SearchClient
 from .context.retrieval.client import SearchClientConfig as SearchClientConfig
 from .context.search import AgentContext as AgentContext
 from .context.search import SearchContext as SearchContext
 from .context.search import SearchResult as SearchResult
-from .backend.document_index.retrieval import SparseRetriever as SparseRetriever
-from .backend.document_index.retrieval import (
+from .internal.document_index.retrieval import SparseRetriever as SparseRetriever
+from .internal.document_index.retrieval import (
     SparseRetrieverConfig as SparseRetrieverConfig,
 )
 from .tools.base import FunctionTool as FunctionTool
