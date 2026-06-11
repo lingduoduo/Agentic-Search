@@ -1,26 +1,26 @@
 # Agentic Search
 
-A retrieval-backed agent platform for building high-quality search, research, and custom AI workflows. Agentic Search combines a FastAPI backend, local dense and sparse retrieval, multi-turn agent traces, web search, connector-based indexing, and RL training utilities.
+A retrieval-backed agent platform for multi-turn search, RAG, and RL training. Built around a FastAPI backend, interchangeable retrieval servers, and an async agent loop that supports dense/sparse hybrid retrieval, tool calling, and streaming chat.
 
-🔍 **Agentic RAG** — Improve search and answer quality with hybrid retrieval, reranking, query decomposition, HyDE, and citation-grounded synthesis.
+🔍 **Agentic RAG** — Multi-hop retrieval with query decomposition, HyDE, hybrid reranking, and citation-grounded synthesis via `AgenticRAGLoop`.
 
-🔬 **Deep Research** — Generate in-depth reports through a multi-step research workflow with iterative search, evidence gathering, and synthesis.
+🤖 **Custom Agents** — Compose agents from instructions, knowledge sources, tools, and memory; backed by `SearchAgentLoop` or `ToolAgentLoop`.
 
-🤖 **Custom Agents** — Build agents with tailored instructions, knowledge sources, memory, tools, and action workflows.
+🌍 **Web Search** — Live retrieval via Google Custom Search, SerpAPI, and playwright-cli browser automation — all behind the same `/retrieve` API.
 
-🌍 **Web Search** — Retrieve up-to-date information from Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
+📚 **Document Indexing** — Chunk, embed, and index documents into FAISS or BM25; async background workers handle ingestion at scale.
 
-📚 **Document Indexing** — Ingest, chunk, enrich, embed, and index documents for retrieval-backed chat and search.
+🔗 **Connectors** — Pull content from local files, Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
 
-🔗 **Connectors** — Bring in content from local files, search results, and external systems such as Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
+🛠️ **Tool Use** — Register Python callables or OpenAPI 3.x schemas as tools; `ToolAgentLoop` handles dispatch and structured output.
 
-🛠️ **Tool Use** — Register and execute tools from Python functions or OpenAPI schemas, with support for structured tool-calling loops.
+💬 **Chat Orchestration** — Streaming multi-turn chat with citation extraction, tool dispatch, context compression, and persisted sessions.
 
-💬 **Chat Orchestration** — Run streaming multi-turn chat with citations, tool calls, file context, history compression, and persisted sessions.
+🧠 **RL Training** — GRPO/PPO training with composite shaped rewards; `SearchAgentGRPOTrainer` runs real agent-loop rollouts so all reward components fire during training.
 
-🧠 **PPO/GRPO Rewards** — Train search agents with composite reward shaping, group-relative advantages, and PPO, GRPO, or REINFORCE helpers.
+📐 **Benchmarking** — Evaluate agents on the Bamboogle two-hop QA benchmark with exact-match, contains-match, and shaped reward scoring.
 
-📊 **Admin & Observability** — Track usage, query history, health, analytics, reporting, rate limits, hooks, billing, and license state.
+📊 **Admin & Observability** — Health, analytics, rate limits, hooks, billing, SCIM provisioning, and license state via the FastAPI admin API.
 
 [Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
 
