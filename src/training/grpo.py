@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -246,23 +247,39 @@ async def sample_prompt_batch(
     sampling_params: dict[str, Any],
     num_rollouts: int = 4,
     sampling_variants: list[dict[str, Any]] | None = None,
+    max_concurrent: int | None = None,
 ) -> list[list[GRPORolloutSample]]:
     """Generate rollout groups for every prompt in a DataLoader batch.
 
-    Each item in the batch becomes one prompt group with `num_rollouts`
-    concurrently sampled rollouts.  All groups are dispatched concurrently.
+    Each item in the batch becomes one prompt group with ``num_rollouts``
+    concurrently sampled rollouts.
+
+    Args:
+        max_concurrent: Maximum number of prompt groups to sample at the same
+            time.  ``None`` (default) fires all groups concurrently.  Set this
+            to a small value (e.g. ``4``–``8``) when the inference server has
+            limited capacity to avoid request queue saturation.
     """
-    group_tasks = [
-        sample_prompt_group(
+
+    async def _sample_one(messages: list[dict[str, Any]]) -> list[GRPORolloutSample]:
+        return await sample_prompt_group(
             loop_factory,
             messages=messages,
             sampling_params=sampling_params,
             num_rollouts=num_rollouts,
             sampling_variants=sampling_variants,
         )
-        for messages in batch.messages
-    ]
-    return list(await asyncio.gather(*group_tasks))
+
+    if max_concurrent is None:
+        return list(await asyncio.gather(*[_sample_one(m) for m in batch.messages]))
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def _bounded(messages: list[dict[str, Any]]) -> list[GRPORolloutSample]:
+        async with semaphore:
+            return await _sample_one(messages)
+
+    return list(await asyncio.gather(*[_bounded(m) for m in batch.messages]))
 
 
 def score_prompt_group(
@@ -450,3 +467,110 @@ def score_prompt_batch(
         )
         for samples, gt in zip(grouped_samples, ground_truths)
     ]
+
+
+# ---------------------------------------------------------------------------
+# On-policy GRPO batch assembly
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OnPolicyGRPOConfig:
+    """Configuration for on-policy GRPO batch assembly."""
+
+    min_reward_range: float = 0.0
+    normalize_globally: bool = False
+    max_groups: int | None = None
+
+
+@dataclass(frozen=True)
+class OnPolicyBatchStats:
+    """Diagnostics returned by ``compute_on_policy_batch_stats``."""
+
+    n_groups_total: int
+    n_groups_kept: int
+    n_rollouts_kept: int
+    pct_groups_kept: float
+    mean_reward: float
+    reward_std: float
+
+
+def filter_zero_advantage_groups(
+    scored_groups: list[list[ScoredGRPORollout]],
+    *,
+    min_reward_range: float = 0.0,
+) -> list[list[ScoredGRPORollout]]:
+    """Drop groups whose reward range is at or below *min_reward_range*.
+
+    A group where every rollout receives the same reward produces zero
+    advantage for all members and contributes nothing to the GRPO gradient.
+    Filtering these groups before the loss step reduces wasted compute.
+    """
+    result = []
+    for group in scored_groups:
+        rewards = [r.reward for r in group]
+        if max(rewards) - min(rewards) > min_reward_range:
+            result.append(group)
+    return result
+
+
+def assemble_on_policy_batch(
+    scored_groups: list[list[ScoredGRPORollout]],
+    config: OnPolicyGRPOConfig | None = None,
+) -> list[ScoredGRPORollout]:
+    """Filter dead groups, optionally normalise globally, and flatten.
+
+    Steps:
+    1. Drop groups where ``max(reward) - min(reward) <= config.min_reward_range``.
+    2. If ``config.normalize_globally``, re-centre and rescale advantages
+       across all remaining rollouts using global mean/std.
+    3. Truncate to ``config.max_groups`` groups if set.
+    4. Flatten to a single list.
+    """
+    cfg = config or OnPolicyGRPOConfig()
+
+    kept = filter_zero_advantage_groups(
+        scored_groups, min_reward_range=cfg.min_reward_range
+    )
+
+    if cfg.max_groups is not None:
+        kept = kept[: cfg.max_groups]
+
+    flat: list[ScoredGRPORollout] = [r for group in kept for r in group]
+
+    if cfg.normalize_globally and flat:
+        adv_values = [r.advantage for r in flat]
+        mean = sum(adv_values) / len(adv_values)
+        variance = sum((a - mean) ** 2 for a in adv_values) / len(adv_values)
+        std = math.sqrt(variance) if variance > 0 else 1.0
+        flat = [replace(r, advantage=(r.advantage - mean) / std) for r in flat]
+
+    return flat
+
+
+def compute_on_policy_batch_stats(
+    scored_groups_before_filter: list[list[ScoredGRPORollout]],
+    flat_batch_after_filter: list[ScoredGRPORollout],
+) -> OnPolicyBatchStats:
+    """Compute diagnostics comparing the raw and filtered batches."""
+    n_total = len(scored_groups_before_filter)
+    n_kept = len({r.group_id for r in flat_batch_after_filter})
+    n_rollouts = len(flat_batch_after_filter)
+    pct = n_kept / n_total if n_total > 0 else 0.0
+
+    rewards = [r.reward for r in flat_batch_after_filter]
+    if rewards:
+        mean = sum(rewards) / len(rewards)
+        std = math.sqrt(sum((x - mean) ** 2 for x in rewards) / len(rewards))
+    else:
+        mean = 0.0
+        std = 0.0
+
+    return OnPolicyBatchStats(
+        n_groups_total=n_total,
+        n_groups_kept=n_kept,
+        n_rollouts_kept=n_rollouts,
+        pct_groups_kept=pct,
+        mean_reward=mean,
+        reward_std=std,
+    )

@@ -10,10 +10,16 @@ from src import (
     AgentLoopBase,
     AgentLoopOutput,
     GRPOAdvantageConfig,
+    OnPolicyBatchStats,
+    OnPolicyGRPOConfig,
     SearchRewardConfig,
     SearchRewardFunction,
+    ScoredGRPORollout,
+    assemble_on_policy_batch,
     build_grpo_sampling_params,
     compute_grpo_outcome_advantage,
+    compute_on_policy_batch_stats,
+    filter_zero_advantage_groups,
     sample_prompt_group,
     score_prompt_group,
 )
@@ -471,3 +477,118 @@ def test_sample_prompt_group_requires_exactly_one_prompt_input():
                 num_rollouts=1,
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# On-policy GRPO helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_scored(group_id: str, reward: float, advantage: float) -> ScoredGRPORollout:
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        metrics={},
+        final_answer="answer",
+    )
+    return ScoredGRPORollout(
+        group_id=group_id,
+        rollout_index=0,
+        sampling_params={"temperature": 0.7},
+        output=output,
+        reward=reward,
+        reward_component="total",
+        reward_components={"total": reward},
+        advantage=advantage,
+    )
+
+
+def test_filter_zero_advantage_groups_removes_uniform_reward_groups():
+    groups = [
+        [_make_scored("g1", 1.0, 0.5), _make_scored("g1", 0.5, -0.5)],  # varied
+        [_make_scored("g2", 0.8, 0.0), _make_scored("g2", 0.8, 0.0)],  # uniform
+        [_make_scored("g3", 0.3, 0.4), _make_scored("g3", 0.9, -0.4)],  # varied
+    ]
+    kept = filter_zero_advantage_groups(groups)
+    assert len(kept) == 2
+    assert {kept[0][0].group_id, kept[1][0].group_id} == {"g1", "g3"}
+
+
+def test_filter_zero_advantage_groups_respects_min_reward_range():
+    groups = [
+        [_make_scored("g1", 1.0, 0.0), _make_scored("g1", 0.9, 0.0)],  # range=0.1
+        [_make_scored("g2", 1.0, 0.0), _make_scored("g2", 0.5, 0.0)],  # range=0.5
+    ]
+    kept = filter_zero_advantage_groups(groups, min_reward_range=0.2)
+    assert len(kept) == 1
+    assert kept[0][0].group_id == "g2"
+
+
+def test_assemble_on_policy_batch_flattens_and_filters():
+    groups = [
+        [_make_scored("g1", 1.0, 0.5), _make_scored("g1", 0.5, -0.5)],
+        [_make_scored("g2", 0.8, 0.0), _make_scored("g2", 0.8, 0.0)],
+    ]
+    flat = assemble_on_policy_batch(groups)
+    assert len(flat) == 2
+    assert all(r.group_id == "g1" for r in flat)
+
+
+def test_assemble_on_policy_batch_max_groups_truncates():
+    groups = [
+        [_make_scored("g1", 1.0, 0.5), _make_scored("g1", 0.0, -0.5)],
+        [_make_scored("g2", 1.0, 0.5), _make_scored("g2", 0.0, -0.5)],
+        [_make_scored("g3", 1.0, 0.5), _make_scored("g3", 0.0, -0.5)],
+    ]
+    flat = assemble_on_policy_batch(groups, OnPolicyGRPOConfig(max_groups=2))
+    group_ids = {r.group_id for r in flat}
+    assert len(group_ids) == 2
+
+
+def test_assemble_on_policy_batch_global_normalization_centers_advantages():
+    import math
+
+    groups = [
+        [_make_scored("g1", 1.0, 2.0), _make_scored("g1", 0.0, -2.0)],
+        [_make_scored("g2", 1.0, 4.0), _make_scored("g2", 0.0, -4.0)],
+    ]
+    flat = assemble_on_policy_batch(groups, OnPolicyGRPOConfig(normalize_globally=True))
+    adv_values = [r.advantage for r in flat]
+    mean = sum(adv_values) / len(adv_values)
+    assert mean == pytest.approx(0.0, abs=1e-6)
+    # std should be 1 after z-score normalization
+    std = math.sqrt(sum(a**2 for a in adv_values) / len(adv_values))
+    assert std == pytest.approx(1.0, abs=1e-4)
+
+
+def test_compute_on_policy_batch_stats_returns_correct_counts():
+    groups = [
+        [_make_scored("g1", 1.0, 0.5), _make_scored("g1", 0.0, -0.5)],
+        [
+            _make_scored("g2", 0.8, 0.0),
+            _make_scored("g2", 0.8, 0.0),
+        ],  # will be filtered
+        [_make_scored("g3", 0.9, 0.3), _make_scored("g3", 0.3, -0.3)],
+    ]
+    flat = assemble_on_policy_batch(groups)
+    stats = compute_on_policy_batch_stats(groups, flat)
+
+    assert isinstance(stats, OnPolicyBatchStats)
+    assert stats.n_groups_total == 3
+    assert stats.n_groups_kept == 2
+    assert stats.n_rollouts_kept == 4
+    assert stats.pct_groups_kept == pytest.approx(2 / 3)
+
+
+def test_compute_on_policy_batch_stats_empty_batch():
+    groups = [
+        [_make_scored("g1", 0.5, 0.0), _make_scored("g1", 0.5, 0.0)],
+    ]
+    flat = assemble_on_policy_batch(groups)  # all filtered
+    stats = compute_on_policy_batch_stats(groups, flat)
+
+    assert stats.n_rollouts_kept == 0
+    assert stats.mean_reward == 0.0
+    assert stats.reward_std == 0.0

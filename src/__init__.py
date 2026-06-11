@@ -149,7 +149,17 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "compute_grpo_outcome_advantage",
     ),
     "sample_prompt_group": (".training.grpo", "sample_prompt_group"),
+    "sample_prompt_batch": (".training.grpo", "sample_prompt_batch"),
     "score_prompt_group": (".training.grpo", "score_prompt_group"),
+    "score_prompt_batch": (".training.grpo", "score_prompt_batch"),
+    "OnPolicyGRPOConfig": (".training.grpo", "OnPolicyGRPOConfig"),
+    "OnPolicyBatchStats": (".training.grpo", "OnPolicyBatchStats"),
+    "filter_zero_advantage_groups": (".training.grpo", "filter_zero_advantage_groups"),
+    "assemble_on_policy_batch": (".training.grpo", "assemble_on_policy_batch"),
+    "compute_on_policy_batch_stats": (
+        ".training.grpo",
+        "compute_on_policy_batch_stats",
+    ),
     # training.reward
     "BatchJudgeFn": (".training.reward", "BatchJudgeFn"),
     "JudgeFn": (".training.reward", "JudgeFn"),
