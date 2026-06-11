@@ -5,6 +5,9 @@ import type {
   AuditSummary,
   BreakdownAnalytics,
   ChatSessionView,
+  ConnectorCreateRequest,
+  ConnectorDetailView,
+  ConnectorView,
   QueryHistoryPage,
   SessionCreateRequest,
 } from "./types";
@@ -128,6 +131,71 @@ export function getAuditSummary(
   return requestJson<AuditSummary>(
     `/admin/query-history/audit${query ? `?${query}` : ""}`,
     { signal: init?.signal },
+  );
+}
+
+export function listConnectors(
+  params: { enabled?: boolean } = {},
+  init?: Pick<RequestInit, "signal">,
+): Promise<ConnectorView[]> {
+  const qs = new URLSearchParams();
+  if (params.enabled !== undefined) qs.set("enabled", String(params.enabled));
+  const query = qs.toString();
+  return requestJson<ConnectorView[]>(
+    `/admin/connectors${query ? `?${query}` : ""}`,
+    { signal: init?.signal },
+  );
+}
+
+export function createConnector(
+  req: ConnectorCreateRequest,
+  init?: Pick<RequestInit, "signal">,
+): Promise<ConnectorView> {
+  return requestJson<ConnectorView>("/admin/connectors", {
+    method: "POST",
+    body: JSON.stringify(req),
+    signal: init?.signal,
+  });
+}
+
+export function getConnector(
+  connectorId: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<ConnectorDetailView> {
+  return requestJson<ConnectorDetailView>(`/admin/connectors/${connectorId}`, {
+    signal: init?.signal,
+  });
+}
+
+export function updateConnector(
+  connectorId: string,
+  patch: { name?: string; config?: Record<string, unknown>; enabled?: boolean },
+  init?: Pick<RequestInit, "signal">,
+): Promise<ConnectorView> {
+  return requestJson<ConnectorView>(`/admin/connectors/${connectorId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+    signal: init?.signal,
+  });
+}
+
+export function deleteConnector(
+  connectorId: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<void> {
+  return requestJson<void>(`/admin/connectors/${connectorId}`, {
+    method: "DELETE",
+    signal: init?.signal,
+  });
+}
+
+export function runConnector(
+  connectorId: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<{ attempt_id: string; message: string }> {
+  return requestJson<{ attempt_id: string; message: string }>(
+    `/admin/connectors/${connectorId}/run`,
+    { method: "POST", signal: init?.signal },
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bot, ClipboardList, FileSearch, MessageSquarePlus, Search } from "lucide-react";
+import { Bot, ClipboardList, FileSearch, MessageSquarePlus, Plug, Search } from "lucide-react";
 import {
   createSession,
   getAdminSummary,
@@ -12,6 +12,7 @@ import {
 import { AdminOverview } from "./components/AdminOverview";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
+import { ConnectorPanel } from "./components/ConnectorPanel";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
@@ -48,6 +49,7 @@ export function App() {
   const [analyticsByPersona, setAnalyticsByPersona] = useState<BreakdownAnalytics | null>(null);
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
+  const [showConnectors, setShowConnectors] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -163,6 +165,15 @@ export function App() {
           <div className="topbar-actions">
             <span className="status-pill">{status}</span>
             <button
+              className={`icon-button${showConnectors ? " active" : ""}`}
+              type="button"
+              onClick={() => setShowConnectors((v) => !v)}
+              title="Manage connectors"
+            >
+              <Plug size={18} />
+              <span>Connectors</span>
+            </button>
+            <button
               className={`icon-button${showQueryHistory ? " active" : ""}`}
               type="button"
               onClick={() => setShowQueryHistory((v) => !v)}
@@ -203,6 +214,8 @@ export function App() {
             byFlow={analyticsByFlow}
           />
         )}
+
+        {showConnectors && <ConnectorPanel />}
 
         {showQueryHistory && <QueryHistoryPanel />}
 

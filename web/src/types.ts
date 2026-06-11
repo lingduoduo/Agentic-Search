@@ -53,6 +53,43 @@ export interface SessionCreateRequest {
   user_id?: string | null;
 }
 
+export type IndexAttemptStatus = "not_started" | "in_progress" | "success" | "failed";
+
+export interface IndexAttemptView {
+  id: string;
+  status: IndexAttemptStatus;
+  total_documents: number;
+  total_chunks: number;
+  error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ConnectorView {
+  id: string;
+  name: string;
+  source: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+  last_attempt: IndexAttemptView | null;
+}
+
+export interface ConnectorDetailView extends ConnectorView {
+  attempts: IndexAttemptView[];
+  document_count: number;
+}
+
+export interface ConnectorCreateRequest {
+  name: string;
+  source: string;
+  config: Record<string, unknown>;
+  enabled?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
 export interface QueryHistoryItem {
   id: string;
   user_id: string | null;
