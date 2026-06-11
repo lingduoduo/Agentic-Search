@@ -35,6 +35,7 @@ from .llm_grpo_trainer import (
     LLMRolloutResult,
     get_response_log_probs,
 )
+from .search_agent_grpo_trainer import SearchAgentGRPOTrainer
 from .reward_manager import (
     PPORewardManager,
     qa_exact_match_score,
@@ -71,6 +72,7 @@ __all__ = [
     "compute_group_advantages",
     "get_response_log_probs",
     "grpo_clipped_policy_loss",
+    "SearchAgentGRPOTrainer",
     "make_grpo_trainer",
     "qa_exact_match_score",
     "reverse_kl_penalty",
