@@ -169,19 +169,7 @@ MCP_SERVER_ENABLED=true uvicorn src.internal.mcp_server.api:app \
   --host 127.0.0.1 --port 8090
 ```
 
-**Optional — dense/hybrid retrieval** (instead of TF-IDF demo):
-
-```bash
-# Build a FAISS index first
-python3 -m src.internal.document_index.index_builder \
-  --retrieval_method e5 --model_path intfloat/e5-base-v2 \
-  --corpus_path data/corpus.jsonl --save_dir data/indexes/
-
-# Then start the dense retrieval server on port 8001
-python3 -m src.internal.servers.retrieval.retrieval \
-  --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
-  --corpus_path data/corpus.jsonl --retrieval_method e5 --port 8001
-```
+To swap in a dense (E5/BGE), sparse (BM25), or hybrid retrieval server instead of the TF-IDF demo, see [Retrieval Setup](#retrieval-setup).
 
 
 ## Examples
