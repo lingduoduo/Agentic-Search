@@ -101,6 +101,7 @@ The FastAPI app is assembled in `src/internal/servers/web/app.py` using a router
 Requires Python 3.10+.
 
 ```bash
+conda activate agentic-search-local
 pip install -e .          # one-time; makes src importable as a package
 pip install -r requirements.txt
 ```
