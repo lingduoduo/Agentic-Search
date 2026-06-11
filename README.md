@@ -613,11 +613,11 @@ npx @modelcontextprotocol/inspector http://localhost:8090/
 | `API_SERVER_HOST` | `127.0.0.1` | Host of the main API server |
 
 
-## API Health Checks
+## API Reference
 
-Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8001`
+Base URLs: web backend `http://localhost:7860` · retrieval server `http://localhost:8001`
 
-**Generate a dev JWT** (required for admin endpoints):
+**Generate a dev JWT** (required for all authenticated endpoints):
 
 ```bash
 export TOKEN=$(python3 -c "
@@ -626,58 +626,159 @@ print(generate_user_jwt_token(user_id='dev', email='dev@local'))
 ")
 ```
 
-**Core**
+**Health**
 
 ```bash
-curl -s http://localhost:7860/health                  # web server
-curl -s http://localhost:8001/health                  # retrieval server
-curl -s http://localhost:7860/settings                # tier / license status (no auth)
+curl -s http://localhost:7860/health       # web backend
+curl -s http://localhost:8001/health       # retrieval server
+curl -s http://localhost:7860/settings     # tier / license state (no auth)
+```
+
+**Auth & users**
+
+```bash
+curl -s -X POST http://localhost:7860/auth/register \
+  -H "Content-Type: application/json" -d '{"email":"dev@local","password":"..."}'
+curl -s -X POST http://localhost:7860/auth/login \
+  -H "Content-Type: application/json" -d '{"email":"dev@local","password":"..."}'
+curl -s http://localhost:7860/me                      -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/me/permissions          -H "Authorization: Bearer $TOKEN"
 ```
 
 **Search & chat**
 
 ```bash
+# Agentic search (streaming)
 curl -s -X POST http://localhost:7860/api/agent \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "mode": "search"}'
+  -H "Content-Type: application/json" -d '{"query":"What is FAISS?","mode":"search"}'
 
-curl -s http://localhost:7860/api/sessions -H "Authorization: Bearer $TOKEN"
+# Search-flow classification (search vs chat router)
+curl -s -X POST http://localhost:7860/search/search-flow-classification \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"What is FAISS?"}'
 
+# Send a search message
+curl -s -X POST http://localhost:7860/search/send-search-message \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"dense retrieval","search_doc_ids":[]}'
+
+# Chat sessions
+curl -s -X POST http://localhost:7860/api/sessions    -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/api/sessions            -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/chat/get-user-chat-sessions -H "Authorization: Bearer $TOKEN"
+
+# Retrieval server
 curl -s -X POST http://localhost:8001/retrieve \
-  -H "Content-Type: application/json" -d '{"query": "dense retrieval", "top_k": 3}'
+  -H "Content-Type: application/json" -d '{"query":"dense retrieval","top_k":3}'
 ```
 
-**Admin — analytics, billing, reporting**
+**Connectors (admin)**
+
+```bash
+curl -s http://localhost:7860/admin/connectors                     -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:7860/admin/connectors \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"name":"my-files","source":"local_file","input_type":"load_state","connector_specific_config":{}}'
+curl -s -X POST http://localhost:7860/admin/connector/1/sync       -H "Authorization: Bearer $TOKEN"
+```
+
+**Tools (admin)**
+
+```bash
+curl -s http://localhost:7860/admin/tools                          -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:7860/admin/tools/my_tool/invoke \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"input":{"query":"test"}}'
+```
+
+**Analytics (admin)**
 
 ```bash
 curl -s "http://localhost:7860/analytics/query?start=2024-01-01&end=2025-12-31" \
   -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/admin/billing/billing-information -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/admin/usage-report                -H "Authorization: Bearer $TOKEN"
+curl -s "http://localhost:7860/analytics/by-llm?start=2024-01-01&end=2025-12-31" \
+  -H "Authorization: Bearer $TOKEN"
+curl -s "http://localhost:7860/analytics/by-flow?start=2024-01-01&end=2025-12-31" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-**Admin — hooks, rate limits, web search**
+**Query history (admin)**
 
 ```bash
-curl -s http://localhost:7860/admin/hooks/specs              -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/admin/hooks                    -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/admin/token-rate-limits/users  -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/admin/web-search/search-providers -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/chat-sessions                  -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/query-history/audit            -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/query-history/export           -H "Authorization: Bearer $TOKEN"
 ```
 
-**Admin — license**
+**Hooks (admin)**
 
 ```bash
-curl -s http://localhost:7860/license       -H "Authorization: Bearer $TOKEN"
-curl -s http://localhost:7860/license/seats -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/hooks/specs                    -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/hooks                          -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:7860/admin/hooks/1/activate       -H "Authorization: Bearer $TOKEN"
 ```
 
-**SCIM** (uses SCIM bearer token, not a JWT)
+**Token rate limits (admin)**
 
 ```bash
-curl -s http://localhost:7860/scim/v2/ServiceProviderConfig  # no auth
-curl -s http://localhost:7860/scim/v2/Users  -H "Authorization: Bearer $SCIM_TOKEN"
-curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOKEN"
+curl -s http://localhost:7860/admin/token-rate-limits/users        -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/admin/token-rate-limits/user-groups  -H "Authorization: Bearer $TOKEN"
+```
+
+**User groups (admin)**
+
+```bash
+curl -s http://localhost:7860/manage/admin/user-group              -H "Authorization: Bearer $TOKEN"
+```
+
+**Evals**
+
+```bash
+curl -s -X POST http://localhost:7860/evals/eval_run \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"questions":["What is FAISS?"]}'
+```
+
+**Observability (admin)**
+
+```bash
+curl -s http://localhost:7860/admin/observability/summary          -H "Authorization: Bearer $TOKEN"
+```
+
+**Reporting (admin)**
+
+```bash
+curl -s http://localhost:7860/admin/usage-report                   -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:7860/admin/usage-report           -H "Authorization: Bearer $TOKEN"
+```
+
+**Billing (admin)**
+
+```bash
+curl -s http://localhost:7860/admin/billing/billing-information    -H "Authorization: Bearer $TOKEN"
+```
+
+**License**
+
+```bash
+curl -s http://localhost:7860/license                              -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/license/seats                        -H "Authorization: Bearer $TOKEN"
+```
+
+**OAuth**
+
+```bash
+curl -s -X POST http://localhost:7860/oauth/prepare-authorization-request \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"connector":"google_drive","redirect_on_success":"/connectors"}'
+```
+
+**SCIM** (SCIM bearer token, not a JWT)
+
+```bash
+curl -s http://localhost:7860/scim/v2/ServiceProviderConfig        # no auth
+curl -s http://localhost:7860/scim/v2/Users   -H "Authorization: Bearer $SCIM_TOKEN"
+curl -s http://localhost:7860/scim/v2/Groups  -H "Authorization: Bearer $SCIM_TOKEN"
 ```
 
 
