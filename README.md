@@ -122,6 +122,25 @@ GOOGLE_API_KEY=...   GOOGLE_CSE_ID=...   SERP_API_KEY=...   JAVA_HOME=/path/to/j
 
 ## Quick Start
 
+| Mode | Retrieval server | Web backend | Frontend |
+|------|:---:|:---:|:---:|
+| Chat only (LLM, no retrieval) | — | ✓ | ✓ |
+| Search / Agentic RAG | ✓ | ✓ | ✓ |
+| Search + Chat (full stack) | ✓ | ✓ | ✓ |
+| API only (no browser UI) | ✓ (optional) | ✓ | — |
+
+**Chat only** — skip the retrieval server:
+
+```bash
+# Terminal 1 — web backend
+uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+
+# Terminal 2 — frontend
+cd web && npm install && npm run dev
+```
+
+**Search + Chat (full stack):**
+
 ```bash
 # Terminal 1 — retrieval server (TF-IDF demo, no Java required; binds to port 8001)
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
