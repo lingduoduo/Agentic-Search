@@ -342,16 +342,15 @@ Optional metadata flags (both scripts): `--template_type` (default `base`), `--d
 - Compatible with Claude Desktop, MCP Inspector, and any OpenAI-tool-compatible client
 
 **LLM Backends**
-- `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/internal/llm/providers.py`)
-- `VLLMServerManager` — server-backed inference via any OpenAI-compatible endpoint
-- `LocalServerManager` — in-process HuggingFace models (Qwen, Llama, Mistral, etc.) on CPU or GPU
+- `OpenAICompatibleLLM` — single HTTP client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM via the OpenAI streaming chat-completions protocol (`src/internal/llm/providers.py`)
+- `LiteLLM` singleton integration for provider-agnostic routing (`src/internal/llm/litellm_singleton/`)
+- `VLLMServerManager` / `LocalServerManager` — example-layer helpers for launching vLLM server-backed and in-process HuggingFace inference (`examples/run_agentic_search.py`)
 - Configured via `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
 
 **Query Classification**
-- **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/secondary_llm_flows/`)
+- **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/servers/secondary_llm_flows/search_flow_classification.py`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
-- Chat prompt constants — citation reminders, system prompt defaults, file/image/tool templates (`src/internal/prompts/chat_prompts.py`)
-- `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
+- `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify query intent for retrieval tuning (`src/internal/prompts/query_expansion.py`)
 
 **Admin & Observability**
 - `build_admin_surface_summary` — single-call health snapshot: connectors, indexing, users, auth, models, tools, analytics, enterprise controls with a composite health score
