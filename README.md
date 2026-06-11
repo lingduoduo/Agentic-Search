@@ -650,10 +650,10 @@ uvicorn src.internal.mcp_server.api:mcp_app --port 8090
 | `open_urls` | Fetch full page text from a list of URLs |
 | `ask_agentic_search` | Full `SearchAgentLoop` answer with citations |
 | `deep_research` | Multi-round iterative RAG via `AgenticRAGLoop` |
-| `retrieve_documents` | Raw retrieval with optional reranking |
+| `retrieve_documents` | Raw retrieval — returns full document content and relevance scores |
 | `expand_query` | Query decomposition and HyDE expansion |
 
-Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` in the main app are automatically mirrored to MCP via `sync_tool_to_mcp`.
+Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored to MCP by calling `sync_tool_to_mcp(name)` after registration (`src/internal/mcp_server/tools/dynamic.py`).
 
 **Resources:**
 
