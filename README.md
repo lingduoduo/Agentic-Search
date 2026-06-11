@@ -20,6 +20,8 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 📐 **Benchmarking** — Evaluate agents on the Bamboogle two-hop QA benchmark with exact-match, contains-match, and shaped reward scoring.
 
+🔌 **MCP Server** — Expose search, retrieval, and RAG as Model Context Protocol tools so any MCP-compatible LLM client (Claude Desktop, etc.) can query your knowledge base directly.
+
 📊 **Admin & Observability** — Health, analytics, rate limits, hooks, billing, SCIM provisioning, and license state via the FastAPI admin API.
 
 [Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
@@ -34,6 +36,7 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
 | 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/`, `src/training/ppo/search_agent_grpo_trainer.py` |
 | 📐 Benchmarking | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py` |
+| 🔌 MCP Server | `src/internal/mcp_server/` |
 | 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
 | 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
@@ -503,6 +506,66 @@ value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
 ```
 
 `<information>` is environment output — mask it from policy/SFT action loss.
+
+
+## MCP Server
+
+The MCP server exposes Agentic Search capabilities as [Model Context Protocol](https://modelcontextprotocol.io/) tools, letting any MCP-compatible client (Claude Desktop, Cursor, etc.) query your knowledge base directly.
+
+**Start the server** (requires `MCP_SERVER_ENABLED=true`):
+
+```bash
+MCP_SERVER_ENABLED=true uvicorn src.internal.mcp_server.api:app --port 8090
+```
+
+**Connect Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "agentic-search": {
+      "url": "http://localhost:8090/",
+      "transport": "http",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN_HERE" }
+    }
+  }
+}
+```
+
+**Tools available to the LLM client:**
+
+| Tool | What it does |
+|------|-------------|
+| `search_indexed_documents` | Search the private knowledge base with optional source filter |
+| `search_web` | Web search via Google Custom Search or SerpAPI |
+| `open_urls` | Fetch full page text from a list of URLs |
+| `ask_agentic_search` | Full `SearchAgentLoop` answer with citations |
+| `deep_research` | Multi-round iterative RAG via `AgenticRAGLoop` |
+| `retrieve_documents` | Raw retrieval with optional reranking |
+| `expand_query` | Query decomposition and HyDE expansion |
+
+Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` in the main app are automatically mirrored to MCP via `sync_tool_to_mcp`.
+
+**Resources:**
+
+| Resource | What it exposes |
+|----------|----------------|
+| `indexed_sources` | All connector types currently indexed (e.g. `"github"`, `"confluence"`) |
+
+**Debug with MCP Inspector:**
+
+```bash
+npx @modelcontextprotocol/inspector http://localhost:8090/
+```
+
+**Environment variables:**
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `MCP_SERVER_ENABLED` | `false` | Set to `true` to enable |
+| `MCP_SERVER_PORT` | `8090` | Bind port |
+| `MCP_SERVER_CORS_ORIGINS` | — | Comma-separated allowed origins |
+| `API_SERVER_HOST` | `127.0.0.1` | Host of the main API server |
 
 
 ## API Health Checks
