@@ -539,9 +539,7 @@ option:disabled,
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Analytics Dashboard                                                 */
-/* ------------------------------------------------------------------ */
+/* ── Analytics Dashboard ─────────────────────────────────────── */
 
 .analytics-dashboard {
   background: var(--panel);
@@ -610,4 +608,162 @@ option:disabled,
   font-size: 11px;
   fill: var(--muted);
   font-family: inherit;
+}
+
+/* ── Query History Panel ─────────────────────────────────────── */
+
+.query-history-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 0 0 20px;
+}
+
+.qh-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.qh-header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.audit-bar {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.audit-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audit-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+}
+
+.audit-value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.dislike-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dislike-badge[data-tone="good"] { background: #d1fae5; color: #065f46; }
+.dislike-badge[data-tone="watch"] { background: #fef3c7; color: #92400e; }
+.dislike-badge[data-tone="bad"] { background: #fee2e2; color: #991b1b; }
+
+.top-dislikes {
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+}
+
+.top-dislikes summary {
+  cursor: pointer;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.top-dislikes ol {
+  padding-left: 20px;
+  opacity: 0.8;
+}
+
+.qh-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+
+.qh-controls select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.85rem;
+}
+
+.qh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.qh-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--line);
+  font-weight: 600;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.qh-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.session-query {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-time, .session-user, .session-llm, .session-turns, .session-feedback {
+  white-space: nowrap;
+}
+
+.qh-loading, .qh-empty {
+  text-align: center;
+  padding: 20px;
+  opacity: 0.5;
+}
+
+.qh-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+
+.qh-pagination button {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.qh-pagination button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon-button.active {
+  background: var(--accent);
+  color: #fff;
 }

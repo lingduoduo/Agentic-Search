@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from src.backend.auth import AuthenticatedUser
 from src.backend.configs import AppSettings
 from src.backend.db import AgenticSearchStore
+from src.backend.servers.query_history.models import AuditSummary
 from src.backend.servers.query_history.models import ChatSessionMinimal
 from src.backend.servers.query_history.models import ChatSessionSnapshot
 from src.backend.servers.query_history.models import PaginatedReturn
@@ -37,6 +38,7 @@ _CSV_HEADERS = [
     "feedback_type",
     "feedback_text",
     "user_id",
+    "llm_name",
     "time_created",
     "flow_type",
 ]
@@ -77,18 +79,28 @@ def create_query_history_router(
         page_size: int = Query(10, ge=1, le=200),
         start_time: str | None = None,
         end_time: str | None = None,
+        user_id: str | None = Query(None),
+        feedback_type: str | None = Query(None, pattern="^(like|dislike)$"),
         _: AuthenticatedUser = Depends(_require_admin),
     ) -> PaginatedReturn:
-        """Return a paginated list of chat sessions with minimal detail."""
+        """Return a paginated list of chat sessions with minimal detail.
+
+        *feedback_type* may be ``"like"`` or ``"dislike"`` to filter sessions
+        that contain at least one message with that feedback value.
+        """
         sessions = store.get_paginated_chat_sessions(
             page_num=page_num,
             page_size=page_size,
             start_time=start_time,
             end_time=end_time,
+            user_id=user_id,
+            feedback_type=feedback_type,
         )
         total = store.get_chat_sessions_count(
             start_time=start_time,
             end_time=end_time,
+            user_id=user_id,
+            feedback_type=feedback_type,
         )
         items = [
             ChatSessionMinimal.from_records(
@@ -113,6 +125,22 @@ def create_query_history_router(
             )
         messages = store.list_chat_messages(session_id)
         return ChatSessionSnapshot.from_records(session=session, messages=messages)
+
+    @router.get("/query-history/audit")
+    def get_audit_summary(
+        start_time: str | None = None,
+        end_time: str | None = None,
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> AuditSummary:
+        """Return aggregated audit metrics for the given window (default: all time)."""
+        import datetime
+
+        resolved_start = start_time or "1970-01-01T00:00:00"
+        resolved_end = (
+            end_time or datetime.datetime.now(datetime.timezone.utc).isoformat()
+        )
+        data = store.get_audit_summary(resolved_start, resolved_end)
+        return AuditSummary(**data)
 
     @router.get("/query-history/export")
     def export_query_history(

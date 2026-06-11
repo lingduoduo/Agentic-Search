@@ -1450,49 +1450,230 @@ class AgenticSearchStore:
     # Query history helpers
     # ------------------------------------------------------------------
 
+    def upsert_message_feedback(
+        self,
+        message_id: str,
+        is_positive: bool | None,
+        feedback_text: str | None = None,
+    ) -> bool:
+        """Persist feedback for a chat message. Returns False if message not found."""
+        row = self._conn.execute(
+            "SELECT metadata_json FROM chat_messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        meta = _json_loads(row["metadata_json"])
+        if is_positive is True:
+            meta["feedback"] = "like"
+        elif is_positive is False:
+            meta["feedback"] = "dislike"
+        if feedback_text is not None:
+            meta["feedback_text"] = feedback_text
+        self._conn.execute(
+            "UPDATE chat_messages SET metadata_json = ? WHERE id = ?",
+            (_json_dumps(meta), message_id),
+        )
+        self._conn.commit()
+        return True
+
     def get_paginated_chat_sessions(
         self,
         page_num: int,
         page_size: int,
         start_time: str | None = None,
         end_time: str | None = None,
+        user_id: str | None = None,
+        feedback_type: str | None = None,
     ) -> list[ChatSessionRecord]:
-        """Return a single page of chat sessions ordered by creation time descending."""
-        clauses: list[str] = []
-        params: list[object] = []
-        if start_time:
-            clauses.append("created_at >= ?")
-            params.append(start_time)
-        if end_time:
-            clauses.append("created_at <= ?")
-            params.append(end_time)
-        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        params.extend([page_size, page_num * page_size])
-        rows = self._conn.execute(
-            f"SELECT * FROM chat_sessions {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            tuple(params),
-        ).fetchall()
+        """Return a single page of chat sessions ordered by creation time descending.
+
+        *feedback_type* filters to sessions that contain at least one message
+        with the given feedback value (``"like"`` or ``"dislike"``).
+        """
+        if feedback_type:
+            clauses = ["s.id = s.id"]
+            params: list[object] = []
+            if start_time:
+                clauses.append("s.created_at >= ?")
+                params.append(start_time)
+            if end_time:
+                clauses.append("s.created_at <= ?")
+                params.append(end_time)
+            if user_id:
+                clauses.append("s.user_id = ?")
+                params.append(user_id)
+            clauses.append(
+                "EXISTS ("
+                "  SELECT 1 FROM chat_messages m"
+                "  WHERE m.session_id = s.id"
+                "  AND json_extract(m.metadata_json, '$.feedback') = ?"
+                ")"
+            )
+            params.append(feedback_type)
+            where = "WHERE " + " AND ".join(clauses)
+            params.extend([page_size, page_num * page_size])
+            rows = self._conn.execute(
+                f"SELECT s.* FROM chat_sessions s {where}"
+                " ORDER BY s.created_at DESC LIMIT ? OFFSET ?",
+                tuple(params),
+            ).fetchall()
+        else:
+            clauses_simple: list[str] = []
+            params_simple: list[object] = []
+            if start_time:
+                clauses_simple.append("created_at >= ?")
+                params_simple.append(start_time)
+            if end_time:
+                clauses_simple.append("created_at <= ?")
+                params_simple.append(end_time)
+            if user_id:
+                clauses_simple.append("user_id = ?")
+                params_simple.append(user_id)
+            where = ("WHERE " + " AND ".join(clauses_simple)) if clauses_simple else ""
+            params_simple.extend([page_size, page_num * page_size])
+            rows = self._conn.execute(
+                f"SELECT * FROM chat_sessions {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                tuple(params_simple),
+            ).fetchall()
         return [self._row_to_chat_session(row) for row in rows]
 
     def get_chat_sessions_count(
         self,
         start_time: str | None = None,
         end_time: str | None = None,
+        user_id: str | None = None,
+        feedback_type: str | None = None,
     ) -> int:
-        """Return total number of chat sessions matching the given time filter."""
-        clauses: list[str] = []
-        params: list[object] = []
-        if start_time:
-            clauses.append("created_at >= ?")
-            params.append(start_time)
-        if end_time:
-            clauses.append("created_at <= ?")
-            params.append(end_time)
-        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        row = self._conn.execute(
-            f"SELECT COUNT(*) AS cnt FROM chat_sessions {where}", tuple(params)
-        ).fetchone()
+        """Return total session count matching the given filters."""
+        if feedback_type:
+            clauses = ["s.id = s.id"]
+            params: list[object] = []
+            if start_time:
+                clauses.append("s.created_at >= ?")
+                params.append(start_time)
+            if end_time:
+                clauses.append("s.created_at <= ?")
+                params.append(end_time)
+            if user_id:
+                clauses.append("s.user_id = ?")
+                params.append(user_id)
+            clauses.append(
+                "EXISTS ("
+                "  SELECT 1 FROM chat_messages m"
+                "  WHERE m.session_id = s.id"
+                "  AND json_extract(m.metadata_json, '$.feedback') = ?"
+                ")"
+            )
+            params.append(feedback_type)
+            where = "WHERE " + " AND ".join(clauses)
+            row = self._conn.execute(
+                f"SELECT COUNT(*) AS cnt FROM chat_sessions s {where}", tuple(params)
+            ).fetchone()
+        else:
+            clauses_simple: list[str] = []
+            params_simple: list[object] = []
+            if start_time:
+                clauses_simple.append("created_at >= ?")
+                params_simple.append(start_time)
+            if end_time:
+                clauses_simple.append("created_at <= ?")
+                params_simple.append(end_time)
+            if user_id:
+                clauses_simple.append("user_id = ?")
+                params_simple.append(user_id)
+            where = ("WHERE " + " AND ".join(clauses_simple)) if clauses_simple else ""
+            row = self._conn.execute(
+                f"SELECT COUNT(*) AS cnt FROM chat_sessions {where}",
+                tuple(params_simple),
+            ).fetchone()
         return int(row["cnt"]) if row else 0
+
+    def get_audit_summary(
+        self,
+        start: str,
+        end: str,
+    ) -> dict[str, Any]:
+        """Return audit metrics for the given UTC ISO window.
+
+        Returns a dict with:
+          total_sessions, total_messages, sessions_with_feedback,
+          sessions_with_dislike, dislike_rate, top_disliked_queries.
+        """
+
+        def _count(sql: str, params: tuple) -> int:
+            row = self._conn.execute(sql, params).fetchone()
+            return int(row[0]) if row else 0
+
+        total_sessions = _count(
+            "SELECT COUNT(*) FROM chat_sessions WHERE created_at >= ? AND created_at < ?",
+            (start, end),
+        )
+        total_messages = _count(
+            """
+            SELECT COUNT(*) FROM chat_messages m
+            JOIN chat_sessions s ON s.id = m.session_id
+            WHERE s.created_at >= ? AND s.created_at < ?
+            """,
+            (start, end),
+        )
+        sessions_with_feedback = _count(
+            """
+            SELECT COUNT(DISTINCT m.session_id)
+            FROM chat_messages m
+            JOIN chat_sessions s ON s.id = m.session_id
+            WHERE s.created_at >= ? AND s.created_at < ?
+              AND json_extract(m.metadata_json, '$.feedback') IS NOT NULL
+            """,
+            (start, end),
+        )
+        sessions_with_dislike = _count(
+            """
+            SELECT COUNT(DISTINCT m.session_id)
+            FROM chat_messages m
+            JOIN chat_sessions s ON s.id = m.session_id
+            WHERE s.created_at >= ? AND s.created_at < ?
+              AND json_extract(m.metadata_json, '$.feedback') = 'dislike'
+            """,
+            (start, end),
+        )
+        dislike_rate = (
+            round(sessions_with_dislike / sessions_with_feedback, 4)
+            if sessions_with_feedback > 0
+            else 0.0
+        )
+
+        top_rows = self._conn.execute(
+            """
+            SELECT first_msg.content AS query
+            FROM chat_sessions s
+            JOIN chat_messages first_msg
+              ON first_msg.id = (
+                SELECT id FROM chat_messages
+                WHERE session_id = s.id AND role = 'user'
+                ORDER BY created_at LIMIT 1
+              )
+            WHERE s.created_at >= ? AND s.created_at < ?
+              AND EXISTS (
+                SELECT 1 FROM chat_messages m
+                WHERE m.session_id = s.id
+                  AND json_extract(m.metadata_json, '$.feedback') = 'dislike'
+              )
+            ORDER BY s.created_at DESC
+            LIMIT 10
+            """,
+            (start, end),
+        ).fetchall()
+        top_disliked_queries = [row[0] for row in top_rows]
+
+        return {
+            "total_sessions": total_sessions,
+            "total_messages": total_messages,
+            "sessions_with_feedback": sessions_with_feedback,
+            "sessions_with_dislike": sessions_with_dislike,
+            "dislike_rate": dislike_rate,
+            "top_disliked_queries": top_disliked_queries,
+        }
 
     def list_all_users(self) -> list[UserRecord]:
         """Return every user record ordered by created_at."""

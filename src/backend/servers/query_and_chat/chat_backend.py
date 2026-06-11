@@ -115,11 +115,15 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
 
     @router.post("/create-chat-message-feedback")
     def create_chat_feedback(feedback: ChatFeedbackRequest) -> None:
-        logger.debug(
-            "Feedback received for message %s: positive=%s",
+        found = store.upsert_message_feedback(
             feedback.chat_message_id,
             feedback.is_positive,
+            getattr(feedback, "feedback_text", None),
         )
+        if not found:
+            logger.warning(
+                "Feedback for unknown message %s ignored", feedback.chat_message_id
+            )
 
     return router
 

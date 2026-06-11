@@ -2,8 +2,10 @@ import type {
   AdminSurfaceSummary,
   AgentExperienceRequest,
   AgentExperienceResponse,
+  AuditSummary,
   BreakdownAnalytics,
   ChatSessionView,
+  QueryHistoryPage,
   SessionCreateRequest,
 } from "./types";
 
@@ -86,6 +88,62 @@ export function runAgent(
   return requestJson<AgentExperienceResponse>("/api/agent", {
     method: "POST",
     body: JSON.stringify(request),
+    signal: init?.signal,
+  });
+}
+
+export function getQueryHistory(
+  params: {
+    page_num?: number;
+    page_size?: number;
+    start_time?: string;
+    end_time?: string;
+    user_id?: string;
+    feedback_type?: "like" | "dislike";
+  } = {},
+  init?: Pick<RequestInit, "signal">,
+): Promise<QueryHistoryPage> {
+  const qs = new URLSearchParams();
+  if (params.page_num !== undefined) qs.set("page_num", String(params.page_num));
+  if (params.page_size !== undefined) qs.set("page_size", String(params.page_size));
+  if (params.start_time) qs.set("start_time", params.start_time);
+  if (params.end_time) qs.set("end_time", params.end_time);
+  if (params.user_id) qs.set("user_id", params.user_id);
+  if (params.feedback_type) qs.set("feedback_type", params.feedback_type);
+  const query = qs.toString();
+  return requestJson<QueryHistoryPage>(
+    `/admin/chat-session-history${query ? `?${query}` : ""}`,
+    { signal: init?.signal },
+  );
+}
+
+export function getAuditSummary(
+  params: { start_time?: string; end_time?: string } = {},
+  init?: Pick<RequestInit, "signal">,
+): Promise<AuditSummary> {
+  const qs = new URLSearchParams();
+  if (params.start_time) qs.set("start_time", params.start_time);
+  if (params.end_time) qs.set("end_time", params.end_time);
+  const query = qs.toString();
+  return requestJson<AuditSummary>(
+    `/admin/query-history/audit${query ? `?${query}` : ""}`,
+    { signal: init?.signal },
+  );
+}
+
+export function submitFeedback(
+  messageId: string,
+  isPositive: boolean,
+  feedbackText?: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<void> {
+  return requestJson<void>("/chat/create-chat-message-feedback", {
+    method: "POST",
+    body: JSON.stringify({
+      chat_message_id: messageId,
+      is_positive: isPositive,
+      feedback_text: feedbackText ?? null,
+    }),
     signal: init?.signal,
   });
 }

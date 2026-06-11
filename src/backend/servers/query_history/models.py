@@ -85,6 +85,7 @@ class ChatSessionMinimal(BaseModel):
     feedback_type: QAFeedbackType | None
     flow_type: SessionType
     conversation_length: int
+    llm_name: str | None = None
 
     @classmethod
     def from_records(
@@ -124,6 +125,7 @@ class ChatSessionMinimal(BaseModel):
             feedback_type=feedback_type,
             flow_type=flow_type,
             conversation_length=len(non_system),
+            llm_name=session.metadata.get("llm_name"),
         )
 
 
@@ -134,6 +136,7 @@ class ChatSessionSnapshot(BaseModel):
     messages: list[MessageSnapshot]
     time_created: str
     flow_type: SessionType
+    llm_name: str | None = None
 
     @classmethod
     def from_records(
@@ -157,6 +160,7 @@ class ChatSessionSnapshot(BaseModel):
             ],
             time_created=session.created_at or "",
             flow_type=flow_type,
+            llm_name=session.metadata.get("llm_name"),
         )
 
 
@@ -169,6 +173,7 @@ class QuestionAnswerPairSnapshot(BaseModel):
     feedback_type: QAFeedbackType | None
     feedback_text: str | None
     user_id: str | None
+    llm_name: str | None
     time_created: str
     flow_type: SessionType
 
@@ -190,6 +195,7 @@ class QuestionAnswerPairSnapshot(BaseModel):
                 feedback_type=ai_msg.feedback_type,
                 feedback_text=ai_msg.feedback_text,
                 user_id=snapshot.user_id,
+                llm_name=snapshot.llm_name,
                 time_created=user_msg.time_created,
                 flow_type=snapshot.flow_type,
             )
@@ -208,6 +214,7 @@ class QuestionAnswerPairSnapshot(BaseModel):
             "feedback_type": self.feedback_type.value if self.feedback_type else "",
             "feedback_text": self.feedback_text or "",
             "user_id": self.user_id,
+            "llm_name": self.llm_name or "",
             "time_created": self.time_created,
             "flow_type": self.flow_type.value,
         }
@@ -218,8 +225,18 @@ class PaginatedReturn(BaseModel):
     total_items: int
 
 
+class AuditSummary(BaseModel):
+    total_sessions: int
+    total_messages: int
+    sessions_with_feedback: int
+    sessions_with_dislike: int
+    dislike_rate: float
+    top_disliked_queries: list[str]
+
+
 __all__ = [
     "AbridgedSearchDoc",
+    "AuditSummary",
     "ChatSessionMinimal",
     "ChatSessionSnapshot",
     "MessageSnapshot",
