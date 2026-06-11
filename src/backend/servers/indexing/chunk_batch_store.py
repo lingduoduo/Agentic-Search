@@ -3,8 +3,11 @@ import shutil
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TypeVar
 
-from src.backend.servers.indexing.models import IndexChunk
+from src.backend.document_index.models import EmbeddedChunk
+
+_T = TypeVar("_T")
 
 
 class ChunkBatchStore:
@@ -44,12 +47,12 @@ class ChunkBatchStore:
 
     # -- storage primitives --------------------------------------------------
 
-    def save(self, chunks: list[IndexChunk], batch_idx: int) -> None:
+    def save(self, chunks: list[EmbeddedChunk], batch_idx: int) -> None:
         """Serialize a batch of embedded chunks to disk."""
         with open(self._dir / f"batch_{batch_idx}{self._EXT}", "wb") as f:
             pickle.dump(chunks, f)
 
-    def _load(self, batch_file: Path) -> list[IndexChunk]:
+    def _load(self, batch_file: Path) -> list[EmbeddedChunk]:
         """Deserialize a batch of embedded chunks from a file."""
         with open(batch_file, "rb") as f:
             return pickle.load(f)  # noqa: S301 — reads back files this process itself wrote in save()
@@ -63,7 +66,7 @@ class ChunkBatchStore:
 
     # -- higher-level operations ---------------------------------------------
 
-    def stream(self) -> Iterator[IndexChunk]:
+    def stream(self) -> Iterator[EmbeddedChunk]:
         """Yield all chunks across all batch files.
 
         Each call returns a fresh generator, so the data can be iterated
@@ -82,7 +85,7 @@ class ChunkBatchStore:
         for batch_file in self._batch_files():
             batch_chunks = self._load(batch_file)
             cleaned = [
-                c for c in batch_chunks if c.source_document.id not in failed_doc_ids
+                c for c in batch_chunks if c.chunk.document_id not in failed_doc_ids
             ]
             if len(cleaned) != len(batch_chunks):
                 with open(batch_file, "wb") as f:
