@@ -585,8 +585,23 @@ if summary.avg_reward is not None:
 ```python
 from src.training.ppo import compute_ppo_policy_loss_core, compute_value_loss, AdaptiveKLController
 
-policy_loss = compute_ppo_policy_loss_core(logprobs, old_logprobs, advantages, clip_eps=0.2)
-value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
+# Returns (pg_loss, clipfrac, approx_kl, surrogate)
+pg_loss, clipfrac, kl, _ = compute_ppo_policy_loss_core(
+    old_log_prob=old_logprobs,   # log probs from the frozen reference snapshot
+    log_prob=logprobs,           # log probs from the current policy
+    advantages=advantages,
+    eos_mask=eos_mask,
+    cliprange=0.2,
+)
+# Returns (vf_loss, vf_clipfrac)
+vf_loss, _ = compute_value_loss(
+    vpreds=values,               # current value predictions
+    returns=returns,
+    values=old_values,           # value baseline from the reference snapshot
+    eos_mask=eos_mask,
+    cliprange_value=0.2,
+)
+kl_ctrl = AdaptiveKLController(init_kl_coef=0.1, target_kl=6.0, horizon=10000)
 ```
 
 **XML search protocol** — the ReAct-style trace format used by `SearchAgentLoop`:
