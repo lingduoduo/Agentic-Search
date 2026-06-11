@@ -135,6 +135,35 @@ cd web && npm install && npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to port 7860. For production, `npm run build` produces `web/dist`; the FastAPI app serves it automatically.
 
+**Verify the stack is up:**
+
+```bash
+curl -s http://127.0.0.1:8001/health   # retrieval server → {"status":"ok"}
+curl -s http://127.0.0.1:7860/health   # web backend     → {"status":"ok"}
+```
+
+**Optional — MCP server** (requires `pip install -e ".[mcp]"`):
+
+```bash
+# Terminal 4 — MCP server (port 8090)
+MCP_SERVER_ENABLED=true uvicorn src.internal.mcp_server.api:app \
+  --host 127.0.0.1 --port 8090
+```
+
+**Optional — dense/hybrid retrieval** (instead of TF-IDF demo):
+
+```bash
+# Build a FAISS index first
+python3 -m src.internal.document_index.index_builder \
+  --retrieval_method e5 --model_path intfloat/e5-base-v2 \
+  --corpus_path data/corpus.jsonl --save_dir data/indexes/
+
+# Then start the dense retrieval server on port 8001
+python3 -m src.internal.servers.retrieval.retrieval \
+  --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
+  --corpus_path data/corpus.jsonl --retrieval_method e5 --port 8001
+```
+
 
 ## Examples
 
