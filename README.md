@@ -29,7 +29,7 @@ A retrieval-backed agent platform for building high-quality search, research, an
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
-| 🌍 Web Search | `src/internal/servers/retrieval/google.py`, `serp.py`, `browser.py` |
+| 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
