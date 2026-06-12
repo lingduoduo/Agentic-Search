@@ -14,6 +14,8 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 🔗 **Connectors** — Bring in content from local files, search results, and external systems such as Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
 
+🔒 **Permission-Aware Retrieval** — Enforce per-user access controls at retrieval time with ACL filtering, source-type gating, and connector-level permission metadata.
+
 🛠️ **Tool Use** — Register and execute tools from Python functions or OpenAPI schemas, with support for structured tool-calling loops.
 
 💬 **Chat Orchestration** — Run streaming multi-turn chat with citations, tool calls, file context, history compression, and persisted sessions.
@@ -29,14 +31,16 @@ A retrieval-backed agent platform for building high-quality search, research, an
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
+| 🔬 Deep Research | `src/internal/mcp_server/tools/research.py`, `src/agents/agentic_rag.py` |
+| 🤖 Custom Agents | `src/agents/graph_base.py`, `src/internal/chat/process_message.py`, `src/internal/configs/chat_configs.py` |
 | 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
+| 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
 | 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
 | 📐 Bamboogle Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
-| 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
 | 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
 
