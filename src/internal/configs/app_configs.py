@@ -16,8 +16,8 @@ from typing import Mapping
 
 EnvMapping = Mapping[str, str]
 
-DEFAULT_RETRIEVAL_URL = "http://localhost:8000/retrieve"
-DEFAULT_FETCH_URL = "http://localhost:8000/fetch"
+DEFAULT_RETRIEVAL_URL = "http://localhost:8001/retrieve"
+DEFAULT_FETCH_URL = "http://localhost:8001/fetch"
 DEFAULT_WEB_DB_PATH = ":memory:"
 DEFAULT_AUTH_SECRET = "agentic-search-dev-secret"
 
@@ -31,7 +31,7 @@ class ServiceSettings:
     web_db_path: str | Path = DEFAULT_WEB_DB_PATH
     web_top_k: int = 5
     retrieval_host: str = "0.0.0.0"
-    retrieval_port: int = 8000
+    retrieval_port: int = 8001
     web_host: str = "0.0.0.0"
     web_port: int = 8080
 
@@ -161,7 +161,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
             retrieval_host=get_env_str(
                 source, "AGENTIC_SEARCH_RETRIEVAL_HOST", "0.0.0.0"
             ),
-            retrieval_port=get_env_int(source, "AGENTIC_SEARCH_RETRIEVAL_PORT", 8000),
+            retrieval_port=get_env_int(source, "AGENTIC_SEARCH_RETRIEVAL_PORT", 8001),
             web_host=get_env_str(source, "AGENTIC_SEARCH_WEB_HOST", "0.0.0.0"),
             web_port=get_env_int(source, "AGENTIC_SEARCH_WEB_PORT", 8080),
         ),

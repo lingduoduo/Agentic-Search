@@ -10,25 +10,22 @@
   body { background: #020617; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; min-height: 100vh; padding: 32px 24px 48px; }
   .header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 28px; }
   .pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #22d3ee; flex-shrink: 0; margin-top: 5px; animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(34,211,238,.5); } 50% { box-shadow: 0 0 0 7px rgba(34,211,238,0); } }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(34,211,238,.5);}50%{box-shadow:0 0 0 7px rgba(34,211,238,0);} }
   h1 { font-size: 20px; font-weight: 700; color: #f8fafc; letter-spacing: -.3px; }
   .subtitle { font-size: 11px; color: #64748b; margin-top: 3px; }
   .diagram-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; overflow-x: auto; }
   svg { display: block; }
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-top: 20px; }
   .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; }
   .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .card-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .dot-cyan   { background: #22d3ee; }
-  .dot-green  { background: #34d399; }
-  .dot-violet { background: #a78bfa; }
-  .dot-amber  { background: #fbbf24; }
-  .dot-rose   { background: #fb7185; }
-  .dot-orange { background: #fb923c; }
+  .dot-cyan{background:#22d3ee;} .dot-green{background:#34d399;} .dot-violet{background:#a78bfa;}
+  .dot-amber{background:#fbbf24;} .dot-rose{background:#fb7185;} .dot-orange{background:#fb923c;}
   .card-header h3 { font-size: 11px; font-weight: 600; color: #e2e8f0; }
   .card ul { list-style: none; }
   .card li { font-size: 10px; color: #94a3b8; padding: 2px 0; line-height: 1.55; }
   .footer { margin-top: 20px; font-size: 9px; color: #334155; text-align: right; }
+  .badge { display:inline-block; font-size:8px; font-family:'JetBrains Mono',monospace; background:rgba(34,211,238,.15); color:#22d3ee; border:1px solid rgba(34,211,238,.3); border-radius:3px; padding:1px 5px; margin-left:6px; vertical-align:middle; }
 </style>
 </head>
 <body>
@@ -36,13 +33,13 @@
 <div class="header">
   <div class="pulse-dot"></div>
   <div>
-    <h1>Agentic Search GRPO</h1>
-    <div class="subtitle">Retrieval-Backed Agent Platform · FastAPI · GRPO/PPO RL Training · lingduoduo/Agentic-Search-GRPO</div>
+    <h1>Agentic Search GRPO <span class="badge">updated</span></h1>
+    <div class="subtitle">Retrieval-Backed Agent Platform · FastAPI · CLI · GRPO/PPO RL Training · Python 87% · JS/Go/TS · lingduoduo/Agentic-Search-GRPO</div>
   </div>
 </div>
 
 <div class="diagram-card">
-<svg viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg" width="1200" height="900">
+<svg viewBox="0 0 1240 980" xmlns="http://www.w3.org/2000/svg" width="1240" height="980">
 <defs>
   <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0L0 0 0 40" fill="none" stroke="#1e293b" stroke-width=".5"/></pattern>
   <marker id="a"     markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,9 3,0 6" fill="#475569"/></marker>
@@ -54,347 +51,399 @@
   <marker id="arose" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,9 3,0 6" fill="#fb7185"/></marker>
 </defs>
 
-<rect width="1200" height="900" fill="#020617"/>
-<rect width="1200" height="900" fill="url(#grid)"/>
+<rect width="1240" height="980" fill="#020617"/>
+<rect width="1240" height="980" fill="url(#grid)"/>
 
 <!-- ═══ ZONE OUTLINES ═══ -->
-<!-- FastAPI Web Backend zone -->
-<rect x="260" y="108" width="540" height="348" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="276" y="100" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9">FastAPI Web Backend  :7860  (src/backend/servers/web/app.py)</text>
+<!-- NEW: Entry Points -->
+<rect x="28" y="28" width="1184" height="100" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="20" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">Entry Points  (NEW: cli/ · bin/ · web/ · examples/)</text>
 
-<!-- Retrieval Server zone -->
-<rect x="44" y="108" width="200" height="348" rx="10" fill="none" stroke="#34d399" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="60" y="100" fill="#34d399" font-family="'JetBrains Mono',monospace" font-size="9">Retrieval Server  :8000</text>
+<!-- FastAPI Web Backend -->
+<rect x="270" y="158" width="530" height="360" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="286" y="150" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9">FastAPI Web Backend  :7860  (src/backend/servers/web/app.py)</text>
 
-<!-- Agent Loops zone -->
-<rect x="820" y="108" width="352" height="220" rx="10" fill="none" stroke="#a78bfa" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="836" y="100" fill="#a78bfa" font-family="'JetBrains Mono',monospace" font-size="9">Agent Loops  (src/agents/)</text>
+<!-- Retrieval Server -->
+<rect x="28" y="158" width="226" height="360" rx="10" fill="none" stroke="#34d399" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="150" fill="#34d399" font-family="'JetBrains Mono',monospace" font-size="9">Retrieval Server  :8000</text>
 
-<!-- RL Training zone -->
-<rect x="820" y="350" width="352" height="220" rx="10" fill="none" stroke="#fb923c" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="836" y="342" fill="#fb923c" font-family="'JetBrains Mono',monospace" font-size="9">RL Training  (src/training/)</text>
+<!-- Agent Loops -->
+<rect x="820" y="158" width="392" height="220" rx="10" fill="none" stroke="#a78bfa" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="836" y="150" fill="#a78bfa" font-family="'JetBrains Mono',monospace" font-size="9">Agent Loops  (src/agents/)</text>
 
-<!-- Connectors zone -->
-<rect x="44" y="490" width="760" height="130" rx="10" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="60" y="482" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="9">Connectors  (src/backend/connectors/)</text>
+<!-- RL Training -->
+<rect x="820" y="398" width="392" height="220" rx="10" fill="none" stroke="#fb923c" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="836" y="390" fill="#fb923c" font-family="'JetBrains Mono',monospace" font-size="9">RL Training  (src/training/)  +  NEW: models/  generated/</text>
 
-<!-- Persistence zone -->
-<rect x="44" y="650" width="1128" height="100" rx="10" fill="none" stroke="#475569" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="60" y="642" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9">Persistence &amp; Observability</text>
+<!-- Connectors -->
+<rect x="28" y="548" width="784" height="118" rx="10" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="540" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="9">Connectors  (src/backend/connectors/)  +  docs/superpowers/</text>
+
+<!-- NEW: Claude Code / Dev Tooling -->
+<rect x="820" y="548" width="392" height="118" rx="10" fill="none" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="836" y="540" fill="#fb7185" font-family="'JetBrains Mono',monospace" font-size="9">NEW: Dev Tooling  (.claude/ · package.json · pre-commit)</text>
+
+<!-- Persistence -->
+<rect x="28" y="696" width="1184" height="96" rx="10" fill="none" stroke="#475569" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="688" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9">Persistence &amp; Observability</text>
 
 <!-- ═══ ARROWS ═══ -->
-<!-- Client to FastAPI -->
-<line x1="144" y1="62" x2="430" y2="118" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#acyan)"/>
-<!-- Client to retrieval -->
-<line x1="100" y1="62" x2="100" y2="118" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="5,3" marker-end="url(#acyan)"/>
-<!-- FastAPI chat → LLM Backends -->
-<line x1="530" y1="192" x2="530" y2="318" stroke="#475569" stroke-width="1.2" marker-end="url(#a)"/>
+<!-- Entry points → FastAPI -->
+<line x1="490" y1="128" x2="490" y2="158" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#acyan)"/>
+<!-- CLI → FastAPI -->
+<line x1="200" y1="108" x2="380" y2="158" stroke="#22d3ee" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#acyan)"/>
+<!-- CLI → Retrieval -->
+<line x1="148" y1="108" x2="130" y2="158" stroke="#34d399" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
 <!-- FastAPI → Agent Loops -->
-<line x1="800" y1="192" x2="830" y2="192" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#avio)"/>
-<!-- Agent Loops → Retrieval -->
-<line x1="820" y1="210" x2="260" y2="255" stroke="#34d399" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
-<!-- Agent Loops → LLM Backends -->
-<line x1="906" y1="328" x2="680" y2="340" stroke="#475569" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a)"/>
-<!-- RL Training ← Agent traces -->
-<line x1="960" y1="328" x2="960" y2="360" stroke="#fb923c" stroke-width="1.3" marker-end="url(#aorg)"/>
-<!-- FastAPI → Background worker -->
-<line x1="430" y1="278" x2="430" y2="318" stroke="#475569" stroke-width="1.2" marker-end="url(#a)"/>
-<!-- Retrieval dense → Sparse -->
-<line x1="144" y1="208" x2="144" y2="248" stroke="#34d399" stroke-width="1.2" marker-end="url(#agrn)"/>
-<!-- Retrieval → Web Search -->
-<line x1="144" y1="308" x2="144" y2="348" stroke="#34d399" stroke-width="1.2" marker-end="url(#agrn)"/>
-<!-- Connectors → Background worker -->
-<line x1="400" y1="490" x2="430" y2="398" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#aamb)"/>
-<!-- Everything → SQLite -->
-<line x1="530" y1="456" x2="530" y2="660" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
-<line x1="144" y1="456" x2="200" y2="662" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
-<line x1="960" y1="570" x2="750" y2="662" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
+<line x1="800" y1="248" x2="830" y2="248" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#avio)"/>
+<!-- FastAPI → LLM Backends (internal) -->
+<line x1="490" y1="298" x2="490" y2="338" stroke="#475569" stroke-width="1.2" marker-end="url(#a)"/>
+<!-- Agent Loops → Retrieval (cross-zone) -->
+<line x1="820" y1="268" x2="258" y2="268" stroke="#34d399" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
+<!-- Agent Loops → RL Training -->
+<line x1="1016" y1="378" x2="1016" y2="398" stroke="#fb923c" stroke-width="1.3" marker-end="url(#aorg)"/>
+<!-- Retrieval internal stacking -->
+<line x1="130" y1="238" x2="130" y2="278" stroke="#34d399" stroke-width="1.2" marker-end="url(#agrn)"/>
+<line x1="130" y1="338" x2="130" y2="378" stroke="#34d399" stroke-width="1.2" marker-end="url(#agrn)"/>
+<!-- Connectors → Background Worker -->
+<line x1="400" y1="548" x2="430" y2="518" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#aamb)"/>
+<!-- Everything → Persistence -->
+<line x1="490" y1="518" x2="490" y2="696" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
+<line x1="130" y1="518" x2="220" y2="696" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
+<line x1="1016" y1="618" x2="900" y2="696" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
 <!-- Observability side channel -->
-<line x1="750" y1="192" x2="1060" y2="680" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arose)"/>
+<line x1="720" y1="248" x2="1090" y2="706" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arose)"/>
 
-<!-- ═══ BOXES ═══ -->
+<!-- ═══ ENTRY POINTS ROW ═══ -->
+<!-- Web UI -->
+<rect x="38" y="42" width="148" height="64" rx="6" fill="#0f172a"/>
+<rect x="38" y="42" width="148" height="64" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="112" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">HTTP / Web UI</text>
+<text x="112" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">curl · Vite :5173</text>
+<text x="112" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">web/ npm dev</text>
 
-<!-- CLIENT -->
-<rect x="56" y="30" width="132" height="50" rx="6" fill="#0f172a"/>
-<rect x="56" y="30" width="132" height="50" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="122" y="51" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">HTTP Clients</text>
-<text x="122" y="68" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">curl / Web UI :5173</text>
+<!-- CLI (NEW) -->
+<rect x="200" y="42" width="185" height="64" rx="6" fill="#0f172a"/>
+<rect x="200" y="42" width="185" height="64" rx="6" fill="rgba(34,211,238,.18)" stroke="#22d3ee" stroke-width="2"/>
+<text x="220" y="57" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="292" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">CLI Layer</text>
+<text x="292" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">cli/  ·  bin/</text>
+<text x="292" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_agentic_search · search / tool / single modes</text>
 
-<!-- VITE FRONTEND -->
-<rect x="220" y="30" width="148" height="50" rx="6" fill="#0f172a"/>
-<rect x="220" y="30" width="148" height="50" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="294" y="51" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Vite Frontend</text>
-<text x="294" y="68" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">web/ npm dev :5173</text>
+<!-- Examples -->
+<rect x="400" y="42" width="185" height="64" rx="6" fill="#0f172a"/>
+<rect x="400" y="42" width="185" height="64" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="492" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Examples / Scripts</text>
+<text x="492" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_search_trace_workflow</text>
+<text x="492" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_grpo_training_pipeline</text>
 
-<!-- ── RETRIEVAL SERVER ── -->
-<!-- Dense retrieval -->
-<rect x="56" y="118" width="180" height="70" rx="6" fill="#0f172a"/>
-<rect x="56" y="118" width="180" height="70" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
-<text x="146" y="139" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Dense Retrieval</text>
-<text x="146" y="155" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">FAISS  E5 / BGE</text>
-<text x="146" y="169" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">retrieval.py  hybrid_rerank.py</text>
+<!-- Deep Research (NEW) -->
+<rect x="600" y="42" width="185" height="64" rx="6" fill="#0f172a"/>
+<rect x="600" y="42" width="185" height="64" rx="6" fill="rgba(34,211,238,.18)" stroke="#22d3ee" stroke-width="2"/>
+<text x="620" y="57" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="692" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Deep Research</text>
+<text x="692" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/agents/deep_research/</text>
+<text x="692" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">multi-step · evidence · synthesis</text>
 
-<!-- Sparse BM25 -->
-<rect x="56" y="208" width="180" height="70" rx="6" fill="#0f172a"/>
-<rect x="56" y="208" width="180" height="70" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
-<text x="146" y="229" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Sparse BM25</text>
-<text x="146" y="245" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">Pyserini / Lucene</text>
-<text x="146" y="259" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">RRF fusion + reranker</text>
+<!-- Custom Agents (NEW) -->
+<rect x="800" y="42" width="185" height="64" rx="6" fill="#0f172a"/>
+<rect x="800" y="42" width="185" height="64" rx="6" fill="rgba(34,211,238,.18)" stroke="#22d3ee" stroke-width="2"/>
+<text x="820" y="57" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="892" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Custom Agents</text>
+<text x="892" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/agents/custom.py</text>
+<text x="892" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">persona · memory · tools</text>
 
-<!-- Web Search -->
-<rect x="56" y="298" width="180" height="70" rx="6" fill="#0f172a"/>
-<rect x="56" y="298" width="180" height="70" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
-<text x="146" y="319" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Web Search</text>
-<text x="146" y="335" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">Google PSE · SerpAPI</text>
-<text x="146" y="349" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Brave · Playwright · Exa</text>
+<!-- Docs/Superpowers (NEW) -->
+<rect x="1000" y="42" width="200" height="64" rx="6" fill="#0f172a"/>
+<rect x="1000" y="42" width="200" height="64" rx="6" fill="rgba(34,211,238,.18)" stroke="#22d3ee" stroke-width="2"/>
+<text x="1020" y="57" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="1100" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">docs/superpowers</text>
+<text x="1100" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">findings.md · progress.md</text>
+<text x="1100" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">task_plan.md · .gitguardian</text>
 
-<!-- Index Builder -->
-<rect x="56" y="388" width="180" height="60" rx="6" fill="#0f172a"/>
-<rect x="56" y="388" width="180" height="60" rx="6" fill="rgba(6,78,59,.35)" stroke="#34d399" stroke-width="1.4"/>
-<text x="146" y="409" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Index Builder</text>
-<text x="146" y="425" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">index_builder.py</text>
-<text x="146" y="439" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">corpus.jsonl → FAISS / BM25</text>
+<!-- ═══ RETRIEVAL SERVER ═══ -->
+<rect x="40" y="172" width="200" height="66" rx="6" fill="#0f172a"/>
+<rect x="40" y="172" width="200" height="66" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
+<text x="140" y="193" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Dense Retrieval</text>
+<text x="140" y="209" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">FAISS  E5 / BGE embedders</text>
+<text x="140" y="223" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">retrieval.py  hybrid_rerank.py</text>
 
-<!-- ── FASTAPI BACKEND ── -->
+<rect x="40" y="252" width="200" height="66" rx="6" fill="#0f172a"/>
+<rect x="40" y="252" width="200" height="66" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
+<text x="140" y="273" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Sparse BM25</text>
+<text x="140" y="289" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">Pyserini / Lucene (Java)</text>
+<text x="140" y="303" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">RRF fusion + cross-encoder rerank</text>
+
+<rect x="40" y="332" width="200" height="66" rx="6" fill="#0f172a"/>
+<rect x="40" y="332" width="200" height="66" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
+<text x="140" y="353" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Web Search</text>
+<text x="140" y="369" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">Google PSE · SerpAPI · Brave</text>
+<text x="140" y="383" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SearXNG · Playwright · Exa/Firecrawl</text>
+
+<rect x="40" y="412" width="200" height="60" rx="6" fill="#0f172a"/>
+<rect x="40" y="412" width="200" height="60" rx="6" fill="rgba(6,78,59,.35)" stroke="#34d399" stroke-width="1.4"/>
+<text x="140" y="433" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Index Builder</text>
+<text x="140" y="449" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">index_builder.py</text>
+<text x="140" y="463" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">corpus.jsonl → FAISS / BM25</text>
+
+<!-- ═══ FASTAPI BACKEND ═══ -->
 <!-- Chat Orchestration -->
-<rect x="272" y="118" width="250" height="80" rx="6" fill="#0f172a"/>
-<rect x="272" y="118" width="250" height="80" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="397" y="139" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Chat Orchestration</text>
-<text x="397" y="155" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">process_message  run_llm_loop</text>
-<text x="397" y="169" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">citation_processor  compression</text>
-<text x="397" y="181" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Emitter  token streaming</text>
+<rect x="282" y="172" width="246" height="84" rx="6" fill="#0f172a"/>
+<rect x="282" y="172" width="246" height="84" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="405" y="192" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Chat Orchestration</text>
+<text x="405" y="208" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">process_message  run_llm_loop</text>
+<text x="405" y="222" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">DynamicCitationProcessor  Emitter</text>
+<text x="405" y="234" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">compress_chat_history  streaming</text>
+<text x="405" y="246" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">build_system_prompt</text>
 
 <!-- Query & Search API -->
-<rect x="540" y="118" width="248" height="80" rx="6" fill="#0f172a"/>
-<rect x="540" y="118" width="248" height="80" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="664" y="139" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Query &amp; Search API</text>
-<text x="664" y="155" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">POST /api/agent  /retrieve</text>
-<text x="664" y="169" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">classify_is_search_flow</text>
-<text x="664" y="181" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">QueryEnhancer: decompose / HyDE</text>
+<rect x="544" y="172" width="246" height="84" rx="6" fill="#0f172a"/>
+<rect x="544" y="172" width="246" height="84" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="667" y="192" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Query &amp; Search API</text>
+<text x="667" y="208" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">POST /api/agent  /retrieve</text>
+<text x="667" y="222" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">classify_is_search_flow</text>
+<text x="667" y="234" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">QueryEnhancer: decompose / HyDE</text>
+<text x="667" y="246" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Permission-Aware Retrieval  ACLs</text>
 
 <!-- LLM Backends -->
-<rect x="272" y="218" width="250" height="80" rx="6" fill="#0f172a"/>
-<rect x="272" y="218" width="250" height="80" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="397" y="239" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">LLM Backends</text>
-<text x="397" y="255" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">OpenAICompatibleLLM</text>
-<text x="397" y="269" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">OpenAI · Anthropic · Ollama</text>
-<text x="397" y="281" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">vLLM · LocalServerManager</text>
+<rect x="282" y="272" width="246" height="80" rx="6" fill="#0f172a"/>
+<rect x="282" y="272" width="246" height="80" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="405" y="292" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">LLM Backends</text>
+<text x="405" y="308" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">OpenAICompatibleLLM</text>
+<text x="405" y="322" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">OpenAI · Anthropic · Azure</text>
+<text x="405" y="334" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Ollama · vLLM · LocalServerManager</text>
 
 <!-- Intent Classifier -->
-<rect x="540" y="218" width="248" height="80" rx="6" fill="#0f172a"/>
-<rect x="540" y="218" width="248" height="80" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="664" y="239" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Intent Classifier</text>
-<text x="664" y="255" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">IntentPipeline (feedforward ML)</text>
-<text x="664" y="269" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">purchase / navigate / qa / rec</text>
-<text x="664" y="281" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">fast / balanced / reasoning tier</text>
+<rect x="544" y="272" width="246" height="80" rx="6" fill="#0f172a"/>
+<rect x="544" y="272" width="246" height="80" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="667" y="292" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Intent Classifier</text>
+<text x="667" y="308" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">IntentPipeline (feedforward ML)</text>
+<text x="667" y="322" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">purchase / navigate / qa / rec</text>
+<text x="667" y="334" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">fast / balanced / reasoning tier</text>
 
-<!-- Background Worker -->
-<rect x="272" y="318" width="250" height="90" rx="6" fill="#0f172a"/>
-<rect x="272" y="318" width="250" height="90" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="397" y="339" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Background Workers</text>
-<text x="397" y="355" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">beat · docfetch · light · heavy</text>
-<text x="397" y="369" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">fetch → parse → chunk → embed</text>
-<text x="397" y="383" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">→ index  (ChunkBatchStore)</text>
-<text x="397" y="395" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">MonitoringWorker: RSS / queue</text>
+<!-- Background Workers -->
+<rect x="282" y="368" width="246" height="84" rx="6" fill="#0f172a"/>
+<rect x="282" y="368" width="246" height="84" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="405" y="388" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Background Workers</text>
+<text x="405" y="404" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">beat · docfetch · light · heavy</text>
+<text x="405" y="418" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">fetch→parse→chunk→embed→index</text>
+<text x="405" y="430" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">MonitoringWorker: RSS / queue</text>
+<text x="405" y="442" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ChunkBatchStore (disk buffer)</text>
 
 <!-- Auth & Middleware -->
-<rect x="540" y="318" width="248" height="90" rx="6" fill="#0f172a"/>
-<rect x="540" y="318" width="248" height="90" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="664" y="339" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Auth &amp; Middleware</text>
-<text x="664" y="355" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">JWT · OAuth 2.0 · SCIM 2.0</text>
-<text x="664" y="369" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">license gate · tier gate</text>
-<text x="664" y="383" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">rate limits · multi-tenant</text>
-<text x="664" y="395" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">feature flags: Env / PostHog</text>
+<rect x="544" y="368" width="246" height="84" rx="6" fill="#0f172a"/>
+<rect x="544" y="368" width="246" height="84" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="667" y="388" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Auth &amp; Middleware</text>
+<text x="667" y="404" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">JWT · OAuth 2.0 · SCIM 2.0</text>
+<text x="667" y="418" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">license gate · tier gate</text>
+<text x="667" y="430" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">rate limits · multi-tenant</text>
+<text x="667" y="442" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">feature flags: Env / PostHog</text>
 
-<!-- ── AGENT LOOPS ── -->
-<!-- Agentic RAG Loop -->
-<rect x="832" y="118" width="165" height="80" rx="6" fill="#0f172a"/>
-<rect x="832" y="118" width="165" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="915" y="138" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">AgenticRAGLoop</text>
-<text x="915" y="153" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">decompose → HyDE</text>
-<text x="915" y="165" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">retrieve → sufficiency</text>
-<text x="915" y="177" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">→ grounded synthesis</text>
+<!-- ═══ AGENT LOOPS ═══ -->
+<rect x="832" y="172" width="174" height="80" rx="6" fill="#0f172a"/>
+<rect x="832" y="172" width="174" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="919" y="192" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">AgenticRAGLoop</text>
+<text x="919" y="207" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">decompose → HyDE</text>
+<text x="919" y="219" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">retrieve → sufficiency</text>
+<text x="919" y="231" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">→ grounded synthesis</text>
+<text x="919" y="243" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">agentic_rag.py</text>
 
-<!-- SearchAgentLoop -->
-<rect x="1007" y="118" width="153" height="80" rx="6" fill="#0f172a"/>
-<rect x="1007" y="118" width="153" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="1083" y="138" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">SearchAgentLoop</text>
-<text x="1083" y="153" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;think&gt;&lt;search&gt;</text>
-<text x="1083" y="165" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;information&gt;</text>
-<text x="1083" y="177" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;answer&gt; ReAct trace</text>
+<rect x="1018" y="172" width="182" height="80" rx="6" fill="#0f172a"/>
+<rect x="1018" y="172" width="182" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="1109" y="192" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">SearchAgentLoop</text>
+<text x="1109" y="207" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;think&gt;&lt;search&gt;</text>
+<text x="1109" y="219" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;information&gt;&lt;fetch&gt;</text>
+<text x="1109" y="231" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;answer&gt; ReAct XML</text>
+<text x="1109" y="243" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mask &lt;information&gt; tokens</text>
 
-<!-- Tool Agent Loop -->
-<rect x="832" y="218" width="165" height="80" rx="6" fill="#0f172a"/>
-<rect x="832" y="218" width="165" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="915" y="238" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">ToolAgentLoop</text>
-<text x="915" y="253" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">FunctionTool</text>
-<text x="915" y="265" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ApiToolRegistry</text>
-<text x="915" y="277" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">OpenAPI 3.x schema</text>
+<rect x="832" y="268" width="174" height="80" rx="6" fill="#0f172a"/>
+<rect x="832" y="268" width="174" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="919" y="288" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">ToolAgentLoop</text>
+<text x="919" y="303" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">FunctionTool</text>
+<text x="919" y="315" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ApiToolRegistry</text>
+<text x="919" y="327" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">OpenAPI 3.x schema</text>
 
-<!-- Tool Registry -->
-<rect x="1007" y="218" width="153" height="80" rx="6" fill="#0f172a"/>
-<rect x="1007" y="218" width="153" height="80" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="1083" y="238" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Tool Registry</text>
-<text x="1083" y="253" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">search · retrieval</text>
-<text x="1083" y="265" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Hermes / Llama-3</text>
-<text x="1083" y="277" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">JSON parsers</text>
+<rect x="1018" y="268" width="182" height="80" rx="6" fill="#0f172a"/>
+<rect x="1018" y="268" width="182" height="80" rx="6" fill="rgba(76,29,149,.38)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="1024" y="283" fill="#a78bfa" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="1109" y="288" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">DeepResearchLoop</text>
+<text x="1109" y="303" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">multi-step reports</text>
+<text x="1109" y="315" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">iterative search</text>
+<text x="1109" y="327" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">evidence + synthesis</text>
 
-<!-- ── RL TRAINING ── -->
-<!-- Reward Function -->
-<rect x="832" y="362" width="155" height="82" rx="6" fill="#0f172a"/>
-<rect x="832" y="362" width="155" height="82" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
-<text x="909" y="382" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">SearchRewardFn</text>
-<text x="909" y="397" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">format · search_use</text>
-<text x="909" y="409" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">answer_length</text>
-<text x="909" y="421" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">exact_match</text>
-<text x="909" y="433" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">reward.py</text>
+<!-- ═══ RL TRAINING ═══ -->
+<rect x="832" y="412" width="174" height="84" rx="6" fill="#0f172a"/>
+<rect x="832" y="412" width="174" height="84" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
+<text x="919" y="432" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">SearchRewardFn</text>
+<text x="919" y="447" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">format · search_use</text>
+<text x="919" y="459" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">answer_length · exact_match</text>
+<text x="919" y="471" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">reward.py</text>
+<text x="919" y="483" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">composite weights</text>
 
-<!-- GRPO -->
-<rect x="1000" y="362" width="155" height="82" rx="6" fill="#0f172a"/>
-<rect x="1000" y="362" width="155" height="82" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
-<text x="1077" y="382" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">GRPO</text>
-<text x="1077" y="397" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">score_prompt_group</text>
-<text x="1077" y="409" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">group-relative advantage</text>
-<text x="1077" y="421" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">G rollouts / prompt</text>
-<text x="1077" y="433" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">grpo.py</text>
+<rect x="1018" y="412" width="182" height="84" rx="6" fill="#0f172a"/>
+<rect x="1018" y="412" width="182" height="84" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
+<text x="1109" y="432" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">GRPO</text>
+<text x="1109" y="447" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">score_prompt_group</text>
+<text x="1109" y="459" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">group-relative advantage</text>
+<text x="1109" y="471" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">G rollouts / prompt</text>
+<text x="1109" y="483" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">grpo.py</text>
 
-<!-- PPO -->
-<rect x="832" y="460" width="155" height="82" rx="6" fill="#0f172a"/>
-<rect x="832" y="460" width="155" height="82" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
-<text x="909" y="480" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">PPO</text>
-<text x="909" y="495" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">clipped policy loss</text>
-<text x="909" y="507" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">value loss · KL penalty</text>
-<text x="909" y="519" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AdaptiveKLController</text>
-<text x="909" y="531" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ppo/</text>
+<rect x="832" y="512" width="174" height="84" rx="6" fill="#0f172a"/>
+<rect x="832" y="512" width="174" height="84" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
+<text x="919" y="532" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">PPO</text>
+<text x="919" y="547" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">clipped policy loss</text>
+<text x="919" y="559" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">value loss · KL penalty</text>
+<text x="919" y="571" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AdaptiveKLController</text>
+<text x="919" y="583" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ppo/</text>
 
-<!-- SFT / Dataset -->
-<rect x="1000" y="460" width="155" height="82" rx="6" fill="#0f172a"/>
-<rect x="1000" y="460" width="155" height="82" rx="6" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.6"/>
-<text x="1077" y="480" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">SFT / Dataset</text>
-<text x="1077" y="495" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">search_trace_workflow</text>
-<text x="1077" y="507" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">prepare_search_qa</text>
-<text x="1077" y="519" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">FlashRAG NQ parquet</text>
-<text x="1077" y="531" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">data.py</text>
+<!-- NEW: models/ + generated/ -->
+<rect x="1018" y="512" width="182" height="84" rx="6" fill="#0f172a"/>
+<rect x="1018" y="512" width="182" height="84" rx="6" fill="rgba(251,146,60,.35)" stroke="#fb923c" stroke-width="2"/>
+<text x="1024" y="527" fill="#fb923c" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="1109" y="532" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">models/ + generated/</text>
+<text x="1109" y="547" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">saved model checkpoints</text>
+<text x="1109" y="559" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">intent_classifier.pt</text>
+<text x="1109" y="571" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">generated artifacts</text>
+<text x="1109" y="583" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SFT records · parquet data</text>
 
-<!-- ── CONNECTORS ── -->
-<!-- Local / InMemory -->
-<rect x="56" y="502" width="148" height="62" rx="6" fill="#0f172a"/>
-<rect x="56" y="502" width="148" height="62" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
-<text x="130" y="522" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">LocalFileConnector</text>
-<text x="130" y="537" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">UTF-8 files / globs</text>
-<text x="130" y="549" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Poll · InMemory</text>
+<!-- ═══ CONNECTORS ═══ -->
+<rect x="40" y="562" width="148" height="64" rx="6" fill="#0f172a"/>
+<rect x="40" y="562" width="148" height="64" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
+<text x="114" y="582" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">LocalFileConnector</text>
+<text x="114" y="597" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">UTF-8 files / globs</text>
+<text x="114" y="609" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Poll · InMemory · Search</text>
 
-<!-- OAuth Connectors -->
-<rect x="220" y="502" width="188" height="62" rx="6" fill="#0f172a"/>
-<rect x="220" y="502" width="188" height="62" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
-<text x="314" y="522" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">OAuth Connectors</text>
-<text x="314" y="537" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Google Drive · Slack · GitHub</text>
-<text x="314" y="549" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Jira · Confluence · Notion</text>
+<rect x="202" y="562" width="188" height="64" rx="6" fill="#0f172a"/>
+<rect x="202" y="562" width="188" height="64" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
+<text x="296" y="582" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">OAuth Connectors</text>
+<text x="296" y="597" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Google Drive · Slack · GitHub</text>
+<text x="296" y="609" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Jira · Confluence · Notion</text>
 
-<!-- Search Connector -->
-<rect x="424" y="502" width="180" height="62" rx="6" fill="#0f172a"/>
-<rect x="424" y="502" width="180" height="62" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
-<text x="514" y="522" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">SearchConnector</text>
-<text x="514" y="537" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">results as documents</text>
-<text x="514" y="549" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Poll · Checkpoint · Slim</text>
+<rect x="404" y="562" width="188" height="64" rx="6" fill="#0f172a"/>
+<rect x="404" y="562" width="188" height="64" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
+<text x="498" y="582" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Incremental Sync</text>
+<text x="498" y="597" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SharePoint · Salesforce</text>
+<text x="498" y="609" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Zendesk · Checkpoint · Slim</text>
 
-<!-- Incremental Sync -->
-<rect x="620" y="502" width="172" height="62" rx="6" fill="#0f172a"/>
-<rect x="620" y="502" width="172" height="62" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
-<text x="706" y="522" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Incremental Sync</text>
-<text x="706" y="537" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SharePoint · Salesforce</text>
-<text x="706" y="549" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Zendesk · time-window</text>
+<rect x="606" y="562" width="194" height="64" rx="6" fill="#0f172a"/>
+<rect x="606" y="562" width="194" height="64" rx="6" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.6"/>
+<text x="703" y="582" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Vespa doc_index</text>
+<text x="703" y="597" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">document_index/ integration</text>
+<text x="703" y="609" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">connector-credential pairs</text>
 
-<!-- ── PERSISTENCE ── -->
-<!-- SQLite -->
-<rect x="56" y="665" width="220" height="65" rx="6" fill="#0f172a"/>
-<rect x="56" y="665" width="220" height="65" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
-<text x="166" y="686" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SQLite Store</text>
-<text x="166" y="702" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">AgenticSearchStore</text>
-<text x="166" y="716" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">connectors · sessions · docs · rates</text>
+<!-- ═══ NEW: DEV TOOLING ═══ -->
+<rect x="832" y="562" width="174" height="84" rx="6" fill="#0f172a"/>
+<rect x="832" y="562" width="174" height="84" rx="6" fill="rgba(136,19,55,.28)" stroke="#fb7185" stroke-width="1.6"/>
+<text x="838" y="577" fill="#fb7185" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="919" y="582" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Claude Code Config</text>
+<text x="919" y="597" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">.claude/ settings</text>
+<text x="919" y="609" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AI-assisted dev workflow</text>
+<text x="919" y="621" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">.gitguardian.yaml secrets</text>
+<text x="919" y="633" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">pre-commit hooks</text>
 
-<!-- InMemoryCache -->
-<rect x="294" y="665" width="210" height="65" rx="6" fill="#0f172a"/>
-<rect x="294" y="665" width="210" height="65" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
-<text x="399" y="686" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">InMemoryCache</text>
-<text x="399" y="702" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">chat session state</text>
-<text x="399" y="716" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">processing · stop · cancel flags</text>
+<rect x="1018" y="562" width="182" height="84" rx="6" fill="#0f172a"/>
+<rect x="1018" y="562" width="182" height="84" rx="6" fill="rgba(136,19,55,.28)" stroke="#fb7185" stroke-width="1.6"/>
+<text x="1024" y="577" fill="#fb7185" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
+<text x="1109" y="582" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Node / TS Layer</text>
+<text x="1109" y="597" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">package.json  pyproject.toml</text>
+<text x="1109" y="609" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Go 3.6% · TypeScript 0.5%</text>
+<text x="1109" y="621" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">JS 4.5% · CSS 1.4%</text>
+<text x="1109" y="633" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">.env.example</text>
 
-<!-- File Store -->
-<rect x="520" y="665" width="210" height="65" rx="6" fill="#0f172a"/>
-<rect x="520" y="665" width="210" height="65" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
-<text x="625" y="686" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">File Store</text>
-<text x="625" y="702" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">InMemoryChatFile</text>
-<text x="625" y="716" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">images · PDFs · text (per-turn)</text>
+<!-- ═══ PERSISTENCE ═══ -->
+<rect x="40" y="710" width="240" height="64" rx="6" fill="#0f172a"/>
+<rect x="40" y="710" width="240" height="64" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
+<text x="160" y="730" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SQLite Store</text>
+<text x="160" y="746" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">AgenticSearchStore</text>
+<text x="160" y="760" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">connectors · sessions · docs · rates · SCIM</text>
 
-<!-- Observability -->
-<rect x="746" y="665" width="420" height="65" rx="6" fill="#0f172a"/>
-<rect x="746" y="665" width="420" height="65" rx="6" fill="rgba(136,19,55,.25)" stroke="#fb7185" stroke-width="1.6"/>
-<text x="956" y="686" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Observability &amp; Admin</text>
-<text x="956" y="702" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">build_admin_surface_summary · health score · PostHog telemetry</text>
-<text x="956" y="716" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">analytics · billing (Stripe) · reporting · hooks · license · SCIM</text>
+<rect x="296" y="710" width="240" height="64" rx="6" fill="#0f172a"/>
+<rect x="296" y="710" width="240" height="64" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
+<text x="416" y="730" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">InMemoryCache</text>
+<text x="416" y="746" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">chat session state</text>
+<text x="416" y="760" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">processing · stop · cancel · InMemoryChatFile</text>
+
+<rect x="552" y="710" width="240" height="64" rx="6" fill="#0f172a"/>
+<rect x="552" y="710" width="240" height="64" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
+<text x="672" y="730" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Vespa / Index Store</text>
+<text x="672" y="746" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">document_index/</text>
+<text x="672" y="760" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ChunkBatchStore (disk buffer)</text>
+
+<rect x="808" y="710" width="400" height="64" rx="6" fill="#0f172a"/>
+<rect x="808" y="710" width="400" height="64" rx="6" fill="rgba(136,19,55,.22)" stroke="#fb7185" stroke-width="1.6"/>
+<text x="1008" y="730" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Observability &amp; Admin</text>
+<text x="1008" y="746" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">health score · PostHog telemetry · analytics · billing (Stripe)</text>
+<text x="1008" y="760" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">reporting · hooks · license · SCIM · MonitoringWorker</text>
 
 <!-- ═══ LEGEND ═══ -->
-<rect x="28" y="798" width="980" height="36" rx="6" fill="rgba(15,23,42,.7)" stroke="#1e293b" stroke-width="1"/>
-<text x="46" y="813" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">LEGEND</text>
-<rect x="112" y="804" width="11" height="11" rx="2" fill="rgba(8,51,68,.45)"  stroke="#22d3ee" stroke-width="1.3"/>
-<text x="127" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI / Client</text>
-<rect x="228" y="804" width="11" height="11" rx="2" fill="rgba(6,78,59,.4)"  stroke="#34d399" stroke-width="1.3"/>
-<text x="243" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Retrieval</text>
-<rect x="310" y="804" width="11" height="11" rx="2" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.3"/>
-<text x="325" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Agent Loops</text>
-<rect x="415" y="804" width="11" height="11" rx="2" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.3"/>
-<text x="430" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">RL Training (GRPO/PPO)</text>
-<rect x="572" y="804" width="11" height="11" rx="2" fill="rgba(120,53,15,.35)" stroke="#fbbf24" stroke-width="1.3"/>
-<text x="587" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Connectors</text>
-<rect x="664" y="804" width="11" height="11" rx="2" fill="rgba(136,19,55,.25)" stroke="#fb7185" stroke-width="1.3"/>
-<text x="679" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Observability</text>
-<rect x="762" y="804" width="11" height="11" rx="2" fill="rgba(30,41,59,.7)"  stroke="#64748b" stroke-width="1.3"/>
-<text x="777" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Persistence</text>
-<line x1="855" y1="810" x2="875" y2="810" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
-<text x="879" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Sync</text>
-<line x1="916" y1="810" x2="936" y2="810" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="4,2" marker-end="url(#a)"/>
-<text x="940" y="814" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Async</text>
-<text x="112" y="828" fill="#475569" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI :7860  ·  Retrieval :8000  ·  Vite :5173  ·  Python 3.10+  ·  FAISS  ·  BM25/Pyserini  ·  SQLite  ·  GRPO/PPO</text>
+<rect x="28" y="844" width="1020" height="44" rx="6" fill="rgba(15,23,42,.7)" stroke="#1e293b" stroke-width="1"/>
+<text x="46" y="859" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">LEGEND</text>
+
+<rect x="112" y="850" width="11" height="11" rx="2" fill="rgba(8,51,68,.45)"   stroke="#22d3ee" stroke-width="1.3"/>
+<text x="127" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI / Client</text>
+
+<rect x="230" y="850" width="11" height="11" rx="2" fill="rgba(6,78,59,.4)"   stroke="#34d399" stroke-width="1.3"/>
+<text x="245" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Retrieval</text>
+
+<rect x="310" y="850" width="11" height="11" rx="2" fill="rgba(76,29,149,.4)"  stroke="#a78bfa" stroke-width="1.3"/>
+<text x="325" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Agent Loops</text>
+
+<rect x="415" y="850" width="11" height="11" rx="2" fill="rgba(251,146,60,.28)" stroke="#fb923c" stroke-width="1.3"/>
+<text x="430" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">RL Training</text>
+
+<rect x="510" y="850" width="11" height="11" rx="2" fill="rgba(120,53,15,.35)"  stroke="#fbbf24" stroke-width="1.3"/>
+<text x="525" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Connectors</text>
+
+<rect x="606" y="850" width="11" height="11" rx="2" fill="rgba(136,19,55,.28)"  stroke="#fb7185" stroke-width="1.3"/>
+<text x="621" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Observability / Dev Tooling</text>
+
+<rect x="760" y="850" width="11" height="11" rx="2" fill="rgba(30,41,59,.7)"    stroke="#64748b" stroke-width="1.3"/>
+<text x="775" y="860" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Persistence</text>
+
+<rect x="855" y="848" width="14" height="14" rx="2" fill="rgba(34,211,238,.18)"  stroke="#22d3ee" stroke-width="1.5"/>
+<text x="873" y="860" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="8" font-weight="700">NEW  added in latest commit</text>
+
+<line x1="112" y1="876" x2="132" y2="876" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="136" y="880" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Sync</text>
+<line x1="180" y1="876" x2="200" y2="876" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="4,2" marker-end="url(#a)"/>
+<text x="204" y="880" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Async</text>
+<text x="250" y="880" fill="#475569" font-family="'JetBrains Mono',monospace" font-size="8">Python 87%  ·  JavaScript 4.5%  ·  Go 3.6%  ·  HTML 2.7%  ·  CSS 1.4%  ·  TypeScript 0.5%  ·  498 commits</text>
 </svg>
 </div>
 
 <div class="cards">
   <div class="card">
-    <div class="card-header"><div class="card-dot dot-cyan"></div><h3>FastAPI Backend &amp; Chat Pipeline</h3></div>
+    <div class="card-header"><div class="card-dot dot-cyan"></div><h3>NEW: Entry Points &amp; CLI Layer</h3></div>
     <ul>
-      <li>• process_message → run_llm_loop → run_llm_step pipeline</li>
-      <li>• DynamicCitationProcessor: REMOVE / KEEP / HYPERLINK modes</li>
-      <li>• Emitter: routes tokens/tool calls/citations to HTTP stream</li>
-      <li>• compress_chat_history: branch-aware token budget management</li>
-      <li>• classify_is_search_flow: LLM-backed binary router</li>
-      <li>• IntentPipeline: purchase / navigate / qa / recommendation</li>
+      <li>• <strong>cli/</strong> — dedicated CLI layer for agentic search workflows (single/search/tool modes)</li>
+      <li>• <strong>bin/</strong> — executable scripts for server launch and tooling</li>
+      <li>• <strong>docs/superpowers/</strong> — extended documentation on platform capabilities</li>
+      <li>• <strong>package.json</strong> — Node.js package alongside Go (3.6%) and TypeScript (0.5%) code</li>
+      <li>• findings.md · progress.md · task_plan.md — project tracking</li>
     </ul>
   </div>
   <div class="card">
-    <div class="card-header"><div class="card-dot dot-violet"></div><h3>Agent Loops &amp; Retrieval</h3></div>
+    <div class="card-header"><div class="card-dot dot-violet"></div><h3>NEW: Deep Research + Custom Agents</h3></div>
     <ul>
-      <li>• AgenticRAGLoop: decompose → HyDE → retrieve → sufficiency → cite</li>
-      <li>• SearchAgentLoop: ReAct trace with &lt;think&gt;&lt;search&gt;&lt;answer&gt; tags</li>
-      <li>• ToolAgentLoop: FunctionTool + ApiToolRegistry (OpenAPI 3.x)</li>
-      <li>• Hybrid+rerank: FAISS dense + BM25 RRF fusion, cross-encoder</li>
-      <li>• QueryEnhancer: sub-query decomposition and HyDE generation</li>
-      <li>• Web search: Google PSE, SerpAPI, Brave, Playwright, Exa</li>
+      <li>• <strong>src/agents/deep_research/</strong> — multi-step report generation loop</li>
+      <li>• Iterative search, evidence gathering, structured synthesis</li>
+      <li>• <strong>src/agents/custom.py</strong> — persona + memory + tools + action workflows</li>
+      <li>• DeepResearchLoop joins AgenticRAGLoop, SearchAgentLoop, ToolAgentLoop</li>
+      <li>• All loops share the same LLM backend and retrieval interface</li>
     </ul>
   </div>
   <div class="card">
-    <div class="card-header"><div class="card-dot dot-orange"></div><h3>RL Training (GRPO / PPO)</h3></div>
+    <div class="card-header"><div class="card-dot dot-orange"></div><h3>NEW: models/ + generated/ + .claude/</h3></div>
     <ul>
-      <li>• SearchRewardFunction: format + search_use + length + exact_match</li>
-      <li>• GRPO: group-relative advantages over G rollouts per prompt</li>
-      <li>• PPO: clipped policy loss + value loss + AdaptiveKLController</li>
-      <li>• SFT: trace → record via run_search_trace_workflow --sft</li>
-      <li>• Datasets: FlashRAG NQ/TriviaQA parquet via prepare_search_qa</li>
-      <li>• mask &lt;information&gt; tokens from policy/SFT action loss</li>
+      <li>• <strong>models/</strong> — saved checkpoints (intent_classifier.pt, fine-tuned weights)</li>
+      <li>• <strong>generated/</strong> — SFT records, parquet datasets, and artifact outputs</li>
+      <li>• <strong>.claude/</strong> — Claude Code settings for AI-assisted development</li>
+      <li>• <strong>.gitguardian.yaml</strong> — secrets scanning config</li>
+      <li>• pre-commit hooks, pyproject.toml, .env.example</li>
     </ul>
   </div>
 </div>
 
-<div class="footer">Agentic Search GRPO · Python 3.10+ · FastAPI · FAISS · BM25 · GRPO / PPO · SQLite · lingduoduo/Agentic-Search-GRPO</div>
+<div class="footer">Agentic Search GRPO · Python 3.10+ · FastAPI · FAISS · BM25 · GRPO/PPO · SQLite · 498 commits · lingduoduo/Agentic-Search-GRPO</div>
 </body>
 </html>
