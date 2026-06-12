@@ -67,7 +67,6 @@ DEFAULT_CONFIG: dict = {
     "STOP_STREAM_PAT": "",
     "NUM_INTERNET_SEARCH_RESULTS": 10,
     "NUM_INTERNET_SEARCH_CHUNKS": 50,
-    "SKIP_DEEP_RESEARCH_CLARIFICATION": "False",
     "USE_SEMANTIC_KEYWORD_EXPANSIONS_BASIC_SEARCH": "False",
     # -------------------------------------------------------------------------
     # Permission sync cadence (seconds)
