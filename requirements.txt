@@ -16,12 +16,12 @@ numpy==1.26.4
 redis>=4.0.0
 
 # Local model inference stack used by `python -m src.run_agentic_search --local`.
-torch==2.2.2
-transformers==4.39.3
+# MPS on macOS requires torch>=2.3 and transformers>=4.40.
+torch>=2.3.0
+transformers>=4.40.0
 accelerate
 
 # Training / data / retrieval dependencies.
-datasets==2.18.0
 pyarrow>=14,<21
 tqdm==4.66.4
 sentence-transformers==2.7.0
@@ -43,3 +43,5 @@ faiss-cpu==1.13.2
 # faiss-cpu: install via conda to avoid OpenMP conflict with PyTorch on macOS:
 #   conda install -c conda-forge faiss-cpu
 # pip install faiss-cpu works on Linux but segfaults on macOS Apple Silicon.
+
+datasets==5.0.0
