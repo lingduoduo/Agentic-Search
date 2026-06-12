@@ -24,7 +24,11 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 📊 **Admin & Observability** — Health, analytics, rate limits, hooks, billing, SCIM provisioning, and license state via the FastAPI admin API.
 
-[Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
+
+[![Architecture](agentic-search-grpo-architecture.png)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
+
+*Click to open the interactive version.*
+
 
 | Feature | Key modules |
 |---------|-------------|
