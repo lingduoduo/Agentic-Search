@@ -301,7 +301,7 @@ python3 -m examples.run_search_pipeline
 - `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing attempts, usage reports, rate limits, SCIM tokens, standard answers (`src/internal/db/store.py`)
 - Search history per user (`GET /search/search-history`) and query history with CSV export (`GET /admin/query-history/export`)
 - `InMemoryCache` — in-flight chat session state (processing flag, stop signal, cancel) during streaming
-- `ChunkBatchStore` — temp disk buffer decoupling embedding from index insertion for large jobs
+- `ChunkBatchStore` — temp disk buffer decoupling embedding from index insertion for large jobs (`src/internal/servers/indexing/chunk_batch_store.py`)
 - `InMemoryChatFile` — uploaded files (images, PDFs, text) held in memory for one chat turn
 
 **Prompts**
