@@ -265,9 +265,10 @@ python3 -m examples.run_search_pipeline
 - **Connectors** (`src/internal/connectors/`) — collect documents from multiple sources:
   - `LocalFileConnector` / `LocalFilePollConnector` — UTF-8 files from paths, directories, or globs
   - `SearchConnector` — search results as documents via retrieval, Google, or SerpAPI
+  - `WebConnector` / `RSSConnector` — web page scraping and RSS feed ingestion
   - `InMemoryConnector` — Python objects for testing and prototyping
-  - `OAuthConnector` — authorization-code flow for Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion
-  - `PollConnector` / `CheckpointedConnector` / `SlimConnector` — incremental sync with time-window, checkpoint, and permission-metadata variants
+  - `OAuthConnector` — base class for authorization-code OAuth flows (Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, Notion)
+  - `PollConnector` / `CheckpointedConnector` / `SlimConnector` — base classes for incremental sync with time-window, checkpoint, and permission-metadata variants
 
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
