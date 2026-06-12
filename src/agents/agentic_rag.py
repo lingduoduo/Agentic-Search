@@ -87,7 +87,7 @@ def _parse_gap_queries(raw: str) -> list[str]:
 class AgenticRAGConfig:
     max_rounds: int = 3
     topk: int = 5
-    retrieval_url: str = "http://localhost:8000/retrieve"
+    retrieval_url: str = "http://localhost:8001/retrieve"
 
 
 @dataclass
