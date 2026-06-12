@@ -504,8 +504,18 @@ reward_fn = SearchRewardFunction(SearchRewardConfig(
 ```python
 from src.training.grpo import score_prompt_group, compute_grpo_outcome_advantage
 
-scored = score_prompt_group(rollouts, reward_fn, reference_answer)
-advantages = compute_grpo_outcome_advantage(scored)
+# score_prompt_group scores G rollouts for one prompt and normalises advantages within the group
+scored = score_prompt_group(
+    samples,                      # list[GRPORolloutSample] — G rollouts for the same prompt
+    ground_truth=reference_answer,
+    judge_fn=exact_match,
+    reward_fn=reward_fn,
+)
+# advantages are attached to each ScoredGRPORollout
+advantages = [s.advantage for s in scored]
+
+# Or compute group-relative advantages from raw rewards directly:
+advantages = compute_grpo_outcome_advantage([s.reward for s in scored])
 ```
 
 **PPO** — clipped policy + value loss with KL penalty:
