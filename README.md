@@ -582,7 +582,7 @@ summary, rows = evaluate_bamboogle(
     limit=50,
     output_path="bamboogle_results.jsonl",
 )
-print(summary)  # exact_match, contains_match, mean_reward, …
+print(summary)  # exact_match, contains_match, avg_reward, …
 ```
 
 **CLI (local CPU):**
