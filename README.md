@@ -150,18 +150,25 @@ JAVA_HOME=/path/to/java            # for BM25 / pyserini
 
 ## Quick Start
 
+Three processes, each in its own terminal:
+
+**Retrieval service** — `http://localhost:8000`
 ```bash
-# Terminal 1 — retrieval server (TF-IDF demo, no Java required)
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
+```
 
-# Terminal 2 — web backend
+**Web API** — `http://localhost:7860`
+```bash
 uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
 
-# Terminal 3 — frontend
+**Frontend** — `http://localhost:5173`
+```bash
 cd web && npm install && npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to port 7860. For production, `npm run build` produces `web/dist`; the FastAPI app serves it automatically.
+Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to the web API on port 7860.
+For production, `npm run build` produces `web/dist`; the FastAPI app serves it automatically.
 
 
 ## Examples
