@@ -92,9 +92,9 @@
 <!-- FastAPI → Retrieval (queries) -->
 <line x1="778" y1="310" x2="798" y2="310" stroke="#34d399" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#agrn)"/>
 <!-- Agent Loops → Retrieval -->
-<line x1="562" y1="660" x2="798" y2="350" stroke="#34d399" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
+<line x1="572" y1="660" x2="798" y2="350" stroke="#34d399" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
 <!-- Agent Loops → RL Training -->
-<line x1="562" y1="680" x2="590" y2="680" stroke="#fb923c" stroke-width="1.3" marker-end="url(#aorg)"/>
+<line x1="572" y1="680" x2="590" y2="680" stroke="#fb923c" stroke-width="1.3" marker-end="url(#aorg)"/>
 <!-- FastAPI → Persistence -->
 <line x1="380" y1="538" x2="380" y2="812" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
 <!-- RL → Persistence -->
@@ -253,18 +253,18 @@
 <text x="168" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">3. sufficiency check  4. follow-up gen</text>
 <text x="168" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">5. grounded synthesis + citations</text>
 <text x="168" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">max_rounds=3  topk=5  extractive fallback</text>
-<text x="168" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent  mode=chat_loop</text>
+<text x="168" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent  mode=agentic_rag</text>
 
-<!-- SearchAgentLoop -->
+<!-- SearchAgentLoop + DeepResearch -->
 <rect x="310" y="572" width="252" height="106" rx="6" fill="#0f172a"/>
 <rect x="310" y="572" width="252" height="106" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
 <text x="436" y="592" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SearchAgentLoop</text>
-<text x="436" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/search.py  ·  ReAct XML trace</text>
+<text x="436" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/  ·  ReAct XML trace</text>
 <text x="436" y="622" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;think&gt; &lt;search&gt; &lt;information&gt;</text>
 <text x="436" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;fetch&gt; &lt;answer&gt;</text>
 <text x="436" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mask &lt;information&gt; from policy loss</text>
-<text x="436" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ToolAgentLoop: FunctionTool/OpenAPI</text>
-<text x="436" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent  mode=search_tool</text>
+<text x="436" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">DeepResearch: multi-step report gen</text>
+<text x="436" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ToolAgentLoop: FunctionTool/OpenAPI</text>
 
 <!-- Tools + Context -->
 <rect x="38" y="692" width="524" height="80" rx="6" fill="#0f172a"/>
