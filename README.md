@@ -1,41 +1,44 @@
 # Agentic Search
 
-A retrieval-backed agent platform for building high-quality search, research, and custom AI workflows. Agentic Search combines a FastAPI backend, local dense and sparse retrieval, multi-turn agent traces, web search, connector-based indexing, and RL training utilities.
+A retrieval-backed agent platform for multi-turn search, RAG, and RL training. Built around a FastAPI backend, interchangeable retrieval servers, and an async agent loop that supports dense/sparse hybrid retrieval, tool calling, and streaming chat.
 
-📚 **Document Indexing** — Ingest, chunk, enrich, embed, and index documents for retrieval-backed chat and search.
+🔍 **Agentic RAG** — Multi-hop retrieval with query decomposition, HyDE, hybrid reranking, and citation-grounded synthesis via `AgenticRAGLoop`.
 
-🔗 **Connectors** — Bring in content from local files, search results, and external systems such as Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
+🤖 **Custom Agents** — Compose agents from instructions, knowledge sources, tools, and memory; backed by `SearchAgentLoop` or `ToolAgentLoop`.
 
-🔒 **Permission-Aware Retrieval** — Enforce per-user access controls at retrieval time with ACL filtering, source-type gating, and connector-level permission metadata.
+🌍 **Web Search** — Live retrieval via Google Custom Search, SerpAPI, and playwright-cli browser automation — all behind the same `/retrieve` API.
 
-🌍 **Web Search** — Retrieve up-to-date information from Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
+📚 **Document Indexing** — Chunk, embed, and index documents into FAISS or BM25; async background workers handle ingestion at scale.
 
-🔍 **Agentic RAG** — Improve search and answer quality with hybrid retrieval, reranking, query decomposition, HyDE, and citation-grounded synthesis.
+🔗 **Connectors** — Pull content from local files, Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
 
-🛠️ **Tool Use** — Register and execute tools from Python functions or OpenAPI schemas, with support for structured tool-calling loops.
+🛠️ **Tool Use** — Register Python callables or OpenAPI 3.x schemas as tools; `ToolAgentLoop` handles dispatch and structured output.
 
-💬 **Chat Orchestration** — Run streaming multi-turn chat with citations, tool calls, file context, history compression, and persisted sessions.
+💬 **Chat Orchestration** — Streaming multi-turn chat with citation extraction, tool dispatch, context compression, and persisted sessions.
 
-🧠 **PPO/GRPO Rewards** — Train search agents with composite reward shaping, group-relative advantages, and PPO, GRPO, or REINFORCE helpers.
+🧠 **RL Training** — GRPO/PPO training with composite shaped rewards; `SearchAgentGRPOTrainer` runs real agent-loop rollouts so all reward components fire during training.
 
 📐 **Bamboogle Evaluation** — Benchmark `SearchAgentLoop` on two-hop QA with exact-match, contains-match, and shaped reward metrics; Apple Silicon (`--device mps`) supported out of the box.
 
-📊 **Admin & Observability** — Track usage, query history, health, analytics, reporting, rate limits, hooks, billing, and license state.
+🔌 **MCP Server** — Expose search, retrieval, and RAG as Model Context Protocol tools so any MCP-compatible LLM client (Claude Desktop, etc.) can query your knowledge base directly.
+
+📊 **Admin & Observability** — Health, analytics, rate limits, hooks, billing, SCIM provisioning, and license state via the FastAPI admin API.
 
 [Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
 
 | Feature | Key modules |
 |---------|-------------|
-| 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
-| 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
-| 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
-| 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
+| 🤖 Custom Agents | `src/agents/search.py`, `src/agents/custom.py`, `src/agents/tool_calling.py`, `src/agents/base.py` |
+| 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
+| 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
+| 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/connectors/`, `src/internal/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
-| 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
+| 🧠 RL Training | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/search_agent_grpo_trainer.py` |
 | 📐 Bamboogle Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
-| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
+| 🔌 MCP Server | `src/internal/mcp_server/tools/`, `src/internal/mcp_server/resources/` |
+| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `src/internal/servers/reporting/`, `src/internal/servers/license/` |
 
 
 ## Repository Structure
@@ -496,6 +499,67 @@ Environment-only tags (injected by the loop — never output by the model):
 ```
 
 Mask all environment-only tags from policy/SFT action loss.
+
+
+## MCP Server
+
+The MCP server exposes Agentic Search capabilities as [Model Context Protocol](https://modelcontextprotocol.io/) tools, letting any MCP-compatible client (Claude Desktop, Cursor, etc.) query your knowledge base directly.
+
+**Start the server** (requires the `mcp` extra):
+
+```bash
+pip install -e ".[mcp]"
+uvicorn src.internal.mcp_server.api:mcp_app --port 8090
+```
+
+**Connect Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "agentic-search": {
+      "type": "http",
+      "url": "http://localhost:8090/",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN_HERE" }
+    }
+  }
+}
+```
+
+**Tools available to the LLM client:**
+
+| Tool | What it does |
+|------|-------------|
+| `search_indexed_documents` | Search the private knowledge base with optional source filter |
+| `search_web` | Web search via Google Custom Search or SerpAPI |
+| `open_urls` | Fetch full page text from a list of URLs |
+| `ask_agentic_search` | Full `SearchAgentLoop` answer with citations |
+| `retrieve_documents` | Raw retrieval — returns full document content and relevance scores |
+| `expand_query` | Query decomposition and HyDE expansion |
+
+Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored to MCP by calling `sync_tool_to_mcp(name)` after registration (`src/internal/mcp_server/tools/dynamic.py`).
+
+**Resources:**
+
+| Resource | What it exposes |
+|----------|----------------|
+| `indexed_sources` | Available retrieval source types based on configured API keys |
+| `document_sets` | Document sets scoped for search |
+
+**Debug with MCP Inspector:**
+
+```bash
+npx @modelcontextprotocol/inspector http://localhost:8090/
+```
+
+**MCP environment variables:**
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `MCP_SERVER_CORS_ORIGINS` | — | Comma-separated allowed origins for CORS |
+| `API_SERVER_HOST` | `127.0.0.1` | Host of the web backend |
+| `API_SERVER_PROTOCOL` | `http` | Protocol for the web backend URL |
+| `API_SERVER_URL_OVERRIDE_FOR_HTTP_REQUESTS` | — | Override the full web backend URL |
 
 
 ## Evaluation
