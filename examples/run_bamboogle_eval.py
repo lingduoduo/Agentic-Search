@@ -29,6 +29,7 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
         return LocalServerManager(
             model_path=args.model,
             device=args.device,
+            allow_unsafe_mps=args.allow_unsafe_mps,
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
@@ -100,7 +101,16 @@ def main() -> None:
     parser.add_argument(
         "--local", action="store_true", help="Run model in-process (no vLLM)"
     )
-    parser.add_argument("--device", default="cpu", help="Device for local inference")
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        help="Device for local inference: cpu, mps, cuda, or auto",
+    )
+    parser.add_argument(
+        "--allow_unsafe_mps",
+        action="store_true",
+        help="Allow MPS generation on macOS (may segfault on old torch/transformers; safe on torch>=2.3)",
+    )
     parser.add_argument("--vllm_url", default="http://localhost:8080")
     parser.add_argument("--search_url", default="http://localhost:8000/retrieve")
     parser.add_argument("--topk", type=int, default=5)
