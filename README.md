@@ -523,8 +523,14 @@ advantages = compute_grpo_outcome_advantage([s.reward for s in scored])
 ```python
 from src.training.ppo import compute_ppo_policy_loss_core, compute_value_loss, AdaptiveKLController
 
-policy_loss = compute_ppo_policy_loss_core(logprobs, old_logprobs, advantages, clip_eps=0.2)
-value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
+# returns (pg_loss, pg_clipfrac, ppo_kl, surrogate)
+pg_loss, pg_clipfrac, ppo_kl, _ = compute_ppo_policy_loss_core(
+    old_log_prob, log_prob, advantages, eos_mask, cliprange=0.2
+)
+# returns (vf_loss, vf_clipfrac)
+vf_loss, vf_clipfrac = compute_value_loss(
+    vpreds, returns, values, eos_mask, cliprange_value=0.2
+)
 ```
 
 **XML search protocol** — the ReAct-style trace format used by `SearchAgentLoop`:
