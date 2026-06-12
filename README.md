@@ -883,14 +883,14 @@ API_SERVER_HOST=localhost API_SERVER_PORT=8080 pytest tests/integration/
 
 | Test area | What is tested |
 |-----------|----------------|
-| `server/billing/` | Circuit breaker state, endpoint responses, HTTP mocks |
-| `server/features/hooks/` | SSRF safety, endpoint validation, `HookValidateStatus` |
-| `server/license/` | PEM stripping, `_strip_pem` boundary cases |
-| `server/middleware/` | Path allowlist, license enforcement, tier gating |
-| `server/settings/` | `_load_license_status`, `/settings` endpoint |
-| `utils/test_license_utils.py` | RSA signature verification with real key pairs |
-| `utils/test_license_expiry.py` | 18 parametrized `ExpiryWarningStage` boundary points |
-| `utils/test_tier.py` | `get_tier` + `tier_at_least` matrix |
+| `servers/server/billing/` | Circuit breaker state, endpoint responses, HTTP mocks |
+| `servers/server/features/hooks/` | SSRF safety, endpoint validation, `HookValidateStatus` |
+| `servers/server/license/` | PEM stripping, `_strip_pem` boundary cases |
+| `servers/server/middleware/` | Path allowlist, license enforcement, tier gating |
+| `servers/server/settings/` | `_load_license_status`, `/settings` endpoint |
+| `servers/utils/test_license_utils.py` | RSA signature verification with real key pairs |
+| `servers/utils/test_license_expiry.py` | 17 parametrized `ExpiryWarningStage` boundary points |
+| `servers/utils/test_tier.py` | `get_tier` + `tier_at_least` matrix |
 
 
 ## Notes
