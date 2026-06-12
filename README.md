@@ -173,8 +173,6 @@ For production, `npm run build` produces `web/dist`; the FastAPI app serves it a
 
 ## Examples
 
-All examples run without a live model or retrieval server unless noted.
-
 **Agent loops**
 
 ```bash
