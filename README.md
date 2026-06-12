@@ -438,10 +438,10 @@ python3 -m src.internal.servers.retrieval.hybrid_rerank \
 **Web search servers:**
 
 ```bash
-python3 -m src.internal.servers.retrieval.serp \
+python3 -m src.internal.servers.web_search.serp \
   --search_url "https://serpapi.com/search" --topk 3 --serp_api_key "$SERP_API_KEY"
 
-python3 -m src.internal.servers.retrieval.google \
+python3 -m src.internal.servers.web_search.google \
   --api_key "$GOOGLE_API_KEY" --topk 5 --cse_id "$GOOGLE_CSE_ID" --snippet_only
 ```
 
