@@ -20,6 +20,8 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 🧠 **PPO/GRPO Rewards** — Train search agents with composite reward shaping, group-relative advantages, and PPO, GRPO, or REINFORCE helpers.
 
+📐 **Bamboogle Evaluation** — Benchmark `SearchAgentLoop` on two-hop QA with exact-match, contains-match, and shaped reward metrics; Apple Silicon (`--device mps`) supported out of the box.
+
 📊 **Admin & Observability** — Track usage, query history, health, analytics, reporting, rate limits, hooks, billing, and license state.
 
 [Architecture Diagram (interactive)](https://htmlpreview.github.io/?https://github.com/lingduoduo/Agentic-Search-GRPO/blob/main/agentic-search-grpo-architecture.html)
@@ -33,6 +35,7 @@ A retrieval-backed agent platform for building high-quality search, research, an
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
 | 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
+| 📐 Bamboogle Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
 | 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
 | 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `settings/`, `reporting/`, `license/` |
 
@@ -41,8 +44,8 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 ```
 src/
-├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, …)
-├── backend/
+├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, AgenticRAGLoop, …)
+├── internal/
 │   ├── access/                  # Access control & ACL helpers
 │   ├── auth/                    # Authentication & authorization
 │   ├── cache/                   # In-memory cache backend (chat session state)
@@ -50,14 +53,14 @@ src/
 │   ├── configs/                 # Environment-based configuration (AppSettings)
 │   ├── connectors/              # Data source connectors
 │   ├── db/                      # SQLite store (AgenticSearchStore)
-│   ├── document_index/          # Document index (OpenSearch / disabled)
+│   ├── document_index/          # Document index (FAISS / BM25)
 │   ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
 │   ├── file_store/              # In-memory chat file handling
 │   ├── hooks/                   # Outbound webhook execution
 │   ├── llm/                     # LLM provider integrations
 │   ├── observability/           # Admin surface summary & health score
 │   ├── prompts/                 # Prompt templates
-│   ├── secondary_llm_flows/     # Search-vs-chat flow classification
+│   ├── search/                  # Search-vs-chat flow classification
 │   ├── servers/
 │   │   ├── backgroundworker/    # Async workers (beat, docfetching, light, heavy, monitoring)
 │   │   ├── analytics/           # Usage analytics API
@@ -74,9 +77,15 @@ src/
 │   └── utils/                   # License, encryption, telemetry utilities
 ├── context/                     # Retrieval-grounded context & prompt builders
 ├── model/                       # LLM generation, intent classifier, tensor helpers
-├── retrieval/                   # Dense/sparse retrievers, indexing pipeline, embedders
 ├── tools/                       # Tool schemas, search tools, OpenAPI tool registry
-└── training/                    # SFT, rewards, PPO, GRPO helpers
+└── training/
+    ├── eval/                    # Benchmark evaluation (Bamboogle, …)
+    ├── ppo/                     # PPO core, LLMGRPOTrainer, SearchAgentGRPOTrainer
+    ├── data.py                  # Training dataset builders
+    ├── grpo.py                  # GRPO advantage helpers
+    ├── reward.py                # SearchRewardFunction
+    └── sft.py                   # SFT data pipeline
+bin/                             # Shell helpers (eval, training data generation)
 tests/                           # Unit and integration test suites
 examples/                        # Runnable CLI examples
 ```
@@ -140,6 +149,11 @@ python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
 
+# Apple Silicon (MPS)
+python3 -m examples.run_agentic_search \
+  --mode search --question "What is FAISS?" \
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps
+
 # Server-backed multi-turn search
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
@@ -152,6 +166,17 @@ python3 -m examples.run_agentic_search \
 | `single` | `PlainGenerationLoop` | Local generation smoke tests |
 | `search` | `SearchAgentLoop` | Multi-turn RAG, SFT, and RL traces |
 | `tool` | `ToolAgentLoop` | Generic tool-calling experiments |
+
+**Bamboogle evaluation**
+
+```bash
+# Quick smoke test (local, 1 example, full trace printed)
+python3 -m examples.run_bamboogle_eval \
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --limit 1 --print_trace
+
+# Full benchmark via Apple Silicon shell script
+bin/run_bamboogle_eval.sh --limit 125
+```
 
 **PPO/GRPO reward**
 
@@ -202,6 +227,7 @@ python3 -m examples.prepare_search_rag_dataset \
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, `<fetch>`, and `<answer>` actions
 - `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
+- `BaseAgent` (`src/agents/graph_base.py`) — Pydantic-based agent base class; lightweight alternative to LangGraph for custom agent workflows with `invoke()`-compatible interface
 
 **LLM Backends**
 - `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/internal/llm/providers.py`)
@@ -242,7 +268,10 @@ python3 -m examples.prepare_search_rag_dataset \
 - Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, and exact-match components
 - Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
+- `LLMGRPOTrainer` — online GRPO for any HuggingFace causal-LM; rolls out G completions per prompt, scores with `judge_fn` + `SearchRewardFunction`, and updates with PPO-clip + KL penalty (`src/training/ppo/llm_grpo_trainer.py`)
+- `SearchAgentGRPOTrainer` — extends `LLMGRPOTrainer` with real `SearchAgentLoop` rollouts to unlock the full shaped-reward signal (citations, search quality, fetch usefulness) (`src/training/ppo/search_agent_grpo_trainer.py`)
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
+- `bin/generate_training_data.sh` — one-command parquet generation for Bamboogle, NQ, TriviaQA, and HotpotQA; `--preview` mode prints sample records without writing
 
 **Query Classification**
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/secondary_llm_flows/`)
@@ -377,10 +406,14 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Task | Entry point |
 |------|-------------|
 | QA parquet preparation | `python3 -m examples.prepare_search_qa_dataset` |
+| Training data (shell) | `bin/generate_training_data.sh` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
+| Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
 | Reward function | `src/training/reward.py` |
 | GRPO helpers | `src/training/grpo.py` |
-| PPO helpers | `src/training/ppo/` |
+| Online GRPO for HF LMs | `src/training/ppo/llm_grpo_trainer.py` |
+| Agent-loop GRPO (full reward) | `src/training/ppo/search_agent_grpo_trainer.py` |
+| PPO core | `src/training/ppo/core_algos.py` |
 | Generation and policy loss | `src/model/generation.py` |
 
 **Reward components** (`SearchRewardFunction`):
@@ -429,6 +462,68 @@ value_loss  = compute_value_loss(values, returns, old_values, clip_eps=0.2)
 ```
 
 `<information>` is environment output — mask it from policy/SFT action loss.
+
+
+## Evaluation
+
+### Bamboogle
+
+Bamboogle is a two-hop QA benchmark that requires chaining retrieval across multiple hops — a strong signal for `SearchAgentLoop` quality.
+
+**Python API:**
+
+```python
+from src.training.eval.bamboogle import evaluate_bamboogle
+from src.training.reward import SearchRewardFunction, SearchRewardConfig
+
+summary, rows = evaluate_bamboogle(
+    agent,
+    reward_fn=SearchRewardFunction(SearchRewardConfig.second_pass()),
+    limit=50,
+    output_path="bamboogle_results.jsonl",
+)
+print(summary)  # exact_match, contains_match, mean_reward, …
+```
+
+**CLI (local CPU):**
+
+```bash
+python3 -m examples.run_bamboogle_eval \
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --limit 5 --print_trace
+```
+
+**CLI (server-backed):**
+
+```bash
+python3 -m examples.run_bamboogle_eval \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --vllm_url http://localhost:8080 \
+  --search_url http://localhost:8000/retrieve \
+  --reward_preset second_pass --limit 125
+```
+
+Reward presets: `sparse_final_only` | `simple_sparse` | `second_pass` | `third_pass`
+
+**Apple Silicon shell script** (auto-starts SerpAPI retrieval server, reads `SERP_API_KEY` from `.env`):
+
+```bash
+bin/run_bamboogle_eval.sh                        # 5 examples, mps device
+bin/run_bamboogle_eval.sh --smoke                # 1 example, quick sanity check
+bin/run_bamboogle_eval.sh --limit 125            # full benchmark
+bin/run_bamboogle_eval.sh --device cpu --limit 10
+```
+
+**Training data generation:**
+
+```bash
+bin/generate_training_data.sh                         # Bamboogle → data/bamboogle_train/
+bin/generate_training_data.sh --preview               # print 5 sample rows, no write
+bin/generate_training_data.sh --dataset nq            # Natural Questions
+bin/generate_training_data.sh --dataset trivia_qa     # TriviaQA
+bin/generate_training_data.sh --dataset hotpotqa --max_examples 500
+```
+
+Each run writes `data/<dataset>_train/train.parquet` and `data/<dataset>_train/test.parquet` ready for `LLMGRPOTrainer` or SFT.
 
 
 ## API Health Checks
@@ -547,7 +642,8 @@ API_SERVER_HOST=localhost API_SERVER_PORT=8080 pytest tests/integration/
 
 ## Notes
 
-- Dense retrieval defaults to CPU; set `--device cuda` only on a dedicated retrieval node.
+- Dense retrieval defaults to CPU; set `--device cuda` on a dedicated retrieval node or `--device mps` on Apple Silicon.
+- MPS acceleration is available for local inference (`--device mps`); add `--allow_unsafe_mps` to suppress PyTorch MPS safety warnings.
 - BM25 serving requires Java because Pyserini uses Lucene.
 - Empty or invalid queries return empty result lists.
 - Some web pages block scraping or return little usable text.
