@@ -309,7 +309,7 @@ python3 -m examples.run_search_pipeline
 - `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
 - Binary search/chat classification prompt with labelled examples and strict single-word output
 - Agentic RAG prompts — decompose (2–4 sub-questions) and HyDE (hypothetical ideal answer) for `QueryEnhancer`
-- `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop`
+- `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop` (`src/agents/search.py`)
 
 **RL Training**
 - Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, and exact-match components
