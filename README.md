@@ -2,15 +2,15 @@
 
 A retrieval-backed agent platform for building high-quality search, research, and custom AI workflows. Agentic Search combines a FastAPI backend, local dense and sparse retrieval, multi-turn agent traces, web search, connector-based indexing, and RL training utilities.
 
-🔍 **Agentic RAG** — Improve search and answer quality with hybrid retrieval, reranking, query decomposition, HyDE, and citation-grounded synthesis.
-
-🌍 **Web Search** — Retrieve up-to-date information from Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
-
 📚 **Document Indexing** — Ingest, chunk, enrich, embed, and index documents for retrieval-backed chat and search.
 
 🔗 **Connectors** — Bring in content from local files, search results, and external systems such as Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
 
 🔒 **Permission-Aware Retrieval** — Enforce per-user access controls at retrieval time with ACL filtering, source-type gating, and connector-level permission metadata.
+
+🌍 **Web Search** — Retrieve up-to-date information from Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
+
+🔍 **Agentic RAG** — Improve search and answer quality with hybrid retrieval, reranking, query decomposition, HyDE, and citation-grounded synthesis.
 
 🛠️ **Tool Use** — Register and execute tools from Python functions or OpenAPI schemas, with support for structured tool-calling loops.
 
@@ -26,11 +26,11 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 | Feature | Key modules |
 |---------|-------------|
-| 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
-| 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
 | 🔒 Permission-Aware Retrieval | `src/internal/access/`, `src/context/preprocessing/`, `src/internal/servers/documents/` |
+| 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
+| 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
 | 🧠 PPO/GRPO Rewards | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/` |
