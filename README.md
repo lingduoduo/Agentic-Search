@@ -173,12 +173,6 @@ For production, `npm run build` produces `web/dist`; the FastAPI app serves it a
 
 ## Examples
 
-**Agent loops**
-
-```bash
-python3 -m examples.run_search_pipeline                # pipeline with access filters
-```
-
 **Agent CLI** (requires retrieval server; `--vllm_url` optional)
 
 ```bash
@@ -241,6 +235,12 @@ python3 -m examples.prepare_search_rag_dataset \
   --train_retrieval_cache data/nq_train_retrieval_cache.json \
   --test_retrieval_cache data/nq_test_retrieval_cache.json \
   --topk 3 --local_dir data/nq_rag
+```
+
+**Search pipeline with access filters** (no live model or retrieval server required)
+
+```bash
+python3 -m examples.run_search_pipeline
 ```
 
 
