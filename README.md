@@ -206,14 +206,15 @@ python3 -m examples.run_agentic_search \
   --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
 ```
 
-**Bamboogle evaluation**
+**Bamboogle evaluation** (always requires retrieval server on :8000)
 
 ```bash
-# Quick smoke test (local, 1 example, full trace printed)
+# Smoke test — local model, 1 example, full trace printed
 python3 -m examples.run_bamboogle_eval \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --limit 1 --print_trace
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu \
+  --search_url http://localhost:8000/retrieve --limit 1 --print_trace
 
-# Full benchmark via Apple Silicon shell script
+# Full benchmark — Apple Silicon, requires SERP_API_KEY in .env
 bin/run_bamboogle_eval.sh --limit 125
 ```
 
