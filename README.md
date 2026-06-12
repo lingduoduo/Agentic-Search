@@ -289,7 +289,7 @@ python3 -m examples.run_search_pipeline
 - `build_search_tool` — ready-made tool dispatching to retrieval, Google, or SerpAPI
 
 **Chat Processing**
-- `process_message` — top-level orchestrator: resolves persona, tools, files, and LLM; dispatches to `run_llm_loop`; persists via `save_chat_turn`
+- `build_chat_turn` — top-level orchestrator: resolves persona, tools, files, and LLM; dispatches to `run_llm_loop`; persists via `save_chat_turn` (`src/internal/chat/process_message.py`)
 - `run_llm_loop` — multi-turn loop: message history, tool dispatch, context injection, token streaming
 - `run_llm_step` — single LLM step: prompt → stream → extract tool calls → `LlmStepResult`
 - `DynamicCitationProcessor` — streams tokens and extracts citation markers in REMOVE / KEEP / HYPERLINK modes
