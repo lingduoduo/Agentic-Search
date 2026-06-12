@@ -333,27 +333,13 @@ python3 -m examples.run_search_pipeline
 
 ## Agentic RAG
 
-```python
-from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
-
-loop = AgenticRAGLoop(
-    AgenticRAGConfig(max_rounds=3, topk=5, retrieval_url="http://localhost:8000/retrieve"),
-    llm=my_llm_client,  # any LLMClient; pass None for extractive fallback
-)
-result = await loop.run("What is FAISS and how does it compare to ScaNN?")
-print(result.answer)       # grounded answer with citations
-print(result.rounds_used)  # retrieval rounds used
-```
-
-Via the web API (`chat_loop` is the API name for `AgenticRAGLoop` — web modes are named by session behavior, not retrieval strategy):
+`chat_loop` is the web API name for `AgenticRAGLoop` — web modes are named by session behavior, not retrieval strategy. Valid modes: `search_tool`, `hybrid_search`, `chat_once`, `chat_loop`.
 
 ```bash
 curl -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
   -d '{"query": "What is FAISS?", "mode": "chat_loop", "top_k": 5}'
 ```
-
-Valid modes: `search_tool`, `hybrid_search`, `chat_once`, `chat_loop`.
 
 Loop flow:
 
@@ -366,22 +352,7 @@ Loop flow:
 
 ## Retrieval Setup
 
-**Index documents from Python:**
-
-Use `src.internal.document_index` as the single indexing entry point. It handles
-filtering, chunking, embedding, retry-isolated writes, and failure reporting:
-
-```python
-from src.internal.document_index import index_documents
-
-result = index_documents(documents, sink=my_chunk_sink)
-print(result.successful_chunk_counts)
-print(result.failures)
-```
-
-Query-time indexing and local retrievers live in `src.internal.document_index`.
-Search context contracts and the retrieval HTTP client live in `src.context`.
-Reranker utilities live beside their server in `src.internal.servers.retrieval`.
+`src.internal.document_index` is the single indexing entry point — filtering, chunking, embedding, retry-isolated writes, and failure reporting. Query-time retrievers and the retrieval HTTP client live in `src.context`. Reranker utilities live in `src.internal.servers.retrieval`.
 
 **Retrieval servers** (`src/internal/servers/retrieval/`):
 
@@ -484,53 +455,16 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Fetch usefulness | `fetch_usefulness_reward` | Bonus when fetched pages are cited in the final answer |
 | Format compliance | `format_reward_weight` | Structural compliance in the final answer |
 
-```python
-from src.training.reward import SearchRewardFunction, SearchRewardConfig
+Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` (see `SearchRewardConfig` in `src/training/reward.py`).
 
-# Named presets: sparse_final_only, simple_sparse_with_search_penalty, second_pass, third_pass_with_format
-reward_fn = SearchRewardFunction(SearchRewardConfig.second_pass())
+**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo.py`.
 
-# Or fully custom:
-reward_fn = SearchRewardFunction(SearchRewardConfig(
-    correctness_weight=1.0,
-    citation_support_weight=0.3,
-    unnecessary_fetch_penalty=-0.1,
-    fetch_usefulness_reward=0.1,
-))
-```
+**PPO** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)`; `compute_value_loss` returns `(vf_loss, vf_clipfrac)`. Both require an `eos_mask` tensor. See `src/training/ppo/core_algos.py`.
 
-**GRPO** — group-relative advantages from G rollouts per prompt:
+**Smoke test** (end-to-end reward + GRPO, no GPU):
 
-```python
-from src.training.grpo import score_prompt_group, compute_grpo_outcome_advantage
-
-# score_prompt_group scores G rollouts for one prompt and normalises advantages within the group
-scored = score_prompt_group(
-    samples,                      # list[GRPORolloutSample] — G rollouts for the same prompt
-    ground_truth=reference_answer,
-    judge_fn=exact_match,
-    reward_fn=reward_fn,
-)
-# advantages are attached to each ScoredGRPORollout
-advantages = [s.advantage for s in scored]
-
-# Or compute group-relative advantages from raw rewards directly:
-advantages = compute_grpo_outcome_advantage([s.reward for s in scored])
-```
-
-**PPO** — clipped policy + value loss with KL penalty:
-
-```python
-from src.training.ppo import compute_ppo_policy_loss_core, compute_value_loss, AdaptiveKLController
-
-# returns (pg_loss, pg_clipfrac, ppo_kl, surrogate)
-pg_loss, pg_clipfrac, ppo_kl, _ = compute_ppo_policy_loss_core(
-    old_log_prob, log_prob, advantages, eos_mask, cliprange=0.2
-)
-# returns (vf_loss, vf_clipfrac)
-vf_loss, vf_clipfrac = compute_value_loss(
-    vpreds, returns, values, eos_mask, cliprange_value=0.2
-)
+```bash
+python3 -m examples.run_grpo_training_pipeline
 ```
 
 **XML search protocol** — the ReAct-style trace format used by `SearchAgentLoop`:
@@ -569,21 +503,6 @@ Mask all environment-only tags from policy/SFT action loss.
 ### Bamboogle
 
 Bamboogle is a two-hop QA benchmark that requires chaining retrieval across multiple hops — a strong signal for `SearchAgentLoop` quality.
-
-**Python API:**
-
-```python
-from src.training.eval.bamboogle import evaluate_bamboogle
-from src.training.reward import SearchRewardFunction, SearchRewardConfig
-
-summary, rows = evaluate_bamboogle(
-    agent,
-    reward_fn=SearchRewardFunction(SearchRewardConfig.second_pass()),
-    limit=50,
-    output_path="bamboogle_results.jsonl",
-)
-print(summary)  # exact_match, contains_match, avg_reward, …
-```
 
 **CLI (local CPU):**
 
@@ -633,10 +552,7 @@ Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8000
 **Generate a dev JWT** (required for admin endpoints):
 
 ```bash
-export TOKEN=$(python3 -c "
-from src.internal.auth import generate_user_jwt_token
-print(generate_user_jwt_token(user_id='dev', email='dev@local'))
-")
+export TOKEN=$(bin/gen_dev_token.sh)   # or: source bin/gen_dev_token.sh
 ```
 
 **Core**
