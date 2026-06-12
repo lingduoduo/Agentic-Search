@@ -68,6 +68,17 @@ def _build_agent(args: argparse.Namespace, tokenizer: Any, server_manager: Any) 
                     },
                 )
             )
+            if args.print_trace:
+                print(f"\n{'=' * 60}")
+                print(f"Q: {question}")
+                print(f"{'=' * 60}")
+                for msg in output.trajectory_messages:
+                    role = msg.get("role", "?").upper()
+                    content = msg.get("content", "")
+                    print(f"\n[{role}]\n{content}")
+                print(f"\n[FINAL ANSWER] {output.final_answer!r}")
+                print(f"[TURNS] {output.num_turns}  [METRICS] {output.metrics}")
+                print(f"{'=' * 60}\n")
             return SimpleNamespace(
                 answer=output.final_answer or "",
                 # Pass the real AgentLoopOutput so reward_fn gets full
@@ -143,6 +154,11 @@ def main() -> None:
         "--print_output",
         action="store_true",
         help="Print each question, raw prediction, and gold answers (useful for smoke-testing)",
+    )
+    parser.add_argument(
+        "--print_trace",
+        action="store_true",
+        help="Print the full agent trajectory per example: every turn, search results, and final answer",
     )
     args = parser.parse_args()
 

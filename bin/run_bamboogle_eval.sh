@@ -85,8 +85,8 @@ EVAL_ARGS=(
 )
 
 if [ "$SMOKE" -eq 1 ]; then
-  EVAL_ARGS+=(--max_tokens 256 --print_output)
-  echo ">> Smoke test: 1 example, --print_output enabled"
+  EVAL_ARGS+=(--max_tokens 256 --print_output --print_trace)
+  echo ">> Smoke test: 1 example, --print_output and --print_trace enabled"
 else
   EVAL_ARGS+=(--max_tokens 512)
 fi
