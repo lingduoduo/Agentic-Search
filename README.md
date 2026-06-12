@@ -312,7 +312,7 @@ python3 -m examples.run_search_pipeline
 - `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop` (`src/agents/search.py`)
 
 **RL Training**
-- Composite reward shaping (`SearchRewardFunction`) — format, search-use, answer-length, and exact-match components
+- Composite reward shaping (`SearchRewardFunction`) — correctness, format compliance, citation support, unnecessary-fetch penalty, and fetch-usefulness reward components
 - Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - `LLMGRPOTrainer` — online GRPO for any HuggingFace causal-LM; rolls out G completions per prompt, scores with `judge_fn` + `SearchRewardFunction`, and updates with PPO-clip + KL penalty (`src/training/ppo/llm_grpo_trainer.py`)
