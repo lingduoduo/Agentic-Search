@@ -880,7 +880,7 @@ class LitellmLLM(LLM):
         # 2. STREAMING-SPECIFIC CONCERNS:
         #    - "Bad file descriptor" errors are MORE common during streaming because:
         #      a) Streams hold connections open longer, increasing conflict window
-        #      b) Multiple concurrent streams (e.g., deep research) share the pool
+        #      b) Multiple concurrent streams share the pool
         #      c) Abandoned/interrupted streams can leave connections in bad state
         #
         # 3. ABANDONED STREAM PITFALL:

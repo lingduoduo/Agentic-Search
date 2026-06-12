@@ -3,7 +3,7 @@
 Three modes are supported, selected via --mode:
 
   single   One-shot generation — no search, no tool calls.
-  search   Deep-research loop (SearchAgentLoop): plan → adaptive decision →
+  search   SearchAgentLoop: plan → adaptive decision →
            subquestions → parallel search → fetch → evaluate → answer.
   tool     Tool-calling loop (ToolAgentLoop): model emits structured tool calls
            that are executed in parallel and injected back.
@@ -800,7 +800,7 @@ async def run_search_agent(
     intent_prediction: Any | None = None,
     intent_min_confidence: float = 0.6,
 ) -> None:
-    """Run the deep-research SearchAgentLoop and print results.
+    """Run the SearchAgentLoop and print results.
 
     Can be called directly as a library function or via the CLI.
 

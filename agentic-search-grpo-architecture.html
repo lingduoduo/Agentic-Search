@@ -245,37 +245,26 @@
      AGENT LOOPS
 ═══════════════════════════ -->
 <!-- AgenticRAGLoop -->
-<rect x="38" y="572" width="168" height="106" rx="6" fill="#0f172a"/>
-<rect x="38" y="572" width="168" height="106" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="122" y="592" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">AgenticRAGLoop</text>
-<text x="122" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/agentic_rag.py</text>
-<text x="122" y="622" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">decompose + HyDE</text>
-<text x="122" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">hybrid+rerank retrieval</text>
-<text x="122" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">sufficiency check</text>
-<text x="122" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">grounded synthesis</text>
-<text x="122" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mode=chat_loop</text>
+<rect x="38" y="572" width="260" height="106" rx="6" fill="#0f172a"/>
+<rect x="38" y="572" width="260" height="106" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="168" y="592" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">AgenticRAGLoop</text>
+<text x="168" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/agentic_rag.py</text>
+<text x="168" y="622" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">1. decompose + HyDE  2. hybrid+rerank</text>
+<text x="168" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">3. sufficiency check  4. follow-up gen</text>
+<text x="168" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">5. grounded synthesis + citations</text>
+<text x="168" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">max_rounds=3  topk=5  extractive fallback</text>
+<text x="168" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent  mode=chat_loop</text>
 
 <!-- SearchAgentLoop -->
-<rect x="216" y="572" width="168" height="106" rx="6" fill="#0f172a"/>
-<rect x="216" y="572" width="168" height="106" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="300" y="592" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SearchAgentLoop</text>
-<text x="300" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/search.py</text>
-<text x="300" y="622" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ReAct XML trace</text>
-<text x="300" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;think&gt; &lt;search&gt;</text>
-<text x="300" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;fetch&gt; &lt;answer&gt;</text>
-<text x="300" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mask &lt;information&gt;</text>
-<text x="300" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mode=search_tool</text>
-
-<!-- DeepResearchLoop -->
-<rect x="394" y="572" width="168" height="106" rx="6" fill="#0f172a"/>
-<rect x="394" y="572" width="168" height="106" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="6,3"/>
-<text x="478" y="592" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">DeepResearchLoop</text>
-<text x="478" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/deep_research.py</text>
-<text x="478" y="622" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">plan outline sections</text>
-<text x="478" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">per-section retrieval</text>
-<text x="478" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">synthesise + compile</text>
-<text x="478" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">multi-section report</text>
-<text x="478" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mode=deep_research</text>
+<rect x="310" y="572" width="252" height="106" rx="6" fill="#0f172a"/>
+<rect x="310" y="572" width="252" height="106" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="436" y="592" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SearchAgentLoop</text>
+<text x="436" y="608" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/agents/search.py  ·  ReAct XML trace</text>
+<text x="436" y="622" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;think&gt; &lt;search&gt; &lt;information&gt;</text>
+<text x="436" y="634" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">&lt;fetch&gt; &lt;answer&gt;</text>
+<text x="436" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">mask &lt;information&gt; from policy loss</text>
+<text x="436" y="658" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ToolAgentLoop: FunctionTool/OpenAPI</text>
+<text x="436" y="670" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent  mode=search_tool</text>
 
 <!-- Tools + Context -->
 <rect x="38" y="692" width="524" height="80" rx="6" fill="#0f172a"/>
