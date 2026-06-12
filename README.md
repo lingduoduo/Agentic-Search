@@ -43,46 +43,67 @@ A retrieval-backed agent platform for building high-quality search, research, an
 ```
 src/
 ├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, AgenticRAGLoop, …)
-├── internal/
-│   ├── access/                  # Access control & ACL helpers
-│   ├── auth/                    # Authentication & authorization
-│   ├── cache/                   # In-memory cache backend (chat session state)
-│   ├── chat/                    # Chat pipeline (loop, steps, citations, compression)
-│   ├── configs/                 # Environment-based configuration (AppSettings)
-│   ├── connectors/              # Data source connectors
-│   ├── db/                      # SQLite store (AgenticSearchStore)
-│   ├── document_index/          # Document index (FAISS / BM25)
-│   ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
-│   ├── file_store/              # In-memory chat file handling
-│   ├── hooks/                   # Outbound webhook execution
-│   ├── llm/                     # LLM provider integrations
-│   ├── observability/           # Admin surface summary & health score
-│   ├── prompts/                 # Prompt templates
-│   ├── search/                  # Search-vs-chat flow classification
-│   ├── servers/
-│   │   ├── backgroundworker/    # Async workers (beat, docfetching, light, heavy, monitoring)
-│   │   ├── analytics/           # Usage analytics API
-│   │   ├── billing/             # Stripe billing proxy
-│   │   ├── documents/           # Connector-credential pair management
-│   │   ├── middleware/          # License enforcement, tier gate, tenant tracking
-│   │   ├── oauth/               # OAuth 2.0 connector authorization
-│   │   ├── query_and_chat/      # Search and chat endpoints
-│   │   ├── reporting/           # Usage report ZIP generation
-│   │   ├── retrieval/           # Dense/sparse/rerank server entry points
-│   │   ├── scim/                # SCIM 2.0 user & group provisioning
-│   │   ├── tenants/             # Multi-tenant provisioning & management
-│   │   └── web/                 # FastAPI app assembly
-│   └── utils/                   # License, encryption, telemetry utilities
+├── cli/                         # CLI query interface
 ├── context/                     # Retrieval-grounded context & prompt builders
 ├── model/                       # LLM generation, intent classifier, tensor helpers
+├── shared_configs/              # Shared configuration dataclasses
 ├── tools/                       # Tool schemas, search tools, OpenAPI tool registry
-└── training/
-    ├── eval/                    # Benchmark evaluation (Bamboogle, …)
-    ├── ppo/                     # PPO core, LLMGRPOTrainer, SearchAgentGRPOTrainer
-    ├── data.py                  # Training dataset builders
-    ├── grpo.py                  # GRPO advantage helpers
-    ├── reward.py                # SearchRewardFunction
-    └── sft.py                   # SFT data pipeline
+├── training/
+│   ├── eval/                    # Benchmark evaluation (Bamboogle, …)
+│   ├── ppo/                     # PPO core, LLMGRPOTrainer, SearchAgentGRPOTrainer
+│   ├── data.py                  # Training dataset builders
+│   ├── grpo.py                  # GRPO advantage helpers
+│   ├── reward.py                # SearchRewardFunction
+│   └── sft.py                   # SFT data pipeline
+└── internal/
+    ├── access/                  # Access control & ACL helpers
+    ├── auth/                    # Authentication & authorization
+    ├── cache/                   # In-memory cache backend (chat session state)
+    ├── chat/                    # Chat pipeline (loop, steps, citations, compression)
+    ├── configs/                 # Environment-based configuration (AppSettings)
+    ├── connectors/              # Data source connectors
+    ├── context/                 # Internal retrieval context helpers
+    ├── db/                      # SQLite store (AgenticSearchStore)
+    ├── document_index/          # Document index (FAISS / BM25)
+    ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
+    ├── file_store/              # In-memory chat file handling
+    ├── hooks/                   # Outbound webhook execution
+    ├── llm/                     # LLM provider integrations
+    ├── mcp_server/              # MCP server (tools, resources, auth)
+    ├── metrics/                 # Metrics collection helpers
+    ├── natural_language_processing/  # NLP utilities
+    ├── observability/           # Admin surface summary & health score
+    ├── prompts/                 # Prompt templates
+    ├── search/                  # Search-vs-chat flow classification
+    ├── tools/                   # Internal tool registry
+    ├── utils/                   # License, encryption, telemetry utilities
+    └── servers/
+        ├── admin_surface/       # Admin summary endpoint
+        ├── analytics/           # Usage analytics API
+        ├── backgroundworker/    # Async workers (beat, docfetching, light, heavy, monitoring)
+        ├── billing/             # Stripe billing proxy
+        ├── connectors/          # Connector management endpoints
+        ├── documents/           # Connector-credential pair management
+        ├── enterprise_settings/ # Enterprise configuration endpoints
+        ├── evals/               # Evaluation endpoints
+        ├── features/            # Feature-flag endpoints
+        ├── indexing/            # Indexing status & control endpoints
+        ├── license/             # License validation & seat management
+        ├── limits/              # Usage limit enforcement
+        ├── middleware/          # License enforcement, tier gate, tenant tracking
+        ├── oauth/               # OAuth 2.0 connector authorization
+        ├── query_and_chat/      # Search and chat endpoints
+        ├── query_history/       # Query history & export
+        ├── reporting/           # Usage report ZIP generation
+        ├── retrieval/           # Dense/sparse/rerank server entry points
+        ├── scim/                # SCIM 2.0 user & group provisioning
+        ├── settings/            # Settings endpoints
+        ├── tenants/             # Multi-tenant provisioning & management
+        ├── token_rate_limits/   # Per-user token rate limiting
+        ├── user_group/          # Group management
+        ├── users/               # User management
+        ├── web/                 # FastAPI app assembly
+        └── web_search/          # Web search servers (Google, SerpAPI, browser)
 bin/                             # Shell helpers (eval, training data generation)
 tests/                           # Unit and integration test suites
 examples/                        # Runnable CLI examples
@@ -109,7 +130,10 @@ conda install -c conda-forge faiss-cpu
 Optional env vars:
 
 ```bash
-GOOGLE_API_KEY=...   GOOGLE_CSE_ID=...   SERP_API_KEY=...   JAVA_HOME=/path/to/java
+GOOGLE_API_KEY=...
+GOOGLE_CSE_ID=...
+SERP_API_KEY=...
+JAVA_HOME=/path/to/java
 ```
 
 
