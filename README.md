@@ -278,8 +278,8 @@ python3 -m examples.run_search_pipeline
 
 **LLM Backends**
 - `OpenAICompatibleLLM` — single client for OpenAI, Azure OpenAI, Anthropic, Ollama, LiteLLM, and vLLM (`src/internal/llm/providers.py`)
-- `VLLMServerManager` — server-backed inference via any OpenAI-compatible endpoint
-- `LocalServerManager` — in-process HuggingFace models (Qwen, Llama, Mistral, etc.) on CPU or GPU
+- Server-backed inference via any OpenAI-compatible endpoint (`--vllm_url`)
+- In-process HuggingFace models on CPU, CUDA, or MPS (`--local --device`)
 - Configured via `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, `GEN_AI_API_KEY`, `GEN_AI_API_BASE`
 
 **Tool Use**
