@@ -173,20 +173,21 @@ For production, `npm run build` produces `web/dist`; the FastAPI app serves it a
 
 ## Examples
 
-**Agent CLI** (requires retrieval server; `--vllm_url` optional)
+**Agent CLI**
 
 ```bash
-# Local CPU inference
+# Local — no retrieval server needed (plain generation)
 python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
 
-# Apple Silicon (MPS)
+# Local with retrieval — requires retrieval server on :8000
 python3 -m examples.run_agentic_search \
   --mode search --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps \
+  --search_url http://localhost:8000/retrieve
 
-# Server-backed multi-turn search
+# Server-backed — requires vLLM on :8080 and retrieval server on :8000
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
