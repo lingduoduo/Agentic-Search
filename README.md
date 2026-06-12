@@ -652,12 +652,12 @@ curl -s http://localhost:7860/settings                # tier / license status (n
 ```bash
 curl -s -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "mode": "search"}'
+  -d '{"query": "What is FAISS?", "mode": "search_tool"}'
 
-curl -s http://localhost:7860/api/sessions -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:7860/api/sessions/SESSION_ID -H "Authorization: Bearer $TOKEN"
 
 curl -s -X POST http://localhost:8000/retrieve \
-  -H "Content-Type: application/json" -d '{"query": "dense retrieval", "top_k": 3}'
+  -H "Content-Type: application/json" -d '{"query": "dense retrieval", "topk": 3}'
 ```
 
 **Admin — analytics, billing, reporting**
