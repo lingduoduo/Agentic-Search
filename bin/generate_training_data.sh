@@ -86,4 +86,29 @@ python3 -m examples.prepare_search_qa_dataset "${ARGS[@]}"
 if [ "$PREVIEW" -eq 0 ]; then
   echo ">> Done. Files:"
   ls -lh "$OUTPUT/"
+
+  echo ""
+  echo ">> Sample records (first 3 rows):"
+  python3 - "$OUTPUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output_dir = Path(sys.argv[1])
+parquet_files = sorted(output_dir.glob("*.parquet"))
+if not parquet_files:
+    print("No parquet files found.")
+    sys.exit(1)
+
+import pyarrow.parquet as pq
+
+for parquet_path in parquet_files:
+    table = pq.read_table(parquet_path)
+    print(f"\n  [{parquet_path.name}]  {table.num_rows} rows")
+    for i, row in enumerate(table.slice(0, 3).to_pylist()):
+        prompt_content = row.get("prompt", [{}])[-1].get("content", "")
+        target = row.get("reward_model", {}).get("ground_truth", {}).get("target", [])
+        print(f"  [{i}] Q: {prompt_content[:80]!r}")
+        print(f"       A: {target}")
+PY
 fi
