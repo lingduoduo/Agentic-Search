@@ -405,12 +405,12 @@ Reranker utilities live beside their server in `src.internal.servers.retrieval`.
 
 ```bash
 # Dense (E5)
-python3 -m src.internal.servers.retrieval.retrieval \
+python3 -m src.internal.servers.retrieval.retrieval_server \
   --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
   --corpus_path data/corpus.jsonl --retrieval_method e5 --device cpu --topk 5
 
 # Sparse BM25
-python3 -m src.internal.servers.retrieval.retrieval \
+python3 -m src.internal.servers.retrieval.retrieval_server \
   --index_path data/indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
 ```
 
