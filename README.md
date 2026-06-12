@@ -4,10 +4,6 @@ A retrieval-backed agent platform for building high-quality search, research, an
 
 🔍 **Agentic RAG** — Improve search and answer quality with hybrid retrieval, reranking, query decomposition, HyDE, and citation-grounded synthesis.
 
-🔬 **Deep Research** — Generate in-depth reports through a multi-step research workflow with iterative search, evidence gathering, and synthesis.
-
-🤖 **Custom Agents** — Build agents with tailored instructions, knowledge sources, memory, tools, and action workflows.
-
 🌍 **Web Search** — Retrieve up-to-date information from Google PSE, SerpAPI, Brave, SearXNG, Firecrawl/Exa, and playwright-cli.
 
 📚 **Document Indexing** — Ingest, chunk, enrich, embed, and index documents for retrieval-backed chat and search.
@@ -31,8 +27,6 @@ A retrieval-backed agent platform for building high-quality search, research, an
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
-| 🔬 Deep Research | `src/internal/mcp_server/tools/research.py`, `src/agents/agentic_rag.py` |
-| 🤖 Custom Agents | `src/agents/graph_base.py`, `src/internal/chat/process_message.py`, `src/internal/configs/chat_configs.py` |
 | 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/documents/`, `src/internal/servers/oauth/` |
