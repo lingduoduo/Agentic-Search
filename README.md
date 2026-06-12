@@ -175,30 +175,36 @@ For production, `npm run build` produces `web/dist`; the FastAPI app serves it a
 
 **Agent CLI**
 
+| Mode | Loop | Needs retrieval server | Use it for |
+|------|------|------------------------|------------|
+| `single` | `PlainGenerationLoop` | No | Local generation smoke tests |
+| `search` | `SearchAgentLoop` | Yes | Multi-turn RAG, SFT, and RL traces |
+| `tool` | `ToolAgentLoop` | Yes | Structured tool-calling experiments |
+
 ```bash
-# Local — no retrieval server needed (plain generation)
+# single — no retrieval server needed (plain generation)
 python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
 
-# Local with retrieval — requires retrieval server on :8000
+# search — local model, requires retrieval server on :8000
 python3 -m examples.run_agentic_search \
   --mode search --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps \
   --search_url http://localhost:8000/retrieve
 
-# Server-backed — requires vLLM on :8080 and retrieval server on :8000
+# tool — local model, requires retrieval server on :8000
+python3 -m examples.run_agentic_search \
+  --mode tool --question "What is FAISS?" \
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu \
+  --search_url http://localhost:8000/retrieve
+
+# search — server-backed, requires vLLM on :8080 and retrieval on :8000
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
 ```
-
-| Mode | Loop | Use it for |
-|------|------|------------|
-| `single` | `PlainGenerationLoop` | Local generation smoke tests |
-| `search` | `SearchAgentLoop` | Multi-turn RAG, SFT, and RL traces |
-| `tool` | `ToolAgentLoop` | Generic tool-calling experiments |
 
 **Bamboogle evaluation**
 
