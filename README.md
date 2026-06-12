@@ -535,14 +535,33 @@ vf_loss, vf_clipfrac = compute_value_loss(
 
 **XML search protocol** — the ReAct-style trace format used by `SearchAgentLoop`:
 
+Model-output tags:
+
 ```xml
 <think>decide whether to answer or search</think>
-<search>precise query</search>
-<information>retrieval results injected by the environment</information>
-<answer>final grounded answer</answer>
+<search>one precise query when external evidence is needed</search>
+<fetch>comma- or newline-separated URLs when snippets are insufficient</fetch>
+<answer>final grounded answer with citation labels</answer>
 ```
 
-`<information>` is environment output — mask it from policy/SFT action loss.
+Optional model-output tags for multi-hop tasks:
+
+```xml
+<search_decision>answer</search_decision>   <!-- skip search when internal knowledge suffices -->
+<subquestions>one research subquestion per line</subquestions>
+<searches>parallel independent queries, one per line</searches>
+```
+
+Environment-only tags (injected by the loop — never output by the model):
+
+```xml
+<information>search results with citation labels</information>
+<search_evaluation>sufficiency verdict and weak-query hints</search_evaluation>
+<subquestions_feedback>per-subquestion coverage status</subquestions_feedback>
+<full_page>fetched page content</full_page>
+```
+
+Mask all environment-only tags from policy/SFT action loss.
 
 
 ## Evaluation
