@@ -21,7 +21,6 @@ transformers==4.39.3
 accelerate
 
 # Training / data / retrieval dependencies.
-datasets==2.18.0
 pyarrow>=14,<21
 tqdm==4.66.4
 sentence-transformers==2.7.0
@@ -43,3 +42,5 @@ faiss-cpu==1.13.2
 # faiss-cpu: install via conda to avoid OpenMP conflict with PyTorch on macOS:
 #   conda install -c conda-forge faiss-cpu
 # pip install faiss-cpu works on Linux but segfaults on macOS Apple Silicon.
+
+datasets==5.0.0
