@@ -473,19 +473,29 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 
 **Reward components** (`SearchRewardFunction`):
 
-| Component | What it measures |
-|-----------|-----------------|
-| `format` | Well-formed XML trace with required action tags |
-| `search_use` | Agent issued at least one search action |
-| `answer_length` | Answer within acceptable token bounds |
-| `exact_match` | Token-overlap correctness against reference answers |
+| Component | Config field | What it measures |
+|-----------|-------------|-----------------|
+| Correctness | `correctness_weight` | Judge score against gold answer (EM / contains-match) |
+| Citation support | `citation_support_weight` | Fraction of retrieved docs cited in the final answer |
+| Subquestion coverage | `subquestion_coverage_weight` | Fraction of sub-questions with sufficient evidence |
+| Search quality | `search_quality_weight` | Evaluator verdict + per-query search quality |
+| Unnecessary search | `unnecessary_search_penalty` | Penalty per search round beyond the first |
+| Unnecessary fetch | `unnecessary_fetch_penalty` | Penalty per fetched page not cited in the answer |
+| Fetch usefulness | `fetch_usefulness_reward` | Bonus when fetched pages are cited in the final answer |
+| Format compliance | `format_reward_weight` | Structural compliance in the final answer |
 
 ```python
 from src.training.reward import SearchRewardFunction, SearchRewardConfig
 
+# Named presets: sparse_final_only, simple_sparse_with_search_penalty, second_pass, third_pass_with_format
+reward_fn = SearchRewardFunction(SearchRewardConfig.second_pass())
+
+# Or fully custom:
 reward_fn = SearchRewardFunction(SearchRewardConfig(
-    format_weight=0.2, search_use_weight=0.3,
-    length_weight=0.1, exact_match_weight=0.4,
+    correctness_weight=1.0,
+    citation_support_weight=0.3,
+    unnecessary_fetch_penalty=-0.1,
+    fetch_usefulness_reward=0.1,
 ))
 ```
 
