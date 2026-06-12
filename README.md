@@ -345,13 +345,15 @@ print(result.answer)       # grounded answer with citations
 print(result.rounds_used)  # retrieval rounds used
 ```
 
-Via the web API:
+Via the web API (`chat_loop` is the API name for `AgenticRAGLoop` — web modes are named by session behavior, not retrieval strategy):
 
 ```bash
 curl -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
   -d '{"query": "What is FAISS?", "mode": "chat_loop", "top_k": 5}'
 ```
+
+Valid modes: `search_tool`, `hybrid_search`, `chat_once`, `chat_loop`.
 
 Loop flow:
 
