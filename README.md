@@ -388,9 +388,15 @@ Reranker utilities live beside their server in `src.internal.servers.retrieval`.
 | Module | Description |
 |--------|-------------|
 | `demo.py` | TF-IDF over corpus.jsonl — no Java required |
-| `retrieval.py` | BM25 or dense (E5/BGE via FAISS) |
+| `retrieval_server.py` | BM25 or dense (E5/BGE via FAISS) |
 | `retrieval_rerank.py` | Retrieval + cross-encoder reranker |
+| `rerank.py` | Standalone cross-encoder reranker (no retrieval) |
 | `hybrid_rerank.py` | Dense + BM25 RRF fusion + rerank (recommended for `AgenticRAGLoop`) |
+
+**Web search servers** (`src/internal/servers/web_search/`):
+
+| Module | Description |
+|--------|-------------|
 | `google.py` | Google Custom Search proxy |
 | `serp.py` | SerpAPI proxy |
 | `browser.py` | playwright-cli browser automation; no API key, ~5–10s/query |
