@@ -117,23 +117,34 @@ The FastAPI app is assembled in `src/internal/servers/web/app.py`. Every feature
 Requires Python 3.10+.
 
 ```bash
-pip install -e .          # one-time; makes src importable as a package
+pip install -e .               # makes src importable as a package
 pip install -r requirements.txt
 ```
 
-For BM25, Java must be available. On Apple Silicon, install FAISS via conda:
+For MCP server support:
 
 ```bash
-conda install -c conda-forge faiss-cpu
+pip install -e ".[mcp]"
 ```
 
-Optional env vars:
+For BM25 (pyserini), Java must be available on `PATH`. Set `JAVA_HOME` if needed.
+
+Env vars — copy `.env.example` to `.env` (loaded automatically via `python-dotenv`):
 
 ```bash
+# LLM provider (required for agent loops)
+GEN_AI_MODEL_PROVIDER=openai       # openai | anthropic | ollama | litellm
+GEN_AI_MODEL_VERSION=gpt-4o-mini
+GEN_AI_API_KEY=...
+GEN_AI_API_BASE=...                # optional override (e.g. http://localhost:11434/v1)
+
+# Web search (pick one or more)
 GOOGLE_API_KEY=...
 GOOGLE_CSE_ID=...
 SERP_API_KEY=...
-JAVA_HOME=/path/to/java
+
+# Optional
+JAVA_HOME=/path/to/java            # for BM25 / pyserini
 ```
 
 
