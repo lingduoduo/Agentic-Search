@@ -350,7 +350,7 @@ Via the web API:
 ```bash
 curl -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "mode": "agentic_rag", "top_k": 5}'
+  -d '{"query": "What is FAISS?", "mode": "chat_loop", "top_k": 5}'
 ```
 
 Loop flow:
