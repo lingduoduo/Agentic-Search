@@ -891,13 +891,3 @@ API_SERVER_HOST=localhost API_SERVER_PORT=8080 pytest tests/integration/
 | `servers/utils/test_license_utils.py` | RSA signature verification with real key pairs |
 | `servers/utils/test_license_expiry.py` | 17 parametrized `ExpiryWarningStage` boundary points |
 | `servers/utils/test_tier.py` | `get_tier` + `tier_at_least` matrix |
-
-
-## Notes
-
-- Dense retrieval defaults to CPU; set `--device cuda` only on a dedicated retrieval node.
-- BM25 serving requires Java because Pyserini uses Lucene.
-- Empty or invalid queries return empty result lists.
-- Some web pages block scraping or return little usable text.
-- Google Custom Search and SerpAPI are subject to their own quota and billing rules.
-- If `prepare_search_qa_dataset` fails with a `pyarrow` extension error, run `pip install -r requirements.txt`.
