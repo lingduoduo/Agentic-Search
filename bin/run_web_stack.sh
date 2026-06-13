@@ -33,7 +33,7 @@ SEARCH_AGENT_MODEL="${SEARCH_AGENT_MODEL:-}"
 SEARCH_AGENT_DEVICE="${SEARCH_AGENT_DEVICE:-mps}"
 
 echo ">> Starting SerpAPI retrieval server on port ${SERP_PORT}..."
-PYTHONPATH="$ROOT" python3 -m src.internal.servers.web_search.serp --port "$SERP_PORT" &
+PYTHONPATH="$ROOT/src:$ROOT" python3 -m src.internal.servers.web_search.serp --port "$SERP_PORT" &
 SERP_PID=$!
 trap 'echo ">> Stopping processes..."; kill "$SERP_PID" "$WEB_PID" 2>/dev/null; wait 2>/dev/null || true' EXIT
 
@@ -54,7 +54,7 @@ else
 fi
 
 echo ">> Starting web backend on port ${WEB_PORT}..."
-PYTHONPATH="$ROOT" \
+PYTHONPATH="$ROOT/src:$ROOT" \
 SEARCH_AGENT_MODEL="$SEARCH_AGENT_MODEL" \
 SEARCH_AGENT_DEVICE="$SEARCH_AGENT_DEVICE" \
 AGENTIC_SEARCH_RETRIEVAL_URL="http://localhost:${SERP_PORT}/retrieve" \
