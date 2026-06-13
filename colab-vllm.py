@@ -12,6 +12,7 @@ import ctypes
 import glob
 import json
 import os
+import site
 import subprocess
 import sys
 import threading
@@ -53,27 +54,47 @@ print(f"Any previous vLLM process stopped. Port {PORT} is free.")
 # library with RTLD_GLOBAL — the latter makes symbols globally visible to all
 # subsequently loaded extensions (including vllm._C).
 
-_nvidia_lib_dirs = glob.glob("/usr/local/lib/python*/dist-packages/nvidia/*/lib")
-_existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-os.environ["LD_LIBRARY_PATH"] = ":".join(_nvidia_lib_dirs) + (
-    ":" + _existing_ld if _existing_ld else ""
-)
 
-_cudart_candidates = glob.glob(
-    "/usr/local/lib/python*/dist-packages/nvidia/cuda_runtime/lib/libcudart.so.13*"
-)
-if not _cudart_candidates:
-    _cudart_candidates = glob.glob(
-        "/usr/local/lib/python*/dist-packages/nvidia/*/lib/libcudart.so.13*"
+def _find_libcudart() -> str | None:
+    """Return the path to libcudart.so.13, or None if not found."""
+    # 1. ldconfig cache (fast)
+    _ldc = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True)
+    for _line in _ldc.stdout.splitlines():
+        if "libcudart.so.13" in _line and "=>" in _line:
+            return _line.split("=>")[-1].strip()
+
+    # 2. pip-installed nvidia packages (all Python versions / site-packages)
+    _site_dirs = site.getsitepackages() + [site.getusersitepackages()]
+    for _sdir in _site_dirs:
+        for _hit in glob.glob(f"{_sdir}/nvidia/*/lib/libcudart.so.13*"):
+            return _hit
+
+    # 3. Broad find under /usr and /opt (slower but thorough)
+    _find = subprocess.run(
+        ["find", "/usr", "/opt", "-name", "libcudart.so.13*", "-type", "f"],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
+    for _p in _find.stdout.splitlines():
+        if _p.strip():
+            return _p.strip()
 
-for _lib in sorted(_cudart_candidates):
+    return None
+
+
+_cudart_path = _find_libcudart()
+if _cudart_path:
+    _lib_dir = os.path.dirname(_cudart_path)
+    _existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+    os.environ["LD_LIBRARY_PATH"] = _lib_dir + (
+        ":" + _existing_ld if _existing_ld else ""
+    )
     try:
-        ctypes.CDLL(_lib, mode=ctypes.RTLD_GLOBAL)
-        print(f"Preloaded {_lib}")
-        break
+        ctypes.CDLL(_cudart_path, mode=ctypes.RTLD_GLOBAL)
+        print(f"Preloaded {_cudart_path}")
     except OSError as _e:
-        print(f"Warning: could not preload {_lib}: {_e}")
+        print(f"Warning: found {_cudart_path} but could not preload it: {_e}")
 else:
     print("Warning: libcudart.so.13 not found — vllm may fail to import vllm._C")
 
