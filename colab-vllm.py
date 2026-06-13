@@ -104,6 +104,10 @@ if _cudart_path:
 else:
     print("Warning: libcudart.so.13 not found — vllm may fail to import vllm._C")
 
+
+# the CUDA 12/13 mismatch on this specific Colab runtime is a rabbit hole.
+
+
 # ── Section 4: Start vLLM server in-process (~60s on A100) ───────────────────
 # Running in the same Python process avoids subprocess linker path issues.
 # Logs print to stdout as normal. libcudart is already loaded above.
