@@ -275,7 +275,32 @@ def create_web_app(
         check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
         _app.state.search_agent_manager = None
         _app.state.search_agent_tokenizer = None
-        if resolved.search_agent_model:
+        if resolved.search_agent_vllm_url:
+            try:
+                from transformers import AutoTokenizer
+                from examples.run_agentic_search import VLLMServerManager
+
+                model = resolved.search_agent_model or "Qwen/Qwen2.5-1.5B-Instruct"
+                tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+                if tokenizer.pad_token_id is None:
+                    tokenizer.pad_token_id = tokenizer.eos_token_id
+                manager = VLLMServerManager(
+                    tokenizer=tokenizer,
+                    base_url=resolved.search_agent_vllm_url,
+                    model=model,
+                )
+                _app.state.search_agent_tokenizer = tokenizer
+                _app.state.search_agent_manager = manager
+                logger.info(
+                    "search_agent: connected to remote vLLM at %s (model %s)",
+                    resolved.search_agent_vllm_url,
+                    model,
+                )
+            except Exception:
+                logger.exception(
+                    "search_agent: failed to init remote vLLM manager — mode will return 400"
+                )
+        elif resolved.search_agent_model:
             try:
                 from transformers import AutoTokenizer
                 from examples.run_agentic_search import LocalServerManager
@@ -296,7 +321,7 @@ def create_web_app(
                 _app.state.search_agent_tokenizer = tokenizer
                 _app.state.search_agent_manager = manager
                 logger.info(
-                    "search_agent: loaded tokenizer for %s on %s",
+                    "search_agent: loaded %s on %s",
                     resolved.search_agent_model,
                     resolved.search_agent_device,
                 )
