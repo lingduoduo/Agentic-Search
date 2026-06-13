@@ -166,7 +166,7 @@ python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 **Web API** — `http://localhost:7860`
 ```bash
-uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+PYTHONPATH=src uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
 **Frontend** — `http://localhost:5173`
