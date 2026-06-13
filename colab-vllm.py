@@ -12,7 +12,6 @@ import ctypes
 import glob
 import json
 import os
-import site
 import subprocess
 import sys
 import threading
@@ -55,47 +54,42 @@ print(f"Any previous vLLM process stopped. Port {PORT} is free.")
 # subsequently loaded extensions (including vllm._C).
 
 
-def _find_libcudart() -> str | None:
-    """Return the path to libcudart.so.13, or None if not found."""
-    # 0. Direct glob — covers pip-installed CUDA and system CUDA toolkit
+def _resolve_libcudart() -> str | None:
+    """Return a path to libcudart.so.13 (real or compat symlink), or None."""
+    # 1. Already present as .so.13
     for _pattern in [
         "/usr/local/lib/python*/dist-packages/nvidia/cuda_runtime/lib/libcudart.so.13*",
         "/usr/local/lib/python*/dist-packages/nvidia/*/lib/libcudart.so.13*",
+        "/usr/local/cuda*/targets/*/lib/libcudart.so.13*",
         "/usr/local/cuda*/lib64/libcudart.so.13*",
-        "/usr/local/cuda*/lib64/libcudart.so",  # symlink covers any CUDA version
         "/usr/lib/x86_64-linux-gnu/libcudart.so.13*",
     ]:
         _hits = sorted(glob.glob(_pattern))
         if _hits:
             return _hits[0]
 
-    # 1. ldconfig cache (fast)
     _ldc = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True)
     for _line in _ldc.stdout.splitlines():
         if "libcudart.so.13" in _line and "=>" in _line:
             return _line.split("=>")[-1].strip()
 
-    # 2. pip-installed nvidia packages via site.getsitepackages()
-    _site_dirs = site.getsitepackages() + [site.getusersitepackages()]
-    for _sdir in _site_dirs:
-        for _hit in glob.glob(f"{_sdir}/nvidia/*/lib/libcudart.so.13*"):
-            return _hit
-
-    # 3. Broad find under /usr and /opt (slower but thorough)
-    _find = subprocess.run(
-        ["find", "/usr", "/opt", "-name", "libcudart.so.13*", "-type", "f"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    for _p in _find.stdout.splitlines():
-        if _p.strip():
-            return _p.strip()
+    # 2. CUDA 13 not found — create a compat symlink from libcudart.so.12.
+    # CUDA 12 and 13 share the same core ABI for inference workloads.
+    for _cudart12 in [
+        "/usr/local/cuda/targets/x86_64-linux/lib/libcudart.so.12",
+        "/usr/local/cuda/lib64/libcudart.so.12",
+        "/usr/lib/x86_64-linux-gnu/libcudart.so.12",
+    ]:
+        if os.path.exists(_cudart12):
+            _compat = "/tmp/libcudart.so.13"
+            subprocess.run(["ln", "-sf", _cudart12, _compat], check=True)
+            print(f"Created CUDA 12→13 compat symlink: {_compat} -> {_cudart12}")
+            return _compat
 
     return None
 
 
-_cudart_path = _find_libcudart()
+_cudart_path = _resolve_libcudart()
 if _cudart_path:
     _lib_dir = os.path.dirname(_cudart_path)
     _existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
