@@ -202,10 +202,10 @@ python3 -m examples.run_agentic_search \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
   --search_url http://localhost:8001/retrieve --allow_remote_model_downloads
 
-# search — requires 7B+ model and retrieval server on :8001
+# search — 3B is the Mac sweet spot (~6 GB unified memory); 7B needs 16 GB+ and will swap
 python3 -m examples.run_agentic_search \
-  --mode search --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-7B-Instruct --local --device mps --allow_unsafe_mps \
+  --mode search --question "What is RAG?" \
+  --model Qwen/Qwen2.5-3B-Instruct --local --device mps --allow_unsafe_mps \
   --search_url http://localhost:8001/retrieve --allow_remote_model_downloads
 
 # search — server-backed, requires vLLM on :8080 and retrieval on :8001
