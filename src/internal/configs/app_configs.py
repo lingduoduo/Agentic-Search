@@ -149,7 +149,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     configuration side-effect free.
     """
 
-    source = env or os.environ
+    source = env if env is not None else os.environ
     return AppSettings(
         services=ServiceSettings(
             retrieval_url=get_env_str(
@@ -234,7 +234,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
 def load_permission_sync_settings(
     env: EnvMapping | None = None,
 ) -> PermissionSyncSettings:
-    source = env or os.environ
+    source = env if env is not None else os.environ
     return PermissionSyncSettings(
         default_doc_sync_frequency=get_env_int(
             source,
