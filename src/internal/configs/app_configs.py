@@ -138,6 +138,8 @@ class AppSettings:
     stripe_publishable_key_url: str | None = None
     web_domain: str = "http://localhost:8080"
     dev_mode: bool = False
+    search_agent_model: str | None = None
+    search_agent_device: str = "mps"
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -224,6 +226,8 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         ),
         web_domain=get_env_str(source, "WEB_DOMAIN", "http://localhost:8080"),
         dev_mode=get_env_bool(source, "DEV_MODE", False),
+        search_agent_model=get_env_str(source, "SEARCH_AGENT_MODEL", None),
+        search_agent_device=get_env_str(source, "SEARCH_AGENT_DEVICE", "mps"),
     )
 
 
