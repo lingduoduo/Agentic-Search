@@ -220,8 +220,9 @@ python3 -m examples.run_agentic_search \
 ```bash
 # Smoke test — local model, 1 example, full trace printed
 python3 -m examples.run_bamboogle_eval \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu \
-  --search_url http://localhost:8001/retrieve --limit 1 --print_trace
+  --model Qwen/Qwen2.5-3B-Instruct --local --device mps --allow_unsafe_mps \
+  --search_url http://localhost:8001/retrieve --limit 1 --print_trace \
+  --allow_remote_model_downloads
 
 # Full benchmark — Apple Silicon, requires SERP_API_KEY in .env
 bin/run_bamboogle_eval.sh --limit 125
