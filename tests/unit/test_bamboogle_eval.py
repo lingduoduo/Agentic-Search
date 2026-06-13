@@ -149,7 +149,7 @@ _FAKE_JSONL = "\n".join(
 def test_load_bamboogle_all(mock_get):
     mock_get.return_value.text = _FAKE_JSONL
     mock_get.return_value.raise_for_status = MagicMock()
-    rows = load_bamboogle()
+    rows = load_bamboogle(cache_path=None)
     assert len(rows) == 5
 
 
@@ -157,8 +157,40 @@ def test_load_bamboogle_all(mock_get):
 def test_load_bamboogle_limit(mock_get):
     mock_get.return_value.text = _FAKE_JSONL
     mock_get.return_value.raise_for_status = MagicMock()
-    rows = load_bamboogle(limit=3)
+    rows = load_bamboogle(limit=3, cache_path=None)
     assert len(rows) == 3
+
+
+@patch("requests.get")
+def test_load_bamboogle_writes_cache(mock_get, tmp_path):
+    mock_get.return_value.text = _FAKE_JSONL
+    mock_get.return_value.raise_for_status = MagicMock()
+    cache = tmp_path / "bamboogle_test.jsonl"
+    load_bamboogle(cache_path=cache)
+    assert cache.exists()
+    assert len(cache.read_text().splitlines()) == 5
+
+
+@patch("requests.get")
+def test_load_bamboogle_reads_cache(mock_get, tmp_path):
+    """Second call must not hit the network when cache exists."""
+    mock_get.return_value.text = _FAKE_JSONL
+    mock_get.return_value.raise_for_status = MagicMock()
+    cache = tmp_path / "bamboogle_test.jsonl"
+    load_bamboogle(cache_path=cache)
+    mock_get.reset_mock()
+    rows = load_bamboogle(cache_path=cache)
+    mock_get.assert_not_called()
+    assert len(rows) == 5
+
+
+@patch("requests.get")
+def test_load_bamboogle_cache_none_skips_disk(mock_get):
+    """cache_path=None must never touch the filesystem."""
+    mock_get.return_value.text = _FAKE_JSONL
+    mock_get.return_value.raise_for_status = MagicMock()
+    rows = load_bamboogle(cache_path=None)
+    assert len(rows) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +290,98 @@ def test_evaluate_with_reward_fn(mock_load, tmp_path):
         assert row.reward_total is not None
         assert "total" in row.reward_components
         assert "correctness" in row.reward_components
+
+
+@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+def test_evaluate_parallel_same_results(mock_load, tmp_path):
+    """Concurrency > 1 must produce identical results to concurrency=1."""
+    serial_summary, serial_rows = evaluate_bamboogle(
+        _PerfectAgent(), limit=2, output_path=None, verbose=False, concurrency=1
+    )
+    parallel_summary, parallel_rows = evaluate_bamboogle(
+        _PerfectAgent(), limit=2, output_path=None, verbose=False, concurrency=2
+    )
+    assert serial_summary.exact_match == parallel_summary.exact_match
+    assert serial_summary.contains_match == parallel_summary.contains_match
+    assert [r.question for r in serial_rows] == [r.question for r in parallel_rows]
+
+
+@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+def test_resume_skips_completed(mock_load, tmp_path):
+    """With resume=True, already-completed examples are skipped."""
+    out = tmp_path / "out.jsonl"
+    out.write_text(
+        json.dumps(
+            {
+                "id": "1",
+                "question": "Who invented the telephone?",
+                "golden_answers": ["Alexander Graham Bell"],
+                "prediction": "Alexander Graham Bell",
+                "exact_match": 1.0,
+                "contains_match": 1.0,
+                "reward_total": None,
+                "reward_components": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    call_count = 0
+
+    class _CountingAgent:
+        def invoke(self, state: dict) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            r = MagicMock()
+            r.answer = "Paris"
+            del r.metadata
+            return r
+
+    evaluate_bamboogle(
+        _CountingAgent(), limit=2, output_path=out, verbose=False, resume=True
+    )
+    assert call_count == 1
+    lines = out.read_text().splitlines()
+    assert len(lines) == 2
+
+
+@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+def test_resume_false_reruns_all(mock_load, tmp_path):
+    """With resume=False (default), all examples run even if output exists."""
+    out = tmp_path / "out.jsonl"
+    out.write_text(
+        json.dumps(
+            {
+                "id": "1",
+                "question": "Who invented the telephone?",
+                "golden_answers": ["Alexander Graham Bell"],
+                "prediction": "Alexander Graham Bell",
+                "exact_match": 1.0,
+                "contains_match": 1.0,
+                "reward_total": None,
+                "reward_components": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    call_count = 0
+
+    class _CountingAgent:
+        def invoke(self, state: dict) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            r = MagicMock()
+            r.answer = "Paris"
+            del r.metadata
+            return r
+
+    evaluate_bamboogle(
+        _CountingAgent(), limit=2, output_path=out, verbose=False, resume=False
+    )
+    assert call_count == 2
 
 
 @patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)

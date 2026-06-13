@@ -166,6 +166,18 @@ def main() -> None:
         action="store_true",
         help="Print the full agent trajectory per example: every turn, search results, and final answer",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Number of questions to evaluate in parallel (default: 1 = serial). "
+        "Values of 4-8 work well with SerpAPI free tier.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip examples already in the output file and append new results.",
+    )
     args = parser.parse_args()
 
     from transformers import AutoTokenizer
@@ -191,6 +203,8 @@ def main() -> None:
         limit=args.limit,
         output_path=args.output,
         verbose=True,
+        concurrency=args.concurrency,
+        resume=args.resume,
     )
 
     if args.print_output:
