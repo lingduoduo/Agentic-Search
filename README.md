@@ -159,7 +159,7 @@ JAVA_HOME=/path/to/java            # for BM25 / pyserini
 
 Three processes, each in its own terminal:
 
-**Retrieval service** — `http://localhost:8000`
+**Retrieval service** — `http://localhost:8001`
 ```bash
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 ```
@@ -196,32 +196,32 @@ python3 -m examples.run_agentic_search \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
   --allow_remote_model_downloads
 
-# search — local model, requires retrieval server on :8000
+# search — local model, requires retrieval server on :8001
 python3 -m examples.run_agentic_search \
   --mode search --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
-  --search_url http://localhost:8000/retrieve --allow_remote_model_downloads
+  --search_url http://localhost:8001/retrieve --allow_remote_model_downloads
 
-# tool — local model, requires retrieval server on :8000
+# tool — local model, requires retrieval server on :8001
 python3 -m examples.run_agentic_search \
   --mode tool --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
-  --search_url http://localhost:8000/retrieve --allow_remote_model_downloads
+  --search_url http://localhost:8001/retrieve --allow_remote_model_downloads
 
-# search — server-backed, requires vLLM on :8080 and retrieval on :8000
+# search — server-backed, requires vLLM on :8080 and retrieval on :8001
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
+  --vllm_url http://localhost:8080 --search_url http://localhost:8001/retrieve
 ```
 
-**Bamboogle evaluation** (always requires retrieval server on :8000)
+**Bamboogle evaluation** (always requires retrieval server on :8001)
 
 ```bash
 # Smoke test — local model, 1 example, full trace printed
 python3 -m examples.run_bamboogle_eval \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu \
-  --search_url http://localhost:8000/retrieve --limit 1 --print_trace
+  --search_url http://localhost:8001/retrieve --limit 1 --print_trace
 
 # Full benchmark — Apple Silicon, requires SERP_API_KEY in .env
 bin/run_bamboogle_eval.sh --limit 125
@@ -428,8 +428,8 @@ python3 -m src.internal.servers.web_search.google \
 **Health check:**
 
 ```bash
-curl -i -sS http://127.0.0.1:8000/health
-curl -i -sS -X POST http://127.0.0.1:8000/retrieve \
+curl -i -sS http://127.0.0.1:8001/health
+curl -i -sS -X POST http://127.0.0.1:8001/retrieve \
   -H "Content-Type: application/json" -d '{"query":"What is FAISS?","topk":5}'
 ```
 
@@ -587,7 +587,7 @@ python3 -m examples.run_bamboogle_eval \
 python3 -m examples.run_bamboogle_eval \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --vllm_url http://localhost:8080 \
-  --search_url http://localhost:8000/retrieve \
+  --search_url http://localhost:8001/retrieve \
   --reward_preset second_pass --limit 125
 ```
 
@@ -617,7 +617,7 @@ Each run writes `data/<dataset>_train/train.parquet` and `data/<dataset>_train/t
 
 ## API Health Checks
 
-Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8000`
+Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8001`
 
 **Generate a dev JWT** (required for admin endpoints):
 
@@ -629,7 +629,7 @@ export TOKEN=$(bin/gen_dev_token.sh)   # or: source bin/gen_dev_token.sh
 
 ```bash
 curl -s http://localhost:7860/health                  # web server
-curl -s http://localhost:8000/health                  # retrieval server
+curl -s http://localhost:8001/health                  # retrieval server
 curl -s http://localhost:7860/settings                # tier / license status (no auth)
 ```
 
@@ -642,7 +642,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 
 curl -s http://localhost:7860/api/sessions/SESSION_ID -H "Authorization: Bearer $TOKEN"
 
-curl -s -X POST http://localhost:8000/retrieve \
+curl -s -X POST http://localhost:8001/retrieve \
   -H "Content-Type: application/json" -d '{"query": "dense retrieval", "topk": 3}'
 ```
 
@@ -687,7 +687,7 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `AGENTIC_SEARCH_AUTH_SECRET` | `agentic-search-dev-secret` | JWT signing secret |
 | `AGENTIC_SEARCH_SUPER_USERS` | `[]` | JSON list of admin user IDs or emails |
 | `AGENTIC_SEARCH_WEB_DB_PATH` | `:memory:` | SQLite path (`:memory:` for ephemeral) |
-| `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8000/retrieve` | Retrieval server URL |
+| `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8001/retrieve` | Retrieval server URL |
 | `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL` | — | Cloud data plane for billing proxy |
 | `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
 | `AGENTIC_SEARCH_DATA_DIR` | `~/.local/share/agentic_search` | License file directory |

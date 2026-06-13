@@ -122,7 +122,7 @@ python3 -m examples.run_agentic_search \
 python3 -m examples.run_agentic_search \
   --mode search --question "Compare dense and sparse retrieval" \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --vllm_url http://localhost:8080 --search_url http://localhost:8000/retrieve
+  --vllm_url http://localhost:8080 --search_url http://localhost:8001/retrieve
 ```
 
 Modes: `single` (PlainGenerationLoop), `search` (SearchAgentLoop), `tool` (ToolAgentLoop).
