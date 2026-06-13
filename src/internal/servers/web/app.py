@@ -554,11 +554,12 @@ def create_web_app(
                     search_config=SearchAgentLoopConfig(
                         search_url=search_url,
                         topk=top_k,
+                        max_turns=3,
                     ),
                 )
                 output = await loop.run(
                     [{"role": "user", "content": query}],
-                    sampling_params={"temperature": 0.0, "max_tokens": 512},
+                    sampling_params={"temperature": 0.0, "max_tokens": 256},
                 )
                 answer = output.final_answer or ""
                 sa_documents: list[ContextDocument] = []
