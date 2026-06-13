@@ -26,7 +26,13 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
     from examples.run_agentic_search import LocalServerManager, VLLMServerManager
 
     if args.local:
-        return LocalServerManager(model_path=args.model, device=args.device)
+        return LocalServerManager(
+            model_path=args.model,
+            device=args.device,
+            allow_unsafe_mps=args.allow_unsafe_mps,
+            generation_timeout_seconds=args.generation_timeout_seconds,
+            generation_heartbeat_seconds=args.generation_heartbeat_seconds,
+        )
     return VLLMServerManager(
         tokenizer=tokenizer, base_url=args.vllm_url, model=args.model
     )
@@ -62,6 +68,17 @@ def _build_agent(args: argparse.Namespace, tokenizer: Any, server_manager: Any) 
                     },
                 )
             )
+            if args.print_trace:
+                print(f"\n{'=' * 60}")
+                print(f"Q: {question}")
+                print(f"{'=' * 60}")
+                for msg in output.trajectory_messages:
+                    role = msg.get("role", "?").upper()
+                    content = msg.get("content", "")
+                    print(f"\n[{role}]\n{content}")
+                print(f"\n[FINAL ANSWER] {output.final_answer!r}")
+                print(f"[TURNS] {output.num_turns}  [METRICS] {output.metrics}")
+                print(f"{'=' * 60}\n")
             return SimpleNamespace(
                 answer=output.final_answer or "",
                 # Pass the real AgentLoopOutput so reward_fn gets full
@@ -95,7 +112,16 @@ def main() -> None:
     parser.add_argument(
         "--local", action="store_true", help="Run model in-process (no vLLM)"
     )
-    parser.add_argument("--device", default="cpu", help="Device for local inference")
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        help="Device for local inference: cpu, mps, cuda, or auto",
+    )
+    parser.add_argument(
+        "--allow_unsafe_mps",
+        action="store_true",
+        help="Allow MPS generation on macOS (may segfault on old torch/transformers; safe on torch>=2.3)",
+    )
     parser.add_argument("--vllm_url", default="http://localhost:8080")
     parser.add_argument("--search_url", default="http://localhost:8000/retrieve")
     parser.add_argument("--topk", type=int, default=5)
@@ -112,6 +138,28 @@ def main() -> None:
         "--limit", type=int, default=20, help="Number of examples (max 125)"
     )
     parser.add_argument("--output", default="bamboogle_results.jsonl")
+    parser.add_argument(
+        "--generation_timeout_seconds",
+        type=float,
+        default=0.0,
+        help="Local generation wall-clock timeout in seconds; 0 disables (default for benchmarks)",
+    )
+    parser.add_argument(
+        "--generation_heartbeat_seconds",
+        type=float,
+        default=10.0,
+        help="How often local generation prints a still-running heartbeat",
+    )
+    parser.add_argument(
+        "--print_output",
+        action="store_true",
+        help="Print each question, raw prediction, and gold answers (useful for smoke-testing)",
+    )
+    parser.add_argument(
+        "--print_trace",
+        action="store_true",
+        help="Print the full agent trajectory per example: every turn, search results, and final answer",
+    )
     args = parser.parse_args()
 
     from transformers import AutoTokenizer
@@ -127,13 +175,22 @@ def main() -> None:
     agent = _build_agent(args, tokenizer, server_manager)
     reward_fn = _build_reward_fn(args.reward_preset)
 
-    evaluate_bamboogle(
+    _summary, rows = evaluate_bamboogle(
         agent,
         reward_fn=reward_fn,
         limit=args.limit,
         output_path=args.output,
         verbose=True,
     )
+
+    if args.print_output:
+        print("\n--- per-example predictions ---")
+        for r in rows:
+            print(f"Q : {r.question}")
+            print(f"A : {r.prediction!r}")
+            print(f"Gold: {r.golden_answers}")
+            print(f"EM={r.exact_match:.0f}  contains={r.contains_match:.0f}")
+            print()
 
 
 if __name__ == "__main__":

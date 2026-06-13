@@ -3,6 +3,9 @@
 data/
 indexes/
 models/
+
+# Eval output files
+*_results.jsonl
 .DS_Store
 
 # Byte-compiled / optimized / DLL files

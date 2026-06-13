@@ -55,9 +55,6 @@ USE_SEMANTIC_KEYWORD_EXPANSIONS_BASIC_SEARCH: bool = (
     == "true"
 )
 
-SKIP_DEEP_RESEARCH_CLARIFICATION: bool = (
-    os.environ.get("SKIP_DEEP_RESEARCH_CLARIFICATION", "false").lower() == "true"
-)
 
 PROMPTS_YAML: str = os.environ.get("PROMPTS_YAML", "./data/seeding/prompts.yaml")
 PERSONAS_YAML: str = os.environ.get("PERSONAS_YAML", "./data/seeding/personas.yaml")
