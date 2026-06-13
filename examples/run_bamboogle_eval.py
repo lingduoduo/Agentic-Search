@@ -30,6 +30,7 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
             model_path=args.model,
             device=args.device,
             allow_unsafe_mps=args.allow_unsafe_mps,
+            local_files_only=not args.allow_remote_model_downloads,
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
@@ -122,6 +123,11 @@ def main() -> None:
         action="store_true",
         help="Allow MPS generation on macOS (may segfault on old torch/transformers; safe on torch>=2.3)",
     )
+    parser.add_argument(
+        "--allow_remote_model_downloads",
+        action="store_true",
+        help="Download model weights from HuggingFace if not cached locally",
+    )
     parser.add_argument("--vllm_url", default="http://localhost:8080")
     parser.add_argument("--search_url", default="http://localhost:8000/retrieve")
     parser.add_argument("--topk", type=int, default=5)
@@ -160,12 +166,28 @@ def main() -> None:
         action="store_true",
         help="Print the full agent trajectory per example: every turn, search results, and final answer",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Number of questions to evaluate in parallel (default: 1 = serial). "
+        "Values of 4-8 work well with SerpAPI free tier.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip examples already in the output file and append new results.",
+    )
     args = parser.parse_args()
 
     from transformers import AutoTokenizer
 
     print(f"Loading tokenizer: {args.model}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        trust_remote_code=True,
+        local_files_only=not args.allow_remote_model_downloads,
+    )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
@@ -181,6 +203,8 @@ def main() -> None:
         limit=args.limit,
         output_path=args.output,
         verbose=True,
+        concurrency=args.concurrency,
+        resume=args.resume,
     )
 
     if args.print_output:

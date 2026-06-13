@@ -38,15 +38,19 @@ DEVICE="mps"
 SMOKE=0
 SERP_PORT="${SERP_PORT:-8000}"
 OUTPUT="${OUTPUT:-bamboogle_results.jsonl}"
+CONCURRENCY="${CONCURRENCY:-1}"
+RESUME=0
 
 # Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model)   MODEL="$2";  shift 2 ;;
-    --limit)   LIMIT="$2";  shift 2 ;;
-    --device)  DEVICE="$2"; shift 2 ;;
-    --output)  OUTPUT="$2"; shift 2 ;;
-    --smoke)   SMOKE=1; LIMIT=1; shift ;;
+    --model)       MODEL="$2";       shift 2 ;;
+    --limit)       LIMIT="$2";       shift 2 ;;
+    --device)      DEVICE="$2";      shift 2 ;;
+    --output)      OUTPUT="$2";      shift 2 ;;
+    --concurrency) CONCURRENCY="$2"; shift 2 ;;
+    --resume)      RESUME=1;         shift ;;
+    --smoke)       SMOKE=1; LIMIT=1; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -82,6 +86,7 @@ EVAL_ARGS=(
   --search_url "$SEARCH_URL"
   --limit "$LIMIT"
   --output "$OUTPUT"
+  --concurrency "$CONCURRENCY"
 )
 
 if [ "$SMOKE" -eq 1 ]; then
@@ -89,6 +94,10 @@ if [ "$SMOKE" -eq 1 ]; then
   echo ">> Smoke test: 1 example, --print_output and --print_trace enabled"
 else
   EVAL_ARGS+=(--max_tokens 512)
+fi
+
+if [ "$RESUME" -eq 1 ]; then
+  EVAL_ARGS+=(--resume)
 fi
 
 echo ">> Running bamboogle eval (model=$MODEL, limit=$LIMIT, device=$DEVICE)..."
