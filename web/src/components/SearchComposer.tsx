@@ -9,6 +9,7 @@ const MODE_OPTIONS: Array<{ value: AgentMode; label: string }> = [
   { value: "hybrid_search", label: "Search: Hybrid" },
   { value: "chat_once", label: "Chat: No Loop" },
   { value: "chat_loop", label: "Chat: Loop" },
+  { value: "search_agent", label: "Search Agent (Local Model)" },
 ];
 
 const SOURCE_OPTIONS: Array<{
@@ -54,6 +55,7 @@ export const SearchComposer = memo(function SearchComposer({
 }: SearchComposerProps) {
   const isSearchMode = mode === "search_tool" || mode === "hybrid_search";
   const usesRetrievalUrl =
+    mode === "search_agent" ||
     !isSearchMode ||
     sourceProvider === "retrieval" ||
     sourceProvider === "browser" ||
