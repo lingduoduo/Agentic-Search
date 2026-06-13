@@ -74,7 +74,7 @@ No new routers, DB tables, or UI components.
 Two new optional env vars (add to `.env`):
 
 ```
-SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct   # required to enable the mode
+SEARCH_AGENT_MODEL=Qwen/Qwen2.5-0.5B-Instruct   # 8 GB RAM; use 1.5B-Instruct on 16 GB+
 SEARCH_AGENT_DEVICE=mps                           # default: mps
 ```
 
@@ -127,7 +127,7 @@ python3 -m src.internal.servers.web_search.serp --port 8000 &
 SERP_PID=$!
 trap 'kill $SERP_PID 2>/dev/null' EXIT
 
-SEARCH_AGENT_MODEL="${SEARCH_AGENT_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}" \
+SEARCH_AGENT_MODEL="${SEARCH_AGENT_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}" \
 SEARCH_AGENT_DEVICE="${SEARCH_AGENT_DEVICE:-mps}" \
 PYTHONPATH="$ROOT/src" \
 uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860 &
