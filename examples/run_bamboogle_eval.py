@@ -30,7 +30,7 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
             model_path=args.model,
             device=args.device,
             allow_unsafe_mps=args.allow_unsafe_mps,
-            allow_remote_model_downloads=args.allow_remote_model_downloads,
+            local_files_only=not args.allow_remote_model_downloads,
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
