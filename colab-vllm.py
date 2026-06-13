@@ -8,9 +8,7 @@ Prerequisites:
   - Free ngrok account — copy your authtoken from https://dashboard.ngrok.com/
 """
 
-import glob
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -46,17 +44,14 @@ subprocess.run(["pkill", "-f", "vllm"], capture_output=True)
 time.sleep(2)
 print(f"Any previous vLLM process stopped. Port {PORT} is free.")
 
-# ── Section 4: Start vLLM server (~60s on A100) ───────────────────────────────
-# pip-installed CUDA packages put their .so files under site-packages/nvidia/*/lib.
-# The subprocess won't find them unless we add those dirs to LD_LIBRARY_PATH.
+# ── Section 4: Start vLLM server in-process (~60s on A100) ───────────────────
+# Running in the same Python process avoids the libcudart.so.13 path issue
+# that affects subprocesses on Colab. Logs print to stdout as normal.
 
-nvidia_lib_dirs = glob.glob("/usr/local/lib/python*/dist-packages/nvidia/*/lib")
-existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-ld_library_path = ":".join(nvidia_lib_dirs) + (":" + existing_ld if existing_ld else "")
-_env = {**os.environ, "LD_LIBRARY_PATH": ld_library_path}
 
-proc = subprocess.Popen(
-    [
+def _run_vllm() -> None:
+    _old_argv = sys.argv[:]
+    sys.argv = [
         "vllm",
         "serve",
         MODEL,
@@ -66,20 +61,18 @@ proc = subprocess.Popen(
         "float16",
         "--max-model-len",
         "4096",
-    ],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    text=True,
-    env=_env,
-)
+    ]
+    try:
+        from vllm.entrypoints.cli.main import main  # noqa: PLC0415
+
+        main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = _old_argv
 
 
-def _stream_logs() -> None:
-    for line in proc.stdout:
-        print(line, end="", flush=True)
-
-
-threading.Thread(target=_stream_logs, daemon=True).start()
+threading.Thread(target=_run_vllm, daemon=True).start()
 
 print(f"Waiting for vLLM to load {MODEL} (up to 3 min)...")
 for i in range(36):
