@@ -597,11 +597,15 @@ Reward presets: `sparse_final_only` | `simple_sparse` | `second_pass` | `third_p
 **Apple Silicon shell script** (auto-starts SerpAPI retrieval server, reads `SERP_API_KEY` from `.env`):
 
 ```bash
-bin/run_bamboogle_eval.sh                        # 5 examples, mps device
-bin/run_bamboogle_eval.sh --smoke                # 1 example, quick sanity check
-bin/run_bamboogle_eval.sh --limit 125            # full benchmark
+bin/run_bamboogle_eval.sh                              # 5 examples, mps device
+bin/run_bamboogle_eval.sh --smoke                      # 1 example, quick sanity check
+bin/run_bamboogle_eval.sh --limit 125                  # full benchmark
 bin/run_bamboogle_eval.sh --device cpu --limit 10
+bin/run_bamboogle_eval.sh --limit 125 --concurrency 8  # ~6-8x faster via parallel SerpAPI calls
+bin/run_bamboogle_eval.sh --limit 125 --concurrency 8 --resume  # resume an interrupted run
 ```
+
+The dataset is cached locally after the first download (`~/.cache/agentic_search/bamboogle_test.jsonl`), so subsequent runs skip the network fetch. `--resume` reads the existing output file and skips already-evaluated questions, appending new results.
 
 **Training data generation:**
 
