@@ -30,6 +30,7 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
             model_path=args.model,
             device=args.device,
             allow_unsafe_mps=args.allow_unsafe_mps,
+            allow_remote_model_downloads=args.allow_remote_model_downloads,
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
@@ -122,6 +123,11 @@ def main() -> None:
         action="store_true",
         help="Allow MPS generation on macOS (may segfault on old torch/transformers; safe on torch>=2.3)",
     )
+    parser.add_argument(
+        "--allow_remote_model_downloads",
+        action="store_true",
+        help="Download model weights from HuggingFace if not cached locally",
+    )
     parser.add_argument("--vllm_url", default="http://localhost:8080")
     parser.add_argument("--search_url", default="http://localhost:8000/retrieve")
     parser.add_argument("--topk", type=int, default=5)
@@ -165,7 +171,11 @@ def main() -> None:
     from transformers import AutoTokenizer
 
     print(f"Loading tokenizer: {args.model}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        trust_remote_code=True,
+        local_files_only=not args.allow_remote_model_downloads,
+    )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
