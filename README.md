@@ -116,7 +116,7 @@ GOOGLE_API_KEY=...   GOOGLE_CSE_ID=...   SERP_API_KEY=...   JAVA_HOME=/path/to/j
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend
-uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+PYTHONPATH=src uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 
 # Terminal 3 — frontend
 cd web && npm install && npm run dev
