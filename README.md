@@ -197,8 +197,8 @@ python3 -m examples.run_agentic_search \
 # search — local model, requires retrieval server on :8000
 python3 -m examples.run_agentic_search \
   --mode search --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps \
-  --search_url http://localhost:8000/retrieve
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu \
+  --search_url http://localhost:8000/retrieve --allow_remote_model_downloads
 
 # tool — local model, requires retrieval server on :8000
 python3 -m examples.run_agentic_search \
