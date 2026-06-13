@@ -8,7 +8,9 @@ Prerequisites:
   - Free ngrok account — copy your authtoken from https://dashboard.ngrok.com/
 """
 
+import glob
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -45,7 +47,13 @@ time.sleep(2)
 print(f"Any previous vLLM process stopped. Port {PORT} is free.")
 
 # ── Section 4: Start vLLM server (~60s on A100) ───────────────────────────────
-# Logs stream below. Wait for "Application startup complete" before Section 5.
+# pip-installed CUDA packages put their .so files under site-packages/nvidia/*/lib.
+# The subprocess won't find them unless we add those dirs to LD_LIBRARY_PATH.
+
+nvidia_lib_dirs = glob.glob("/usr/local/lib/python*/dist-packages/nvidia/*/lib")
+existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+ld_library_path = ":".join(nvidia_lib_dirs) + (":" + existing_ld if existing_ld else "")
+_env = {**os.environ, "LD_LIBRARY_PATH": ld_library_path}
 
 proc = subprocess.Popen(
     [
@@ -62,6 +70,7 @@ proc = subprocess.Popen(
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     text=True,
+    env=_env,
 )
 
 
