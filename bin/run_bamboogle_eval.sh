@@ -38,15 +38,17 @@ DEVICE="mps"
 SMOKE=0
 SERP_PORT="${SERP_PORT:-8000}"
 OUTPUT="${OUTPUT:-bamboogle_results.jsonl}"
+CONCURRENCY="${CONCURRENCY:-1}"
 
 # Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model)   MODEL="$2";  shift 2 ;;
-    --limit)   LIMIT="$2";  shift 2 ;;
-    --device)  DEVICE="$2"; shift 2 ;;
-    --output)  OUTPUT="$2"; shift 2 ;;
-    --smoke)   SMOKE=1; LIMIT=1; shift ;;
+    --model)       MODEL="$2";       shift 2 ;;
+    --limit)       LIMIT="$2";       shift 2 ;;
+    --device)      DEVICE="$2";      shift 2 ;;
+    --output)      OUTPUT="$2";      shift 2 ;;
+    --concurrency) CONCURRENCY="$2"; shift 2 ;;
+    --smoke)       SMOKE=1; LIMIT=1; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -82,6 +84,7 @@ EVAL_ARGS=(
   --search_url "$SEARCH_URL"
   --limit "$LIMIT"
   --output "$OUTPUT"
+  --concurrency "$CONCURRENCY"
 )
 
 if [ "$SMOKE" -eq 1 ]; then

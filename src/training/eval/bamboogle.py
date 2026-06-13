@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from concurrent.futures import ThreadPoolExecutor
+
 from tqdm import tqdm
 
 if TYPE_CHECKING:
@@ -226,6 +228,7 @@ def evaluate_bamboogle(
     limit: int | None = 20,
     output_path: str | Path | None = "bamboogle_results.jsonl",
     verbose: bool = True,
+    concurrency: int = 1,
 ) -> tuple[BamboogleSummary, list[BamboogleResult]]:
     """Run *agent* on the Bamboogle benchmark and report accuracy metrics.
 
@@ -239,6 +242,9 @@ def evaluate_bamboogle(
         output_path: Write per-example results as JSONL here.  ``None``
             skips writing.
         verbose: Show a tqdm progress bar.
+        concurrency: Number of questions to evaluate in parallel.  Each thread
+            runs one ``agent.invoke()`` call.  Use 1 (default) for serial
+            execution.  Values of 4–8 work well with SerpAPI free tier.
 
     Returns:
         ``(summary, rows)`` — a :class:`BamboogleSummary` and a list of
@@ -246,15 +252,7 @@ def evaluate_bamboogle(
     """
     dataset = load_bamboogle(limit=limit)
 
-    results: list[BamboogleResult] = []
-    total_em = 0.0
-    total_contains = 0.0
-    total_reward = 0.0
-    n_reward = 0
-
-    it = tqdm(dataset, desc="Bamboogle") if verbose else dataset
-
-    for ex in it:
+    def _run_one(ex: dict[str, Any]) -> BamboogleResult:
         question: str = ex["question"]
         gold_answers: list[str] = ex.get("golden_answers") or ex.get("answers") or []
 
@@ -265,12 +263,9 @@ def evaluate_bamboogle(
 
         em = exact_match(answer, gold_answers)
         cm = contains_match(answer, gold_answers)
-        total_em += em
-        total_contains += cm
 
         reward_total: float | None = None
         components: dict[str, float] = {}
-
         if reward_fn is not None:
             loop_output = _to_loop_output(agent_result)
             judge_fn = _make_judge_fn(gold_answers)
@@ -280,21 +275,28 @@ def evaluate_bamboogle(
                 judge_fn=judge_fn,
             )
             reward_total = float(components.get("total", 0.0))
-            total_reward += reward_total
-            n_reward += 1
 
-        results.append(
-            BamboogleResult(
-                id=ex.get("id"),
-                question=question,
-                golden_answers=gold_answers,
-                prediction=answer,
-                exact_match=em,
-                contains_match=cm,
-                reward_total=reward_total,
-                reward_components=components,
-            )
+        return BamboogleResult(
+            id=ex.get("id"),
+            question=question,
+            golden_answers=gold_answers,
+            prediction=answer,
+            exact_match=em,
+            contains_match=cm,
+            reward_total=reward_total,
+            reward_components=components,
         )
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        mapped = pool.map(_run_one, dataset)
+        if verbose:
+            mapped = tqdm(mapped, total=len(dataset), desc="Bamboogle")
+        results = list(mapped)
+
+    total_em = sum(r.exact_match for r in results)
+    total_contains = sum(r.contains_match for r in results)
+    n_reward = sum(1 for r in results if r.reward_total is not None)
+    total_reward = sum(r.reward_total for r in results if r.reward_total is not None)
 
     n = len(results)
     summary = BamboogleSummary(

@@ -293,6 +293,20 @@ def test_evaluate_with_reward_fn(mock_load, tmp_path):
 
 
 @patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+def test_evaluate_parallel_same_results(mock_load, tmp_path):
+    """Concurrency > 1 must produce identical results to concurrency=1."""
+    serial_summary, serial_rows = evaluate_bamboogle(
+        _PerfectAgent(), limit=2, output_path=None, verbose=False, concurrency=1
+    )
+    parallel_summary, parallel_rows = evaluate_bamboogle(
+        _PerfectAgent(), limit=2, output_path=None, verbose=False, concurrency=2
+    )
+    assert serial_summary.exact_match == parallel_summary.exact_match
+    assert serial_summary.contains_match == parallel_summary.contains_match
+    assert [r.question for r in serial_rows] == [r.question for r in parallel_rows]
+
+
+@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
 def test_evaluate_reward_uses_gold_list(mock_load):
     """judge_fn must check against all gold answers, not just the first."""
     from src.training.reward import SearchRewardFunction, SearchRewardConfig
