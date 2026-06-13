@@ -48,10 +48,8 @@ print(f"Any previous vLLM process on port {PORT} stopped.")
 
 proc = subprocess.Popen(
     [
-        sys.executable,
-        "-m",
-        "vllm.entrypoints.openai.api_server",
-        "--model",
+        "vllm",
+        "serve",
         MODEL,
         "--port",
         str(PORT),
