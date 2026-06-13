@@ -37,10 +37,11 @@ subprocess.run(
     check=True,
 )
 
-# ── Section 3: Free port if already in use ───────────────────────────────────
+# ── Section 3: Kill any existing vLLM process on the port ────────────────────
+# Uses pkill targeting the vLLM entrypoint specifically — avoids killing the kernel.
 
-subprocess.run(["fuser", "-k", f"{PORT}/tcp"], capture_output=True)
-print(f"Port {PORT} cleared.")
+subprocess.run(["pkill", "-f", "vllm.entrypoints"], capture_output=True)
+print(f"Any previous vLLM process on port {PORT} stopped.")
 
 # ── Section 4: Start vLLM server (~60s on A100) ───────────────────────────────
 # Watch logs for "Uvicorn running on" — that means it's ready.
