@@ -27,6 +27,9 @@ else:
     print(result.stdout)
 
 # ── Section 2: Install dependencies (~2 min) ──────────────────────────────────
+# Colab cell equivalent:
+#   !pip install vllm==0.6.3 "transformers>=4.45.0,<4.50.0" pyngrok nest_asyncio -q
+#   !pip check
 
 subprocess.run(
     [
