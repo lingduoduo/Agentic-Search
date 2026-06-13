@@ -26,26 +26,16 @@ if result.returncode != 0:
 else:
     print(result.stdout)
 
-# ── Section 2: Install dependencies (~2 min) ──────────────────────────────────
+# ── Section 2: Install missing dependencies ───────────────────────────────────
+# Colab runtimes already include vLLM (0.20+) and transformers (5.x).
+# Only pyngrok and nest_asyncio need to be added.
 # Colab cell equivalent:
-#   !pip install vllm==0.6.3 "transformers>=4.45.0,<4.50.0" pyngrok nest_asyncio -q
-#   !pip check
+#   !pip install pyngrok nest_asyncio -q
 
 subprocess.run(
-    [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "-q",
-        "vllm==0.6.3",
-        "transformers>=4.45.0,<4.50.0",
-        "pyngrok",
-        "nest_asyncio",
-    ],
+    [sys.executable, "-m", "pip", "install", "-q", "pyngrok", "nest_asyncio"],
     check=True,
 )
-subprocess.run([sys.executable, "-m", "pip", "check"])
 
 # ── Section 3: Free port if already in use ───────────────────────────────────
 
