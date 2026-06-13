@@ -112,10 +112,11 @@ Frontend type-check: `cd web && npm run typecheck`
 ### Agent CLI
 
 ```bash
-# Local inference (CPU)
+# Local inference (Apple Silicon — MPS is ~50x faster than CPU)
 python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
+  --allow_remote_model_downloads
 
 # Server-backed search mode
 python3 -m examples.run_agentic_search \
