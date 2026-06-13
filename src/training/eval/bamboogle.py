@@ -217,6 +217,30 @@ def _to_loop_output(agent_result: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Resume helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_completed_ids(path: Path) -> set[str]:
+    """Return the set of question strings already recorded in *path*.
+
+    Uses ``question`` as the key (always present) rather than ``id`` (may be None).
+    """
+    if not path.exists():
+        return set()
+    completed: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+            completed.add(row["question"])
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return completed
+
+
+# ---------------------------------------------------------------------------
 # Main evaluation loop
 # ---------------------------------------------------------------------------
 
@@ -229,6 +253,7 @@ def evaluate_bamboogle(
     output_path: str | Path | None = "bamboogle_results.jsonl",
     verbose: bool = True,
     concurrency: int = 1,
+    resume: bool = False,
 ) -> tuple[BamboogleSummary, list[BamboogleResult]]:
     """Run *agent* on the Bamboogle benchmark and report accuracy metrics.
 
@@ -245,12 +270,42 @@ def evaluate_bamboogle(
         concurrency: Number of questions to evaluate in parallel.  Each thread
             runs one ``agent.invoke()`` call.  Use 1 (default) for serial
             execution.  Values of 4–8 work well with SerpAPI free tier.
+        resume: When True and *output_path* already exists, skip examples whose
+            questions appear in that file and append new results to it.
 
     Returns:
         ``(summary, rows)`` — a :class:`BamboogleSummary` and a list of
         :class:`BamboogleResult` objects.
     """
     dataset = load_bamboogle(limit=limit)
+
+    prior_results: list[BamboogleResult] = []
+    if resume and output_path is not None:
+        out_path = Path(output_path)
+        completed_questions = _load_completed_ids(out_path)
+        if completed_questions:
+            for line in out_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                    prior_results.append(
+                        BamboogleResult(
+                            id=row.get("id"),
+                            question=row["question"],
+                            golden_answers=row.get("golden_answers", []),
+                            prediction=row.get("prediction", ""),
+                            exact_match=row.get("exact_match", 0.0),
+                            contains_match=row.get("contains_match", 0.0),
+                            reward_total=row.get("reward_total"),
+                            reward_components=row.get("reward_components", {}),
+                        )
+                    )
+                except (json.JSONDecodeError, KeyError):
+                    pass
+            dataset = [
+                ex for ex in dataset if ex["question"] not in completed_questions
+            ]
 
     def _run_one(ex: dict[str, Any]) -> BamboogleResult:
         question: str = ex["question"]
@@ -291,7 +346,9 @@ def evaluate_bamboogle(
         mapped = pool.map(_run_one, dataset)
         if verbose:
             mapped = tqdm(mapped, total=len(dataset), desc="Bamboogle")
-        results = list(mapped)
+        new_results = list(mapped)
+
+    results = prior_results + new_results
 
     total_em = sum(r.exact_match for r in results)
     total_contains = sum(r.contains_match for r in results)
@@ -307,7 +364,10 @@ def evaluate_bamboogle(
     )
 
     if output_path is not None:
-        _write_jsonl(results, Path(output_path))
+        if resume and prior_results:
+            _append_jsonl(new_results, Path(output_path))
+        else:
+            _write_jsonl(results, Path(output_path))
 
     if verbose:
         print(summary)
@@ -320,23 +380,28 @@ def evaluate_bamboogle(
 # ---------------------------------------------------------------------------
 
 
+def _result_to_dict(r: BamboogleResult) -> dict[str, Any]:
+    return {
+        "id": r.id,
+        "question": r.question,
+        "golden_answers": r.golden_answers,
+        "prediction": r.prediction,
+        "exact_match": r.exact_match,
+        "contains_match": r.contains_match,
+        "reward_total": r.reward_total,
+        "reward_components": r.reward_components,
+    }
+
+
 def _write_jsonl(results: list[BamboogleResult], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for r in results:
-            f.write(
-                json.dumps(
-                    {
-                        "id": r.id,
-                        "question": r.question,
-                        "golden_answers": r.golden_answers,
-                        "prediction": r.prediction,
-                        "exact_match": r.exact_match,
-                        "contains_match": r.contains_match,
-                        "reward_total": r.reward_total,
-                        "reward_components": r.reward_components,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+            f.write(json.dumps(_result_to_dict(r), ensure_ascii=False) + "\n")
+
+
+def _append_jsonl(results: list[BamboogleResult], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for r in results:
+            f.write(json.dumps(_result_to_dict(r), ensure_ascii=False) + "\n")

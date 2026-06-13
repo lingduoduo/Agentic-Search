@@ -307,6 +307,84 @@ def test_evaluate_parallel_same_results(mock_load, tmp_path):
 
 
 @patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+def test_resume_skips_completed(mock_load, tmp_path):
+    """With resume=True, already-completed examples are skipped."""
+    out = tmp_path / "out.jsonl"
+    out.write_text(
+        json.dumps(
+            {
+                "id": "1",
+                "question": "Who invented the telephone?",
+                "golden_answers": ["Alexander Graham Bell"],
+                "prediction": "Alexander Graham Bell",
+                "exact_match": 1.0,
+                "contains_match": 1.0,
+                "reward_total": None,
+                "reward_components": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    call_count = 0
+
+    class _CountingAgent:
+        def invoke(self, state: dict) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            r = MagicMock()
+            r.answer = "Paris"
+            del r.metadata
+            return r
+
+    evaluate_bamboogle(
+        _CountingAgent(), limit=2, output_path=out, verbose=False, resume=True
+    )
+    assert call_count == 1
+    lines = out.read_text().splitlines()
+    assert len(lines) == 2
+
+
+@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+def test_resume_false_reruns_all(mock_load, tmp_path):
+    """With resume=False (default), all examples run even if output exists."""
+    out = tmp_path / "out.jsonl"
+    out.write_text(
+        json.dumps(
+            {
+                "id": "1",
+                "question": "Who invented the telephone?",
+                "golden_answers": ["Alexander Graham Bell"],
+                "prediction": "Alexander Graham Bell",
+                "exact_match": 1.0,
+                "contains_match": 1.0,
+                "reward_total": None,
+                "reward_components": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    call_count = 0
+
+    class _CountingAgent:
+        def invoke(self, state: dict) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            r = MagicMock()
+            r.answer = "Paris"
+            del r.metadata
+            return r
+
+    evaluate_bamboogle(
+        _CountingAgent(), limit=2, output_path=out, verbose=False, resume=False
+    )
+    assert call_count == 2
+
+
+@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
 def test_evaluate_reward_uses_gold_list(mock_load):
     """judge_fn must check against all gold answers, not just the first."""
     from src.training.reward import SearchRewardFunction, SearchRewardConfig
