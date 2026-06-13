@@ -192,7 +192,7 @@ For production, `npm run build` produces `web/dist`; the FastAPI app serves it a
 # single — no retrieval server needed (plain generation)
 python3 -m examples.run_agentic_search \
   --mode single --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu
+  --model Qwen/Qwen2.5-1.5B-Instruct --local --device cpu --allow_remote_model_downloads
 
 # search — local model, requires retrieval server on :8000
 python3 -m examples.run_agentic_search \
