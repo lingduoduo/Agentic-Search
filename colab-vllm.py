@@ -57,13 +57,25 @@ print(f"Any previous vLLM process stopped. Port {PORT} is free.")
 
 def _find_libcudart() -> str | None:
     """Return the path to libcudart.so.13, or None if not found."""
+    # 0. Direct glob — covers pip-installed CUDA and system CUDA toolkit
+    for _pattern in [
+        "/usr/local/lib/python*/dist-packages/nvidia/cuda_runtime/lib/libcudart.so.13*",
+        "/usr/local/lib/python*/dist-packages/nvidia/*/lib/libcudart.so.13*",
+        "/usr/local/cuda*/lib64/libcudart.so.13*",
+        "/usr/local/cuda*/lib64/libcudart.so",  # symlink covers any CUDA version
+        "/usr/lib/x86_64-linux-gnu/libcudart.so.13*",
+    ]:
+        _hits = sorted(glob.glob(_pattern))
+        if _hits:
+            return _hits[0]
+
     # 1. ldconfig cache (fast)
     _ldc = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True)
     for _line in _ldc.stdout.splitlines():
         if "libcudart.so.13" in _line and "=>" in _line:
             return _line.split("=>")[-1].strip()
 
-    # 2. pip-installed nvidia packages (all Python versions / site-packages)
+    # 2. pip-installed nvidia packages via site.getsitepackages()
     _site_dirs = site.getsitepackages() + [site.getusersitepackages()]
     for _sdir in _site_dirs:
         for _hit in glob.glob(f"{_sdir}/nvidia/*/lib/libcudart.so.13*"):
