@@ -149,7 +149,7 @@ _FAKE_JSONL = "\n".join(
 def test_load_bamboogle_all(mock_get):
     mock_get.return_value.text = _FAKE_JSONL
     mock_get.return_value.raise_for_status = MagicMock()
-    rows = load_bamboogle()
+    rows = load_bamboogle(cache_path=None)
     assert len(rows) == 5
 
 
@@ -157,8 +157,40 @@ def test_load_bamboogle_all(mock_get):
 def test_load_bamboogle_limit(mock_get):
     mock_get.return_value.text = _FAKE_JSONL
     mock_get.return_value.raise_for_status = MagicMock()
-    rows = load_bamboogle(limit=3)
+    rows = load_bamboogle(limit=3, cache_path=None)
     assert len(rows) == 3
+
+
+@patch("requests.get")
+def test_load_bamboogle_writes_cache(mock_get, tmp_path):
+    mock_get.return_value.text = _FAKE_JSONL
+    mock_get.return_value.raise_for_status = MagicMock()
+    cache = tmp_path / "bamboogle_test.jsonl"
+    load_bamboogle(cache_path=cache)
+    assert cache.exists()
+    assert len(cache.read_text().splitlines()) == 5
+
+
+@patch("requests.get")
+def test_load_bamboogle_reads_cache(mock_get, tmp_path):
+    """Second call must not hit the network when cache exists."""
+    mock_get.return_value.text = _FAKE_JSONL
+    mock_get.return_value.raise_for_status = MagicMock()
+    cache = tmp_path / "bamboogle_test.jsonl"
+    load_bamboogle(cache_path=cache)
+    mock_get.reset_mock()
+    rows = load_bamboogle(cache_path=cache)
+    mock_get.assert_not_called()
+    assert len(rows) == 5
+
+
+@patch("requests.get")
+def test_load_bamboogle_cache_none_skips_disk(mock_get):
+    """cache_path=None must never touch the filesystem."""
+    mock_get.return_value.text = _FAKE_JSONL
+    mock_get.return_value.raise_for_status = MagicMock()
+    rows = load_bamboogle(cache_path=None)
+    assert len(rows) == 5
 
 
 # ---------------------------------------------------------------------------

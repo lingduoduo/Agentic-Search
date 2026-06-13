@@ -49,6 +49,8 @@ BAMBOOGLE_URL = (
     "resolve/main/bamboogle/test.jsonl"
 )
 
+_DEFAULT_CACHE = Path.home() / ".cache" / "agentic_search" / "bamboogle_test.jsonl"
+
 # ---------------------------------------------------------------------------
 # Text normalisation and matching
 # ---------------------------------------------------------------------------
@@ -79,21 +81,42 @@ def contains_match(prediction: str, gold_answers: list[str]) -> float:
 # ---------------------------------------------------------------------------
 
 
-def load_bamboogle(limit: int | None = None) -> list[dict[str, Any]]:
+def load_bamboogle(
+    limit: int | None = None,
+    cache_path: str | Path | None = _DEFAULT_CACHE,
+) -> list[dict[str, Any]]:
     """Download and parse the Bamboogle test split from HuggingFace.
 
     Args:
         limit: Return only the first *limit* examples.  ``None`` returns all
             125 examples in the test split.
+        cache_path: Path to cache the raw JSONL locally.  On subsequent calls
+            the file is read from disk instead of re-downloading.  Set to
+            ``None`` to disable caching.
 
     Returns:
         List of dicts with ``"question"`` and ``"golden_answers"`` keys.
     """
+    if cache_path is not None:
+        cache_path = Path(cache_path)
+        if cache_path.exists():
+            rows = [
+                json.loads(line)
+                for line in cache_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            return rows[:limit] if limit is not None else rows
+
     import requests
 
     resp = requests.get(BAMBOOGLE_URL, timeout=30)
     resp.raise_for_status()
     rows = [json.loads(line) for line in resp.text.splitlines() if line.strip()]
+
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(resp.text, encoding="utf-8")
+
     return rows[:limit] if limit is not None else rows
 
 
