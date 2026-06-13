@@ -8,7 +8,10 @@ Prerequisites:
   - Free ngrok account — copy your authtoken from https://dashboard.ngrok.com/
 """
 
+import ctypes
+import glob
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -44,9 +47,39 @@ subprocess.run(["pkill", "-f", "vllm"], capture_output=True)
 time.sleep(2)
 print(f"Any previous vLLM process stopped. Port {PORT} is free.")
 
+# ── Section 3.5: Preload libcudart so vllm._C can link against it ─────────────
+# pip-installed CUDA packages put their .so files under site-packages/nvidia/*/lib.
+# dlopen() won't find them unless we either set LD_LIBRARY_PATH or preload the
+# library with RTLD_GLOBAL — the latter makes symbols globally visible to all
+# subsequently loaded extensions (including vllm._C).
+
+_nvidia_lib_dirs = glob.glob("/usr/local/lib/python*/dist-packages/nvidia/*/lib")
+_existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+os.environ["LD_LIBRARY_PATH"] = ":".join(_nvidia_lib_dirs) + (
+    ":" + _existing_ld if _existing_ld else ""
+)
+
+_cudart_candidates = glob.glob(
+    "/usr/local/lib/python*/dist-packages/nvidia/cuda_runtime/lib/libcudart.so.13*"
+)
+if not _cudart_candidates:
+    _cudart_candidates = glob.glob(
+        "/usr/local/lib/python*/dist-packages/nvidia/*/lib/libcudart.so.13*"
+    )
+
+for _lib in sorted(_cudart_candidates):
+    try:
+        ctypes.CDLL(_lib, mode=ctypes.RTLD_GLOBAL)
+        print(f"Preloaded {_lib}")
+        break
+    except OSError as _e:
+        print(f"Warning: could not preload {_lib}: {_e}")
+else:
+    print("Warning: libcudart.so.13 not found — vllm may fail to import vllm._C")
+
 # ── Section 4: Start vLLM server in-process (~60s on A100) ───────────────────
-# Running in the same Python process avoids the libcudart.so.13 path issue
-# that affects subprocesses on Colab. Logs print to stdout as normal.
+# Running in the same Python process avoids subprocess linker path issues.
+# Logs print to stdout as normal. libcudart is already loaded above.
 
 
 def _run_vllm() -> None:
