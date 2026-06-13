@@ -196,16 +196,16 @@ python3 -m examples.run_agentic_search \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
   --allow_remote_model_downloads
 
-# search — local model, requires retrieval server on :8001
+# single with retrieval server — small models (≤3B) use --mode single; search/tool require 7B+ to emit structured tags
 python3 -m examples.run_agentic_search \
-  --mode search --question "What is FAISS?" \
+  --mode single --question "What is FAISS?" \
   --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
   --search_url http://localhost:8001/retrieve --allow_remote_model_downloads
 
-# tool — local model, requires retrieval server on :8001
+# search — requires 7B+ model and retrieval server on :8001
 python3 -m examples.run_agentic_search \
-  --mode tool --question "What is FAISS?" \
-  --model Qwen/Qwen2.5-1.5B-Instruct --local --device mps --allow_unsafe_mps \
+  --mode search --question "What is FAISS?" \
+  --model Qwen/Qwen2.5-7B-Instruct --local --device mps --allow_unsafe_mps \
   --search_url http://localhost:8001/retrieve --allow_remote_model_downloads
 
 # search — server-backed, requires vLLM on :8080 and retrieval on :8001
