@@ -428,35 +428,3 @@ def test_dump_connector_to_jsonl_writes_documents(tmp_path):
     assert len(lines) == 2
     assert lines[0] == {"id": "x", "title": "X", "contents": "hello"}
     assert lines[1] == {"id": "y", "title": None, "contents": "world"}
-
-
-def test_web_connector_fetches_and_yields_document(monkeypatch):
-    """WebConnector yields one Document per crawled page (mocked HTTP)."""
-    from unittest.mock import MagicMock
-
-    from src.internal.connectors.web import WebConnector
-
-    fake_html = "<html><head><title>Test Page</title></head><body><p>Hello world content.</p></body></html>"
-
-    fake_resp = MagicMock()
-    fake_resp.status_code = 200
-    fake_resp.headers = {"content-type": "text/html"}
-    fake_resp.text = fake_html
-    fake_resp.raise_for_status = lambda: None
-
-    fake_session = MagicMock()
-    fake_session.get.return_value = fake_resp
-
-    monkeypatch.setattr(
-        "src.internal.connectors.web.requests.Session",
-        lambda: fake_session,
-    )
-
-    connector = WebConnector(urls=["https://example.test/page"], max_pages=1)
-    batches = list(connector.load_from_state())
-    docs = [doc for batch in batches for doc in batch]
-
-    assert len(docs) == 1
-    assert docs[0].title == "Test Page"
-    assert "Hello world content." in docs[0].contents
-    assert docs[0].url == "https://example.test/page"

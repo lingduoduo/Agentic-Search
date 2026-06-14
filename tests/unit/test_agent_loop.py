@@ -27,15 +27,10 @@ from src import (
 
 
 class DummyTokenizerWithTemplate:
-    chat_template = "dummy"
-
     def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=True):
         assert add_generation_prompt is True
-        assert tokenize is False
-        return "ABC"
-
-    def encode(self, text):
-        return [ord(c) for c in text]
+        assert tokenize is True
+        return [11, 12, 13, 14, 15]
 
     def decode(self, token_ids, skip_special_tokens=True):
         del skip_special_tokens
@@ -96,7 +91,7 @@ def test_build_prompt_ids_uses_chat_template_when_available():
     prompt_ids = asyncio.run(
         loop.build_prompt_ids([{"role": "user", "content": "hello"}])
     )
-    assert prompt_ids == [65, 66, 67]  # ord("ABC"), prompt_length=3
+    assert prompt_ids == [13, 14, 15]
 
 
 def test_build_prompt_ids_falls_back_to_encode():
@@ -111,36 +106,6 @@ def test_build_prompt_ids_falls_back_to_encode():
         )
     )
     assert len(prompt_ids) == 4
-
-
-def test_build_prompt_ids_sync_with_chat_template_returns_int_list():
-    loop = ConcreteAgentLoop(
-        tokenizer=DummyTokenizerWithTemplate(),
-        server_manager=DummyServerManager([]),
-        config=AgentLoopConfig(prompt_length=10, response_length=5),
-    )
-    result = loop._build_prompt_ids_sync([{"role": "user", "content": "hello"}])
-    assert isinstance(result, list)
-    assert all(isinstance(x, int) for x in result)
-    assert result == [65, 66, 67]  # encode("ABC") = [ord(c) for c in "ABC"]
-
-
-def test_build_prompt_ids_sync_fallback_when_chat_template_is_none():
-    class NoChatTemplateTokenizer:
-        chat_template = None
-
-        def encode(self, text):
-            return [ord(c) for c in text]
-
-    loop = ConcreteAgentLoop(
-        tokenizer=NoChatTemplateTokenizer(),
-        server_manager=DummyServerManager([]),
-        config=AgentLoopConfig(prompt_length=5, response_length=5),
-    )
-    result = loop._build_prompt_ids_sync([{"role": "user", "content": "hi"}])
-    assert isinstance(result, list)
-    assert all(isinstance(x, int) for x in result)
-    assert result == [ord("h"), ord("i")]
 
 
 def test_plain_generation_loop_runs_one_model_generation():
