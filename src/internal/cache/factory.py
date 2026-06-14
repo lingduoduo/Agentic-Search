@@ -42,7 +42,7 @@ def get_tenant_cache_backend(*, tenant_id: str | None = None) -> CacheBackend:
     thread-local context variable.
     """
     if tenant_id is None:
-        from shared_configs.contextvars import get_current_tenant_id
+        from src.shared_configs.contextvars import get_current_tenant_id
 
         tenant_id = get_current_tenant_id()
 
@@ -57,6 +57,6 @@ def get_tenant_cache_backend(*, tenant_id: str | None = None) -> CacheBackend:
 
 def get_shared_cache_backend() -> CacheBackend:
     """Return a ``CacheBackend`` in the shared (cross-tenant) namespace."""
-    from shared_configs.configs import DEFAULT_REDIS_PREFIX
+    from src.shared_configs.configs import DEFAULT_REDIS_PREFIX
 
     return get_tenant_cache_backend(tenant_id=DEFAULT_REDIS_PREFIX)

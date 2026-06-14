@@ -6,9 +6,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from shared_configs.enums import EmbeddingProvider
-from shared_configs.enums import EmbedTextType
-from shared_configs.enums import RerankerProvider
+from src.shared_configs.enums import EmbeddingProvider
+from src.shared_configs.enums import EmbedTextType
+from src.shared_configs.enums import RerankerProvider
 
 # Type alias — a single embedding vector
 Embedding = list[float]

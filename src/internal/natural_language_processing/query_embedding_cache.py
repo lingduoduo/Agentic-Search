@@ -15,8 +15,8 @@ needed.
 import hashlib
 import struct
 
-from shared_configs.enums import EmbeddingProvider
-from shared_configs.model_server_models import Embedding
+from src.shared_configs.enums import EmbeddingProvider
+from src.shared_configs.model_server_models import Embedding
 from src.internal.cache.interface import CACHE_TRANSIENT_ERRORS
 from src.internal.cache.interface import get_cache_backend
 from src.internal.document_index.utils import setup_logger

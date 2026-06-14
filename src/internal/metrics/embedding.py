@@ -13,8 +13,8 @@ from prometheus_client import Counter
 from prometheus_client import Gauge
 from prometheus_client import Histogram
 
-from shared_configs.enums import EmbeddingProvider
-from shared_configs.enums import EmbedTextType
+from src.shared_configs.enums import EmbeddingProvider
+from src.shared_configs.enums import EmbedTextType
 
 
 class QueryEmbeddingCacheLookupOutcome(str, Enum):

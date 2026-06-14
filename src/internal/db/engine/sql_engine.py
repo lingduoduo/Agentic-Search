@@ -17,9 +17,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
-from shared_configs.contextvars import CURRENT_TENANT_ID_CONTEXTVAR
-from shared_configs.contextvars import get_current_tenant_id
+from src.shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
+from src.shared_configs.contextvars import CURRENT_TENANT_ID_CONTEXTVAR
+from src.shared_configs.contextvars import get_current_tenant_id
 
 from src.internal.db.engine.iam_auth import provide_iam_token
 

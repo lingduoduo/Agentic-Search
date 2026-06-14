@@ -6,9 +6,9 @@ from copy import copy
 from tokenizers import Encoding
 from tokenizers import Tokenizer
 
-from shared_configs.configs import DOCUMENT_ENCODER_MODEL
-from shared_configs.configs import DOC_EMBEDDING_CONTEXT_SIZE
-from shared_configs.enums import EmbeddingProvider
+from src.shared_configs.configs import DOCUMENT_ENCODER_MODEL
+from src.shared_configs.configs import DOC_EMBEDDING_CONTEXT_SIZE
+from src.shared_configs.enums import EmbeddingProvider
 from src.internal.document_index.utils import setup_logger
 
 # InferenceChunk may be unavailable in retrieval-only deployments

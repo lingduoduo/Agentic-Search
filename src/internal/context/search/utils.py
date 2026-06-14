@@ -20,10 +20,10 @@ from src.internal.natural_language_processing.query_embedding_cache import (
     record_cache_skipped,
 )
 from src.internal.natural_language_processing.search_nlp_models import EmbeddingModel
-from shared_configs.configs import MODEL_SERVER_HOST
-from shared_configs.configs import MODEL_SERVER_PORT
-from shared_configs.enums import EmbedTextType
-from shared_configs.model_server_models import Embedding
+from src.shared_configs.configs import MODEL_SERVER_HOST
+from src.shared_configs.configs import MODEL_SERVER_PORT
+from src.shared_configs.enums import EmbedTextType
+from src.shared_configs.model_server_models import Embedding
 
 logger = logging.getLogger(__name__)
 

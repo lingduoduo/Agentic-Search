@@ -31,8 +31,8 @@ from sqlalchemy.pool import PoolProxiedConnection
 from sqlalchemy.pool import QueuePool
 
 from src.internal.document_index.utils import setup_logger
-from shared_configs.contextvars import CURRENT_ENDPOINT_CONTEXTVAR
-from shared_configs.contextvars import CURRENT_TENANT_ID_CONTEXTVAR
+from src.shared_configs.contextvars import CURRENT_ENDPOINT_CONTEXTVAR
+from src.shared_configs.contextvars import CURRENT_TENANT_ID_CONTEXTVAR
 
 logger = setup_logger()
 
