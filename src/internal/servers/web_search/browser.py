@@ -67,6 +67,16 @@ _WIKIPEDIA_EXTRACT_JS = (
     ")"
 )
 
+_PAGE_TEXT_JS = (
+    "JSON.stringify("
+    "[...document.querySelectorAll('p,h1,h2,h3,li')]"
+    ".map(e=>e.textContent.trim())"
+    ".filter(t=>t.length>20)"
+    ".slice(0,60)"
+    ".join(' ')"
+    ")"
+)
+
 _SEARCH_TARGETS = (
     ("google", GOOGLE_SEARCH_URL, _GOOGLE_EXTRACT_JS),
     ("yahoo", YAHOO_SEARCH_URL, _YAHOO_EXTRACT_JS),
@@ -79,6 +89,8 @@ class BrowserSearchConfig:
     topk: int = DEFAULT_TOPK
     batch_workers: int = 4
     subprocess_timeout: int = SUBPROCESS_TIMEOUT
+    fetch_content: bool = True
+    content_timeout: int = 10
 
 
 class BrowserSearchEngine:
@@ -121,6 +133,18 @@ class BrowserSearchEngine:
             [h for h in value if isinstance(h, dict)] if isinstance(value, list) else []
         )
 
+    def _fetch_page_text(self, url: str, *, session: str) -> str:
+        try:
+            self._run("goto", url, session=session)
+            self._run("snapshot", session=session)
+            proc = self._run("eval", _PAGE_TEXT_JS, session=session, raw=True)
+            if proc.stdout.strip():
+                raw = json.loads(proc.stdout.strip())
+                return str(raw)[:3000] if raw else ""
+        except Exception as exc:
+            logger.info("fetch_page_text failed for %s: %s", url, exc)
+        return ""
+
     def _search_and_process(self, query: str) -> list[dict[str, dict[str, str]]]:
         session = f"search-{uuid.uuid4().hex[:8]}"
         hits: list[dict[str, str]] = []
@@ -151,19 +175,25 @@ class BrowserSearchEngine:
                         query,
                     )
                     break
+
+            results = []
+            for h in hits[: self.config.topk]:
+                url = h.get("url", "")
+                content = h.get("snippet", "")
+                if self.config.fetch_content and url:
+                    fetched = self._fetch_page_text(url, session=session)
+                    if fetched:
+                        content = fetched
+                results.append(format_document(h.get("title"), content, url or None))
+            return results
         except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as exc:
             logger.warning("browser search failed for %r: %s", query, exc)
-            hits = []
+            return []
         finally:
             try:
                 self._run("close", session=session)
             except Exception:
                 pass
-
-        return [
-            format_document(h.get("title"), h.get("snippet"), h.get("url"))
-            for h in hits[: self.config.topk]
-        ]
 
     def batch_search(self, queries: list[str]) -> list[list[dict[str, dict[str, str]]]]:
         max_workers = min(max(len(queries), 1), self.config.batch_workers)
