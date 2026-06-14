@@ -1015,6 +1015,13 @@ async def _rerank_documents(
                         metadata=orig.metadata,
                     )
                 )
+            else:
+                logger.debug(
+                    "Reranker response item missing valid _idx: %r",
+                    item.get("document", {}).get("_idx"),
+                )
+        # If the reranker truncates results (applies its own topk), the truncated
+        # list is returned — MMR then diversifies within that smaller candidate pool.
         if reranked:
             return reranked
     except Exception as exc:
@@ -1034,6 +1041,9 @@ async def _run_hybrid_search(
     source_provider: str,
 ) -> _HybridSearchResult:
     if source_provider in {"retrieval", "browser"}:
+        # This path uses run_expanded_search with its own query expansion pipeline.
+        # browser_search_url and rerank_url are applied in Path B (all-provider branch)
+        # and in _run_direct_search; they are intentionally not wired here.
         # Over-fetch so MMR has candidates beyond top_k to diversify from.
         search_result = await run_expanded_search(
             query,

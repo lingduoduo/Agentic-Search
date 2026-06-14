@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.context.models import (
@@ -64,6 +65,90 @@ def test_browser_search_url_causes_browser_provider_call(tmp_path, monkeypatch):
     assert resp.status_code == 200
     browser_calls = [(p, u) for p, u in call_log if u == "http://browser.test:8002"]
     assert browser_calls, f"browser_search_url not used; calls were {call_log}"
+
+
+@pytest.mark.asyncio
+async def test_rerank_documents_returns_original_on_http_error(monkeypatch):
+    """_rerank_documents falls back to original order when httpx raises."""
+    import httpx
+    from src.internal.servers.web.app import _rerank_documents
+    from src.context.models import ContextDocument
+
+    async def bad_post(self, url, *, json=None, timeout=None):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("httpx.AsyncClient.post", bad_post)
+
+    docs = [
+        ContextDocument(id="D1", title="A", content="a", score=0.5),
+        ContextDocument(id="D2", title="B", content="b", score=0.3),
+    ]
+    result = await _rerank_documents(docs, "query", "http://rerank.test:6980")
+    assert result == docs  # original order preserved on failure
+
+
+@pytest.mark.asyncio
+async def test_rerank_documents_updates_scores_and_reorders(monkeypatch):
+    """_rerank_documents reorders docs by cross-encoder score."""
+    import httpx
+    from src.internal.servers.web.app import _rerank_documents
+    from src.context.models import ContextDocument
+
+    async def fake_post(self, url, *, json=None, timeout=None):
+        # Simulate reranker reversing the order: D2 (idx=1) scores higher
+        body = {
+            "result": [
+                [
+                    {"document": {"contents": "B\nb", "_idx": "1"}, "score": 0.9},
+                    {"document": {"contents": "A\na", "_idx": "0"}, "score": 0.4},
+                ]
+            ]
+        }
+        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    docs = [
+        ContextDocument(id="D1", title="A", content="a", score=0.0),
+        ContextDocument(id="D2", title="B", content="b", score=0.0),
+    ]
+    result = await _rerank_documents(docs, "query", "http://rerank.test:6980")
+    assert len(result) == 2
+    assert result[0].title == "B"  # D2 now first (score 0.9)
+    assert result[0].score == pytest.approx(0.9)
+    assert result[1].title == "A"
+    assert result[1].score == pytest.approx(0.4)
+
+
+@pytest.mark.asyncio
+async def test_rerank_documents_drops_items_with_missing_idx(monkeypatch):
+    """_rerank_documents silently drops items where _idx is absent or invalid."""
+    import httpx
+    from src.internal.servers.web.app import _rerank_documents
+    from src.context.models import ContextDocument
+
+    async def fake_post(self, url, *, json=None, timeout=None):
+        body = {
+            "result": [
+                [
+                    {
+                        "document": {"contents": "no idx here"},
+                        "score": 0.8,
+                    },  # missing _idx
+                    {"document": {"contents": "A\na", "_idx": "0"}, "score": 0.5},
+                ]
+            ]
+        }
+        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    docs = [ContextDocument(id="D1", title="A", content="a", score=0.0)]
+    result = await _rerank_documents(docs, "query", "http://rerank.test:6980")
+    # The item with no _idx is dropped; the valid item is returned
+    assert len(result) == 1
+    assert result[0].title == "A"
+    assert result[0].score == pytest.approx(0.5)
 
 
 def test_rerank_url_causes_rerank_documents_call(tmp_path, monkeypatch):
