@@ -431,10 +431,12 @@ def create_web_app(
         mode = _normalize_agent_mode(request.mode)
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request, auth_user=auth_user)
-        history = [
-            ChatMessage(role=message.role, content=message.content)
-            for message in db.list_chat_messages(session_id)
-        ]
+        history = _trim_history(
+            [
+                ChatMessage(role=message.role, content=message.content)
+                for message in db.list_chat_messages(session_id)
+            ]
+        )
         db.add_chat_message(session_id, role="user", content=query)
 
         search_url = request.search_url or settings.search_url
@@ -778,6 +780,15 @@ _VALID_AGENT_MODES = {
     "search_agent",
     "tool_agent",
 }
+
+MAX_HISTORY_MESSAGES = 40
+
+
+def _trim_history(history: list, max_messages: int = MAX_HISTORY_MESSAGES) -> list:
+    """Keep only the tail of chat history to avoid overflowing the LLM context."""
+    if len(history) <= max_messages:
+        return history
+    return history[-max_messages:]
 
 
 def _normalize_agent_mode(mode: str) -> str:
