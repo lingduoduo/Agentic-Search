@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from shared_configs.enums import EmbeddingProvider
+from src.shared_configs.enums import EmbeddingProvider
 
 JsonObject = dict[str, Any]
 PrincipalType = Literal["public", "user", "group"]
