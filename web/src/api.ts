@@ -12,6 +12,7 @@ import type {
   OpenAPIRegisterResponse,
   QueryHistoryPage,
   SessionCreateRequest,
+  SSEEvent,
   ToolInvokeRequest,
   ToolInvokeResponse,
   ToolView,
@@ -98,6 +99,46 @@ export function runAgent(
     body: JSON.stringify(request),
     signal: init?.signal,
   });
+}
+
+export async function* streamAgent(
+  request: AgentExperienceRequest,
+  init?: Pick<RequestInit, "signal">,
+): AsyncGenerator<SSEEvent> {
+  const response = await fetch("/api/agent/stream", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    signal: init?.signal,
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("data:")) {
+        const payload = trimmed.slice("data:".length).trim();
+        if (payload) {
+          yield JSON.parse(payload) as SSEEvent;
+        }
+      }
+    }
+  }
 }
 
 export function getQueryHistory(

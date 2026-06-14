@@ -8,6 +8,7 @@ import {
   getAnalyticsByLLM,
   getAnalyticsByPersona,
   runAgent,
+  streamAgent,
 } from "./api";
 import { AdminOverview } from "./components/AdminOverview";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
@@ -20,6 +21,7 @@ import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
 import type {
   AdminSurfaceSummary,
+  AgentExperienceRequest,
   AgentExperienceResponse,
   AgentMode,
   BreakdownAnalytics,
@@ -44,6 +46,7 @@ export function App() {
   const [documents, setDocuments] = useState<SourceDocumentView[]>([]);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingAnswer, setStreamingAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [adminSummary, setAdminSummary] = useState<AdminSurfaceSummary | null>(null);
   const [analyticsByLLM, setAnalyticsByLLM] = useState<BreakdownAnalytics | null>(null);
@@ -81,6 +84,8 @@ export function App() {
     [sessionId],
   );
 
+  const STREAMING_MODES: AgentMode[] = ["search_agent", "tool_agent", "chat_loop"];
+
   const handleSubmit = useCallback(async (event?: FormEvent) => {
     event?.preventDefault();
     const normalizedQuery = query.trim();
@@ -92,21 +97,45 @@ export function App() {
 
     setIsLoading(true);
     setError(null);
+    setStreamingAnswer("");
     try {
       const activeSessionId = await ensureSession(controller.signal);
-      const response: AgentExperienceResponse = await runAgent({
+      const agentRequest: AgentExperienceRequest = {
         query: normalizedQuery,
         session_id: activeSessionId,
         search_url: searchUrl,
         top_k: topK,
         mode,
         source_provider: isSearchMode ? sourceProvider : "retrieval",
-      }, { signal: controller.signal });
-      setSessionId(response.session_id);
-      setAnswer(response.answer);
-      setCitations(response.citations);
-      setDocuments(response.documents);
-      setMessages(response.messages);
+      };
+
+      if (STREAMING_MODES.includes(mode)) {
+        for await (const event of streamAgent(agentRequest, { signal: controller.signal })) {
+          if (event.type === "progress") {
+            setStreamingAnswer((prev) => prev + (prev ? "\n" : "") + event.text);
+          } else if (event.type === "answer") {
+            setStreamingAnswer(event.text);
+            setAnswer(event.text);
+          } else if (event.type === "done") {
+            setSessionId(event.session_id);
+            setCitations(event.citations);
+            setDocuments(event.documents);
+            setStreamingAnswer("");
+            break;
+          } else if (event.type === "error") {
+            throw new Error(event.detail);
+          }
+        }
+      } else {
+        const response: AgentExperienceResponse = await runAgent(agentRequest, {
+          signal: controller.signal,
+        });
+        setSessionId(response.session_id);
+        setAnswer(response.answer);
+        setCitations(response.citations);
+        setDocuments(response.documents);
+        setMessages(response.messages);
+      }
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
@@ -238,7 +267,7 @@ export function App() {
               {isChatMode ? <Bot size={18} /> : <Search size={18} />}
               <h2>{isChatMode ? "Answer" : "Search Summary"}</h2>
             </div>
-            <AnswerPanel answer={answer} citations={citations} />
+            <AnswerPanel answer={streamingAnswer || answer} citations={citations} />
           </section>
 
           <section className="panel sources-panel wide" aria-label="Sources">
