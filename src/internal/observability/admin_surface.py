@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import BaseModel, Field
 
 from src.internal.configs import AppSettings
 from src.internal.db import AgenticSearchStore
@@ -35,8 +34,6 @@ class AdminSurfaceCard(BaseModel):
 
 
 class AdminSurfaceSummary(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
     health_label: str = "Operational readiness"
     health_score: int
     metrics: list[AdminSurfaceMetric]
