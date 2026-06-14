@@ -611,6 +611,7 @@ def create_web_app(
                         "document_ids": [doc.id for doc in sa_documents],
                         "hooks": hook_metadata,
                         "mode": mode,
+                        "num_turns": output.num_turns,
                     },
                 )
                 messages = [
