@@ -84,17 +84,17 @@ def test_load_app_settings_search_agent_defaults_to_none_and_mps():
     settings = load_app_settings({})
     assert settings.search_agent_model is None
     assert settings.search_agent_device == "mps"
-    assert settings.search_agent_vllm_url is None
+    assert settings.search_agent_server_url is None
 
 
-def test_load_app_settings_reads_search_agent_vllm_url():
+def test_load_app_settings_reads_search_agent_server_url():
     settings = load_app_settings(
         {
-            "SEARCH_AGENT_VLLM_URL": "https://xxxx.ngrok-free.app",
+            "SEARCH_AGENT_SERVER_URL": "https://xxxx.ngrok-free.app",
             "SEARCH_AGENT_MODEL": "Qwen/Qwen2.5-1.5B-Instruct",
         }
     )
-    assert settings.search_agent_vllm_url == "https://xxxx.ngrok-free.app"
+    assert settings.search_agent_server_url == "https://xxxx.ngrok-free.app"
     assert settings.search_agent_model == "Qwen/Qwen2.5-1.5B-Instruct"
 
 

@@ -12,11 +12,10 @@ Server managers
 ---------------
 Two server-manager implementations are provided:
 
-  VLLMServerManager   Calls any OpenAI-compatible completions endpoint
-                      (vLLM, Ollama, LiteLLM, …).  Decodes prompt token IDs
-                      back to text, sends the text prompt, then re-tokenises
-                      the completion.  Works out of the box with vLLM's
-                      default serving mode.
+  OpenAIServerManager Calls any OpenAI-compatible completions endpoint
+                      (mlx-lm, vLLM, Ollama, LiteLLM, …).  Decodes prompt
+                      token IDs back to text, sends the text prompt, then
+                      re-tokenises the completion.
 
   LocalServerManager  Loads a HuggingFace model in-process with greedy or
                       sampling decoding.  Useful for offline testing without
@@ -24,12 +23,12 @@ Two server-manager implementations are provided:
 
 Quick start
 -----------
-# With a running vLLM server and Google search server:
+# With a running OpenAI-compatible server (e.g. mlx-lm, vLLM) and Google search server:
 python3 -m examples.run_agentic_search \\
     --mode search \\
     --question "Compare dense vs sparse retrieval" \\
     --model meta-llama/Llama-3.1-8B-Instruct \\
-    --vllm_url http://localhost:8080 \\
+    --server_url http://localhost:8080 \\
     --search_url http://localhost:8000/retrieve
 
 # Local model, single-turn:
@@ -313,9 +312,9 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
-    return VLLMServerManager(
+    return OpenAIServerManager(
         tokenizer=tokenizer,
-        base_url=args.vllm_url,
+        base_url=args.server_url,
         model=args.model,
     )
 
@@ -463,7 +462,7 @@ def _validate_local_runtime_stack(
 # ---------------------------------------------------------------------------
 
 
-class VLLMServerManager:
+class OpenAIServerManager:
     """Calls an OpenAI-compatible /v1/completions endpoint.
 
     The manager accepts prompt token IDs, decodes them to text with the
@@ -525,8 +524,8 @@ class VLLMServerManager:
                 data = await resp.json()
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
             raise RuntimeError(
-                f"Cannot connect to vLLM server at {self.base_url}. "
-                f"Start it first with: vllm serve {self.model} --port 8080"
+                f"Cannot connect to inference server at {self.base_url}. "
+                f"Start one first, e.g.: mlx_lm.server --model {self.model} --port 8080"
             )
 
         completion_text = data["choices"][0]["text"]
@@ -806,11 +805,11 @@ async def run_search_agent(
 
     Example::
 
-        from examples.run_agentic_search import run_search_agent, VLLMServerManager
+        from examples.run_agentic_search import run_search_agent, OpenAIServerManager
         from transformers import AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
-        server_manager = VLLMServerManager(tokenizer, "http://localhost:8080", "meta-llama/Llama-3.1-8B-Instruct")
+        server_manager = OpenAIServerManager(tokenizer, "http://localhost:8080", "meta-llama/Llama-3.1-8B-Instruct")
         await run_search_agent(
             tokenizer, server_manager,
             question="Compare dense vs sparse retrieval.",
@@ -1068,7 +1067,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--local", action="store_true", help="Run model locally (no vLLM server)"
     )
     parser.add_argument(
-        "--vllm_url", type=str, default="http://localhost:8080", help="vLLM base URL"
+        "--server_url",
+        type=str,
+        default="http://localhost:8080",
+        help="OpenAI-compatible server URL (mlx-lm, vLLM, Ollama, …)",
     )
     parser.add_argument(
         "--device",
