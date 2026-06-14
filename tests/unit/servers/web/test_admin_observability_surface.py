@@ -107,7 +107,7 @@ def test_admin_observability_endpoint_requires_admin(tmp_path):
         assert unauthorized.status_code == 401
         assert authorized.status_code == 200
         data = authorized.json()
-        assert data["health_score"] == 100
+        assert data["healthScore"] == 100
         assert data["sections"][0]["key"] == "connectors"
     finally:
         store.close()
