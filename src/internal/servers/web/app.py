@@ -121,6 +121,7 @@ class SessionCreateRequest(BaseModel):
 class ChatMessageView(BaseModel):
     role: str
     content: str
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class ChatSessionView(BaseModel):
@@ -393,7 +394,11 @@ def create_web_app(
             title=session.title,
             user_id=session.user_id,
             messages=[
-                ChatMessageView(role=message.role, content=message.content)
+                ChatMessageView(
+                    role=message.role,
+                    content=message.content,
+                    metadata=message.metadata,
+                )
                 for message in db.list_chat_messages(session.id)
             ],
         )
@@ -472,7 +477,7 @@ def create_web_app(
                     },
                 )
                 messages = [
-                    ChatMessageView(role=m.role, content=m.content)
+                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
                     for m in db.list_chat_messages(session_id)
                 ]
                 return AgentExperienceResponse(
@@ -514,7 +519,7 @@ def create_web_app(
                     },
                 )
                 messages = [
-                    ChatMessageView(role=m.role, content=m.content)
+                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
                     for m in db.list_chat_messages(session_id)
                 ]
                 return AgentExperienceResponse(
@@ -547,7 +552,7 @@ def create_web_app(
                     },
                 )
                 messages = [
-                    ChatMessageView(role=m.role, content=m.content)
+                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
                     for m in db.list_chat_messages(session_id)
                 ]
                 return AgentExperienceResponse(
@@ -609,7 +614,7 @@ def create_web_app(
                     },
                 )
                 messages = [
-                    ChatMessageView(role=m.role, content=m.content)
+                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
                     for m in db.list_chat_messages(session_id)
                 ]
                 return AgentExperienceResponse(
@@ -617,6 +622,68 @@ def create_web_app(
                     answer=answer,
                     citations=[doc.citation for doc in sa_documents],
                     documents=[_document_view(doc) for doc in sa_documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
+
+            if mode == "tool_agent":
+                from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+                from src.tools import build_search_tool, tool_registry
+
+                manager = getattr(http_request.app.state, "search_agent_manager", None)
+                tokenizer = getattr(
+                    http_request.app.state, "search_agent_tokenizer", None
+                )
+                if manager is None or tokenizer is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "tool_agent mode requires SEARCH_AGENT_MODEL or "
+                            "SEARCH_AGENT_SERVER_URL to be set."
+                        ),
+                    )
+                tools = [
+                    build_search_tool(search_url=search_url)
+                ] + tool_registry.list_tools()
+                loop = ToolAgentLoop(
+                    tokenizer=tokenizer,
+                    server_manager=manager,
+                    tools=tools,
+                    config=ToolAgentLoopConfig(
+                        tool_parser_format=resolved.tool_agent_parser,
+                    ),
+                )
+                output = await loop.run(
+                    [{"role": "user", "content": query}],
+                    sampling_params={"temperature": 0.0, "max_tokens": 512},
+                )
+                answer = output.final_answer or next(
+                    (
+                        m["content"]
+                        for m in reversed(output.trajectory_messages)
+                        if m.get("role") == "assistant"
+                    ),
+                    "",
+                )
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "mode": mode,
+                        "hooks": hook_metadata,
+                        "num_turns": output.num_turns,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=[],
+                    documents=[],
                     messages=messages,
                     hook_metadata=hook_metadata,
                 )
@@ -657,7 +724,9 @@ def create_web_app(
             },
         )
         messages = [
-            ChatMessageView(role=message.role, content=message.content)
+            ChatMessageView(
+                role=message.role, content=message.content, metadata=message.metadata
+            )
             for message in db.list_chat_messages(session_id)
         ]
         return _response_from_result(
@@ -706,6 +775,7 @@ _VALID_AGENT_MODES = {
     "chat_once",
     "chat_loop",
     "search_agent",
+    "tool_agent",
 }
 
 
