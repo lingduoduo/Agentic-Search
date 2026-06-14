@@ -52,8 +52,8 @@ def test_web_app_serves_browser_experience(tmp_path):
     assert "text/css" in client.get("/assets/app.css").headers["content-type"]
 
 
-def test_web_demo_all_sources_excludes_disabled_google():
-    assert _source_providers_for("all") == ["retrieval", "serpapi"]
+def test_web_demo_all_sources_includes_browser_excludes_google():
+    assert _source_providers_for("all") == ["retrieval", "serpapi", "browser"]
 
 
 def test_web_demo_rejects_disabled_google_provider():

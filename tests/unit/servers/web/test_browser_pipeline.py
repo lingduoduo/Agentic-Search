@@ -177,6 +177,7 @@ async def test_direct_search_merges_browser_sidecar_before_mmr(monkeypatch):
 
     monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search)
 
+    # source_provider="retrieval" + browser_search_url → sidecar adds browser docs
     docs = await _run_direct_search(
         "query",
         source_provider="retrieval",
@@ -186,7 +187,7 @@ async def test_direct_search_merges_browser_sidecar_before_mmr(monkeypatch):
     )
 
     sources = {d.metadata.get("source_provider") for d in docs}
-    assert "browser" in sources, "browser docs must appear in merged output"
+    assert "browser" in sources, "browser sidecar docs must appear in merged output"
     assert "retrieval" in sources, "primary retrieval docs must also appear"
 
 
@@ -248,7 +249,7 @@ async def test_browser_docs_have_mmr_rank_after_full_pipeline(monkeypatch):
 
     docs = await _run_direct_search(
         "query",
-        source_provider="retrieval",
+        source_provider="browser",
         search_url="http://retrieval.test:8001",
         browser_search_url="http://browser.test:8002",
         top_k=5,
