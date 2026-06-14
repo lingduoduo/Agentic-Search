@@ -144,8 +144,8 @@ export interface AdminSurfaceSection {
 }
 
 export interface AdminSurfaceSummary {
-  healthLabel: string;
-  healthScore: number;
+  health_label: string;
+  health_score: number;
   metrics: AdminSurfaceMetric[];
   sections: AdminSurfaceSection[];
 }

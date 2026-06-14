@@ -35,8 +35,8 @@ export function AdminOverview({ summary }: AdminOverviewProps) {
           <p>Operational health across retrieval, governance, and enterprise controls.</p>
         </div>
         <div className="admin-health">
-          <span>{summary.healthLabel}</span>
-          <strong>{summary.healthScore}%</strong>
+          <span>{summary.health_label}</span>
+          <strong>{summary.health_score}%</strong>
         </div>
       </div>
 
