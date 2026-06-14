@@ -189,3 +189,36 @@ export interface ToolInvokeResponse {
   raw: unknown;
   errors: string[];
 }
+
+// ---------------------------------------------------------------------------
+// SSE streaming types
+// ---------------------------------------------------------------------------
+
+export interface SSEProgressEvent {
+  type: "progress";
+  text: string;
+  turn: number;
+}
+
+export interface SSEAnswerEvent {
+  type: "answer";
+  text: string;
+}
+
+export interface SSEDoneEvent {
+  type: "done";
+  session_id: string;
+  citations: string[];
+  documents: SourceDocumentView[];
+}
+
+export interface SSEErrorEvent {
+  type: "error";
+  detail: string;
+}
+
+export type SSEEvent =
+  | SSEProgressEvent
+  | SSEAnswerEvent
+  | SSEDoneEvent
+  | SSEErrorEvent;
