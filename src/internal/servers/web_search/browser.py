@@ -102,6 +102,7 @@ class BrowserSearchEngine:
         *args: str,
         session: str | None = None,
         raw: bool = False,
+        timeout: int | None = None,
     ) -> subprocess.CompletedProcess:
         # --raw is a global flag; must precede -s= per playwright-cli CLI contract.
         cmd = [PLAYWRIGHT_CMD]
@@ -116,7 +117,7 @@ class BrowserSearchEngine:
             cmd,
             capture_output=True,
             text=True,
-            timeout=self.config.subprocess_timeout,
+            timeout=timeout if timeout is not None else self.config.subprocess_timeout,
             env=env,
         )
         if proc.returncode != 0:
@@ -135,9 +136,15 @@ class BrowserSearchEngine:
 
     def _fetch_page_text(self, url: str, *, session: str) -> str:
         try:
-            self._run("goto", url, session=session)
-            self._run("snapshot", session=session)
-            proc = self._run("eval", _PAGE_TEXT_JS, session=session, raw=True)
+            self._run("goto", url, session=session, timeout=self.config.content_timeout)
+            self._run("snapshot", session=session, timeout=self.config.content_timeout)
+            proc = self._run(
+                "eval",
+                _PAGE_TEXT_JS,
+                session=session,
+                raw=True,
+                timeout=self.config.content_timeout,
+            )
             if proc.stdout.strip():
                 raw = json.loads(proc.stdout.strip())
                 return str(raw)[:3000] if raw else ""
