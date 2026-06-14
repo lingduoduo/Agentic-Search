@@ -14,6 +14,7 @@
 #   --smoke      Run 1 example with --print_output for a quick sanity check
 #   --server_url Use an OpenAI-compatible server (e.g. mlx-lm) instead of --local
 #                Start with: python -m mlx_lm.server --model <model> --port 8080
+#   --allow_remote_model_downloads  Download the model from HuggingFace if not cached
 #
 # Reads SERP_API_KEY from .env automatically.
 
@@ -44,6 +45,7 @@ OUTPUT="${OUTPUT:-bamboogle_results.jsonl}"
 CONCURRENCY="${CONCURRENCY:-1}"
 RESUME=0
 SERVER_URL=""
+ALLOW_REMOTE_DOWNLOADS=0
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -56,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --resume)      RESUME=1;         shift ;;
     --smoke)       SMOKE=1; LIMIT=1; shift ;;
     --server_url)  SERVER_URL="$2";  shift 2 ;;
+    --allow_remote_model_downloads) ALLOW_REMOTE_DOWNLOADS=1; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -107,6 +110,10 @@ fi
 
 if [ "$RESUME" -eq 1 ]; then
   EVAL_ARGS+=(--resume)
+fi
+
+if [ "$ALLOW_REMOTE_DOWNLOADS" -eq 1 ]; then
+  EVAL_ARGS+=(--allow_remote_model_downloads)
 fi
 
 BACKEND_MSG="${SERVER_URL:-local (device=$DEVICE)}"

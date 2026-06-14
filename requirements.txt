@@ -22,7 +22,7 @@ transformers>=4.40.0
 accelerate
 
 # Training / data / retrieval dependencies.
-pyarrow>=14,<21
+pyarrow>=14
 tqdm==4.66.4
 sentence-transformers==2.7.0
 python-dotenv
@@ -45,3 +45,4 @@ faiss-cpu==1.13.2
 # pip install faiss-cpu works on Linux but segfaults on macOS Apple Silicon.
 
 datasets==5.0.0
+mlx-lm
