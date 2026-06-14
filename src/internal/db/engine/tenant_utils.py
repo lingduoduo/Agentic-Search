@@ -4,8 +4,8 @@ import re
 
 from sqlalchemy import text
 
-from shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
-from shared_configs.configs import TENANT_ID_PREFIX
+from src.shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
+from src.shared_configs.configs import TENANT_ID_PREFIX
 
 from src.internal.db.engine.sql_engine import get_session_with_shared_schema
 from src.internal.db.engine.sql_engine import MULTI_TENANT

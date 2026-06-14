@@ -21,7 +21,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 from redis.lock import Lock as RedisLock
 from redis.retry import Retry
 
-from shared_configs.contextvars import get_current_tenant_id
+from src.shared_configs.contextvars import get_current_tenant_id
 
 from src.internal.servers.redis.iam_auth import configure_redis_iam_auth
 from src.internal.servers.redis.iam_auth import create_redis_ssl_context_if_iam

@@ -33,7 +33,7 @@ from src.internal.servers.error_handling import AgenticSearchError
 from src.internal.servers.error_handling import ErrorCode
 from src.internal.servers.secondary_llm_flows import extract_source_filter
 from src.internal.servers.secondary_llm_flows import extract_time_filter
-from shared_configs.contextvars import get_current_tenant_id
+from src.shared_configs.contextvars import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 

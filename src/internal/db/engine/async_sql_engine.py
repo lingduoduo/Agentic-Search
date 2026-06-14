@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from shared_configs.contextvars import get_current_tenant_id
+from src.shared_configs.contextvars import get_current_tenant_id
 
 from src.internal.db.engine.iam_auth import create_ssl_context_if_iam
 from src.internal.db.engine.iam_auth import get_iam_auth_token

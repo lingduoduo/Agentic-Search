@@ -31,7 +31,7 @@ def _add_instance_tags(
     try:
         import sentry_sdk
 
-        from shared_configs.configs import MULTI_TENANT
+        from src.shared_configs.configs import MULTI_TENANT
 
         if MULTI_TENANT:
             instance_id = "multi-tenant-cloud"
