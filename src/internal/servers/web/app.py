@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import httpx
 import json as _json
 import logging
 from collections.abc import AsyncIterator
@@ -100,6 +101,8 @@ class SearchExperienceSettings:
     search_url: str = "http://localhost:8000/retrieve"
     top_k: int = 5
     db_path: str | Path = ":memory:"
+    browser_search_url: str | None = None
+    rerank_url: str | None = None
 
     @classmethod
     def from_app_settings(
@@ -459,6 +462,8 @@ def create_web_app(
                     query,
                     source_provider=source_provider,
                     search_url=search_url,
+                    browser_search_url=settings.browser_search_url,
+                    rerank_url=settings.rerank_url,
                     top_k=top_k,
                 )
                 answer = _search_only_answer(
@@ -498,6 +503,8 @@ def create_web_app(
                     query,
                     llm=llm,
                     search_url=search_url,
+                    browser_search_url=settings.browser_search_url,
+                    rerank_url=settings.rerank_url,
                     top_k=top_k,
                     filters=filters,
                     source_provider=source_provider,
@@ -902,6 +909,8 @@ async def _run_direct_search(
     *,
     source_provider: str,
     search_url: str,
+    browser_search_url: str | None = None,
+    rerank_url: str | None = None,
     top_k: int,
 ) -> list[ContextDocument]:
     # Over-fetch so MMR has candidates beyond top_k to diversify from.
@@ -924,9 +933,93 @@ async def _run_direct_search(
                 start_index=len(documents) + 1,
             )
         )
+    if browser_search_url and source_provider != "browser":
+        browser_docs = await _run_browser_search(
+            query,
+            browser_search_url=browser_search_url,
+            top_k=fetch_k,
+            existing_count=len(documents),
+        )
+        documents.extend(browser_docs)
     deduped = _dedupe_documents(documents)
+    if rerank_url:
+        deduped = await _rerank_documents(deduped, query, rerank_url)
     diversified = mmr_rerank(deduped, topk=top_k)
     return _reindex_documents(diversified)
+
+
+async def _run_browser_search(
+    query: str,
+    *,
+    browser_search_url: str,
+    top_k: int,
+    existing_count: int,
+) -> list[ContextDocument]:
+    """Call a running browser.py /retrieve server and convert results to ContextDocuments."""
+    try:
+        pages = await search_tool(
+            query,
+            provider="retrieval",
+            search_url=browser_search_url,
+            page_size=top_k,
+        )
+    except Exception as exc:
+        logger.warning("Browser search failed for %r: %s", query, exc)
+        return []
+    return _documents_from_search_pages(
+        pages,
+        source_provider="browser",
+        query=query,
+        start_index=existing_count + 1,
+    )
+
+
+async def _rerank_documents(
+    docs: list[ContextDocument],
+    query: str,
+    rerank_url: str,
+) -> list[ContextDocument]:
+    """Send docs to the cross-encoder rerank server; update scores and return ranked."""
+    if not docs:
+        return docs
+    doc_payloads = [
+        {"document": {"contents": f"{d.title}\n{d.content}", "_idx": str(i)}}
+        for i, d in enumerate(docs)
+    ]
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{rerank_url.rstrip('/')}/rerank",
+                json={
+                    "queries": [query],
+                    "documents": [doc_payloads],
+                    "return_scores": True,
+                },
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+        ranked = resp.json()["result"][0]
+        reranked: list[ContextDocument] = []
+        for item in ranked:
+            idx = int(item["document"].get("_idx", -1))
+            score = float(item.get("score", 0.0))
+            if 0 <= idx < len(docs):
+                orig = docs[idx]
+                reranked.append(
+                    ContextDocument(
+                        id=orig.id,
+                        title=orig.title,
+                        content=orig.content,
+                        url=orig.url,
+                        score=score,
+                        metadata=orig.metadata,
+                    )
+                )
+        if reranked:
+            return reranked
+    except Exception as exc:
+        logger.warning("Rerank request failed, using original order: %s", exc)
+    return docs
 
 
 async def _run_hybrid_search(
@@ -934,6 +1027,8 @@ async def _run_hybrid_search(
     *,
     llm: LLMClient | None,
     search_url: str,
+    browser_search_url: str | None = None,
+    rerank_url: str | None = None,
     top_k: int,
     filters: SearchFilters | None,
     source_provider: str,
@@ -1001,7 +1096,17 @@ async def _run_hybrid_search(
                     entry_point="hybrid_search",
                 )
             )
+    if browser_search_url and source_provider not in {"browser"}:
+        browser_docs = await _run_browser_search(
+            query,
+            browser_search_url=browser_search_url,
+            top_k=top_k * 2,
+            existing_count=len(documents),
+        )
+        documents.extend(browser_docs)
     deduped = _dedupe_documents(documents)
+    if rerank_url:
+        deduped = await _rerank_documents(deduped, query, rerank_url)
     diversified = mmr_rerank(deduped, topk=top_k)
     return _HybridSearchResult(
         executed_queries=executed_queries,
@@ -1098,7 +1203,7 @@ def _reindex_documents(documents: list[ContextDocument]) -> list[ContextDocument
             content=document.content,
             url=document.url,
             score=document.score,
-            metadata=document.metadata,
+            metadata={**document.metadata, "mmr_rank": index},
         )
         for index, document in enumerate(documents, 1)
     ]
