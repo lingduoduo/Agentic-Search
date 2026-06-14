@@ -32,7 +32,7 @@ def _make_proc(stdout: str = "", returncode: int = 0):
 
 
 def test_search_query_returns_formatted_documents():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=2))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=2, fetch_content=False))
     with patch("src.internal.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),  # open about:blank
@@ -50,7 +50,7 @@ def test_search_query_returns_formatted_documents():
 
 
 def test_empty_results_when_eval_returns_empty_list():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5, fetch_content=False))
     with patch("src.internal.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),  # open
@@ -70,7 +70,7 @@ def test_empty_results_when_eval_returns_empty_list():
 
 
 def test_subprocess_timeout_returns_empty_and_closes():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5, fetch_content=False))
     with patch("src.internal.servers.web_search.browser.subprocess.run") as mock_run:
         mock_run.side_effect = [
             _make_proc(),
@@ -85,7 +85,7 @@ def test_subprocess_timeout_returns_empty_and_closes():
 
 
 def test_topk_truncates_results():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=1))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=1, fetch_content=False))
     many = json.dumps(
         [
             {"title": f"Result {i}", "url": f"https://example{i}.com", "snippet": "x"}
@@ -106,7 +106,9 @@ def test_topk_truncates_results():
 
 
 def test_batch_search_runs_queries_in_parallel():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=2, batch_workers=2))
+    engine = BrowserSearchEngine(
+        BrowserSearchConfig(topk=2, batch_workers=2, fetch_content=False)
+    )
     single = json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
     with patch("src.internal.servers.web_search.browser.subprocess.run") as mock_run:
         # 5 calls per query × 2 queries = 10 calls
@@ -129,7 +131,7 @@ def test_batch_search_runs_queries_in_parallel():
 
 def test_non_dict_eval_items_are_filtered():
     # Live test revealed: CAPTCHA/error pages can produce non-dict items in eval output.
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5, fetch_content=False))
     mixed = json.dumps(
         ["unexpected string", {"title": "T", "url": "https://t.com", "snippet": "s"}]
     )
@@ -147,7 +149,7 @@ def test_non_dict_eval_items_are_filtered():
 
 
 def test_quoted_json_eval_output_is_decoded():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5, fetch_content=False))
     quoted = json.dumps(
         json.dumps([{"title": "T", "url": "https://t.com", "snippet": "s"}])
     )
@@ -165,7 +167,7 @@ def test_quoted_json_eval_output_is_decoded():
 
 
 def test_google_empty_falls_back_to_wikipedia_article():
-    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5))
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=5, fetch_content=False))
     wiki = json.dumps(
         [
             {
@@ -192,3 +194,61 @@ def test_google_empty_falls_back_to_wikipedia_article():
         results = engine._search_and_process("FAISS")
     assert len(results) == 1
     assert results[0]["document"]["url"] == "https://en.wikipedia.org/wiki/FAISS"
+
+
+def test_fetch_content_navigates_to_result_url():
+    """With fetch_content=True, each hit URL is navigated to and full text replaces snippet."""
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=1, fetch_content=True))
+    page_text = "Full article: FAISS is a library for efficient similarity search."
+    single_hit = json.dumps(
+        [
+            {
+                "title": "FAISS - Wikipedia",
+                "url": "https://en.wikipedia.org/wiki/FAISS",
+                "snippet": "A library for similarity search.",
+            }
+        ]
+    )
+    with patch("src.internal.servers.web_search.browser.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            _make_proc(),  # open about:blank
+            _make_proc(),  # goto Google search URL
+            _make_proc(),  # snapshot Google
+            _make_proc(single_hit),  # eval Google extract JS  → 1 hit, break
+            _make_proc(),  # goto result[0].url
+            _make_proc(),  # snapshot result page
+            _make_proc(json.dumps(page_text)),  # eval _PAGE_TEXT_JS
+            _make_proc(),  # close
+        ]
+        results = engine._search_and_process("what is FAISS")
+    assert len(results) == 1
+    assert page_text in results[0]["document"]["contents"]
+    assert results[0]["document"]["url"] == "https://en.wikipedia.org/wiki/FAISS"
+
+
+def test_fetch_content_falls_back_to_snippet_on_timeout():
+    """When page navigation times out, the original SERP snippet is used instead."""
+    engine = BrowserSearchEngine(BrowserSearchConfig(topk=1, fetch_content=True))
+    single_hit = json.dumps(
+        [
+            {
+                "title": "FAISS - Wikipedia",
+                "url": "https://en.wikipedia.org/wiki/FAISS",
+                "snippet": "A library for similarity search.",
+            }
+        ]
+    )
+    with patch("src.internal.servers.web_search.browser.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            _make_proc(),  # open
+            _make_proc(),  # goto Google
+            _make_proc(),  # snapshot Google
+            _make_proc(single_hit),  # eval Google → 1 hit
+            subprocess.TimeoutExpired(
+                "playwright-cli", 10
+            ),  # goto result URL → timeout
+            _make_proc(),  # close
+        ]
+        results = engine._search_and_process("what is FAISS")
+    assert len(results) == 1
+    assert "A library for similarity search." in results[0]["document"]["contents"]

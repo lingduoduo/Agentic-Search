@@ -55,4 +55,17 @@ describe("SourceGrid", () => {
     expect(screen.getByText("FAISS paper")).toBeInTheDocument();
     expect(screen.getByText("Local doc")).toBeInTheDocument();
   });
+
+  it("shows mmr_rank badge from metadata", () => {
+    const ranked = { ...doc, metadata: { source: "Local Retrieval", mmr_rank: 3 } };
+    render(<SourceGrid documents={[ranked]} />);
+    expect(screen.getByText("#3")).toBeInTheDocument();
+  });
+
+  it("applies green color to high score badge", () => {
+    const { container } = render(<SourceGrid documents={[doc]} />); // doc.score = 0.95
+    const badge = container.querySelector(".score-badge") as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.style.color).toBe("rgb(34, 197, 94)");
+  });
 });

@@ -435,7 +435,15 @@ def test_run_agent_search_tool_mode_returns_documents(monkeypatch, tmp_path):
         )
     ]
 
-    async def fake_run_direct_search(query, *, source_provider, search_url, top_k):
+    async def fake_run_direct_search(
+        query,
+        *,
+        source_provider,
+        search_url,
+        top_k,
+        browser_search_url=None,
+        rerank_url=None,
+    ):
         return docs
 
     monkeypatch.setattr(
