@@ -5,9 +5,6 @@ uvicorn>=0.31.1
 python-multipart>=0.0.9
 prometheus-client>=0.20.0
 
-# Vector database clients.
-weaviate-client==4.5.5
-
 # Core client / utility dependencies.
 requests==2.32.3
 urllib3>=2.0
@@ -27,14 +24,14 @@ accelerate
 # Training / data / retrieval dependencies.
 pyarrow>=14
 tqdm==4.66.4
-sentence-transformers==2.7.0
+sentence-transformers>=3.0.0
 python-dotenv
 pyserini
 google-api-python-client
 
 # Test dependencies.
 pytest-asyncio>=0.23.0
-faiss-cpu==1.13.2
+weaviate-client==4.5.5
 # Notes:
 # - `uvicorn` is only needed for FastAPI server entry points under
 #   `src/internal/servers/retrieval/`.
