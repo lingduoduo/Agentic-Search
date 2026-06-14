@@ -884,7 +884,7 @@ def _normalize_source_provider(source_provider: str) -> str:
 
 def _source_providers_for(source_provider: str) -> list[str]:
     if source_provider == "all":
-        return ["retrieval", "serpapi"]
+        return ["retrieval", "serpapi", "browser"]
     return [source_provider]
 
 
@@ -917,9 +917,19 @@ async def _run_direct_search(
     fetch_k = top_k * 2
     documents: list[ContextDocument] = []
     for provider in _source_providers_for(source_provider):
+        if provider == "browser":
+            if browser_search_url:
+                browser_docs = await _run_browser_search(
+                    query,
+                    browser_search_url=browser_search_url,
+                    top_k=fetch_k,
+                    existing_count=len(documents),
+                )
+                documents.extend(browser_docs)
+            continue
         pages = await search_tool(
             query,
-            provider=_tool_provider_for(provider),
+            provider=provider,
             search_url=search_url,
             page_size=fetch_k,
         )
@@ -933,7 +943,8 @@ async def _run_direct_search(
                 start_index=len(documents) + 1,
             )
         )
-    if browser_search_url and source_provider != "browser":
+    # Sidecar: add browser when it isn't already the primary or part of "all".
+    if browser_search_url and source_provider not in {"browser", "all"}:
         browser_docs = await _run_browser_search(
             query,
             browser_search_url=browser_search_url,
@@ -1040,10 +1051,8 @@ async def _run_hybrid_search(
     filters: SearchFilters | None,
     source_provider: str,
 ) -> _HybridSearchResult:
-    if source_provider in {"retrieval", "browser"}:
-        # This path uses run_expanded_search with its own query expansion pipeline.
-        # browser_search_url and rerank_url are applied in Path B (all-provider branch)
-        # and in _run_direct_search; they are intentionally not wired here.
+    if source_provider == "retrieval":
+        # Path A — corpus retrieval with its own query expansion pipeline.
         # Over-fetch so MMR has candidates beyond top_k to diversify from.
         search_result = await run_expanded_search(
             query,
@@ -1072,17 +1081,45 @@ async def _run_hybrid_search(
             ],
         )
 
+    if source_provider == "browser":
+        # Path B-browser — playwright browser server; no query expansion (too slow).
+        browser_docs: list[ContextDocument] = []
+        if browser_search_url:
+            browser_docs = await _run_browser_search(
+                query,
+                browser_search_url=browser_search_url,
+                top_k=top_k * 2,
+                existing_count=0,
+            )
+        deduped_b = _dedupe_documents(browser_docs)
+        if rerank_url:
+            deduped_b = await _rerank_documents(deduped_b, query, rerank_url)
+        diversified_b = mmr_rerank(deduped_b, topk=top_k)
+        return _HybridSearchResult(
+            executed_queries=[query],
+            documents=_reindex_documents(diversified_b),
+        )
+
     executed_queries = _expanded_queries(query, llm)
     documents: list[ContextDocument] = []
     for provider in _source_providers_for(source_provider):
-        tool_provider = _tool_provider_for(provider)
+        if provider == "browser":
+            if browser_search_url:
+                browser_docs = await _run_browser_search(
+                    query,
+                    browser_search_url=browser_search_url,
+                    top_k=top_k * 2,
+                    existing_count=len(documents),
+                )
+                documents.extend(browser_docs)
+            continue
         # Run all expanded queries concurrently for this provider
         page_lists: list[list[SearchPage]] = list(
             await asyncio.gather(
                 *[
                     search_tool(
                         expanded_query,
-                        provider=tool_provider,
+                        provider=provider,
                         search_url=search_url,
                         page_size=top_k,
                     )
@@ -1106,14 +1143,6 @@ async def _run_hybrid_search(
                     entry_point="hybrid_search",
                 )
             )
-    if browser_search_url and source_provider not in {"browser"}:
-        browser_docs = await _run_browser_search(
-            query,
-            browser_search_url=browser_search_url,
-            top_k=top_k * 2,
-            existing_count=len(documents),
-        )
-        documents.extend(browser_docs)
     deduped = _dedupe_documents(documents)
     if rerank_url:
         deduped = await _rerank_documents(deduped, query, rerank_url)
