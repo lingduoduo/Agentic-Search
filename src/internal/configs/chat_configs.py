@@ -21,7 +21,7 @@ COMPRESSION_TRIGGER_RATIO: float = float(
 NUM_RETURNED_HITS: int = int(os.environ.get("NUM_RETURNED_HITS", "50"))
 MAX_CHUNKS_FED_TO_CHAT: int = int(os.environ.get("MAX_CHUNKS_FED_TO_CHAT", "25"))
 
-# 1 / (1 + DOC_TIME_DECAY * doc-age-in-years), set to 0 for no decay (capped at 0.5 in Vespa)
+# 1 / (1 + DOC_TIME_DECAY * doc-age-in-years), set to 0 for no decay
 DOC_TIME_DECAY: float = float(os.environ.get("DOC_TIME_DECAY", "0.5"))
 BASE_RECENCY_DECAY: float = 0.5
 FAVOR_RECENT_DECAY_MULTIPLIER: float = 2.0
@@ -47,8 +47,6 @@ NUM_INTERNET_SEARCH_RESULTS: int = int(
 NUM_INTERNET_SEARCH_CHUNKS: int = int(
     os.environ.get("NUM_INTERNET_SEARCH_CHUNKS", "50")
 )
-
-VESPA_SEARCHER_THREADS: int = int(os.environ.get("VESPA_SEARCHER_THREADS", "2"))
 
 USE_SEMANTIC_KEYWORD_EXPANSIONS_BASIC_SEARCH: bool = (
     os.environ.get("USE_SEMANTIC_KEYWORD_EXPANSIONS_BASIC_SEARCH", "false").lower()
