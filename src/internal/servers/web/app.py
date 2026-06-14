@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from itertools import islice
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -734,6 +735,48 @@ def create_web_app(
         ]
         return _response_from_result(
             session_id, result, messages, hook_metadata=hook_metadata
+        )
+
+    @app.post("/api/agent/stream")
+    async def stream_agent(
+        request: AgentExperienceRequest,
+        http_request: Request,
+    ) -> StreamingResponse:
+        """Stream agent progress as Server-Sent Events.
+
+        Emits:
+          {"type": "answer",   "text": "..."}             — final answer text
+          {"type": "done",     "session_id": "...", "citations": [...], "documents": [...]}
+          {"type": "error",    "detail": "..."}           — on failure
+        """
+
+        def _sse(data: dict) -> str:
+            return f"data: {_json.dumps(data)}\n\n"
+
+        async def _generate():
+            try:
+                result: AgentExperienceResponse = await run_agent(request, http_request)
+                yield _sse({"type": "answer", "text": result.answer})
+                yield _sse(
+                    {
+                        "type": "done",
+                        "session_id": result.session_id,
+                        "citations": result.citations,
+                        "documents": [d.model_dump() for d in result.documents],
+                    }
+                )
+            except HTTPException as exc:
+                yield _sse({"type": "error", "detail": exc.detail})
+            except Exception as exc:
+                yield _sse({"type": "error", "detail": str(exc)})
+
+        return StreamingResponse(
+            _generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     return app
