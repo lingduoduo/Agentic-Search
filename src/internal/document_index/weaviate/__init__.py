@@ -1,0 +1,1 @@
+"""Weaviate document index backend."""
