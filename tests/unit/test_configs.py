@@ -112,3 +112,13 @@ def test_web_settings_can_be_built_from_app_settings():
     assert web_settings.search_url == "http://search.test/retrieve"
     assert web_settings.top_k == 9
     assert web_settings.db_path == "/tmp/search.sqlite3"
+
+
+def test_tool_agent_parser_defaults_to_json():
+    settings = load_app_settings({})
+    assert settings.tool_agent_parser == "json"
+
+
+def test_tool_agent_parser_reads_from_env():
+    settings = load_app_settings({"TOOL_AGENT_PARSER": "hermes"})
+    assert settings.tool_agent_parser == "hermes"
