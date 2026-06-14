@@ -5,6 +5,9 @@ uvicorn>=0.31.1
 python-multipart>=0.0.9
 prometheus-client>=0.20.0
 
+# Vector database clients.
+weaviate-client==4.5.5
+
 # Core client / utility dependencies.
 requests==2.32.3
 urllib3>=2.0
