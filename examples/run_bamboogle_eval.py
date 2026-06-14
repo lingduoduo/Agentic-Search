@@ -1,12 +1,12 @@
 """Evaluate the SearchAgentLoop on the Bamboogle two-hop QA benchmark.
 
-Quick start (local CPU, no vLLM needed — slow but self-contained):
+Quick start (local CPU, no server needed — slow but self-contained):
     python3 -m examples.run_bamboogle_eval --model Qwen/Qwen2.5-1.5B-Instruct --local
 
-Server-backed (fast):
+Server-backed (fast, e.g. mlx-lm or vLLM):
     python3 -m examples.run_bamboogle_eval \\
         --model meta-llama/Llama-3.1-8B-Instruct \\
-        --vllm_url http://localhost:8080 \\
+        --server_url http://localhost:8080 \\
         --search_url http://localhost:8000/retrieve \\
         --reward_preset second_pass \\
         --limit 125
@@ -23,7 +23,7 @@ from typing import Any
 
 
 def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
-    from examples.run_agentic_search import LocalServerManager, VLLMServerManager
+    from examples.run_agentic_search import LocalServerManager, OpenAIServerManager
 
     if args.local:
         return LocalServerManager(
@@ -34,8 +34,8 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
-    return VLLMServerManager(
-        tokenizer=tokenizer, base_url=args.vllm_url, model=args.model
+    return OpenAIServerManager(
+        tokenizer=tokenizer, base_url=args.server_url, model=args.model
     )
 
 
@@ -128,7 +128,11 @@ def main() -> None:
         action="store_true",
         help="Download model weights from HuggingFace if not cached locally",
     )
-    parser.add_argument("--vllm_url", default="http://localhost:8080")
+    parser.add_argument(
+        "--server_url",
+        default="http://localhost:8080",
+        help="OpenAI-compatible server URL (mlx-lm, vLLM, Ollama, …)",
+    )
     parser.add_argument("--search_url", default="http://localhost:8000/retrieve")
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--max_turns", type=int, default=8)

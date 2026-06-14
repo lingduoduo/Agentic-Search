@@ -3,7 +3,7 @@
 #
 # Usage:
 #   bin/run_bamboogle_eval.sh [--model MODEL] [--limit N] [--device DEVICE] [--smoke]
-#   bin/run_bamboogle_eval.sh --vllm_url http://localhost:8080 --model mlx-community/Qwen2.5-1.5B-Instruct-4bit
+#   bin/run_bamboogle_eval.sh --server_url http://localhost:8080 --model mlx-community/Qwen2.5-1.5B-Instruct-4bit
 #
 # Defaults:
 #   --model  Qwen/Qwen2.5-1.5B-Instruct
@@ -12,7 +12,7 @@
 #
 # Flags:
 #   --smoke      Run 1 example with --print_output for a quick sanity check
-#   --vllm_url   Use an OpenAI-compatible server (e.g. mlx-lm) instead of --local
+#   --server_url Use an OpenAI-compatible server (e.g. mlx-lm) instead of --local
 #                Start with: python -m mlx_lm.server --model <model> --port 8080
 #
 # Reads SERP_API_KEY from .env automatically.
@@ -43,7 +43,7 @@ SERP_PORT="${SERP_PORT:-8000}"
 OUTPUT="${OUTPUT:-bamboogle_results.jsonl}"
 CONCURRENCY="${CONCURRENCY:-1}"
 RESUME=0
-VLLM_URL=""
+SERVER_URL=""
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
     --concurrency) CONCURRENCY="$2"; shift 2 ;;
     --resume)      RESUME=1;         shift ;;
     --smoke)       SMOKE=1; LIMIT=1; shift ;;
-    --vllm_url)    VLLM_URL="$2";    shift 2 ;;
+    --server_url)  SERVER_URL="$2";  shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -91,9 +91,9 @@ EVAL_ARGS=(
   --concurrency "$CONCURRENCY"
 )
 
-if [ -n "$VLLM_URL" ]; then
-  echo ">> Using OpenAI-compatible server at ${VLLM_URL} (e.g. mlx-lm)"
-  EVAL_ARGS+=(--vllm_url "$VLLM_URL")
+if [ -n "$SERVER_URL" ]; then
+  echo ">> Using OpenAI-compatible server at ${SERVER_URL} (e.g. mlx-lm)"
+  EVAL_ARGS+=(--server_url "$SERVER_URL")
 else
   EVAL_ARGS+=(--local --device "$DEVICE" --allow_unsafe_mps)
 fi
@@ -109,7 +109,7 @@ if [ "$RESUME" -eq 1 ]; then
   EVAL_ARGS+=(--resume)
 fi
 
-BACKEND_MSG="${VLLM_URL:-local (device=$DEVICE)}"
+BACKEND_MSG="${SERVER_URL:-local (device=$DEVICE)}"
 echo ">> Running bamboogle eval (model=$MODEL, limit=$LIMIT, backend=$BACKEND_MSG)..."
 cd "$ROOT_DIR"
 python3 -m examples.run_bamboogle_eval "${EVAL_ARGS[@]}"

@@ -140,7 +140,7 @@ class AppSettings:
     dev_mode: bool = False
     search_agent_model: str | None = None
     search_agent_device: str = "mps"
-    search_agent_vllm_url: str | None = None
+    search_agent_server_url: str | None = None
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -229,7 +229,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         dev_mode=get_env_bool(source, "DEV_MODE", False),
         search_agent_model=get_env_str(source, "SEARCH_AGENT_MODEL", None),
         search_agent_device=get_env_str(source, "SEARCH_AGENT_DEVICE", "mps"),
-        search_agent_vllm_url=get_env_str(source, "SEARCH_AGENT_VLLM_URL", None),
+        search_agent_server_url=get_env_str(source, "SEARCH_AGENT_SERVER_URL", None),
     )
 
 

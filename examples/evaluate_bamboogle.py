@@ -6,13 +6,13 @@ Minimal (judge_fn only, 20 examples):
     python -m examples.evaluate_bamboogle \\
         --search_url http://localhost:8000/retrieve \\
         --model meta-llama/Llama-3.1-8B-Instruct \\
-        --vllm_url http://localhost:8080
+        --server_url http://localhost:8080
 
 With shaped reward (second-pass curriculum):
     python -m examples.evaluate_bamboogle \\
         --search_url http://localhost:8000/retrieve \\
         --model meta-llama/Llama-3.1-8B-Instruct \\
-        --vllm_url http://localhost:8080 \\
+        --server_url http://localhost:8080 \\
         --reward_preset second_pass \\
         --limit 125 \\
         --output results/bamboogle_second_pass.jsonl
@@ -111,7 +111,11 @@ def main() -> None:
         description="Evaluate an agentic search agent on the Bamboogle benchmark."
     )
     parser.add_argument("--search_url", default="http://localhost:8000/retrieve")
-    parser.add_argument("--vllm_url", default="http://localhost:8080")
+    parser.add_argument(
+        "--server_url",
+        default="http://localhost:8080",
+        help="OpenAI-compatible server URL (mlx-lm, vLLM, Ollama, …)",
+    )
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--max_tokens", type=int, default=512)
