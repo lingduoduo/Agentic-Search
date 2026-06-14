@@ -277,9 +277,7 @@ async def search_tool(
             page_size=page_size,
             timeout_seconds=timeout_seconds,
         )
-    raise ValueError(
-        "provider must be 'retrieval', 'google', 'serpapi', 'brave', or 'serper'"
-    )
+    raise ValueError("provider must be 'retrieval', 'google', 'serpapi', or 'serper'")
 
 
 async def search_for_list(
