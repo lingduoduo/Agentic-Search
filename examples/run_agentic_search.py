@@ -525,7 +525,7 @@ class OpenAIServerManager:
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
             raise RuntimeError(
                 f"Cannot connect to inference server at {self.base_url}. "
-                f"Start one first, e.g.: python -m mlx_lm.server --model {self.model} --port 8080"
+                f"Start one first, e.g.: mlx_lm.server --model {self.model} --port 8080"
             )
 
         completion_text = data["choices"][0]["text"]

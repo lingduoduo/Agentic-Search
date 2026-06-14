@@ -13,7 +13,7 @@
 # Flags:
 #   --smoke      Run 1 example with --print_output for a quick sanity check
 #   --server_url Use an OpenAI-compatible server (e.g. mlx-lm) instead of --local
-#                Start with: python -m mlx_lm.server --model <model> --port 8080
+#                Start with: mlx_lm.server --model <model> --port 8080
 #   --allow_remote_model_downloads  Download the model from HuggingFace if not cached
 #
 # Reads SERP_API_KEY from .env automatically.

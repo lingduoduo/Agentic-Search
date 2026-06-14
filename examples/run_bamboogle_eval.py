@@ -60,15 +60,20 @@ def _build_agent(args: argparse.Namespace, tokenizer: Any, server_manager: Any) 
                     ),
                 ),
             )
-            output = asyncio.run(
-                loop.run(
-                    [{"role": "user", "content": question}],
-                    sampling_params={
-                        "temperature": args.temperature,
-                        "max_tokens": args.max_tokens,
-                    },
-                )
-            )
+
+            async def _run():
+                try:
+                    return await loop.run(
+                        [{"role": "user", "content": question}],
+                        sampling_params={
+                            "temperature": args.temperature,
+                            "max_tokens": args.max_tokens,
+                        },
+                    )
+                finally:
+                    await server_manager.aclose()
+
+            output = asyncio.run(_run())
             if args.print_trace:
                 print(f"\n{'=' * 60}")
                 print(f"Q: {question}")

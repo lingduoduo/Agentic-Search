@@ -133,11 +133,12 @@ class AgentLoopBase:
     def _build_prompt_ids_sync(self, messages: list[dict[str, Any]]) -> list[int]:
         chat_template = getattr(self.tokenizer, "chat_template", "__missing__")
         if hasattr(self.tokenizer, "apply_chat_template") and chat_template is not None:
-            prompt_ids = self.tokenizer.apply_chat_template(
+            prompt_text = self.tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
-                tokenize=True,
+                tokenize=False,
             )
+            prompt_ids = self.tokenizer.encode(prompt_text)
             return list(prompt_ids)[-self.prompt_length :]
 
         joined = "\n".join(message.get("content", "") for message in messages)

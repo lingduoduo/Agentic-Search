@@ -45,4 +45,4 @@ faiss-cpu==1.13.2
 # pip install faiss-cpu works on Linux but segfaults on macOS Apple Silicon.
 
 datasets==5.0.0
-mlx-lm
+mlx-lm>=0.31.3
