@@ -48,7 +48,7 @@ class _CeleryQueues:
     PRIMARY = "celery"
     DOCPROCESSING = "docprocessing"
     CONNECTOR_DOC_FETCHING = "connector_doc_fetching"
-    VESPA_METADATA_SYNC = "vespa_metadata_sync"
+    INDEX_METADATA_SYNC = "index_metadata_sync"
     CONNECTOR_DELETION = "connector_deletion"
     CONNECTOR_PRUNING = "connector_pruning"
     CONNECTOR_DOC_PERMISSIONS_SYNC = "connector_doc_permissions_sync"
@@ -84,7 +84,7 @@ _QUEUE_LABEL_MAP: dict[str, str] = {
     CeleryQueues.PRIMARY: "primary",
     CeleryQueues.DOCPROCESSING: "docprocessing",
     CeleryQueues.CONNECTOR_DOC_FETCHING: "docfetching",
-    CeleryQueues.VESPA_METADATA_SYNC: "vespa_metadata_sync",
+    CeleryQueues.INDEX_METADATA_SYNC: "index_metadata_sync",
     CeleryQueues.CONNECTOR_DELETION: "connector_deletion",
     CeleryQueues.CONNECTOR_PRUNING: "connector_pruning",
     CeleryQueues.CONNECTOR_DOC_PERMISSIONS_SYNC: "permissions_sync",

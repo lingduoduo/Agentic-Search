@@ -166,8 +166,7 @@ class IndexingSetting(EmbeddingModelDetail):
     index_name: str | None
     multipass_indexing: bool
     # Defaults to FLOAT (float32). OpenSearch ignores embedding_precision and
-    # stores vectors as float32 regardless. BFLOAT16 still works for existing
-    # Vespa deployments.
+    # stores vectors as float32 regardless.
     embedding_precision: EmbeddingPrecision = EmbeddingPrecision.FLOAT
     reduced_dimension: int | None = None
 

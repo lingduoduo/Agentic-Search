@@ -216,7 +216,6 @@ class AccessType(str, PyEnum):
 
 
 class EmbeddingPrecision(str, PyEnum):
-    # matches vespa tensor type
     # only support float / bfloat16 for now, since there's not a
     # good reason to specify anything else
     BFLOAT16 = "bfloat16"
@@ -252,7 +251,7 @@ class SwitchoverType(str, PyEnum):
 
 
 class OpenSearchDocumentMigrationStatus(str, PyEnum):
-    """Status for Vespa to OpenSearch migration per document."""
+    """Status for OpenSearch document migration."""
 
     PENDING = "pending"
     COMPLETED = "completed"
