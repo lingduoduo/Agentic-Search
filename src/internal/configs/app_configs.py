@@ -138,6 +138,9 @@ class AppSettings:
     stripe_publishable_key_url: str | None = None
     web_domain: str = "http://localhost:8080"
     dev_mode: bool = False
+    search_agent_model: str | None = None
+    search_agent_device: str = "mps"
+    search_agent_vllm_url: str | None = None
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -147,7 +150,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     configuration side-effect free.
     """
 
-    source = env or os.environ
+    source = env if env is not None else os.environ
     return AppSettings(
         services=ServiceSettings(
             retrieval_url=get_env_str(
@@ -224,13 +227,16 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         ),
         web_domain=get_env_str(source, "WEB_DOMAIN", "http://localhost:8080"),
         dev_mode=get_env_bool(source, "DEV_MODE", False),
+        search_agent_model=get_env_str(source, "SEARCH_AGENT_MODEL", None),
+        search_agent_device=get_env_str(source, "SEARCH_AGENT_DEVICE", "mps"),
+        search_agent_vllm_url=get_env_str(source, "SEARCH_AGENT_VLLM_URL", None),
     )
 
 
 def load_permission_sync_settings(
     env: EnvMapping | None = None,
 ) -> PermissionSyncSettings:
-    source = env or os.environ
+    source = env if env is not None else os.environ
     return PermissionSyncSettings(
         default_doc_sync_frequency=get_env_int(
             source,

@@ -22,7 +22,7 @@ export interface SourceDocumentView {
   metadata: Record<string, unknown>;
 }
 
-export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop";
+export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop" | "search_agent";
 export type SearchSourceProvider =
   | "retrieval"
   | "google"

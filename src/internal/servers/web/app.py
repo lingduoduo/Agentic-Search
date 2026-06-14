@@ -273,6 +273,62 @@ def create_web_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         seed_db(db)
         check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
+        _app.state.search_agent_manager = None
+        _app.state.search_agent_tokenizer = None
+        if resolved.search_agent_vllm_url:
+            try:
+                from transformers import AutoTokenizer
+                from examples.run_agentic_search import VLLMServerManager
+
+                model = resolved.search_agent_model or "Qwen/Qwen2.5-1.5B-Instruct"
+                tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+                if tokenizer.pad_token_id is None:
+                    tokenizer.pad_token_id = tokenizer.eos_token_id
+                manager = VLLMServerManager(
+                    tokenizer=tokenizer,
+                    base_url=resolved.search_agent_vllm_url,
+                    model=model,
+                )
+                _app.state.search_agent_tokenizer = tokenizer
+                _app.state.search_agent_manager = manager
+                logger.info(
+                    "search_agent: connected to remote vLLM at %s (model %s)",
+                    resolved.search_agent_vllm_url,
+                    model,
+                )
+            except Exception:
+                logger.exception(
+                    "search_agent: failed to init remote vLLM manager — mode will return 400"
+                )
+        elif resolved.search_agent_model:
+            try:
+                from transformers import AutoTokenizer
+                from examples.run_agentic_search import LocalServerManager
+
+                tokenizer = AutoTokenizer.from_pretrained(
+                    resolved.search_agent_model,
+                    trust_remote_code=True,
+                    local_files_only=True,
+                )
+                if tokenizer.pad_token_id is None:
+                    tokenizer.pad_token_id = tokenizer.eos_token_id
+                manager = LocalServerManager(
+                    model_path=resolved.search_agent_model,
+                    device=resolved.search_agent_device,
+                    allow_unsafe_mps=True,
+                    local_files_only=True,
+                )
+                _app.state.search_agent_tokenizer = tokenizer
+                _app.state.search_agent_manager = manager
+                logger.info(
+                    "search_agent: loaded %s on %s",
+                    resolved.search_agent_model,
+                    resolved.search_agent_device,
+                )
+            except Exception:
+                logger.exception(
+                    "search_agent: failed to load model — mode will return 400"
+                )
         try:
             yield
         finally:
@@ -502,6 +558,69 @@ def create_web_app(
                     messages=messages,
                     hook_metadata=hook_metadata,
                 )
+            if mode == "search_agent":
+                from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
+
+                manager = getattr(http_request.app.state, "search_agent_manager", None)
+                tokenizer = getattr(
+                    http_request.app.state, "search_agent_tokenizer", None
+                )
+                if manager is None or tokenizer is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "search_agent mode is not configured. "
+                            "Set SEARCH_AGENT_MODEL in .env and restart the server."
+                        ),
+                    )
+                loop = SearchAgentLoop(
+                    tokenizer=tokenizer,
+                    server_manager=manager,
+                    search_config=SearchAgentLoopConfig(
+                        search_url=search_url,
+                        topk=top_k,
+                        max_turns=3,
+                    ),
+                )
+                output = await loop.run(
+                    [{"role": "user", "content": query}],
+                    sampling_params={"temperature": 0.0, "max_tokens": 256},
+                )
+                answer = output.final_answer or ""
+                sa_documents: list[ContextDocument] = []
+                if output.context is not None:
+                    for sc in output.context.turns:
+                        for result in sc.results:
+                            sa_documents.append(
+                                ContextDocument.from_search_result(
+                                    result, index=len(sa_documents) + 1
+                                )
+                            )
+                sa_documents = _dedupe_documents(sa_documents)
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "citations": [doc.citation for doc in sa_documents],
+                        "document_ids": [doc.id for doc in sa_documents],
+                        "hooks": hook_metadata,
+                        "mode": mode,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=[doc.citation for doc in sa_documents],
+                    documents=[_document_view(doc) for doc in sa_documents],
+                    messages=messages,
+                    hook_metadata=hook_metadata,
+                )
+
             result = await answer_with_retrieval(
                 query,
                 llm=llm,
@@ -510,6 +629,8 @@ def create_web_app(
                 top_k=top_k,
                 filters=filters,
             )
+        except HTTPException:
+            raise
         except Exception as exc:
             logger.exception("Agent search failed: %s", exc)
             search_url = request.search_url or settings.search_url
@@ -584,6 +705,7 @@ _VALID_AGENT_MODES = {
     "hybrid_search",
     "chat_once",
     "chat_loop",
+    "search_agent",
 }
 
 

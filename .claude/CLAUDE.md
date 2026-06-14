@@ -84,7 +84,7 @@ pip install -r requirements.txt
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
 # Terminal 2 — web backend (port 7860)
-PYTHONPATH=src uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 
 # Terminal 3 — frontend dev server (port 5173)
 cd web && npm install && npm run dev

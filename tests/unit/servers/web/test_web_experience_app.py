@@ -13,6 +13,7 @@ from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.servers.web.app import SearchExperienceSettings
 from src.internal.servers.web.app import create_web_app
+from src.internal.servers.web.app import _normalize_agent_mode
 from src.internal.servers.web.app import _normalize_source_provider
 from src.internal.servers.web.app import _source_providers_for
 
@@ -388,3 +389,18 @@ def test_hybrid_search_runs_search_tool_calls_concurrently(monkeypatch):
     # 2 queries: original + 1 expansion (temporal variant added too = 3 total)
     assert len(call_count) >= 2
     assert result.executed_queries is not None
+
+
+def test_search_agent_mode_is_valid():
+    assert _normalize_agent_mode("search_agent") == "search_agent"
+
+
+def test_search_agent_returns_400_when_not_configured(tmp_path):
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "state.sqlite3"))
+    client = TestClient(app)
+    response = client.post(
+        "/api/agent",
+        json={"query": "What is FAISS?", "mode": "search_agent"},
+    )
+    assert response.status_code == 400
+    assert "SEARCH_AGENT_MODEL" in response.json()["detail"]
