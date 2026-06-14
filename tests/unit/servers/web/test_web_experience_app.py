@@ -481,3 +481,58 @@ def test_run_agent_chat_once_mode_returns_answer(monkeypatch, tmp_path):
     assert response.status_code == 200
     data = response.json()
     assert "Start retrieval first" in data["answer"]
+
+
+def test_run_agent_chat_once_citations_extracted(monkeypatch, tmp_path):
+    """citations in the response match the [Dx] markers extracted from the answer."""
+
+    async def fake_answer(question, *, llm=None, chat_history=None, **kw):
+        return _answer_result(question)  # answer contains "[D1]", citations=["D1"]
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "state.sqlite3"))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/agent", json={"query": "What is FAISS?", "mode": "chat_once"}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["citations"] == ["D1"]
+    assert "[D1]" in data["answer"]
+
+
+def test_run_agent_trims_long_history(monkeypatch, tmp_path):
+    """When session history exceeds MAX_HISTORY_MESSAGES only the tail reaches the LLM."""
+    from src.internal.servers.web.app import MAX_HISTORY_MESSAGES
+
+    captured: list = []
+
+    async def fake_answer(question, *, llm=None, chat_history=None, **kw):
+        captured.append(list(chat_history or []))
+        return _answer_result(question)
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+
+    store = AgenticSearchStore(tmp_path / "state.sqlite3")
+    session = store.create_chat_session(title="long")
+    for i in range(60):
+        role = "user" if i % 2 == 0 else "assistant"
+        store.add_chat_message(session.id, role=role, content=f"msg {i}")
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "state.sqlite3"), store=store
+    )
+    client = TestClient(app)
+    client.post(
+        "/api/agent",
+        json={"query": "follow up", "mode": "chat_once", "session_id": session.id},
+    )
+
+    assert len(captured) == 1
+    assert len(captured[0]) <= MAX_HISTORY_MESSAGES
