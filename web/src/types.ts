@@ -3,7 +3,6 @@ export type ChatRole = "user" | "assistant" | "system" | string;
 export interface ChatMessageView {
   role: ChatRole;
   content: string;
-  metadata?: Record<string, unknown>;
 }
 
 export interface ChatSessionView {
@@ -23,7 +22,7 @@ export interface SourceDocumentView {
   metadata: Record<string, unknown>;
 }
 
-export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop" | "search_agent" | "tool_agent";
+export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop" | "search_agent";
 export type SearchSourceProvider =
   | "retrieval"
   | "google"

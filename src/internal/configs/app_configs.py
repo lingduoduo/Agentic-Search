@@ -141,7 +141,6 @@ class AppSettings:
     search_agent_model: str | None = None
     search_agent_device: str = "mps"
     search_agent_server_url: str | None = None
-    tool_agent_parser: str = "json"
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -231,7 +230,6 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         search_agent_model=get_env_str(source, "SEARCH_AGENT_MODEL", None),
         search_agent_device=get_env_str(source, "SEARCH_AGENT_DEVICE", "mps"),
         search_agent_server_url=get_env_str(source, "SEARCH_AGENT_SERVER_URL", None),
-        tool_agent_parser=get_env_str(source, "TOOL_AGENT_PARSER", "json"),
     )
 
 
