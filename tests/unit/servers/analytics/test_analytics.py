@@ -202,3 +202,57 @@ def test_analytics_uses_default_30_day_window_when_no_params(tmp_path):
     assert response.status_code == 200
     assert isinstance(response.json(), list)
     store.close()
+
+
+def test_analytics_by_llm_groups_sessions(tmp_path):
+    client, store = _admin_app(tmp_path)
+    response = client.get(
+        "/analytics/by-llm",
+        params={"start": _RANGE_START, "end": _RANGE_END},
+        headers=_bearer(_ADMIN_ID),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dimension"] == "llm"
+    # All 4 sessions have NULL llm_name → coalesced to 'unknown'
+    assert data["total_sessions"] == 4
+    assert len(data["items"]) == 1
+    assert data["items"][0]["label"] == "unknown"
+    assert data["items"][0]["session_count"] == 4
+    store.close()
+
+
+def test_analytics_by_persona_groups_sessions(tmp_path):
+    client, store = _admin_app(tmp_path)
+    response = client.get(
+        "/analytics/by-persona",
+        params={"start": _RANGE_START, "end": _RANGE_END},
+        headers=_bearer(_ADMIN_ID),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dimension"] == "persona"
+    # All 4 sessions have NULL persona_id → coalesced to 'default'
+    assert data["total_sessions"] == 4
+    assert len(data["items"]) == 1
+    assert data["items"][0]["label"] == "default"
+    assert data["items"][0]["session_count"] == 4
+    store.close()
+
+
+def test_analytics_by_flow_groups_sessions(tmp_path):
+    client, store = _admin_app(tmp_path)
+    response = client.get(
+        "/analytics/by-flow",
+        params={"start": _RANGE_START, "end": _RANGE_END},
+        headers=_bearer(_ADMIN_ID),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dimension"] == "flow"
+    # All 4 sessions have NULL flow_type → coalesced to 'chat'
+    assert data["total_sessions"] == 4
+    assert len(data["items"]) == 1
+    assert data["items"][0]["label"] == "chat"
+    assert data["items"][0]["session_count"] == 4
+    store.close()
