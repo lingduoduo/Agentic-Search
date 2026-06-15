@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.agents.base import AgentLoopOutput
 
+_TEMPORAL_RE = re.compile(
+    r"\b(today|right now|this week|this month|this year|latest|breaking|news|recent|"
+    r"currently|202[4-9]|203\d)\b",
+    re.IGNORECASE,
+)
+
 _SEARCH_RE = re.compile(
     r"\b(find|list|retrieve|search for|show me|pull|get me|look up|fetch)\b",
     re.IGNORECASE,
@@ -39,6 +45,18 @@ def _rule_based_is_search(query: str) -> bool:
     if len(tokens) <= 5 and not _VERB_RE.search(q) and not q.endswith("?"):
         return True
     return False
+
+
+def _route_source_provider(query: str, browser_search_url: str | None = None) -> str:
+    """Pick the retrieval backend for a search query.
+
+    Temporal queries ("today", "latest news", year references) route to the
+    browser backend when one is configured.  Everything else uses the local
+    corpus retrieval server.
+    """
+    if browser_search_url and _TEMPORAL_RE.search(query):
+        return "browser"
+    return "retrieval"
 
 
 def _infer_intent_from_output(output: "AgentLoopOutput") -> str:

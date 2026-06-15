@@ -6,6 +6,7 @@ import pytest
 from src.agents.base import AgentLoopOutput
 from src.internal.servers.web.intent_routing import (
     _infer_intent_from_output,
+    _route_source_provider,
     _rule_based_is_search,
 )
 from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
@@ -65,6 +66,53 @@ def test_rule_based_is_search_empty_returns_false():
 def test_rule_based_chat_signal_beats_search_signal():
     # 'explain' (chat) + 'find' (search) in same query → chat wins
     assert _rule_based_is_search("explain how to find docs") is False
+
+
+# --- _route_source_provider ---
+
+
+def test_route_defaults_to_retrieval():
+    assert _route_source_provider("procurement process") == "retrieval"
+
+
+def test_route_temporal_without_browser_url_stays_retrieval():
+    assert _route_source_provider("latest AI news today") == "retrieval"
+
+
+def test_route_temporal_with_browser_url_uses_browser():
+    assert (
+        _route_source_provider(
+            "latest AI news today", browser_search_url="http://localhost:8002"
+        )
+        == "browser"
+    )
+
+
+def test_route_today_keyword():
+    assert (
+        _route_source_provider(
+            "what happened today", browser_search_url="http://localhost:8002"
+        )
+        == "browser"
+    )
+
+
+def test_route_year_reference():
+    assert (
+        _route_source_provider(
+            "AI models in 2025", browser_search_url="http://localhost:8002"
+        )
+        == "browser"
+    )
+
+
+def test_route_non_temporal_always_retrieval():
+    assert (
+        _route_source_provider(
+            "explain FAISS", browser_search_url="http://localhost:8002"
+        )
+        == "retrieval"
+    )
 
 
 # --- _infer_intent_from_output ---
