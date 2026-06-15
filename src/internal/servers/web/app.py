@@ -90,7 +90,11 @@ from src.tools import search_tool
 from .static import APP_CSS
 from .static import APP_HTML
 from .static import APP_JS
-from .intent_routing import _rule_based_is_search, _infer_intent_from_output
+from .intent_routing import (
+    _infer_intent_from_output,
+    _route_source_provider,
+    _rule_based_is_search,
+)
 from src.internal.servers.secondary_llm_flows.search_flow_classification import (
     classify_is_search_flow,
 )
@@ -344,6 +348,7 @@ async def _run_auto_routed(
         # Don't raise here — fall through to search or chat path below
 
     if is_search:
+        provider = _route_source_provider(query, browser_search_url)
         try:
             search_result = await _run_hybrid_search(
                 query,
@@ -353,13 +358,13 @@ async def _run_auto_routed(
                 rerank_url=rerank_url,
                 top_k=top_k,
                 filters=filters,
-                source_provider="retrieval",
+                source_provider=provider,
             )
             answer = _search_only_answer(
                 "Search",
                 queries=search_result.executed_queries,
                 documents=search_result.documents,
-                source_provider="retrieval",
+                source_provider=provider,
             )
             return (
                 answer,
