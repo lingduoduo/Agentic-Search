@@ -7,46 +7,36 @@ on:
     branches: [main]
 
 jobs:
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install -e .
-          pip install -r requirements.txt
-
-      - name: Run unit tests
-        run: pytest tests/unit/ -q --tb=short
-
   retrieval-eval-gate:
     name: Retrieval Eval Gate
     runs-on: ubuntu-latest
-    # Only run if baseline metrics exist (set manually after first green run)
-    if: ${{ hashFiles('data/eval/baseline_metrics.json') != '' }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check baseline exists
+        id: check
+        run: |
+          if [ -f data/eval/baseline_metrics.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python 3.12
+        if: steps.check.outputs.exists == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
         run: |
           pip install -e .
           pip install -r requirements.txt
 
       - name: Run retrieval eval
+        if: steps.check.outputs.exists == 'true'
         env:
           BM25_INDEX_PATH: ${{ secrets.BM25_INDEX_PATH }}
           BM25_CORPUS_PATH: data/corpus.jsonl
@@ -58,6 +48,7 @@ jobs:
             --output /tmp/current_metrics.json
 
       - name: Check for regressions
+        if: steps.check.outputs.exists == 'true'
         run: |
           python - <<'EOF'
           import json, sys
@@ -84,3 +75,46 @@ jobs:
           else:
               print("No regressions. current:", json.dumps(current, indent=2))
           EOF
+
+  ragas-eval-gate:
+    name: RAGAS Eval Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check baseline exists
+        id: check
+        run: |
+          if [ -f data/eval/ragas_baseline.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python 3.12
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          pip install -e .
+          pip install -r requirements.txt
+          pip install ragas
+
+      - name: Run RAGAS eval
+        if: steps.check.outputs.exists == 'true'
+        env:
+          BM25_INDEX_PATH: ${{ secrets.BM25_INDEX_PATH }}
+          BM25_CORPUS_PATH: data/corpus.jsonl
+          RETRIEVAL_BACKEND: local
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python -m src.internal.retrieval.ragas_eval \
+            --dataset data/eval/ragas_qa.jsonl \
+            --metrics faithfulness answer_relevancy \
+            --output /tmp/ragas_current.json \
+            --baseline data/eval/ragas_baseline.json

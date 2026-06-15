@@ -640,8 +640,8 @@ def test_retrieve_documents_returns_structured_docs_from_backend():
             del query, topk
             return "unused"
 
-    manager._make_retriever = (
-        lambda tool_call, search_mode, gt_threshold: FakeRetriever()
+    manager._make_retriever = lambda tool_call, search_mode, gt_threshold: (
+        FakeRetriever()
     )  # type: ignore[method-assign]
     docs = manager.retrieve_documents(
         "2024 physics nobel prize winner",

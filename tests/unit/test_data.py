@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+pytest.importorskip("torch")
 from examples.prepare_search_qa_dataset import preview_records
 from src import (
     PromptOnlyDataset,

@@ -6,6 +6,9 @@ import asyncio
 import copy
 from unittest.mock import MagicMock
 
+import pytest
+
+pytest.importorskip("torch")
 import torch
 import torch.nn as nn
 

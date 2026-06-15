@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("torch")
 from src.training.eval.bamboogle import (
     contains_match,
     evaluate_bamboogle,
