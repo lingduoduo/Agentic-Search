@@ -49,6 +49,8 @@ def _to_item(r: RetrievalResult) -> SearchResultItem:
 
 
 def create_app(service: RetrievalService | None = None) -> FastAPI:
+    from src.internal.servers.retrieval.eval_router import create_eval_router
+
     _service = service or RetrievalService.from_env()
     _backend_name = os.environ.get("RETRIEVAL_BACKEND", "local")
     app = FastAPI(title="Retrieval Service", version="1.0")
@@ -68,5 +70,8 @@ def create_app(service: RetrievalService | None = None) -> FastAPI:
             executed_queries=[request.query],
             latency_ms=latency_ms,
         )
+
+    # Internal eval endpoints (no auth in dev; pass require_admin in prod)
+    app.include_router(create_eval_router(_service, require_admin=None))
 
     return app
