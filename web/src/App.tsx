@@ -8,7 +8,6 @@ import {
   getAnalyticsByLLM,
   getAnalyticsByPersona,
   runAgent,
-  streamAgent,
 } from "./api";
 import { AdminOverview } from "./components/AdminOverview";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
@@ -23,7 +22,6 @@ import type {
   AdminSurfaceSummary,
   AgentExperienceRequest,
   AgentExperienceResponse,
-  AgentMode,
   BreakdownAnalytics,
   ChatMessageView,
   SearchSourceProvider,
@@ -37,7 +35,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
-  const [mode, setMode] = useState<AgentMode>("chat_once");
+  const [intent, setIntent] = useState<"search" | "chat" | "tool" | undefined>(undefined);
   const [sourceProvider, setSourceProvider] =
     useState<SearchSourceProvider>("retrieval");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -70,9 +68,6 @@ export function App() {
     if (answer) return "Grounded";
     return "Ready";
   }, [answer, error, isLoading]);
-  const isChatMode = mode === "chat_once" || mode === "chat_loop";
-  const isSearchMode = mode === "search_tool" || mode === "hybrid_search";
-
   const ensureSession = useCallback(
     async (signal: AbortSignal) => {
       if (sessionId) return sessionId;
@@ -83,8 +78,6 @@ export function App() {
     },
     [sessionId],
   );
-
-  const STREAMING_MODES: AgentMode[] = ["chat_loop"];
 
   const handleSubmit = useCallback(async (event?: FormEvent) => {
     event?.preventDefault();
@@ -105,37 +98,18 @@ export function App() {
         session_id: activeSessionId,
         search_url: searchUrl,
         top_k: topK,
-        mode,
-        source_provider: isSearchMode ? sourceProvider : "retrieval",
+        source_provider: sourceProvider,
       };
 
-      if (STREAMING_MODES.includes(mode)) {
-        for await (const event of streamAgent(agentRequest, { signal: controller.signal })) {
-          if (event.type === "progress") {
-            setStreamingAnswer((prev) => prev + (prev ? "\n" : "") + event.text);
-          } else if (event.type === "answer") {
-            setStreamingAnswer(event.text);
-            setAnswer(event.text);
-          } else if (event.type === "done") {
-            setSessionId(event.session_id);
-            setCitations(event.citations);
-            setDocuments(event.documents);
-            setStreamingAnswer("");
-            break;
-          } else if (event.type === "error") {
-            throw new Error(event.detail);
-          }
-        }
-      } else {
-        const response: AgentExperienceResponse = await runAgent(agentRequest, {
-          signal: controller.signal,
-        });
-        setSessionId(response.session_id);
-        setAnswer(response.answer);
-        setCitations(response.citations);
-        setDocuments(response.documents);
-        setMessages(response.messages);
-      }
+      const response: AgentExperienceResponse = await runAgent(agentRequest, {
+        signal: controller.signal,
+      });
+      setSessionId(response.session_id);
+      setAnswer(response.answer);
+      setCitations(response.citations);
+      setDocuments(response.documents);
+      setMessages(response.messages);
+      setIntent(response.intent);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
@@ -146,7 +120,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [ensureSession, isSearchMode, mode, query, searchUrl, sourceProvider, topK]);
+  }, [ensureSession, query, searchUrl, sourceProvider, topK]);
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
@@ -157,6 +131,7 @@ export function App() {
     setDocuments([]);
     setMessages([]);
     setError(null);
+    setIntent(undefined);
     setIsLoading(false);
   }, []);
 
@@ -259,13 +234,18 @@ export function App() {
 
         {showQueryHistory && <QueryHistoryPanel />}
 
-        <div className="results-layout">
-          <section className="answer-column" aria-label={isChatMode ? "Answer" : "Search Summary"}>
+        <div className={`results-layout${intent ? ` intent-${intent}` : ""}`}>
+          <section className="answer-column" aria-label="Answer">
             <div className="section-heading">
-              {isChatMode ? <Bot size={18} /> : <Search size={18} />}
-              <h2>{isChatMode ? "Answer" : "Search Summary"}</h2>
+              <Bot size={18} />
+              <h2>Answer</h2>
             </div>
-            <AnswerPanel answer={streamingAnswer || answer} citations={citations} />
+            <AnswerPanel
+              answer={streamingAnswer || answer}
+              citations={citations}
+              intent={intent}
+              documentCount={documents.length}
+            />
           </section>
 
           <section className="panel sources-panel wide" aria-label="Sources">
