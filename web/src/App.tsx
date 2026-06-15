@@ -90,6 +90,7 @@ export function App() {
 
     setIsLoading(true);
     setError(null);
+    setIntent(undefined);
     setStreamingAnswer("");
     try {
       const activeSessionId = await ensureSession(controller.signal);

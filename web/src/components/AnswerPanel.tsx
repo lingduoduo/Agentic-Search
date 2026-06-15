@@ -22,8 +22,7 @@ function IntentBadge({ intent, citations, documentCount, toolCallCount }: {
     const n = citations.length;
     return <span className="intent-badge">Answered · {n} {n === 1 ? "citation" : "citations"}</span>;
   }
-  const n = toolCallCount ?? 0;
-  return <span className="intent-badge">Used tools · {n} {n === 1 ? "call" : "calls"}</span>;
+  return <span className="intent-badge">Used tools</span>;
 }
 
 export const AnswerPanel = memo(function AnswerPanel({

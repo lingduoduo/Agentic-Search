@@ -33,9 +33,9 @@ describe("AnswerPanel", () => {
     expect(screen.getByText(/answered · 2 citations/i)).toBeInTheDocument();
   });
 
-  it("renders 'Used tools · 3 calls' badge when intent is tool", () => {
-    render(<AnswerPanel answer="tool output" citations={[]} intent="tool" toolCallCount={3} />);
-    expect(screen.getByText(/used tools · 3 calls/i)).toBeInTheDocument();
+  it("renders 'Used tools' badge when intent is tool", () => {
+    render(<AnswerPanel answer="tool output" citations={[]} intent="tool" />);
+    expect(screen.getByText(/used tools/i)).toBeInTheDocument();
   });
 
   it("renders no badge when intent is undefined", () => {

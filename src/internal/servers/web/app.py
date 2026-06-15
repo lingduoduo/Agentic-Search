@@ -334,7 +334,7 @@ async def _run_auto_routed(
     # --- Tier 2: LLM classify + execution ---
     if llm is not None:
         try:
-            is_search = classify_is_search_flow(query, llm)
+            is_search = await asyncio.to_thread(classify_is_search_flow, query, llm)
         except Exception as exc:
             logger.warning("LLM classifier failed, using rule-based: %s", exc)
             is_search = _rule_based_is_search(query)
