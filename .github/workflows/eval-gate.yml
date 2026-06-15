@@ -1,0 +1,86 @@
+name: Eval Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -q --tb=short
+
+  retrieval-eval-gate:
+    name: Retrieval Eval Gate
+    runs-on: ubuntu-latest
+    # Only run if baseline metrics exist (set manually after first green run)
+    if: ${{ hashFiles('data/eval/baseline_metrics.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install -r requirements.txt
+
+      - name: Run retrieval eval
+        env:
+          BM25_INDEX_PATH: ${{ secrets.BM25_INDEX_PATH }}
+          BM25_CORPUS_PATH: data/corpus.jsonl
+          RETRIEVAL_BACKEND: local
+        run: |
+          python -m src.internal.retrieval.eval_runner \
+            --dataset data/eval/qa_pairs.jsonl \
+            --top_k 10 \
+            --output /tmp/current_metrics.json
+
+      - name: Check for regressions
+        run: |
+          python - <<'EOF'
+          import json, sys
+          baseline = json.load(open("data/eval/baseline_metrics.json"))
+          current  = json.load(open("/tmp/current_metrics.json"))
+
+          failures = []
+          for key, threshold in [("recall@10", 0.02), ("ndcg@10", 0.01)]:
+              base_val = baseline.get(key)
+              curr_val = current.get(key)
+              if base_val is None or curr_val is None:
+                  continue
+              drop = base_val - curr_val
+              if drop > threshold:
+                  failures.append(
+                      f"{key}: dropped {drop:.4f} (baseline={base_val:.4f}, current={curr_val:.4f})"
+                  )
+
+          if failures:
+              print("EVAL REGRESSION DETECTED:")
+              for f in failures:
+                  print(f"  {f}")
+              sys.exit(1)
+          else:
+              print("No regressions. current:", json.dumps(current, indent=2))
+          EOF

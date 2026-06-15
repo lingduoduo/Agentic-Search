@@ -244,14 +244,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "OnlineSearchEngine": (".backend.servers.web_search.google", "OnlineSearchEngine"),
     "SerpSearchConfig": (".backend.servers.web_search.serp", "SerpSearchConfig"),
     "SerpSearchEngine": (".backend.servers.web_search.serp", "SerpSearchEngine"),
-    "RetrievalServerConfig": (
-        ".backend.servers.retrieval.retrieval_server",
-        "RetrievalServerConfig",
-    ),
-    "RetrievalRerankConfig": (
-        ".backend.servers.retrieval.retrieval_rerank",
-        "RetrievalRerankConfig",
-    ),
     "RerankerConfig": (".backend.servers.retrieval.rerank", "RerankerConfig"),
     "create_base_app": (".backend.servers.app", "create_base_app"),
     "create_search_app": (".backend.servers.app", "create_search_app"),
