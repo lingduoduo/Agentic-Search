@@ -28,3 +28,5 @@ from .openapi_schema import OpenAPISchema as OpenAPISchema
 from .openapi_schema import ParameterIn as ParameterIn
 from .openapi_schema import ParameterType as ParameterType
 from .openapi_schema import ParameterTypeMap as ParameterTypeMap
+from .routing_tools import build_search_routing_tool as build_search_routing_tool
+from .routing_tools import build_rag_routing_tool as build_rag_routing_tool

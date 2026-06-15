@@ -1,11 +1,14 @@
 """Tests for rule-based classifier and trajectory intent inference."""
 
 import json
-from src.internal.servers.web.intent_routing import (
-    _rule_based_is_search,
-    _infer_intent_from_output,
-)
+
+import pytest
 from src.agents.base import AgentLoopOutput
+from src.internal.servers.web.intent_routing import (
+    _infer_intent_from_output,
+    _rule_based_is_search,
+)
+from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
 
 
 def _make_output(
@@ -105,3 +108,69 @@ def test_infer_intent_no_trace_defaults_to_chat():
 def test_infer_intent_malformed_trace_defaults_to_chat():
     output = _make_output(action_trace="not json")
     assert _infer_intent_from_output(output) == "chat"
+
+
+def test_build_search_routing_tool_schema():
+    tool = build_search_routing_tool(
+        search_url="http://localhost:8000/retrieve", top_k=5
+    )
+    schema = tool.schema.to_dict()
+    assert schema["function"]["name"] == "search_routing_tool"
+    assert "query" in schema["function"]["parameters"]["properties"]
+
+
+def test_build_rag_routing_tool_schema():
+    tool = build_rag_routing_tool(
+        llm=None, search_url="http://localhost:8000/retrieve", top_k=5
+    )
+    schema = tool.schema.to_dict()
+    assert schema["function"]["name"] == "rag_routing_tool"
+    assert "query" in schema["function"]["parameters"]["properties"]
+
+
+@pytest.mark.asyncio
+async def test_search_routing_tool_returns_json(monkeypatch):
+    from src.tools import SearchPage
+
+    async def fake_search_tool(query, *, provider, search_url, page_size):
+        return [
+            SearchPage(
+                title="Doc A", summary="summary", url="http://example.com", error=None
+            )
+        ]
+
+    monkeypatch.setattr("src.tools.routing_tools.search_tool", fake_search_tool)
+    tool = build_search_routing_tool(
+        search_url="http://localhost:8000/retrieve", top_k=5
+    )
+    result, _, _ = await tool.execute("default", {"query": "FAISS"})
+    data = json.loads(result)
+    assert data[0]["title"] == "Doc A"
+
+
+@pytest.mark.asyncio
+async def test_rag_routing_tool_returns_answer(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from src.context.models import (
+        AnswerGenerationResult,
+        SearchContextBundle,
+        PromptBundle,
+    )
+
+    fake_result = AnswerGenerationResult(
+        answer="FAISS is a library.",
+        citations=["[D1]"],
+        context=SearchContextBundle(query="q", documents=[]),
+        prompt=PromptBundle(system="", user="", messages=[]),
+    )
+    mock_llm = MagicMock()
+    monkeypatch.setattr(
+        "src.tools.routing_tools.answer_with_retrieval",
+        AsyncMock(return_value=fake_result),
+    )
+    tool = build_rag_routing_tool(
+        llm=mock_llm, search_url="http://localhost:8000/retrieve", top_k=5
+    )
+    result, _, _ = await tool.execute("default", {"query": "What is FAISS?"})
+    data = json.loads(result)
+    assert data["answer"] == "FAISS is a library."
