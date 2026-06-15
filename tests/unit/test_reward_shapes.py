@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 
 import pytest
+
+pytest.importorskip("torch")
 import torch
 
 from src.training.grpo import (
