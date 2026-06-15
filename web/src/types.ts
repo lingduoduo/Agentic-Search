@@ -47,6 +47,7 @@ export interface AgentExperienceResponse {
   citations: string[];
   documents: SourceDocumentView[];
   messages: ChatMessageView[];
+  intent?: "search" | "chat" | "tool";
 }
 
 export interface SessionCreateRequest {

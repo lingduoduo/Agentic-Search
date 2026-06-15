@@ -23,11 +23,28 @@ describe("AnswerPanel", () => {
     expect(screen.queryByLabelText(/citations/i)).not.toBeInTheDocument();
   });
 
-  it("renders multiple citations", () => {
-    render(
-      <AnswerPanel answer="See [D1] and [D2]." citations={["[D1]", "[D2]"]} />,
-    );
-    expect(screen.getByText("[D1]")).toBeInTheDocument();
-    expect(screen.getByText("[D2]")).toBeInTheDocument();
+  it("renders 'Searched · 5 sources' badge when intent is search", () => {
+    render(<AnswerPanel answer="results" citations={[]} intent="search" documentCount={5} />);
+    expect(screen.getByText(/searched · 5 sources/i)).toBeInTheDocument();
+  });
+
+  it("renders 'Answered · 2 citations' badge when intent is chat", () => {
+    render(<AnswerPanel answer="answer" citations={["[D1]", "[D2]"]} intent="chat" />);
+    expect(screen.getByText(/answered · 2 citations/i)).toBeInTheDocument();
+  });
+
+  it("renders 'Used tools' badge when intent is tool", () => {
+    render(<AnswerPanel answer="tool output" citations={[]} intent="tool" />);
+    expect(screen.getByText(/used tools/i)).toBeInTheDocument();
+  });
+
+  it("renders no badge when intent is undefined", () => {
+    render(<AnswerPanel answer="answer" citations={[]} />);
+    expect(document.querySelector(".intent-badge")).not.toBeInTheDocument();
+  });
+
+  it("renders no badge when answer is empty even if intent is set", () => {
+    render(<AnswerPanel answer="" citations={[]} intent="chat" />);
+    expect(document.querySelector(".intent-badge")).not.toBeInTheDocument();
   });
 });
