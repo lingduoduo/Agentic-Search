@@ -29,6 +29,11 @@ class HybridSearchRequest(InternalSearchRequest):
     over_fetch: int = Field(default=2, ge=1, le=4)
 
 
+class GraphSearchRequest(InternalSearchRequest):
+    initial_k: int = Field(default=5, ge=1, le=50)
+    max_entity_queries: int = Field(default=3, ge=0, le=10)
+
+
 def create_eval_router(
     service: RetrievalService,
     require_admin: Callable | None = None,
@@ -78,6 +83,22 @@ def create_eval_router(
         return SearchResponse(
             results=[_to_item(r) for r in reranked],
             retrieval_mode="hybrid",
+            executed_queries=[request.query],
+            latency_ms=round((time.monotonic() - t0) * 1000, 1),
+        )
+
+    @router.post("/graph", response_model=SearchResponse, dependencies=deps)
+    def search_graph(request: GraphSearchRequest) -> SearchResponse:
+        t0 = time.monotonic()
+        results = service.graph_search(
+            request.query,
+            top_k=request.top_k,
+            initial_k=request.initial_k,
+            max_entity_queries=request.max_entity_queries,
+        )
+        return SearchResponse(
+            results=[_to_item(r) for r in results],
+            retrieval_mode="graph",
             executed_queries=[request.query],
             latency_ms=round((time.monotonic() - t0) * 1000, 1),
         )

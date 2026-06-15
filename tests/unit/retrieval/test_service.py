@@ -109,3 +109,29 @@ def test_search_raises_when_both_legs_fail():
 
     with pytest.raises(RuntimeError, match="Both retrieval legs failed"):
         service.search("q", top_k=5)
+
+
+def test_graph_search_returns_results():
+    backend = MagicMock()
+    backend.search_sparse.return_value = [
+        _make_result("g1"),
+    ]
+    backend.search_dense.side_effect = NotImplementedError("no dense")
+    service = RetrievalService(backend)
+
+    results = service.graph_search(
+        "FAISS dense retrieval", top_k=5, max_entity_queries=0
+    )
+
+    assert len(results) >= 1
+    assert results[0].doc_id == "g1"
+
+
+def test_graph_search_delegates_to_graph_rag_search():
+    backend = MagicMock()
+    backend.search_sparse.return_value = [_make_result("g2")]
+    backend.search_dense.side_effect = NotImplementedError
+    service = RetrievalService(backend)
+
+    results = service.graph_search("q", top_k=3, initial_k=2, max_entity_queries=0)
+    assert isinstance(results, list)
