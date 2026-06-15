@@ -5,6 +5,7 @@ Replaces retrieval_server.py in M3. During M1-M2 both run in parallel.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 
@@ -13,6 +14,8 @@ from pydantic import BaseModel, Field
 
 from src.internal.retrieval.backends.base import RetrievalResult
 from src.internal.retrieval.service import RetrievalService
+
+logger = logging.getLogger(__name__)
 
 
 class SearchRequest(BaseModel):
@@ -64,6 +67,14 @@ def create_app(service: RetrievalService | None = None) -> FastAPI:
         t0 = time.monotonic()
         results, mode = _service.search(request.query, top_k=request.top_k)
         latency_ms = round((time.monotonic() - t0) * 1000, 1)
+        logger.info(
+            "retrieval query completed",
+            extra={
+                "retrieval_mode": mode,
+                "latency_ms": latency_ms,
+                "top_k": request.top_k,
+            },
+        )
         return SearchResponse(
             results=[_to_item(r) for r in results],
             retrieval_mode=mode,

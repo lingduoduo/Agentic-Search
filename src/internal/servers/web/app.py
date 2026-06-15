@@ -227,7 +227,7 @@ def _register_routers(
     ee_admin_router, ee_basic_router = create_enterprise_settings_routers(settings)
     app.include_router(ee_admin_router)
     app.include_router(ee_basic_router)
-    app.include_router(create_evals_router(settings, search_url=search_url))
+    app.include_router(create_evals_router(settings, search_url=search_url, db=db))
     app.include_router(create_hooks_router(db, settings))
 
     # --- Admin: license, billing ---
@@ -248,6 +248,11 @@ def _register_routers(
 
     # --- Analytics ---
     app.include_router(create_analytics_router(db, settings))
+
+    # --- Retrieval feedback ---
+    from src.internal.servers.retrieval.feedback_router import create_feedback_router
+
+    app.include_router(create_feedback_router(db))
 
 
 async def _run_auto_routed(

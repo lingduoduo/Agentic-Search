@@ -21,6 +21,7 @@ from pydantic import Field
 
 from src.internal.auth import AuthenticatedUser
 from src.internal.configs import AppSettings
+from src.internal.db import AgenticSearchStore
 from src.context.models import SearchFilters
 from src.internal.search.process_search_query import run_expanded_search
 from src.internal.servers._auth import make_require_admin
@@ -70,18 +71,28 @@ class EvalRunAck(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class EvalsSummary(BaseModel):
+    thumbs_up_rate: float
+    ctr: float
+    rated_queries: int
+
+
 def create_evals_router(
     app_settings: AppSettings,
     *,
     search_url: str = "http://localhost:8000/retrieve",
+    db: "AgenticSearchStore | None" = None,
+    require_admin: object = None,
 ) -> APIRouter:
     """Return an APIRouter for evaluation endpoints bound to *app_settings*."""
 
-    router = APIRouter(prefix="/evals", tags=["evals"])
+    router = APIRouter(tags=["evals"])
 
-    _require_admin = make_require_admin(app_settings)
+    _require_admin = (
+        require_admin if require_admin is not None else make_require_admin(app_settings)
+    )
 
-    @router.post("/eval_run", response_model=EvalRunResult)
+    @router.post("/evals/eval_run", response_model=EvalRunResult)
     async def eval_run(
         request: EvalConfigurationOptions,
         _: AuthenticatedUser = Depends(_require_admin),
@@ -127,7 +138,7 @@ def create_evals_router(
                 error=str(exc),
             )
 
-    @router.post("/eval_run_ack")
+    @router.post("/evals/eval_run_ack")
     async def eval_run_ack(
         request: EvalConfigurationOptions,
         _: AuthenticatedUser = Depends(_require_admin),
@@ -157,6 +168,20 @@ def create_evals_router(
 
         asyncio.ensure_future(_run_background())
         return EvalRunAck(success=True, message="Eval queued.")
+
+    @router.get("/api/admin/evals/summary", response_model=EvalsSummary)
+    def evals_summary(
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> EvalsSummary:
+        """Return aggregate retrieval feedback metrics (admin only)."""
+        if db is None:
+            return EvalsSummary(thumbs_up_rate=0.0, ctr=0.0, rated_queries=0)
+        summary = db.get_feedback_summary()
+        return EvalsSummary(
+            thumbs_up_rate=float(summary["thumbs_up_rate"]),
+            ctr=float(summary["ctr"]),
+            rated_queries=int(summary["rated_queries"]),
+        )
 
     return router
 
