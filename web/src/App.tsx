@@ -84,7 +84,7 @@ export function App() {
     [sessionId],
   );
 
-  const STREAMING_MODES: AgentMode[] = ["search_agent", "tool_agent", "chat_loop"];
+  const STREAMING_MODES: AgentMode[] = ["chat_loop"];
 
   const handleSubmit = useCallback(async (event?: FormEvent) => {
     event?.preventDefault();
