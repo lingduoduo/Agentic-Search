@@ -158,11 +158,11 @@ class AgentExperienceRequest(BaseModel):
             "Browser uses the retrieval-compatible URL in search_url."
         ),
     )
-    mode: str = Field(
-        default="chat_once",
+    mode: str | None = Field(
+        default=None,
         description=(
-            "'search_tool', 'hybrid_search', 'chat_once', or 'chat_loop'. "
-            "'standard' and 'agentic_rag' are accepted as legacy aliases."
+            "Optional explicit mode override: 'search_tool', 'hybrid_search', 'chat_once', "
+            "'chat_loop', 'search_agent', 'tool_agent'. When None, intent is auto-detected."
         ),
     )
 
@@ -174,6 +174,7 @@ class AgentExperienceResponse(BaseModel):
     documents: list[SourceDocumentView]
     messages: list[ChatMessageView]
     hook_metadata: dict[str, object] = Field(default_factory=dict)
+    intent: str = "chat"  # "search" | "chat" | "tool"
 
 
 class QueryProcessingHookResponse(BaseModel):
@@ -432,7 +433,8 @@ def create_web_app(
         elif isinstance(hook_result, HookSoftFailed):
             hook_metadata = {"query_processing_hook_error": hook_result.error_message}
 
-        mode = _normalize_agent_mode(request.mode)
+        mode_str = request.mode if request.mode is not None else "chat_once"
+        mode = _normalize_agent_mode(mode_str)
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request, auth_user=auth_user)
         history = _trim_history(

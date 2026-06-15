@@ -544,3 +544,19 @@ def test_run_agent_trims_long_history(monkeypatch, tmp_path):
 
     assert len(captured) == 1
     assert len(captured[0]) <= MAX_HISTORY_MESSAGES
+
+
+def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
+    async def fake_answer(*args, **kwargs):
+        return _answer_result("q")
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "explain FAISS"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "intent" in data
+    assert data["intent"] in ("search", "chat", "tool")
