@@ -82,7 +82,10 @@ def test_scim_request_with_bad_token_rejected(
     admin_user: DATestUser,  # noqa: ARG001
 ) -> None:
     """SCIM endpoints reject requests with an invalid token."""
-    assert ScimClient.get("/Users", "agentic_search_scim_bogus_token_value").status_code == 401
+    assert (
+        ScimClient.get("/Users", "agentic_search_scim_bogus_token_value").status_code
+        == 401
+    )
 
 
 def test_non_admin_cannot_create_token(

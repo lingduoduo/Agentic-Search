@@ -20,7 +20,7 @@ jobs:
           cache: pip
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.11.9
 
       - name: Check formatting
         run: ruff format --check .

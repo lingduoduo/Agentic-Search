@@ -38,7 +38,9 @@ def _get_github_test_tokens() -> list[str]:
     """
     token_1 = os.environ.get("AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN")
     # Prefer the new "classic" name, but keep backward compatibility.
-    token_2 = os.environ.get("AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC")
+    token_2 = os.environ.get(
+        "AGENTIC_SEARCH_GITHUB_PERMISSION_SYNC_TEST_ACCESS_TOKEN_CLASSIC"
+    )
 
     tokens: list[str] = []
     if token_1:
