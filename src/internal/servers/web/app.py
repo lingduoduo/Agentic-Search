@@ -90,6 +90,11 @@ from src.tools import search_tool
 from .static import APP_CSS
 from .static import APP_HTML
 from .static import APP_JS
+from .intent_routing import _rule_based_is_search, _infer_intent_from_output
+from src.internal.servers.secondary_llm_flows.search_flow_classification import (
+    classify_is_search_flow,
+)
+from src.tools.routing_tools import build_search_routing_tool, build_rag_routing_tool
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +244,181 @@ def _register_routers(
 
     # --- Analytics ---
     app.include_router(create_analytics_router(db, settings))
+
+
+async def _run_auto_routed(
+    query: str,
+    *,
+    llm,
+    manager,
+    tokenizer,
+    search_url: str,
+    browser_search_url,
+    rerank_url,
+    top_k: int,
+    filters,
+    history: list,
+    resolved,
+) -> tuple:
+    """
+    Three-tier intent routing. Returns (answer, citations, documents, intent, extra_meta).
+    Tier 1: ToolAgentLoop (when local model available)
+    Tier 2: LLM binary classifier
+    Tier 3: Rule-based keyword classifier
+    """
+    extra: dict = {}
+
+    # --- Tier 1: ToolAgentLoop ---
+    if manager is not None and tokenizer is not None:
+        from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+        from src.tools import tool_registry
+
+        tools = [
+            build_search_routing_tool(search_url=search_url, top_k=top_k),
+            build_rag_routing_tool(
+                llm=llm, search_url=search_url, top_k=top_k, filters=filters
+            ),
+        ] + tool_registry.list_tools()
+        loop = ToolAgentLoop(
+            tokenizer=tokenizer,
+            server_manager=manager,
+            tools=tools,
+            config=ToolAgentLoopConfig(tool_parser_format=resolved.tool_agent_parser),
+        )
+        try:
+            output = await loop.run(
+                [{"role": "user", "content": query}],
+                sampling_params={"temperature": 0.0, "max_tokens": 512},
+            )
+        except Exception as exc:
+            logger.warning("ToolAgentLoop failed, falling through to Tier 2: %s", exc)
+            extra["intent_fallback"] = "loop_error"
+            output = None
+
+        if output is not None and not (output.final_answer or "").strip():
+            logger.warning(
+                "ToolAgentLoop returned empty output, falling through to Tier 2"
+            )
+            extra["intent_fallback"] = "empty_output"
+            output = None
+
+        if output is not None:
+            intent = _infer_intent_from_output(output)
+            answer = output.final_answer or ""
+            documents = []
+            if output.action_trace:
+                for line in output.action_trace.split("\n"):
+                    try:
+                        rec = _json.loads(line)
+                        if rec.get("tool_name") == "search_routing_tool" and rec.get(
+                            "result"
+                        ):
+                            raw = _json.loads(rec["result"])
+                            for i, item in enumerate(raw, 1):
+                                documents.append(
+                                    ContextDocument(
+                                        id=f"D{i}",
+                                        title=item.get("title", ""),
+                                        content=item.get("content", ""),
+                                        url=item.get("url"),
+                                        score=0.0,
+                                        metadata={"source": "search_routing_tool"},
+                                    )
+                                )
+                    except Exception:
+                        pass
+            citations = [doc.citation for doc in documents]
+            return answer, citations, documents, intent, extra
+
+    # --- Tier 2: LLM classify + execution ---
+    if llm is not None:
+        try:
+            is_search = classify_is_search_flow(query, llm)
+        except Exception as exc:
+            logger.warning("LLM classifier failed, using rule-based: %s", exc)
+            is_search = _rule_based_is_search(query)
+    else:
+        # --- Tier 3: rule-based only (no LLM to classify) ---
+        is_search = _rule_based_is_search(query)
+        # Don't raise here — fall through to search or chat path below
+
+    if is_search:
+        try:
+            search_result = await _run_hybrid_search(
+                query,
+                llm=llm,
+                search_url=search_url,
+                browser_search_url=browser_search_url,
+                rerank_url=rerank_url,
+                top_k=top_k,
+                filters=filters,
+                source_provider="retrieval",
+            )
+            answer = _search_only_answer(
+                "Search",
+                queries=search_result.executed_queries,
+                documents=search_result.documents,
+                source_provider="retrieval",
+            )
+            return (
+                answer,
+                [d.citation for d in search_result.documents],
+                search_result.documents,
+                "search",
+                extra,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Hybrid search failed, falling back to RAG without context: %s", exc
+            )
+            extra["search_fallback"] = "retrieval_unavailable"
+            is_search = False
+
+    # Chat path (also search fallback)
+    # (No LLM check here — answer_with_retrieval handles llm=None gracefully,
+    #  and tests monkeypatch it anyway)
+    try:
+        result = await answer_with_retrieval(
+            query,
+            llm=llm,
+            chat_history=history,
+            search_url=search_url,
+            top_k=0 if extra.get("search_fallback") else top_k,
+            filters=filters,
+        )
+        return (
+            result.answer,
+            result.citations,
+            result.context.documents,
+            "chat",
+            extra,
+        )
+    except Exception as exc:
+        logger.warning("RAG answer_with_retrieval failed, trying raw search: %s", exc)
+        extra["rag_fallback"] = "synthesis_failed"
+        try:
+            raw_docs = await _run_direct_search(
+                query,
+                source_provider="retrieval",
+                search_url=search_url,
+                browser_search_url=None,
+                rerank_url=None,
+                top_k=top_k,
+            )
+            if raw_docs:
+                answer = _search_only_answer(
+                    "Search (synthesis failed)",
+                    queries=[query],
+                    documents=raw_docs,
+                    source_provider="retrieval",
+                )
+                return answer, [d.citation for d in raw_docs], raw_docs, "search", extra
+        except Exception as exc2:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Answer generation failed and retrieval also unavailable: {exc2}",
+            ) from exc2
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def create_web_app(
@@ -433,8 +613,9 @@ def create_web_app(
         elif isinstance(hook_result, HookSoftFailed):
             hook_metadata = {"query_processing_hook_error": hook_result.error_message}
 
-        mode_str = request.mode if request.mode is not None else "chat_once"
-        mode = _normalize_agent_mode(mode_str)
+        mode_str = request.mode.strip().lower() if request.mode else None
+        normalized_mode = _normalize_agent_mode(mode_str) if mode_str else None
+
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request, auth_user=auth_user)
         history = _trim_history(
@@ -457,7 +638,62 @@ def create_web_app(
             else (build_user_only_filters(user_id) if user_id else None)
         )
 
+        manager = getattr(http_request.app.state, "search_agent_manager", None)
+        tokenizer = getattr(http_request.app.state, "search_agent_tokenizer", None)
+
         try:
+            if normalized_mode is None:
+                # Auto-routing path
+                (
+                    answer,
+                    citations,
+                    documents,
+                    intent,
+                    extra_meta,
+                ) = await _run_auto_routed(
+                    query,
+                    llm=llm,
+                    manager=manager,
+                    tokenizer=tokenizer,
+                    search_url=search_url,
+                    browser_search_url=settings.browser_search_url,
+                    rerank_url=settings.rerank_url,
+                    top_k=top_k,
+                    filters=filters,
+                    history=history,
+                    resolved=resolved,
+                )
+                merged_metadata = {**hook_metadata, **extra_meta}
+                db.add_chat_message(
+                    session_id,
+                    role="assistant",
+                    content=answer,
+                    metadata={
+                        "citations": citations,
+                        "document_ids": [d.id for d in documents],
+                        "hooks": hook_metadata,
+                        "mode": "auto",
+                        "intent": intent,
+                        **extra_meta,
+                    },
+                )
+                messages = [
+                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
+                    for m in db.list_chat_messages(session_id)
+                ]
+                return AgentExperienceResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    citations=citations,
+                    documents=[_document_view(d) for d in documents],
+                    messages=messages,
+                    hook_metadata=merged_metadata,
+                    intent=intent,
+                )
+
+            # Explicit mode — fall through to existing if/elif chain
+            mode = normalized_mode
+
             if mode == "search_tool":
                 source_provider = _normalize_source_provider(request.source_provider)
                 documents = await _run_direct_search(
@@ -497,6 +733,7 @@ def create_web_app(
                     documents=[_document_view(doc) for doc in documents],
                     messages=messages,
                     hook_metadata=hook_metadata,
+                    intent="search",
                 )
 
             if mode == "hybrid_search":
@@ -541,6 +778,7 @@ def create_web_app(
                     documents=[_document_view(doc) for doc in search_result.documents],
                     messages=messages,
                     hook_metadata=hook_metadata,
+                    intent="search",
                 )
 
             if mode == "chat_loop":
@@ -574,14 +812,12 @@ def create_web_app(
                     documents=[_document_view(doc) for doc in rag.context.documents],
                     messages=messages,
                     hook_metadata=hook_metadata,
+                    intent="chat",
                 )
+
             if mode == "search_agent":
                 from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
 
-                manager = getattr(http_request.app.state, "search_agent_manager", None)
-                tokenizer = getattr(
-                    http_request.app.state, "search_agent_tokenizer", None
-                )
                 if manager is None or tokenizer is None:
                     raise HTTPException(
                         status_code=400,
@@ -637,16 +873,13 @@ def create_web_app(
                     documents=[_document_view(doc) for doc in sa_documents],
                     messages=messages,
                     hook_metadata=hook_metadata,
+                    intent="search",
                 )
 
             if mode == "tool_agent":
                 from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
                 from src.tools import build_search_tool, tool_registry
 
-                manager = getattr(http_request.app.state, "search_agent_manager", None)
-                tokenizer = getattr(
-                    http_request.app.state, "search_agent_tokenizer", None
-                )
                 if manager is None or tokenizer is None:
                     raise HTTPException(
                         status_code=400,
@@ -699,6 +932,7 @@ def create_web_app(
                     documents=[],
                     messages=messages,
                     hook_metadata=hook_metadata,
+                    intent="tool",
                 )
 
             result = await answer_with_retrieval(
@@ -712,16 +946,11 @@ def create_web_app(
         except HTTPException:
             raise
         except Exception as exc:
-            logger.exception("Agent search failed: %s", exc)
-            search_url = request.search_url or settings.search_url
+            logger.exception("Agent dispatch error: %s", exc)
             detail = (
-                (
-                    f"Cannot reach retrieval server at {search_url}. "
-                    "Start it with: python3 -m src.internal.servers.retrieval.retrieval_server "
-                    "--retrieval_method bm25"
-                )
-                if "connect" in str(exc).lower() or "retriev" in str(exc).lower()
-                else "Agent search failed"
+                str(exc)
+                if str(exc).strip()
+                else "Unexpected error during agent dispatch"
             )
             raise HTTPException(status_code=502, detail=detail) from exc
 
@@ -742,8 +971,16 @@ def create_web_app(
             )
             for message in db.list_chat_messages(session_id)
         ]
-        return _response_from_result(
-            session_id, result, messages, hook_metadata=hook_metadata
+        return AgentExperienceResponse(
+            session_id=session_id,
+            answer=result.answer,
+            citations=result.citations,
+            documents=[
+                _document_view(document) for document in result.context.documents
+            ],
+            messages=messages,
+            hook_metadata=hook_metadata,
+            intent="chat",
         )
 
     @app.post("/api/agent/stream")

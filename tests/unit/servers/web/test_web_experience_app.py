@@ -560,3 +560,69 @@ def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
     data = response.json()
     assert "intent" in data
     assert data["intent"] in ("search", "chat", "tool")
+
+
+def test_auto_route_chat_uses_answer_with_retrieval(monkeypatch, tmp_path):
+    """No mode in request → auto-routes to chat via answer_with_retrieval."""
+    called = {}
+
+    async def fake_answer(q, *, llm, chat_history, search_url, top_k, filters):
+        called["answer"] = True
+        return _answer_result(q)
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "explain FAISS"})
+    assert response.status_code == 200
+    assert called.get("answer") is True
+    assert response.json()["intent"] == "chat"
+
+
+def test_auto_route_search_via_rule_based(monkeypatch, tmp_path):
+    """Short keyword query → rule-based classifies as search → hybrid_search runs."""
+    called = {}
+
+    async def fake_hybrid(
+        query,
+        *,
+        llm,
+        search_url,
+        browser_search_url,
+        rerank_url,
+        top_k,
+        filters,
+        source_provider,
+    ):
+        called["hybrid"] = True
+        from src.internal.servers.web.app import _HybridSearchResult
+
+        return _HybridSearchResult(executed_queries=[query], documents=[])
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "procurement process"})
+    assert response.status_code == 200
+    assert called.get("hybrid") is True
+    assert response.json()["intent"] == "search"
+
+
+def test_explicit_mode_still_works(monkeypatch, tmp_path):
+    """Passing explicit mode='chat_once' still routes to answer_with_retrieval."""
+    called = {}
+
+    async def fake_answer(q, *, llm, chat_history, search_url, top_k, filters):
+        called["answer"] = True
+        return _answer_result(q)
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "hello", "mode": "chat_once"})
+    assert response.status_code == 200
+    assert called.get("answer") is True
