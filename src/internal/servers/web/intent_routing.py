@@ -26,6 +26,8 @@ _VERB_RE = re.compile(
 def _rule_based_is_search(query: str) -> bool:
     """Return True if the query looks like a search/retrieval intent."""
     q = query.strip()
+    if not q:
+        return False
     # Check for explicit chat keywords first
     if _CHAT_RE.search(q):
         return False
@@ -40,7 +42,11 @@ def _rule_based_is_search(query: str) -> bool:
 
 
 def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
-    """Infer search/chat/tool intent from the first tool called in the output."""
+    """Infer search/chat/tool intent from the first tool called in the output.
+
+    Only the first line of action_trace is examined; subsequent tool calls
+    do not affect intent classification.
+    """
     if not output.action_trace:
         return "chat"
     first_line = output.action_trace.split("\n")[0].strip()
@@ -53,6 +59,6 @@ def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
             return "chat"
         if tool_name:
             return "tool"
-    except (json.JSONDecodeError, KeyError, AttributeError):
+    except (json.JSONDecodeError, AttributeError):
         pass
     return "chat"

@@ -55,6 +55,15 @@ def test_rule_based_is_search_show_me():
     assert _rule_based_is_search("show me the deployment runbook") is True
 
 
+def test_rule_based_is_search_empty_returns_false():
+    assert _rule_based_is_search("") is False
+
+
+def test_rule_based_chat_signal_beats_search_signal():
+    # 'explain' (chat) + 'find' (search) in same query → chat wins
+    assert _rule_based_is_search("explain how to find docs") is False
+
+
 # --- _infer_intent_from_output ---
 
 
