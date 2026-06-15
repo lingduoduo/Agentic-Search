@@ -233,13 +233,11 @@ export function App() {
           query={query}
           searchUrl={searchUrl}
           topK={topK}
-          mode={mode}
           sourceProvider={sourceProvider}
           isLoading={isLoading}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}
-          onModeChange={setMode}
           onSourceProviderChange={handleSourceProviderChange}
           onSubmit={handleSubmit}
         />
