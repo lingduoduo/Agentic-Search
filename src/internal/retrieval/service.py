@@ -117,3 +117,21 @@ class RetrievalService:
         fused = rrf_fuse([sparse_results, dense_results])
         reranked = mmr_rerank(fused, top_k=top_k)
         return reranked, "hybrid"
+
+    def graph_search(
+        self,
+        query: str,
+        top_k: int = 10,
+        initial_k: int = 5,
+        max_entity_queries: int = 3,
+    ) -> list[RetrievalResult]:
+        """Graph-augmented retrieval: seed search → entity expansion → RRF fusion."""
+        from .graph_rag import graph_rag_search
+
+        return graph_rag_search(
+            query,
+            service=self,
+            top_k=top_k,
+            initial_k=initial_k,
+            max_entity_queries=max_entity_queries,
+        )

@@ -71,3 +71,34 @@ def test_hybrid_endpoint_accepts_tuning_params():
     )
     assert resp.status_code == 200
     assert resp.json()["retrieval_mode"] == "hybrid"
+
+
+def test_graph_endpoint_returns_mode_graph():
+    client = _app_with_router(_make_backend(sparse=[_result("g1")]))
+    resp = client.post(
+        "/internal/search/graph",
+        json={"query": "FAISS dense retrieval", "top_k": 5},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["retrieval_mode"] == "graph"
+    assert len(resp.json()["results"]) >= 1
+
+
+def test_graph_endpoint_accepts_tuning_params():
+    client = _app_with_router(_make_backend(sparse=[_result("g2")]))
+    resp = client.post(
+        "/internal/search/graph",
+        json={"query": "FAISS", "top_k": 3, "initial_k": 2, "max_entity_queries": 1},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["retrieval_mode"] == "graph"
+
+
+def test_graph_endpoint_empty_corpus_returns_empty():
+    client = _app_with_router(_make_backend(sparse=[]))
+    resp = client.post(
+        "/internal/search/graph",
+        json={"query": "nothing here", "top_k": 5},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["results"] == []
