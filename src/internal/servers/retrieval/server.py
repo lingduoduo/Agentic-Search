@@ -1,0 +1,72 @@
+"""FastAPI app wrapping RetrievalService.
+
+Replaces retrieval_server.py in M3. During M1-M2 both run in parallel.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+from src.internal.retrieval.backends.base import RetrievalResult
+from src.internal.retrieval.service import RetrievalService
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    top_k: int = Field(default=5, ge=1, le=50)
+    filters: dict | None = None
+
+
+class SearchResultItem(BaseModel):
+    doc_id: str
+    title: str
+    text: str
+    url: str | None = None
+    score: float
+    metadata: dict = Field(default_factory=dict)
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResultItem]
+    retrieval_mode: str
+    executed_queries: list[str]
+    latency_ms: float
+
+
+def _to_item(r: RetrievalResult) -> SearchResultItem:
+    return SearchResultItem(
+        doc_id=r.doc_id,
+        title=r.title,
+        text=r.text,
+        url=r.url,
+        score=r.score,
+        metadata=r.metadata,
+    )
+
+
+def create_app(service: RetrievalService | None = None) -> FastAPI:
+    _service = service or RetrievalService.from_env()
+    _backend_name = os.environ.get("RETRIEVAL_BACKEND", "local")
+    app = FastAPI(title="Retrieval Service", version="1.0")
+
+    @app.get("/health")
+    def health() -> dict:
+        return {"status": "ok", "backend": _backend_name}
+
+    @app.post("/search", response_model=SearchResponse)
+    def search(request: SearchRequest) -> SearchResponse:
+        t0 = time.monotonic()
+        results, mode = _service.search(request.query, top_k=request.top_k)
+        latency_ms = round((time.monotonic() - t0) * 1000, 1)
+        return SearchResponse(
+            results=[_to_item(r) for r in results],
+            retrieval_mode=mode,
+            executed_queries=[request.query],
+            latency_ms=latency_ms,
+        )
+
+    return app
