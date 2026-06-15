@@ -124,3 +124,59 @@ def test_local_backend_search_dense_raises(monkeypatch):
     backend = LocalBackend(SparseRetrieverConfig(index_path="x", corpus_path="y"))
     with pytest.raises(NotImplementedError, match="Dense search not configured"):
         backend.search_dense("q", 5)
+
+
+def _fake_dense_retriever(rows: list[dict]) -> MagicMock:
+    m = MagicMock()
+    m.retrieve.return_value = [rows]
+    return m
+
+
+def test_local_backend_search_dense(monkeypatch):
+    import src.internal.retrieval.backends.local as local_mod
+
+    from src.internal.document_index.retrieval import (
+        DenseRetrieverConfig,
+        SparseRetrieverConfig,
+    )
+
+    dense_rows = [
+        {
+            "document": {
+                "id": "d3",
+                "title": "T3",
+                "contents": "dense body",
+                "url": None,
+            },
+            "score": 0.95,
+        },
+    ]
+    monkeypatch.setattr(local_mod, "_make_sparse_retriever", lambda cfg: MagicMock())
+    monkeypatch.setattr(
+        local_mod,
+        "_make_dense_retriever",
+        lambda cfg: _fake_dense_retriever(dense_rows),
+    )
+
+    backend = LocalBackend(
+        SparseRetrieverConfig(index_path="x", corpus_path="y"),
+        dense_config=DenseRetrieverConfig.for_e5_base_v2(
+            index_path="z", corpus_path="y"
+        ),
+    )
+    results = backend.search_dense("embedding", top_k=5)
+    assert len(results) == 1
+    assert results[0].doc_id == "d3"
+    assert results[0].score == pytest.approx(0.95)
+
+
+def test_local_backend_search_dense_raises_when_not_configured(monkeypatch):
+    import src.internal.retrieval.backends.local as local_mod
+
+    from src.internal.document_index.retrieval import SparseRetrieverConfig
+
+    monkeypatch.setattr(local_mod, "_make_sparse_retriever", lambda cfg: MagicMock())
+
+    backend = LocalBackend(SparseRetrieverConfig(index_path="x", corpus_path="y"))
+    with pytest.raises(NotImplementedError, match="Dense search not configured"):
+        backend.search_dense("q", 5)
