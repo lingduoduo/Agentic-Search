@@ -74,20 +74,31 @@ async def answer_with_retrieval(
     top_k: int = 5,
     filters: SearchFilters | None = None,
 ) -> AnswerGenerationResult:
-    context = await retrieve_context(
-        question,
-        search_url=search_url,
-        top_k=top_k,
-        filters=filters,
-    )
-    return generate_answer(
-        AnswerGenerationRequest(
-            question=question,
-            context=context,
-            chat_history=chat_history or [],
-        ),
-        llm=llm,
-    )
+    from src.internal.observability.tracer import get_tracer
+
+    tracer = get_tracer()
+    with tracer.span("rag.query", query=question, top_k=top_k):
+        with tracer.span("rag.retrieve", search_url=search_url):
+            context = await retrieve_context(
+                question,
+                search_url=search_url,
+                top_k=top_k,
+                filters=filters,
+            )
+        with tracer.span(
+            "rag.generate",
+            num_docs=len(context.documents),
+            has_llm=llm is not None,
+        ):
+            result = generate_answer(
+                AnswerGenerationRequest(
+                    question=question,
+                    context=context,
+                    chat_history=chat_history or [],
+                ),
+                llm=llm,
+            )
+    return result
 
 
 def synthesize_answer_from_context(question: str, context: SearchContextBundle) -> str:
