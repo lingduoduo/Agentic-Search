@@ -660,3 +660,43 @@ def test_auto_route_tier1_tool_loop_runs_when_model_available(monkeypatch, tmp_p
     data = response.json()
     assert data["intent"] == "search"
     assert data["answer"] == "Here are the results."
+
+
+def test_agent_no_llm_no_model_returns_400(monkeypatch, tmp_path):
+    """App with no LLM and no local model → chat query → 400."""
+    # Prevent .env from loading so no API key is picked up.
+    monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "explain FAISS"})
+    assert response.status_code == 400
+    assert "no llm" in response.json()["detail"].lower()
+
+
+def test_agent_tool_mode_without_model_returns_clear_400(tmp_path):
+    """Explicit mode=tool_agent without local model → 400 with 'local model' in detail."""
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post(
+        "/api/agent", json={"query": "run tool", "mode": "tool_agent"}
+    )
+    assert response.status_code == 400
+    assert "local model" in response.json()["detail"].lower()
+
+
+def test_agent_other_exception_returns_502_with_message(monkeypatch, tmp_path):
+    """Unexpected exception → 502 with the exception message, not 'Agent search failed'."""
+
+    async def explode(*args, **kwargs):
+        raise ValueError("bad input format")
+
+    monkeypatch.setattr("src.internal.servers.web.app.answer_with_retrieval", explode)
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    response = client.post(
+        "/api/agent", json={"query": "explain FAISS", "mode": "chat_once"}
+    )
+    assert response.status_code == 502
+    assert "bad input format" in response.json()["detail"]
+    assert "Agent search failed" not in response.json()["detail"]

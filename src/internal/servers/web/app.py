@@ -375,8 +375,6 @@ async def _run_auto_routed(
             extra["search_fallback"] = "retrieval_unavailable"
 
     # Chat path (also search fallback)
-    # (No LLM check here — answer_with_retrieval handles llm=None gracefully,
-    #  and tests monkeypatch it anyway)
     try:
         result = await answer_with_retrieval(
             query,
@@ -394,6 +392,11 @@ async def _run_auto_routed(
             extra,
         )
     except Exception as exc:
+        if llm is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No LLM configured. Set OPENAI_API_KEY or equivalent in .env.",
+            ) from exc
         logger.warning("RAG answer_with_retrieval failed, trying raw search: %s", exc)
         extra["rag_fallback"] = "synthesis_failed"
         try:
@@ -884,8 +887,8 @@ def create_web_app(
                     raise HTTPException(
                         status_code=400,
                         detail=(
-                            "tool_agent mode requires SEARCH_AGENT_MODEL or "
-                            "SEARCH_AGENT_SERVER_URL to be set."
+                            "tool_agent mode requires a local model. "
+                            "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
                         ),
                     )
                 tools = [
