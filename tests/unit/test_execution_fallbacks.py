@@ -77,6 +77,7 @@ def test_tool_loop_empty_output_reroutes(monkeypatch, tmp_path):
         response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 200
     assert response.json()["intent"] == "chat"
+    assert response.json()["answer"] == "fallback answer"
 
 
 # --- Search fallbacks ---
