@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 
+pytest.importorskip("torch")
 from src import (
     AgentLoopBase,
     AgentLoopOutput,

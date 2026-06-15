@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("torch")
 from src.training.data import (
     build_search_qa_messages,
     build_search_qa_prompt,
