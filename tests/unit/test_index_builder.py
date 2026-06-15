@@ -358,7 +358,7 @@ class TestIndexBuilderInternals:
         )
         monkeypatch.setattr(
             "src.internal.document_index.index_builder._require_tqdm",
-            lambda: (lambda seq, **_: seq),
+            lambda: lambda seq, **_: seq,
         )
 
         calls: list[list[str]] = []
@@ -408,7 +408,7 @@ class TestIndexBuilderInternals:
         )
         monkeypatch.setattr(
             "src.internal.document_index.index_builder._require_tqdm",
-            lambda: (lambda seq, **_: seq),
+            lambda: lambda seq, **_: seq,
         )
 
         calls: list[list[str]] = []
