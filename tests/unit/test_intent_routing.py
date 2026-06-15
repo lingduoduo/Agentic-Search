@@ -165,7 +165,7 @@ async def test_rag_routing_tool_returns_answer(monkeypatch):
     )
     mock_llm = MagicMock()
     monkeypatch.setattr(
-        "src.tools.routing_tools.answer_with_retrieval",
+        "src.context.answer_with_retrieval",
         AsyncMock(return_value=fake_result),
     )
     tool = build_rag_routing_tool(
