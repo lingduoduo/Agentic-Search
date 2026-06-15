@@ -1,0 +1,85 @@
+"""Internal eval endpoints: /internal/search/{sparse,dense,hybrid}.
+
+Pass require_admin=make_require_admin(app_settings) in production.
+Pass require_admin=None in tests to skip auth.
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from src.internal.retrieval.backends.base import RetrievalResult
+from src.internal.retrieval.fusion import mmr_rerank, rrf_fuse
+from src.internal.retrieval.service import RetrievalService
+from src.internal.servers.retrieval.server import SearchResponse, _to_item
+
+
+class InternalSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    top_k: int = Field(default=5, ge=1, le=100)
+
+
+class HybridSearchRequest(InternalSearchRequest):
+    rrf_k: int = Field(default=60, ge=10, le=200)
+    mmr_lambda: float = Field(default=0.5, ge=0.0, le=1.0)
+    over_fetch: int = Field(default=2, ge=1, le=4)
+
+
+def create_eval_router(
+    service: RetrievalService,
+    require_admin: Callable | None = None,
+) -> APIRouter:
+    """Return router with /internal/search/{sparse,dense,hybrid} endpoints."""
+    router = APIRouter(prefix="/internal/search")
+    deps = [Depends(require_admin)] if require_admin is not None else []
+
+    @router.post("/sparse", response_model=SearchResponse, dependencies=deps)
+    def search_sparse(request: InternalSearchRequest) -> SearchResponse:
+        t0 = time.monotonic()
+        results = service._backend.search_sparse(request.query, top_k=request.top_k)
+        return SearchResponse(
+            results=[_to_item(r) for r in results],
+            retrieval_mode="sparse",
+            executed_queries=[request.query],
+            latency_ms=round((time.monotonic() - t0) * 1000, 1),
+        )
+
+    @router.post("/dense", response_model=SearchResponse, dependencies=deps)
+    def search_dense(request: InternalSearchRequest) -> SearchResponse:
+        t0 = time.monotonic()
+        try:
+            results = service._backend.search_dense(request.query, top_k=request.top_k)
+        except NotImplementedError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return SearchResponse(
+            results=[_to_item(r) for r in results],
+            retrieval_mode="dense",
+            executed_queries=[request.query],
+            latency_ms=round((time.monotonic() - t0) * 1000, 1),
+        )
+
+    @router.post("/hybrid", response_model=SearchResponse, dependencies=deps)
+    def search_hybrid(request: HybridSearchRequest) -> SearchResponse:
+        t0 = time.monotonic()
+        over_fetch = request.top_k * request.over_fetch
+        sparse = service._backend.search_sparse(request.query, top_k=over_fetch)
+        try:
+            dense: list[RetrievalResult] = service._backend.search_dense(
+                request.query, top_k=over_fetch
+            )
+        except NotImplementedError:
+            dense = []
+        fused = rrf_fuse([sparse, dense] if dense else [sparse], rrf_k=request.rrf_k)
+        reranked = mmr_rerank(fused, top_k=request.top_k, mmr_lambda=request.mmr_lambda)
+        return SearchResponse(
+            results=[_to_item(r) for r in reranked],
+            retrieval_mode="hybrid",
+            executed_queries=[request.query],
+            latency_ms=round((time.monotonic() - t0) * 1000, 1),
+        )
+
+    return router
