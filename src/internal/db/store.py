@@ -315,6 +315,15 @@ class AgenticSearchStore:
                 ON chat_messages(session_id, created_at, id);
             CREATE INDEX IF NOT EXISTS idx_index_attempts_connector_updated
                 ON index_attempts(connector_id, updated_at DESC, id);
+
+            CREATE TABLE IF NOT EXISTS retrieval_feedback (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                signal TEXT NOT NULL CHECK (signal IN ('thumbs_up', 'thumbs_down')),
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_retrieval_feedback_created
+                ON retrieval_feedback(created_at);
             """
         )
         self._conn.commit()
@@ -2302,3 +2311,48 @@ class AgenticSearchStore:
             "SELECT is_active FROM user_is_active WHERE user_id = ?", (user_id,)
         ).fetchone()
         return bool(row["is_active"]) if row else True
+
+    # ------------------------------------------------------------------
+    # Retrieval feedback
+    # ------------------------------------------------------------------
+
+    def save_retrieval_feedback(self, session_id: str | None, signal: str) -> None:
+        """Persist a thumbs_up or thumbs_down signal for a search session."""
+        self._conn.execute(
+            "INSERT INTO retrieval_feedback (id, session_id, signal, created_at) VALUES (?, ?, ?, ?)",
+            (_new_id("fb"), session_id, signal, _now()),
+        )
+        self._conn.commit()
+
+    def get_feedback_summary(self) -> dict[str, object]:
+        """Return aggregate feedback metrics.
+
+        thumbs_up_rate — fraction of rated queries that got thumbs_up.
+        ctr            — fraction of distinct sessions that received any feedback.
+        rated_queries  — total feedback rows persisted.
+        """
+        row = self._conn.execute(
+            """
+            SELECT
+                COUNT(*)                                                    AS total,
+                SUM(CASE WHEN signal = 'thumbs_up' THEN 1 ELSE 0 END)     AS ups,
+                COUNT(DISTINCT session_id)                                  AS rated_sessions
+            FROM retrieval_feedback
+            """
+        ).fetchone()
+        total = int(row["total"]) if row else 0
+        ups = int(row["ups"] or 0) if row else 0
+        rated_sessions = int(row["rated_sessions"] or 0) if row else 0
+
+        total_sessions_row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM chat_sessions"
+        ).fetchone()
+        total_sessions = int(total_sessions_row["n"]) if total_sessions_row else 0
+
+        thumbs_up_rate = round(ups / total, 4) if total else 0.0
+        ctr = round(rated_sessions / total_sessions, 4) if total_sessions else 0.0
+        return {
+            "thumbs_up_rate": thumbs_up_rate,
+            "ctr": ctr,
+            "rated_queries": total,
+        }
