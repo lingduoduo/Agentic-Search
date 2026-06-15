@@ -626,3 +626,37 @@ def test_explicit_mode_still_works(monkeypatch, tmp_path):
     response = client.post("/api/agent", json={"query": "hello", "mode": "chat_once"})
     assert response.status_code == 200
     assert called.get("answer") is True
+    assert response.json()["intent"] == "chat"
+
+
+def test_auto_route_tier1_tool_loop_runs_when_model_available(monkeypatch, tmp_path):
+    """When manager+tokenizer are set, ToolAgentLoop is used as Tier 1 router."""
+    from unittest.mock import AsyncMock, MagicMock
+    from src.agents.base import AgentLoopOutput
+    import json
+
+    # A trace that says search_routing_tool was called
+    fake_trace = json.dumps(
+        {"tool_name": "search_routing_tool", "status": "completed", "result": "[]"}
+    )
+    fake_output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        action_trace=fake_trace,
+        final_answer="Here are the results.",
+    )
+    monkeypatch.setattr(
+        "src.agents.tool_calling.ToolAgentLoop.run",
+        AsyncMock(return_value=fake_output),
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        app.state.search_agent_manager = MagicMock()
+        app.state.search_agent_tokenizer = MagicMock()
+        response = client.post("/api/agent", json={"query": "find the onboarding doc"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["intent"] == "search"
+    assert data["answer"] == "Here are the results."

@@ -314,17 +314,18 @@ async def _run_auto_routed(
                             "result"
                         ):
                             raw = _json.loads(rec["result"])
-                            for i, item in enumerate(raw, 1):
-                                documents.append(
-                                    ContextDocument(
-                                        id=f"D{i}",
-                                        title=item.get("title", ""),
-                                        content=item.get("content", ""),
-                                        url=item.get("url"),
-                                        score=0.0,
-                                        metadata={"source": "search_routing_tool"},
+                            if isinstance(raw, list):
+                                for i, item in enumerate(raw, 1):
+                                    documents.append(
+                                        ContextDocument(
+                                            id=f"D{i}",
+                                            title=item.get("title", ""),
+                                            content=item.get("content", ""),
+                                            url=item.get("url"),
+                                            score=0.0,
+                                            metadata={"source": "search_routing_tool"},
+                                        )
                                     )
-                                )
                     except Exception:
                         pass
             citations = [doc.citation for doc in documents]
@@ -372,7 +373,6 @@ async def _run_auto_routed(
                 "Hybrid search failed, falling back to RAG without context: %s", exc
             )
             extra["search_fallback"] = "retrieval_unavailable"
-            is_search = False
 
     # Chat path (also search fallback)
     # (No LLM check here — answer_with_retrieval handles llm=None gracefully,
