@@ -10,6 +10,7 @@ import pytest
 
 from src.internal.retrieval.backends.base import RetrievalResult
 from src.internal.retrieval.eval_runner import run_eval
+from src.internal.retrieval.reranker import Reranker
 
 
 def _make_service(doc_ids_per_query: list[list[str]]) -> MagicMock:
@@ -72,3 +73,55 @@ def test_run_eval_averages_over_queries():
 
     assert metrics["recall@5"] == pytest.approx(0.5)
     assert metrics["num_queries"] == 2
+
+
+def test_run_eval_with_reranker_returns_reranked_section():
+    """run_eval with a reranker must return 'retrieval', 'reranked', and 'latency_ms'."""
+    qa = [{"query": "q1", "relevant_doc_ids": ["d1"]}]
+    path = _write_qa(qa)
+
+    mock_reranker = MagicMock(spec=Reranker)
+    mock_reranker.rerank.return_value = [
+        RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.99)
+    ]
+
+    svc = _make_service([["d1"]])
+    result = run_eval(path, service=svc, top_k=5, reranker=mock_reranker)
+
+    assert "retrieval" in result
+    assert "reranked" in result
+    assert "latency_ms" in result
+    assert "ndcg@5" in result["retrieval"]
+    assert "ndcg@5" in result["reranked"]
+    assert "p99" in result["latency_ms"]
+
+
+def test_run_eval_without_reranker_returns_flat_dict():
+    """run_eval without reranker returns the existing flat dict format."""
+    qa = [{"query": "q1", "relevant_doc_ids": ["d1"]}]
+    path = _write_qa(qa)
+    svc = _make_service([["d1"]])
+
+    result = run_eval(path, service=svc, top_k=5)
+
+    assert "retrieval" not in result
+    assert "ndcg@5" in result
+
+
+def test_run_eval_reranker_called_once_per_query():
+    """reranker.rerank() must be called exactly once per QA pair."""
+    qa = [
+        {"query": "q1", "relevant_doc_ids": ["d1"]},
+        {"query": "q2", "relevant_doc_ids": ["d2"]},
+    ]
+    path = _write_qa(qa)
+
+    mock_reranker = MagicMock(spec=Reranker)
+    mock_reranker.rerank.return_value = [
+        RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.9)
+    ]
+
+    svc = _make_service([["d1"], ["d2"]])
+    run_eval(path, service=svc, top_k=5, reranker=mock_reranker)
+
+    assert mock_reranker.rerank.call_count == 2
