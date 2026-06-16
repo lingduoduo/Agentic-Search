@@ -32,6 +32,8 @@ class PlainGenerationLoop(AgentLoopBase):
         self,
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
+        *,
+        on_turn=None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = {}
         request_id = uuid4().hex

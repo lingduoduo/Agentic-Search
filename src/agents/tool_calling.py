@@ -200,6 +200,8 @@ class ToolAgentLoop(AgentLoopBase):
         self,
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
+        *,
+        on_turn=None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = {}
         request_id = uuid4().hex
@@ -260,6 +262,9 @@ class ToolAgentLoop(AgentLoopBase):
                     ]
                 )
             tool_results.extend(tool_execution_results)
+            if on_turn is not None and tool_execution_results:
+                last = tool_execution_results[-1]
+                await on_turn(assistant_turns, last.tool_name, 0)
 
             if any(
                 r.status is not TaskStatus.COMPLETED for r in tool_execution_results
