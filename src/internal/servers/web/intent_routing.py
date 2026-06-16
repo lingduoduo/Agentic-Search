@@ -47,18 +47,6 @@ def _rule_based_is_search(query: str) -> bool:
     return False
 
 
-def _route_source_provider(query: str, browser_search_url: str | None = None) -> str:
-    """Pick the retrieval backend for a search query.
-
-    Temporal queries ("today", "latest news", year references) route to the
-    browser backend when one is configured.  Everything else uses the local
-    corpus retrieval server.
-    """
-    if browser_search_url and _TEMPORAL_RE.search(query):
-        return "browser"
-    return "retrieval"
-
-
 def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
     """Infer search/chat/tool intent from the first tool called in the output.
 
