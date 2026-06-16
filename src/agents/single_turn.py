@@ -25,6 +25,7 @@ from .base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
+    OnTurnCallback,
     register,
     simple_timer,
 )
@@ -264,7 +265,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
         *,
-        on_turn=None,
+        on_turn: "OnTurnCallback | None" = None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = {}
         request_id = uuid4().hex

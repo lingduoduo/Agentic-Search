@@ -16,6 +16,7 @@ from .base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
+    OnTurnCallback,
     register,
     simple_timer,
 )
@@ -752,7 +753,7 @@ class SearchAgentLoop(AgentLoopBase):
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
         *,
-        on_turn=None,
+        on_turn: "OnTurnCallback | None" = None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = self._initial_metrics()
         request_id = uuid4().hex
@@ -1003,7 +1004,7 @@ class SearchAgentLoop(AgentLoopBase):
                         doc_count = sum(
                             len(sc.results) for sc in round_result.search_contexts
                         )
-                        await on_turn(turn + 1, "search_routing_tool", doc_count)
+                        await on_turn(num_turns, "search_routing_tool", doc_count)
                     if active_tasks:
                         turn_observations.append(
                             cfg.subquestions_obs_template.format(
