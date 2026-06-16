@@ -335,3 +335,30 @@ def test_no_pipeline_path_unchanged():
 
     assert "+rag_fusion" not in mode
     backend.search_sparse.assert_called_once()
+
+
+def test_pipeline_merged_filters_passed_to_backend():
+    """Bundle's merged_filters must be forwarded to the retrieval backend."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock(["q1"], merged_filters={"source": "arxiv"})
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    service.search("q", top_k=1)
+
+    # The backend must receive the merged_filters from the pipeline bundle
+    call_args = backend.search_sparse.call_args
+    assert call_args[1]["filters"] == {"source": "arxiv"}
+
+
+def test_pipeline_empty_variants_falls_back_to_original_query():
+    """If retrieval_variants() returns [], fall back to original query — no crash."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock([])  # empty variants!
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    results, mode = service.search("original query", top_k=1)
+
+    # Must not crash; backend must be called with the original query
+    assert backend.search_sparse.call_count == 1
+    call_args = backend.search_sparse.call_args
+    assert call_args[0][0] == "original query"

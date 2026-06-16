@@ -194,6 +194,11 @@ class RetrievalService:
             variants = [query]
             active_filters = filters
 
+        if (
+            not variants
+        ):  # guard: retrieval_variants() returned [] (shouldn't happen but be safe)
+            variants = [query]
+
         max_workers = min(len(variants), 4)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
