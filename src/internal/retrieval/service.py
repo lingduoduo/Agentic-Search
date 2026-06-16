@@ -5,9 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING
 
 from .backends.base import RetrievalBackend, RetrievalResult
 from .fusion import mmr_rerank, rrf_fuse
+
+if TYPE_CHECKING:
+    from src.internal.retrieval.reranker import Reranker
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +79,18 @@ def _build_backend() -> RetrievalBackend:
 
 
 class RetrievalService:
-    def __init__(self, backend: RetrievalBackend) -> None:
+    def __init__(
+        self, backend: RetrievalBackend, reranker: Reranker | None = None
+    ) -> None:
         self._backend = backend
+        self._reranker = reranker
 
     @classmethod
     def from_env(cls) -> "RetrievalService":
         """Construct service from environment variables."""
-        return cls(_build_backend())
+        from src.internal.retrieval.reranker import Reranker
+
+        return cls(_build_backend(), reranker=Reranker.from_env())
 
     def search(
         self,
@@ -127,13 +136,19 @@ class RetrievalService:
             raise RuntimeError("Both retrieval legs failed")
 
         if not dense_ok:
-            return sparse_results[:top_k], "sparse_only"
-        if not sparse_ok:
-            return dense_results[:top_k], "dense_only"
+            fused, mode = sparse_results[:top_k], "sparse_only"
+        elif not sparse_ok:
+            fused, mode = dense_results[:top_k], "dense_only"
+        else:
+            fused = rrf_fuse([sparse_results, dense_results])
+            fused = mmr_rerank(fused, top_k=top_k)
+            mode = "hybrid"
 
-        fused = rrf_fuse([sparse_results, dense_results])
-        reranked = mmr_rerank(fused, top_k=top_k)
-        return reranked, "hybrid"
+        if self._reranker:
+            fused = self._reranker.rerank(query, fused, top_k)
+            mode = f"{mode}+reranked"
+
+        return fused, mode
 
     def graph_search(
         self,
