@@ -149,6 +149,10 @@ class _HttpService:
 
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Offline retrieval evaluation")
     parser.add_argument("--dataset", required=True, help="Path to qa_pairs.jsonl")
     parser.add_argument("--top_k", type=int, default=10)
