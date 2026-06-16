@@ -129,7 +129,7 @@ class _HttpService:
         resp = requests.post(self._url, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        rows = data.get("result", [[]])[0]
+        rows = (data.get("results") or data.get("result") or [[]])[0]
         results = []
         for item in rows:
             if "document" in item:
