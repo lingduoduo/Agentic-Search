@@ -7,8 +7,6 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from src.internal.servers.secondary_llm_flows.query_expansion import expand_keywords
-
 if TYPE_CHECKING:
     from src.internal.retrieval.query_constructor import QueryConstructor
 
@@ -35,12 +33,15 @@ class TransformedQueryBundle:
     merged_filters: dict = field(default_factory=dict)
 
     def retrieval_variants(self, max_variants: int = 5) -> list[str]:
-        """Return deduplicated query variants, always including original.
+        """Return deduplicated query variants, always including original last.
 
-        Order: sub_queries → hyde_text → step_back → keywords → original (always present).
-        Truncated to max_variants total.
+        Order: sub_queries → hyde_text → step_back → keywords → original (always last).
+        Truncated to max_variants total. original is always present.
         """
         seen: set[str] = set()
+        seen.add(
+            self.original.lower()
+        )  # pre-seed so original is excluded from candidates
         candidates: list[str] = []
 
         def _add(text: str | None) -> None:
@@ -55,14 +56,10 @@ class TransformedQueryBundle:
         for kw in self.keywords:
             _add(kw)
 
-        original_already_in = self.original.lower() in seen
-        if original_already_in:
-            result = candidates[:max_variants]
-        else:
-            result = candidates[: max_variants - 1]
-            result.append(self.original)
-
-        return result if result else [self.original]
+        # Reserve last slot for original, then always append it
+        result = candidates[: max_variants - 1]
+        result.append(self.original)
+        return result
 
 
 class QueryTransformPipeline:
@@ -103,6 +100,10 @@ class QueryTransformPipeline:
         if self._config.step_back:
             step_back_q = self._enhancer.step_back(query)
         if self._config.keywords:
+            from src.internal.servers.secondary_llm_flows.query_expansion import (
+                expand_keywords,
+            )
+
             keywords = expand_keywords(query, self._llm)  # type: ignore[arg-type]
         if self._config.construct_filters and self._constructor is not None:
             _, extracted_filters = self._constructor.extract_filters(query)
@@ -126,13 +127,19 @@ class QueryTransformPipeline:
         def _bool(name: str) -> bool:
             return os.environ.get(name, "").lower() in ("1", "true", "yes")
 
+        def _parse_max_variants() -> int:
+            try:
+                return max(1, int(os.environ.get("QT_MAX_VARIANTS") or "5"))
+            except (ValueError, TypeError):
+                return 5
+
         config = QueryTransformConfig(
             decompose=_bool("QT_DECOMPOSE"),
             hyde=_bool("QT_HYDE"),
             step_back=_bool("QT_STEP_BACK"),
             keywords=_bool("QT_KEYWORDS"),
             construct_filters=_bool("QT_CONSTRUCT_FILTERS"),
-            max_variants=int(os.environ.get("QT_MAX_VARIANTS", "5")),
+            max_variants=_parse_max_variants(),
         )
 
         if not any(

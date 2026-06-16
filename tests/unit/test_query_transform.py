@@ -105,7 +105,7 @@ def test_pipeline_keywords_flag_calls_expand_keywords():
 
     llm = MagicMock()
     with patch(
-        "src.context.query_transform.expand_keywords",
+        "src.internal.servers.secondary_llm_flows.query_expansion.expand_keywords",
         return_value=["FAISS", "ANN index"],
     ) as mock_expand:
         pipeline = QueryTransformPipeline(QueryTransformConfig(keywords=True), llm)
@@ -157,3 +157,16 @@ def test_from_env_returns_pipeline_when_one_qt_var_set(monkeypatch):
     assert pipeline is not None
     assert pipeline._config.decompose is True
     assert pipeline._config.hyde is False
+
+
+def test_retrieval_variants_includes_original_when_it_appears_in_sub_queries():
+    """original must still appear (last) even if it was also in sub_queries."""
+    bundle = TransformedQueryBundle(
+        original="what is FAISS?",
+        sub_queries=["what is FAISS?", "q1", "q2"],
+    )
+    variants = bundle.retrieval_variants(max_variants=3)
+    assert variants[-1] == "what is FAISS?"
+    # sub-queries that aren't original fill the other slots
+    assert len(variants) == 3
+    assert variants.count("what is FAISS?") == 1
