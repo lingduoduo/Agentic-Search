@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from .base import FunctionTool
 from .search import search_tool
+
+logger = logging.getLogger(__name__)
 
 _SEARCH_TOOL_PARAMS = {
     "type": "object",
@@ -77,6 +80,7 @@ def build_rag_routing_tool(
             )
             return json.dumps({"answer": result.answer, "citations": result.citations})
         except Exception as exc:
+            logger.error("rag_routing_tool failed: %s", exc, exc_info=True)
             return json.dumps({"error": str(exc)})
 
     return FunctionTool(

@@ -294,8 +294,11 @@ async def _run_auto_routed(
             config=ToolAgentLoopConfig(tool_parser_format=resolved.tool_agent_parser),
         )
         try:
+            messages = [{"role": m.role, "content": m.content} for m in history] + [
+                {"role": "user", "content": query}
+            ]
             output = await loop.run(
-                [{"role": "user", "content": query}],
+                messages,
                 sampling_params={"temperature": 0.0, "max_tokens": 512},
             )
         except Exception as exc:
