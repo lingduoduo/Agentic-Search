@@ -280,3 +280,110 @@ def test_reranker_receives_filters():
     backend.search_sparse.assert_called_once_with(
         "q", top_k=2, filters={"source": "wiki"}
     )
+
+
+def _pipeline_mock(
+    variants: list[str], merged_filters: dict | None = None
+) -> MagicMock:
+    """Helper: mock QueryTransformPipeline returning given variants."""
+    pipeline = MagicMock()
+    bundle = MagicMock()
+    bundle.retrieval_variants.return_value = variants
+    bundle.merged_filters = merged_filters or {}
+    pipeline.transform.return_value = bundle
+    pipeline.max_variants = 5
+    return pipeline
+
+
+def test_pipeline_transform_called_with_query_and_filters():
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock(["variant q"])
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    service.search("original query", top_k=1, filters={"source": "wiki"})
+
+    pipeline.transform.assert_called_once_with("original query", {"source": "wiki"})
+
+
+def test_rag_fusion_retrieves_once_per_variant():
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock(["q1", "q2", "q3"])
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    service.search("q", top_k=1)
+
+    # _search_one runs once per variant; each calls search_sparse once
+    assert backend.search_sparse.call_count == 3
+
+
+def test_mode_has_rag_fusion_suffix_when_pipeline_set():
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock(["q1", "q2"])
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    _, mode = service.search("q", top_k=1)
+
+    assert "+rag_fusion" in mode
+
+
+def test_no_pipeline_path_unchanged():
+    """Without pipeline, mode must not contain +rag_fusion and only one retrieval fires."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    service = RetrievalService(backend)
+
+    _, mode = service.search("q", top_k=1)
+
+    assert "+rag_fusion" not in mode
+    backend.search_sparse.assert_called_once()
+
+
+def test_pipeline_merged_filters_passed_to_backend():
+    """Bundle's merged_filters must be forwarded to the retrieval backend."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock(["q1"], merged_filters={"source": "arxiv"})
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    service.search("q", top_k=1)
+
+    # The backend must receive the merged_filters from the pipeline bundle
+    call_args = backend.search_sparse.call_args
+    assert call_args[1]["filters"] == {"source": "arxiv"}
+
+
+def test_pipeline_empty_variants_falls_back_to_original_query():
+    """If retrieval_variants() returns [], fall back to original query — no crash."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    pipeline = _pipeline_mock([])  # empty variants!
+
+    service = RetrievalService(backend, pipeline=pipeline)
+    results, mode = service.search("original query", top_k=1)
+
+    # Must not crash; backend must be called with the original query
+    assert backend.search_sparse.call_count == 1
+    call_args = backend.search_sparse.call_args
+    assert call_args[0][0] == "original query"
+
+
+def test_rag_fusion_degrades_gracefully_when_variant_fails():
+    """If one variant's _search_one raises, it should be skipped (not crash)."""
+    call_count = 0
+
+    def flaky_sparse(query, *, top_k, filters):
+        nonlocal call_count
+        call_count += 1
+        if query == "q2":
+            raise RuntimeError("backend hiccup")
+        return [_make_result(f"r_{query}")]
+
+    backend = MagicMock()
+    backend.search_sparse.side_effect = flaky_sparse
+    backend.search_dense.side_effect = NotImplementedError
+
+    pipeline = _pipeline_mock(["q1", "q2", "q3"])
+    service = RetrievalService(backend, pipeline=pipeline)
+
+    results, mode = service.search("q", top_k=2)
+
+    # Should not raise; should return results from q1 and q3
+    assert len(results) >= 1
+    assert "+rag_fusion" in mode
