@@ -65,7 +65,9 @@ def create_app(service: RetrievalService | None = None) -> FastAPI:
     @app.post("/search", response_model=SearchResponse)
     def search(request: SearchRequest) -> SearchResponse:
         t0 = time.monotonic()
-        results, mode = _service.search(request.query, top_k=request.top_k)
+        results, mode = _service.search(
+            request.query, top_k=request.top_k, filters=request.filters
+        )
         latency_ms = round((time.monotonic() - t0) * 1000, 1)
         logger.info(
             "retrieval query completed",

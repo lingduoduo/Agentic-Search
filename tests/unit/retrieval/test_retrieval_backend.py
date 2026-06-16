@@ -180,3 +180,94 @@ def test_local_backend_search_dense_raises_when_not_configured(monkeypatch):
     backend = LocalBackend(SparseRetrieverConfig(index_path="x", corpus_path="y"))
     with pytest.raises(NotImplementedError, match="Dense search not configured"):
         backend.search_dense("q", 5)
+
+
+def test_local_backend_search_sparse_filters_by_metadata(monkeypatch):
+    import src.internal.retrieval.backends.local as local_mod
+
+    rows = [
+        {
+            "document": {
+                "id": "d1",
+                "title": "T1",
+                "contents": "body",
+                "url": None,
+                "source": "confluence",
+            },
+            "score": 0.9,
+        },
+        {
+            "document": {
+                "id": "d2",
+                "title": "T2",
+                "contents": "text",
+                "url": None,
+                "source": "sharepoint",
+            },
+            "score": 0.7,
+        },
+    ]
+    fake = _fake_sparse_retriever(rows)
+    monkeypatch.setattr(local_mod, "_make_sparse_retriever", lambda cfg: fake)
+
+    from src.internal.document_index.retrieval import SparseRetrieverConfig
+
+    backend = LocalBackend(SparseRetrieverConfig(index_path="x", corpus_path="y"))
+    results = backend.search_sparse("q", top_k=5, filters={"source": "confluence"})
+
+    assert len(results) == 1
+    assert results[0].doc_id == "d1"
+
+
+def test_local_backend_search_sparse_no_filter_returns_all(monkeypatch):
+    import src.internal.retrieval.backends.local as local_mod
+
+    rows = [
+        {
+            "document": {
+                "id": "d1",
+                "title": "T1",
+                "contents": "body",
+                "url": None,
+                "source": "a",
+            },
+            "score": 0.9,
+        },
+        {
+            "document": {
+                "id": "d2",
+                "title": "T2",
+                "contents": "text",
+                "url": None,
+                "source": "b",
+            },
+            "score": 0.7,
+        },
+    ]
+    fake = _fake_sparse_retriever(rows)
+    monkeypatch.setattr(local_mod, "_make_sparse_retriever", lambda cfg: fake)
+
+    from src.internal.document_index.retrieval import SparseRetrieverConfig
+
+    backend = LocalBackend(SparseRetrieverConfig(index_path="x", corpus_path="y"))
+    results = backend.search_sparse("q", top_k=5)
+
+    assert len(results) == 2
+
+
+def test_row_to_result_carries_extra_keys_as_metadata():
+    from src.internal.retrieval.backends.local import _row_to_result
+
+    row = {
+        "document": {
+            "id": "d1",
+            "title": "T1",
+            "contents": "body",
+            "url": None,
+            "source": "confluence",
+            "author": "alice",
+        },
+        "score": 0.8,
+    }
+    r = _row_to_result(row)
+    assert r.metadata == {"source": "confluence", "author": "alice"}

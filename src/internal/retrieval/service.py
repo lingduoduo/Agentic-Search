@@ -80,11 +80,16 @@ class RetrievalService:
         """Construct service from environment variables."""
         return cls(_build_backend())
 
-    def search(self, query: str, top_k: int = 5) -> tuple[list[RetrievalResult], str]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        filters: dict | None = None,
+    ) -> tuple[list[RetrievalResult], str]:
         """Run sparse and dense legs, fuse with RRF+MMR, fall back gracefully.
 
-        Returns (results, retrieval_mode) where mode is one of:
-        'hybrid' | 'sparse_only' | 'dense_only'.
+        filters: optional key/value pairs applied by each backend before returning results.
+        Returns (results, retrieval_mode) where mode is 'hybrid' | 'sparse_only' | 'dense_only'.
         """
         over_fetch = top_k * int(os.environ.get("OVER_FETCH_MULTIPLIER", "2"))
 
@@ -93,13 +98,17 @@ class RetrievalService:
         sparse_ok = dense_ok = False
 
         try:
-            sparse_results = self._backend.search_sparse(query, top_k=over_fetch)
+            sparse_results = self._backend.search_sparse(
+                query, top_k=over_fetch, filters=filters
+            )
             sparse_ok = True
         except Exception as exc:
             logger.warning("Sparse retrieval leg failed: %s", exc)
 
         try:
-            dense_results = self._backend.search_dense(query, top_k=over_fetch)
+            dense_results = self._backend.search_dense(
+                query, top_k=over_fetch, filters=filters
+            )
             dense_ok = True
         except NotImplementedError:
             pass  # dense not configured — silent fallback
