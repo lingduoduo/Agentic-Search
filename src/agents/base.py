@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import re
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,6 +20,9 @@ _DEFAULT_ACTION_RE: re.Pattern[str] = re.compile(
 )
 
 _DEFAULT_TERMINAL_ACTIONS: frozenset[str] = frozenset({"answer"})
+
+# Signature: (turn_number, tool_name_or_None, doc_count) -> awaitable
+OnTurnCallback = Callable[[int, "str | None", int], Awaitable[None]]
 
 _REGISTERED_AGENT_LOOPS: dict[str, type["AgentLoopBase"]] = {}
 
@@ -234,5 +238,7 @@ class AgentLoopBase:
         self,
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
+        *,
+        on_turn: "OnTurnCallback | None" = None,
     ) -> AgentLoopOutput:
         raise NotImplementedError
