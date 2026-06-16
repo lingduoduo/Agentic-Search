@@ -244,7 +244,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "OnlineSearchEngine": (".backend.servers.web_search.google", "OnlineSearchEngine"),
     "SerpSearchConfig": (".backend.servers.web_search.serp", "SerpSearchConfig"),
     "SerpSearchEngine": (".backend.servers.web_search.serp", "SerpSearchEngine"),
-    "RerankerConfig": (".backend.servers.retrieval.rerank", "RerankerConfig"),
+    "RerankerConfig": (".internal.servers.retrieval.rerank", "RerankerConfig"),
     "create_base_app": (".backend.servers.app", "create_base_app"),
     "create_search_app": (".backend.servers.app", "create_search_app"),
     "format_document": (".backend.servers.app", "format_document"),
@@ -274,14 +274,14 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".backend.document_index.retrieval",
         "DenseRetrieverConfig",
     ),
-    # backend.servers.retrieval.rerank
+    # internal.servers.retrieval.rerank
     "SentenceTransformerReranker": (
-        ".backend.servers.retrieval.rerank",
+        ".internal.servers.retrieval.rerank",
         "SentenceTransformerReranker",
     ),
-    "get_reranker": (".backend.servers.retrieval.rerank", "get_reranker"),
-    "passage_to_string": (".backend.servers.retrieval.rerank", "passage_to_string"),
-    "string_to_document": (".backend.servers.retrieval.rerank", "string_to_document"),
+    "get_reranker": (".internal.servers.retrieval.rerank", "get_reranker"),
+    "passage_to_string": (".internal.servers.retrieval.rerank", "passage_to_string"),
+    "string_to_document": (".internal.servers.retrieval.rerank", "string_to_document"),
     # backend.document_index.text
     "SOS_token": (".backend.document_index.text", "SOS_token"),
     "EOS_token": (".backend.document_index.text", "EOS_token"),
