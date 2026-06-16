@@ -25,6 +25,12 @@ def _make_weaviate_client(url: str) -> Any:
     )
 
 
+def _make_collection(url: str, collection_name: str) -> Any:
+    """Thin factory — exists so tests can monkeypatch it."""
+    client = _make_weaviate_client(url)
+    return client.collections.get(collection_name)
+
+
 def _obj_to_result(obj: Any) -> RetrievalResult:
     """Convert a Weaviate v4 result object to RetrievalResult."""
     props = obj.properties if hasattr(obj, "properties") else {}
@@ -45,6 +51,18 @@ def _obj_to_result(obj: Any) -> RetrievalResult:
     )
 
 
+def _weaviate_filter(filters: dict | None) -> Any:
+    """Build a Weaviate Filter from a key/value dict, or return None."""
+    if not filters:
+        return None
+    try:
+        from weaviate.classes.query import Filter as WvFilter
+    except ImportError:
+        return None
+    clauses = [WvFilter.by_property(k).equal(v) for k, v in filters.items()]
+    return clauses[0] if len(clauses) == 1 else WvFilter.all_of(clauses)
+
+
 class WeaviateBackend(RetrievalBackend):
     """Retrieves from a Weaviate collection via BM25 (sparse) and nearVector (dense)."""
 
@@ -54,26 +72,49 @@ class WeaviateBackend(RetrievalBackend):
         *,
         embedder: Callable[[str], list[float]] | None = None,
         client: Any = None,
+        collection: Any = None,
     ) -> None:
         self._collection_name = collection_name
         self._embedder = embedder
-        self._client = client or _make_weaviate_client(
-            os.environ.get("WEAVIATE_URL", "http://localhost:8080")
+        if collection is not None:
+            self._collection_obj = collection
+        elif client is not None:
+            self._collection_obj = client.collections.get(collection_name)
+        else:
+            url = os.environ.get("WEAVIATE_URL", "http://localhost:8080")
+            self._collection_obj = _make_collection(url, collection_name)
+
+    @classmethod
+    def from_env(cls) -> "WeaviateBackend":
+        return cls(
+            collection_name=os.environ.get("WEAVIATE_COLLECTION", "Document"),
         )
 
     @property
     def _collection(self) -> Any:
-        return self._client.collections.get(self._collection_name)
+        return self._collection_obj
 
-    def search_sparse(self, query: str, top_k: int) -> list[RetrievalResult]:
-        resp = self._collection.query.bm25(query=query, limit=top_k)
+    def search_sparse(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        kwargs: dict = {"query": query, "limit": top_k}
+        wv_filter = _weaviate_filter(filters)
+        if wv_filter is not None:
+            kwargs["filters"] = wv_filter
+        resp = self._collection.query.bm25(**kwargs)
         return [_obj_to_result(obj) for obj in resp.objects]
 
-    def search_dense(self, query: str, top_k: int) -> list[RetrievalResult]:
+    def search_dense(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
         if self._embedder is None:
             raise NotImplementedError(
                 "Dense search not configured — provide an embedder or set DENSE_MODEL_PATH"
             )
         vector = self._embedder(query)
-        resp = self._collection.query.near_vector(near_vector=vector, limit=top_k)
+        kwargs: dict = {"near_vector": vector, "limit": top_k}
+        wv_filter = _weaviate_filter(filters)
+        if wv_filter is not None:
+            kwargs["filters"] = wv_filter
+        resp = self._collection.query.near_vector(**kwargs)
         return [_obj_to_result(obj) for obj in resp.objects]
