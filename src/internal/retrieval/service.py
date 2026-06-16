@@ -188,7 +188,7 @@ class RetrievalService:
 
         if self._pipeline:
             bundle = self._pipeline.transform(query, filters)
-            variants = bundle.retrieval_variants(self._pipeline._config.max_variants)
+            variants = bundle.retrieval_variants(self._pipeline.max_variants)
             active_filters: dict | None = bundle.merged_filters or None
         else:
             variants = [query]
@@ -205,7 +205,16 @@ class RetrievalService:
                 executor.submit(self._search_one, v, over_fetch, active_filters)
                 for v in variants
             ]
-        result_sets_with_modes = [f.result() for f in futures]
+        result_sets_with_modes = []
+        for f in futures:
+            try:
+                result_sets_with_modes.append(f.result())
+            except Exception as exc:
+                logger.warning("Variant retrieval failed, skipping: %s", exc)
+        if not result_sets_with_modes:
+            result_sets_with_modes = [
+                self._search_one(query, over_fetch, active_filters)
+            ]
         all_result_sets = [rs for rs, _ in result_sets_with_modes]
         base_mode = (
             result_sets_with_modes[0][1] if result_sets_with_modes else "sparse_only"

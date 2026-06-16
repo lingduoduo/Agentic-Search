@@ -291,7 +291,7 @@ def _pipeline_mock(
     bundle.retrieval_variants.return_value = variants
     bundle.merged_filters = merged_filters or {}
     pipeline.transform.return_value = bundle
-    pipeline._config.max_variants = 5
+    pipeline.max_variants = 5
     return pipeline
 
 
@@ -362,3 +362,28 @@ def test_pipeline_empty_variants_falls_back_to_original_query():
     assert backend.search_sparse.call_count == 1
     call_args = backend.search_sparse.call_args
     assert call_args[0][0] == "original query"
+
+
+def test_rag_fusion_degrades_gracefully_when_variant_fails():
+    """If one variant's _search_one raises, it should be skipped (not crash)."""
+    call_count = 0
+
+    def flaky_sparse(query, *, top_k, filters):
+        nonlocal call_count
+        call_count += 1
+        if query == "q2":
+            raise RuntimeError("backend hiccup")
+        return [_make_result(f"r_{query}")]
+
+    backend = MagicMock()
+    backend.search_sparse.side_effect = flaky_sparse
+    backend.search_dense.side_effect = NotImplementedError
+
+    pipeline = _pipeline_mock(["q1", "q2", "q3"])
+    service = RetrievalService(backend, pipeline=pipeline)
+
+    results, mode = service.search("q", top_k=2)
+
+    # Should not raise; should return results from q1 and q3
+    assert len(results) >= 1
+    assert "+rag_fusion" in mode

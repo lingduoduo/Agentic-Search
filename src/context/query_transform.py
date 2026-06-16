@@ -120,6 +120,10 @@ class QueryTransformPipeline:
             merged_filters=merged_filters,
         )
 
+    @property
+    def max_variants(self) -> int:
+        return self._config.max_variants
+
     @classmethod
     def from_env(cls, llm: object) -> QueryTransformPipeline | None:
         """Return None if no QT_* env vars are enabled (zero overhead for callers)."""
