@@ -293,6 +293,8 @@ class SparseRetrieverConfig:
     corpus_path: str
     retrieval_method: str = "bm25"
     topk: int = 5
+    k1: float = 1.2
+    b: float = 0.75
 
     def validate(self) -> None:
         if not self.index_path:
@@ -314,6 +316,7 @@ class SparseRetriever:
         config.validate()
         self.config = config
         self.searcher = _require_lucene_searcher()(config.index_path)
+        self.searcher.set_bm25(config.k1, config.b)
         self._corpus_by_id: dict[str, dict[str, Any]] | None = None
 
     def _ensure_corpus_by_id(self) -> dict[str, dict[str, Any]]:

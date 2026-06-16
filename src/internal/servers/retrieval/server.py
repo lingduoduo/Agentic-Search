@@ -58,6 +58,12 @@ def create_app(service: RetrievalService | None = None) -> FastAPI:
     _backend_name = os.environ.get("RETRIEVAL_BACKEND", "local")
     app = FastAPI(title="Retrieval Service", version="1.0")
 
+    @app.middleware("http")
+    async def add_api_version_header(request, call_next):
+        response = await call_next(request)
+        response.headers["Retrieval-API-Version"] = "1.0"
+        return response
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "backend": _backend_name}
