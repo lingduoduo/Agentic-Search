@@ -68,3 +68,15 @@ def test_search_default_top_k_is_5():
 
     client.post("/search", json={"query": "anything"})
     svc.search.assert_called_once_with("anything", top_k=5, filters=None)
+
+
+def test_health_response_has_api_version_header():
+    client = TestClient(create_app(_make_service([])))
+    resp = client.get("/health")
+    assert resp.headers.get("Retrieval-API-Version") == "1.0"
+
+
+def test_search_response_has_api_version_header():
+    client = TestClient(create_app(_make_service([_result()])))
+    resp = client.post("/search", json={"query": "anything"})
+    assert resp.headers.get("Retrieval-API-Version") == "1.0"

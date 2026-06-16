@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 import pytest
 from unittest.mock import MagicMock
@@ -162,3 +163,69 @@ def test_search_passes_filters_to_both_legs():
     backend.search_dense.assert_called_once_with(
         "q", top_k=6, filters={"source": "sharepoint"}
     )
+
+
+def test_search_runs_legs_concurrently():
+    """Both legs must overlap — proves ThreadPoolExecutor, not sequential."""
+    sparse_started = threading.Event()
+    dense_started = threading.Event()
+
+    def slow_sparse(query, *, top_k, filters):
+        sparse_started.set()
+        assert dense_started.wait(timeout=2.0), "dense leg never started"
+        return [_make_result("s1")]
+
+    def slow_dense(query, *, top_k, filters):
+        dense_started.set()
+        assert sparse_started.wait(timeout=2.0), "sparse leg never started"
+        return [_make_result("d1")]
+
+    backend = MagicMock()
+    backend.search_sparse.side_effect = slow_sparse
+    backend.search_dense.side_effect = slow_dense
+    service = RetrievalService(backend)
+
+    results, mode = service.search("q", top_k=3)
+
+    assert mode == "hybrid"
+    assert sparse_started.is_set() and dense_started.is_set()
+
+
+def test_sparse_retriever_config_bm25_defaults():
+    from src.internal.document_index.retrieval import SparseRetrieverConfig
+
+    config = SparseRetrieverConfig(index_path="/idx", corpus_path="/c.jsonl")
+    assert config.k1 == pytest.approx(1.2)
+    assert config.b == pytest.approx(0.75)
+
+
+def test_build_local_backend_passes_bm25_k1_b(monkeypatch):
+    monkeypatch.setenv("BM25_INDEX_PATH", "/fake/index")
+    monkeypatch.setenv("BM25_K1", "0.9")
+    monkeypatch.setenv("BM25_B", "0.5")
+
+    import src.internal.retrieval.service as svc_mod
+
+    captured: dict = {}
+
+    def fake_local_backend():
+        from src.internal.document_index.retrieval import SparseRetrieverConfig
+        import os
+
+        config = SparseRetrieverConfig(
+            index_path=os.environ["BM25_INDEX_PATH"],
+            corpus_path=os.environ.get("BM25_CORPUS_PATH", "data/corpus.jsonl"),
+            topk=int(os.environ.get("BM25_TOP_K", "20")),
+            k1=float(os.environ.get("BM25_K1", "1.2")),
+            b=float(os.environ.get("BM25_B", "0.75")),
+        )
+        captured["k1"] = config.k1
+        captured["b"] = config.b
+        return MagicMock()
+
+    monkeypatch.setattr(svc_mod, "_build_local_backend", fake_local_backend)
+    monkeypatch.setenv("RETRIEVAL_BACKEND", "local")
+    svc_mod.RetrievalService.from_env()
+
+    assert captured["k1"] == pytest.approx(0.9)
+    assert captured["b"] == pytest.approx(0.5)

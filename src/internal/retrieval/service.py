@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from .backends.base import RetrievalBackend, RetrievalResult
 from .fusion import mmr_rerank, rrf_fuse
@@ -23,6 +24,8 @@ def _build_local_backend() -> RetrievalBackend:
         index_path=os.environ["BM25_INDEX_PATH"],
         corpus_path=os.environ.get("BM25_CORPUS_PATH", "data/corpus.jsonl"),
         topk=int(os.environ.get("BM25_TOP_K", "20")),
+        k1=float(os.environ.get("BM25_K1", "1.2")),
+        b=float(os.environ.get("BM25_B", "0.75")),
     )
     dense_config: DenseRetrieverConfig | None = None
     if os.environ.get("DENSE_MODEL_PATH"):
@@ -97,18 +100,23 @@ class RetrievalService:
         dense_results: list[RetrievalResult] = []
         sparse_ok = dense_ok = False
 
-        try:
-            sparse_results = self._backend.search_sparse(
-                query, top_k=over_fetch, filters=filters
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sparse_future = executor.submit(
+                self._backend.search_sparse, query, top_k=over_fetch, filters=filters
             )
+            dense_future = executor.submit(
+                self._backend.search_dense, query, top_k=over_fetch, filters=filters
+            )
+        # Both futures are complete once the with-block exits.
+
+        try:
+            sparse_results = sparse_future.result()
             sparse_ok = True
         except Exception as exc:
             logger.warning("Sparse retrieval leg failed: %s", exc)
 
         try:
-            dense_results = self._backend.search_dense(
-                query, top_k=over_fetch, filters=filters
-            )
+            dense_results = dense_future.result()
             dense_ok = True
         except NotImplementedError:
             pass  # dense not configured — silent fallback
