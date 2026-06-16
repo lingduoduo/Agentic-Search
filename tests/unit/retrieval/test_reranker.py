@@ -161,3 +161,10 @@ def test_from_env_builds_cohere_reranker(monkeypatch):
     assert ranker is not None
     assert ranker._config.provider == "cohere"
     assert ranker._config.api_key == "ck-test"
+
+
+def test_from_env_cohere_without_api_key_raises(monkeypatch):
+    monkeypatch.setenv("RERANKER_PROVIDER", "cohere")
+    monkeypatch.delenv("COHERE_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="api_key"):
+        Reranker.from_env()
