@@ -1163,3 +1163,63 @@ option:disabled,
   margin: 0;
   max-height: 260px;
 }
+
+/* ── Streaming progress log ─────────────────────────────────────────────────── */
+
+.progress-log {
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #0d1f33;
+  margin-bottom: 12px;
+  font-size: 0.75rem;
+}
+
+.progress-log-header {
+  color: #64748b;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-step { margin-top: 2px; }
+.progress-step.done   { color: #22c55e; }
+.progress-step.active { color: #f59e0b; }
+.progress-step + .progress-step { margin-top: 3px; }
+
+.progress-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #0d1f33;
+  border: 1px solid #1e3a5f;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  color: #22c55e;
+  font-size: 0.72rem;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.show-reasoning {
+  color: #475569;
+  font-size: 0.65rem;
+  margin-left: auto;
+}
+
+.collapse-btn {
+  background: none;
+  border: none;
+  color: #475569;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0;
+  font-family: inherit;
+}
