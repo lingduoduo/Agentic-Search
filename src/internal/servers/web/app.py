@@ -31,6 +31,7 @@ from src.internal.servers.secondary_llm_flows.query_expansion import (
     with_temporal_context,
 )
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
+from src.agents.base import OnTurnCallback
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
@@ -606,7 +607,7 @@ def create_web_app(
     async def _run_agent_impl(
         request: AgentExperienceRequest,
         http_request: Request,
-        on_turn=None,
+        on_turn: "OnTurnCallback | None" = None,
     ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:
@@ -1024,10 +1025,12 @@ def create_web_app(
         def _sse(data: dict) -> str:
             return f"data: {_json.dumps(data)}\n\n"
 
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
 
         async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
-            text = f"{tool_name} · {doc_count} docs" if tool_name else "writing answer…"
+            text = (
+                f"{tool_name} · {doc_count} docs" if tool_name else "writing answer..."
+            )
             await queue.put({"type": "progress", "turn": turn, "text": text})
 
         async def _generate():
@@ -1054,9 +1057,15 @@ def create_web_app(
                         "intent": result.intent,
                     }
                 )
-            except Exception as exc:
+            except BaseException as exc:
                 if not task.done():
                     task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                if isinstance(exc, asyncio.CancelledError):
+                    return  # client disconnected
                 if isinstance(exc, HTTPException):
                     yield _sse({"type": "error", "detail": exc.detail})
                 else:
