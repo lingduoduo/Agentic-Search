@@ -12,6 +12,7 @@ from .fusion import mmr_rerank, rrf_fuse
 
 if TYPE_CHECKING:
     from src.internal.retrieval.reranker import Reranker
+    from src.context.query_transform import QueryTransformPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,23 @@ def _build_weaviate_backend() -> RetrievalBackend:
     )
 
 
+def _build_llm() -> object:
+    """Build an LLM client from GEN_AI_* environment variables."""
+    from src.internal.llm.interfaces import LLMConfig
+    from src.internal.llm.providers import OpenAICompatibleLLM
+
+    return OpenAICompatibleLLM(
+        LLMConfig(
+            model_provider=os.environ.get("GEN_AI_MODEL_PROVIDER", "openai"),
+            model_name=os.environ.get("GEN_AI_MODEL_VERSION", "gpt-4o-mini"),
+            api_key=os.environ.get("GEN_AI_API_KEY")
+            or os.environ.get("OPENAI_API_KEY"),
+            api_base=os.environ.get("GEN_AI_API_BASE"),
+            max_input_tokens=int(os.environ.get("GEN_AI_MAX_INPUT_TOKENS", "8192")),
+        )
+    )
+
+
 def _build_backend() -> RetrievalBackend:
     name = os.environ.get("RETRIEVAL_BACKEND", "local").lower()
     if name == "local":
@@ -80,17 +98,36 @@ def _build_backend() -> RetrievalBackend:
 
 class RetrievalService:
     def __init__(
-        self, backend: RetrievalBackend, reranker: "Reranker | None" = None
+        self,
+        backend: RetrievalBackend,
+        reranker: "Reranker | None" = None,
+        pipeline: "QueryTransformPipeline | None" = None,
     ) -> None:
         self._backend = backend
         self._reranker = reranker
+        self._pipeline = pipeline
 
     @classmethod
     def from_env(cls) -> "RetrievalService":
         """Construct service from environment variables."""
         from src.internal.retrieval.reranker import Reranker
 
-        return cls(_build_backend(), reranker=Reranker.from_env())
+        pipeline = None
+        _qt_flags = (
+            "QT_DECOMPOSE",
+            "QT_HYDE",
+            "QT_STEP_BACK",
+            "QT_KEYWORDS",
+            "QT_CONSTRUCT_FILTERS",
+        )
+        if any(
+            os.environ.get(v, "").lower() in ("1", "true", "yes") for v in _qt_flags
+        ):
+            from src.context.query_transform import QueryTransformPipeline
+
+            pipeline = QueryTransformPipeline.from_env(_build_llm())
+
+        return cls(_build_backend(), reranker=Reranker.from_env(), pipeline=pipeline)
 
     def _search_one(
         self,
@@ -141,18 +178,45 @@ class RetrievalService:
         top_k: int = 5,
         filters: dict | None = None,
     ) -> tuple[list[RetrievalResult], str]:
-        """Run sparse and dense legs, fuse with RRF+MMR, fall back gracefully.
+        """Run retrieval, fuse with RRF+MMR, fall back gracefully.
 
-        filters: optional key/value pairs applied by each backend before returning results.
-        Returns (results, retrieval_mode) where mode is 'hybrid' | 'sparse_only' | 'dense_only'.
+        When pipeline is set: generates query variants, retrieves per variant in
+        parallel, fuses all result sets via RRF → mode gains '+rag_fusion' suffix.
+        Without pipeline: single query, identical behaviour to previous releases.
         """
         over_fetch = top_k * int(os.environ.get("OVER_FETCH_MULTIPLIER", "2"))
-        raw, mode = self._search_one(query, over_fetch, filters)
 
-        if mode == "hybrid":
-            fused = mmr_rerank(raw, top_k=top_k)
+        if self._pipeline:
+            bundle = self._pipeline.transform(query, filters)
+            variants = bundle.retrieval_variants(self._pipeline._config.max_variants)
+            active_filters: dict | None = bundle.merged_filters or None
         else:
-            fused = raw[:top_k]
+            variants = [query]
+            active_filters = filters
+
+        max_workers = min(len(variants), 4)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(self._search_one, v, over_fetch, active_filters)
+                for v in variants
+            ]
+        result_sets_with_modes = [f.result() for f in futures]
+        all_result_sets = [rs for rs, _ in result_sets_with_modes]
+        base_mode = (
+            result_sets_with_modes[0][1] if result_sets_with_modes else "sparse_only"
+        )
+
+        if len(all_result_sets) > 1:
+            fused = rrf_fuse(all_result_sets)
+            fused = mmr_rerank(fused, top_k=top_k)
+            mode = f"{base_mode}+rag_fusion"
+        else:
+            raw = all_result_sets[0] if all_result_sets else []
+            if base_mode == "hybrid":
+                fused = mmr_rerank(raw, top_k=top_k)
+            else:
+                fused = raw[:top_k]
+            mode = base_mode
 
         if self._reranker:
             fused = self._reranker.rerank(query, fused, top_k)
