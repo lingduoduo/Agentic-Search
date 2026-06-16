@@ -65,16 +65,19 @@ def build_rag_routing_tool(
     """FunctionTool that generates a RAG answer."""
 
     async def _execute(query: str) -> str:
-        from src.context import answer_with_retrieval as fn
+        try:
+            from src.context import answer_with_retrieval
 
-        result = await fn(
-            query,
-            llm=llm,
-            search_url=search_url,
-            top_k=top_k,
-            filters=filters,
-        )
-        return json.dumps({"answer": result.answer, "citations": result.citations})
+            result = await answer_with_retrieval(
+                query,
+                llm=llm,
+                search_url=search_url,
+                top_k=top_k,
+                filters=filters,
+            )
+            return json.dumps({"answer": result.answer, "citations": result.citations})
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
 
     return FunctionTool(
         fn=_execute,
