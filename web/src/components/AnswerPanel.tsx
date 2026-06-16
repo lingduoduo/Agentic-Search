@@ -41,9 +41,9 @@ function ProgressLog({
     return (
       <div className="progress-log">
         <div className="progress-log-header">Agent reasoning</div>
-        {steps.map((s) => (
+        {steps.map((s, i) => (
           <div
-            key={s.turn}
+            key={`${s.turn}-${i}`}
             className={`progress-step ${s.text.includes("writing") ? "active" : "done"}`}
           >
             {s.text.includes("writing") ? "⟳" : "✓"} Turn {s.turn} · {s.text}
@@ -81,8 +81,8 @@ function ProgressLog({
             &#9660; hide
           </button>
         </div>
-        {completedSteps.map((s) => (
-          <div key={s.turn} className="progress-step done">
+        {completedSteps.map((s, i) => (
+          <div key={`${s.turn}-${i}`} className="progress-step done">
             &#10003; Turn {s.turn} · {s.text}
           </div>
         ))}

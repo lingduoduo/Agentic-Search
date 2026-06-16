@@ -268,6 +268,7 @@ async def _run_auto_routed(
     filters,
     history: list,
     resolved,
+    on_turn=None,
 ) -> tuple:
     """
     Three-tier intent routing. Returns (answer, citations, documents, intent, extra_meta).
@@ -301,6 +302,7 @@ async def _run_auto_routed(
             output = await loop.run(
                 messages,
                 sampling_params={"temperature": 0.0, "max_tokens": 512},
+                on_turn=on_turn,
             )
         except Exception as exc:
             logger.warning("ToolAgentLoop failed, falling through to Tier 2: %s", exc)
@@ -678,6 +680,7 @@ def create_web_app(
                     filters=filters,
                     history=history,
                     resolved=resolved,
+                    on_turn=on_turn,
                 )
                 merged_metadata = {**hook_metadata, **extra_meta}
                 db.add_chat_message(
