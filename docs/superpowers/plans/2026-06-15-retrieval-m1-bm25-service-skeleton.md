@@ -1047,14 +1047,339 @@ git push origin HEAD
 
 ---
 
+### Task 8: Chunking + Chunk Overlap configuration
+
+**PRD reference:** Section 3 — "Document chunking at ≤ 512 tokens, 64-token overlap. Chunk size and overlap are configurable but fixed at index time."
+
+The existing `chunker.py` already implements chunking. This task adds typed configuration constants, env-var wiring, and unit tests that lock the behaviour so future changes don't silently alter chunk boundaries.
+
+**Files:**
+- Create: `src/internal/retrieval/chunk_config.py`
+- Create: `tests/unit/retrieval/test_chunk_config.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# tests/unit/retrieval/test_chunk_config.py
+"""Unit tests for ChunkConfig — validates env-var defaults and bounds."""
+from __future__ import annotations
+
+import pytest
+from src.internal.retrieval.chunk_config import ChunkConfig
+
+
+def test_defaults():
+    cfg = ChunkConfig()
+    assert cfg.chunk_size == 512
+    assert cfg.chunk_overlap == 64
+
+
+def test_from_env_reads_vars(monkeypatch):
+    monkeypatch.setenv("CHUNK_SIZE", "256")
+    monkeypatch.setenv("CHUNK_OVERLAP", "32")
+    cfg = ChunkConfig.from_env()
+    assert cfg.chunk_size == 256
+    assert cfg.chunk_overlap == 32
+
+
+def test_overlap_must_be_less_than_chunk_size():
+    with pytest.raises(ValueError, match="chunk_overlap"):
+        ChunkConfig(chunk_size=64, chunk_overlap=64)
+
+
+def test_chunk_size_must_be_positive():
+    with pytest.raises(ValueError, match="chunk_size"):
+        ChunkConfig(chunk_size=0)
+
+
+def test_chunk_overlap_must_be_nonnegative():
+    with pytest.raises(ValueError, match="chunk_overlap"):
+        ChunkConfig(chunk_size=512, chunk_overlap=-1)
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+pytest tests/unit/retrieval/test_chunk_config.py -v
+```
+
+Expected: `ModuleNotFoundError: No module named 'src.internal.retrieval.chunk_config'`
+
+- [ ] **Step 3: Implement `chunk_config.py`**
+
+```python
+# src/internal/retrieval/chunk_config.py
+"""Typed configuration for document chunking.
+
+Values are fixed at index time — changing them requires a full re-index.
+PRD defaults: chunk_size=512 tokens, chunk_overlap=64 tokens.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+
+@dataclass
+class ChunkConfig:
+    chunk_size: int = 512
+    chunk_overlap: int = 64
+
+    def __post_init__(self) -> None:
+        if self.chunk_size <= 0:
+            raise ValueError(f"chunk_size must be positive, got {self.chunk_size}")
+        if self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be non-negative, got {self.chunk_overlap}")
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be < chunk_size ({self.chunk_size})"
+            )
+
+    @classmethod
+    def from_env(cls) -> "ChunkConfig":
+        return cls(
+            chunk_size=int(os.environ.get("CHUNK_SIZE", "512")),
+            chunk_overlap=int(os.environ.get("CHUNK_OVERLAP", "64")),
+        )
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+pytest tests/unit/retrieval/test_chunk_config.py -v
+```
+
+Expected: `5 passed`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/internal/retrieval/chunk_config.py tests/unit/retrieval/test_chunk_config.py
+git commit -m "feat(retrieval): add ChunkConfig with env-var wiring (chunk_size=512, overlap=64)"
+```
+
+---
+
+### Task 9: Metadata filtering — thread `filters` from API through service to backend
+
+**PRD reference:** Section 7 API — `"filters": { "source": "confluence" }` in `POST /search`. The field already exists in `SearchRequest` (Task 4) but is never passed to the backend.
+
+**Files:**
+- Modify: `src/internal/retrieval/backends/base.py`
+- Modify: `src/internal/retrieval/backends/local.py`
+- Modify: `src/internal/retrieval/service.py`
+- Modify: `src/internal/servers/retrieval/server.py`
+- Modify: `tests/unit/retrieval/test_retrieval_backend.py` (append)
+- Modify: `tests/unit/retrieval/test_service.py` (append)
+
+- [ ] **Step 1: Append failing tests for backend**
+
+```python
+# Append to tests/unit/retrieval/test_retrieval_backend.py
+
+def test_local_backend_search_sparse_filters_by_metadata(monkeypatch):
+    import src.internal.retrieval.backends.local as local_mod
+
+    rows = [
+        {
+            "document": {
+                "id": "d1", "title": "T1", "contents": "body",
+                "url": None, "source": "confluence",
+            },
+            "score": 0.9,
+        },
+        {
+            "document": {
+                "id": "d2", "title": "T2", "contents": "text",
+                "url": None, "source": "sharepoint",
+            },
+            "score": 0.7,
+        },
+    ]
+    fake = _fake_sparse_retriever(rows)
+    monkeypatch.setattr(local_mod, "_make_sparse_retriever", lambda cfg: fake)
+
+    from src.internal.document_index.retrieval import SparseRetrieverConfig
+    backend = LocalBackend(SparseRetrieverConfig(index_path="x", corpus_path="y"))
+    results = backend.search_sparse("q", top_k=5, filters={"source": "confluence"})
+
+    assert len(results) == 1
+    assert results[0].doc_id == "d1"
+```
+
+- [ ] **Step 2: Append failing tests for service**
+
+```python
+# Append to tests/unit/retrieval/test_service.py
+
+def test_search_passes_filters_to_backend():
+    backend = MagicMock()
+    backend.search_sparse.return_value = [_make_result("d1")]
+    backend.search_dense.side_effect = NotImplementedError
+    service = RetrievalService(backend)
+
+    service.search("q", top_k=5, filters={"source": "confluence"})
+
+    backend.search_sparse.assert_called_once_with(
+        "q", top_k=10, filters={"source": "confluence"}
+    )
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+```bash
+pytest tests/unit/retrieval/test_retrieval_backend.py -v -k "filters"
+pytest tests/unit/retrieval/test_service.py -v -k "filters"
+```
+
+Expected: `TypeError` / `AssertionError` — `search_sparse` does not yet accept `filters`
+
+- [ ] **Step 4: Update `base.py` — add `filters` param to ABC**
+
+```python
+# src/internal/retrieval/backends/base.py
+"""Abstract base for all retrieval backends."""
+from __future__ import annotations
+
+import abc
+from dataclasses import dataclass, field
+
+
+@dataclass
+class RetrievalResult:
+    doc_id: str
+    title: str
+    text: str
+    url: str | None
+    score: float
+    metadata: dict = field(default_factory=dict)
+
+
+class RetrievalBackend(abc.ABC):
+    @abc.abstractmethod
+    def search_sparse(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        """BM25 keyword search. filters: optional key/value metadata constraints."""
+
+    @abc.abstractmethod
+    def search_dense(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        """ANN vector search. Raise NotImplementedError if not supported."""
+```
+
+- [ ] **Step 5: Update `local.py` — add `_apply_filters` and thread `filters`**
+
+Add the helper function and update both `search_sparse` and `search_dense`:
+
+```python
+def _apply_filters(
+    results: list[RetrievalResult], filters: dict | None
+) -> list[RetrievalResult]:
+    """Post-hoc metadata filter. Pyserini does not support native filtering."""
+    if not filters:
+        return results
+    return [
+        r for r in results
+        if all(r.metadata.get(k) == v for k, v in filters.items())
+    ]
+
+
+# In _row_to_result, populate metadata from extra document fields:
+def _row_to_result(row: dict) -> RetrievalResult:
+    doc = row.get("document", {})
+    text: str = doc.get("text") or doc.get("contents") or ""
+    if text.startswith('"'):
+        parts = text.split("\n", 1)
+        text = parts[1] if len(parts) > 1 else text
+    # Carry all non-standard keys as metadata so filters can match them.
+    known = {"id", "title", "text", "contents", "url"}
+    metadata = {k: v for k, v in doc.items() if k not in known}
+    return RetrievalResult(
+        doc_id=str(doc.get("id", "")),
+        title=str(doc.get("title", "")),
+        text=text,
+        url=doc.get("url"),
+        score=float(row.get("score", 0.0)),
+        metadata=metadata,
+    )
+
+
+class LocalBackend(RetrievalBackend):
+    # __init__ unchanged
+
+    def search_sparse(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        rows = self._sparse.retrieve([query], topk=top_k)
+        results = [_row_to_result(r) for r in rows[0]]
+        return _apply_filters(results, filters)
+
+    def search_dense(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        if self._dense is None:
+            raise NotImplementedError("Dense search not configured — set DENSE_MODEL_PATH env var")
+        rows = self._dense.retrieve([query], topk=top_k)
+        results = [_row_to_result(r) for r in rows[0]]
+        return _apply_filters(results, filters)
+```
+
+- [ ] **Step 6: Update `service.py` — add `filters` to `search()`**
+
+```python
+def search(
+    self, query: str, top_k: int = 5, filters: dict | None = None
+) -> tuple[list[RetrievalResult], str]:
+    """Run sparse and dense legs; fuse with RRF+MMR. filters passed to both legs."""
+    over_fetch = top_k * int(os.environ.get("OVER_FETCH_MULTIPLIER", "2"))
+    # ... existing fallback logic, but pass filters=filters to each backend call:
+    sparse_results = self._backend.search_sparse(query, top_k=over_fetch, filters=filters)
+    dense_results = self._backend.search_dense(query, top_k=over_fetch, filters=filters)
+    # ... rest unchanged
+```
+
+- [ ] **Step 7: Update `server.py` — pass `request.filters` to service**
+
+In the `search()` endpoint handler:
+
+```python
+results, mode = _service.search(request.query, top_k=request.top_k, filters=request.filters)
+```
+
+- [ ] **Step 8: Run all affected tests**
+
+```bash
+pytest tests/unit/retrieval/ tests/unit/servers/retrieval/ -v
+```
+
+Expected: all pass
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/internal/retrieval/backends/base.py \
+        src/internal/retrieval/backends/local.py \
+        src/internal/retrieval/service.py \
+        src/internal/servers/retrieval/server.py \
+        tests/unit/retrieval/test_retrieval_backend.py \
+        tests/unit/retrieval/test_service.py
+git commit -m "feat(retrieval): thread metadata filters from POST /search through to backend"
+```
+
+---
+
 ## M1 Completion Checklist
 
 - [ ] `pytest tests/unit/retrieval/ tests/unit/servers/retrieval/test_new_server.py` — all pass
 - [ ] `ruff check` and `ruff format` — clean
 - [ ] `GET /health` returns `{"status": "ok", "backend": "local"}`
 - [ ] `POST /search` returns `retrieval_mode`, `executed_queries`, `latency_ms`
+- [ ] `POST /search` with `"filters": {"source": "confluence"}` returns only matching docs
 - [ ] `python -m src.internal.retrieval.eval_runner --dataset data/eval/qa_pairs.jsonl` runs without error
 - [ ] `data/eval/baseline_metrics.json` updated with real numbers (recall@10 ≥ 0.75)
 - [ ] No regressions in existing `pytest tests/unit/` suite
+- [ ] `CHUNK_SIZE` and `CHUNK_OVERLAP` env vars documented and validated by `ChunkConfig`
 
 **Next:** M2 plan (`2026-06-15-retrieval-m2-dense-hybrid.md`) — dense retrieval, RRF+MMR extraction, hybrid mode, internal eval endpoints, Redis cache.

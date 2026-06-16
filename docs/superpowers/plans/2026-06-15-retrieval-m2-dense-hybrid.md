@@ -781,7 +781,338 @@ git commit -m "feat(retrieval): add internal eval endpoints /internal/search/{sp
 
 ---
 
-### Task 5: Full suite pass + M2 gate verification
+### Task 5: FAISS index builder CLI
+
+**PRD reference:** Section 4 — `IndexHNSWFlat` with `ef_construction=128, ef_search=64`. M2 wires `DENSE_INDEX_PATH` but no task builds the index. This CLI builds it.
+
+**Files:**
+- Create: `src/internal/retrieval/indexer.py`
+- Create: `tests/unit/retrieval/test_indexer.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# tests/unit/retrieval/test_indexer.py
+"""Tests for FAISS index builder."""
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+
+pytest.importorskip("faiss")
+
+from src.internal.retrieval.indexer import IndexerConfig, build_faiss_index
+
+
+def _write_corpus(docs: list[dict]) -> str:
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+        for d in docs:
+            f.write(json.dumps(d) + "\n")
+        return f.name
+
+
+def test_build_faiss_index_creates_file():
+    corpus = [
+        {"id": "d1", "title": "T1", "contents": "text one"},
+        {"id": "d2", "title": "T2", "contents": "text two"},
+    ]
+    corpus_path = _write_corpus(corpus)
+
+    fake_embedder = MagicMock()
+    fake_embedder.encode.return_value = np.random.randn(2, 768).astype(np.float32)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        index_path = str(Path(tmp) / "test.index")
+        with patch(
+            "src.internal.retrieval.indexer._load_embedder", return_value=fake_embedder
+        ):
+            build_faiss_index(
+                IndexerConfig(
+                    corpus_path=corpus_path,
+                    index_path=index_path,
+                    model_name="intfloat/e5-base-v2",
+                )
+            )
+        assert Path(index_path).exists()
+
+
+def test_build_faiss_index_stores_correct_count():
+    import faiss
+
+    corpus = [{"id": f"d{i}", "title": f"T{i}", "contents": f"text {i}"} for i in range(5)]
+    corpus_path = _write_corpus(corpus)
+
+    fake_embedder = MagicMock()
+    fake_embedder.encode.return_value = np.random.randn(5, 768).astype(np.float32)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        index_path = str(Path(tmp) / "test.index")
+        with patch(
+            "src.internal.retrieval.indexer._load_embedder", return_value=fake_embedder
+        ):
+            build_faiss_index(
+                IndexerConfig(corpus_path=corpus_path, index_path=index_path)
+            )
+        index = faiss.read_index(index_path)
+        assert index.ntotal == 5
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+pytest tests/unit/retrieval/test_indexer.py -v
+```
+
+Expected: `ModuleNotFoundError: No module named 'src.internal.retrieval.indexer'`
+
+- [ ] **Step 3: Implement `indexer.py`**
+
+```python
+# src/internal/retrieval/indexer.py
+"""CLI to build a FAISS HNSW index from a corpus.jsonl file.
+
+Usage:
+    python -m src.internal.retrieval.indexer \
+        --corpus data/corpus.jsonl \
+        --index  data/indexes/dense/index.faiss \
+        --model  intfloat/e5-base-v2
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import dataclass, field
+
+import numpy as np
+
+
+@dataclass
+class IndexerConfig:
+    corpus_path: str = "data/corpus.jsonl"
+    index_path: str = "data/indexes/dense/index.faiss"
+    model_name: str = "intfloat/e5-base-v2"
+    ef_construction: int = 128
+    ef_search: int = 64
+    hnsw_m: int = 32
+    batch_size: int = 256
+
+
+def _load_embedder(model_name: str):
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(model_name)
+
+
+def _load_corpus(corpus_path: str) -> list[str]:
+    texts = []
+    with open(corpus_path) as f:
+        for line in f:
+            doc = json.loads(line)
+            texts.append(doc.get("text") or doc.get("contents") or "")
+    return texts
+
+
+def build_faiss_index(config: IndexerConfig) -> None:
+    import faiss
+
+    embedder = _load_embedder(config.model_name)
+    texts = _load_corpus(config.corpus_path)
+
+    all_vecs: list[np.ndarray] = []
+    for i in range(0, len(texts), config.batch_size):
+        batch = texts[i : i + config.batch_size]
+        vecs = embedder.encode(batch, normalize_embeddings=True, show_progress_bar=False)
+        all_vecs.append(vecs.astype(np.float32))
+
+    embeddings = np.vstack(all_vecs)
+    dim = embeddings.shape[1]
+
+    index = faiss.IndexHNSWFlat(dim, config.hnsw_m)
+    index.hnsw.efConstruction = config.ef_construction
+    index.hnsw.efSearch = config.ef_search
+    index.add(embeddings)
+
+    faiss.write_index(index, config.index_path)
+    print(f"Indexed {index.ntotal} vectors → {config.index_path}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Build FAISS HNSW index from corpus")
+    parser.add_argument("--corpus", default="data/corpus.jsonl")
+    parser.add_argument("--index", default="data/indexes/dense/index.faiss")
+    parser.add_argument("--model", default="intfloat/e5-base-v2")
+    parser.add_argument("--ef-construction", type=int, default=128)
+    parser.add_argument("--ef-search", type=int, default=64)
+    args = parser.parse_args()
+    build_faiss_index(
+        IndexerConfig(
+            corpus_path=args.corpus,
+            index_path=args.index,
+            model_name=args.model,
+            ef_construction=args.ef_construction,
+            ef_search=args.ef_search,
+        )
+    )
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+pytest tests/unit/retrieval/test_indexer.py -v
+```
+
+Expected: `2 passed`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/internal/retrieval/indexer.py tests/unit/retrieval/test_indexer.py
+git commit -m "feat(retrieval): add FAISS HNSW index builder CLI (ef_construction=128, ef_search=64)"
+```
+
+---
+
+### Task 6: Redis embedding cache
+
+**PRD reference:** Section 4 — "Redis query-embedding cache already wired via `redis_url` in `DenseRetrieverConfig` — a cache hit skips the embedding call entirely." M2 passes `redis_url` in `service.py` but no task implements the cache.
+
+**Files:**
+- Create: `src/internal/retrieval/embedding_cache.py`
+- Create: `tests/unit/retrieval/test_embedding_cache.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# tests/unit/retrieval/test_embedding_cache.py
+"""Tests for Redis embedding cache."""
+from __future__ import annotations
+
+import json
+from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
+
+from src.internal.retrieval.embedding_cache import CachedEmbedder
+
+
+def _fake_base_embedder(vec: list[float]):
+    m = MagicMock()
+    m.encode.return_value = np.array(vec, dtype=np.float32)
+    return m
+
+
+def test_cache_miss_calls_embedder():
+    embedder = _fake_base_embedder([0.1, 0.2, 0.3])
+    redis = MagicMock()
+    redis.get.return_value = None  # cache miss
+
+    cached = CachedEmbedder(embedder, redis_client=redis)
+    result = cached.embed("hello")
+
+    embedder.encode.assert_called_once()
+    redis.setex.assert_called_once()
+    assert result == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_cache_hit_skips_embedder():
+    embedder = _fake_base_embedder([0.1, 0.2, 0.3])
+    redis = MagicMock()
+    redis.get.return_value = json.dumps([0.4, 0.5, 0.6]).encode()
+
+    cached = CachedEmbedder(embedder, redis_client=redis)
+    result = cached.embed("hello")
+
+    embedder.encode.assert_not_called()
+    assert result == pytest.approx([0.4, 0.5, 0.6])
+
+
+def test_no_redis_passes_through():
+    embedder = _fake_base_embedder([0.1, 0.2])
+    cached = CachedEmbedder(embedder, redis_client=None)
+    result = cached.embed("hello")
+    embedder.encode.assert_called_once()
+    assert result == pytest.approx([0.1, 0.2])
+
+
+def test_cache_key_is_deterministic():
+    from src.internal.retrieval.embedding_cache import _cache_key
+    assert _cache_key("hello") == _cache_key("hello")
+    assert _cache_key("hello") != _cache_key("world")
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+pytest tests/unit/retrieval/test_embedding_cache.py -v
+```
+
+Expected: `ModuleNotFoundError: No module named 'src.internal.retrieval.embedding_cache'`
+
+- [ ] **Step 3: Implement `embedding_cache.py`**
+
+```python
+# src/internal/retrieval/embedding_cache.py
+"""Redis-backed embedding cache for query vectors.
+
+Cache key: sha256(query)[:16]. TTL: 1 hour.
+A cache hit skips the embedding call entirely (saves 30-80ms per query).
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+
+def _cache_key(query: str) -> str:
+    return f"emb:{hashlib.sha256(query.encode()).hexdigest()[:16]}"
+
+
+class CachedEmbedder:
+    def __init__(self, base_embedder: Any, redis_client: Any | None = None) -> None:
+        self._embedder = base_embedder
+        self._redis = redis_client
+
+    def embed(self, query: str) -> list[float]:
+        if self._redis is not None:
+            key = _cache_key(query)
+            cached = self._redis.get(key)
+            if cached is not None:
+                return json.loads(cached)
+
+        vec: list[float] = self._embedder.encode(
+            query, normalize_embeddings=True
+        ).tolist()
+
+        if self._redis is not None:
+            self._redis.setex(key, 3600, json.dumps(vec))
+
+        return vec
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+pytest tests/unit/retrieval/test_embedding_cache.py -v
+```
+
+Expected: `4 passed`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/internal/retrieval/embedding_cache.py tests/unit/retrieval/test_embedding_cache.py
+git commit -m "feat(retrieval): add Redis embedding cache (1h TTL, sha256 key)"
+```
+
+---
+
+### Task 7: Full suite pass + M2 gate verification
 
 **Files:** No new files — verification only.
 

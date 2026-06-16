@@ -72,7 +72,147 @@ Thin script that downloads BEIR corpora (nfcorpus, fiqa, scifact) via `ir-datase
 **Files:**
 - Create: `src/internal/retrieval/beir_eval.py`
 
-### Task 5: CI eval gate + legacy removal
+### Task 5: Metadata filtering in OpenSearch and Weaviate backends
+
+**PRD reference:** Section 7 — `"filters": { "source": "confluence" }` in `POST /search`. M1 Task 9 added post-hoc Python filtering to `LocalBackend`. OpenSearch and Weaviate support server-side filtering — more efficient and must be wired here.
+
+**Files:**
+- Modify: `src/internal/retrieval/backends/opensearch.py`
+- Modify: `src/internal/retrieval/backends/weaviate.py`
+- Modify: `tests/unit/retrieval/test_opensearch_backend.py` (append)
+- Modify: `tests/unit/retrieval/test_weaviate_backend.py` (append)
+
+**OpenSearch filtering** — wrap `match` query in `bool+filter` when `filters` is provided:
+
+```python
+def _build_sparse_body(
+    query: str, content_field: str, filters: dict | None
+) -> dict:
+    match_clause = {"match": {content_field: query}}
+    if not filters:
+        return {"query": match_clause}
+    return {
+        "query": {
+            "bool": {
+                "must": [match_clause],
+                "filter": [{"term": {k: v}} for k, v in filters.items()],
+            }
+        }
+    }
+```
+
+For kNN, add a `"filter"` key inside the knn clause:
+
+```python
+def _build_dense_body(
+    vec: list[float], vector_field: str, top_k: int, filters: dict | None
+) -> dict:
+    knn_clause: dict = {"vector": vec, "k": top_k}
+    if filters:
+        knn_clause["filter"] = {
+            "bool": {"filter": [{"term": {k: v}} for k, v in filters.items()]}
+        }
+    return {"query": {"knn": {vector_field: knn_clause}}}
+```
+
+Update `search_sparse()` and `search_dense()` signatures to `(self, query, top_k, filters=None)`.
+
+**Failing tests to append to `test_opensearch_backend.py`:**
+
+```python
+def test_sparse_query_wrapped_in_bool_when_filters_set(monkeypatch):
+    import src.internal.retrieval.backends.opensearch as os_mod
+    fake_client = _make_fake_client([])
+    monkeypatch.setattr(os_mod, "_make_client", lambda url: fake_client)
+    backend = OpenSearchBackend.from_env()
+    backend.search_sparse("q", top_k=5, filters={"source": "confluence"})
+    body = fake_client.search.call_args[1]["body"]
+    assert body["query"]["bool"]["filter"] == [{"term": {"source": "confluence"}}]
+
+
+def test_sparse_query_is_plain_match_without_filters(monkeypatch):
+    import src.internal.retrieval.backends.opensearch as os_mod
+    fake_client = _make_fake_client([])
+    monkeypatch.setattr(os_mod, "_make_client", lambda url: fake_client)
+    backend = OpenSearchBackend.from_env()
+    backend.search_sparse("q", top_k=5)
+    body = fake_client.search.call_args[1]["body"]
+    assert "match" in body["query"]
+    assert "bool" not in body["query"]
+```
+
+**Weaviate filtering** — use `Filter.by_property()` from `weaviate.classes.query`:
+
+```python
+from weaviate.classes.query import Filter as WvFilter
+
+def _weaviate_filter(filters: dict | None):
+    if not filters:
+        return None
+    clauses = [WvFilter.by_property(k).equal(v) for k, v in filters.items()]
+    return clauses[0] if len(clauses) == 1 else WvFilter.all_of(clauses)
+
+# In search_sparse:
+results = self._collection.query.bm25(query=query, limit=top_k, filters=_weaviate_filter(filters))
+
+# In search_dense:
+results = self._collection.query.near_vector(near_vector=vec, limit=top_k, filters=_weaviate_filter(filters))
+```
+
+**Failing tests to append to `test_weaviate_backend.py`:**
+
+```python
+def test_bm25_passes_filter_object_when_filters_set(monkeypatch):
+    import src.internal.retrieval.backends.weaviate as wv_mod
+    fake_collection = _make_fake_collection([])
+    monkeypatch.setattr(wv_mod, "_make_collection", lambda url, name: fake_collection)
+    backend = WeaviateBackend.from_env()
+    backend.search_sparse("q", top_k=5, filters={"source": "confluence"})
+    kw = fake_collection.query.bm25.call_args[1]
+    assert kw.get("filters") is not None
+
+
+def test_bm25_no_filter_kwarg_when_filters_none(monkeypatch):
+    import src.internal.retrieval.backends.weaviate as wv_mod
+    fake_collection = _make_fake_collection([])
+    monkeypatch.setattr(wv_mod, "_make_collection", lambda url, name: fake_collection)
+    backend = WeaviateBackend.from_env()
+    backend.search_sparse("q", top_k=5)
+    kw = fake_collection.query.bm25.call_args[1]
+    assert kw.get("filters") is None
+```
+
+- [ ] **Step 1: Implement OpenSearch filtering in `opensearch.py`** (extract `_build_sparse_body` + `_build_dense_body` helpers; update both search methods)
+- [ ] **Step 2: Run and verify OpenSearch filter tests pass**
+
+```bash
+pytest tests/unit/retrieval/test_opensearch_backend.py -v
+```
+
+Expected: all pass (including 2 new filter tests)
+
+- [ ] **Step 3: Implement Weaviate filtering in `weaviate.py`** (add `_weaviate_filter` helper; update `search_sparse` and `search_dense`)
+- [ ] **Step 4: Run and verify Weaviate filter tests pass**
+
+```bash
+pytest tests/unit/retrieval/test_weaviate_backend.py -v
+```
+
+Expected: all pass (including 2 new filter tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/internal/retrieval/backends/opensearch.py \
+        src/internal/retrieval/backends/weaviate.py \
+        tests/unit/retrieval/test_opensearch_backend.py \
+        tests/unit/retrieval/test_weaviate_backend.py
+git commit -m "feat(retrieval): server-side metadata filtering in OpenSearch (bool+filter) and Weaviate (Filter.by_property)"
+```
+
+---
+
+### Task 6: CI eval gate + legacy removal
 
 Create `.github/workflows/eval-gate.yml`, remove three legacy server files, clean `src/__init__.py`.
 
