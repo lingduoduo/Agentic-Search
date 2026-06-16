@@ -80,7 +80,7 @@ def _build_backend() -> RetrievalBackend:
 
 class RetrievalService:
     def __init__(
-        self, backend: RetrievalBackend, reranker: Reranker | None = None
+        self, backend: RetrievalBackend, reranker: "Reranker | None" = None
     ) -> None:
         self._backend = backend
         self._reranker = reranker
@@ -91,6 +91,49 @@ class RetrievalService:
         from src.internal.retrieval.reranker import Reranker
 
         return cls(_build_backend(), reranker=Reranker.from_env())
+
+    def _search_one(
+        self,
+        query: str,
+        over_fetch: int,
+        filters: dict | None,
+    ) -> tuple[list[RetrievalResult], str]:
+        """Run sparse+dense retrieval for one query variant. Returns (results, base_mode)."""
+        sparse_results: list[RetrievalResult] = []
+        dense_results: list[RetrievalResult] = []
+        sparse_ok = dense_ok = False
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sparse_future = executor.submit(
+                self._backend.search_sparse, query, top_k=over_fetch, filters=filters
+            )
+            dense_future = executor.submit(
+                self._backend.search_dense, query, top_k=over_fetch, filters=filters
+            )
+
+        try:
+            sparse_results = sparse_future.result()
+            sparse_ok = True
+        except Exception as exc:
+            logger.warning("Sparse retrieval leg failed: %s", exc)
+
+        try:
+            dense_results = dense_future.result()
+            dense_ok = True
+        except NotImplementedError:
+            pass
+        except Exception as exc:
+            logger.warning("Dense retrieval leg failed: %s", exc)
+
+        if not sparse_ok and not dense_ok:
+            raise RuntimeError("Both retrieval legs failed")
+
+        if not dense_ok:
+            return sparse_results, "sparse_only"
+        elif not sparse_ok:
+            return dense_results, "dense_only"
+        else:
+            return rrf_fuse([sparse_results, dense_results]), "hybrid"
 
     def search(
         self,
@@ -104,45 +147,12 @@ class RetrievalService:
         Returns (results, retrieval_mode) where mode is 'hybrid' | 'sparse_only' | 'dense_only'.
         """
         over_fetch = top_k * int(os.environ.get("OVER_FETCH_MULTIPLIER", "2"))
+        raw, mode = self._search_one(query, over_fetch, filters)
 
-        sparse_results: list[RetrievalResult] = []
-        dense_results: list[RetrievalResult] = []
-        sparse_ok = dense_ok = False
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            sparse_future = executor.submit(
-                self._backend.search_sparse, query, top_k=over_fetch, filters=filters
-            )
-            dense_future = executor.submit(
-                self._backend.search_dense, query, top_k=over_fetch, filters=filters
-            )
-        # Both futures are complete once the with-block exits.
-
-        try:
-            sparse_results = sparse_future.result()
-            sparse_ok = True
-        except Exception as exc:
-            logger.warning("Sparse retrieval leg failed: %s", exc)
-
-        try:
-            dense_results = dense_future.result()
-            dense_ok = True
-        except NotImplementedError:
-            pass  # dense not configured — silent fallback
-        except Exception as exc:
-            logger.warning("Dense retrieval leg failed: %s", exc)
-
-        if not sparse_ok and not dense_ok:
-            raise RuntimeError("Both retrieval legs failed")
-
-        if not dense_ok:
-            fused, mode = sparse_results[:top_k], "sparse_only"
-        elif not sparse_ok:
-            fused, mode = dense_results[:top_k], "dense_only"
+        if mode == "hybrid":
+            fused = mmr_rerank(raw, top_k=top_k)
         else:
-            fused = rrf_fuse([sparse_results, dense_results])
-            fused = mmr_rerank(fused, top_k=top_k)
-            mode = "hybrid"
+            fused = raw[:top_k]
 
         if self._reranker:
             fused = self._reranker.rerank(query, fused, top_k)
