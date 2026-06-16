@@ -7,7 +7,7 @@ import {
   getAnalyticsByFlow,
   getAnalyticsByLLM,
   getAnalyticsByPersona,
-  runAgent,
+  streamAgent,
 } from "./api";
 import { AdminOverview } from "./components/AdminOverview";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
@@ -21,9 +21,9 @@ import { SourceGrid } from "./components/SourceGrid";
 import type {
   AdminSurfaceSummary,
   AgentExperienceRequest,
-  AgentExperienceResponse,
   BreakdownAnalytics,
   ChatMessageView,
+  ProgressStep,
   SearchSourceProvider,
   SourceDocumentView,
 } from "./types";
@@ -45,6 +45,8 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingAnswer, setStreamingAnswer] = useState("");
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
+  const [completedSteps, setCompletedSteps] = useState<ProgressStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [adminSummary, setAdminSummary] = useState<AdminSurfaceSummary | null>(null);
   const [analyticsByLLM, setAnalyticsByLLM] = useState<BreakdownAnalytics | null>(null);
@@ -92,6 +94,8 @@ export function App() {
     setError(null);
     setIntent(undefined);
     setStreamingAnswer("");
+    setProgressSteps([]);
+    setCompletedSteps([]);
     try {
       const activeSessionId = await ensureSession(controller.signal);
       const agentRequest: AgentExperienceRequest = {
@@ -102,15 +106,27 @@ export function App() {
         source_provider: sourceProvider,
       };
 
-      const response: AgentExperienceResponse = await runAgent(agentRequest, {
-        signal: controller.signal,
-      });
-      setSessionId(response.session_id);
-      setAnswer(response.answer);
-      setCitations(response.citations);
-      setDocuments(response.documents);
-      setMessages(response.messages);
-      setIntent(response.intent);
+      let accumulatedAnswer = "";
+      let liveSteps: ProgressStep[] = [];
+      for await (const event of streamAgent(agentRequest, { signal: controller.signal })) {
+        if (event.type === "progress") {
+          liveSteps = [...liveSteps, { turn: event.turn, text: event.text }];
+          setProgressSteps(liveSteps);
+        } else if (event.type === "answer") {
+          accumulatedAnswer = event.text;
+          setStreamingAnswer(event.text);
+        } else if (event.type === "done") {
+          setSessionId(event.session_id);
+          setCitations(event.citations);
+          setDocuments(event.documents);
+          if (event.intent) setIntent(event.intent);
+          setAnswer(accumulatedAnswer);
+          setCompletedSteps(liveSteps);
+          setProgressSteps([]);
+        } else if (event.type === "error") {
+          throw new Error(event.detail);
+        }
+      }
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
@@ -246,6 +262,8 @@ export function App() {
               citations={citations}
               intent={intent}
               documentCount={documents.length}
+              progressSteps={progressSteps}
+              completedSteps={completedSteps}
             />
           </section>
 
