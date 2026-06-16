@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 
 from .eval_metrics import mrr as mrr_score
@@ -28,7 +29,7 @@ def _percentile(values: list[float], p: int) -> float:
     if not values:
         return 0.0
     sorted_vals = sorted(values)
-    idx = max(0, int(len(sorted_vals) * p / 100) - 1)
+    idx = min(len(sorted_vals) - 1, max(0, math.ceil(len(sorted_vals) * p / 100) - 1))
     return round(sorted_vals[idx], 1)
 
 

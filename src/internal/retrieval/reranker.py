@@ -41,6 +41,8 @@ class RerankerConfig:
             raise ValueError("api_key is required for provider='cohere'.")
         if self.batch_size < 1:
             raise ValueError("batch_size must be at least 1.")
+        if self.top_k is not None and self.top_k < 1:
+            raise ValueError("top_k must be >= 1 or None.")
 
 
 class Reranker:
@@ -63,7 +65,9 @@ class Reranker:
         """Rescore results and return top_k sorted by descending score."""
         if not results:
             return results
-        effective_k = min(top_k, self._config.top_k) if self._config.top_k else top_k
+        effective_k = (
+            min(top_k, self._config.top_k) if self._config.top_k is not None else top_k
+        )
         if self._config.provider == "local":
             return self._rerank_local(query, results, effective_k)
         return self._rerank_cohere(query, results, effective_k)
