@@ -1,10 +1,15 @@
 # tests/unit/test_intent_routing.py
+import asyncio
 import json
-from src.internal.servers.web.intent_routing import (
-    _rule_based_is_search,
-    _infer_intent_from_output,
-)
+import json as _json
+from unittest.mock import AsyncMock, patch
+
 from src.agents.base import AgentLoopOutput
+from src.internal.servers.web.intent_routing import (
+    _infer_intent_from_output,
+    _rule_based_is_search,
+)
+from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
 
 
 def _make_output(
@@ -95,3 +100,79 @@ def test_infer_intent_no_trace_defaults_to_chat():
 def test_infer_intent_malformed_trace_defaults_to_chat():
     output = _make_output(action_trace="not json")
     assert _infer_intent_from_output(output) == "chat"
+
+
+# --- routing tool builder tests ---
+
+
+def test_build_search_routing_tool_schema():
+    tool = build_search_routing_tool(
+        search_url="http://localhost:8001/retrieve", top_k=3
+    )
+    assert tool.schema.name == "search_routing_tool"
+    assert "query" in tool.schema.parameters.get("properties", {})
+
+
+def test_build_rag_routing_tool_schema():
+    tool = build_rag_routing_tool(
+        llm=None, search_url="http://localhost:8001/retrieve", top_k=3
+    )
+    assert tool.schema.name == "rag_routing_tool"
+    assert "query" in tool.schema.parameters.get("properties", {})
+
+
+def test_search_routing_tool_returns_json():
+    from src.tools.search import SearchPage
+
+    fake_pages = [SearchPage(title="Doc A", summary="Content A", url="http://a.com")]
+
+    async def run():
+        with patch(
+            "src.tools.routing_tools.search_tool",
+            new=AsyncMock(return_value=fake_pages),
+        ):
+            tool = build_search_routing_tool(
+                search_url="http://localhost:8001/retrieve", top_k=3
+            )
+            response_text, raw, _meta = await tool.execute(
+                "default", {"query": "FAISS"}
+            )
+        return response_text
+
+    result = asyncio.run(run())
+    data = _json.loads(result)
+    assert isinstance(data, list)
+    assert data[0]["title"] == "Doc A"
+
+
+def test_rag_routing_tool_returns_answer():
+    from src.context.models import (
+        AnswerGenerationResult,
+        PromptBundle,
+        SearchContextBundle,
+    )
+
+    fake_context = SearchContextBundle(query="q", documents=[])
+    fake_prompt = PromptBundle(system="", user="", messages=[])
+    fake_result = AnswerGenerationResult(
+        answer="42",
+        citations=["[D1]"],
+        context=fake_context,
+        prompt=fake_prompt,
+    )
+
+    async def run():
+        with patch(
+            "src.context.answer_with_retrieval", new=AsyncMock(return_value=fake_result)
+        ):
+            tool = build_rag_routing_tool(
+                llm=None, search_url="http://localhost:8001/retrieve", top_k=3
+            )
+            response_text, raw, _meta = await tool.execute(
+                "default", {"query": "What is the answer?"}
+            )
+        return response_text
+
+    result = asyncio.run(run())
+    data = _json.loads(result)
+    assert data["answer"] == "42"
