@@ -16,7 +16,7 @@ _DEFAULT_TITLE_FIELD = "title"
 _DEFAULT_URL_FIELD = "source_links"
 
 
-def _make_opensearch_client(url: str) -> Any:
+def _make_client(url: str) -> Any:
     """Thin factory — exists so tests can monkeypatch it."""
     try:
         from opensearchpy import OpenSearch
@@ -45,6 +45,31 @@ def _hit_to_result(
     )
 
 
+def _build_sparse_body(query: str, content_field: str, filters: dict | None) -> dict:
+    match_clause = {"match": {content_field: query}}
+    if not filters:
+        return {"query": match_clause}
+    return {
+        "query": {
+            "bool": {
+                "must": [match_clause],
+                "filter": [{"term": {k: v}} for k, v in filters.items()],
+            }
+        }
+    }
+
+
+def _build_dense_body(
+    vec: list[float], vector_field: str, top_k: int, filters: dict | None
+) -> dict:
+    knn_clause: dict = {"vector": vec, "k": top_k}
+    if filters:
+        knn_clause["filter"] = {
+            "bool": {"filter": [{"term": {k: v}} for k, v in filters.items()]}
+        }
+    return {"query": {"knn": {vector_field: knn_clause}}}
+
+
 class OpenSearchBackend(RetrievalBackend):
     """Retrieves from an OpenSearch index via BM25 (sparse) and kNN (dense)."""
 
@@ -67,8 +92,19 @@ class OpenSearchBackend(RetrievalBackend):
         self._title_field = title_field
         self._url_field = url_field
         self._embedder = embedder
-        self._client = client or _make_opensearch_client(
+        self._client = client or _make_client(
             os.environ.get("OPENSEARCH_URL", "http://localhost:9200")
+        )
+
+    @classmethod
+    def from_env(cls) -> "OpenSearchBackend":
+        return cls(
+            index_name=os.environ.get("OPENSEARCH_INDEX", "documents"),
+            content_field=os.environ.get("OPENSEARCH_CONTENT_FIELD", "content"),
+            vector_field=os.environ.get("OPENSEARCH_VECTOR_FIELD", "content_vector"),
+            doc_id_field=os.environ.get("OPENSEARCH_DOC_ID_FIELD", "document_id"),
+            title_field=os.environ.get("OPENSEARCH_TITLE_FIELD", "title"),
+            url_field=os.environ.get("OPENSEARCH_URL_FIELD", "source_links"),
         )
 
     def _convert(self, hit: dict) -> RetrievalResult:
@@ -80,30 +116,23 @@ class OpenSearchBackend(RetrievalBackend):
             url_field=self._url_field,
         )
 
-    def search_sparse(self, query: str, top_k: int) -> list[RetrievalResult]:
-        body = {
-            "query": {"match": {self._content_field: query}},
-            "size": top_k,
-        }
+    def search_sparse(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        body = _build_sparse_body(query, self._content_field, filters)
+        body["size"] = top_k
         resp = self._client.search(index=self._index, body=body)
         return [self._convert(h) for h in resp["hits"]["hits"]]
 
-    def search_dense(self, query: str, top_k: int) -> list[RetrievalResult]:
+    def search_dense(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
         if self._embedder is None:
             raise NotImplementedError(
                 "Dense search not configured — provide an embedder or set DENSE_MODEL_PATH"
             )
         vector = self._embedder(query)
-        body = {
-            "query": {
-                "knn": {
-                    self._vector_field: {
-                        "vector": vector,
-                        "k": top_k,
-                    }
-                }
-            },
-            "size": top_k,
-        }
+        body = _build_dense_body(vector, self._vector_field, top_k, filters)
+        body["size"] = top_k
         resp = self._client.search(index=self._index, body=body)
         return [self._convert(h) for h in resp["hits"]["hits"]]
