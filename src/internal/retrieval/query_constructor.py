@@ -68,7 +68,7 @@ class QueryConstructor:
             # Strip markdown code fences if present
             if raw.startswith("```"):
                 parts = raw.split("```")
-                raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
+                raw = parts[1].removeprefix("json").strip() if len(parts) > 1 else raw
             parsed = json.loads(raw)
             cleaned_query = str(parsed.get("query", query))
             raw_filters: dict = parsed.get("filters") or {}
@@ -78,5 +78,6 @@ class QueryConstructor:
                 if k in _KNOWN_FILTER_FIELDS and v is not None
             }
             return cleaned_query, filters
-        except Exception:
+        except Exception as exc:
+            logger.warning("Filter extraction failed: %s", exc)
             return query, {}
