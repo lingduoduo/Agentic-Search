@@ -18,9 +18,13 @@ class RetrievalResult:
 
 class RetrievalBackend(abc.ABC):
     @abc.abstractmethod
-    def search_sparse(self, query: str, top_k: int) -> list[RetrievalResult]:
-        """BM25 keyword search. Must be implemented by every backend."""
+    def search_sparse(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
+        """BM25 keyword search. filters: optional key/value metadata constraints."""
 
     @abc.abstractmethod
-    def search_dense(self, query: str, top_k: int) -> list[RetrievalResult]:
+    def search_dense(
+        self, query: str, top_k: int, filters: dict | None = None
+    ) -> list[RetrievalResult]:
         """ANN vector search. Raise NotImplementedError if not supported."""

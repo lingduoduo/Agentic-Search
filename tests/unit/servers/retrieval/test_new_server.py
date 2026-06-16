@@ -53,7 +53,7 @@ def test_search_calls_service_with_top_k():
     client = TestClient(create_app(svc))
 
     client.post("/search", json={"query": "vector search", "top_k": 10})
-    svc.search.assert_called_once_with("vector search", top_k=10)
+    svc.search.assert_called_once_with("vector search", top_k=10, filters=None)
 
 
 def test_search_rejects_empty_query():
@@ -67,4 +67,4 @@ def test_search_default_top_k_is_5():
     client = TestClient(create_app(svc))
 
     client.post("/search", json={"query": "anything"})
-    svc.search.assert_called_once_with("anything", top_k=5)
+    svc.search.assert_called_once_with("anything", top_k=5, filters=None)

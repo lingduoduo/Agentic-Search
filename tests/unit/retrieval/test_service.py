@@ -30,7 +30,7 @@ def test_search_delegates_to_backend_sparse():
     results, mode = service.search("procurement", top_k=5)
 
     # over_fetch multiplier=2 → top_k * 2 = 10
-    backend.search_sparse.assert_called_once_with("procurement", top_k=10)
+    backend.search_sparse.assert_called_once_with("procurement", top_k=10, filters=None)
     assert mode == "sparse_only"
     assert len(results) == 1
     assert results[0].doc_id == "d1"
@@ -135,3 +135,30 @@ def test_graph_search_delegates_to_graph_rag_search():
 
     results = service.graph_search("q", top_k=3, initial_k=2, max_entity_queries=0)
     assert isinstance(results, list)
+
+
+def test_search_passes_filters_to_sparse_backend():
+    backend = _sparse_only_backend([_make_result("d1")])
+    service = RetrievalService(backend)
+
+    service.search("q", top_k=5, filters={"source": "confluence"})
+
+    backend.search_sparse.assert_called_once_with(
+        "q", top_k=10, filters={"source": "confluence"}
+    )
+
+
+def test_search_passes_filters_to_both_legs():
+    backend = MagicMock()
+    backend.search_sparse.return_value = [_make_result("s1")]
+    backend.search_dense.return_value = [_make_result("d1")]
+    service = RetrievalService(backend)
+
+    service.search("q", top_k=3, filters={"source": "sharepoint"})
+
+    backend.search_sparse.assert_called_once_with(
+        "q", top_k=6, filters={"source": "sharepoint"}
+    )
+    backend.search_dense.assert_called_once_with(
+        "q", top_k=6, filters={"source": "sharepoint"}
+    )
