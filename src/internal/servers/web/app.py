@@ -603,10 +603,10 @@ def create_web_app(
             ],
         )
 
-    @app.post("/api/agent")
-    async def run_agent(
+    async def _run_agent_impl(
         request: AgentExperienceRequest,
         http_request: Request,
+        on_turn=None,
     ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:
@@ -853,6 +853,7 @@ def create_web_app(
                 output = await loop.run(
                     [{"role": "user", "content": query}],
                     sampling_params={"temperature": 0.0, "max_tokens": 256},
+                    on_turn=on_turn,
                 )
                 answer = output.final_answer or ""
                 sa_documents: list[ContextDocument] = []
@@ -917,6 +918,7 @@ def create_web_app(
                 output = await loop.run(
                     [{"role": "user", "content": query}],
                     sampling_params={"temperature": 0.0, "max_tokens": 512},
+                    on_turn=on_turn,
                 )
                 answer = output.final_answer or next(
                     (
@@ -998,6 +1000,13 @@ def create_web_app(
             intent="chat",
         )
 
+    @app.post("/api/agent")
+    async def run_agent(
+        request: AgentExperienceRequest,
+        http_request: Request,
+    ) -> AgentExperienceResponse:
+        return await _run_agent_impl(request, http_request, on_turn=None)
+
     @app.post("/api/agent/stream")
     async def stream_agent(
         request: AgentExperienceRequest,
@@ -1006,17 +1015,35 @@ def create_web_app(
         """Stream agent progress as Server-Sent Events.
 
         Emits:
+          {"type": "progress", "turn": N, "text": "..."}  — per-turn progress
           {"type": "answer",   "text": "..."}             — final answer text
-          {"type": "done",     "session_id": "...", "citations": [...], "documents": [...]}
+          {"type": "done",     "session_id": "...", "citations": [...], "documents": [...], "intent": "..."}
           {"type": "error",    "detail": "..."}           — on failure
         """
 
         def _sse(data: dict) -> str:
             return f"data: {_json.dumps(data)}\n\n"
 
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
+            text = f"{tool_name} · {doc_count} docs" if tool_name else "writing answer…"
+            await queue.put({"type": "progress", "turn": turn, "text": text})
+
         async def _generate():
+            task = asyncio.create_task(
+                _run_agent_impl(request, http_request, on_turn=on_turn)
+            )
             try:
-                result: AgentExperienceResponse = await run_agent(request, http_request)
+                while not task.done():
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=0.05)
+                        yield _sse(item)
+                    except asyncio.TimeoutError:
+                        continue
+                while not queue.empty():
+                    yield _sse(queue.get_nowait())
+                result: AgentExperienceResponse = task.result()
                 yield _sse({"type": "answer", "text": result.answer})
                 yield _sse(
                     {
@@ -1024,12 +1051,16 @@ def create_web_app(
                         "session_id": result.session_id,
                         "citations": result.citations,
                         "documents": [d.model_dump() for d in result.documents],
+                        "intent": result.intent,
                     }
                 )
-            except HTTPException as exc:
-                yield _sse({"type": "error", "detail": exc.detail})
             except Exception as exc:
-                yield _sse({"type": "error", "detail": str(exc)})
+                if not task.done():
+                    task.cancel()
+                if isinstance(exc, HTTPException):
+                    yield _sse({"type": "error", "detail": exc.detail})
+                else:
+                    yield _sse({"type": "error", "detail": str(exc)})
 
         return StreamingResponse(
             _generate(),
