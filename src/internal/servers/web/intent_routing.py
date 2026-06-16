@@ -9,12 +9,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.agents.base import AgentLoopOutput
 
-_TEMPORAL_RE = re.compile(
-    r"\b(today|right now|this week|this month|this year|latest|breaking|news|recent|"
-    r"currently|202[4-9]|203\d)\b",
-    re.IGNORECASE,
-)
-
 _SEARCH_RE = re.compile(
     r"\b(find|list|retrieve|search for|show me|pull|get me|look up|fetch)\b",
     re.IGNORECASE,
