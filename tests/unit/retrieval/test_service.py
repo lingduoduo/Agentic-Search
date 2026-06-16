@@ -229,3 +229,54 @@ def test_build_local_backend_passes_bm25_k1_b(monkeypatch):
 
     assert captured["k1"] == pytest.approx(0.9)
     assert captured["b"] == pytest.approx(0.5)
+
+
+def test_reranker_called_when_injected():
+    """Reranker.rerank() must be called with the query and fused results."""
+    backend = _sparse_only_backend([_make_result("d1"), _make_result("d2")])
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [_make_result("d2"), _make_result("d1")]
+
+    service = RetrievalService(backend, reranker=mock_reranker)
+    results, mode = service.search("q", top_k=2)
+
+    mock_reranker.rerank.assert_called_once()
+    call_args = mock_reranker.rerank.call_args
+    assert call_args[0][0] == "q"  # query
+    assert call_args[0][2] == 2  # top_k
+    assert results[0].doc_id == "d2"
+
+
+def test_mode_has_reranked_suffix():
+    """retrieval_mode must end with '+reranked' when a reranker is present."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [_make_result("d1")]
+
+    service = RetrievalService(backend, reranker=mock_reranker)
+    _, mode = service.search("q", top_k=1)
+
+    assert mode.endswith("+reranked")
+
+
+def test_no_reranker_mode_unchanged():
+    """Without a reranker, mode must not contain '+reranked'."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    service = RetrievalService(backend)
+    _, mode = service.search("q", top_k=1)
+
+    assert "+reranked" not in mode
+
+
+def test_reranker_receives_filters():
+    """filters kwarg must be passed through to backend legs even when reranker is set."""
+    backend = _sparse_only_backend([_make_result("d1")])
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [_make_result("d1")]
+
+    service = RetrievalService(backend, reranker=mock_reranker)
+    service.search("q", top_k=1, filters={"source": "wiki"})
+
+    backend.search_sparse.assert_called_once_with(
+        "q", top_k=2, filters={"source": "wiki"}
+    )
