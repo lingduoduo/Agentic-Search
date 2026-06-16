@@ -9,7 +9,7 @@ import pytest
 from src.internal.retrieval.backends.opensearch import OpenSearchBackend, _hit_to_result
 
 
-def _make_client(hits: list[dict]) -> MagicMock:
+def _make_fake_client(hits: list[dict]) -> MagicMock:
     """Return a mock client whose .search() returns the given hit list."""
     client = MagicMock()
     client.search.return_value = {"hits": {"hits": hits}}
@@ -46,7 +46,7 @@ def test_hit_to_result_maps_fields():
 
 
 def test_search_sparse_issues_match_query():
-    client = _make_client([_hit("d1"), _hit("d2")])
+    client = _make_fake_client([_hit("d1"), _hit("d2")])
     backend = OpenSearchBackend("my_index", client=client)
 
     results = backend.search_sparse("neural retrieval", top_k=5)
@@ -59,7 +59,7 @@ def test_search_sparse_issues_match_query():
 
 
 def test_search_sparse_uses_custom_content_field():
-    client = _make_client([])
+    client = _make_fake_client([])
     backend = OpenSearchBackend("idx", content_field="text_body", client=client)
     backend.search_sparse("q", top_k=3)
 
@@ -68,14 +68,14 @@ def test_search_sparse_uses_custom_content_field():
 
 
 def test_search_dense_raises_without_embedder():
-    client = _make_client([])
+    client = _make_fake_client([])
     backend = OpenSearchBackend("idx", client=client)
     with pytest.raises(NotImplementedError, match="Dense search not configured"):
         backend.search_dense("q", 5)
 
 
 def test_search_dense_issues_knn_query():
-    client = _make_client([_hit("d1")])
+    client = _make_fake_client([_hit("d1")])
     embedder = MagicMock(return_value=[0.1, 0.2, 0.3])
     backend = OpenSearchBackend("idx", embedder=embedder, client=client)
 
@@ -90,6 +90,29 @@ def test_search_dense_issues_knn_query():
 
 
 def test_search_sparse_empty_results():
-    client = _make_client([])
+    client = _make_fake_client([])
     backend = OpenSearchBackend("idx", client=client)
     assert backend.search_sparse("q", 5) == []
+
+
+def test_sparse_query_wrapped_in_bool_when_filters_set(monkeypatch):
+    import src.internal.retrieval.backends.opensearch as os_mod
+
+    fake_client = _make_fake_client([])
+    monkeypatch.setattr(os_mod, "_make_client", lambda url: fake_client)
+    backend = OpenSearchBackend.from_env()
+    backend.search_sparse("q", top_k=5, filters={"source": "confluence"})
+    body = fake_client.search.call_args[1]["body"]
+    assert body["query"]["bool"]["filter"] == [{"term": {"source": "confluence"}}]
+
+
+def test_sparse_query_is_plain_match_without_filters(monkeypatch):
+    import src.internal.retrieval.backends.opensearch as os_mod
+
+    fake_client = _make_fake_client([])
+    monkeypatch.setattr(os_mod, "_make_client", lambda url: fake_client)
+    backend = OpenSearchBackend.from_env()
+    backend.search_sparse("q", top_k=5)
+    body = fake_client.search.call_args[1]["body"]
+    assert "match" in body["query"]
+    assert "bool" not in body["query"]

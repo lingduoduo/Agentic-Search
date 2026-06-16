@@ -90,3 +90,32 @@ def test_search_sparse_empty():
     client = _make_client()
     backend = WeaviateBackend("Docs", client=client)
     assert backend.search_sparse("q", 5) == []
+
+
+def _make_fake_collection(objs) -> MagicMock:
+    collection = MagicMock()
+    collection.query.bm25.return_value = MagicMock(objects=objs)
+    collection.query.near_vector.return_value = MagicMock(objects=objs)
+    return collection
+
+
+def test_bm25_passes_filter_object_when_filters_set(monkeypatch):
+    import src.internal.retrieval.backends.weaviate as wv_mod
+
+    fake_collection = _make_fake_collection([])
+    monkeypatch.setattr(wv_mod, "_make_collection", lambda url, name: fake_collection)
+    backend = WeaviateBackend.from_env()
+    backend.search_sparse("q", top_k=5, filters={"source": "confluence"})
+    kw = fake_collection.query.bm25.call_args[1]
+    assert kw.get("filters") is not None
+
+
+def test_bm25_no_filter_kwarg_when_filters_none(monkeypatch):
+    import src.internal.retrieval.backends.weaviate as wv_mod
+
+    fake_collection = _make_fake_collection([])
+    monkeypatch.setattr(wv_mod, "_make_collection", lambda url, name: fake_collection)
+    backend = WeaviateBackend.from_env()
+    backend.search_sparse("q", top_k=5)
+    kw = fake_collection.query.bm25.call_args[1]
+    assert kw.get("filters") is None
