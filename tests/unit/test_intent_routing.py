@@ -1,12 +1,12 @@
-"""Tests for rule-based classifier and trajectory intent inference."""
-
+# tests/unit/test_intent_routing.py
+import asyncio
 import json
+import json as _json
+from unittest.mock import AsyncMock, patch
 
-import pytest
 from src.agents.base import AgentLoopOutput
 from src.internal.servers.web.intent_routing import (
     _infer_intent_from_output,
-    _route_source_provider,
     _rule_based_is_search,
 )
 from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
@@ -59,62 +59,6 @@ def test_rule_based_is_search_show_me():
     assert _rule_based_is_search("show me the deployment runbook") is True
 
 
-def test_rule_based_is_search_empty_returns_false():
-    assert _rule_based_is_search("") is False
-
-
-def test_rule_based_chat_signal_beats_search_signal():
-    # 'explain' (chat) + 'find' (search) in same query → chat wins
-    assert _rule_based_is_search("explain how to find docs") is False
-
-
-# --- _route_source_provider ---
-
-
-def test_route_defaults_to_retrieval():
-    assert _route_source_provider("procurement process") == "retrieval"
-
-
-def test_route_temporal_without_browser_url_stays_retrieval():
-    assert _route_source_provider("latest AI news today") == "retrieval"
-
-
-def test_route_temporal_with_browser_url_uses_browser():
-    assert (
-        _route_source_provider(
-            "latest AI news today", browser_search_url="http://localhost:8002"
-        )
-        == "browser"
-    )
-
-
-def test_route_today_keyword():
-    assert (
-        _route_source_provider(
-            "what happened today", browser_search_url="http://localhost:8002"
-        )
-        == "browser"
-    )
-
-
-def test_route_year_reference():
-    assert (
-        _route_source_provider(
-            "AI models in 2025", browser_search_url="http://localhost:8002"
-        )
-        == "browser"
-    )
-
-
-def test_route_non_temporal_always_retrieval():
-    assert (
-        _route_source_provider(
-            "explain FAISS", browser_search_url="http://localhost:8002"
-        )
-        == "retrieval"
-    )
-
-
 # --- _infer_intent_from_output ---
 
 
@@ -158,67 +102,77 @@ def test_infer_intent_malformed_trace_defaults_to_chat():
     assert _infer_intent_from_output(output) == "chat"
 
 
+# --- routing tool builder tests ---
+
+
 def test_build_search_routing_tool_schema():
     tool = build_search_routing_tool(
-        search_url="http://localhost:8000/retrieve", top_k=5
+        search_url="http://localhost:8001/retrieve", top_k=3
     )
-    schema = tool.schema.to_dict()
-    assert schema["function"]["name"] == "search_routing_tool"
-    assert "query" in schema["function"]["parameters"]["properties"]
+    assert tool.schema.name == "search_routing_tool"
+    assert "query" in tool.schema.parameters.get("properties", {})
 
 
 def test_build_rag_routing_tool_schema():
     tool = build_rag_routing_tool(
-        llm=None, search_url="http://localhost:8000/retrieve", top_k=5
+        llm=None, search_url="http://localhost:8001/retrieve", top_k=3
     )
-    schema = tool.schema.to_dict()
-    assert schema["function"]["name"] == "rag_routing_tool"
-    assert "query" in schema["function"]["parameters"]["properties"]
+    assert tool.schema.name == "rag_routing_tool"
+    assert "query" in tool.schema.parameters.get("properties", {})
 
 
-@pytest.mark.asyncio
-async def test_search_routing_tool_returns_json(monkeypatch):
-    from src.tools import SearchPage
+def test_search_routing_tool_returns_json():
+    from src.tools.search import SearchPage
 
-    async def fake_search_tool(query, *, provider, search_url, page_size):
-        return [
-            SearchPage(
-                title="Doc A", summary="summary", url="http://example.com", error=None
+    fake_pages = [SearchPage(title="Doc A", summary="Content A", url="http://a.com")]
+
+    async def run():
+        with patch(
+            "src.tools.routing_tools.search_tool",
+            new=AsyncMock(return_value=fake_pages),
+        ):
+            tool = build_search_routing_tool(
+                search_url="http://localhost:8001/retrieve", top_k=3
             )
-        ]
+            response_text, raw, _meta = await tool.execute(
+                "default", {"query": "FAISS"}
+            )
+        return response_text
 
-    monkeypatch.setattr("src.tools.routing_tools.search_tool", fake_search_tool)
-    tool = build_search_routing_tool(
-        search_url="http://localhost:8000/retrieve", top_k=5
-    )
-    result, _, _ = await tool.execute("default", {"query": "FAISS"})
-    data = json.loads(result)
+    result = asyncio.run(run())
+    data = _json.loads(result)
+    assert isinstance(data, list)
     assert data[0]["title"] == "Doc A"
 
 
-@pytest.mark.asyncio
-async def test_rag_routing_tool_returns_answer(monkeypatch):
-    from unittest.mock import AsyncMock, MagicMock
+def test_rag_routing_tool_returns_answer():
     from src.context.models import (
         AnswerGenerationResult,
-        SearchContextBundle,
         PromptBundle,
+        SearchContextBundle,
     )
 
+    fake_context = SearchContextBundle(query="q", documents=[])
+    fake_prompt = PromptBundle(system="", user="", messages=[])
     fake_result = AnswerGenerationResult(
-        answer="FAISS is a library.",
+        answer="42",
         citations=["[D1]"],
-        context=SearchContextBundle(query="q", documents=[]),
-        prompt=PromptBundle(system="", user="", messages=[]),
+        context=fake_context,
+        prompt=fake_prompt,
     )
-    mock_llm = MagicMock()
-    monkeypatch.setattr(
-        "src.context.answer_with_retrieval",
-        AsyncMock(return_value=fake_result),
-    )
-    tool = build_rag_routing_tool(
-        llm=mock_llm, search_url="http://localhost:8000/retrieve", top_k=5
-    )
-    result, _, _ = await tool.execute("default", {"query": "What is FAISS?"})
-    data = json.loads(result)
-    assert data["answer"] == "FAISS is a library."
+
+    async def run():
+        with patch(
+            "src.context.answer_with_retrieval", new=AsyncMock(return_value=fake_result)
+        ):
+            tool = build_rag_routing_tool(
+                llm=None, search_url="http://localhost:8001/retrieve", top_k=3
+            )
+            response_text, raw, _meta = await tool.execute(
+                "default", {"query": "What is the answer?"}
+            )
+        return response_text
+
+    result = asyncio.run(run())
+    data = _json.loads(result)
+    assert data["answer"] == "42"

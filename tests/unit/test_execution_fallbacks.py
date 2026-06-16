@@ -170,3 +170,30 @@ def test_answer_with_retrieval_and_search_both_fail_returns_502(monkeypatch, tmp
         response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 502
     assert "retrieval also unavailable" in response.json()["detail"].lower()
+
+
+def test_llm_classifier_fails_falls_back_to_rule_based(monkeypatch, tmp_path):
+    """Tier 1 (loop OOM) + Tier 2 LLM classifier error → rule-based fallback."""
+    monkeypatch.setattr(
+        "src.agents.tool_calling.ToolAgentLoop.run",
+        AsyncMock(side_effect=RuntimeError("OOM")),
+    )
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.classify_is_search_flow",
+        lambda q, llm: (_ for _ in ()).throw(RuntimeError("LLM down")),
+    )
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval",
+        AsyncMock(return_value=_make_answer_result("rule-based fallback answer")),
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        app.state.search_agent_manager = MagicMock()
+        app.state.search_agent_tokenizer = MagicMock()
+        monkeypatch.setattr(
+            "src.internal.servers.web.app.llm", MagicMock(), raising=False
+        )
+        # "explain FAISS" → rule-based → is_search=False → chat path
+        response = client.post("/api/agent", json={"query": "explain FAISS"})
+    assert response.status_code == 200
+    assert response.json()["intent"] == "chat"
