@@ -8,7 +8,9 @@ interface SessionTimelineProps {
 export const SessionTimeline = memo(function SessionTimeline({
   messages,
 }: SessionTimelineProps) {
-  const visible = messages.filter((m) => m.role !== "system");
+  const visible = messages
+    .map((m, i) => ({ m, i }))
+    .filter(({ m }) => m.role !== "system");
 
   if (visible.length === 0) {
     return <div className="empty-state compact">Start a query to create history.</div>;
@@ -16,14 +18,14 @@ export const SessionTimeline = memo(function SessionTimeline({
 
   return (
     <div className="chat-thread">
-      {visible.map((message, index) => {
+      {visible.map(({ m: message, i: origIdx }) => {
         const isUser = message.role === "user";
         const roundsUsed = message.metadata?.rounds_used as number | undefined;
         const numTurns = message.metadata?.num_turns as number | undefined;
 
         return (
           <div
-            key={`${message.role}-${index}`}
+            key={`${message.role}-${origIdx}`}
             className={`chat-row ${isUser ? "chat-row--user" : "chat-row--assistant"}`}
           >
             {isUser && <div className="chat-avatar chat-avatar--user">U</div>}
