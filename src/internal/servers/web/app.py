@@ -339,7 +339,7 @@ async def _run_auto_routed(
                         rec = _json.loads(line)
                         tool_name = rec.get("tool_name", "")
                         perf = rec.get("performance", {})
-                        latency_ms = int(perf.get("execution_time", 0.0) * 1000)
+                        latency_ms = round(perf.get("execution_time", 0.0) * 1000)
                         status_raw = str(rec.get("status", "failed")).lower()
                         is_completed = "completed" in status_raw
                         result = rec.get("result")
@@ -358,11 +358,13 @@ async def _run_auto_routed(
                         else:
                             result_summary = ""
 
+                        args = rec.get("arguments") or {}
+                        args = args if isinstance(args, dict) else {}
                         tool_calls.append(
                             ToolCallView(
                                 tool_name=tool_name,
                                 status="completed" if is_completed else "failed",
-                                arguments=rec.get("arguments", {}),
+                                arguments=args,
                                 result_summary=result_summary,
                                 latency_ms=latency_ms,
                                 error=rec.get("error_message"),
