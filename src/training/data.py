@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 import re
 from typing import Any, Callable, Mapping, Sequence
 
@@ -792,3 +793,58 @@ def _rag_prompt_instruct(question: str, context: str) -> str:
 register_rag_prompt_template("base", _rag_prompt_base)
 register_rag_prompt_template("chat", _rag_prompt_chat)
 register_rag_prompt_template("instruct", _rag_prompt_instruct)
+
+
+# ---------------------------------------------------------------------------
+# Feedback-driven training data
+# ---------------------------------------------------------------------------
+
+_SIGNAL_MAP = {"thumbs_up": 1.0, "thumbs_down": -1.0}
+
+
+def load_feedback_examples(
+    db_path: str | Path,
+    *,
+    min_ratings: int = 10,
+) -> list[PromptTrainingExample]:
+    """Load rated sessions from AgenticSearchStore as GRPO training examples.
+
+    Each returned example has:
+        question     = first user message in the session
+        ground_truth = ""  (human signal replaces correctness supervision)
+        metadata     = {"human_signal": +1.0 | -1.0}
+
+    Sessions without chat messages are skipped.
+    Raises ValueError if fewer than min_ratings rated sessions are found.
+    """
+    from src.internal.db import AgenticSearchStore
+
+    examples: list[PromptTrainingExample] = []
+    with AgenticSearchStore(str(db_path)) as store:
+        rows = store._conn.execute(
+            "SELECT session_id, signal FROM retrieval_feedback"
+        ).fetchall()
+        for row in rows:
+            session_id = row["session_id"]
+            if not session_id:
+                continue
+            signal = _SIGNAL_MAP.get(row["signal"])
+            if signal is None:
+                continue
+            messages = store.list_chat_messages(session_id)
+            first_user = next((m.content for m in messages if m.role == "user"), None)
+            if not first_user:
+                continue
+            examples.append(
+                PromptTrainingExample(
+                    question=first_user,
+                    ground_truth="",
+                    metadata={"human_signal": signal},
+                )
+            )
+
+    if len(examples) < min_ratings:
+        raise ValueError(
+            f"Only {len(examples)} rated sessions found; need at least {min_ratings}"
+        )
+    return examples
