@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+import logging
 from pathlib import Path
 import re
-from typing import Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from src.training.sft import SFTExample
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -846,5 +851,88 @@ def load_feedback_examples(
     if len(examples) < min_ratings:
         raise ValueError(
             f"Only {len(examples)} rated sessions found; need at least {min_ratings}"
+        )
+    return examples
+
+
+_logger = logging.getLogger(__name__)
+
+
+def load_sft_examples(
+    db_path: str | Path,
+    jsonl_path: str | Path | None = None,
+    *,
+    min_ratings: int = 1,
+) -> list[SFTExample]:
+    """Load SFT training examples from thumbs-up sessions and/or a JSONL file.
+
+    DB source: thumbs-up sessions only. Prompt = first user message.
+    Completion = first assistant message content. Sessions with no assistant
+    turn are skipped silently.
+
+    JSONL source: each line must be {"question": "...", "response": "..."}.
+    Rows missing either key are skipped with a warning.
+
+    Raises ValueError if total count < min_ratings.
+    """
+    from src.internal.db import AgenticSearchStore
+    from src.training.sft import SFTExample
+
+    examples: list[SFTExample] = []
+
+    # --- DB source: thumbs-up sessions ---
+    with AgenticSearchStore(str(db_path)) as store:
+        rows = store._conn.execute(
+            "SELECT session_id, signal FROM retrieval_feedback WHERE signal = 'thumbs_up'"
+        ).fetchall()
+        for row in rows:
+            session_id = row["session_id"]
+            if not session_id:
+                continue
+            messages = store.list_chat_messages(session_id)
+            first_user = next((m.content for m in messages if m.role == "user"), None)
+            first_assistant = next(
+                (m.content for m in messages if m.role == "assistant"), None
+            )
+            if not first_user or not first_assistant:
+                continue
+            examples.append(
+                SFTExample(
+                    prompt_messages=[{"role": "user", "content": first_user}],
+                    completion=first_assistant,
+                    trajectory_messages=[],
+                )
+            )
+
+    # --- JSONL source ---
+    if jsonl_path is not None:
+        with open(jsonl_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    _logger.warning("Skipping malformed JSONL line: %r", line[:80])
+                    continue
+                question = row.get("question")
+                response = row.get("response")
+                if not question or not response:
+                    _logger.warning(
+                        "Skipping JSONL row missing question/response: %r", row
+                    )
+                    continue
+                examples.append(
+                    SFTExample(
+                        prompt_messages=[{"role": "user", "content": question}],
+                        completion=response,
+                        trajectory_messages=[],
+                    )
+                )
+
+    if len(examples) < min_ratings:
+        raise ValueError(
+            f"Only {len(examples)} SFT examples found; need at least {min_ratings}"
         )
     return examples
