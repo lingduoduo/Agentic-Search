@@ -347,6 +347,8 @@ python3 -m examples.run_search_pipeline
 **Retrieval, Indexing & Search**
 - **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
+- **`Reranker`** (`src/internal/retrieval/reranker.py`) — unified neural reranker supporting local cross-encoders (`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-*`) and Cohere API; built via `Reranker.from_env()`; injected into `RetrievalService`; skipped when `RERANKER_PROVIDER` is unset; appends `+reranked` to `retrieval_mode`
+- **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface; passed into `RetrievalService.search(pipeline=...)` for parallel multi-variant retrieval with RRF fusion; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli
@@ -378,6 +380,7 @@ python3 -m examples.run_search_pipeline
 - `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
 - `FunctionTool` — wrap any Python callable with auto-generated JSON schema
 - `build_search_tool` — ready-made tool dispatching to retrieval, Google, or SerpAPI
+- `ToolCallView` (`src/internal/servers/web/app.py`) — response model for each tool call: `tool_name`, `status`, `arguments` (dict), `result_summary` (first 200 chars or "N items"), `latency_ms`, `error`; returned as `AgentExperienceResponse.tool_calls` for `intent == "tool"` requests
 
 **Chat Processing**
 - `build_chat_turn` — top-level orchestrator: resolves persona, tools, files, and LLM; dispatches to `run_llm_loop`; persists via `save_chat_turn` (`src/internal/chat/process_message.py`)
@@ -791,6 +794,16 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
 | `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
+| `RERANKER_PROVIDER` | — | `local` or `cohere`; omit to disable neural reranking in `RetrievalService` |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model for local reranking |
+| `RERANKER_DEVICE` | `cpu` | Device for local reranker (`cpu`, `mps`, `cuda`) |
+| `COHERE_API_KEY` | — | Cohere API key (required when `RERANKER_PROVIDER=cohere`) |
+| `QT_DECOMPOSE` | `false` | Enable query decomposition in `QueryTransformPipeline` |
+| `QT_HYDE` | `false` | Enable HyDE (hypothetical document embedding) |
+| `QT_STEP_BACK` | `false` | Enable step-back query rephrasing |
+| `QT_KEYWORDS` | `false` | Enable keyword expansion for BM25 variants |
+| `QT_CONSTRUCT_FILTERS` | `false` | Enable NL → metadata filter extraction |
+| `QT_MAX_VARIANTS` | `5` | Max parallel retrieval variants when any `QT_*` is enabled |
 
 
 ## Tests
