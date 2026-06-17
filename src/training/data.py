@@ -900,7 +900,9 @@ def load_sft_examples(
                 SFTExample(
                     prompt_messages=[{"role": "user", "content": first_user}],
                     completion=first_assistant,
-                    trajectory_messages=[],
+                    trajectory_messages=[
+                        {"role": "assistant", "content": first_assistant}
+                    ],
                 )
             )
 
@@ -927,7 +929,9 @@ def load_sft_examples(
                     SFTExample(
                         prompt_messages=[{"role": "user", "content": question}],
                         completion=response,
-                        trajectory_messages=[],
+                        trajectory_messages=[
+                            {"role": "assistant", "content": response}
+                        ],
                     )
                 )
 

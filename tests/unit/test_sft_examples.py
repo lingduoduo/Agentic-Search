@@ -43,6 +43,7 @@ def test_thumbs_up_session_becomes_sft_example(tmp_path):
     ex = examples[0]
     assert ex.prompt_messages == [{"role": "user", "content": "Q?"}]
     assert ex.completion == "A."
+    assert ex.trajectory_messages == [{"role": "assistant", "content": "A."}]
 
 
 def test_thumbs_down_session_excluded(tmp_path):
@@ -78,6 +79,7 @@ def test_jsonl_row_becomes_sft_example(tmp_path):
     assert len(examples) == 1
     assert examples[0].prompt_messages == [{"role": "user", "content": "Q?"}]
     assert examples[0].completion == "R."
+    assert examples[0].trajectory_messages == [{"role": "assistant", "content": "R."}]
 
 
 def test_jsonl_row_missing_response_skipped(tmp_path):
