@@ -187,14 +187,18 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
         self,
         prompts: list[str],
         ground_truths: list[str],
+        metadata: list[dict] | None = None,
     ) -> LLMRolloutResult:
         """Sync entry point — runs :meth:`rollout_async` in a new event loop."""
-        return asyncio.run(self.rollout_async(prompts, ground_truths))
+        return asyncio.run(
+            self.rollout_async(prompts, ground_truths, metadata=metadata)
+        )
 
     async def rollout_async(
         self,
         prompts: list[str],
         ground_truths: list[str],
+        metadata: list[dict] | None = None,
     ) -> LLMRolloutResult:
         """Run live agent loops for each prompt and assemble an LLMRolloutResult.
 
@@ -257,13 +261,15 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
         all_response_ids: list[list[int]] = []
         all_prompt_ids: list[list[int]] = []  # last-turn prompt per rollout
 
-        for group_samples, gt in zip(grouped_samples, ground_truths):
+        for i, (group_samples, gt) in enumerate(zip(grouped_samples, ground_truths)):
+            group_metadata = metadata[i] if metadata and i < len(metadata) else None
             scored = score_prompt_group(
                 group_samples,
                 ground_truth=gt,
                 judge_fn=self.judge_fn,
                 reward_fn=self.reward_fn,
                 advantage_config=self._advantage_config,
+                metadata=group_metadata,
             )
             for s in scored:
                 rewards_list.append(s.reward)
@@ -343,13 +349,14 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
         self,
         prompts: list[str],
         ground_truths: list[str],
+        metadata: list[dict] | None = None,
     ) -> dict[str, float]:
         """Async version of :meth:`step` — avoids nested ``asyncio.run()`` calls.
 
         Use this when the caller already runs inside an event loop (e.g. a
         training loop driven by ``asyncio.run(train())``).
         """
-        rollout = await self.rollout_async(prompts, ground_truths)
+        rollout = await self.rollout_async(prompts, ground_truths, metadata=metadata)
 
         self.policy.train()
         loss, metrics = self.compute_loss(rollout)

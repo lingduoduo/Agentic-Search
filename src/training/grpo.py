@@ -290,6 +290,7 @@ def score_prompt_group(
     reward_fn: SearchRewardFunction | None = None,
     advantage_config: GRPOAdvantageConfig | None = None,
     batch_judge_fn: BatchJudgeFn | None = None,
+    metadata: dict | None = None,
 ) -> list[ScoredGRPORollout]:
     """Score a prompt group and compute GRPO advantages within that group.
 
@@ -315,10 +316,12 @@ def score_prompt_group(
     reward_components: list[dict[str, float]] = []
     group_ids: list[str] = []
 
+    human_signal: float | None = metadata.get("human_signal") if metadata else None
+
     reward_scale = float(resolved_advantage_config.reward_scale)
     for sample, correctness in zip(samples, correctness_scores):
         components = reward_function._reward_components_from_correctness(
-            sample.output, correctness
+            sample.output, correctness, human_signal=human_signal
         )
         reward_components.append(components)
         raw_reward = _select_reward_component(

@@ -235,6 +235,10 @@ class SearchRewardConfig:
     # reward magnitudes across training phases without changing all weights.
     reward_scale: float = 1.0
 
+    # Human feedback signal weight.  When 0.0 (default) the term is always
+    # zero — existing reward presets produce identical scores.
+    human_feedback_weight: float = 0.0
+
     @classmethod
     def _zeroed(
         cls,
@@ -551,6 +555,8 @@ class SearchRewardFunction:
         self,
         output: AgentLoopOutput,
         correctness: float,
+        *,
+        human_signal: float | None = None,
     ) -> dict[str, float]:
         """Compute reward breakdown with a pre-scored correctness value.
 
@@ -620,6 +626,12 @@ class SearchRewardFunction:
             else 0.0
         )
 
+        human_feedback = (
+            cfg.human_feedback_weight * human_signal
+            if human_signal is not None and cfg.human_feedback_weight != 0.0
+            else None
+        )
+
         terminal_reward = cfg.correctness_weight * correctness
         shaping_total = (
             cfg.citation_support_weight * citation_support
@@ -637,7 +649,9 @@ class SearchRewardFunction:
             + format_reward
         )
         total = self._aggregate_total_reward(terminal_reward, shaping_total)
-        return {
+        if human_feedback is not None:
+            total += human_feedback
+        components = {
             "reward_mode": cfg.reward_mode,
             "correctness": terminal_reward,
             "citation_support": cfg.citation_support_weight * citation_support,
@@ -659,6 +673,9 @@ class SearchRewardFunction:
             "shaping_total": shaping_total,
             "total": total,
         }
+        if human_feedback is not None:
+            components["human_feedback"] = human_feedback
+        return components
 
     # ------------------------------------------------------------------
     # GRPO advantage computation
