@@ -181,7 +181,7 @@ def test_no_tool_calls_on_chat_path(monkeypatch, tmp_path):
     assert response.json()["tool_calls"] == []
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace
@@ -190,7 +190,7 @@ pytest tests/unit/servers/web/test_tool_trace.py -v 2>&1 | tail -20
 
 Expected: tests FAIL because `tool_calls` key is absent from the response.
 
-- [ ] **Step 3: Add `arguments` field to `ToolExecutionResult`**
+- [x] **Step 3: Add `arguments` field to `ToolExecutionResult`**
 
 In `src/agents/state.py`, find `ToolExecutionResult` (around line 150). Add `arguments` field:
 
@@ -208,7 +208,7 @@ class ToolExecutionResult:
     retry_count: int = 0
 ```
 
-- [ ] **Step 4: Pass `parsed_arguments()` in `_call_tool`**
+- [x] **Step 4: Pass `parsed_arguments()` in `_call_tool`**
 
 In `src/agents/tool_calling.py`, find the `return ToolExecutionResult(...)` inside `_call_tool` (around line 188). Add `arguments=tool_call.parsed_arguments()`:
 
@@ -227,7 +227,7 @@ return ToolExecutionResult(
 )
 ```
 
-- [ ] **Step 5: Add `ToolCallView` Pydantic model to `app.py`**
+- [x] **Step 5: Add `ToolCallView` Pydantic model to `app.py`**
 
 In `src/internal/servers/web/app.py`, find `class AgentExperienceResponse(BaseModel):` and add `ToolCallView` just before it:
 
@@ -241,14 +241,14 @@ class ToolCallView(BaseModel):
     error: str | None = None
 ```
 
-- [ ] **Step 6: Add `tool_calls` field to `AgentExperienceResponse`**
+- [x] **Step 6: Add `tool_calls` field to `AgentExperienceResponse`**
 
 In `AgentExperienceResponse`, add:
 ```python
 tool_calls: list[ToolCallView] = Field(default_factory=list)
 ```
 
-- [ ] **Step 7: Extend `action_trace` parsing in `_run_auto_routed`**
+- [x] **Step 7: Extend `action_trace` parsing in `_run_auto_routed`**
 
 In `_run_auto_routed`, find the `if output.action_trace:` block (around line 323). Replace the existing loop with an extended version that collects `ToolCallView` objects AND still extracts documents from `search_routing_tool`:
 
@@ -309,7 +309,7 @@ citations = [doc.citation for doc in documents]
 return answer, citations, documents, intent, extra
 ```
 
-- [ ] **Step 8: Pass `tool_calls` into `AgentExperienceResponse` in `run_agent`**
+- [x] **Step 8: Pass `tool_calls` into `AgentExperienceResponse` in `run_agent`**
 
 In `_run_agent_impl` (or `run_agent`), find where `_run_auto_routed` is awaited and `AgentExperienceResponse` is constructed. After the `await`, extract `tool_calls`:
 
@@ -324,7 +324,7 @@ return AgentExperienceResponse(
 )
 ```
 
-- [ ] **Step 9: Run the backend tests**
+- [x] **Step 9: Run the backend tests**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace
@@ -333,7 +333,7 @@ pytest tests/unit/servers/web/test_tool_trace.py -v 2>&1 | tail -20
 
 Expected: all 6 tests pass.
 
-- [ ] **Step 10: Run full Python unit suite to check no regressions**
+- [x] **Step 10: Run full Python unit suite to check no regressions**
 
 ```bash
 pytest tests/unit/ -x -q 2>&1 | tail -5
@@ -341,7 +341,7 @@ pytest tests/unit/ -x -q 2>&1 | tail -5
 
 Expected: 1809+ passed.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add src/agents/state.py src/agents/tool_calling.py \
@@ -359,7 +359,7 @@ git commit -m "feat(backend): add ToolCallView trace parsing; expose tool_calls 
 - Create: `web/src/components/ToolCallTracePanel.tsx`
 - Create: `web/src/components/__tests__/ToolCallTracePanel.test.tsx`
 
-- [ ] **Step 1: Write failing component tests**
+- [x] **Step 1: Write failing component tests**
 
 Create `web/src/components/__tests__/ToolCallTracePanel.test.tsx`:
 
@@ -429,7 +429,7 @@ describe("ToolCallTracePanel", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace/web
@@ -438,7 +438,7 @@ npm test -- --run src/components/__tests__/ToolCallTracePanel.test.tsx 2>&1 | ta
 
 Expected: tests FAIL (module not found / no export).
 
-- [ ] **Step 3: Add `ToolCallTraceView` to `web/src/types.ts`**
+- [x] **Step 3: Add `ToolCallTraceView` to `web/src/types.ts`**
 
 Append to the end of `web/src/types.ts`:
 
@@ -478,7 +478,7 @@ export interface SSEDoneEvent {
 }
 ```
 
-- [ ] **Step 4: Create `web/src/components/ToolCallTracePanel.tsx`**
+- [x] **Step 4: Create `web/src/components/ToolCallTracePanel.tsx`**
 
 ```tsx
 import { memo } from "react";
@@ -543,7 +543,7 @@ export const ToolCallTracePanel = memo(function ToolCallTracePanel({
 });
 ```
 
-- [ ] **Step 5: Run component tests**
+- [x] **Step 5: Run component tests**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace/web
@@ -552,7 +552,7 @@ npm test -- --run src/components/__tests__/ToolCallTracePanel.test.tsx 2>&1 | ta
 
 Expected: all 7 tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/types.ts \
@@ -569,9 +569,9 @@ git commit -m "feat(frontend): add ToolCallTraceView type and ToolCallTracePanel
 - Modify: `web/src/App.tsx`
 - Modify: `web/src/styles.css`
 
-- [ ] **Step 1: Read `web/src/App.tsx`** to understand current structure before editing.
+- [x] **Step 1: Read `web/src/App.tsx`** to understand current structure before editing.
 
-- [ ] **Step 2: Update `App.tsx`**
+- [x] **Step 2: Update `App.tsx`**
 
 Add import at the top:
 ```typescript
@@ -601,7 +601,7 @@ In the JSX, inside `.results-layout`, after `<AnswerPanel ...>` and before the S
 )}
 ```
 
-- [ ] **Step 3: Append CSS to `web/src/styles.css`**
+- [x] **Step 3: Append CSS to `web/src/styles.css`**
 
 Append at the end:
 
@@ -680,7 +680,7 @@ Append at the end:
 .tool-trace-code--error { color: #ef4444; }
 ```
 
-- [ ] **Step 4: Run full frontend test suite**
+- [x] **Step 4: Run full frontend test suite**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace/web
@@ -689,7 +689,7 @@ npm test -- --run 2>&1 | tail -10
 
 Expected: all tests pass (65+).
 
-- [ ] **Step 5: Run typecheck**
+- [x] **Step 5: Run typecheck**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace/web
@@ -698,7 +698,7 @@ npm run typecheck 2>&1 | grep "error TS" | head -5 || echo "clean"
 
 Expected: no new errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/App.tsx web/src/styles.css
@@ -714,7 +714,7 @@ git commit -m "feat(frontend): wire toolCalls state in App.tsx; add tool-trace C
 
 The `stream_agent` SSE endpoint emits a `done` event from `_run_agent_impl` result. Currently the `done` event doesn't include `tool_calls`. Fix:
 
-- [ ] **Step 1: Find the SSE `done` yield in `stream_agent`**
+- [x] **Step 1: Find the SSE `done` yield in `stream_agent`**
 
 In `app.py`, find `stream_agent` and the line:
 ```python
@@ -733,7 +733,7 @@ yield _sse({"type": "done", "session_id": result.session_id,
             "tool_calls": [tc.model_dump() for tc in result.tool_calls]})
 ```
 
-- [ ] **Step 2: Run the full Python unit suite**
+- [x] **Step 2: Run the full Python unit suite**
 
 ```bash
 pytest tests/unit/ -x -q 2>&1 | tail -5
@@ -741,7 +741,7 @@ pytest tests/unit/ -x -q 2>&1 | tail -5
 
 Expected: 1815+ passed.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/internal/servers/web/app.py
@@ -752,20 +752,20 @@ git commit -m "feat(backend): include tool_calls in SSE done event"
 
 ## Task 5: Final verification
 
-- [ ] **Step 1: Full frontend test suite**
+- [x] **Step 1: Full frontend test suite**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace/web
 npm test -- --run 2>&1 | tail -8
 ```
 
-- [ ] **Step 2: Typecheck**
+- [x] **Step 2: Typecheck**
 
 ```bash
 npm run typecheck 2>&1 | grep "error TS" | head -5 || echo "clean"
 ```
 
-- [ ] **Step 3: Full Python unit suite**
+- [x] **Step 3: Full Python unit suite**
 
 ```bash
 cd /Users/linghuang/Git/Agentic-Search/.worktrees/feat-tool-trace
