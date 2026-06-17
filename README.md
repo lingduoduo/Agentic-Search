@@ -16,6 +16,10 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 💬 **Chat Orchestration** — Streaming multi-turn chat with citation extraction, tool dispatch, context compression, and persisted sessions.
 
+🧭 **Intent Routing** — Auto-classifies every query as `search`, `chat`, or `tool`; dispatches to the right agent loop with no configuration; RAG-Fusion multi-source aggregation in tool mode.
+
+🖥️ **React Frontend** — Streaming chat UI with live SSE progress log, Markdown rendering, `[D1]`-format citation anchor links, per-card source expand/collapse, tool call trace panel, and intent-adaptive layout.
+
 🧠 **RL Training** — GRPO/PPO training with composite shaped rewards; `SearchAgentGRPOTrainer` runs real agent-loop rollouts so all reward components fire during training.
 
 📐 **Bamboogle Evaluation** — Benchmark `SearchAgentLoop` on two-hop QA with exact-match, contains-match, and shaped reward metrics; Apple Silicon (`--device mps`) supported out of the box.
@@ -39,6 +43,8 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/connectors/`, `src/internal/servers/oauth/` |
 | 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
 | 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
+| 🧭 Intent Routing | `src/internal/servers/web/app.py` (`_run_auto_routed`), `src/context/` |
+| 🖥️ React Frontend | `web/src/App.tsx`, `web/src/components/`, `web/src/styles.css` |
 | 🧠 RL Training | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/search_agent_grpo_trainer.py` |
 | 📐 Bamboogle Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
 | 🔌 MCP Server | `src/internal/mcp_server/tools/`, `src/internal/mcp_server/resources/` |
@@ -193,6 +199,65 @@ SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct PYTHONPATH=src:. uvicorn src.inter
 Or use `bin/run_web_stack.sh` which reads `SEARCH_AGENT_MODEL` from `.env` and starts all three processes in one command (~30–60s first response on MPS).
 
 
+## Frontend
+
+The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and proxies `/api/*` through Vite in development.
+
+```bash
+cd web && npm install && npm run dev   # dev server at http://127.0.0.1:5173
+cd web && npm run build                # production bundle → web/dist/ (served by FastAPI)
+cd web && npm run typecheck            # TypeScript check
+cd web && npm run test -- --run        # Vitest unit tests
+```
+
+### UI features
+
+**Streaming answers** — Every query streams over SSE. A live `ProgressLog` shows tool-call steps as they arrive (turn number + tool name); collapses to a one-line summary once the answer is complete.
+
+**Markdown rendering** — Answers render via `react-markdown`: headings, bold/italic, inline code, code blocks, and ordered/unordered lists. Citation markers (`[D1]`, `[D2]`, …) become anchor links that scroll the page to the matching source card.
+
+**Chat history** — Session timeline renders as a chat bubble layout: user messages right-aligned, assistant messages left-aligned. System messages are filtered out. Keys are stable against message prepend/removal.
+
+**Source cards** — Each source card is collapsed to 3 lines by default. Click **show more ▾** to expand; click **show less ▴** to collapse. A **⎘ copy** button copies the full content to the clipboard and shows "copied ✓" for 1.5 s. Each card has an `id` attribute matching its citation label so anchor links from the answer scroll to it.
+
+**Tool Call Trace Panel** — When the agent runs in `tool` mode, a panel below the answer shows every tool call: name, status (✓ / ✗), arguments as JSON, result summary (first 200 chars or "N items" for lists), and latency in ms. Failed calls render with a red border and the error message.
+
+**Intent-adaptive layout** — After each response the results area applies a CSS class (`intent-search`, `intent-chat`, or `intent-tool`) that shifts the layout:
+
+| Intent | Layout |
+|--------|--------|
+| `search` | Single column; sources panel gets a highlighted border; session history dimmed |
+| `chat` | Answer + session history side-by-side (≥720 px); sources full-width below |
+| `tool` | Tool Trace Panel full-width hero; sources and session side-by-side below |
+| narrow (≤720 px) | All intents fall back to single-column stack |
+
+
+## Intent Routing
+
+The backend auto-classifies every query and dispatches to the right agent without any configuration:
+
+| Intent | Agent loop | Trigger |
+|--------|-----------|---------|
+| `search` | `SearchAgentLoop` | Query needs external retrieval (web or indexed docs) |
+| `chat` | `PlainGenerationLoop` | Conversational follow-ups, definitions, open-ended questions |
+| `tool` | `ToolAgentLoop` | Explicit tool use (`search_routing_tool`, custom tools) |
+
+The router is `_run_auto_routed` in `src/internal/servers/web/app.py`. It runs an LLM-backed classifier (`classify_is_search_flow`) and falls back to `chat` on ambiguous input.
+
+**RAG-Fusion in tool mode** — `search_routing_tool` aggregates results from all configured retrieval sources (local index, Google, SerpAPI) in a single call, deduplicates by URL, and returns a ranked list with `[D1]`/`[D2]` citation labels.
+
+**SSE streaming with progress events** — All three agent paths emit SSE events:
+
+| Event type | When emitted | Payload |
+|------------|-------------|---------|
+| `progress` | Each agent turn | `{type, turn, text}` |
+| `answer` | Answer token chunks | `{type, text}` |
+| `done` | Stream complete | `{type, session_id, citations, documents, intent, tool_calls}` |
+| `error` | Unhandled exception | `{type, message}` |
+
+The `on_turn` callback (`OnTurnCallback` in `src/agents/base.py`) is the hook that feeds per-turn events into the SSE queue from inside the agent loop.
+
+
 ## Examples
 
 **Agent CLI**
@@ -282,6 +347,8 @@ python3 -m examples.run_search_pipeline
 **Retrieval, Indexing & Search**
 - **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
+- **`Reranker`** (`src/internal/retrieval/reranker.py`) — unified neural reranker supporting local cross-encoders (`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-*`) and Cohere API; built via `Reranker.from_env()`; injected into `RetrievalService`; skipped when `RERANKER_PROVIDER` is unset; appends `+reranked` to `retrieval_mode`
+- **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface; passed into `RetrievalService.search(pipeline=...)` for parallel multi-variant retrieval with RRF fusion; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli
@@ -298,7 +365,8 @@ python3 -m examples.run_search_pipeline
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
 - Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, and `<answer>` actions
-- `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows
+- `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows; emits `action_trace` (newline-delimited JSON of every `ToolExecutionResult`) for downstream parsing and display
+- `OnTurnCallback` — async hook called after each agent turn with `(turn, tool_name, doc_count)`; wired through `SearchAgentLoop`, `ToolAgentLoop`, and `PlainGenerationLoop`; used by the web backend to forward live progress events over SSE
 - `BaseAgent` (`src/agents/graph_base.py`) — Pydantic-based agent base class; lightweight alternative to LangGraph for custom agent workflows with `invoke()`-compatible interface
 
 **LLM Backends**
@@ -312,6 +380,7 @@ python3 -m examples.run_search_pipeline
 - `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
 - `FunctionTool` — wrap any Python callable with auto-generated JSON schema
 - `build_search_tool` — ready-made tool dispatching to retrieval, Google, or SerpAPI
+- `ToolCallView` (`src/internal/servers/web/app.py`) — response model for each tool call: `tool_name`, `status`, `arguments` (dict), `result_summary` (first 200 chars or "N items"), `latency_ms`, `error`; returned as `AgentExperienceResponse.tool_calls` for `intent == "tool"` requests
 
 **Chat Processing**
 - `build_chat_turn` — top-level orchestrator: resolves persona, tools, files, and LLM; dispatches to `run_llm_loop`; persists via `save_chat_turn` (`src/internal/chat/process_message.py`)
@@ -345,7 +414,13 @@ python3 -m examples.run_search_pipeline
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 - `bin/generate_training_data.sh` — one-command parquet generation for Bamboogle, NQ, TriviaQA, and HotpotQA; `--preview` mode prints sample records without writing
 
-**Query Classification**
+**Intent Routing & Query Transformations**
+- **Auto-routing** (`_run_auto_routed`) — single entry point that classifies every query as `search`, `chat`, or `tool` and dispatches to the right agent loop; no per-query configuration needed
+- **RAG-Fusion** — `search_routing_tool` in tool mode aggregates across all configured retrieval sources, deduplicates by URL, and returns `[D1]`/`[D2]`-labelled results
+- **Query decomposition** (`QueryEnhancer.decompose`) — splits complex questions into 2–4 independent sub-queries for parallel retrieval
+- **HyDE** (`QueryEnhancer.hyde`) — generates a hypothetical ideal answer to expand sparse queries before retrieval
+- **Step-back prompting** — reformulates narrow questions into broader conceptual queries
+- **Keyword extraction** — strips conversational noise from queries before BM25 retrieval
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/servers/secondary_llm_flows/search_flow_classification.py`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
 
@@ -719,6 +794,16 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
 | `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
+| `RERANKER_PROVIDER` | — | `local` or `cohere`; omit to disable neural reranking in `RetrievalService` |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model for local reranking |
+| `RERANKER_DEVICE` | `cpu` | Device for local reranker (`cpu`, `mps`, `cuda`) |
+| `COHERE_API_KEY` | — | Cohere API key (required when `RERANKER_PROVIDER=cohere`) |
+| `QT_DECOMPOSE` | `false` | Enable query decomposition in `QueryTransformPipeline` |
+| `QT_HYDE` | `false` | Enable HyDE (hypothetical document embedding) |
+| `QT_STEP_BACK` | `false` | Enable step-back query rephrasing |
+| `QT_KEYWORDS` | `false` | Enable keyword expansion for BM25 variants |
+| `QT_CONSTRUCT_FILTERS` | `false` | Enable NL → metadata filter extraction |
+| `QT_MAX_VARIANTS` | `5` | Max parallel retrieval variants when any `QT_*` is enabled |
 
 
 ## Tests
@@ -741,9 +826,20 @@ API_SERVER_HOST=localhost API_SERVER_PORT=8080 pytest tests/integration/
 | `server/license/` | PEM stripping, `_strip_pem` boundary cases |
 | `server/middleware/` | Path allowlist, license enforcement, tier gating |
 | `server/settings/` | `_load_license_status`, `/settings` endpoint |
+| `server/web/test_tool_trace.py` | `ToolCallView` trace parsing, latency rounding, list/string summarisation, error forwarding |
 | `utils/test_license_utils.py` | RSA signature verification with real key pairs |
 | `utils/test_license_expiry.py` | 18 parametrized `ExpiryWarningStage` boundary points |
 | `utils/test_tier.py` | `get_tier` + `tier_at_least` matrix |
+
+Frontend tests (`web/src/components/__tests__/`):
+
+| Test file | What is tested |
+|-----------|----------------|
+| `App.test.tsx` | SSE streaming flow, intent class applied per response, reset on new session |
+| `AnswerPanel.test.tsx` | Markdown rendering, `[D1]` citation link generation, `ReactNode[]` children handling |
+| `SessionTimeline.test.tsx` | Chat bubble layout, system message filtering, stable React keys |
+| `SourceGrid.test.tsx` | Card expand/collapse, copy button 1.5 s feedback, `id` anchor attribute |
+| `ToolCallTracePanel.test.tsx` | Empty→null, completed/failed card classes, latency display, JSON arguments |
 
 
 ## Notes
