@@ -1,4 +1,6 @@
-import { memo, useMemo, useState } from "react";
+import React, { memo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import type { ProgressStep } from "../types";
 
 interface AnswerPanelProps {
@@ -10,6 +12,43 @@ interface AnswerPanelProps {
   progressSteps?: ProgressStep[];
   completedSteps?: ProgressStep[];
 }
+
+const CITATION_RE = /(\[D\d+\])/;
+
+function linkifyCitations(children: React.ReactNode): React.ReactNode {
+  if (Array.isArray(children)) {
+    return (children as React.ReactNode[]).flatMap((child, i) => {
+      if (typeof child !== "string") return [child];
+      const parts = child.split(CITATION_RE);
+      if (parts.length === 1) return [child];
+      return parts.map((part, j) =>
+        /^\[D\d+\]$/.test(part)
+          ? React.createElement("a", { key: `${i}-${j}`, href: `#source-${part}`, className: "citation-link" }, part)
+          : part
+      );
+    });
+  }
+  if (typeof children !== "string") return children;
+  const parts = children.split(CITATION_RE);
+  if (parts.length === 1) return children;
+  return parts.map((part, i) =>
+    /^\[D\d+\]$/.test(part)
+      ? React.createElement("a", { key: i, href: `#source-${part}`, className: "citation-link" }, part)
+      : part
+  );
+}
+
+const markdownComponents: Components = {
+  p({ children }) {
+    return <p>{linkifyCitations(children as React.ReactNode)}</p>;
+  },
+  code({ className, children }) {
+    const isBlock = Boolean(className);
+    return isBlock
+      ? <pre><code className={className}>{children}</code></pre>
+      : <code>{children}</code>;
+  },
+};
 
 function IntentBadge({ intent, citations, documentCount, toolCallCount }: {
   intent: "search" | "chat" | "tool";
@@ -102,8 +141,6 @@ export const AnswerPanel = memo(function AnswerPanel({
   progressSteps = [],
   completedSteps = [],
 }: AnswerPanelProps) {
-  const paragraphs = useMemo(() => answer.split(/\n\n+/).filter(Boolean), [answer]);
-
   if (!answer && progressSteps.length === 0) {
     return (
       <div className="empty-state">
@@ -123,16 +160,7 @@ export const AnswerPanel = memo(function AnswerPanel({
           toolCallCount={toolCallCount}
         />
       )}
-      {paragraphs.map((para, i) => (
-        <p key={i}>{para}</p>
-      ))}
-      {citations.length > 0 && (
-        <div className="citation-row" aria-label="Citations">
-          {citations.map((citation) => (
-            <span key={citation}>{citation}</span>
-          ))}
-        </div>
-      )}
+      <ReactMarkdown components={markdownComponents}>{answer}</ReactMarkdown>
     </article>
   );
 });

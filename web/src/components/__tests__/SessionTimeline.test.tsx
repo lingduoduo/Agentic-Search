@@ -53,4 +53,37 @@ describe("SessionTimeline", () => {
     render(<SessionTimeline messages={[msg]} />);
     expect(screen.getByText("1 rounds")).toBeInTheDocument();
   });
+
+  const systemMsg: ChatMessageView = { role: "system", content: "You are helpful." };
+
+  it("hides system messages", () => {
+    render(<SessionTimeline messages={[systemMsg, userMsg, assistantMsg]} />);
+    expect(screen.queryByText("You are helpful.")).not.toBeInTheDocument();
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(screen.getByText("Hi there")).toBeInTheDocument();
+  });
+
+  it("user message has chat-row--user class", () => {
+    render(<SessionTimeline messages={[userMsg]} />);
+    const row = document.querySelector(".chat-row--user");
+    expect(row).not.toBeNull();
+  });
+
+  it("assistant message has chat-row--assistant class", () => {
+    render(<SessionTimeline messages={[assistantMsg]} />);
+    const row = document.querySelector(".chat-row--assistant");
+    expect(row).not.toBeNull();
+  });
+
+  it("renders rounds_used in .chat-meta under assistant bubble", () => {
+    render(<SessionTimeline messages={[assistantWithRounds]} />);
+    const meta = document.querySelector(".chat-meta");
+    expect(meta).not.toBeNull();
+    expect(meta?.textContent).toMatch(/3 rounds/);
+  });
+
+  it("shows empty state when only system messages exist", () => {
+    render(<SessionTimeline messages={[systemMsg]} />);
+    expect(screen.getByText(/start a query/i)).toBeInTheDocument();
+  });
 });

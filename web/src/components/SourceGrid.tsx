@@ -38,7 +38,7 @@ export const SourceGrid = memo(function SourceGrid({ documents }: SourceGridProp
             : idx + 1;
         const sourceColor = SOURCE_COLORS[source] ?? "rgb(107, 114, 128)";
         return (
-          <article className="source-card" key={document.id}>
+          <article className="source-card" key={document.id} id={`source-${document.citation}`}>
             <div className="source-meta">
               <span>{document.citation}</span>
               <span

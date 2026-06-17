@@ -14,11 +14,6 @@ describe("AnswerPanel", () => {
     expect(screen.getByText(/FAISS is a vector library/)).toBeInTheDocument();
   });
 
-  it("renders citation chips when present", () => {
-    render(<AnswerPanel answer="See [D1] for details." citations={["[D1]"]} />);
-    expect(screen.getByText("[D1]")).toBeInTheDocument();
-  });
-
   it("does not render citation row when citations are empty", () => {
     render(<AnswerPanel answer="Some answer." citations={[]} />);
     expect(screen.queryByLabelText(/citations/i)).not.toBeInTheDocument();
@@ -109,4 +104,53 @@ it("renders nothing for progress when both arrays are empty", () => {
   );
   expect(document.querySelector(".progress-log")).not.toBeInTheDocument();
   expect(document.querySelector(".progress-summary")).not.toBeInTheDocument();
+});
+
+// ---------------------------------------------------------------------------
+// Markdown rendering
+// ---------------------------------------------------------------------------
+
+it("renders bold text from markdown", () => {
+  render(
+    <AnswerPanel
+      answer="See **bold** text here."
+      citations={[]}
+    />
+  );
+  expect(screen.getByText("bold")).toBeInTheDocument();
+  const strong = document.querySelector("strong");
+  expect(strong).not.toBeNull();
+  expect(strong?.textContent).toBe("bold");
+});
+
+it("renders citation [D1] as an anchor link", () => {
+  render(
+    <AnswerPanel
+      answer="See [D1] for details."
+      citations={[]}
+    />
+  );
+  const link = screen.getByRole("link", { name: "[D1]" });
+  expect(link).toHaveAttribute("href", "#source-[D1]");
+  expect(link).toHaveClass("citation-link");
+});
+
+it("renders no anchor when answer has no citation pattern", () => {
+  render(
+    <AnswerPanel
+      answer="No citations here."
+      citations={[]}
+    />
+  );
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
+it("does not render .citation-row div", () => {
+  render(
+    <AnswerPanel
+      answer="answer"
+      citations={["[D1]", "[D2]"]}
+    />
+  );
+  expect(document.querySelector(".citation-row")).not.toBeInTheDocument();
 });

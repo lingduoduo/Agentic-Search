@@ -68,4 +68,10 @@ describe("SourceGrid", () => {
     expect(badge).not.toBeNull();
     expect(badge.style.color).toBe("rgb(34, 197, 94)");
   });
+
+  it("adds id='source-[D1]' to each article", () => {
+    render(<SourceGrid documents={[doc]} />);
+    const article = document.querySelector('article[id="source-[D1]"]');
+    expect(article).not.toBeNull();
+  });
 });
