@@ -1432,7 +1432,7 @@ option:disabled,
 .intent-tool .session-panel {
   flex: 1 1 calc(50% - 8px);
   min-width: 240px;
-  order: 2;
+  order: 3;
   opacity: 0.7;
 }
 
@@ -1440,15 +1440,16 @@ option:disabled,
 @media (max-width: 720px) {
   .intent-chat.results-layout,
   .intent-tool.results-layout {
-    display: grid;
+    display: block;
   }
   .intent-chat .answer-column,
   .intent-chat .session-panel,
   .intent-chat .sources-panel,
+  .intent-tool .answer-column,
   .intent-tool .tool-trace-panel,
   .intent-tool .sources-panel,
   .intent-tool .session-panel {
-    flex: unset;
+    flex: 1 1 auto;
     order: unset;
     min-width: unset;
   }
