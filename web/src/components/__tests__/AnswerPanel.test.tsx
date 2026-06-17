@@ -110,3 +110,52 @@ it("renders nothing for progress when both arrays are empty", () => {
   expect(document.querySelector(".progress-log")).not.toBeInTheDocument();
   expect(document.querySelector(".progress-summary")).not.toBeInTheDocument();
 });
+
+// ---------------------------------------------------------------------------
+// Markdown rendering
+// ---------------------------------------------------------------------------
+
+it("renders bold text from markdown", () => {
+  render(
+    <AnswerPanel
+      answer="See **bold** text here."
+      citations={[]}
+    />
+  );
+  expect(screen.getByText("bold")).toBeInTheDocument();
+  const strong = document.querySelector("strong");
+  expect(strong).not.toBeNull();
+  expect(strong?.textContent).toBe("bold");
+});
+
+it("renders citation [1] as an anchor link", () => {
+  render(
+    <AnswerPanel
+      answer="See [1] for details."
+      citations={[]}
+    />
+  );
+  const link = screen.getByRole("link", { name: "[1]" });
+  expect(link).toHaveAttribute("href", "#source-[1]");
+  expect(link).toHaveClass("citation-link");
+});
+
+it("renders no anchor when answer has no citation pattern", () => {
+  render(
+    <AnswerPanel
+      answer="No citations here."
+      citations={[]}
+    />
+  );
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
+it("does not render .citation-row div", () => {
+  render(
+    <AnswerPanel
+      answer="answer"
+      citations={["[1]", "[2]"]}
+    />
+  );
+  expect(document.querySelector(".citation-row")).not.toBeInTheDocument();
+});
