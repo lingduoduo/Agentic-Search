@@ -282,7 +282,7 @@ export function App() {
             <SourceGrid documents={documents} />
           </section>
 
-          <section className="panel" aria-label="Session">
+          <section className="panel session-panel" aria-label="Session">
             <div className="section-heading">
               <MessageSquarePlus size={18} />
               <h2>Session</h2>
