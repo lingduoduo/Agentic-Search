@@ -15,7 +15,7 @@ vi.mock("../../api", () => ({
 
 import * as api from "../../api";
 
-const mockRunAgent = api.runAgent as ReturnType<typeof vi.fn>;
+const mockStreamAgent = api.streamAgent as ReturnType<typeof vi.fn>;
 
 const baseResponse = {
   session_id: "s1", answer: "The answer", citations: ["[D1]"],
@@ -32,9 +32,24 @@ async function submitQuery(query = "explain FAISS") {
   await userEvent.click(screen.getByRole("button", { name: /search/i }));
 }
 
+function fakeStream(intent: string, documents = baseResponse.documents) {
+  async function* gen() {
+    yield { type: "answer" as const, text: baseResponse.answer };
+    yield { type: "done" as const, session_id: baseResponse.session_id, citations: baseResponse.citations, documents, intent };
+  }
+  return gen();
+}
+
+function errorStream(message: string) {
+  async function* gen() {
+    yield { type: "error" as const, detail: message };
+  }
+  return gen();
+}
+
 describe("App adaptive layout", () => {
   it("adds intent-search class to results layout on search response", async () => {
-    mockRunAgent.mockResolvedValue({ ...baseResponse, intent: "search" });
+    mockStreamAgent.mockReturnValue(fakeStream("search"));
     render(<App />);
     await submitQuery("find the onboarding doc");
     await waitFor(() => {
@@ -44,7 +59,7 @@ describe("App adaptive layout", () => {
   });
 
   it("adds intent-chat class to results layout on chat response", async () => {
-    mockRunAgent.mockResolvedValue({ ...baseResponse, intent: "chat" });
+    mockStreamAgent.mockReturnValue(fakeStream("chat"));
     render(<App />);
     await submitQuery("explain FAISS");
     await waitFor(() => {
@@ -54,7 +69,7 @@ describe("App adaptive layout", () => {
   });
 
   it("adds intent-tool class to results layout on tool response", async () => {
-    mockRunAgent.mockResolvedValue({ ...baseResponse, intent: "tool", documents: [] });
+    mockStreamAgent.mockReturnValue(fakeStream("tool", []));
     render(<App />);
     await submitQuery("run API tool");
     await waitFor(() => {
@@ -64,7 +79,7 @@ describe("App adaptive layout", () => {
   });
 
   it("shows error banner on API failure", async () => {
-    mockRunAgent.mockRejectedValue(new Error("No LLM configured"));
+    mockStreamAgent.mockReturnValue(errorStream("No LLM configured"));
     render(<App />);
     await submitQuery("explain FAISS");
     await waitFor(() => {
@@ -73,7 +88,7 @@ describe("App adaptive layout", () => {
   });
 
   it("clears error when new session is created", async () => {
-    mockRunAgent.mockRejectedValue(new Error("failed"));
+    mockStreamAgent.mockReturnValue(errorStream("failed"));
     render(<App />);
     await submitQuery("q");
     await waitFor(() => expect(screen.getByText(/failed/i)).toBeInTheDocument());
