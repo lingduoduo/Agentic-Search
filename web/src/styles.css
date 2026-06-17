@@ -1343,3 +1343,37 @@ option:disabled,
 }
 
 .tool-trace-code--error { color: #ef4444; }
+
+/* Source Card expand/copy */
+.source-content--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.source-copy-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgb(71, 85, 105);
+  cursor: pointer;
+  font-size: 0.65rem;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+.source-copy-btn:hover { color: rgb(148, 163, 184); }
+
+.source-expand-btn {
+  background: none;
+  border: none;
+  color: rgb(56, 189, 248);
+  cursor: pointer;
+  font-size: 0.68rem;
+  padding: 2px 0;
+  margin-top: 4px;
+  font-family: inherit;
+  display: block;
+}
+.source-expand-btn:hover { text-decoration: underline; }
