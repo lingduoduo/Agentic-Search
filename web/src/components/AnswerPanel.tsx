@@ -1,4 +1,7 @@
-import { memo, useMemo, useState } from "react";
+import React from "react";
+import { memo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import type { ProgressStep } from "../types";
 
 interface AnswerPanelProps {
@@ -10,6 +13,31 @@ interface AnswerPanelProps {
   progressSteps?: ProgressStep[];
   completedSteps?: ProgressStep[];
 }
+
+const CITATION_RE = /(\[\d+\])/g;
+
+function linkifyCitations(children: React.ReactNode): React.ReactNode {
+  if (typeof children !== "string") return children;
+  const parts = children.split(CITATION_RE);
+  if (parts.length === 1) return children;
+  return parts.map((part, i) =>
+    /^\[\d+\]$/.test(part)
+      ? React.createElement("a", { key: i, href: `#source-${part}`, className: "citation-link" }, part)
+      : part
+  );
+}
+
+const markdownComponents: Components = {
+  p({ children }) {
+    return <p>{linkifyCitations(children as React.ReactNode)}</p>;
+  },
+  code({ className, children }) {
+    const isBlock = Boolean(className);
+    return isBlock
+      ? <pre><code className={className}>{children}</code></pre>
+      : <code>{children}</code>;
+  },
+};
 
 function IntentBadge({ intent, citations, documentCount, toolCallCount }: {
   intent: "search" | "chat" | "tool";
@@ -102,8 +130,6 @@ export const AnswerPanel = memo(function AnswerPanel({
   progressSteps = [],
   completedSteps = [],
 }: AnswerPanelProps) {
-  const paragraphs = useMemo(() => answer.split(/\n\n+/).filter(Boolean), [answer]);
-
   if (!answer && progressSteps.length === 0) {
     return (
       <div className="empty-state">
@@ -123,16 +149,7 @@ export const AnswerPanel = memo(function AnswerPanel({
           toolCallCount={toolCallCount}
         />
       )}
-      {paragraphs.map((para, i) => (
-        <p key={i}>{para}</p>
-      ))}
-      {citations.length > 0 && (
-        <div className="citation-row" aria-label="Citations">
-          {citations.map((citation) => (
-            <span key={citation}>{citation}</span>
-          ))}
-        </div>
-      )}
+      <ReactMarkdown components={markdownComponents}>{answer}</ReactMarkdown>
     </article>
   );
 });

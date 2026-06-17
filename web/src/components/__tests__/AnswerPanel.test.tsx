@@ -14,11 +14,6 @@ describe("AnswerPanel", () => {
     expect(screen.getByText(/FAISS is a vector library/)).toBeInTheDocument();
   });
 
-  it("renders citation chips when present", () => {
-    render(<AnswerPanel answer="See [D1] for details." citations={["[D1]"]} />);
-    expect(screen.getByText("[D1]")).toBeInTheDocument();
-  });
-
   it("does not render citation row when citations are empty", () => {
     render(<AnswerPanel answer="Some answer." citations={[]} />);
     expect(screen.queryByLabelText(/citations/i)).not.toBeInTheDocument();
