@@ -58,6 +58,7 @@ def build_search_sft_example(
 @dataclass(frozen=True)
 class SFTConfig:
     epochs: int = 3
+    lr: float = 2e-5
     batch_size: int = 4
     max_length: int = 2048
     grad_clip: float = 1.0

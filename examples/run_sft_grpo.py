@@ -42,6 +42,12 @@ def _parse_args() -> argparse.Namespace:
         help="Final GRPO checkpoint directory",
     )
     p.add_argument(
+        "--sft_lr",
+        type=float,
+        default=2e-5,
+        help="Learning rate for SFT phase",
+    )
+    p.add_argument(
         "--min_ratings",
         type=int,
         default=1,
@@ -96,13 +102,14 @@ async def _train(args: argparse.Namespace) -> None:
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token_id = tokenizer.eos_token_id
         policy = AutoModelForCausalLM.from_pretrained(args.model).to(device)
-        optimizer = torch.optim.AdamW(policy.parameters(), lr=2e-5)
+        sft_config = SFTConfig(epochs=args.sft_epochs, lr=args.sft_lr)
+        optimizer = torch.optim.AdamW(policy.parameters(), lr=sft_config.lr)
 
         trainer = SFTTrainer(
             policy,
             tokenizer,
             optimizer,
-            SFTConfig(epochs=args.sft_epochs),
+            sft_config,
             device=device,
         )
         history = trainer.train(sft_examples)
