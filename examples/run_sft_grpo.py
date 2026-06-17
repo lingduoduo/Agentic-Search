@@ -41,11 +41,29 @@ def _parse_args() -> argparse.Namespace:
         default="data/checkpoints/sft_grpo/",
         help="Final GRPO checkpoint directory",
     )
-    p.add_argument("--min_ratings", type=int, default=1)
-    p.add_argument("--human_feedback_weight", type=float, default=0.5)
-    p.add_argument("--num_rollouts", type=int, default=4)
-    p.add_argument("--search_url", default="http://localhost:8001/retrieve")
-    p.add_argument("--device", default="mps", choices=["cpu", "mps", "cuda"])
+    p.add_argument(
+        "--min_ratings",
+        type=int,
+        default=1,
+        help="Abort if fewer feedback/SFT examples found",
+    )
+    p.add_argument(
+        "--human_feedback_weight",
+        type=float,
+        default=0.5,
+        help="GRPO human signal reward weight",
+    )
+    p.add_argument(
+        "--num_rollouts", type=int, default=4, help="Number of rollouts per GRPO prompt"
+    )
+    p.add_argument(
+        "--search_url",
+        default="http://localhost:8001/retrieve",
+        help="Retrieval server URL",
+    )
+    p.add_argument(
+        "--device", default="mps", choices=["cpu", "mps", "cuda"], help="Compute device"
+    )
     return p.parse_args()
 
 
