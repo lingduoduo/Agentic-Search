@@ -48,6 +48,15 @@ function errorStream(message: string) {
 }
 
 describe("App adaptive layout", () => {
+  it("has no intent class on initial render", () => {
+    render(<App />);
+    const layout = document.querySelector(".results-layout");
+    expect(layout?.classList).not.toContain("intent-search");
+    expect(layout?.classList).not.toContain("intent-chat");
+    expect(layout?.classList).not.toContain("intent-tool");
+  });
+
+
   it("adds intent-search class to results layout on search response", async () => {
     mockStreamAgent.mockReturnValue(fakeStream("search"));
     render(<App />);
