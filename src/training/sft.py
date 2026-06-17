@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,8 +10,6 @@ import torch
 import torch.nn as nn
 
 from ..agents.base import AgentLoopOutput
-
-_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -133,6 +130,9 @@ class SFTTrainer:
             attention_mask = full_enc.attention_mask
 
         labels = input_ids.clone()
+        prompt_len = min(
+            prompt_len, input_ids.shape[-1]
+        )  # guard when prompt exceeds max_length
         labels[:, :prompt_len] = -100  # mask prompt tokens
         return {
             "input_ids": input_ids.to(self.device),
@@ -163,7 +163,7 @@ class SFTTrainer:
                     self.policy.parameters(), self.config.grad_clip
                 )
                 self.optimizer.step()
-                history.append(float(batch_loss))
+                history.append(batch_loss.item())
         return history
 
     def save(self, output_dir: str | Path) -> None:

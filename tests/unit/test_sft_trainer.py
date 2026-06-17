@@ -19,38 +19,7 @@ def _make_example(prompt: str = "Q?", completion: str = "A.") -> SFTExample:
     )
 
 
-def _make_tokenizer(prompt_ids: list[int], full_ids: list[int]):
-    """Minimal tokenizer mock that returns different ids for prompt vs full."""
-    tok = MagicMock()
-    tok.pad_token_id = 0
-    tok.eos_token_id = 2
-
-    def side_effect(text_or_messages, **kwargs):
-        # Detect prompt-only call by checking for assistant content absence
-        if isinstance(text_or_messages, str) and "A." not in text_or_messages:
-            ids = prompt_ids
-        elif isinstance(text_or_messages, list) and not any(
-            m.get("role") == "assistant" for m in text_or_messages
-        ):
-            ids = prompt_ids
-        else:
-            ids = full_ids
-        t = torch.tensor([ids])
-        result = MagicMock()
-        result.input_ids = t
-        result.attention_mask = torch.ones_like(t)
-        result.__getitem__ = (
-            lambda self, k: t if k == "input_ids" else torch.ones_like(t)
-        )
-        return result
-
-    tok.side_effect = side_effect
-    tok.__call__ = side_effect
-    tok.apply_chat_template = None  # force fallback path
-    return tok
-
-
-def test_non_assistant_tokens_masked_to_minus_100(tmp_path):
+def test_non_assistant_tokens_masked_to_minus_100():
     """Labels for prompt tokens must be -100; only assistant tokens get loss."""
     prompt_ids = [10, 11, 12]  # 3 prompt tokens
     full_ids = [10, 11, 12, 20, 21]  # same prompt + 2 assistant tokens
@@ -106,7 +75,7 @@ def test_non_assistant_tokens_masked_to_minus_100(tmp_path):
     assert all(labels[i].item() != -100 for i in range(3, 5))
 
 
-def test_loss_history_length_matches_steps(tmp_path):
+def test_loss_history_length_matches_steps():
     """train() returns one loss value per gradient step."""
 
     class _FakePolicy(torch.nn.Module):
@@ -129,7 +98,7 @@ def test_loss_history_length_matches_steps(tmp_path):
         r.attention_mask = torch.ones_like(t)
         return r
 
-    tokenizer.__call__ = tok_call
+    tokenizer.side_effect = tok_call
 
     policy = _FakePolicy()
     param = torch.nn.Parameter(torch.zeros(1))
