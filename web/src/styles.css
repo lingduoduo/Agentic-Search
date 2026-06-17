@@ -426,10 +426,6 @@ option:disabled,
 }
 
 .source-card p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 6;
-  -webkit-box-orient: vertical;
   line-height: 1.45;
 }
 
