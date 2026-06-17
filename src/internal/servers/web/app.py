@@ -1110,6 +1110,7 @@ def create_web_app(
                         "citations": result.citations,
                         "documents": [d.model_dump() for d in result.documents],
                         "intent": result.intent,
+                        "tool_calls": [tc.model_dump() for tc in result.tool_calls],
                     }
                 )
             except BaseException as exc:
