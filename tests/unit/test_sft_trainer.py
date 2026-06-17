@@ -131,3 +131,48 @@ def test_save_calls_save_pretrained(tmp_path):
     trainer.save(tmp_path)
     policy.save_pretrained.assert_called_once_with(tmp_path)
     tokenizer.save_pretrained.assert_called_once_with(tmp_path)
+
+
+def test_apply_chat_template_path_masks_prompt_correctly():
+    """Primary tokenizer path (apply_chat_template) must mask prompt tokens to -100."""
+    prompt_ids = [10, 11, 12]  # 3 prompt tokens
+    full_ids = [10, 11, 12, 20, 21]  # prompt + 2 assistant tokens
+
+    captured_labels = []
+
+    class _FakePolicy(torch.nn.Module):
+        def forward(self, input_ids=None, attention_mask=None, labels=None, **kw):
+            captured_labels.append(labels.clone())
+            out = MagicMock()
+            out.loss = torch.tensor(1.0, requires_grad=True)
+            return out
+
+    def mock_apply_chat_template(messages, *, tokenize=True, return_tensors=None, **kw):
+        has_assistant = any(m.get("role") == "assistant" for m in messages)
+        ids = full_ids if has_assistant else prompt_ids
+        enc = MagicMock()
+        enc.__getitem__ = lambda self, k: (
+            torch.tensor([ids])
+            if k == "input_ids"
+            else torch.ones(1, len(ids), dtype=torch.long)
+        )
+        return enc
+
+    tokenizer = MagicMock()
+    tokenizer.pad_token_id = 0
+    tokenizer.apply_chat_template = mock_apply_chat_template
+
+    policy = _FakePolicy()
+    param = torch.nn.Parameter(torch.zeros(1))
+    optimizer = torch.optim.SGD([param], lr=1e-3)
+    trainer = SFTTrainer(
+        policy, tokenizer, optimizer, SFTConfig(epochs=1, batch_size=1)
+    )
+    trainer.train([_make_example()])
+
+    assert len(captured_labels) == 1
+    labels = captured_labels[0][0]  # shape (seq_len,)
+    assert all(labels[i].item() == -100 for i in range(3)), "Prompt tokens must be -100"
+    assert all(labels[i].item() != -100 for i in range(3, 5)), (
+        "Assistant tokens must not be -100"
+    )

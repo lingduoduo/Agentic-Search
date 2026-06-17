@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -57,7 +58,6 @@ def build_search_sft_example(
 @dataclass(frozen=True)
 class SFTConfig:
     epochs: int = 3
-    lr: float = 2e-5
     batch_size: int = 4
     max_length: int = 2048
     grad_clip: float = 1.0
@@ -95,12 +95,13 @@ class SFTTrainer:
 
         # Tokenize prompt only to find where assistant tokens begin.
         if callable(getattr(self.tokenizer, "apply_chat_template", None)):
-            prompt_ids = self.tokenizer.apply_chat_template(
+            prompt_enc = self.tokenizer.apply_chat_template(
                 example.prompt_messages,
                 tokenize=True,
+                return_tensors="pt",
                 add_generation_prompt=True,
             )
-            prompt_len = len(prompt_ids)
+            prompt_len = prompt_enc["input_ids"].shape[-1]
             full_enc = self.tokenizer.apply_chat_template(
                 full_messages,
                 tokenize=True,
@@ -108,12 +109,8 @@ class SFTTrainer:
                 max_length=cfg.max_length,
                 truncation=True,
             )
-            input_ids = (
-                full_enc
-                if isinstance(full_enc, torch.Tensor)
-                else full_enc["input_ids"]
-            )
-            attention_mask = torch.ones_like(input_ids)
+            input_ids = full_enc["input_ids"]
+            attention_mask = full_enc["attention_mask"]
         else:
             # Fallback: join content strings, track prompt length by token count.
             prompt_text = "\n".join(m["content"] for m in example.prompt_messages)
@@ -149,8 +146,10 @@ class SFTTrainer:
         history: list[float] = []
 
         for _epoch in range(self.config.epochs):
-            for i in range(0, len(examples), self.config.batch_size):
-                batch = examples[i : i + self.config.batch_size]
+            epoch_examples = list(examples)
+            random.shuffle(epoch_examples)
+            for i in range(0, len(epoch_examples), self.config.batch_size):
+                batch = epoch_examples[i : i + self.config.batch_size]
                 self.optimizer.zero_grad()
                 batch_loss = torch.tensor(0.0, device=self.device)
                 for example in batch:

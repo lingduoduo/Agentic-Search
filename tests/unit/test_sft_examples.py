@@ -72,7 +72,8 @@ def test_session_without_assistant_turn_skipped(tmp_path):
 
 def test_jsonl_row_becomes_sft_example(tmp_path):
     db = str(tmp_path / "t.sqlite3")
-    AgenticSearchStore(db).__exit__(None, None, None)  # init schema only
+    with AgenticSearchStore(db):
+        pass  # init schema only
     jsonl = tmp_path / "pairs.jsonl"
     jsonl.write_text(json.dumps({"question": "Q?", "response": "R."}) + "\n")
     examples = load_sft_examples(db, jsonl_path=str(jsonl), min_ratings=1)
@@ -84,7 +85,8 @@ def test_jsonl_row_becomes_sft_example(tmp_path):
 
 def test_jsonl_row_missing_response_skipped(tmp_path):
     db = str(tmp_path / "t.sqlite3")
-    AgenticSearchStore(db).__exit__(None, None, None)
+    with AgenticSearchStore(db):
+        pass  # init schema only
     jsonl = tmp_path / "pairs.jsonl"
     jsonl.write_text(json.dumps({"question": "Q?"}) + "\n")
     with pytest.raises(ValueError, match="Only 0 SFT examples"):
