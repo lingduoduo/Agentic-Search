@@ -41,6 +41,15 @@ export interface AgentExperienceRequest {
   mode?: AgentMode;
 }
 
+export interface ToolCallTraceView {
+  tool_name: string;
+  status: "completed" | "failed";
+  arguments: Record<string, unknown>;
+  result_summary: string;
+  latency_ms: number;
+  error: string | null;
+}
+
 export interface AgentExperienceResponse {
   session_id: string;
   answer: string;
@@ -48,6 +57,7 @@ export interface AgentExperienceResponse {
   documents: SourceDocumentView[];
   messages: ChatMessageView[];
   intent?: "search" | "chat" | "tool";
+  tool_calls?: ToolCallTraceView[];
 }
 
 export interface SessionCreateRequest {
@@ -212,6 +222,7 @@ export interface SSEDoneEvent {
   citations: string[];
   documents: SourceDocumentView[];
   intent?: "search" | "chat" | "tool";
+  tool_calls?: ToolCallTraceView[];
 }
 
 export interface SSEErrorEvent {

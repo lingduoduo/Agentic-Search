@@ -189,6 +189,7 @@ class ToolAgentLoop(AgentLoopBase):
             tool_name=tool_call.name,
             status=status,
             result=result,
+            arguments=tool_call.parsed_arguments(),
             performance=PerformanceMetrics(
                 execution_time=elapsed,
                 success_rate=1.0 if status is TaskStatus.COMPLETED else 0.0,

@@ -10,6 +10,7 @@ import {
   streamAgent,
 } from "./api";
 import { AdminOverview } from "./components/AdminOverview";
+import { ToolCallTracePanel } from "./components/ToolCallTracePanel";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { ConnectorPanel } from "./components/ConnectorPanel";
@@ -26,6 +27,7 @@ import type {
   ProgressStep,
   SearchSourceProvider,
   SourceDocumentView,
+  ToolCallTraceView,
 } from "./types";
 
 const DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve";
@@ -52,6 +54,7 @@ export function App() {
   const [analyticsByLLM, setAnalyticsByLLM] = useState<BreakdownAnalytics | null>(null);
   const [analyticsByPersona, setAnalyticsByPersona] = useState<BreakdownAnalytics | null>(null);
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
+  const [toolCalls, setToolCalls] = useState<ToolCallTraceView[]>([]);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
@@ -119,6 +122,7 @@ export function App() {
           setSessionId(event.session_id);
           setCitations(event.citations);
           setDocuments(event.documents);
+          setToolCalls(event.tool_calls ?? []);
           if (event.intent) setIntent(event.intent);
           setAnswer(accumulatedAnswer);
           setCompletedSteps(liveSteps);
@@ -146,6 +150,7 @@ export function App() {
     setAnswer("");
     setCitations([]);
     setDocuments([]);
+    setToolCalls([]);
     setMessages([]);
     setError(null);
     setIntent(undefined);
@@ -265,6 +270,7 @@ export function App() {
               progressSteps={progressSteps}
               completedSteps={completedSteps}
             />
+            {intent === "tool" && <ToolCallTracePanel calls={toolCalls} />}
           </section>
 
           <section className="panel sources-panel wide" aria-label="Sources">

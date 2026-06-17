@@ -1271,3 +1271,75 @@ option:disabled,
   padding: 0;
   font-family: inherit;
 }
+
+/* Tool Call Trace Panel */
+.tool-trace-panel {
+  margin-top: 12px;
+}
+
+.tool-trace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-trace-card {
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #0f172a;
+}
+
+.tool-trace-card--failed {
+  border-color: #7f1d1d;
+  background: #0f0a0a;
+}
+
+.tool-trace-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tool-trace-status--ok   { color: #22c55e; font-size: 0.8rem; }
+.tool-trace-status--failed { color: #ef4444; font-size: 0.8rem; }
+
+.tool-trace-name {
+  color: #e2e8f0;
+  font-size: 0.8rem;
+}
+
+.tool-trace-latency {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-trace-section {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-top: 6px;
+}
+
+.tool-trace-label {
+  display: block;
+  color: #64748b;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+
+.tool-trace-code {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-trace-code--error { color: #ef4444; }

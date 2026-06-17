@@ -176,6 +176,15 @@ class AgentExperienceRequest(BaseModel):
     )
 
 
+class ToolCallView(BaseModel):
+    tool_name: str
+    status: str
+    arguments: dict[str, object]
+    result_summary: str
+    latency_ms: int
+    error: str | None = None
+
+
 class AgentExperienceResponse(BaseModel):
     session_id: str
     answer: str
@@ -184,6 +193,7 @@ class AgentExperienceResponse(BaseModel):
     messages: list[ChatMessageView]
     hook_metadata: dict[str, object] = Field(default_factory=dict)
     intent: str = "chat"  # "search" | "chat" | "tool"
+    tool_calls: list[ToolCallView] = Field(default_factory=list)
 
 
 class QueryProcessingHookResponse(BaseModel):
@@ -319,15 +329,54 @@ async def _run_auto_routed(
         if output is not None:
             intent = _infer_intent_from_output(output)
             answer = output.final_answer or ""
+            tool_calls: list[ToolCallView] = []
             documents = []
             if output.action_trace:
                 for line in output.action_trace.split("\n"):
+                    if not line.strip():
+                        continue
                     try:
                         rec = _json.loads(line)
-                        if rec.get("tool_name") == "search_routing_tool" and rec.get(
-                            "result"
-                        ):
-                            raw = _json.loads(rec["result"])
+                        tool_name = rec.get("tool_name", "")
+                        perf = rec.get("performance", {})
+                        latency_ms = round(perf.get("execution_time", 0.0) * 1000)
+                        status_raw = str(rec.get("status", "failed")).lower()
+                        is_completed = "completed" in status_raw
+                        result = rec.get("result")
+                        # Decode JSON-string results so list detection works
+                        decoded_result = result
+                        if isinstance(result, str):
+                            try:
+                                decoded_result = _json.loads(result)
+                            except Exception:
+                                pass
+
+                        if isinstance(decoded_result, list):
+                            result_summary = f"{len(decoded_result)} items"
+                        elif result is not None:
+                            result_summary = str(result)[:200]
+                        else:
+                            result_summary = ""
+
+                        args = rec.get("arguments") or {}
+                        args = args if isinstance(args, dict) else {}
+                        tool_calls.append(
+                            ToolCallView(
+                                tool_name=tool_name,
+                                status="completed" if is_completed else "failed",
+                                arguments=args,
+                                result_summary=result_summary,
+                                latency_ms=latency_ms,
+                                error=rec.get("error_message"),
+                            )
+                        )
+
+                        if tool_name == "search_routing_tool" and result:
+                            raw = (
+                                _json.loads(result)
+                                if isinstance(result, str)
+                                else result
+                            )
                             if isinstance(raw, list):
                                 for i, item in enumerate(raw, 1):
                                     documents.append(
@@ -342,6 +391,7 @@ async def _run_auto_routed(
                                     )
                     except Exception:
                         pass
+            extra["tool_calls"] = tool_calls
             citations = [doc.citation for doc in documents]
             return answer, citations, documents, intent, extra
 
@@ -682,6 +732,7 @@ def create_web_app(
                     resolved=resolved,
                     on_turn=on_turn,
                 )
+                tool_calls = extra_meta.pop("tool_calls", [])
                 merged_metadata = {**hook_metadata, **extra_meta}
                 db.add_chat_message(
                     session_id,
@@ -708,6 +759,7 @@ def create_web_app(
                     messages=messages,
                     hook_metadata=merged_metadata,
                     intent=intent,
+                    tool_calls=tool_calls,
                 )
 
             # Explicit mode — fall through to existing if/elif chain
@@ -1058,6 +1110,7 @@ def create_web_app(
                         "citations": result.citations,
                         "documents": [d.model_dump() for d in result.documents],
                         "intent": result.intent,
+                        "tool_calls": [tc.model_dump() for tc in result.tool_calls],
                     }
                 )
             except BaseException as exc:
