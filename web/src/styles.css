@@ -106,8 +106,7 @@ h3 {
 
 .brand p,
 .empty-state,
-.source-card p,
-.timeline p {
+.source-card p {
   color: var(--muted);
 }
 
@@ -119,8 +118,7 @@ h3 {
 
 .status-pill,
 .count,
-.source-meta span,
-.citation-row span {
+.source-meta span {
   border-radius: 999px;
   padding: 5px 9px;
   font-size: 12px;
@@ -372,17 +370,8 @@ option:disabled,
 .answer-panel {
   margin-top: 14px;
   line-height: 1.72;
-  white-space: pre-wrap;
 }
 
-.citation-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.citation-row span,
 .source-meta span,
 .source-tags span {
   background: #e3f3ef;
@@ -444,27 +433,6 @@ option:disabled,
   line-height: 1.45;
 }
 
-.timeline {
-  display: grid;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.timeline li {
-  border-left: 3px solid var(--line);
-  padding-left: 10px;
-}
-
-.timeline strong {
-  text-transform: capitalize;
-}
-
-.timeline p {
-  margin-top: 4px;
-  line-height: 1.45;
-}
 
 .empty-state {
   margin-top: 12px;

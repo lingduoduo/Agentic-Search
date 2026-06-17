@@ -123,15 +123,15 @@ it("renders bold text from markdown", () => {
   expect(strong?.textContent).toBe("bold");
 });
 
-it("renders citation [1] as an anchor link", () => {
+it("renders citation [D1] as an anchor link", () => {
   render(
     <AnswerPanel
-      answer="See [1] for details."
+      answer="See [D1] for details."
       citations={[]}
     />
   );
-  const link = screen.getByRole("link", { name: "[1]" });
-  expect(link).toHaveAttribute("href", "#source-[1]");
+  const link = screen.getByRole("link", { name: "[D1]" });
+  expect(link).toHaveAttribute("href", "#source-[D1]");
   expect(link).toHaveClass("citation-link");
 });
 
@@ -149,7 +149,7 @@ it("does not render .citation-row div", () => {
   render(
     <AnswerPanel
       answer="answer"
-      citations={["[1]", "[2]"]}
+      citations={["[D1]", "[D2]"]}
     />
   );
   expect(document.querySelector(".citation-row")).not.toBeInTheDocument();
