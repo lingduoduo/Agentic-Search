@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { AnswerPanel } from "../AnswerPanel";
 
@@ -47,4 +48,65 @@ describe("AnswerPanel", () => {
     render(<AnswerPanel answer="" citations={[]} intent="chat" />);
     expect(document.querySelector(".intent-badge")).not.toBeInTheDocument();
   });
+});
+
+// ---------------------------------------------------------------------------
+// ProgressLog — live phase
+// ---------------------------------------------------------------------------
+
+it("renders live progress log when progressSteps is non-empty", () => {
+  render(
+    <AnswerPanel
+      answer=""
+      citations={[]}
+      progressSteps={[{ turn: 1, text: "search_routing_tool · 5 docs" }]}
+      completedSteps={[]}
+    />
+  );
+  expect(screen.getByText(/agent reasoning/i)).toBeInTheDocument();
+  expect(screen.getByText(/search_routing_tool · 5 docs/i)).toBeInTheDocument();
+});
+
+it("renders collapsed summary when progressSteps is empty and completedSteps is non-empty", () => {
+  render(
+    <AnswerPanel
+      answer="Done."
+      citations={[]}
+      progressSteps={[]}
+      completedSteps={[
+        { turn: 1, text: "search_routing_tool · 5 docs" },
+        { turn: 2, text: "writing answer..." },
+      ]}
+    />
+  );
+  expect(screen.getByText(/2 turns/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /show reasoning/i })).toBeInTheDocument();
+});
+
+it("expands the log when 'show reasoning' is clicked", async () => {
+  render(
+    <AnswerPanel
+      answer="Done."
+      citations={[]}
+      progressSteps={[]}
+      completedSteps={[{ turn: 1, text: "search_routing_tool · 5 docs" }]}
+    />
+  );
+  const button = screen.getByRole("button", { name: /show reasoning/i });
+  await userEvent.click(button);
+  expect(screen.getByText(/search_routing_tool · 5 docs/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /hide/i })).toBeInTheDocument();
+});
+
+it("renders nothing for progress when both arrays are empty", () => {
+  render(
+    <AnswerPanel
+      answer="answer"
+      citations={[]}
+      progressSteps={[]}
+      completedSteps={[]}
+    />
+  );
+  expect(document.querySelector(".progress-log")).not.toBeInTheDocument();
+  expect(document.querySelector(".progress-summary")).not.toBeInTheDocument();
 });

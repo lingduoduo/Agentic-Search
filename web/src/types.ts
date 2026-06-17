@@ -211,6 +211,7 @@ export interface SSEDoneEvent {
   session_id: string;
   citations: string[];
   documents: SourceDocumentView[];
+  intent?: "search" | "chat" | "tool";
 }
 
 export interface SSEErrorEvent {
@@ -223,3 +224,8 @@ export type SSEEvent =
   | SSEAnswerEvent
   | SSEDoneEvent
   | SSEErrorEvent;
+
+export interface ProgressStep {
+  turn: number;
+  text: string;  // e.g. "search_routing_tool · 5 docs" or "writing answer..."
+}

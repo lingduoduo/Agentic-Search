@@ -16,6 +16,7 @@ from .base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
+    OnTurnCallback,
     register,
     simple_timer,
 )
@@ -751,6 +752,8 @@ class SearchAgentLoop(AgentLoopBase):
         self,
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
+        *,
+        on_turn: "OnTurnCallback | None" = None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = self._initial_metrics()
         request_id = uuid4().hex
@@ -900,6 +903,8 @@ class SearchAgentLoop(AgentLoopBase):
                         and not active_tasks
                     ):
                         metrics["direct_answers"] += 1.0
+                        if on_turn is not None:
+                            await on_turn(num_turns, None, 0)
                         break
                     if (
                         not cfg.require_sufficient_evidence_before_answer
@@ -908,6 +913,8 @@ class SearchAgentLoop(AgentLoopBase):
                         )
                         or consecutive_rejections >= cfg.max_answer_rejections
                     ):
+                        if on_turn is not None:
+                            await on_turn(num_turns, None, 0)
                         break
                     # Answer rejected — clear the tentative candidate so a
                     # discarded answer is not returned as the final answer.
@@ -993,6 +1000,11 @@ class SearchAgentLoop(AgentLoopBase):
                     )
                     latest_evaluation = round_result.evaluation
                     turn_observations.append(round_result.observation)
+                    if on_turn is not None:
+                        doc_count = sum(
+                            len(sc.results) for sc in round_result.search_contexts
+                        )
+                        await on_turn(num_turns, "search_routing_tool", doc_count)
                     if active_tasks:
                         turn_observations.append(
                             cfg.subquestions_obs_template.format(

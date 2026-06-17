@@ -118,3 +118,68 @@ def test_stream_done_event_contains_documents(monkeypatch, tmp_path):
     assert isinstance(done_event["documents"], list)
     assert len(done_event["documents"]) >= 1
     assert done_event["documents"][0]["title"] == "T"
+
+
+def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):
+    """When SearchAgentLoop.run fires on_turn, progress SSE events appear before done."""
+    from src.agents.search import SearchAgentLoop
+    from src.agents.base import AgentLoopOutput
+
+    async def fake_run(self, messages, sampling_params, *, on_turn=None):
+        if on_turn is not None:
+            await on_turn(1, "search_routing_tool", 5)
+            await on_turn(2, None, 0)
+        return AgentLoopOutput(
+            prompt_ids=[],
+            response_ids=[],
+            response_mask=[],
+            num_turns=2,
+            final_answer="FAISS is fast.",
+            action_trace=None,
+        )
+
+    monkeypatch.setattr(SearchAgentLoop, "run", fake_run)
+
+    class _MockMgr:
+        async def generate(self, *a, **kw):
+            return []
+
+    class _MockTok:
+        chat_template = "t"
+
+        def apply_chat_template(self, *a, **kw):
+            return [] if kw.get("tokenize", True) else ""
+
+        def encode(self, t):
+            return []
+
+        def decode(self, ids, **kw):
+            return "FAISS is fast."
+
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    app.state.search_agent_manager = _MockMgr()
+    app.state.search_agent_tokenizer = _MockTok()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/agent/stream",
+        json={"query": "What is FAISS?", "mode": "search_agent"},
+    )
+    assert resp.status_code == 200
+
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "progress" in types, "Expected at least one progress event"
+    assert "done" in types
+
+    # Progress must arrive before done
+    progress_indices = [i for i, e in enumerate(events) if e["type"] == "progress"]
+    done_index = next(i for i, e in enumerate(events) if e["type"] == "done")
+    assert all(p < done_index for p in progress_indices)
+
+    progress_events = [e for e in events if e["type"] == "progress"]
+    assert progress_events[0]["turn"] == 1
+    assert "search_routing_tool" in progress_events[0]["text"]
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert "intent" in done_event  # done event now includes intent

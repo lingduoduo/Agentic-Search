@@ -1,4 +1,5 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
+import type { ProgressStep } from "../types";
 
 interface AnswerPanelProps {
   answer: string;
@@ -6,6 +7,8 @@ interface AnswerPanelProps {
   intent?: "search" | "chat" | "tool";
   documentCount?: number;
   toolCallCount?: number;
+  progressSteps?: ProgressStep[];
+  completedSteps?: ProgressStep[];
 }
 
 function IntentBadge({ intent, citations, documentCount, toolCallCount }: {
@@ -25,16 +28,83 @@ function IntentBadge({ intent, citations, documentCount, toolCallCount }: {
   return <span className="intent-badge">Used tools</span>;
 }
 
+function ProgressLog({
+  steps,
+  completedSteps,
+}: {
+  steps: ProgressStep[];
+  completedSteps: ProgressStep[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (steps.length > 0) {
+    return (
+      <div className="progress-log">
+        <div className="progress-log-header">Agent reasoning</div>
+        {steps.map((s, i) => (
+          <div
+            key={`${s.turn}-${i}`}
+            className={`progress-step ${s.text.includes("writing") ? "active" : "done"}`}
+          >
+            {s.text.includes("writing") ? "⟳" : "✓"} Turn {s.turn} · {s.text}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (completedSteps.length > 0) {
+    const n = completedSteps.length;
+    if (!expanded) {
+      return (
+        <button
+          className="progress-summary"
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label={`show reasoning — ${n} ${n === 1 ? "turn" : "turns"}`}
+        >
+          <span>&#10003; {n} {n === 1 ? "turn" : "turns"}</span>
+          <span className="show-reasoning">show reasoning &#9658;</span>
+        </button>
+      );
+    }
+    return (
+      <div className="progress-log">
+        <div className="progress-log-header">
+          Agent reasoning
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="collapse-btn"
+            aria-label="hide reasoning"
+          >
+            &#9660; hide
+          </button>
+        </div>
+        {completedSteps.map((s, i) => (
+          <div key={`${s.turn}-${i}`} className="progress-step done">
+            &#10003; Turn {s.turn} · {s.text}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 export const AnswerPanel = memo(function AnswerPanel({
   answer,
   citations,
   intent,
   documentCount,
   toolCallCount,
+  progressSteps = [],
+  completedSteps = [],
 }: AnswerPanelProps) {
   const paragraphs = useMemo(() => answer.split(/\n\n+/).filter(Boolean), [answer]);
 
-  if (!answer) {
+  if (!answer && progressSteps.length === 0) {
     return (
       <div className="empty-state">
         Results will appear here once the agent retrieves context.
@@ -44,7 +114,8 @@ export const AnswerPanel = memo(function AnswerPanel({
 
   return (
     <article className="answer-panel">
-      {intent && (
+      <ProgressLog steps={progressSteps} completedSteps={completedSteps} />
+      {intent && answer && (
         <IntentBadge
           intent={intent}
           citations={citations}
