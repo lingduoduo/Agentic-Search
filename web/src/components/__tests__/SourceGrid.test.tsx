@@ -112,6 +112,10 @@ describe("SourceGrid", () => {
 
     afterEach(() => {
       vi.useRealTimers();
+      Object.defineProperty(navigator, "clipboard", {
+        value: undefined,
+        configurable: true,
+      });
     });
 
     it("shows 'copied ✓' after clicking copy, then resets after 1.5s", async () => {
@@ -119,9 +123,9 @@ describe("SourceGrid", () => {
       const copyBtn = screen.getByRole("button", { name: /copy/i });
       expect(copyBtn.textContent).toContain("copy");
 
-      fireEvent.click(copyBtn);
-      // Flush the resolved promise
-      await act(async () => {});
+      await act(async () => {
+        fireEvent.click(copyBtn);
+      });
       expect(copyBtn.textContent).toContain("copied ✓");
 
       act(() => {
