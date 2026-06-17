@@ -65,12 +65,10 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def _train(args: argparse.Namespace) -> None:
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
     from src.agents.search import SearchAgentLoop
     from src.training.data import load_feedback_examples
-    from src.training.grpo import GRPOAdvantageConfig, GRPOTrainerConfig
+    from src.training.grpo import GRPOAdvantageConfig
+    from src.training.ppo.llm_grpo_trainer import LLMGRPOConfig
     from src.training.ppo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
     from src.training.reward import SearchRewardConfig, SearchRewardFunction
     from src.training.reward import simple_sparse_correctness_reward
@@ -83,28 +81,24 @@ async def _train(args: argparse.Namespace) -> None:
     ground_truths = [ex.ground_truth for ex in examples]
     metadata = [dict(ex.metadata) for ex in examples]
 
-    device = torch.device(args.device)
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    policy = AutoModelForCausalLM.from_pretrained(args.model).to(device)
-
-    reward_config = SearchRewardConfig(
-        human_feedback_weight=args.human_feedback_weight,
-        correctness_weight=0.0,
+    reward_fn = SearchRewardFunction(
+        SearchRewardConfig(
+            human_feedback_weight=args.human_feedback_weight,
+            correctness_weight=0.0,
+        )
     )
-    reward_fn = SearchRewardFunction(reward_config)
 
     def loop_factory():
         return SearchAgentLoop(search_url=args.search_url)
 
-    trainer = SearchAgentGRPOTrainer(
-        policy=policy,
-        tokenizer=tokenizer,
-        loop_factory=loop_factory,
+    trainer = SearchAgentGRPOTrainer.from_pretrained(
+        args.model,
         judge_fn=simple_sparse_correctness_reward,
+        loop_factory=loop_factory,
         reward_fn=reward_fn,
-        config=GRPOTrainerConfig(num_rollouts=args.num_rollouts),
+        config=LLMGRPOConfig(num_rollouts=args.num_rollouts),
         advantage_config=GRPOAdvantageConfig(),
-        device=device,
+        device=args.device,
     )
 
     print("Running rollouts and gradient step …")
@@ -113,8 +107,8 @@ async def _train(args: argparse.Namespace) -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    policy.save_pretrained(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    trainer.policy.save_pretrained(output_dir)
+    trainer.tokenizer.save_pretrained(output_dir)
     print(f"Checkpoint saved to {output_dir}")
 
 

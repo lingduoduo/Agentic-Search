@@ -1376,12 +1376,27 @@ option:disabled,
 
 /* ── Intent-adaptive layout ──────────────────────────────────────────────────── */
 
-/* Search: sources panel gets visual prominence */
+/* Search: sources panel promoted to top with wider flex basis */
+.intent-search.results-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
 .intent-search .sources-panel {
+  flex: 1 1 55%;
+  min-width: 280px;
+  order: -1;
   border: 2px solid var(--accent, #38bdf8);
   border-radius: 8px;
 }
+.intent-search .answer-column {
+  flex: 1 1 40%;
+  min-width: 280px;
+}
 .intent-search .session-panel {
+  flex: 1 1 100%;
+  order: 1;
   opacity: 0.7;
 }
 
@@ -1434,10 +1449,14 @@ option:disabled,
 
 /* Narrow screens: stack everything single-column for all intents */
 @media (max-width: 720px) {
+  .intent-search.results-layout,
   .intent-chat.results-layout,
   .intent-tool.results-layout {
     display: block;
   }
+  .intent-search .sources-panel,
+  .intent-search .answer-column,
+  .intent-search .session-panel,
   .intent-chat .answer-column,
   .intent-chat .session-panel,
   .intent-chat .sources-panel,
