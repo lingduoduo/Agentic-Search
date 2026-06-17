@@ -1,5 +1,4 @@
-import React from "react";
-import { memo, useState } from "react";
+import React, { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import type { ProgressStep } from "../types";
@@ -14,9 +13,21 @@ interface AnswerPanelProps {
   completedSteps?: ProgressStep[];
 }
 
-const CITATION_RE = /(\[\d+\])/g;
+const CITATION_RE = /(\[\d+\])/;
 
 function linkifyCitations(children: React.ReactNode): React.ReactNode {
+  if (Array.isArray(children)) {
+    return (children as React.ReactNode[]).flatMap((child, i) => {
+      if (typeof child !== "string") return [child];
+      const parts = child.split(CITATION_RE);
+      if (parts.length === 1) return [child];
+      return parts.map((part, j) =>
+        /^\[\d+\]$/.test(part)
+          ? React.createElement("a", { key: `${i}-${j}`, href: `#source-${part}`, className: "citation-link" }, part)
+          : part
+      );
+    });
+  }
   if (typeof children !== "string") return children;
   const parts = children.split(CITATION_RE);
   if (parts.length === 1) return children;
