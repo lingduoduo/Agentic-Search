@@ -152,6 +152,7 @@ class ToolExecutionResult:
     tool_name: str
     status: TaskStatus
     result: Any
+    arguments: dict[str, Any] = field(default_factory=dict)
     performance: PerformanceMetrics = field(default_factory=PerformanceMetrics)
     error_code: str | None = None
     error_message: str | None = None
