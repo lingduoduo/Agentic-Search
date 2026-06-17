@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { SourceGrid } from "../SourceGrid";
 import type { SourceDocumentView } from "../../types";
 
@@ -73,5 +73,65 @@ describe("SourceGrid", () => {
     render(<SourceGrid documents={[doc]} />);
     const article = document.querySelector('article[id="source-[D1]"]');
     expect(article).not.toBeNull();
+  });
+
+  it("content <p> has source-content--clamped class by default", () => {
+    const { container } = render(<SourceGrid documents={[doc]} />);
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    expect(p!.className).toBe("source-content--clamped");
+  });
+
+  it("clicking 'show more' removes clamped class and updates button text", () => {
+    const { container } = render(<SourceGrid documents={[doc]} />);
+    const btn = screen.getByRole("button", { name: /show more/i });
+    fireEvent.click(btn);
+    const p = container.querySelector("p");
+    expect(p!.className).toBe("");
+    expect(screen.getByRole("button", { name: /show less/i })).toBeInTheDocument();
+  });
+
+  it("clicking 'show less' re-applies clamped class", () => {
+    const { container } = render(<SourceGrid documents={[doc]} />);
+    const showMore = screen.getByRole("button", { name: /show more/i });
+    fireEvent.click(showMore);
+    const showLess = screen.getByRole("button", { name: /show less/i });
+    fireEvent.click(showLess);
+    const p = container.querySelector("p");
+    expect(p!.className).toBe("source-content--clamped");
+  });
+
+  describe("copy button", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText: vi.fn().mockResolvedValue(undefined) },
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      Object.defineProperty(navigator, "clipboard", {
+        value: undefined,
+        configurable: true,
+      });
+    });
+
+    it("shows 'copied ✓' after clicking copy, then resets after 1.5s", async () => {
+      render(<SourceGrid documents={[doc]} />);
+      const copyBtn = screen.getByRole("button", { name: /copy/i });
+      expect(copyBtn.textContent).toContain("copy");
+
+      await act(async () => {
+        fireEvent.click(copyBtn);
+      });
+      expect(copyBtn.textContent).toContain("copied ✓");
+
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(copyBtn.textContent).toContain("copy");
+    });
   });
 });
