@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from src.context.query_transform import QueryTransformConfig, TransformedQueryBundle
+from src.context.query_transform import (
+    QueryTransformConfig,
+    QueryTransformPipeline,
+    TransformedQueryBundle,
+    config_signature,
+)
 
 
 def test_bundle_no_variants_returns_original():
@@ -170,3 +175,33 @@ def test_retrieval_variants_includes_original_when_it_appears_in_sub_queries():
     # sub-queries that aren't original fill the other slots
     assert len(variants) == 3
     assert variants.count("what is FAISS?") == 1
+
+
+# --- Task 1: job-based refactor tests ---
+
+
+def _fake_llm(text: str = "") -> MagicMock:
+    llm = MagicMock()
+    llm.complete.return_value = type("R", (), {"text": text})()
+    return llm
+
+
+def test_transform_config_override_runs_only_overridden_transforms():
+    # Leaf built with everything OFF; override turns step_back ON.
+    pipe = QueryTransformPipeline(QueryTransformConfig(), _fake_llm("broader query"))
+    override = QueryTransformConfig(step_back=True)
+    bundle = pipe.transform("specific q", config_override=override)
+    assert bundle.step_back == "broader query"
+    assert bundle.sub_queries == []  # decompose stayed off
+
+
+def test_base_config_exposed():
+    cfg = QueryTransformConfig(hyde=True)
+    pipe = QueryTransformPipeline(cfg, _fake_llm())
+    assert pipe.base_config is cfg
+
+
+def test_config_signature_changes_with_flags():
+    a = config_signature(QueryTransformConfig(hyde=True))
+    b = config_signature(QueryTransformConfig(hyde=False))
+    assert a != b
