@@ -205,3 +205,11 @@ def test_config_signature_changes_with_flags():
     a = config_signature(QueryTransformConfig(hyde=True))
     b = config_signature(QueryTransformConfig(hyde=False))
     assert a != b
+
+
+def test_multi_query_variants_surface():
+    from src.context.query_transform import TransformedQueryBundle
+
+    b = TransformedQueryBundle(original="orig", multi_query=["p1", "p2"])
+    variants = b.retrieval_variants(max_variants=5)
+    assert "p1" in variants and "p2" in variants and variants[-1] == "orig"

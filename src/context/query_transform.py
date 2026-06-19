@@ -5,10 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
-
-if TYPE_CHECKING:
-    pass
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +17,7 @@ class QueryTransformConfig:
     step_back: bool = False
     keywords: bool = False
     construct_filters: bool = False
+    multi_query: bool = False
     max_variants: int = 5
 
 
@@ -46,6 +44,7 @@ class TransformedQueryBundle:
     step_back: str | None = None
     keywords: list[str] = field(default_factory=list)
     merged_filters: dict = field(default_factory=dict)
+    multi_query: list[str] = field(default_factory=list)
 
     def retrieval_variants(self, max_variants: int = 5) -> list[str]:
         """Return deduplicated query variants, always including original last.
@@ -65,6 +64,8 @@ class TransformedQueryBundle:
                 candidates.append(text)
 
         for q in self.sub_queries:
+            _add(q)
+        for q in self.multi_query:
             _add(q)
         _add(self.hyde_text)
         _add(self.step_back)
@@ -124,6 +125,16 @@ class QueryTransformPipeline:
             jobs["keywords"] = _keywords
         if config.construct_filters:
             jobs["_filters"] = lambda: self._constructor.extract_filters(query)[1]
+        if config.multi_query:
+
+            def _mq() -> object:
+                from src.internal.retrieval.multi_query import MultiQueryGenerator
+
+                return MultiQueryGenerator(
+                    self._llm, n=int(os.environ.get("QT_MULTI_QUERY_N", "3"))
+                ).generate(query)
+
+            jobs["multi_query"] = _mq
         return jobs
 
     def _assemble(
@@ -137,6 +148,7 @@ class QueryTransformPipeline:
             step_back=results.get("step_back"),
             keywords=results.get("keywords") or [],
             merged_filters={**extracted, **(caller_filters or {})},
+            multi_query=results.get("multi_query") or [],
         )
 
     def transform(
@@ -149,7 +161,7 @@ class QueryTransformPipeline:
         """Run enabled transformations and return a bundle of all query variants."""
         config = config_override or self._config
         jobs = self._build_jobs(query, config)
-        results = {field: fn() for field, fn in jobs.items()}
+        results = {name: fn() for name, fn in jobs.items()}
         return self._assemble(query, results, filters)
 
     @classmethod
@@ -171,6 +183,7 @@ class QueryTransformPipeline:
             step_back=_bool("QT_STEP_BACK"),
             keywords=_bool("QT_KEYWORDS"),
             construct_filters=_bool("QT_CONSTRUCT_FILTERS"),
+            multi_query=_bool("QT_MULTI_QUERY"),
             max_variants=_parse_max_variants(),
         )
 
@@ -181,6 +194,7 @@ class QueryTransformPipeline:
                 config.step_back,
                 config.keywords,
                 config.construct_filters,
+                config.multi_query,
             ]
         ):
             return None
