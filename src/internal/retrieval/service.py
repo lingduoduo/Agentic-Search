@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from .backends.base import RetrievalBackend, RetrievalResult
 from .fusion import mmr_rerank, rrf_fuse
 from .query_optimizer import QueryOptimizer
+from .result_cache import ResultCache
 
 if TYPE_CHECKING:
     from src.internal.retrieval.reranker import Reranker
@@ -104,11 +105,13 @@ class RetrievalService:
         reranker: "Reranker | None" = None,
         pipeline: "QueryTransformPipeline | None" = None,
         optimizer: "QueryOptimizer | None" = None,
+        result_cache: "ResultCache | None" = None,
     ) -> None:
         self._backend = backend
         self._reranker = reranker
         self._pipeline = pipeline
         self._optimizer = optimizer
+        self._result_cache = result_cache
 
     @classmethod
     def from_env(cls) -> "RetrievalService":
@@ -131,11 +134,24 @@ class RetrievalService:
             pipeline = QueryTransformPipeline.from_env(_build_llm())
 
         optimizer = QueryOptimizer.from_env()
+        result_cache = None
+        redis_url = os.environ.get("RESULT_CACHE_REDIS_URL")
+        if redis_url:
+            try:
+                import redis as _redis
+
+                rc = _redis.from_url(redis_url)
+                result_cache = ResultCache(
+                    rc, ttl_seconds=int(os.environ.get("RESULT_CACHE_TTL", "300"))
+                )
+            except Exception as exc:
+                logger.warning("Result cache disabled: %s", exc)
         return cls(
             _build_backend(),
             reranker=Reranker.from_env(),
             pipeline=pipeline,
             optimizer=optimizer,
+            result_cache=result_cache,
         )
 
     def _search_one(
@@ -196,7 +212,13 @@ class RetrievalService:
         When pipeline is set: generates query variants, retrieves per variant in
         parallel, fuses all result sets via RRF → mode gains '+rag_fusion' suffix.
         Without pipeline: single query, identical behaviour to previous releases.
+        Result cache (if enabled) is checked before retrieval and populated after.
         """
+        if self._result_cache:
+            cached = self._result_cache.get(query, filters, top_k)
+            if cached is not None:
+                return cached, "cached"
+
         over_fetch = top_k * int(os.environ.get("OVER_FETCH_MULTIPLIER", "2"))
 
         if self._pipeline:
@@ -248,6 +270,9 @@ class RetrievalService:
         if self._reranker:
             fused = self._reranker.rerank(query, fused, top_k)
             mode = f"{mode}+reranked"
+
+        if self._result_cache:
+            self._result_cache.set(query, filters, top_k, fused)
 
         return fused, mode
 
