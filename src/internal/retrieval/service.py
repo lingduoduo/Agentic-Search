@@ -128,9 +128,11 @@ class RetrievalService:
         if any(
             os.environ.get(v, "").lower() in ("1", "true", "yes") for v in _qt_flags
         ):
-            from src.context.query_transform import QueryTransformPipeline
+            from src.internal.retrieval.query_transform_factory import (
+                build_query_transform_pipeline_from_env,
+            )
 
-            pipeline = QueryTransformPipeline.from_env(_build_llm())
+            pipeline = build_query_transform_pipeline_from_env(_build_llm())
 
         optimizer = QueryOptimizer.from_env()
         result_cache = None
