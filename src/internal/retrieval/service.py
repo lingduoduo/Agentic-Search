@@ -117,8 +117,6 @@ class RetrievalService:
     @classmethod
     def from_env(cls) -> "RetrievalService":
         """Construct service from environment variables."""
-        from src.internal.retrieval.reranker import Reranker
-
         pipeline = None
         _qt_flags = (
             "QT_DECOMPOSE",
@@ -147,50 +145,11 @@ class RetrievalService:
                 )
             except Exception as exc:
                 logger.warning("Result cache disabled: %s", exc)
-        base_reranker = Reranker.from_env()
-
-        _async = os.environ.get("RERANKER_ASYNC", "").lower() in ("1", "true", "yes")
-        _two_stage = os.environ.get("RERANKER_TWO_STAGE", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-
-        def _wrap_async(r):
-            if not _async:
-                return r
-            from src.internal.retrieval.async_reranker import AsyncReranker
-            from src.internal.retrieval.cached_reranker import CachedReranker
-
-            return CachedReranker.from_env(AsyncReranker.from_env(r))
-
-        if base_reranker is not None:
-            if _two_stage:
-                from src.internal.retrieval.two_stage_reranker import TwoStageReranker
-                from src.internal.retrieval.reranker import RerankerConfig
-
-                fast_model = os.environ.get("RERANKER_FAST_MODEL")
-                if fast_model:
-                    fast_cfg = RerankerConfig(
-                        provider=os.environ.get("RERANKER_PROVIDER", "local"),  # type: ignore[arg-type]
-                        model=fast_model,
-                        batch_size=int(os.environ.get("RERANKER_BATCH_SIZE", "32")),
-                        device=os.environ.get("RERANKER_DEVICE", "cpu"),
-                        api_key=os.environ.get("COHERE_API_KEY"),
-                    )
-                    fast_base = Reranker(fast_cfg)
-                else:
-                    fast_base = base_reranker
-                base_reranker = TwoStageReranker.from_env(
-                    _wrap_async(fast_base),
-                    _wrap_async(base_reranker),
-                )
-            else:
-                base_reranker = _wrap_async(base_reranker)
+        from src.internal.retrieval.reranker_factory import build_reranker_from_env
 
         return cls(
             _build_backend(),
-            reranker=base_reranker,
+            reranker=build_reranker_from_env(),
             pipeline=pipeline,
             optimizer=optimizer,
             result_cache=result_cache,
