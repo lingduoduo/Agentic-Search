@@ -24,6 +24,19 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _cohere_documents(texts: list[str]) -> "list[dict] | list[str]":
+    """Return Cohere v4+ document dicts or raw strings for older clients."""
+    try:
+        import cohere
+
+        major = int(cohere.__version__.split(".")[0])
+        if major >= 4:
+            return [{"text": t} for t in texts]
+    except Exception:
+        pass
+    return texts
+
+
 @dataclass(frozen=True)
 class RerankerConfig:
     provider: Literal["local", "cohere"]
@@ -104,7 +117,7 @@ class Reranker:
     ) -> list[RetrievalResult]:
         passages = [f"{r.title}\n{r.text}" for r in results]
         coro = cohere_rerank_api(
-            query, passages, self._config.model, self._config.api_key
+            query, _cohere_documents(passages), self._config.model, self._config.api_key
         )
         try:
             asyncio.get_running_loop()
