@@ -125,3 +125,63 @@ def test_run_eval_reranker_called_once_per_query():
     run_eval(path, service=svc, top_k=5, reranker=mock_reranker)
 
     assert mock_reranker.rerank.call_count == 2
+
+
+def test_run_eval_latency_includes_mean():
+    """latency_ms dict now includes 'mean' field."""
+    qa_path = _write_qa([{"query": "q", "relevant_doc_ids": ["d1"]}])
+    svc = _make_service([["d1"]])
+    fake_reranker = MagicMock()
+    fake_reranker.rerank.return_value = [
+        RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.9)
+    ]
+    metrics = run_eval(qa_path, service=svc, top_k=1, reranker=fake_reranker)
+    assert "mean" in metrics["latency_ms"]
+
+
+def test_run_eval_slo_passes_when_fast(monkeypatch):
+    """No error when latency is within slo_ms."""
+    qa_path = _write_qa([{"query": "q", "relevant_doc_ids": ["d1"]}])
+    svc = _make_service([["d1"]])
+    fake_reranker = MagicMock()
+    fake_reranker.rerank.return_value = [
+        RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.9)
+    ]
+    # slo_ms=10000 should never be exceeded by a mock
+    metrics = run_eval(
+        qa_path, service=svc, top_k=1, reranker=fake_reranker, slo_ms=10000
+    )
+    assert "latency_ms" in metrics
+
+
+def test_run_eval_slo_raises_when_exceeded():
+    """SLOViolationError raised when p99 latency exceeds slo_ms."""
+    import time as _time
+
+    qa_path = _write_qa([{"query": "q", "relevant_doc_ids": ["d1"]}])
+    svc = _make_service([["d1"]])
+    fake_reranker = MagicMock()
+
+    def slow_rerank(*_):
+        _time.sleep(0.1)
+        return [RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.9)]
+
+    fake_reranker.rerank.side_effect = slow_rerank
+
+    from src.internal.retrieval.eval_runner import SLOViolationError
+
+    with pytest.raises(SLOViolationError):
+        run_eval(qa_path, service=svc, top_k=1, reranker=fake_reranker, slo_ms=1)
+
+
+def test_run_eval_compare_baseline_includes_improvement_ratio():
+    qa_path = _write_qa([{"query": "q", "relevant_doc_ids": ["d1"]}])
+    svc = _make_service([["d1"]])
+    fake_reranker = MagicMock()
+    fake_reranker.rerank.return_value = [
+        RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.9)
+    ]
+    metrics = run_eval(
+        qa_path, service=svc, top_k=1, reranker=fake_reranker, compare_baseline=True
+    )
+    assert "reranker_improvement_ratio" in metrics

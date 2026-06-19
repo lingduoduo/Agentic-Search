@@ -51,3 +51,23 @@ def hit_rate_at_k(retrieved_ids: list[str], relevant_ids: set[str], k: int) -> f
     if not relevant_ids:
         return 0.0
     return 1.0 if any(doc_id in relevant_ids for doc_id in retrieved_ids[:k]) else 0.0
+
+
+def map_at_k(retrieved_ids: list[str], relevant_ids: set[str], k: int) -> float:
+    """Mean average precision at k (binary relevance)."""
+    if not relevant_ids:
+        return 0.0
+    hits = 0
+    precision_sum = 0.0
+    for rank, doc_id in enumerate(retrieved_ids[:k], 1):
+        if doc_id in relevant_ids:
+            hits += 1
+            precision_sum += hits / rank
+    return precision_sum / len(relevant_ids)
+
+
+def reranker_improvement_ratio(pre_ndcg: float, post_ndcg: float) -> float:
+    """(post / pre) - 1; negative means reranker hurt quality. Returns 0.0 if pre is 0."""
+    if pre_ndcg == 0.0:
+        return 0.0
+    return post_ndcg / pre_ndcg - 1.0

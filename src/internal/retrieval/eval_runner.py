@@ -26,9 +26,14 @@ import json
 import math
 import time
 
+from .eval_metrics import map_at_k, reranker_improvement_ratio
 from .eval_metrics import mrr as mrr_score
 from .eval_metrics import ndcg_at_k, recall_at_k
 from .service import RetrievalService
+
+
+class SLOViolationError(RuntimeError):
+    """Raised when the P99 reranker latency exceeds the configured SLO."""
 
 
 def _percentile(values: list[float], p: int) -> float:
@@ -45,6 +50,8 @@ def run_eval(
     service: RetrievalService | None = None,
     top_k: int = 10,
     reranker=None,  # Reranker | None — avoid circular import at module level
+    slo_ms: int | None = None,
+    compare_baseline: bool = False,
 ) -> dict:
     """Load QA pairs, run retrieval (and optionally reranking), return metrics.
 
@@ -57,7 +64,7 @@ def run_eval(
         qa_pairs = [json.loads(line) for line in f if line.strip()]
 
     recalls, ndcgs, mrrs = [], [], []
-    r_recalls, r_ndcgs, r_mrrs, latencies_ms = [], [], [], []
+    r_recalls, r_ndcgs, r_mrrs, r_maps, latencies_ms = [], [], [], [], []
 
     for item in qa_pairs:
         query: str = item["query"]
@@ -77,6 +84,7 @@ def run_eval(
             r_recalls.append(recall_at_k(r_retrieved, relevant, top_k))
             r_ndcgs.append(ndcg_at_k(r_retrieved, relevant, top_k))
             r_mrrs.append(mrr_score(r_retrieved, relevant))
+            r_maps.append(map_at_k(r_retrieved, relevant, top_k))
 
     n = len(qa_pairs)
 
@@ -93,21 +101,40 @@ def run_eval(
     if reranker is None:
         return retrieval_metrics
 
-    return {
+    result = {
         "retrieval": retrieval_metrics,
         "reranked": {
             f"recall@{top_k}": _avg(r_recalls),
             f"ndcg@{top_k}": _avg(r_ndcgs),
+            f"map@{top_k}": round(sum(r_maps) / n, 4) if n else 0.0,
             "mrr": _avg(r_mrrs),
             "num_queries": n,
         },
         "latency_ms": {
+            "mean": round(sum(latencies_ms) / len(latencies_ms), 1)
+            if latencies_ms
+            else 0.0,
             "p50": _percentile(latencies_ms, 50),
             "p95": _percentile(latencies_ms, 95),
             "p99": _percentile(latencies_ms, 99),
             "n": n,
         },
     }
+
+    if compare_baseline:
+        result["reranker_improvement_ratio"] = reranker_improvement_ratio(
+            retrieval_metrics[f"ndcg@{top_k}"],
+            result["reranked"][f"ndcg@{top_k}"],
+        )
+
+    if slo_ms is not None and latencies_ms:
+        p99 = _percentile(latencies_ms, 99)
+        if p99 > slo_ms:
+            raise SLOViolationError(
+                f"P99 reranker latency {p99}ms exceeds SLO {slo_ms}ms"
+            )
+
+    return result
 
 
 class _HttpService:
@@ -173,6 +200,17 @@ if __name__ == "__main__":
         default="BAAI/bge-reranker-v2-m3",
         help="Model name for local reranker or Cohere model name",
     )
+    parser.add_argument(
+        "--slo-ms",
+        type=int,
+        default=None,
+        help="P99 latency SLO in ms. Exits non-zero if exceeded.",
+    )
+    parser.add_argument(
+        "--compare-baseline",
+        action="store_true",
+        help="Print reranker_improvement_ratio vs retrieval-only NDCG",
+    )
     args = parser.parse_args()
 
     service = _HttpService(args.retrieval_url) if args.retrieval_url else None
@@ -192,6 +230,11 @@ if __name__ == "__main__":
         )
 
     metrics = run_eval(
-        args.dataset, top_k=args.top_k, service=service, reranker=reranker
+        args.dataset,
+        top_k=args.top_k,
+        service=service,
+        reranker=reranker,
+        slo_ms=args.slo_ms,
+        compare_baseline=args.compare_baseline,
     )
     print(json.dumps(metrics, indent=2))

@@ -168,3 +168,32 @@ def test_from_env_cohere_without_api_key_raises(monkeypatch):
     monkeypatch.delenv("COHERE_API_KEY", raising=False)
     with pytest.raises(ValueError, match="api_key"):
         Reranker.from_env()
+
+
+# --- _cohere_documents tests ---
+
+
+def test_cohere_documents_v4_returns_dicts():
+    from unittest.mock import patch, MagicMock
+    import sys
+
+    fake_cohere = MagicMock()
+    fake_cohere.__version__ = "4.0.0"
+    with patch.dict(sys.modules, {"cohere": fake_cohere}):
+        from src.internal.retrieval.reranker import _cohere_documents
+
+        result = _cohere_documents(["text1", "text2"])
+    assert result == [{"text": "text1"}, {"text": "text2"}]
+
+
+def test_cohere_documents_v3_returns_strings():
+    from unittest.mock import patch, MagicMock
+    import sys
+
+    fake_cohere = MagicMock()
+    fake_cohere.__version__ = "3.9.0"
+    with patch.dict(sys.modules, {"cohere": fake_cohere}):
+        from src.internal.retrieval.reranker import _cohere_documents
+
+        result = _cohere_documents(["text1", "text2"])
+    assert result == ["text1", "text2"]

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.internal.retrieval.backends.base import RetrievalResult
+from src.internal.retrieval.passage_truncator import PassageTruncator
 from src.internal.servers.retrieval.rerank import SentenceTransformerReranker
 
 try:
@@ -21,6 +22,19 @@ except ImportError:
     cohere_rerank_api = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+
+def _cohere_documents(texts: list[str]) -> "list[dict] | list[str]":
+    """Return Cohere v4+ document dicts or raw strings for older clients."""
+    try:
+        import cohere
+
+        major = int(cohere.__version__.split(".")[0])
+        if major >= 4:
+            return [{"text": t} for t in texts]
+    except Exception:
+        pass
+    return texts
 
 
 @dataclass(frozen=True)
@@ -46,9 +60,12 @@ class RerankerConfig:
 
 
 class Reranker:
-    def __init__(self, config: RerankerConfig) -> None:
+    def __init__(
+        self, config: RerankerConfig, truncator: PassageTruncator | None = None
+    ) -> None:
         config.validate()
         self._config = config
+        self._truncator = truncator or PassageTruncator.from_env()
         if config.provider == "local":
             self._local = SentenceTransformerReranker.load(
                 config.model,
@@ -76,7 +93,11 @@ class Reranker:
         self, query: str, results: list[RetrievalResult], top_k: int
     ) -> list[RetrievalResult]:
         docs = [
-            {"contents": f"{r.title}\n{r.text}", "doc_id": r.doc_id} for r in results
+            {
+                "contents": f"{r.title}\n{self._truncator.truncate(r.text)}",
+                "doc_id": r.doc_id,
+            }
+            for r in results
         ]
         scored = self._local.rerank([query], [docs], topk=top_k)
         id_to_result = {r.doc_id: r for r in results}
@@ -96,7 +117,7 @@ class Reranker:
     ) -> list[RetrievalResult]:
         passages = [f"{r.title}\n{r.text}" for r in results]
         coro = cohere_rerank_api(
-            query, passages, self._config.model, self._config.api_key
+            query, _cohere_documents(passages), self._config.model, self._config.api_key
         )
         try:
             asyncio.get_running_loop()

@@ -6,7 +6,7 @@ import logging
 import threading
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.internal.retrieval.backends.base import RetrievalResult
 from src.internal.retrieval.service import RetrievalService
@@ -277,8 +277,9 @@ def test_reranker_receives_filters():
     service = RetrievalService(backend, reranker=mock_reranker)
     service.search("q", top_k=1, filters={"source": "wiki"})
 
+    # With reranker active: over_fetch = ceil(1 * OVER_FETCH_MULTIPLIER=2 * RERANKER_OVER_FETCH_MULTIPLIER=2.0) = 4
     backend.search_sparse.assert_called_once_with(
-        "q", top_k=2, filters={"source": "wiki"}
+        "q", top_k=4, filters={"source": "wiki"}
     )
 
 
@@ -387,3 +388,92 @@ def test_rag_fusion_degrades_gracefully_when_variant_fails():
     # Should not raise; should return results from q1 and q3
     assert len(results) >= 1
     assert "+rag_fusion" in mode
+
+
+def test_from_env_builds_async_reranker_chain(monkeypatch):
+    """RERANKER_ASYNC=true wraps base reranker in AsyncReranker."""
+    monkeypatch.setenv("RERANKER_ASYNC", "true")
+    monkeypatch.setenv("RERANKER_PROVIDER", "local")
+    monkeypatch.setenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+
+    from src.internal.retrieval.async_reranker import AsyncReranker
+    from src.internal.retrieval.cached_reranker import CachedReranker
+
+    with (
+        patch(
+            "src.internal.retrieval.service._build_backend", return_value=MagicMock()
+        ),
+        patch(
+            "src.internal.retrieval.reranker.SentenceTransformerReranker.load",
+            return_value=MagicMock(),
+        ),
+    ):
+        svc = RetrievalService.from_env()
+
+    assert isinstance(svc._reranker, (AsyncReranker, CachedReranker))
+
+
+def test_from_env_no_async_flag_leaves_base_reranker(monkeypatch):
+    """Without RERANKER_ASYNC, reranker is the bare Reranker instance."""
+    monkeypatch.delenv("RERANKER_ASYNC", raising=False)
+    monkeypatch.delenv("RERANKER_PROVIDER", raising=False)
+
+    with patch(
+        "src.internal.retrieval.service._build_backend", return_value=MagicMock()
+    ):
+        svc = RetrievalService.from_env()
+
+    assert svc._reranker is None
+
+
+def test_search_passes_over_fetch_candidates_to_reranker():
+    """When reranker active, fused results are NOT pre-trimmed to top_k before reranking."""
+    from src.internal.retrieval.backends.base import RetrievalResult
+
+    results_6 = [
+        RetrievalResult(doc_id=f"d{i}", title="", text="", url=None, score=float(i))
+        for i in range(6)
+    ]
+
+    backend = MagicMock()
+    backend.search_sparse.return_value = results_6
+    backend.search_dense.side_effect = NotImplementedError
+
+    reranker = MagicMock()
+    reranker.rerank.return_value = results_6[:3]
+
+    svc = RetrievalService(backend, reranker=reranker)
+
+    import os
+
+    with patch.dict(
+        os.environ,
+        {"OVER_FETCH_MULTIPLIER": "2", "RERANKER_OVER_FETCH_MULTIPLIER": "3"},
+    ):
+        svc.search("q", top_k=2)
+
+    # reranker.rerank should have received more than top_k=2 candidates
+    called_results = reranker.rerank.call_args[0][1]
+    assert len(called_results) > 2
+
+
+def test_from_env_builds_two_stage_reranker(monkeypatch):
+    monkeypatch.setenv("RERANKER_TWO_STAGE", "true")
+    monkeypatch.setenv("RERANKER_PROVIDER", "local")
+    monkeypatch.setenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+    monkeypatch.setenv("RERANKER_FAST_MODEL", "BAAI/bge-reranker-base")
+
+    from src.internal.retrieval.two_stage_reranker import TwoStageReranker
+
+    with (
+        patch(
+            "src.internal.retrieval.service._build_backend", return_value=MagicMock()
+        ),
+        patch(
+            "src.internal.retrieval.reranker.SentenceTransformerReranker.load",
+            return_value=MagicMock(),
+        ),
+    ):
+        svc = RetrievalService.from_env()
+
+    assert isinstance(svc._reranker, TwoStageReranker)
