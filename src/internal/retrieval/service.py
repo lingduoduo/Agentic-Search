@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from .backends.base import RetrievalBackend, RetrievalResult
-from .fusion import mmr_rerank, rrf_fuse
+from .fusion import mmr_rerank, rrf_fuse, variant_weighted_rrf_fuse
 from .query_optimizer import QueryOptimizer
 from .result_cache import ResultCache
 
@@ -270,7 +270,12 @@ class RetrievalService:
         reranker_fetch = math.ceil(top_k * reranker_multiplier)
 
         if len(all_result_sets) > 1:
-            fused = rrf_fuse(all_result_sets)
+            if os.environ.get("QT_FUSION_WEIGHTED", "").lower() in ("1", "true", "yes"):
+                # original is the last variant → heaviest weight
+                weights = [0.3] * (len(all_result_sets) - 1) + [1.0]
+                fused = variant_weighted_rrf_fuse(all_result_sets, weights)
+            else:
+                fused = rrf_fuse(all_result_sets)
             fused = mmr_rerank(fused, top_k=reranker_fetch)
             mode = f"{base_mode}+rag_fusion"
         else:

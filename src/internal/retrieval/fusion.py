@@ -100,6 +100,45 @@ def weighted_rrf_fuse(
     )
 
 
+def variant_weighted_rrf_fuse(
+    result_sets: list[list[RetrievalResult]],
+    weights: list[float],
+    *,
+    rrf_k: int = _RRF_K,
+) -> list[RetrievalResult]:
+    """RRF across N variant result sets, each contributing weight / (k + rank).
+
+    weights[i] applies to result_sets[i]. Falls back to uniform when lengths
+    mismatch.
+    """
+    if len(weights) != len(result_sets):
+        weights = [1.0] * len(result_sets)
+
+    rrf_scores: dict[str, float] = defaultdict(float)
+    first_seen: dict[str, RetrievalResult] = {}
+    for w, result_set in zip(weights, result_sets):
+        for rank, result in enumerate(result_set, 1):
+            rrf_scores[result.doc_id] += w * (1.0 / (rrf_k + rank))
+            if result.doc_id not in first_seen:
+                first_seen[result.doc_id] = result
+
+    return sorted(
+        [
+            RetrievalResult(
+                doc_id=doc_id,
+                title=first_seen[doc_id].title,
+                text=first_seen[doc_id].text,
+                url=first_seen[doc_id].url,
+                score=rrf_scores[doc_id],
+                metadata=first_seen[doc_id].metadata,
+            )
+            for doc_id in rrf_scores
+        ],
+        key=lambda r: r.score,
+        reverse=True,
+    )
+
+
 def mmr_rerank(
     results: list[RetrievalResult],
     *,
