@@ -40,3 +40,25 @@ def test_disabled_without_redis_passes_through():
     pipe = CachedQueryTransformPipeline(leaf, None)
     assert pipe.transform("q").original == "q"
     assert pipe.stats()["hits"] == 0
+
+
+def test_cache_hit_remerges_caller_filters():
+    from src.context.query_transform import QueryTransformConfig, QueryTransformPipeline
+
+    leaf = QueryTransformPipeline(QueryTransformConfig(), _fake_llm())
+    redis = FakeRedis()
+    pipe = CachedQueryTransformPipeline(leaf, redis)
+    pipe.transform("q")  # populate cache (miss)
+    b = pipe.transform("q", filters={"lang": "en"})  # hit with caller filters
+    assert b.merged_filters.get("lang") == "en"
+
+
+def test_caller_filters_not_leaked_across_callers():
+    from src.context.query_transform import QueryTransformConfig, QueryTransformPipeline
+
+    leaf = QueryTransformPipeline(QueryTransformConfig(), _fake_llm())
+    redis = FakeRedis()
+    pipe = CachedQueryTransformPipeline(leaf, redis)
+    pipe.transform("q", filters={"source": "web"})  # caller A, miss
+    b = pipe.transform("q")  # caller B, hit, no filters
+    assert "source" not in b.merged_filters  # A's filters must not leak to B

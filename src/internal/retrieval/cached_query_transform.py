@@ -44,6 +44,11 @@ class CachedQueryTransformPipeline:
         return self._base.base_config
 
     def transform(self, query, filters=None, *, config_override=None):
+        """Transform query, returning a bundle with caller filters re-merged per call.
+
+        The cached bundle excludes caller-supplied filters; they are re-merged on
+        every access so different callers never inherit each other's filters.
+        """
         config = config_override or self._base.base_config
         key = _key(query, config_signature(config))
 
@@ -61,10 +66,17 @@ class CachedQueryTransformPipeline:
                 return bundle
 
         self._misses += 1
-        bundle = self._base.transform(query, filters, config_override=config_override)
+        # Call base with NO caller filters so only extracted filters are cached.
+        bundle = self._base.transform(query, None, config_override=config_override)
 
         if self._redis is not None:
             self._redis.setex(key, self._ttl, json.dumps(dataclasses.asdict(bundle)))
+
+        # Re-merge caller filters on the MISS path, same as the HIT path.
+        if filters:
+            return dataclasses.replace(
+                bundle, merged_filters={**bundle.merged_filters, **filters}
+            )
         return bundle
 
     def stats(self) -> dict:
