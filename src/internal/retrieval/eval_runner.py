@@ -26,6 +26,7 @@ import json
 import math
 import time
 
+from .eval_metrics import map_at_k, reranker_improvement_ratio
 from .eval_metrics import mrr as mrr_score
 from .eval_metrics import ndcg_at_k, recall_at_k
 from .service import RetrievalService
@@ -50,6 +51,7 @@ def run_eval(
     top_k: int = 10,
     reranker=None,  # Reranker | None — avoid circular import at module level
     slo_ms: int | None = None,
+    compare_baseline: bool = False,
 ) -> dict:
     """Load QA pairs, run retrieval (and optionally reranking), return metrics.
 
@@ -62,7 +64,7 @@ def run_eval(
         qa_pairs = [json.loads(line) for line in f if line.strip()]
 
     recalls, ndcgs, mrrs = [], [], []
-    r_recalls, r_ndcgs, r_mrrs, latencies_ms = [], [], [], []
+    r_recalls, r_ndcgs, r_mrrs, r_maps, latencies_ms = [], [], [], [], []
 
     for item in qa_pairs:
         query: str = item["query"]
@@ -82,6 +84,7 @@ def run_eval(
             r_recalls.append(recall_at_k(r_retrieved, relevant, top_k))
             r_ndcgs.append(ndcg_at_k(r_retrieved, relevant, top_k))
             r_mrrs.append(mrr_score(r_retrieved, relevant))
+            r_maps.append(map_at_k(r_retrieved, relevant, top_k))
 
     n = len(qa_pairs)
 
@@ -103,6 +106,7 @@ def run_eval(
         "reranked": {
             f"recall@{top_k}": _avg(r_recalls),
             f"ndcg@{top_k}": _avg(r_ndcgs),
+            f"map@{top_k}": round(sum(r_maps) / n, 4) if n else 0.0,
             "mrr": _avg(r_mrrs),
             "num_queries": n,
         },
@@ -116,6 +120,12 @@ def run_eval(
             "n": n,
         },
     }
+
+    if compare_baseline:
+        result["reranker_improvement_ratio"] = reranker_improvement_ratio(
+            retrieval_metrics[f"ndcg@{top_k}"],
+            result["reranked"][f"ndcg@{top_k}"],
+        )
 
     if slo_ms is not None and latencies_ms:
         p99 = _percentile(latencies_ms, 99)
@@ -196,6 +206,11 @@ if __name__ == "__main__":
         default=None,
         help="P99 latency SLO in ms. Exits non-zero if exceeded.",
     )
+    parser.add_argument(
+        "--compare-baseline",
+        action="store_true",
+        help="Print reranker_improvement_ratio vs retrieval-only NDCG",
+    )
     args = parser.parse_args()
 
     service = _HttpService(args.retrieval_url) if args.retrieval_url else None
@@ -220,5 +235,6 @@ if __name__ == "__main__":
         service=service,
         reranker=reranker,
         slo_ms=args.slo_ms,
+        compare_baseline=args.compare_baseline,
     )
     print(json.dumps(metrics, indent=2))

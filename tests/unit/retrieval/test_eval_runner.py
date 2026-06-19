@@ -172,3 +172,16 @@ def test_run_eval_slo_raises_when_exceeded():
 
     with pytest.raises(SLOViolationError):
         run_eval(qa_path, service=svc, top_k=1, reranker=fake_reranker, slo_ms=1)
+
+
+def test_run_eval_compare_baseline_includes_improvement_ratio():
+    qa_path = _write_qa([{"query": "q", "relevant_doc_ids": ["d1"]}])
+    svc = _make_service([["d1"]])
+    fake_reranker = MagicMock()
+    fake_reranker.rerank.return_value = [
+        RetrievalResult(doc_id="d1", title="", text="", url=None, score=0.9)
+    ]
+    metrics = run_eval(
+        qa_path, service=svc, top_k=1, reranker=fake_reranker, compare_baseline=True
+    )
+    assert "reranker_improvement_ratio" in metrics
