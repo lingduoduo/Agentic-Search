@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.internal.retrieval.backends.base import RetrievalResult
+from src.internal.retrieval.passage_truncator import PassageTruncator
 from src.internal.servers.retrieval.rerank import SentenceTransformerReranker
 
 try:
@@ -46,9 +47,12 @@ class RerankerConfig:
 
 
 class Reranker:
-    def __init__(self, config: RerankerConfig) -> None:
+    def __init__(
+        self, config: RerankerConfig, truncator: PassageTruncator | None = None
+    ) -> None:
         config.validate()
         self._config = config
+        self._truncator = truncator or PassageTruncator.from_env()
         if config.provider == "local":
             self._local = SentenceTransformerReranker.load(
                 config.model,
@@ -76,7 +80,11 @@ class Reranker:
         self, query: str, results: list[RetrievalResult], top_k: int
     ) -> list[RetrievalResult]:
         docs = [
-            {"contents": f"{r.title}\n{r.text}", "doc_id": r.doc_id} for r in results
+            {
+                "contents": f"{r.title}\n{self._truncator.truncate(r.text)}",
+                "doc_id": r.doc_id,
+            }
+            for r in results
         ]
         scored = self._local.rerank([query], [docs], topk=top_k)
         id_to_result = {r.doc_id: r for r in results}
