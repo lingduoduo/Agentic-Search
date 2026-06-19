@@ -82,9 +82,7 @@ class Reranker:
         """Rescore results and return top_k sorted by descending score."""
         if not results:
             return results
-        effective_k = (
-            min(top_k, self._config.top_k) if self._config.top_k is not None else top_k
-        )
+        effective_k = self._config.top_k or top_k
         if self._config.provider == "local":
             return self._rerank_local(query, results, effective_k)
         return self._rerank_cohere(query, results, effective_k)
@@ -116,17 +114,26 @@ class Reranker:
         self, query: str, results: list[RetrievalResult], top_k: int
     ) -> list[RetrievalResult]:
         passages = [f"{r.title}\n{r.text}" for r in results]
-        coro = cohere_rerank_api(
-            query, _cohere_documents(passages), self._config.model, self._config.api_key
-        )
         try:
-            asyncio.get_running_loop()
-            # Called from an async context — run in a new thread with its own loop
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                scores = pool.submit(asyncio.run, coro).result()
-        except RuntimeError:
-            # No running loop — safe to call asyncio.run() directly
-            scores = asyncio.run(coro)
+            coro = cohere_rerank_api(
+                query,
+                _cohere_documents(passages),
+                self._config.model,
+                self._config.api_key,
+            )
+            try:
+                asyncio.get_running_loop()
+                # Called from an async context — run in a new thread with its own loop
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    scores = pool.submit(asyncio.run, coro).result()
+            except RuntimeError:
+                # No running loop — safe to call asyncio.run() directly
+                scores = asyncio.run(coro)
+        except Exception:
+            logger.warning(
+                "Cohere rerank failed; returning MMR-ordered results.", exc_info=True
+            )
+            return results[:top_k]
         scored = sorted(zip(scores, results), key=lambda x: x[0], reverse=True)
         return [dataclasses.replace(r, score=float(s)) for s, r in scored[:top_k]]
 

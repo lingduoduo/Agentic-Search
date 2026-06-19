@@ -197,3 +197,24 @@ def test_cohere_documents_v3_returns_strings():
 
         result = _cohere_documents(["text1", "text2"])
     assert result == ["text1", "text2"]
+
+
+def test_local_rerank_20_candidates_under_5s():
+    import time
+
+    candidates = [_result(f"d{i}", score=float(i)) for i in range(20)]
+    fake_local = MagicMock()
+    fake_local.rerank.return_value = [
+        [{"document": {"doc_id": f"d{i}"}, "score": float(20 - i)} for i in range(20)]
+    ]
+    cfg = RerankerConfig(provider="local")
+    with patch(
+        "src.internal.retrieval.reranker.SentenceTransformerReranker.load",
+        return_value=fake_local,
+    ):
+        reranker = Reranker(cfg)
+    start = time.monotonic()
+    result = reranker.rerank("query", candidates, top_k=10)
+    elapsed = time.monotonic() - start
+    assert elapsed < 5.0
+    assert len(result) == 10
