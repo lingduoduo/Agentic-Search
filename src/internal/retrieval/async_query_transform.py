@@ -34,9 +34,13 @@ class AsyncQueryTransformPipeline:
             try:
                 results[field] = fut.result(timeout=self._timeout_ms / 1000)
             except Exception as exc:  # timeout or transform error → degrade field
+                # cancel() is a no-op for an already-running thread; the slow
+                # transform runs to natural completion in the background.
                 logger.warning("transform %s failed/timed out: %s", field, exc)
-                fut.cancel()
         return self._base._assemble(query, results, filters)
+
+    def __del__(self):
+        self._executor.shutdown(wait=False)
 
     @classmethod
     def from_env(cls, base) -> "AsyncQueryTransformPipeline":
