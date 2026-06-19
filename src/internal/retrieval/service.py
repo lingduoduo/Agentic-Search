@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from .backends.base import RetrievalBackend, RetrievalResult
 from .fusion import mmr_rerank, rrf_fuse
+from .query_optimizer import QueryOptimizer
 
 if TYPE_CHECKING:
     from src.internal.retrieval.reranker import Reranker
@@ -102,10 +103,12 @@ class RetrievalService:
         backend: RetrievalBackend,
         reranker: "Reranker | None" = None,
         pipeline: "QueryTransformPipeline | None" = None,
+        optimizer: "QueryOptimizer | None" = None,
     ) -> None:
         self._backend = backend
         self._reranker = reranker
         self._pipeline = pipeline
+        self._optimizer = optimizer
 
     @classmethod
     def from_env(cls) -> "RetrievalService":
@@ -127,7 +130,13 @@ class RetrievalService:
 
             pipeline = QueryTransformPipeline.from_env(_build_llm())
 
-        return cls(_build_backend(), reranker=Reranker.from_env(), pipeline=pipeline)
+        optimizer = QueryOptimizer.from_env()
+        return cls(
+            _build_backend(),
+            reranker=Reranker.from_env(),
+            pipeline=pipeline,
+            optimizer=optimizer,
+        )
 
     def _search_one(
         self,
@@ -140,9 +149,13 @@ class RetrievalService:
         dense_results: list[RetrievalResult] = []
         sparse_ok = dense_ok = False
 
+        bm25_query = self._optimizer.expand(query) if self._optimizer else query
         with ThreadPoolExecutor(max_workers=2) as executor:
             sparse_future = executor.submit(
-                self._backend.search_sparse, query, top_k=over_fetch, filters=filters
+                self._backend.search_sparse,
+                bm25_query,
+                top_k=over_fetch,
+                filters=filters,
             )
             dense_future = executor.submit(
                 self._backend.search_dense, query, top_k=over_fetch, filters=filters
