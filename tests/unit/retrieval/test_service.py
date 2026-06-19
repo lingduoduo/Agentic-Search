@@ -6,7 +6,7 @@ import logging
 import threading
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.internal.retrieval.backends.base import RetrievalResult
 from src.internal.retrieval.service import RetrievalService
@@ -387,3 +387,39 @@ def test_rag_fusion_degrades_gracefully_when_variant_fails():
     # Should not raise; should return results from q1 and q3
     assert len(results) >= 1
     assert "+rag_fusion" in mode
+
+
+def test_from_env_builds_async_reranker_chain(monkeypatch):
+    """RERANKER_ASYNC=true wraps base reranker in AsyncReranker."""
+    monkeypatch.setenv("RERANKER_ASYNC", "true")
+    monkeypatch.setenv("RERANKER_PROVIDER", "local")
+    monkeypatch.setenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+
+    from src.internal.retrieval.async_reranker import AsyncReranker
+    from src.internal.retrieval.cached_reranker import CachedReranker
+
+    with (
+        patch(
+            "src.internal.retrieval.service._build_backend", return_value=MagicMock()
+        ),
+        patch(
+            "src.internal.retrieval.reranker.SentenceTransformerReranker.load",
+            return_value=MagicMock(),
+        ),
+    ):
+        svc = RetrievalService.from_env()
+
+    assert isinstance(svc._reranker, (AsyncReranker, CachedReranker))
+
+
+def test_from_env_no_async_flag_leaves_base_reranker(monkeypatch):
+    """Without RERANKER_ASYNC, reranker is the bare Reranker instance."""
+    monkeypatch.delenv("RERANKER_ASYNC", raising=False)
+    monkeypatch.delenv("RERANKER_PROVIDER", raising=False)
+
+    with patch(
+        "src.internal.retrieval.service._build_backend", return_value=MagicMock()
+    ):
+        svc = RetrievalService.from_env()
+
+    assert svc._reranker is None

@@ -146,9 +146,23 @@ class RetrievalService:
                 )
             except Exception as exc:
                 logger.warning("Result cache disabled: %s", exc)
+        base_reranker = Reranker.from_env()
+        if base_reranker is not None and os.environ.get(
+            "RERANKER_ASYNC", ""
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            from src.internal.retrieval.async_reranker import AsyncReranker
+            from src.internal.retrieval.cached_reranker import CachedReranker
+
+            base_reranker = AsyncReranker.from_env(base_reranker)
+            base_reranker = CachedReranker.from_env(base_reranker)
+
         return cls(
             _build_backend(),
-            reranker=Reranker.from_env(),
+            reranker=base_reranker,
             pipeline=pipeline,
             optimizer=optimizer,
             result_cache=result_cache,
