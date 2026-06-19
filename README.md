@@ -49,6 +49,8 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 | 📐 Bamboogle Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
 | 🔌 MCP Server | `src/internal/mcp_server/tools/`, `src/internal/mcp_server/resources/` |
 | 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `src/internal/servers/reporting/`, `src/internal/servers/license/` |
+| ⚡ Retrieval Optimization | `src/internal/retrieval/query_optimizer.py`, `src/internal/retrieval/bm25_tuner.py`, `src/internal/retrieval/index_optimizer.py`, `src/internal/retrieval/fusion_learner.py`, `src/internal/retrieval/result_cache.py` |
+| 🏆 Reranking Optimization | `src/internal/retrieval/async_reranker.py`, `src/internal/retrieval/cached_reranker.py`, `src/internal/retrieval/two_stage_reranker.py`, `src/internal/retrieval/onnx_reranker.py`, `src/internal/retrieval/reranker_benchmark.py` |
 
 
 ## Repository Structure
@@ -347,8 +349,19 @@ python3 -m examples.run_search_pipeline
 **Retrieval, Indexing & Search**
 - **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
 - **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
-- **`Reranker`** (`src/internal/retrieval/reranker.py`) — unified neural reranker supporting local cross-encoders (`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-*`) and Cohere API; built via `Reranker.from_env()`; injected into `RetrievalService`; skipped when `RERANKER_PROVIDER` is unset; appends `+reranked` to `retrieval_mode`
+- **`Reranker`** (`src/internal/retrieval/reranker.py`) — unified neural reranker supporting local cross-encoders (`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-*`) and Cohere v3/v4 API; built via `Reranker.from_env()`; injected into `RetrievalService`; skipped when `RERANKER_PROVIDER` is unset; appends `+reranked` to `retrieval_mode`
+- **`AsyncReranker`** (`src/internal/retrieval/async_reranker.py`) — wraps any reranker in a `ThreadPoolExecutor`; raises `RerankerTimeoutError` when `RERANKER_TIMEOUT_MS` is exceeded; exposes `arerank()` for async callers
+- **`CachedReranker`** (`src/internal/retrieval/cached_reranker.py`) — Redis-backed score cache keyed on `sha256(query:sorted_doc_ids:k=top_k)`; `stats()` returns hits/misses/hit_rate; `from_env()` returns base unchanged when `RERANKER_CACHE_REDIS_URL` is unset
+- **`TwoStageReranker`** (`src/internal/retrieval/two_stage_reranker.py`) — fast pre-filter over all N candidates, heavy scorer over top M; both legs independently wrapped; enabled via `RERANKER_TWO_STAGE=true`
+- **`ONNXReranker`** (`src/internal/retrieval/onnx_reranker.py`) — drop-in replacement using `optimum.onnxruntime`; falls back to PyTorch `Reranker` on `ImportError`; enabled via `RERANKER_USE_ONNX=true`
+- **`PassageTruncator`** (`src/internal/retrieval/passage_truncator.py`) — whitespace-token truncation applied before scoring; zero-dependency; configurable via `RERANKER_MAX_TOKENS` (0 = disabled)
+- **`RerankerBenchmark`** (`src/internal/retrieval/reranker_benchmark.py`) — offline CLI grid search over model × batch_size × max_tokens; writes JSONL output and prints a ranked table sorted by NDCG@k
 - **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface; passed into `RetrievalService.search(pipeline=...)` for parallel multi-variant retrieval with RRF fusion; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`
+- **`QueryOptimizer`** (`src/internal/retrieval/query_optimizer.py`) — acronym expansion (`data/query/acronyms.json`), WordNet synonym injection, and `symspellpy` spell correction applied to the BM25 leg only; enabled via `QUERY_EXPANSION_ENABLED` / `SPELL_CORRECTION_ENABLED`
+- **`BM25Tuner`** (`src/internal/retrieval/bm25_tuner.py`) — grid search over `(k1, b)` against labeled QA pairs; results written to `data/eval/bm25_params.json`; BM25+ variant (`δ=1.0`) enabled via `BM25_VARIANT=bm25plus`
+- **`FAISSIndexBuilder`** (`src/internal/retrieval/index_optimizer.py`) — builds IVF-PQ indexes (`nlist=4096, m=96, nbits=8, nprobe=64`) cutting memory from ~30 GB to ≤ 4 GB at 10 M docs; `HNSWTuner` finds minimum `ef_search` meeting a recall target; `EmbeddingBatcher` coalesces concurrent embed calls within a 5ms window
+- **`FusionLearner`** (`src/internal/retrieval/fusion_learner.py`) — fits per-source RRF weights `(w_sparse, w_dense)` offline; loaded at startup from `FUSION_WEIGHTS_PATH`; falls back to uniform weights when absent; `adaptive_mmr_lambda` selects `λ` by query length when `ADAPTIVE_MMR=true`
+- **`ResultCache`** (`src/internal/retrieval/result_cache.py`) — Redis-backed full `SearchResponse` cache keyed on canonicalized query + filters + top_k; TTL via `RESULT_CACHE_TTL`; hit/miss stats surfaced via `GET /api/admin/retrieval/stats`
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli
@@ -522,6 +535,142 @@ python3 -m src.internal.servers.web_search.google \
 curl -i -sS http://127.0.0.1:8001/health
 curl -i -sS -X POST http://127.0.0.1:8001/retrieve \
   -H "Content-Type: application/json" -d '{"query":"What is FAISS?","topk":5}'
+```
+
+
+## Neural Reranking
+
+`RetrievalService` optionally reranks hybrid-fused results via a layered wrapper chain. Set `RERANKER_PROVIDER` to enable; all wrappers are opt-in via env vars and compose on top of the unchanged `Reranker` leaf.
+
+**Wrapper chain** (outermost → innermost):
+```
+TwoStageReranker → CachedReranker → AsyncReranker → Reranker (leaf)
+```
+
+**Enable local BGE reranking:**
+```bash
+RERANKER_PROVIDER=local RERANKER_MODEL=BAAI/bge-reranker-v2-m3 \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Enable Cohere reranking:**
+```bash
+RERANKER_PROVIDER=cohere RERANKER_MODEL=rerank-english-v3.0 COHERE_API_KEY=... \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Enable async + Redis cache wrapper:**
+```bash
+RERANKER_PROVIDER=local RERANKER_ASYNC=true \
+  RERANKER_TIMEOUT_MS=500 RERANKER_CACHE_REDIS_URL=redis://localhost:6379 \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Enable two-stage pipeline** (fast pre-filter → heavy scorer):
+```bash
+RERANKER_PROVIDER=local RERANKER_TWO_STAGE=true \
+  RERANKER_FAST_MODEL=BAAI/bge-reranker-base \
+  RERANKER_PRE_FILTER_TOP_N=50 RERANKER_OVER_FETCH_MULTIPLIER=2.0 \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**ONNX runtime** (lower latency than PyTorch, requires `pip install optimum[onnxruntime]`):
+```bash
+RERANKER_PROVIDER=local RERANKER_USE_ONNX=true RERANKER_MODEL=BAAI/bge-reranker-base \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Evaluate reranker quality and latency:**
+```bash
+# Baseline vs reranked NDCG/MRR + per-query latency
+python -m src.internal.retrieval.eval_runner \
+  --dataset data/eval/qa_pairs.jsonl --top_k 10 \
+  --reranker local --reranker_model BAAI/bge-reranker-v2-m3 \
+  --compare-baseline --slo-ms 200
+
+# Output JSON:
+# { "retrieval":  {"ndcg@10": 0.48, "mrr": 0.63},
+#   "reranked":   {"ndcg@10": 0.55, "mrr": 0.71, "map@10": 0.52},
+#   "latency_ms": {"mean": 312, "p50": 290, "p99": 680, "n": 50},
+#   "reranker_improvement_ratio": 0.145 }
+```
+
+**Benchmark model configurations offline:**
+```bash
+python -m src.internal.retrieval.reranker_benchmark \
+  --qa-pairs data/eval/qa_pairs.jsonl \
+  --models BAAI/bge-reranker-base BAAI/bge-reranker-v2-m3 \
+  --batch-sizes 8 16 32 \
+  --max-tokens 256 512 \
+  --output results/reranker_bench.jsonl
+# Prints ranked table sorted by NDCG@10
+```
+
+
+## Retrieval Optimization
+
+All optimization components are opt-in; unset env vars = unchanged M1–M4 behavior.
+
+**Tune BM25 parameters against your QA pairs:**
+```bash
+curl -s -X POST http://localhost:8001/internal/optimize/bm25-tune \
+  -H "Content-Type: application/json" \
+  -d '{"qa_pairs_path": "data/eval/qa_pairs.jsonl", "k1_range": [0.6, 0.9, 1.2], "b_range": [0.5, 0.75]}' \
+  -H "Authorization: Bearer $TOKEN"
+# → {"k1": 0.9, "b": 0.6, "score": 0.86}
+```
+
+**Learn fusion weights (sparse vs dense RRF weights):**
+```bash
+curl -s -X POST http://localhost:8001/internal/optimize/fusion-weights \
+  -H "Content-Type: application/json" \
+  -d '{"qa_pairs_path": "data/eval/qa_pairs.jsonl"}' \
+  -H "Authorization: Bearer $TOKEN"
+# → {"w_sparse": 0.38, "w_dense": 0.62}
+```
+
+**Tune HNSW ef_search for a recall target:**
+```bash
+curl -s -X POST http://localhost:8001/internal/optimize/hnsw-tune \
+  -H "Content-Type: application/json" \
+  -d '{"target_recall": 0.82}' \
+  -H "Authorization: Bearer $TOKEN"
+# → {"ef_search": 96, "measured_recall": 0.831}
+```
+
+**Retrieval stats (cache hit rate, latency, throughput):**
+```bash
+curl -s http://localhost:7860/api/admin/retrieval/stats \
+  -H "Authorization: Bearer $TOKEN"
+# → {"result_cache_hit_rate": 0.42, "p99_latency_ms": 112, "throughput_qps": 87, ...}
+```
+
+**Hot-reload tunable parameters without restart:**
+```bash
+curl -s -X PATCH http://localhost:7860/api/admin/retrieval/config \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"rrf_k": 80, "mmr_lambda": 0.4, "nprobe": 96, "result_cache_ttl": 600}'
+# → {"applied": ["rrf_k", "mmr_lambda", "nprobe", "result_cache_ttl"]}
+```
+
+**Enable query expansion and result caching:**
+```bash
+QUERY_EXPANSION_ENABLED=true SPELL_CORRECTION_ENABLED=true EXPANSION_MAX_TERMS=3 \
+  BM25_VARIANT=bm25plus \
+  RESULT_CACHE_REDIS_URL=redis://localhost:6379 RESULT_CACHE_TTL=300 \
+  ADAPTIVE_MMR=true \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Build an IVF-PQ FAISS index** (cuts memory from ~30 GB to ≤ 4 GB at 10 M docs):
+```python
+from src.internal.retrieval.index_optimizer import FAISSIndexBuilder
+import numpy as np
+
+builder = FAISSIndexBuilder()
+index = builder.build_ivfpq(embeddings, nlist=4096, m=96, nbits=8, nprobe=64)
+# Save alongside existing index; load via FAISS_INDEX_TYPE=ivfpq
 ```
 
 
@@ -796,8 +945,32 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
 | `RERANKER_PROVIDER` | — | `local` or `cohere`; omit to disable neural reranking in `RetrievalService` |
 | `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model for local reranking |
+| `RERANKER_BATCH_SIZE` | `32` | Batch size for local cross-encoder |
 | `RERANKER_DEVICE` | `cpu` | Device for local reranker (`cpu`, `mps`, `cuda`) |
+| `RERANKER_TOP_K` | same as search `top_k` | Cap returned results after reranking |
 | `COHERE_API_KEY` | — | Cohere API key (required when `RERANKER_PROVIDER=cohere`) |
+| `RERANKER_ASYNC` | `false` | Wrap reranker in `AsyncReranker` (thread-pool offload) |
+| `RERANKER_TIMEOUT_MS` | `500` | Per-query scorer timeout for `AsyncReranker` |
+| `RERANKER_MAX_WORKERS` | `4` | Thread pool size for `AsyncReranker` |
+| `RERANKER_CACHE_REDIS_URL` | — | Enable `CachedReranker`; set to a Redis URL |
+| `RERANKER_CACHE_TTL_SECONDS` | `300` | TTL for cached reranker scores |
+| `RERANKER_MAX_TOKENS` | `512` | `PassageTruncator` token limit before scoring (0 = disabled) |
+| `RERANKER_USE_ONNX` | `false` | Load reranker via ONNX runtime (`ONNXReranker`) |
+| `RERANKER_TWO_STAGE` | `false` | Enable `TwoStageReranker` (fast pre-filter → heavy scorer) |
+| `RERANKER_PRE_FILTER_TOP_N` | `50` | Candidates passed to the heavy scorer in two-stage mode |
+| `RERANKER_FAST_MODEL` | inherits `RERANKER_MODEL` | Fast-stage model name in two-stage mode |
+| `RERANKER_OVER_FETCH_MULTIPLIER` | `2.0` | Retrieval over-fetch ratio when a reranker is active |
+| `QUERY_EXPANSION_ENABLED` | `false` | Enable acronym + WordNet synonym expansion in BM25 leg |
+| `SPELL_CORRECTION_ENABLED` | `false` | Enable `symspellpy` spell correction in BM25 leg |
+| `EXPANSION_MAX_TERMS` | `3` | Max added terms per query to prevent BM25 query bloat |
+| `BM25_VARIANT` | — | Set to `bm25plus` to enable BM25+ lower-bound floor (`δ=1.0`) |
+| `FAISS_INDEX_TYPE` | `hnsw` | `ivfpq` for IVF-PQ quantized index; `hnsw` for original |
+| `EF_SEARCH` | — | HNSW `ef_search` override (higher = more recall, slower) |
+| `ADAPTIVE_MMR` | `false` | Select MMR `λ` by query length (short → 0.8, long → 0.3) |
+| `FUSION_WEIGHTS_PATH` | `data/eval/fusion_weights.json` | Learned per-source RRF weights; falls back to uniform if absent |
+| `RESULT_CACHE_REDIS_URL` | — | Enable `ResultCache`; set to a Redis URL |
+| `RESULT_CACHE_TTL` | `300` | TTL in seconds for cached full search responses |
+| `LATENCY_SLO_MS` | `120` | CI SLO gate: P99 above this exits non-zero in `eval_runner` |
 | `QT_DECOMPOSE` | `false` | Enable query decomposition in `QueryTransformPipeline` |
 | `QT_HYDE` | `false` | Enable HyDE (hypothetical document embedding) |
 | `QT_STEP_BACK` | `false` | Enable step-back query rephrasing |
