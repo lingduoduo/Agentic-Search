@@ -246,6 +246,17 @@ class RetrievalService:
         ):  # guard: retrieval_variants() returned [] (shouldn't happen but be safe)
             variants = [query]
 
+        embed_fn = getattr(self._backend, "embed", None)
+        if (
+            os.environ.get("QT_SEMANTIC_DEDUP", "").lower() in ("1", "true", "yes")
+            and embed_fn is not None
+            and len(variants) > 1
+        ):
+            from .fusion import dedup_variants
+
+            threshold = float(os.environ.get("QT_SEMANTIC_DEDUP_THRESHOLD", "0.95"))
+            variants = dedup_variants(variants, embed_fn, threshold=threshold)
+
         max_workers = min(len(variants), 4)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [

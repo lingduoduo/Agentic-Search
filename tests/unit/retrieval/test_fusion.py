@@ -6,6 +6,7 @@ import pytest
 
 from src.internal.retrieval.backends.base import RetrievalResult
 from src.internal.retrieval.fusion import (
+    dedup_variants,
     mmr_rerank,
     rrf_fuse,
     variant_weighted_rrf_fuse,
@@ -88,3 +89,18 @@ def test_variant_weight_favours_heavier_set():
 def test_uniform_weights_match_rank_order():
     fused = variant_weighted_rrf_fuse([[_r("A"), _r("B")]], weights=[1.0])
     assert [r.doc_id for r in fused] == ["A", "B"]
+
+
+def test_dedup_drops_near_duplicate():
+    # Identical embeddings for the first two → second dropped; original (last) kept.
+    embs = {"a": [1.0, 0.0], "a2": [1.0, 0.0], "orig": [0.0, 1.0]}
+    out = dedup_variants(
+        ["a", "a2", "orig"], lambda xs: [embs[x] for x in xs], threshold=0.99
+    )
+    assert out == ["a", "orig"]
+
+
+def test_dedup_keeps_distinct():
+    embs = {"a": [1.0, 0.0], "b": [0.0, 1.0]}
+    out = dedup_variants(["a", "b"], lambda xs: [embs[x] for x in xs], threshold=0.99)
+    assert out == ["a", "b"]

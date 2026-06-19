@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Callable
 
 from .backends.base import RetrievalResult
 
@@ -186,3 +188,33 @@ def mmr_rerank(
         remaining.remove(best)
 
     return selected
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def dedup_variants(
+    variants: list[str],
+    embed_fn: Callable[[list[str]], list[list[float]]],
+    *,
+    threshold: float = 0.95,
+) -> list[str]:
+    """Drop variants whose embedding cosine ≥ threshold to an earlier kept variant.
+
+    Order-preserving; the last variant (the original) is always kept.
+    """
+    if len(variants) <= 1:
+        return variants
+    embs = embed_fn(variants)
+    kept: list[str] = []
+    kept_embs: list[list[float]] = []
+    for i, (v, e) in enumerate(zip(variants, embs)):
+        is_last = i == len(variants) - 1
+        if is_last or all(_cosine(e, ke) < threshold for ke in kept_embs):
+            kept.append(v)
+            kept_embs.append(e)
+    return kept
