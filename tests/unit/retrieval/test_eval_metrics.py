@@ -6,7 +6,13 @@ import math
 
 import pytest
 
-from src.internal.retrieval.eval_metrics import mrr, ndcg_at_k, recall_at_k
+from src.internal.retrieval.eval_metrics import (
+    hit_rate_at_k,
+    mrr,
+    ndcg_at_k,
+    precision_at_k,
+    recall_at_k,
+)
 
 
 def test_recall_perfect():
@@ -61,3 +67,27 @@ def test_mrr_not_found():
 
 def test_mrr_empty_relevant():
     assert mrr(["a", "b"], set()) == 0.0
+
+
+def test_precision_at_k_perfect():
+    assert precision_at_k(["a", "b", "c"], {"a", "b", "c"}, 3) == pytest.approx(1.0)
+
+
+def test_precision_at_k_half():
+    assert precision_at_k(["a", "x", "b", "y"], {"a", "b"}, 4) == pytest.approx(0.5)
+
+
+def test_precision_at_k_empty_relevant():
+    assert precision_at_k(["a", "b"], set(), 5) == 0.0
+
+
+def test_hit_rate_at_1_hit():
+    assert hit_rate_at_k(["a", "b"], {"a"}, 1) == 1.0
+
+
+def test_hit_rate_at_1_miss():
+    assert hit_rate_at_k(["b", "c"], {"a"}, 1) == 0.0
+
+
+def test_hit_rate_at_k_any_relevant():
+    assert hit_rate_at_k(["x", "y", "a"], {"a"}, 3) == 1.0

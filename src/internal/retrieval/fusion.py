@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 
 from .backends.base import RetrievalResult
+
+
+@dataclass
+class FusionWeights:
+    w_sparse: float = 0.5
+    w_dense: float = 0.5
+
 
 _RRF_K = 60
 
@@ -31,6 +39,47 @@ def rrf_fuse(
     for result_set in result_sets:
         for rank, result in enumerate(result_set, 1):
             rrf_scores[result.doc_id] += 1.0 / (rrf_k + rank)
+            if result.doc_id not in first_seen:
+                first_seen[result.doc_id] = result
+
+    return sorted(
+        [
+            RetrievalResult(
+                doc_id=doc_id,
+                title=first_seen[doc_id].title,
+                text=first_seen[doc_id].text,
+                url=first_seen[doc_id].url,
+                score=rrf_scores[doc_id],
+                metadata=first_seen[doc_id].metadata,
+            )
+            for doc_id in rrf_scores
+        ],
+        key=lambda r: r.score,
+        reverse=True,
+    )
+
+
+def weighted_rrf_fuse(
+    result_sets: list[list[RetrievalResult]],
+    weights: FusionWeights | None = None,
+    *,
+    rrf_k: int = _RRF_K,
+) -> list[RetrievalResult]:
+    """RRF fusion with per-source weights (defaults to uniform = standard RRF).
+
+    Assumes result_sets[0] = sparse, result_sets[1] = dense.
+    Falls back to rrf_fuse() when weights is None or len(result_sets) != 2.
+    """
+    if weights is None or len(result_sets) != 2:
+        return rrf_fuse(result_sets, rrf_k=rrf_k)
+
+    w = [weights.w_sparse, weights.w_dense]
+    rrf_scores: dict[str, float] = defaultdict(float)
+    first_seen: dict[str, RetrievalResult] = {}
+
+    for i, result_set in enumerate(result_sets):
+        for rank, result in enumerate(result_set, 1):
+            rrf_scores[result.doc_id] += w[i] * (1.0 / (rrf_k + rank))
             if result.doc_id not in first_seen:
                 first_seen[result.doc_id] = result
 

@@ -80,3 +80,57 @@ def test_embed_returns_list_not_ndarray():
     cached = CachedEmbedder(embedder, redis_client=None)
     result = cached.embed("q")
     assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# EmbeddingBatcher tests
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from src.internal.retrieval.embedding_cache import EmbeddingBatcher  # noqa: E402
+
+
+class _SimpleEmbedder:
+    def encode_batch(self, texts):
+        return np.zeros((len(texts), 8), dtype="float32")
+
+
+def test_batcher_returns_vector():
+    batcher = EmbeddingBatcher(_SimpleEmbedder(), max_batch=4, wait_ms=1.0)
+    result = asyncio.run(batcher.embed("hello world"))
+    assert isinstance(result, np.ndarray)
+    assert result.ndim == 1
+
+
+def test_batcher_coalesces_concurrent_calls():
+    call_log: list[int] = []
+
+    class TrackingEmbedder:
+        def encode_batch(self, texts):
+            call_log.append(len(texts))
+            return np.zeros((len(texts), 8), dtype="float32")
+
+    batcher = EmbeddingBatcher(TrackingEmbedder(), max_batch=8, wait_ms=20.0)
+
+    async def _run():
+        return await asyncio.gather(*[batcher.embed(f"q{i}") for i in range(6)])
+
+    results = asyncio.run(_run())
+    assert len(results) == 6
+    assert sum(call_log) == 6
+    assert max(call_log) > 1  # at least one batch had >1 item
+
+
+def test_batcher_respects_max_batch():
+    class CountingEmbedder:
+        def encode_batch(self, texts):
+            assert len(texts) <= 4, f"Batch too large: {len(texts)}"
+            return np.zeros((len(texts), 8), dtype="float32")
+
+    batcher = EmbeddingBatcher(CountingEmbedder(), max_batch=4, wait_ms=5.0)
+
+    async def _run():
+        return await asyncio.gather(*[batcher.embed(f"q{i}") for i in range(8)])
+
+    asyncio.run(_run())
