@@ -36,3 +36,18 @@ def mrr(retrieved_ids: list[str], relevant_ids: set[str]) -> float:
         if doc_id in relevant_ids:
             return 1.0 / rank
     return 0.0
+
+
+def precision_at_k(retrieved_ids: list[str], relevant_ids: set[str], k: int) -> float:
+    """Fraction of top-k retrieved documents that are relevant."""
+    if not relevant_ids or k == 0:
+        return 0.0
+    hits = sum(1 for doc_id in retrieved_ids[:k] if doc_id in relevant_ids)
+    return hits / k
+
+
+def hit_rate_at_k(retrieved_ids: list[str], relevant_ids: set[str], k: int) -> float:
+    """1.0 if any relevant document appears in the top-k results, else 0.0."""
+    if not relevant_ids:
+        return 0.0
+    return 1.0 if any(doc_id in relevant_ids for doc_id in retrieved_ids[:k]) else 0.0
