@@ -18,10 +18,10 @@ from src.internal.retrieval.backends.base import RetrievalResult
 logger = logging.getLogger(__name__)
 
 
-def _cache_key(query: str, doc_ids: list[str]) -> str:
+def _cache_key(query: str, doc_ids: list[str], top_k: int) -> str:
     canonical = query.lower().strip()
     sorted_ids = json.dumps(sorted(doc_ids))
-    raw = f"{canonical}:{sorted_ids}"
+    raw = f"{canonical}:{sorted_ids}:k={top_k}"
     return "rrk:" + hashlib.sha256(raw.encode()).hexdigest()[:20]
 
 
@@ -51,7 +51,7 @@ class CachedReranker:
         self, query: str, results: list[RetrievalResult], top_k: int
     ) -> list[RetrievalResult]:
         doc_ids = [r.doc_id for r in results]
-        key = _cache_key(query, doc_ids)
+        key = _cache_key(query, doc_ids, top_k)
 
         if self._redis is not None:
             raw = self._redis.get(key)

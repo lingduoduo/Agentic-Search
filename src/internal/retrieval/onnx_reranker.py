@@ -8,6 +8,11 @@ from src.internal.retrieval.backends.base import RetrievalResult
 
 logger = logging.getLogger(__name__)
 
+_DEVICE_TO_ORT_PROVIDER = {
+    "cpu": "CPUExecutionProvider",
+    "cuda": "CUDAExecutionProvider",
+}
+
 
 class ONNXReranker:
     """Drop-in Reranker replacement using ONNX runtime (requires optimum)."""
@@ -16,11 +21,12 @@ class ONNXReranker:
         from optimum.onnxruntime import ORTModelForSequenceClassification
         from transformers import AutoTokenizer
 
-        self._tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self._model = ORTModelForSequenceClassification.from_pretrained(
-            model_name, export=True
-        )
         self._device = device
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+        provider = _DEVICE_TO_ORT_PROVIDER.get(device, "CPUExecutionProvider")
+        self._model = ORTModelForSequenceClassification.from_pretrained(
+            model_name, export=True, provider=provider
+        )
 
     def rerank(
         self, query: str, results: list[RetrievalResult], top_k: int

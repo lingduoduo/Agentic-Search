@@ -89,3 +89,15 @@ def test_from_env_returns_base_when_no_redis_url(monkeypatch):
     base = MagicMock()
     result = CachedReranker.from_env(base)
     assert result is base
+
+
+def test_cache_key_includes_top_k():
+    base = MagicMock()
+    base.rerank.return_value = [_result("d1")]
+    redis = _make_redis()
+    cr = CachedReranker(base, redis, ttl_seconds=60)
+    cr.rerank("q", [_result("d1")], top_k=5)
+    # Different top_k — should NOT hit cache
+    result = cr.rerank("q", [_result("d1")], top_k=1)
+    assert base.rerank.call_count == 2
+    assert result[0].doc_id == "d1"
