@@ -42,7 +42,7 @@ class AsyncReranker:
         self, query: str, results: list[RetrievalResult], top_k: int
     ) -> list[RetrievalResult]:
         """Async entry point: runs scorer in thread pool, awaits with timeout."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future = loop.run_in_executor(
             self._executor, self._base.rerank, query, results, top_k
         )
