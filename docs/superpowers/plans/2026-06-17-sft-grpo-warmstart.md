@@ -64,7 +64,7 @@ This handles `reference_policy = copy.deepcopy(policy)` and `optimizer` internal
 - Modify: `src/training/data.py` (append after the `load_feedback_examples` function)
 - Test: `tests/unit/test_sft_examples.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_sft_examples.py`:
 
@@ -165,14 +165,14 @@ def test_returns_sft_example_instances(tmp_path):
     assert all(isinstance(ex, SFTExample) for ex in examples)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
 ```bash
 pytest tests/unit/test_sft_examples.py -v
 ```
 Expected: all 8 fail with `ImportError: cannot import name 'load_sft_examples'`
 
-- [ ] **Step 3: Add `load_sft_examples` to `src/training/data.py`**
+- [x] **Step 3: Add `load_sft_examples` to `src/training/data.py`**
 
 Add `import json` and `import logging` to the imports block (after `from pathlib import Path`), then append after `load_feedback_examples`:
 
@@ -258,14 +258,14 @@ def load_sft_examples(
     return examples
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
 ```bash
 pytest tests/unit/test_sft_examples.py -v
 ```
 Expected: 8 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/training/data.py tests/unit/test_sft_examples.py
@@ -291,7 +291,7 @@ The tokenization strategy:
 
 If the tokenizer has `apply_chat_template`, use it. Otherwise fall back to joining message contents with newlines.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_sft_trainer.py`:
 
@@ -451,14 +451,14 @@ def test_save_calls_save_pretrained(tmp_path):
     tokenizer.save_pretrained.assert_called_once_with(tmp_path)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
 ```bash
 pytest tests/unit/test_sft_trainer.py -v
 ```
 Expected: fail with `ImportError: cannot import name 'SFTConfig'` or `'SFTTrainer'`
 
-- [ ] **Step 3: Add `SFTConfig` and `SFTTrainer` to `src/training/sft.py`**
+- [x] **Step 3: Add `SFTConfig` and `SFTTrainer` to `src/training/sft.py`**
 
 Add these imports at the top of `src/training/sft.py`:
 
@@ -590,21 +590,21 @@ class SFTTrainer:
         self.tokenizer.save_pretrained(output_dir)
 ```
 
-- [ ] **Step 4: Run SFT trainer tests**
+- [x] **Step 4: Run SFT trainer tests**
 
 ```bash
 pytest tests/unit/test_sft_trainer.py -v
 ```
 Expected: 4 passed
 
-- [ ] **Step 5: Run full unit suite — no regressions**
+- [x] **Step 5: Run full unit suite — no regressions**
 
 ```bash
 pytest tests/unit/ -q
 ```
 Expected: 1830+ passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/training/sft.py tests/unit/test_sft_trainer.py
@@ -624,7 +624,7 @@ git commit -m "feat(training): add SFTConfig and SFTTrainer for warm-start"
 
 `load_feedback_examples` (from `src/training/data.py`) is reused for Phase 2 to get `prompts`, `ground_truths`, and `metadata` with `human_signal`.
 
-- [ ] **Step 1: Create the script**
+- [x] **Step 1: Create the script**
 
 ```python
 """Two-phase training: SFT warm-start followed by GRPO with human feedback.
@@ -770,14 +770,14 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Verify import works**
+- [x] **Step 2: Verify import works**
 
 ```bash
 python3 -c "from examples.run_sft_grpo import _parse_args; print('import ok')"
 ```
 Expected: `import ok`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add examples/run_sft_grpo.py
@@ -788,28 +788,28 @@ git commit -m "feat(training): add run_sft_grpo two-phase CLI script"
 
 ## Task 4: Final integration check + commit spec and plan
 
-- [ ] **Step 1: Run all new tests**
+- [x] **Step 1: Run all new tests**
 
 ```bash
 pytest tests/unit/test_sft_examples.py tests/unit/test_sft_trainer.py -v
 ```
 Expected: 12 passed (8 + 4)
 
-- [ ] **Step 2: Run full unit suite**
+- [x] **Step 2: Run full unit suite**
 
 ```bash
 pytest tests/unit/ -q
 ```
 Expected: 1840+ passed, 0 failed
 
-- [ ] **Step 3: Run linter**
+- [x] **Step 3: Run linter**
 
 ```bash
 ruff check . --fix && ruff format .
 ```
 Expected: no errors
 
-- [ ] **Step 4: Commit spec and plan**
+- [x] **Step 4: Commit spec and plan**
 
 ```bash
 git add docs/superpowers/specs/2026-06-17-sft-grpo-warmstart-design.md \
@@ -817,7 +817,7 @@ git add docs/superpowers/specs/2026-06-17-sft-grpo-warmstart-design.md \
 git commit -m "docs: add spec and plan for SFT warm-start before GRPO"
 ```
 
-- [ ] **Step 5: Push and open PR**
+- [x] **Step 5: Push and open PR**
 
 ```bash
 git push -u origin <branch>

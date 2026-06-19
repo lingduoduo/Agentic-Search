@@ -49,7 +49,7 @@ class PromptTrainingExample:
     metadata: dict[str, Any] = field(default_factory=dict)
 ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_feedback_examples.py`:
 
@@ -125,14 +125,14 @@ def test_returns_prompt_training_example_instances(tmp_path):
     assert all(isinstance(ex, PromptTrainingExample) for ex in examples)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
 ```bash
 pytest tests/unit/test_feedback_examples.py -v
 ```
 Expected: all 6 fail with `ImportError: cannot import name 'load_feedback_examples'`
 
-- [ ] **Step 3: Add `load_feedback_examples` to `src/training/data.py`**
+- [x] **Step 3: Add `load_feedback_examples` to `src/training/data.py`**
 
 Add `from pathlib import Path` to the imports block at the top of the file, then append after the last `register_rag_prompt_template` line:
 
@@ -194,14 +194,14 @@ def load_feedback_examples(
     return examples
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
 ```bash
 pytest tests/unit/test_feedback_examples.py -v
 ```
 Expected: 6 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/training/data.py tests/unit/test_feedback_examples.py
@@ -220,7 +220,7 @@ git commit -m "feat(training): add load_feedback_examples for GRPO feedback loop
 
 `SearchRewardConfig` is a `@dataclass(frozen=True)` at line ~174. `_reward_components_from_correctness(self, output, correctness)` is defined at line ~550 and returns a `dict[str, float]` with a `"total"` key. The `total` is computed by `_aggregate_total_reward(terminal_reward, shaping_total)` before `return`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_reward_human_signal.py`:
 
@@ -321,14 +321,14 @@ def test_existing_presets_unchanged_with_default_config():
         assert total_a == pytest.approx(total_b)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
 ```bash
 pytest tests/unit/test_reward_human_signal.py::test_default_weight_zero_no_human_feedback_key -v
 ```
 Expected: FAIL — `_reward_components_from_correctness` does not accept `human_signal`
 
-- [ ] **Step 3: Add `human_feedback_weight` to `SearchRewardConfig`**
+- [x] **Step 3: Add `human_feedback_weight` to `SearchRewardConfig`**
 
 In `src/training/reward.py`, add after the `reward_scale` field inside `SearchRewardConfig`:
 
@@ -338,7 +338,7 @@ In `src/training/reward.py`, add after the `reward_scale` field inside `SearchRe
     human_feedback_weight: float = 0.0
 ```
 
-- [ ] **Step 4: Add `human_signal` kwarg to `_reward_components_from_correctness`**
+- [x] **Step 4: Add `human_signal` kwarg to `_reward_components_from_correctness`**
 
 Change the method signature:
 
@@ -383,21 +383,21 @@ And replace the plain `return { ... }` with:
         return components
 ```
 
-- [ ] **Step 5: Run reward tests — verify they pass**
+- [x] **Step 5: Run reward tests — verify they pass**
 
 ```bash
 pytest tests/unit/test_reward_human_signal.py -v
 ```
 Expected: all reward tests pass (skip `score_prompt_group` tests — those need Task 3)
 
-- [ ] **Step 6: Verify no regressions on existing reward tests**
+- [x] **Step 6: Verify no regressions on existing reward tests**
 
 ```bash
 pytest tests/unit/test_reward.py tests/unit/test_reward_shapes.py -v
 ```
 Expected: all pass
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/training/reward.py tests/unit/test_reward_human_signal.py
@@ -416,7 +416,7 @@ git commit -m "feat(training): add human_feedback_weight to SearchRewardConfig a
 
 `score_prompt_group` is defined at line ~285 in `src/training/grpo.py`. `GRPORolloutSample` is a dataclass with fields: `group_id`, `rollout_index`, `sampling_params`, `output`. It does NOT have `prompt_ids` or `response_ids` — those live on `AgentLoopOutput`.
 
-- [ ] **Step 1: Add `metadata` param and extract `human_signal`**
+- [x] **Step 1: Add `metadata` param and extract `human_signal`**
 
 Change the signature in `src/training/grpo.py`:
 
@@ -447,7 +447,7 @@ Update the `_reward_components_from_correctness` call inside the loop:
         )
 ```
 
-- [ ] **Step 2: Run the two `score_prompt_group` tests**
+- [x] **Step 2: Run the two `score_prompt_group` tests**
 
 ```bash
 pytest tests/unit/test_reward_human_signal.py::test_score_prompt_group_threads_metadata \
@@ -455,21 +455,21 @@ pytest tests/unit/test_reward_human_signal.py::test_score_prompt_group_threads_m
 ```
 Expected: both pass
 
-- [ ] **Step 3: Run full reward_human_signal suite**
+- [x] **Step 3: Run full reward_human_signal suite**
 
 ```bash
 pytest tests/unit/test_reward_human_signal.py -v
 ```
 Expected: all 9 pass
 
-- [ ] **Step 4: Run existing GRPO tests to check no regressions**
+- [x] **Step 4: Run existing GRPO tests to check no regressions**
 
 ```bash
 pytest tests/unit/test_grpo.py tests/unit/test_grpo_trainer.py -v
 ```
 Expected: all pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/training/grpo.py
@@ -487,7 +487,7 @@ git commit -m "feat(training): thread metadata through score_prompt_group for hu
 
 `rollout_async(prompts, ground_truths)` iterates `zip(grouped_samples, ground_truths)` at line ~260 and calls `score_prompt_group(group_samples, ground_truth=gt, ...)`. The goal is to add a `metadata: list[dict] | None = None` param and pass `metadata[i]` to each `score_prompt_group` call. `step_async` calls `rollout_async` and needs the same param. `step` (sync) wraps `rollout_async` via `asyncio.run`.
 
-- [ ] **Step 1: Update `rollout` (sync) signature**
+- [x] **Step 1: Update `rollout` (sync) signature**
 
 ```python
     @torch.no_grad()
@@ -501,7 +501,7 @@ git commit -m "feat(training): thread metadata through score_prompt_group for hu
         return asyncio.run(self.rollout_async(prompts, ground_truths, metadata=metadata))
 ```
 
-- [ ] **Step 2: Update `rollout_async` signature and scoring loop**
+- [x] **Step 2: Update `rollout_async` signature and scoring loop**
 
 ```python
     async def rollout_async(
@@ -527,7 +527,7 @@ Change the scoring loop from `for group_samples, gt in zip(...)` to:
             )
 ```
 
-- [ ] **Step 3: Update `step_async` signature**
+- [x] **Step 3: Update `step_async` signature**
 
 ```python
     async def step_async(
@@ -539,14 +539,14 @@ Change the scoring loop from `for group_samples, gt in zip(...)` to:
         rollout = await self.rollout_async(prompts, ground_truths, metadata=metadata)
 ```
 
-- [ ] **Step 4: Run trainer tests**
+- [x] **Step 4: Run trainer tests**
 
 ```bash
 pytest tests/unit/test_search_agent_grpo_trainer.py -v
 ```
 Expected: all pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/training/ppo/search_agent_grpo_trainer.py
@@ -571,7 +571,7 @@ The script must:
 
 Note: `SearchAgentGRPOTrainer.__init__` requires `reference_policy` (a deep copy of policy) and `optimizer`. The `from_pretrained` factory handles this automatically; use it when the model name is a HuggingFace id. For local paths, instantiate directly.
 
-- [ ] **Step 1: Create the script**
+- [x] **Step 1: Create the script**
 
 ```python
 """Feedback-driven GRPO fine-tuning.
@@ -673,14 +673,14 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Smoke-test (no GPU, no real model download needed — just import check)**
+- [x] **Step 2: Smoke-test (no GPU, no real model download needed — just import check)**
 
 ```bash
 python3 -c "from examples.run_feedback_grpo import _parse_args; print('import ok')"
 ```
 Expected: `import ok`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add examples/run_feedback_grpo.py
@@ -691,28 +691,28 @@ git commit -m "feat(training): add run_feedback_grpo CLI script"
 
 ## Task 6: Final integration check
 
-- [ ] **Step 1: Run all new tests together**
+- [x] **Step 1: Run all new tests together**
 
 ```bash
 pytest tests/unit/test_feedback_examples.py tests/unit/test_reward_human_signal.py -v
 ```
 Expected: 15 passed
 
-- [ ] **Step 2: Run full unit suite — verify zero regressions**
+- [x] **Step 2: Run full unit suite — verify zero regressions**
 
 ```bash
 pytest tests/unit/ -q
 ```
 Expected: 1830+ passed, 0 failed
 
-- [ ] **Step 3: Run linter**
+- [x] **Step 3: Run linter**
 
 ```bash
 ruff check . --fix && ruff format .
 ```
 Expected: no errors
 
-- [ ] **Step 4: Commit spec + plan**
+- [x] **Step 4: Commit spec + plan**
 
 ```bash
 git add docs/superpowers/specs/2026-06-17-feedback-grpo-design.md \
@@ -720,7 +720,7 @@ git add docs/superpowers/specs/2026-06-17-feedback-grpo-design.md \
 git commit -m "docs: add spec and plan for feedback-driven GRPO"
 ```
 
-- [ ] **Step 5: Push and open PR**
+- [x] **Step 5: Push and open PR**
 
 ```bash
 git push -u origin <branch>
