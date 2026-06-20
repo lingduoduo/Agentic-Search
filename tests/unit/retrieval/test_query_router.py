@@ -24,3 +24,13 @@ def test_heuristic_date_query_constructs_filters():
 def test_from_env_disabled(monkeypatch):
     monkeypatch.delenv("QT_ROUTER", raising=False)
     assert QueryRouter.from_env() is None
+
+
+def test_trained_artifact_round_trips(tmp_path):
+    from src.training.train_query_router import train
+
+    path = str(tmp_path / "router.joblib")
+    train(path)
+    cfg = QueryRouter(model_path=path).predict("faiss index")
+    # A loaded model returns a valid config (booleans), not a crash.
+    assert isinstance(cfg.decompose, bool)
