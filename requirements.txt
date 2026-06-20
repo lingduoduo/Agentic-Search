@@ -25,6 +25,8 @@ transformers>=4.40.0
 accelerate
 
 # Training / data / retrieval dependencies.
+scikit-learn==1.4.2
+joblib>=1.3
 pyarrow>=14
 tqdm==4.66.4
 sentence-transformers>=3.0.0

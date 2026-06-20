@@ -36,6 +36,19 @@ class SLOViolationError(RuntimeError):
     """Raised when the P99 reranker latency exceeds the configured SLO."""
 
 
+def qt_slo_exceeded(latencies_ms: list[float], slo_ms: int) -> bool:
+    """True when the P99 transform latency exceeds slo_ms.
+
+    Authoritative SLO gate: uses index int(n*0.99) (distinct from the display
+    _percentile which uses math.ceil-based indexing).
+    """
+    if not latencies_ms:
+        return False
+    ordered = sorted(latencies_ms)
+    idx = min(len(ordered) - 1, int(len(ordered) * 0.99))
+    return ordered[idx] > slo_ms
+
+
 def _percentile(values: list[float], p: int) -> float:
     if not values:
         return 0.0
@@ -52,6 +65,7 @@ def run_eval(
     reranker=None,  # Reranker | None — avoid circular import at module level
     slo_ms: int | None = None,
     compare_baseline: bool = False,
+    qt_slo_ms: int | None = None,
 ) -> dict:
     """Load QA pairs, run retrieval (and optionally reranking), return metrics.
 
@@ -65,11 +79,14 @@ def run_eval(
 
     recalls, ndcgs, mrrs = [], [], []
     r_recalls, r_ndcgs, r_mrrs, r_maps, latencies_ms = [], [], [], [], []
+    qt_latencies: list[float] = []
 
     for item in qa_pairs:
         query: str = item["query"]
         relevant: set[str] = set(item["relevant_doc_ids"])
+        _qt0 = time.perf_counter()
         results, _ = _service.search(query, top_k=top_k)
+        qt_latencies.append((time.perf_counter() - _qt0) * 1000)
         retrieved = [r.doc_id for r in results]
 
         recalls.append(recall_at_k(retrieved, relevant, top_k))
@@ -99,6 +116,15 @@ def run_eval(
     }
 
     if reranker is None:
+        retrieval_metrics["qt_latency_ms"] = {
+            "p99": _percentile(qt_latencies, 99),
+            "n": n,
+        }
+        if qt_slo_ms is not None and qt_slo_exceeded(qt_latencies, qt_slo_ms):
+            import sys
+
+            print(f"QT SLO breach: P99 > {qt_slo_ms}ms")
+            sys.exit(1)
         return retrieval_metrics
 
     result = {
@@ -119,6 +145,10 @@ def run_eval(
             "p99": _percentile(latencies_ms, 99),
             "n": n,
         },
+        "qt_latency_ms": {
+            "p99": _percentile(qt_latencies, 99),
+            "n": n,
+        },
     }
 
     if compare_baseline:
@@ -133,6 +163,12 @@ def run_eval(
             raise SLOViolationError(
                 f"P99 reranker latency {p99}ms exceeds SLO {slo_ms}ms"
             )
+
+    if qt_slo_ms is not None and qt_slo_exceeded(qt_latencies, qt_slo_ms):
+        import sys
+
+        print(f"QT SLO breach: P99 > {qt_slo_ms}ms")
+        sys.exit(1)
 
     return result
 
@@ -211,6 +247,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Print reranker_improvement_ratio vs retrieval-only NDCG",
     )
+    parser.add_argument(
+        "--qt-slo-ms",
+        type=int,
+        default=None,
+        help="Fail if P99 query-transform latency exceeds this budget",
+    )
     args = parser.parse_args()
 
     service = _HttpService(args.retrieval_url) if args.retrieval_url else None
@@ -236,5 +278,6 @@ if __name__ == "__main__":
         reranker=reranker,
         slo_ms=args.slo_ms,
         compare_baseline=args.compare_baseline,
+        qt_slo_ms=args.qt_slo_ms,
     )
     print(json.dumps(metrics, indent=2))

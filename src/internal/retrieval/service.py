@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from .backends.base import RetrievalBackend, RetrievalResult
-from .fusion import mmr_rerank, rrf_fuse
+from .fusion import mmr_rerank, rrf_fuse, variant_weighted_rrf_fuse
 from .query_optimizer import QueryOptimizer
 from .result_cache import ResultCache
 
@@ -124,13 +124,17 @@ class RetrievalService:
             "QT_STEP_BACK",
             "QT_KEYWORDS",
             "QT_CONSTRUCT_FILTERS",
+            "QT_MULTI_QUERY",
+            "QT_ROUTER",
         )
         if any(
             os.environ.get(v, "").lower() in ("1", "true", "yes") for v in _qt_flags
         ):
-            from src.context.query_transform import QueryTransformPipeline
+            from src.internal.retrieval.query_transform_factory import (
+                build_query_transform_pipeline_from_env,
+            )
 
-            pipeline = QueryTransformPipeline.from_env(_build_llm())
+            pipeline = build_query_transform_pipeline_from_env(_build_llm())
 
         optimizer = QueryOptimizer.from_env()
         result_cache = None
@@ -244,6 +248,17 @@ class RetrievalService:
         ):  # guard: retrieval_variants() returned [] (shouldn't happen but be safe)
             variants = [query]
 
+        embed_fn = getattr(self._backend, "embed", None)
+        if (
+            os.environ.get("QT_SEMANTIC_DEDUP", "").lower() in ("1", "true", "yes")
+            and embed_fn is not None
+            and len(variants) > 1
+        ):
+            from .fusion import dedup_variants
+
+            threshold = float(os.environ.get("QT_SEMANTIC_DEDUP_THRESHOLD", "0.95"))
+            variants = dedup_variants(variants, embed_fn, threshold=threshold)
+
         max_workers = min(len(variants), 4)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
@@ -268,7 +283,12 @@ class RetrievalService:
         reranker_fetch = math.ceil(top_k * reranker_multiplier)
 
         if len(all_result_sets) > 1:
-            fused = rrf_fuse(all_result_sets)
+            if os.environ.get("QT_FUSION_WEIGHTED", "").lower() in ("1", "true", "yes"):
+                # original is the last variant → heaviest weight
+                weights = [0.3] * (len(all_result_sets) - 1) + [1.0]
+                fused = variant_weighted_rrf_fuse(all_result_sets, weights)
+            else:
+                fused = rrf_fuse(all_result_sets)
             fused = mmr_rerank(fused, top_k=reranker_fetch)
             mode = f"{base_mode}+rag_fusion"
         else:
