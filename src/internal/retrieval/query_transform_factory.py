@@ -21,8 +21,12 @@ def build_query_transform_pipeline_from_env(llm: object) -> object | None:
 
     leaf = QueryTransformPipeline.from_env(llm)
     if leaf is None:
-        return None
+        if not _flag("QT_ROUTER"):
+            return None
+        # Router can run standalone: build a default all-off leaf for it to route into.
+        from src.context.query_transform import QueryTransformConfig
 
+        leaf = QueryTransformPipeline(QueryTransformConfig(), llm)
     pipe: object = leaf
     if _flag("QT_ASYNC"):
         from src.internal.retrieval.async_query_transform import (

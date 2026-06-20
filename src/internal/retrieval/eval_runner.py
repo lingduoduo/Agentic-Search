@@ -37,7 +37,11 @@ class SLOViolationError(RuntimeError):
 
 
 def qt_slo_exceeded(latencies_ms: list[float], slo_ms: int) -> bool:
-    """True when the P99 transform latency exceeds slo_ms."""
+    """True when the P99 transform latency exceeds slo_ms.
+
+    Authoritative SLO gate: uses index int(n*0.99) (distinct from the display
+    _percentile which uses math.ceil-based indexing).
+    """
     if not latencies_ms:
         return False
     ordered = sorted(latencies_ms)

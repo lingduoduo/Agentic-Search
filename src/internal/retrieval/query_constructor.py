@@ -82,6 +82,8 @@ class QueryConstructor:
             parsed = json.loads(raw)
             cleaned_query = str(parsed.get("query", query))
             raw_filters: dict = parsed.get("filters") or {}
+            # _EXTRACT_PROMPT lists operator fields unconditionally; gating happens
+            # here at parse time via _operators_enabled() rather than in the prompt.
             allowed = set(_KNOWN_FILTER_FIELDS)
             if _operators_enabled():
                 allowed |= _OPERATOR_FILTER_FIELDS

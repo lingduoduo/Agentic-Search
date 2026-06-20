@@ -124,6 +124,8 @@ class RetrievalService:
             "QT_STEP_BACK",
             "QT_KEYWORDS",
             "QT_CONSTRUCT_FILTERS",
+            "QT_MULTI_QUERY",
+            "QT_ROUTER",
         )
         if any(
             os.environ.get(v, "").lower() in ("1", "true", "yes") for v in _qt_flags

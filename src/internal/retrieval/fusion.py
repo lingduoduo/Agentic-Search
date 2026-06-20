@@ -112,6 +112,9 @@ def variant_weighted_rrf_fuse(
 
     weights[i] applies to result_sets[i]. Falls back to uniform when lengths
     mismatch.
+
+    Note: distinct from weighted_rrf_fuse(), which is the 2-set sparse/dense
+    variant that takes a FusionWeights dataclass and only supports exactly 2 sets.
     """
     if len(weights) != len(result_sets):
         weights = [1.0] * len(result_sets)
