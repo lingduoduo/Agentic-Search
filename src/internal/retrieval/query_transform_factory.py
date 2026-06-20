@@ -38,4 +38,11 @@ def build_query_transform_pipeline_from_env(llm: object) -> object | None:
     pipe = CachedQueryTransformPipeline.from_env(
         pipe
     )  # returns pipe unchanged if no URL
+
+    if _flag("QT_ROUTER"):
+        from src.internal.retrieval.routed_query_transform import (
+            RoutedQueryTransformPipeline,
+        )
+
+        pipe = RoutedQueryTransformPipeline.from_env(pipe)
     return pipe
