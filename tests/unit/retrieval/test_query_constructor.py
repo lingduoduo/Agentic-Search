@@ -79,3 +79,28 @@ def test_unknown_filter_fields_dropped():
     assert "unknown_field" not in filters
     assert "another_unknown" not in filters
     assert filters["source"] == "arxiv"
+
+
+def test_range_operators_extracted(monkeypatch):
+    monkeypatch.setenv("QT_CONSTRUCT_OPERATORS", "true")
+    llm = MagicMock()
+    llm.complete.return_value = type(
+        "R",
+        (),
+        {
+            "text": '{"query": "papers", "filters": {"date_after": "2023-01-01", "rating_gte": 4}}'
+        },
+    )()
+    _, filters = QueryConstructor(llm).extract_filters("papers after 2023 rated 4+")
+    assert filters["date_after"] == "2023-01-01"
+    assert filters["rating_gte"] == 4
+
+
+def test_operators_dropped_when_flag_off(monkeypatch):
+    monkeypatch.delenv("QT_CONSTRUCT_OPERATORS", raising=False)
+    llm = MagicMock()
+    llm.complete.return_value = type(
+        "R", (), {"text": '{"query": "papers", "filters": {"rating_gte": 4}}'}
+    )()
+    _, filters = QueryConstructor(llm).extract_filters("papers rated 4+")
+    assert "rating_gte" not in filters  # equality-only behaviour unchanged

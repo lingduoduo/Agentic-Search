@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 from src.context.models import ChatMessage, LLMClient
 
@@ -12,6 +13,13 @@ logger = logging.getLogger(__name__)
 _KNOWN_FILTER_FIELDS = frozenset(
     {"source", "date_year", "date_after", "date_before", "author", "doc_type"}
 )
+
+_OPERATOR_FILTER_FIELDS = frozenset({"rating_gte", "rating_lte"})
+
+
+def _operators_enabled() -> bool:
+    return os.environ.get("QT_CONSTRUCT_OPERATORS", "").lower() in ("1", "true", "yes")
+
 
 _EXTRACT_PROMPT = """Extract metadata filters from the user's query. Return JSON with exactly two keys:
 - "query": the cleaned query with metadata phrases removed
@@ -22,6 +30,8 @@ _EXTRACT_PROMPT = """Extract metadata filters from the user's query. Return JSON
   - "date_before": string in "YYYY-MM-DD" format
   - "author": string
   - "doc_type": string (e.g. "papers", "tickets", "pages")
+  - "rating_gte": number (e.g. minimum rating like 4)
+  - "rating_lte": number (maximum rating)
 
 Examples:
 Query: "FAISS papers from 2023 on arxiv"
@@ -72,10 +82,11 @@ class QueryConstructor:
             parsed = json.loads(raw)
             cleaned_query = str(parsed.get("query", query))
             raw_filters: dict = parsed.get("filters") or {}
+            allowed = set(_KNOWN_FILTER_FIELDS)
+            if _operators_enabled():
+                allowed |= _OPERATOR_FILTER_FIELDS
             filters: dict = {
-                k: v
-                for k, v in raw_filters.items()
-                if k in _KNOWN_FILTER_FIELDS and v is not None
+                k: v for k, v in raw_filters.items() if k in allowed and v is not None
             }
             return cleaned_query, filters
         except Exception as exc:
