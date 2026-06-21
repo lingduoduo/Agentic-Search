@@ -214,7 +214,7 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 ### UI features
 
-**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` drives the UI from `progress` / `answer` / `done` events. While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` for the active step, `✓ Turn N · <tool> · N docs` for completed ones); answer tokens stream into the panel as markdown as they arrive. Once `done` lands, the log collapses to a one-line summary button (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full per-turn trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) which the stream endpoint converts into a `progress` event.
+**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `answer` / `done` events (full schema in the [SSE event table](#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
 
 **Markdown rendering** — Answers render via `react-markdown`: headings, bold/italic, inline code, code blocks, and ordered/unordered lists. Citation markers (`[D1]`, `[D2]`, …) become anchor links that scroll the page to the matching source card.
 
@@ -272,8 +272,6 @@ API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE),
 
 **Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](#rl-training) — the human-feedback signal that fine-tunes the policy.
 
-**Chat streaming pipeline** — `streamAgent` consumes the SSE stream and drives the chat UI from three event types: `progress` (live tool-call steps in the `ProgressLog`), `answer` (incremental answer tokens rendered as markdown), and `done` (final citations, documents, tool calls, and `intent`). Backend side, these packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent for a fresh session; each in-flight turn is cancellable via the stop-signal fence.
-
 
 ## Intent Routing
 
@@ -296,7 +294,7 @@ The router is `_run_auto_routed` in `src/internal/servers/web/app.py`. It runs a
 | `progress` | Each agent turn | `{type, turn, text}` |
 | `answer` | Answer token chunks | `{type, text}` |
 | `done` | Stream complete | `{type, session_id, citations, documents, intent, tool_calls}` |
-| `error` | Unhandled exception | `{type, message}` |
+| `error` | Unhandled exception | `{type, detail}` |
 
 The `on_turn` callback (`OnTurnCallback` in `src/agents/base.py`) is the hook that feeds per-turn events into the SSE queue from inside the agent loop.
 
