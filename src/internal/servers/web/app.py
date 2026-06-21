@@ -174,10 +174,11 @@ class AgentExperienceRequest(BaseModel):
     search_url: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
     source_provider: str = Field(
-        default="retrieval",
+        default="auto",
         description=(
-            "'retrieval', 'serpapi', 'browser', or 'all'. "
-            "Browser uses the retrieval-compatible URL in search_url."
+            "'auto' (default — fan out to internal RAG + SerpAPI, merged), "
+            "'retrieval', 'serpapi', 'browser', or 'all'. An explicit value other "
+            "than 'auto' forces a search against that single provider (dev only)."
         ),
     )
     mode: str | None = Field(
@@ -306,7 +307,7 @@ async def _run_auto_routed(
     provider directly.
     """
     extra: dict = {}
-    explicit_source = source_provider != "retrieval"
+    explicit_source = source_provider != "auto"
 
     # --- Tier 1: ToolAgentLoop ---
     # Skipped when the user explicitly chose a source — that is a search command,
@@ -1240,12 +1241,14 @@ _SOURCE_PROVIDER_ALIASES = {
     "web": "all",
 }
 _VALID_SOURCE_PROVIDERS = {
+    "auto",
     "retrieval",
     "serpapi",
     "browser",
     "all",
 }
 _SOURCE_PROVIDER_LABELS = {
+    "auto": "Auto (internal + web)",
     "retrieval": "Local Retrieval",
     "serpapi": "SerpAPI",
     "browser": "Browser Retrieval",
@@ -1265,9 +1268,16 @@ def _normalize_source_provider(source_provider: str) -> str:
     return normalized
 
 
+# Default provider set when the user does not pick a source: fan out to internal
+# RAG + fast web search, merged. Browser is excluded (too slow for the default).
+_DEFAULT_FANOUT_PROVIDERS = ["retrieval", "serpapi"]
+
+
 def _source_providers_for(source_provider: str) -> list[str]:
     if source_provider == "all":
         return ["retrieval", "serpapi", "browser"]
+    if source_provider == "auto":
+        return list(_DEFAULT_FANOUT_PROVIDERS)
     return [source_provider]
 
 

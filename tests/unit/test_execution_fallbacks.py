@@ -247,3 +247,32 @@ def test_default_source_still_auto_routes_to_chat(monkeypatch, tmp_path):
         response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 200
     assert response.json()["intent"] == "chat"
+
+
+def test_auto_provider_expands_to_internal_and_serpapi():
+    from src.internal.servers.web.app import _source_providers_for
+
+    assert _source_providers_for("auto") == ["retrieval", "serpapi"]
+
+
+def test_auto_is_default_and_not_treated_as_explicit(monkeypatch, tmp_path):
+    """No source_provider → 'auto' → classifier still runs (not forced)."""
+    from src.internal.servers.web.app import _HybridSearchResult
+
+    captured = {}
+
+    async def fake_hybrid(query, **kwargs):
+        captured["source_provider"] = kwargs.get("source_provider")
+        doc = ContextDocument(id="D1", title="t", content="c", url=None, score=0.0)
+        return _HybridSearchResult(executed_queries=[query], documents=[doc])
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._rule_based_is_search", lambda q: True
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post("/api/agent", json={"query": "anything searchable"})
+    assert response.status_code == 200
+    assert response.json()["intent"] == "search"
+    assert captured["source_provider"] == "auto"
