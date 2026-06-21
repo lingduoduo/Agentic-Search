@@ -16,6 +16,15 @@ const SOURCE_OPTIONS: Array<{
   { value: "all", label: "All Active Sources" },
 ];
 
+// One representative query per routing intent (search / chat / tool) so anyone
+// can exercise the intent router in a single click. The chip shows the query
+// itself — clearest for a test-case affordance. See the intent-routed spec.
+const EXAMPLE_QUERIES: Array<{ intent: string; icon: string; query: string }> = [
+  { intent: "search", icon: "🔍", query: "find the onboarding checklist" },
+  { intent: "chat", icon: "💬", query: "explain how FAISS indexing works" },
+  { intent: "tool", icon: "🛠", query: "summarize the latest sales figures and chart them" },
+];
+
 interface SearchComposerProps {
   query: string;
   searchUrl: string;
@@ -27,6 +36,7 @@ interface SearchComposerProps {
   onTopKChange: (value: number) => void;
   onSourceProviderChange: (value: SearchSourceProvider) => void;
   onSubmit: (event?: FormEvent) => void;
+  onExampleSelect?: (value: string) => void;
 }
 
 export const SearchComposer = memo(function SearchComposer({
@@ -40,6 +50,7 @@ export const SearchComposer = memo(function SearchComposer({
   onTopKChange,
   onSourceProviderChange,
   onSubmit,
+  onExampleSelect,
 }: SearchComposerProps) {
   return (
     <form className="composer" onSubmit={onSubmit}>
@@ -56,6 +67,23 @@ export const SearchComposer = memo(function SearchComposer({
         placeholder="Ask about your indexed docs, web results, or retrieval server output"
         rows={4}
       />
+      {!isLoading && (
+        <div className="example-chips">
+          {EXAMPLE_QUERIES.map((ex) => (
+            <button
+              key={ex.intent}
+              type="button"
+              className="example-chip"
+              title={`${ex.intent} example`}
+              onClick={() =>
+                onExampleSelect ? onExampleSelect(ex.query) : onQueryChange(ex.query)
+              }
+            >
+              <span aria-hidden="true">{ex.icon}</span> {ex.query}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="composer-controls">
         <label>
           Source
