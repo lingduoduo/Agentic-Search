@@ -53,7 +53,7 @@ describe("SearchComposer", () => {
   it("calls onSubmit when form is submitted", async () => {
     const onSubmit = vi.fn();
     render(<SearchComposer {...defaultProps} query="test" onSubmit={onSubmit} />);
-    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(screen.getByRole("button", { name: /search/i }));
     expect(onSubmit).toHaveBeenCalledOnce();
   });
 
@@ -71,5 +71,42 @@ describe("SearchComposer", () => {
     render(<SearchComposer {...defaultProps} onQueryChange={onQueryChange} />);
     await userEvent.type(screen.getByRole("textbox", { name: /question/i }), "hello");
     expect(onQueryChange).toHaveBeenCalled();
+  });
+
+  it("renders three example-query chips (one per intent)", () => {
+    const { container } = render(<SearchComposer {...defaultProps} />);
+    expect(container.querySelectorAll(".example-chip")).toHaveLength(3);
+    expect(
+      screen.getByRole("button", { name: /find the onboarding checklist/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /explain how FAISS indexing works/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /summarize the latest sales figures/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("calls onExampleSelect with the example query when a chip is clicked", async () => {
+    const onExampleSelect = vi.fn();
+    render(<SearchComposer {...defaultProps} onExampleSelect={onExampleSelect} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /find the onboarding checklist/i }),
+    );
+    expect(onExampleSelect).toHaveBeenCalledWith("find the onboarding checklist");
+  });
+
+  it("falls back to onQueryChange when onExampleSelect is not provided", async () => {
+    const onQueryChange = vi.fn();
+    render(<SearchComposer {...defaultProps} onQueryChange={onQueryChange} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /explain how FAISS indexing works/i }),
+    );
+    expect(onQueryChange).toHaveBeenCalledWith("explain how FAISS indexing works");
+  });
+
+  it("hides example chips while loading", () => {
+    const { container } = render(<SearchComposer {...defaultProps} isLoading={true} />);
+    expect(container.querySelectorAll(".example-chip")).toHaveLength(0);
   });
 });

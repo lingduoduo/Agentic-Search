@@ -84,9 +84,10 @@ export function App() {
     [sessionId],
   );
 
-  const handleSubmit = useCallback(async (event?: FormEvent) => {
-    event?.preventDefault();
-    const normalizedQuery = query.trim();
+  const handleSubmit = useCallback(async (eventOrQuery?: FormEvent | string) => {
+    if (eventOrQuery && typeof eventOrQuery !== "string") eventOrQuery.preventDefault();
+    const raw = typeof eventOrQuery === "string" ? eventOrQuery : query;
+    const normalizedQuery = raw.trim();
     if (!normalizedQuery) return;
 
     requestRef.current?.abort();
@@ -237,6 +238,10 @@ export function App() {
           onTopKChange={handleTopKChange}
           onSourceProviderChange={handleSourceProviderChange}
           onSubmit={handleSubmit}
+          onExampleSelect={(q) => {
+            setQuery(q);
+            handleSubmit(q);
+          }}
         />
 
         {error && <div className="error-banner">{error}</div>}

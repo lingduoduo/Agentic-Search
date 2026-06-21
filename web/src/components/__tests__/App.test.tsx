@@ -104,4 +104,41 @@ describe("App adaptive layout", () => {
     await userEvent.click(screen.getByRole("button", { name: /new/i }));
     await waitFor(() => expect(screen.queryByText(/failed/i)).not.toBeInTheDocument());
   });
+
+  it("has no intent-badge or intent class when response omits intent", async () => {
+    async function* noIntentStream() {
+      yield { type: "answer" as const, text: baseResponse.answer };
+      yield {
+        type: "done" as const,
+        session_id: baseResponse.session_id,
+        citations: baseResponse.citations,
+        documents: baseResponse.documents,
+        intent: undefined as unknown as string,
+      };
+    }
+    mockStreamAgent.mockReturnValue(noIntentStream());
+    render(<App />);
+    await submitQuery("explain FAISS");
+    await waitFor(() => expect(screen.getByText(baseResponse.answer)).toBeInTheDocument());
+    const layout = document.querySelector(".results-layout");
+    expect(layout?.className).not.toMatch(/intent-(search|chat|tool)/);
+    expect(document.querySelector(".intent-badge")).toBeNull();
+  });
+});
+
+describe("App example chips", () => {
+  it("runs the agent with the chip's query in one click and applies the intent layout", async () => {
+    mockStreamAgent.mockReturnValue(fakeStream("search"));
+    render(<App />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /find the onboarding checklist/i }),
+    );
+    await waitFor(() => {
+      expect(mockStreamAgent).toHaveBeenCalledTimes(1);
+      const layout = document.querySelector(".results-layout");
+      expect(layout?.classList).toContain("intent-search");
+    });
+    const sentRequest = mockStreamAgent.mock.calls[0][0] as { query: string };
+    expect(sentRequest.query).toBe("find the onboarding checklist");
+  });
 });
