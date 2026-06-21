@@ -93,3 +93,21 @@ def test_hybrid_retrieve_degrades_to_sparse_when_dense_none():
     )
     assert resp.status_code == 200
     assert [item["document"]["id"] for item in resp.json()["results"]] == ["s1", "s2"]
+
+
+def test_build_dense_failure_logs_actionable_hint(monkeypatch, caplog):
+    """When the dense leg can't initialize, _build_dense returns None and logs a
+    warning that points to the setup/troubleshooting doc (not just the raw error)."""
+    import logging
+
+    from src.internal.servers.retrieval import hybrid
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("Could not import module 'BertModel'")
+
+    monkeypatch.setattr(hybrid, "build_e5_encoder", _boom)
+    monkeypatch.setattr(hybrid, "_load_corpus", lambda path: [{"id": "1", "text": "x"}])
+    with caplog.at_level(logging.WARNING):
+        result = hybrid._build_dense("data/corpus.jsonl", "cpu")
+    assert result is None
+    assert "hybrid-dense-setup" in caplog.text
