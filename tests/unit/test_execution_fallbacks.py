@@ -276,3 +276,45 @@ def test_auto_is_default_and_not_treated_as_explicit(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json()["intent"] == "search"
     assert captured["source_provider"] == "auto"
+
+
+def test_search_unreachable_returns_clear_message(monkeypatch, tmp_path):
+    from src.internal.servers.web.app import _HybridSearchResult
+
+    async def fake_hybrid(query, **kwargs):
+        return _HybridSearchResult(
+            executed_queries=[query], documents=[], status="unreachable"
+        )
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._rule_based_is_search", lambda q: True
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post("/api/agent", json={"query": "find stuff"})
+    data = response.json()
+    assert data["intent"] == "search"
+    assert "No sources are reachable" in data["answer"]
+    assert data["documents"] == []
+
+
+def test_search_empty_uses_no_results_message(monkeypatch, tmp_path):
+    from src.internal.servers.web.app import _HybridSearchResult
+
+    async def fake_hybrid(query, **kwargs):
+        return _HybridSearchResult(
+            executed_queries=[query], documents=[], status="empty"
+        )
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._rule_based_is_search", lambda q: True
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post("/api/agent", json={"query": "find stuff"})
+    data = response.json()
+    assert data["intent"] == "search"
+    assert "No sources are reachable" not in data["answer"]
+    assert "no results" in data["answer"].lower()

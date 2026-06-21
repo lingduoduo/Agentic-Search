@@ -447,12 +447,27 @@ async def _run_auto_routed(
                 filters=filters,
                 source_provider=provider,
             )
-            answer = _search_only_answer(
-                "Search",
-                queries=search_result.executed_queries,
-                documents=search_result.documents,
-                source_provider=provider,
+        except Exception as exc:
+            logger.warning(
+                "Hybrid search failed, falling back to RAG without context: %s", exc
             )
+            extra["search_fallback"] = "retrieval_unavailable"
+        else:
+            if search_result.status == "unreachable":
+                query_lines = "\n".join(
+                    f"- {q}" for q in search_result.executed_queries
+                )
+                answer = (
+                    "No sources are reachable right now. Please try again shortly.\n\n"
+                    f"Executed queries:\n{query_lines}"
+                )
+            else:
+                answer = _search_only_answer(
+                    "Search",
+                    queries=search_result.executed_queries,
+                    documents=search_result.documents,
+                    source_provider=provider,
+                )
             return (
                 answer,
                 [d.citation for d in search_result.documents],
@@ -460,11 +475,6 @@ async def _run_auto_routed(
                 "search",
                 extra,
             )
-        except Exception as exc:
-            logger.warning(
-                "Hybrid search failed, falling back to RAG without context: %s", exc
-            )
-            extra["search_fallback"] = "retrieval_unavailable"
 
     # Chat path (also search fallback)
     try:
