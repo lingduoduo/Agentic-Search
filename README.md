@@ -373,7 +373,8 @@ python3 -m examples.run_search_pipeline
 
 **Retrieval, Indexing & Search**
 - **Hybrid + rerank** — dense (FAISS/E5) + sparse (BM25) RRF fusion with cross-encoder reranking in a single `/retrieve` endpoint
-- **Query enhancer** — `QueryEnhancer.decompose()` and `.hyde()` enrich any query; degrades gracefully without an LLM
+- **`QueryEnhancer`** (`src/context/query_enhancer.py`) — base query-transformation primitives: `decompose()` (2–4 sub-queries), `hyde()` (hypothetical answer), `step_back()` (broader reformulation), and `enhance()` which runs all three into a `QueryBundle`. Every method is fallback-safe — it returns the original query / `None` when no LLM is configured
+- **`expand_keywords`** (`src/internal/servers/secondary_llm_flows/query_expansion.py`) — LLM keyword/synonym expansion for the BM25 leg; the `QT_KEYWORDS` branch of `QueryTransformPipeline`
 - **`Reranker`** (`src/internal/retrieval/reranker.py`) — unified neural reranker supporting local cross-encoders (`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-*`) and Cohere v3/v4 API; built via `Reranker.from_env()`; injected into `RetrievalService`; skipped when `RERANKER_PROVIDER` is unset; appends `+reranked` to `retrieval_mode`
 - **`AsyncReranker`** (`src/internal/retrieval/async_reranker.py`) — wraps any reranker in a `ThreadPoolExecutor`; raises `RerankerTimeoutError` when `RERANKER_TIMEOUT_MS` is exceeded; exposes `arerank()` for async callers
 - **`CachedReranker`** (`src/internal/retrieval/cached_reranker.py`) — Redis-backed score cache keyed on `sha256(query:sorted_doc_ids:k=top_k)`; `stats()` returns hits/misses/hit_rate; `from_env()` returns base unchanged when `RERANKER_CACHE_REDIS_URL` is unset
@@ -381,7 +382,7 @@ python3 -m examples.run_search_pipeline
 - **`ONNXReranker`** (`src/internal/retrieval/onnx_reranker.py`) — drop-in replacement using `optimum.onnxruntime`; falls back to PyTorch `Reranker` on `ImportError`; enabled via `RERANKER_USE_ONNX=true`
 - **`PassageTruncator`** (`src/internal/retrieval/passage_truncator.py`) — whitespace-token truncation applied before scoring; zero-dependency; configurable via `RERANKER_MAX_TOKENS` (0 = disabled)
 - **`RerankerBenchmark`** (`src/internal/retrieval/reranker_benchmark.py`) — offline CLI grid search over model × batch_size × max_tokens; writes JSONL output and prints a ranked table sorted by NDCG@k
-- **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface; passed into `RetrievalService.search(pipeline=...)` for parallel multi-variant retrieval with RRF fusion; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`. Refactored to expose `_build_jobs`/`_assemble` and a per-query `config_override`, plus the module helper `config_signature()`, so the wrappers below can compose on top of the unchanged leaf
+- **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface, producing a `TransformedQueryBundle`; `bundle.retrieval_variants(max_variants)` deduplicates the variants and always keeps the original query last, and `RetrievalService` retrieves each variant in parallel then fuses with `rrf_fuse`; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`. Refactored to expose `_build_jobs`/`_assemble` and a per-query `config_override`, plus the module helper `config_signature()`, so the wrappers below can compose on top of the unchanged leaf
 - **`AsyncQueryTransformPipeline`** (`src/internal/retrieval/async_query_transform.py`) — runs the leaf's transform calls (decompose, HyDE, step-back, keywords, filter construction) concurrently in a `ThreadPoolExecutor`; a transform that exceeds `QT_TRANSFORM_TIMEOUT_MS` or raises degrades to its empty default rather than failing the request; enabled via `QT_ASYNC=true`
 - **`CachedQueryTransformPipeline`** (`src/internal/retrieval/cached_query_transform.py`) — Redis-backed bundle cache keyed on `sha256(query|config_signature)`; caches the **filter-free** bundle and re-merges caller filters per call (no cross-caller leakage); `stats()` returns hits/misses/hit_rate; `from_env()` returns base unchanged when `QT_CACHE_REDIS_URL` is unset
 - **`MultiQueryGenerator`** (`src/internal/retrieval/multi_query.py`) — true Multi-Query retrieval: one LLM call produces N paraphrased reformulations (distinct from decompose's sub-questions); surfaced as the `multi_query` field on `TransformedQueryBundle`; enabled via `QT_MULTI_QUERY=true` (`QT_MULTI_QUERY_N` controls N)
@@ -913,7 +914,19 @@ QT_ROUTER=true QT_ROUTER_MODEL_PATH=data/query_router.joblib \
 ```
 `QT_ROUTER` and `QT_MULTI_QUERY` each activate the pipeline on their own — no other `QT_*` flag is required.
 
-**Test it — multi-variant retrieval appends `+rag_fusion` to `retrieval_mode`:**
+Query transformation is **backend-only** — there is no dedicated HTTP endpoint and no query-transform-specific UI. The pipeline runs inside `RetrievalService.from_env()`, so it applies to **both** the retrieval server's `/search` and the web backend's `/api/agent`. Its observable effect is the `+rag_fusion` suffix on `retrieval_mode`.
+
+**Test it on the retrieval server** (`POST /search` — `retrieval_mode` reflects the transform):
+```bash
+# Start the retrieval server with QT flags enabled, then:
+curl -s -X POST http://localhost:8001/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Compare dense and sparse retrieval", "top_k": 5}' \
+  | python -c "import sys, json; print(json.load(sys.stdin)['retrieval_mode'])"
+# → hybrid+rag_fusion
+```
+
+**Test it on the web backend** (`POST /api/agent`):
 ```bash
 curl -s -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
