@@ -1348,7 +1348,8 @@ async def _run_direct_search(
             )
         )
     # Sidecar: add browser when it isn't already the primary or part of "all".
-    if browser_search_url and source_provider not in {"browser", "all"}:
+    # "auto" (internal + serpapi) deliberately excludes the slow browser.
+    if browser_search_url and source_provider not in {"browser", "all", "auto"}:
         browser_docs = await _run_browser_search(
             query,
             browser_search_url=browser_search_url,
