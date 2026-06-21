@@ -118,4 +118,14 @@ describe("SearchComposer", () => {
     const { container } = render(<SearchComposer {...defaultProps} isLoading={true} />);
     expect(container.querySelectorAll(".example-chip")).toHaveLength(0);
   });
+
+  it("hides the Source dropdown by default", () => {
+    render(<SearchComposer {...defaultProps} />);
+    expect(screen.queryByText("Local Retrieval")).not.toBeInTheDocument();
+  });
+
+  it("shows the Source dropdown when showSourcePicker is set (dev mode)", () => {
+    render(<SearchComposer {...defaultProps} showSourcePicker />);
+    expect(screen.getByText("Local Retrieval")).toBeInTheDocument();
+  });
 });

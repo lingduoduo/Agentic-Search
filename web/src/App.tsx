@@ -46,7 +46,7 @@ export function App() {
   const [topK, setTopK] = useState(5);
   const [intent, setIntent] = useState<"search" | "chat" | "tool" | undefined>(undefined);
   const [sourceProvider, setSourceProvider] =
-    useState<SearchSourceProvider>("retrieval");
+    useState<SearchSourceProvider>("auto");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<string[]>([]);
@@ -115,7 +115,7 @@ export function App() {
         // Only forwarded in dev mode; otherwise the backend resolves the URL.
         search_url: DEV_MODE ? searchUrl : undefined,
         top_k: topK,
-        source_provider: sourceProvider,
+        source_provider: DEV_MODE ? sourceProvider : undefined,
       };
 
       let accumulatedAnswer = "";
@@ -242,6 +242,7 @@ export function App() {
           sourceProvider={sourceProvider}
           isLoading={isLoading}
           showUrlField={DEV_MODE}
+          showSourcePicker={DEV_MODE}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}

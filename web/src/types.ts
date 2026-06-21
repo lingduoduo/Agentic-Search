@@ -25,6 +25,7 @@ export interface SourceDocumentView {
 
 export type AgentMode = "search_tool" | "hybrid_search" | "chat_once" | "chat_loop" | "search_agent" | "tool_agent";
 export type SearchSourceProvider =
+  | "auto"
   | "retrieval"
   | "google"
   | "serpapi"
