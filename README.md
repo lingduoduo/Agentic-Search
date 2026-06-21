@@ -220,7 +220,21 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 **Chat history** — Session timeline renders as a chat bubble layout: user messages right-aligned, assistant messages left-aligned. System messages are filtered out. Keys are stable against message prepend/removal.
 
-**Source cards** — Each source card is collapsed to 3 lines by default. Click **show more ▾** to expand; click **show less ▴** to collapse. A **⎘ copy** button copies the full content to the clipboard and shows "copied ✓" for 1.5 s. Each card has an `id` attribute matching its citation label so anchor links from the answer scroll to it.
+**Source cards** (`SourceGrid.tsx`) — `SourceGrid` is a thin mapper over a controlled `SourceCard` (memoised, per-document, owning its own `expanded` / `copied` state). Each card renders one `SourceDocumentView` (`{ id, citation, title, content, url, score, metadata }`) and:
+- collapses content to 3 lines by default (`source-content--clamped`); **show more ▾** / **show less ▴** toggles per card.
+- a **⎘ copy** button copies the full content and flips to "copied ✓" for 1.5 s.
+- carries `id="source-{citation}"` so `[D1]`-style anchor links from the answer scroll to it.
+- color-codes the relevance score via `scoreColor()` (green ≥ 0.7, amber ≥ 0.4, orange > 0, grey for 0).
+- tags the source provider with a colored pill via `SOURCE_COLORS` (Browser Retrieval, SerpAPI, Local Retrieval, All Active Sources; grey fallback).
+
+Source cards are frontend-only (no dedicated backend endpoint): they are populated from the `documents` array of the `POST /api/agent` response (see [Web Backend API](#web-backend-api)); the retrieval server returns the same fields as `results[]` from `POST /search`. Inspect that backing data with:
+```bash
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is FAISS?", "top_k": 3}' \
+  | python -c "import sys, json; [print(d['citation'], round(d['score'],2), d['title']) for d in json.load(sys.stdin)['documents']]"
+# → [D1] 0.81 FAISS: A Library for Efficient Similarity Search ...
+```
 
 **Tool Call Trace Panel** — When the agent runs in `tool` mode, a panel below the answer shows every tool call: name, status (✓ / ✗), arguments as JSON, result summary (first 200 chars or "N items" for lists), and latency in ms. Failed calls render with a red border and the error message.
 
