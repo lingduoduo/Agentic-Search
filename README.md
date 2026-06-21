@@ -268,7 +268,9 @@ The intent itself comes from the backend's routing decision — see the `respons
 | `QueryHistoryPanel` | Per-user query history with CSV export (`getQueryHistory`) |
 | `ToolPanel` | Admin view of MCP/OpenAPI tools registered via `tool_registry` |
 
-API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`.
+API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`, `submitFeedback`.
+
+**Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](#rl-training) — the human-feedback signal that fine-tunes the policy.
 
 **Chat streaming pipeline** — `streamAgent` consumes the SSE stream and drives the chat UI from three event types: `progress` (live tool-call steps in the `ProgressLog`), `answer` (incremental answer tokens rendered as markdown), and `done` (final citations, documents, tool calls, and `intent`). Backend side, these packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent for a fresh session; each in-flight turn is cancellable via the stop-signal fence.
 
@@ -482,6 +484,8 @@ python3 -m examples.run_search_pipeline
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - `LLMGRPOTrainer` — online GRPO for any HuggingFace causal-LM; rolls out G completions per prompt, scores with `judge_fn` + `SearchRewardFunction`, and updates with PPO-clip + KL penalty (`src/training/ppo/llm_grpo_trainer.py`)
 - `SearchAgentGRPOTrainer` — extends `LLMGRPOTrainer` with real `SearchAgentLoop` rollouts to unlock the full shaped-reward signal (citations, search quality, fetch usefulness) (`src/training/ppo/search_agent_grpo_trainer.py`)
+- **Feedback-driven GRPO** — `load_feedback_examples(db_path, min_ratings=10)` (`src/training/data.py`) reads thumbs-up/down sessions from `AgenticSearchStore` (the `retrieval_feedback` table fed by `POST /api/feedback`) into `PromptTrainingExample`s with `metadata["human_signal"] = +1.0 / -1.0`. `SearchRewardFunction` adds a `human_feedback` reward component weighted by `SearchRewardConfig.human_feedback_weight` (default `0.0` → zero regression on existing presets); `SearchAgentGRPOTrainer` threads `human_signal` from batch metadata into the score. Closes the loop: user feedback → reward signal → policy update
+- **SFT warm-start** (`src/training/sft.py`) — `SFTTrainer` / `SFTConfig` / `build_search_sft_example` supervised-fine-tune a base model on agent traces before GRPO, so RL starts from a competent policy rather than cold
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 - `bin/generate_training_data.sh` — one-command parquet generation for Bamboogle, NQ, TriviaQA, and HotpotQA; `--preview` mode prints sample records without writing
 
@@ -1015,6 +1019,26 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Agent-loop GRPO (full reward) | `src/training/ppo/search_agent_grpo_trainer.py` |
 | PPO core | `src/training/ppo/core_algos.py` |
 | Generation and policy loss | `src/model/generation.py` |
+| Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
+| SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
+
+**Fine-tune from user feedback** — train directly on thumbs-up/down sessions collected via `POST /api/feedback` (no GPU required for the smoke path; `--device mps` on Apple Silicon):
+```bash
+# Feedback-driven GRPO: load rated sessions from the web DB → reward with human_signal → update
+python3 -m examples.run_feedback_grpo \
+  --db_path data/feedback.sqlite3 \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --min_ratings 10 --human_feedback_weight 0.5 \
+  --num_rollouts 4 --search_url http://localhost:8001/retrieve --device mps \
+  --output_dir data/checkpoints/feedback_grpo/
+
+# SFT warm-start, then GRPO (skip SFT with --sft_epochs 0)
+python3 -m examples.run_sft_grpo \
+  --db_path data/feedback.sqlite3 --model Qwen/Qwen2.5-1.5B-Instruct \
+  --sft_epochs 3 --sft_output_dir data/checkpoints/sft/ \
+  --grpo_output_dir data/checkpoints/sft_grpo/ --device mps
+```
+`load_feedback_examples` raises if fewer than `--min_ratings` rated sessions exist, so collect feedback first (thumbs in the UI, or `POST /api/feedback`). There is **no HTTP training endpoint** — fine-tuning is offline by design; the only backend endpoint in this loop is `POST /api/feedback` (see [Web Backend API](#web-backend-api)).
 
 **Reward components** (`SearchRewardFunction`):
 
@@ -1028,6 +1052,7 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Unnecessary fetch | `unnecessary_fetch_penalty` | Penalty per fetched page not cited in the answer |
 | Fetch usefulness | `fetch_usefulness_reward` | Bonus when fetched pages are cited in the final answer |
 | Format compliance | `format_reward_weight` | Structural compliance in the final answer |
+| Human feedback | `human_feedback_weight` | `human_signal` (±1.0) from thumbs-up/down sessions; `0.0` by default (off) |
 
 Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` (see `SearchRewardConfig` in `src/training/reward.py`).
 
