@@ -289,7 +289,7 @@ def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
     pages = [SearchPage(title="T", summary="snippet", url="https://t.test")]
     fetched = [SearchPage(title="T", summary="full article body", url="https://t.test")]
 
-    async def _fake_search_tool(query, *, provider, search_url, page_size):
+    async def _fake_search_tool(query, *, provider, search_url, page_size, **kw):
         return pages
 
     async def _fake_fetch_pages(pgs, *, max_chars, timeout_seconds=10):
@@ -325,7 +325,7 @@ def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkey
 
     executed: list[str] = []
 
-    async def _fake_search_tool(query, *, provider, search_url, page_size):
+    async def _fake_search_tool(query, *, provider, search_url, page_size, **kw):
         executed.append(query)
         return [SearchPage(title="T", summary="s", url="https://t.test")]
 
@@ -365,7 +365,7 @@ def test_hybrid_search_runs_search_tool_calls_concurrently(monkeypatch):
 
     call_count = []
 
-    async def _fake_search_tool(query, *, provider, search_url, page_size):
+    async def _fake_search_tool(query, *, provider, search_url, page_size, **kw):
         call_count.append(query)
         return [SearchPage(title="T", summary="s", url="https://t.test")]
 
@@ -705,3 +705,112 @@ def test_agent_other_exception_returns_502_with_message(monkeypatch, tmp_path):
     assert response.status_code == 502
     assert "bad input format" in response.json()["detail"]
     assert "Agent search failed" not in response.json()["detail"]
+
+
+def test_hybrid_fanout_merges_real_and_drops_errored_provider(monkeypatch, tmp_path):
+    """retrieval returns real pages, serpapi errors → only real docs, status ok."""
+    import asyncio
+    from src.internal.servers.web.app import _run_hybrid_search
+    from src.tools import SearchPage
+
+    async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
+        if provider == "retrieval":
+            return [SearchPage(title="Real Doc", summary="real", url="http://x/1")]
+        return [SearchPage(error="SERPAPI_API_KEY is required.")]
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._expanded_queries", lambda q, llm: [q]
+    )
+    result = asyncio.run(
+        _run_hybrid_search(
+            "q",
+            llm=None,
+            search_url="http://localhost:8001/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="auto",
+        )
+    )
+    assert result.status == "ok"
+    assert [d.title for d in result.documents] == ["Real Doc"]
+    assert all(not d.metadata.get("error") for d in result.documents)
+
+
+def test_hybrid_fanout_all_errored_is_unreachable(monkeypatch, tmp_path):
+    import asyncio
+    from src.internal.servers.web.app import _run_hybrid_search
+    from src.tools import SearchPage
+
+    async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
+        return [SearchPage(error="down")]
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._expanded_queries", lambda q, llm: [q]
+    )
+    result = asyncio.run(
+        _run_hybrid_search(
+            "q",
+            llm=None,
+            search_url="http://x/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="auto",
+        )
+    )
+    assert result.status == "unreachable"
+    assert result.documents == []
+
+
+def test_hybrid_fanout_reachable_but_empty_is_empty(monkeypatch, tmp_path):
+    import asyncio
+    from src.internal.servers.web.app import _run_hybrid_search
+
+    async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
+        return []  # reachable, no hits, no error
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._expanded_queries", lambda q, llm: [q]
+    )
+    result = asyncio.run(
+        _run_hybrid_search(
+            "q",
+            llm=None,
+            search_url="http://x/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="auto",
+        )
+    )
+    assert result.status == "empty"
+    assert result.documents == []
+
+
+def test_hybrid_fanout_one_provider_raises_does_not_kill_other(monkeypatch, tmp_path):
+    import asyncio
+    from src.internal.servers.web.app import _run_hybrid_search
+    from src.tools import SearchPage
+
+    async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
+        if provider == "serpapi":
+            raise RuntimeError("boom")
+        return [SearchPage(title="Real", summary="r", url="http://x/1")]
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._expanded_queries", lambda q, llm: [q]
+    )
+    result = asyncio.run(
+        _run_hybrid_search(
+            "q",
+            llm=None,
+            search_url="http://x/retrieve",
+            top_k=3,
+            filters=None,
+            source_provider="auto",
+        )
+    )
+    assert result.status == "ok"
+    assert [d.title for d in result.documents] == ["Real"]

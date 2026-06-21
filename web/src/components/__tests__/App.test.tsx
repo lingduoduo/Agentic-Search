@@ -151,9 +151,9 @@ describe("App retrieval URL handling", () => {
     await waitFor(() => expect(mockStreamAgent).toHaveBeenCalledTimes(1));
     const sentRequest = mockStreamAgent.mock.calls[0][0] as {
       search_url?: string;
-      source_provider: string;
+      source_provider?: string;
     };
     expect(sentRequest.search_url).toBeUndefined();
-    expect(sentRequest.source_provider).toBe("retrieval");
+    expect(sentRequest.source_provider).toBeUndefined();
   });
 });

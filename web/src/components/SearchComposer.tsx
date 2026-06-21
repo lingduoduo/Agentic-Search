@@ -9,6 +9,7 @@ const SOURCE_OPTIONS: Array<{
   label: string;
   disabled?: boolean;
 }> = [
+  { value: "auto", label: "Auto (internal + web)" },
   { value: "retrieval", label: "Local Retrieval" },
   { value: "google", label: "Google PSE", disabled: true },
   { value: "serpapi", label: "SerpAPI" },
@@ -34,6 +35,9 @@ interface SearchComposerProps {
   // When false (default), the raw retrieval URL input is hidden — the backend
   // resolves the URL from the selected Source. Shown only in dev (?dev=1).
   showUrlField?: boolean;
+  // When false (default), the Source picker is hidden — the backend uses "auto"
+  // fan-out. Shown only in dev (?dev=1).
+  showSourcePicker?: boolean;
   onQueryChange: (value: string) => void;
   onSearchUrlChange: (value: string) => void;
   onTopKChange: (value: number) => void;
@@ -49,6 +53,7 @@ export const SearchComposer = memo(function SearchComposer({
   sourceProvider,
   isLoading,
   showUrlField = false,
+  showSourcePicker = false,
   onQueryChange,
   onSearchUrlChange,
   onTopKChange,
@@ -89,19 +94,21 @@ export const SearchComposer = memo(function SearchComposer({
         </div>
       )}
       <div className="composer-controls">
-        <label>
-          Source
-          <select
-            value={sourceProvider}
-            onChange={(e) => onSourceProviderChange(e.currentTarget.value as SearchSourceProvider)}
-          >
-            {SOURCE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {showSourcePicker && (
+          <label>
+            Source
+            <select
+              value={sourceProvider}
+              onChange={(e) => onSourceProviderChange(e.currentTarget.value as SearchSourceProvider)}
+            >
+              {SOURCE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         {showUrlField && (
           <label className="url-field">

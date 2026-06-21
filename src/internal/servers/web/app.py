@@ -174,10 +174,11 @@ class AgentExperienceRequest(BaseModel):
     search_url: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
     source_provider: str = Field(
-        default="retrieval",
+        default="auto",
         description=(
-            "'retrieval', 'serpapi', 'browser', or 'all'. "
-            "Browser uses the retrieval-compatible URL in search_url."
+            "'auto' (default — fan out to internal RAG + SerpAPI, merged), "
+            "'retrieval', 'serpapi', 'browser', or 'all'. An explicit value other "
+            "than 'auto' forces a search against that single provider (dev only)."
         ),
     )
     mode: str | None = Field(
@@ -218,6 +219,7 @@ class QueryProcessingHookResponse(BaseModel):
 class _HybridSearchResult:
     executed_queries: list[str]
     documents: list[ContextDocument]
+    status: str = "ok"  # "ok" | "empty" | "unreachable"
 
 
 def _register_routers(
@@ -306,7 +308,7 @@ async def _run_auto_routed(
     provider directly.
     """
     extra: dict = {}
-    explicit_source = source_provider != "retrieval"
+    explicit_source = source_provider != "auto"
 
     # --- Tier 1: ToolAgentLoop ---
     # Skipped when the user explicitly chose a source — that is a search command,
@@ -445,12 +447,27 @@ async def _run_auto_routed(
                 filters=filters,
                 source_provider=provider,
             )
-            answer = _search_only_answer(
-                "Search",
-                queries=search_result.executed_queries,
-                documents=search_result.documents,
-                source_provider=provider,
+        except Exception as exc:
+            logger.warning(
+                "Hybrid search failed, falling back to RAG without context: %s", exc
             )
+            extra["search_fallback"] = "retrieval_unavailable"
+        else:
+            if search_result.status == "unreachable":
+                query_lines = "\n".join(
+                    f"- {q}" for q in search_result.executed_queries
+                )
+                answer = (
+                    "No sources are reachable right now. Please try again shortly.\n\n"
+                    f"Executed queries:\n{query_lines}"
+                )
+            else:
+                answer = _search_only_answer(
+                    "Search",
+                    queries=search_result.executed_queries,
+                    documents=search_result.documents,
+                    source_provider=provider,
+                )
             return (
                 answer,
                 [d.citation for d in search_result.documents],
@@ -458,11 +475,6 @@ async def _run_auto_routed(
                 "search",
                 extra,
             )
-        except Exception as exc:
-            logger.warning(
-                "Hybrid search failed, falling back to RAG without context: %s", exc
-            )
-            extra["search_fallback"] = "retrieval_unavailable"
 
     # Chat path (also search fallback)
     try:
@@ -1240,12 +1252,14 @@ _SOURCE_PROVIDER_ALIASES = {
     "web": "all",
 }
 _VALID_SOURCE_PROVIDERS = {
+    "auto",
     "retrieval",
     "serpapi",
     "browser",
     "all",
 }
 _SOURCE_PROVIDER_LABELS = {
+    "auto": "Auto (internal + web)",
     "retrieval": "Local Retrieval",
     "serpapi": "SerpAPI",
     "browser": "Browser Retrieval",
@@ -1265,9 +1279,16 @@ def _normalize_source_provider(source_provider: str) -> str:
     return normalized
 
 
+# Default provider set when the user does not pick a source: fan out to internal
+# RAG + fast web search, merged. Browser is excluded (too slow for the default).
+_DEFAULT_FANOUT_PROVIDERS = ["retrieval", "serpapi"]
+
+
 def _source_providers_for(source_provider: str) -> list[str]:
     if source_provider == "all":
         return ["retrieval", "serpapi", "browser"]
+    if source_provider == "auto":
+        return list(_DEFAULT_FANOUT_PROVIDERS)
     return [source_provider]
 
 
@@ -1423,6 +1444,49 @@ async def _rerank_documents(
     return docs
 
 
+def _provider_error_doc(provider: str, message: str) -> ContextDocument:
+    """A placeholder doc marking a provider that failed/timed out. Filtered from
+    results; its presence signals 'unreachable' when no real docs were found."""
+    return ContextDocument(
+        id="D0",
+        title="Search error",
+        content=message,
+        url=None,
+        score=0.0,
+        metadata={
+            "source_provider": provider,
+            "source": _source_label(provider),
+            "error": True,
+        },
+    )
+
+
+async def _finalize_hybrid(
+    documents: list[ContextDocument],
+    *,
+    executed_queries: list[str],
+    query: str,
+    rerank_url: str | None,
+    top_k: int,
+) -> _HybridSearchResult:
+    real = [d for d in documents if not d.metadata.get("error")]
+    errored = [d for d in documents if d.metadata.get("error")]
+    if not real:
+        status = "unreachable" if errored else "empty"
+        return _HybridSearchResult(
+            executed_queries=executed_queries, documents=[], status=status
+        )
+    deduped = _dedupe_documents(real)
+    if rerank_url:
+        deduped = await _rerank_documents(deduped, query, rerank_url)
+    diversified = mmr_rerank(deduped, topk=top_k)
+    return _HybridSearchResult(
+        executed_queries=executed_queries,
+        documents=_reindex_documents(diversified),
+        status="ok" if diversified else "empty",
+    )
+
+
 async def _run_hybrid_search(
     query: str,
     *,
@@ -1462,6 +1526,7 @@ async def _run_hybrid_search(
                 )
                 for doc in diversified
             ],
+            status="ok" if diversified else "empty",
         )
 
     if source_provider == "browser":
@@ -1481,22 +1546,22 @@ async def _run_hybrid_search(
         return _HybridSearchResult(
             executed_queries=[query],
             documents=_reindex_documents(diversified_b),
+            status="ok" if diversified_b else "empty",
         )
 
     executed_queries = _expanded_queries(query, llm)
-    documents: list[ContextDocument] = []
-    for provider in _source_providers_for(source_provider):
+
+    async def _fetch_provider(provider: str) -> list[ContextDocument]:
         if provider == "browser":
-            if browser_search_url:
-                browser_docs = await _run_browser_search(
-                    query,
-                    browser_search_url=browser_search_url,
-                    top_k=top_k * 2,
-                    existing_count=len(documents),
-                )
-                documents.extend(browser_docs)
-            continue
-        # Run all expanded queries concurrently for this provider
+            if not browser_search_url:
+                return []
+            # IDs are globally reassigned by _finalize_hybrid -> _reindex_documents, so starting at 0 here is safe.
+            return await _run_browser_search(
+                query,
+                browser_search_url=browser_search_url,
+                top_k=top_k * 2,
+                existing_count=0,
+            )
         page_lists: list[list[SearchPage]] = list(
             await asyncio.gather(
                 *[
@@ -1505,6 +1570,8 @@ async def _run_hybrid_search(
                         provider=provider,
                         search_url=search_url,
                         page_size=top_k,
+                        timeout_seconds=5,
+                        max_retries=1,
                     )
                     for expanded_query in executed_queries
                 ]
@@ -1513,26 +1580,41 @@ async def _run_hybrid_search(
         if _is_web_provider(provider):
             all_pages = [p for pages in page_lists for p in pages]
             enriched = await fetch_pages_concurrently(all_pages, max_chars=2000)
-            # Re-partition enriched pages back into per-query slices
             it = iter(enriched)
             page_lists = [list(islice(it, len(pages))) for pages in page_lists]
+        docs: list[ContextDocument] = []
         for expanded_query, pages in zip(executed_queries, page_lists):
-            documents.extend(
+            docs.extend(
                 _documents_from_search_pages(
                     pages,
                     source_provider=provider,
                     query=expanded_query,
-                    start_index=len(documents) + 1,
+                    start_index=len(docs) + 1,
                     entry_point="hybrid_search",
                 )
             )
-    deduped = _dedupe_documents(documents)
-    if rerank_url:
-        deduped = await _rerank_documents(deduped, query, rerank_url)
-    diversified = mmr_rerank(deduped, topk=top_k)
-    return _HybridSearchResult(
+        return docs
+
+    async def _fetch_provider_guarded(provider: str) -> list[ContextDocument]:
+        try:
+            return await asyncio.wait_for(_fetch_provider(provider), timeout=8.0)
+        except Exception as exc:  # timeout or provider error → mark unreachable
+            logger.warning("Provider %s failed/timed out: %s", provider, exc)
+            return [_provider_error_doc(provider, str(exc))]
+
+    provider_docs = await asyncio.gather(
+        *[
+            _fetch_provider_guarded(provider)
+            for provider in _source_providers_for(source_provider)
+        ]
+    )
+    documents = [doc for docs in provider_docs for doc in docs]
+    return await _finalize_hybrid(
+        documents,
         executed_queries=executed_queries,
-        documents=_reindex_documents(diversified),
+        query=query,
+        rerank_url=rerank_url,
+        top_k=top_k,
     )
 
 
@@ -1576,6 +1658,7 @@ def _documents_from_search_pages(
                     "source": _source_label(source_provider),
                     "source_provider": source_provider,
                     "query": query,
+                    "error": bool(page.error),
                 },
             )
         )
