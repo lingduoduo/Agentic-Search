@@ -254,6 +254,8 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`.
 
+**Chat streaming pipeline** — `streamAgent` consumes the SSE stream and drives the chat UI from three event types: `progress` (live tool-call steps in the `ProgressLog`), `answer` (incremental answer tokens rendered as markdown), and `done` (final citations, documents, tool calls, and `intent`). Backend side, these packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent for a fresh session; each in-flight turn is cancellable via the stop-signal fence.
+
 
 ## Intent Routing
 
@@ -437,6 +439,11 @@ python3 -m examples.run_search_pipeline
 - `compress_chat_history` — summarises older turns when context exceeds the token budget; branch-aware
 - `Emitter` — routes packets (tokens, tool calls, citations) from worker threads to the HTTP stream
 - `build_system_prompt` — assembles system prompt from persona, tools, knowledge, and memory context
+- `AgentQueueManager` (`src/internal/chat/queue_manager.py`) — thread-safe queue that funnels `AgentThought` packets (token deltas, tool calls, citations, `QueueEvent` markers) from worker threads to the SSE stream; the backbone of streamed chat
+- `ChatStateContainer` / `ChatTurnSetup` / `AvailableFiles` (`src/internal/chat/chat_state.py`) — per-turn chat state: resolved persona, tools, uploaded files, and message history assembled once per turn
+- `maybe_emit_argument_delta` + `Parser` (`src/internal/chat/tool_call_args_streaming.py`) — incrementally parses and streams tool-call **argument** deltas so tool inputs render live as the model emits them
+- Stop / cancel signalling (`src/internal/chat/stop_signal_checker.py`) — `set_fence` / `is_connected` / `reset_cancel_status` use a Redis fence keyed by session to abort an in-flight turn when the client disconnects or hits Stop
+- `compress_chat_history` token-budget policy is documented in `src/internal/chat/COMPRESSION.md`
 
 **Cache & Persistence**
 - `AgenticSearchStore` (SQLite) — connectors, documents, permissions, chat sessions, indexing attempts, usage reports, rate limits, SCIM tokens, standard answers (`src/internal/db/store.py`)
@@ -745,6 +752,57 @@ curl -s -X POST http://localhost:7860/api/feedback \
   -d '{"session_id": "sess-123", "signal": "thumbs_up"}'
 # → {"ok": true}
 ```
+
+
+## Chat & Session API
+
+Chat session management and search-flow routing live on the web backend (`:7860`) under the `/chat`, `/search`, and `/query` routers (`src/internal/servers/query_and_chat/`). The streamed send-message flow itself is `POST /api/agent` / `/api/agent/stream` above; these endpoints manage the sessions and feedback around it.
+
+**Chat sessions** (`/chat`):
+```bash
+# Create a session
+curl -s -X POST http://localhost:7860/chat/create-chat-session \
+  -H "Content-Type: application/json" -d '{"title": "Onboarding questions"}'
+# → {"chat_session_id": "..."}
+
+# List the user's sessions / fetch one with its messages
+curl -s http://localhost:7860/chat/get-user-chat-sessions
+curl -s http://localhost:7860/chat/get-chat-session/{session_id}
+
+# Rename / delete
+curl -s -X PUT http://localhost:7860/chat/rename-chat-session \
+  -H "Content-Type: application/json" \
+  -d '{"chat_session_id": "...", "name": "Renamed"}'
+curl -s -X DELETE http://localhost:7860/chat/delete-chat-session/{session_id}
+```
+
+**Per-message feedback** (`POST /chat/create-chat-message-feedback`):
+```bash
+curl -s -X POST http://localhost:7860/chat/create-chat-message-feedback \
+  -H "Content-Type: application/json" \
+  -d '{"chat_message_id": "...", "is_positive": true, "feedback_text": "spot on"}'
+```
+
+**Search-flow classification** (`POST /search/search-flow-classification` — keyword-search vs chat routing):
+```bash
+curl -s -X POST http://localhost:7860/search/search-flow-classification \
+  -H "Content-Type: application/json" -d '{"user_query": "find the Q3 onboarding deck"}'
+# → {"is_search_flow": true}
+```
+
+**Direct search message** (`POST /search/send-search-message` — optional query expansion, streamable):
+```bash
+curl -s -X POST http://localhost:7860/search/send-search-message \
+  -H "Content-Type: application/json" \
+  -d '{"search_query": "vector database benchmarks", "run_query_expansion": true, "num_hits": 10, "stream": false}'
+```
+
+**Search history** (`GET /search/search-history`):
+```bash
+curl -s http://localhost:7860/search/search-history
+```
+
+`GET /query/standard-answer` exists but is an Enterprise-gated stub — it returns `501` ("Standard Answers is an Enterprise feature … not available in this deployment") in the open-source build.
 
 
 ## Retrieval Optimization
