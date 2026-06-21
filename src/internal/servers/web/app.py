@@ -107,22 +107,35 @@ logger = logging.getLogger(__name__)
 class SearchExperienceSettings:
     """Runtime settings for the browser search app."""
 
-    search_url: str = "http://localhost:8000/retrieve"
+    search_url: str = "http://localhost:8001/retrieve"
     top_k: int = 5
     db_path: str | Path = ":memory:"
     browser_search_url: str | None = None
     rerank_url: str | None = None
+    # When False (default), the retrieval URL is resolved server-side and any
+    # client-supplied search_url is ignored — this closes the SSRF hole where a
+    # client could point the backend at an arbitrary URL. Enable only for local
+    # dev/debugging via AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL=true.
+    allow_client_search_url: bool = False
 
     @classmethod
     def from_app_settings(
         cls,
         settings: AppSettings | None = None,
     ) -> "SearchExperienceSettings":
+        import os
+
         app_settings = settings or load_app_settings()
         return cls(
             search_url=app_settings.services.retrieval_url,
             top_k=app_settings.services.web_top_k,
             db_path=app_settings.services.web_db_path,
+            allow_client_search_url=os.environ.get(
+                "AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL", ""
+            )
+            .strip()
+            .lower()
+            in {"1", "true", "yes"},
         )
 
 
@@ -278,6 +291,7 @@ async def _run_auto_routed(
     filters,
     history: list,
     resolved,
+    source_provider: str = "retrieval",
     on_turn=None,
 ) -> tuple:
     """
@@ -285,11 +299,19 @@ async def _run_auto_routed(
     Tier 1: ToolAgentLoop (when local model available)
     Tier 2: LLM binary classifier
     Tier 3: Rule-based keyword classifier
+
+    When *source_provider* is an explicit non-default source (e.g. "serpapi",
+    "browser", "all"), the user has stated a clear search intent against that
+    backend: skip intent classification and the tool loop, and search that
+    provider directly.
     """
     extra: dict = {}
+    explicit_source = source_provider != "retrieval"
 
     # --- Tier 1: ToolAgentLoop ---
-    if manager is not None and tokenizer is not None:
+    # Skipped when the user explicitly chose a source — that is a search command,
+    # not an open-ended request to be routed to chat/tool.
+    if not explicit_source and manager is not None and tokenizer is not None:
         from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
         from src.tools import tool_registry
 
@@ -396,7 +418,10 @@ async def _run_auto_routed(
             return answer, citations, documents, intent, extra
 
     # --- Tier 2: LLM classify + execution ---
-    if llm is not None:
+    if explicit_source:
+        # User picked a specific source → unambiguous search intent.
+        is_search = True
+    elif llm is not None:
         try:
             is_search = await asyncio.to_thread(classify_is_search_flow, query, llm)
         except Exception as exc:
@@ -408,7 +433,7 @@ async def _run_auto_routed(
         # Don't raise here — fall through to search or chat path below
 
     if is_search:
-        provider = "retrieval"
+        provider = source_provider
         try:
             search_result = await _run_hybrid_search(
                 query,
@@ -694,7 +719,14 @@ def create_web_app(
         )
         db.add_chat_message(session_id, role="user", content=query)
 
-        search_url = request.search_url or settings.search_url
+        # Resolve the retrieval URL server-side. A client-supplied search_url is
+        # honored only when explicitly allowed (dev/debug); otherwise it is
+        # ignored so the backend, not the browser, decides what it will fetch.
+        search_url = (
+            request.search_url
+            if settings.allow_client_search_url and request.search_url
+            else settings.search_url
+        )
         top_k = request.top_k or settings.top_k
         filters = (
             build_user_only_filters(
@@ -730,6 +762,7 @@ def create_web_app(
                     filters=filters,
                     history=history,
                     resolved=resolved,
+                    source_provider=_normalize_source_provider(request.source_provider),
                     on_turn=on_turn,
                 )
                 tool_calls = extra_meta.pop("tool_calls", [])

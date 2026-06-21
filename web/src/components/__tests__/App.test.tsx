@@ -142,3 +142,18 @@ describe("App example chips", () => {
     expect(sentRequest.query).toBe("find the onboarding checklist");
   });
 });
+
+describe("App retrieval URL handling", () => {
+  it("does not send a client search_url in normal (non-dev) mode", async () => {
+    mockStreamAgent.mockReturnValue(fakeStream("search"));
+    render(<App />);
+    await submitQuery("find docs");
+    await waitFor(() => expect(mockStreamAgent).toHaveBeenCalledTimes(1));
+    const sentRequest = mockStreamAgent.mock.calls[0][0] as {
+      search_url?: string;
+      source_provider: string;
+    };
+    expect(sentRequest.search_url).toBeUndefined();
+    expect(sentRequest.source_provider).toBe("retrieval");
+  });
+});

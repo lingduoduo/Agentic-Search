@@ -197,3 +197,53 @@ def test_llm_classifier_fails_falls_back_to_rule_based(monkeypatch, tmp_path):
         response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 200
     assert response.json()["intent"] == "chat"
+
+
+# --- Explicit source selection forces a search against that provider ---
+
+
+def test_explicit_source_forces_search_against_that_provider(monkeypatch, tmp_path):
+    """source_provider='serpapi' + a chat-looking query → search via SerpAPI.
+
+    Regression: picking a Source used to be ignored by the auto-router (it
+    classified by query wording and hardcoded the 'retrieval' provider). An
+    explicit non-default source is now an unambiguous search command.
+    """
+    from src.internal.servers.web.app import _HybridSearchResult
+
+    captured: dict = {}
+
+    async def fake_hybrid(query, **kwargs):
+        captured["source_provider"] = kwargs.get("source_provider")
+        doc = ContextDocument(id="D1", title="t", content="c", url=None, score=0.0)
+        return _HybridSearchResult(executed_queries=[query], documents=[doc])
+
+    # Would classify "explain ..." as chat if it were ever consulted.
+    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    classifier = MagicMock(return_value=False)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.classify_is_search_flow", classifier
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent",
+            json={"query": "explain how FAISS works", "source_provider": "serpapi"},
+        )
+    assert response.status_code == 200
+    assert response.json()["intent"] == "search"
+    assert captured["source_provider"] == "serpapi"
+    classifier.assert_not_called()  # search intent was not second-guessed
+
+
+def test_default_source_still_auto_routes_to_chat(monkeypatch, tmp_path):
+    """Default source ('retrieval') preserves auto-routing: 'explain' → chat."""
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval",
+        AsyncMock(return_value=_make_answer_result("chat answer")),
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post("/api/agent", json={"query": "explain FAISS"})
+    assert response.status_code == 200
+    assert response.json()["intent"] == "chat"

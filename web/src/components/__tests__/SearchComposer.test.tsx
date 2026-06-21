@@ -29,10 +29,19 @@ describe("SearchComposer", () => {
     expect(screen.queryByLabelText(/entry point/i)).not.toBeInTheDocument();
   });
 
-  it("renders retrieval URL and topK fields", () => {
+  it("renders topK field", () => {
     render(<SearchComposer {...defaultProps} />);
-    expect(screen.getByDisplayValue("http://localhost:8001")).toBeInTheDocument();
     expect(screen.getByDisplayValue("5")).toBeInTheDocument();
+  });
+
+  it("hides the raw Retrieval URL field by default", () => {
+    render(<SearchComposer {...defaultProps} />);
+    expect(screen.queryByDisplayValue("http://localhost:8001")).not.toBeInTheDocument();
+  });
+
+  it("shows the Retrieval URL field when showUrlField is set (dev mode)", () => {
+    render(<SearchComposer {...defaultProps} showUrlField />);
+    expect(screen.getByDisplayValue("http://localhost:8001")).toBeInTheDocument();
   });
 
   it("disables submit when query is empty", () => {

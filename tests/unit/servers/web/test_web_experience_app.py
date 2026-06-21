@@ -78,7 +78,9 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         assert filters is None
         assert question == "How do I deploy?"
         assert chat_history == []
-        assert search_url == "http://search.test/retrieve"
+        # The client-supplied search_url below is ignored; the server resolves
+        # the retrieval URL from its own settings (SSRF protection).
+        assert search_url == "http://server.test/retrieve"
         assert top_k == 3
         return _answer_result(question)
 
@@ -87,7 +89,10 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         fake_answer_with_retrieval,
     )
     store = AgenticSearchStore(tmp_path / "state.sqlite3")
-    app = create_web_app(store=store)
+    app = create_web_app(
+        SearchExperienceSettings(search_url="http://server.test/retrieve"),
+        store=store,
+    )
     client = TestClient(app)
 
     response = client.post(
