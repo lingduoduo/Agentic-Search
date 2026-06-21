@@ -237,7 +237,7 @@ def test_explicit_source_forces_search_against_that_provider(monkeypatch, tmp_pa
 
 
 def test_default_source_still_auto_routes_to_chat(monkeypatch, tmp_path):
-    """Default source ('retrieval') preserves auto-routing: 'explain' → chat."""
+    """Default source ('auto') preserves auto-routing: 'explain' → chat."""
     monkeypatch.setattr(
         "src.internal.servers.web.app.answer_with_retrieval",
         AsyncMock(return_value=_make_answer_result("chat answer")),

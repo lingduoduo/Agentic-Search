@@ -668,11 +668,30 @@ def test_auto_route_tier1_tool_loop_runs_when_model_available(monkeypatch, tmp_p
 
 
 def test_agent_no_llm_no_model_returns_400(monkeypatch, tmp_path):
-    """App with no LLM and no local model → chat query → 400."""
-    # Prevent .env from loading so no API key is picked up.
+    """App with no LLM and no local model → chat query → 400.
+
+    Deterministic regardless of local environment. Two real-world leak paths are
+    closed so ``llm`` is genuinely None: (1) inject empty app_settings so the
+    config loader's GEN_AI key can't set ``resolved.llm.api_key``; (2) set
+    OPENAI_API_KEY="" — python-dotenv won't override an already-present var, so
+    create_web_app's internal .env reload can't repopulate it (delenv alone is
+    insufficient — the reload re-adds it). Synthesis is then forced to fail so the
+    no-LLM 400 branch is exercised even when a retrieval server happens to be up
+    (otherwise extractive retrieval would answer without an LLM → 200).
+    """
+    from unittest.mock import AsyncMock
+    from src.internal.configs import AppSettings
+
     monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval",
+        AsyncMock(side_effect=RuntimeError("no retrieval backend")),
+    )
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"),
+        app_settings=AppSettings(),
+    )
     client = TestClient(app)
     response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 400
@@ -814,3 +833,49 @@ def test_hybrid_fanout_one_provider_raises_does_not_kill_other(monkeypatch, tmp_
     )
     assert result.status == "ok"
     assert [d.title for d in result.documents] == ["Real"]
+
+
+def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
+    """source_provider='auto' must NOT pull the slow browser sidecar, while
+    'all'/'retrieval' still do (regression for the browser-out-of-auto invariant)."""
+    import asyncio
+    from src.tools.search import SearchPage
+    from src.internal.servers.web.app import _run_direct_search
+
+    browser_calls: list[str] = []
+
+    async def _fake_search_tool(query, *, provider, search_url, page_size):
+        return [
+            SearchPage(title=f"{provider} R", summary="c", url=f"http://{provider}/1")
+        ]
+
+    async def _fake_browser(query, *, browser_search_url, top_k, existing_count):
+        browser_calls.append(query)
+        return []
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", _fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_browser_search", _fake_browser
+    )
+
+    asyncio.run(
+        _run_direct_search(
+            "q",
+            source_provider="auto",
+            search_url="http://localhost:8001/retrieve",
+            browser_search_url="http://localhost:9999/retrieve",
+            top_k=3,
+        )
+    )
+    assert browser_calls == []  # auto never triggers browser
+
+    asyncio.run(
+        _run_direct_search(
+            "q",
+            source_provider="retrieval",
+            search_url="http://localhost:8001/retrieve",
+            browser_search_url="http://localhost:9999/retrieve",
+            top_k=3,
+        )
+    )
+    assert browser_calls == ["q"]  # non-auto still gets the sidecar
