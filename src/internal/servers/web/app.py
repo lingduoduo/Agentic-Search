@@ -1473,7 +1473,7 @@ async def _finalize_hybrid(
     return _HybridSearchResult(
         executed_queries=executed_queries,
         documents=_reindex_documents(diversified),
-        status="ok",
+        status="ok" if diversified else "empty",
     )
 
 
@@ -1545,6 +1545,7 @@ async def _run_hybrid_search(
         if provider == "browser":
             if not browser_search_url:
                 return []
+            # IDs are globally reassigned by _finalize_hybrid -> _reindex_documents, so starting at 0 here is safe.
             return await _run_browser_search(
                 query,
                 browser_search_url=browser_search_url,
@@ -1579,6 +1580,7 @@ async def _run_hybrid_search(
                     source_provider=provider,
                     query=expanded_query,
                     start_index=len(docs) + 1,
+                    entry_point="hybrid_search",
                 )
             )
         return docs
