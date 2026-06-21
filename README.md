@@ -224,14 +224,16 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 **Tool Call Trace Panel** — When the agent runs in `tool` mode, a panel below the answer shows every tool call: name, status (✓ / ✗), arguments as JSON, result summary (first 200 chars or "N items" for lists), and latency in ms. Failed calls render with a red border and the error message.
 
-**Intent-adaptive layout** — After each response the results area applies a CSS class (`intent-search`, `intent-chat`, or `intent-tool`) that shifts the layout:
+**Intent-adaptive layout** — `App.tsx` reads `response.intent` (set from the `done` SSE event via `setIntent`) and applies `intent-${intent}` to the `.results-layout` container; when `intent` is undefined no class is added and the layout falls back to the default single-column stack. The behaviour is **CSS-only** — `styles.css` rules consume the class to reflow the existing panels (no extra components), keyed off stable hooks `.answer-column`, `.sources-panel`, `.session-panel`, and `.tool-trace-panel`:
 
-| Intent | Layout |
-|--------|--------|
-| `search` | Single column; sources panel gets a highlighted border; session history dimmed |
-| `chat` | Answer + session history side-by-side (≥720 px); sources full-width below |
-| `tool` | Tool Trace Panel full-width hero; sources and session side-by-side below |
-| narrow (≤720 px) | All intents fall back to single-column stack |
+| Intent | `.results-layout` class | Layout |
+|--------|--------|--------|
+| `search` | `intent-search` | Single column; `.sources-panel` gets a highlighted border; `.session-panel` dimmed |
+| `chat` | `intent-chat` | `.answer-column` + `.session-panel` side-by-side (≥720 px); `.sources-panel` full-width below |
+| `tool` | `intent-tool` | `.tool-trace-panel` full-width hero; `.sources-panel` and `.session-panel` side-by-side below |
+| narrow (≤720 px) | — | All intents fall back to a single-column grid stack |
+
+The intent itself comes from the backend's routing decision — see the `response.intent` contract under [Web Backend API](#web-backend-api). No new endpoints back this feature; the layout is a pure function of that one field.
 
 **Intent badge** (`AnswerPanel.tsx`) — a pill under the answer summarising what ran, derived from `response.intent` + counts: `Searched · 5 sources`, `Answered · 3 citations`, or `Used tools`. Hidden when the answer is empty or the intent is undefined.
 
@@ -731,7 +733,16 @@ curl -s -X POST http://localhost:7860/api/agent \
 # → {"answer": "...", "intent": "chat", "citations": ["[D1]"], "documents": [...], "session_id": "..."}
 ```
 
-**Stream the same over SSE** (`POST /api/agent/stream`) — yields `progress`, `answer`, and `done` events:
+`response.intent` is `"search" | "chat" | "tool"` and is the single field that drives the [intent-adaptive layout](#ui-features) (`App.tsx` maps it to a `.results-layout` class). Read just that field:
+```bash
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "find the onboarding checklist", "top_k": 5}' \
+  | python -c "import sys, json; print(json.load(sys.stdin)['intent'])"
+# → search
+```
+
+**Stream the same over SSE** (`POST /api/agent/stream`) — yields `progress`, `answer`, and `done` events (the `done` event carries `intent`, which the frontend feeds to `setIntent`):
 ```bash
 curl -sN -X POST http://localhost:7860/api/agent/stream \
   -H "Content-Type: application/json" \
