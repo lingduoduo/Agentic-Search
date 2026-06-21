@@ -214,7 +214,7 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 ### UI features
 
-**Streaming answers** — Every query streams over SSE. A live `ProgressLog` shows tool-call steps as they arrive (turn number + tool name); collapses to a one-line summary once the answer is complete.
+**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` drives the UI from `progress` / `answer` / `done` events. While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` for the active step, `✓ Turn N · <tool> · N docs` for completed ones); answer tokens stream into the panel as markdown as they arrive. Once `done` lands, the log collapses to a one-line summary button (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full per-turn trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) which the stream endpoint converts into a `progress` event.
 
 **Markdown rendering** — Answers render via `react-markdown`: headings, bold/italic, inline code, code blocks, and ordered/unordered lists. Citation markers (`[D1]`, `[D2]`, …) become anchor links that scroll the page to the matching source card.
 
@@ -757,12 +757,18 @@ curl -s -X POST http://localhost:7860/api/agent \
 # → search
 ```
 
-**Stream the same over SSE** (`POST /api/agent/stream`) — yields `progress`, `answer`, and `done` events (the `done` event carries `intent`, which the frontend feeds to `setIntent`):
+**Stream the same over SSE** (`POST /api/agent/stream`) — emits one `progress` event after each agent turn (via the `on_turn` callback), then `answer`, then `done` (which carries `intent`, `citations`, and `documents`; the frontend feeds `intent` to `setIntent`). The non-streaming `/api/agent` is unchanged:
 ```bash
 curl -sN -X POST http://localhost:7860/api/agent/stream \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "top_k": 5}'
+  -d '{"query": "Compare dense and sparse retrieval", "top_k": 5}'
+# Server-Sent Events (one JSON object per `data:` line):
+# data: {"type": "progress", "turn": 1, "text": "search_routing_tool · 5 docs"}
+# data: {"type": "progress", "turn": 2, "text": "writing answer…"}
+# data: {"type": "answer",   "text": "Dense retrieval embeds the query …"}
+# data: {"type": "done",     "session_id": "...", "intent": "chat", "citations": ["[D1]"], "documents": [...]}
 ```
+On failure the stream yields `data: {"type": "error", "detail": "..."}` instead of `done`, which `streamAgent` surfaces as the error banner.
 
 **Sessions:**
 ```bash
