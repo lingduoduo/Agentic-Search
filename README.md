@@ -356,7 +356,16 @@ python3 -m examples.run_search_pipeline
 - **`ONNXReranker`** (`src/internal/retrieval/onnx_reranker.py`) — drop-in replacement using `optimum.onnxruntime`; falls back to PyTorch `Reranker` on `ImportError`; enabled via `RERANKER_USE_ONNX=true`
 - **`PassageTruncator`** (`src/internal/retrieval/passage_truncator.py`) — whitespace-token truncation applied before scoring; zero-dependency; configurable via `RERANKER_MAX_TOKENS` (0 = disabled)
 - **`RerankerBenchmark`** (`src/internal/retrieval/reranker_benchmark.py`) — offline CLI grid search over model × batch_size × max_tokens; writes JSONL output and prints a ranked table sorted by NDCG@k
-- **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface; passed into `RetrievalService.search(pipeline=...)` for parallel multi-variant retrieval with RRF fusion; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`
+- **`QueryTransformPipeline`** (`src/context/query_transform.py`) — composes decompose, HyDE, step-back, keyword expansion, and filter extraction behind one interface; passed into `RetrievalService.search(pipeline=...)` for parallel multi-variant retrieval with RRF fusion; all `QT_*` env vars default to `false` (zero overhead when disabled); appends `+rag_fusion` to `retrieval_mode`. Refactored to expose `_build_jobs`/`_assemble` and a per-query `config_override`, plus the module helper `config_signature()`, so the wrappers below can compose on top of the unchanged leaf
+- **`AsyncQueryTransformPipeline`** (`src/internal/retrieval/async_query_transform.py`) — runs the leaf's transform calls (decompose, HyDE, step-back, keywords, filter construction) concurrently in a `ThreadPoolExecutor`; a transform that exceeds `QT_TRANSFORM_TIMEOUT_MS` or raises degrades to its empty default rather than failing the request; enabled via `QT_ASYNC=true`
+- **`CachedQueryTransformPipeline`** (`src/internal/retrieval/cached_query_transform.py`) — Redis-backed bundle cache keyed on `sha256(query|config_signature)`; caches the **filter-free** bundle and re-merges caller filters per call (no cross-caller leakage); `stats()` returns hits/misses/hit_rate; `from_env()` returns base unchanged when `QT_CACHE_REDIS_URL` is unset
+- **`MultiQueryGenerator`** (`src/internal/retrieval/multi_query.py`) — true Multi-Query retrieval: one LLM call produces N paraphrased reformulations (distinct from decompose's sub-questions); surfaced as the `multi_query` field on `TransformedQueryBundle`; enabled via `QT_MULTI_QUERY=true` (`QT_MULTI_QUERY_N` controls N)
+- **`variant_weighted_rrf_fuse` / `dedup_variants`** (`src/internal/retrieval/fusion.py`) — weighted RAG-Fusion across N variant result sets (original query weighted highest) gated by `QT_FUSION_WEIGHTED`; embedding-cosine dedup that drops near-duplicate variants before retrieval gated by `QT_SEMANTIC_DEDUP` (dormant until a dense backend exposes a batch `embed()`)
+- **`QueryRouter` / `RoutedQueryTransformPipeline`** (`src/internal/retrieval/query_router.py`, `routed_query_transform.py`) — per-query learned routing: predicts which transforms to enable from a serialized scikit-learn artifact (`QT_ROUTER_MODEL_PATH`) with a rule-based heuristic fallback when no artifact is present; the wrapper threads the predicted config down the chain as `config_override`; enabled via `QT_ROUTER=true`. Train the artifact offline with `src/training/train_query_router.py`
+- **`build_query_transform_pipeline_from_env`** (`src/internal/retrieval/query_transform_factory.py`) — composes the active layers `RoutedQueryTransformPipeline → CachedQueryTransformPipeline → AsyncQueryTransformPipeline → QueryTransformPipeline`, skipping any whose flag is unset; returns `None` (single-query path, zero overhead) when no `QT_*` flag is set
+- **`QueryTransformBenchmark`** (`src/internal/retrieval/query_transform_benchmark.py`) — offline grid over technique-combination configs × a labeled dataset; `run_query_transform_benchmark()` reports recall@k / NDCG@k (reusing `eval_metrics`) plus mean transform latency per config, sorted by recall
+- **`qt_slo_exceeded`** (`src/internal/retrieval/eval_runner.py`) — P99 transform-latency gate; `eval_runner --qt-slo-ms N` records per-query `qt_latency_ms` and exits non-zero when P99 exceeds the budget
+- **`QueryConstructor`** (`src/internal/retrieval/query_constructor.py`) — NL → metadata filter extraction; with `QT_CONSTRUCT_OPERATORS=true` it additionally emits numeric comparison filters (`rating_gte`, `rating_lte`) beyond equality and date ranges
 - **`QueryOptimizer`** (`src/internal/retrieval/query_optimizer.py`) — acronym expansion (`data/query/acronyms.json`), WordNet synonym injection, and `symspellpy` spell correction applied to the BM25 leg only; enabled via `QUERY_EXPANSION_ENABLED` / `SPELL_CORRECTION_ENABLED`
 - **`BM25Tuner`** (`src/internal/retrieval/bm25_tuner.py`) — grid search over `(k1, b)` against labeled QA pairs; results written to `data/eval/bm25_params.json`; BM25+ variant (`δ=1.0`) enabled via `BM25_VARIANT=bm25plus`
 - **`FAISSIndexBuilder`** (`src/internal/retrieval/index_optimizer.py`) — builds IVF-PQ indexes (`nlist=4096, m=96, nbits=8, nprobe=64`) cutting memory from ~30 GB to ≤ 4 GB at 10 M docs; `HNSWTuner` finds minimum `ef_search` meeting a recall target; `EmbeddingBatcher` coalesces concurrent embed calls within a 5ms window
@@ -433,6 +442,9 @@ python3 -m examples.run_search_pipeline
 - **Query decomposition** (`QueryEnhancer.decompose`) — splits complex questions into 2–4 independent sub-queries for parallel retrieval
 - **HyDE** (`QueryEnhancer.hyde`) — generates a hypothetical ideal answer to expand sparse queries before retrieval
 - **Step-back prompting** — reformulates narrow questions into broader conceptual queries
+- **Multi-Query retrieval** (`MultiQueryGenerator`) — one LLM call yields N paraphrased reformulations retrieved in parallel and fused, distinct from decomposition's sub-questions
+- **Weighted RAG-Fusion** (`variant_weighted_rrf_fuse`) — RRF across all variant result sets with the original query weighted highest; optional pre-retrieval semantic dedup of near-duplicate variants
+- **Learned query routing** (`QueryRouter`) — predicts the per-query transform set from a scikit-learn artifact with a rule-based heuristic fallback, so cheap queries skip expensive transforms
 - **Keyword extraction** — strips conversational noise from queries before BM25 retrieval
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/servers/secondary_llm_flows/search_flow_classification.py`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
@@ -671,6 +683,89 @@ import numpy as np
 builder = FAISSIndexBuilder()
 index = builder.build_ivfpq(embeddings, nlist=4096, m=96, nbits=8, nprobe=64)
 # Save alongside existing index; load via FAISS_INDEX_TYPE=ivfpq
+```
+
+
+## Query Transformation Optimization
+
+A layered-wrapper optimization stack over `QueryTransformPipeline`, parallel to Neural Reranking. Every layer is opt-in; with all `QT_*` unset, `RetrievalService` runs the single-query path unchanged (`build_query_transform_pipeline_from_env` returns `None`).
+
+**Wrapper chain** (outermost → innermost):
+```
+RoutedQueryTransformPipeline → CachedQueryTransformPipeline → AsyncQueryTransformPipeline → QueryTransformPipeline (leaf)
+```
+
+**Enable parallel transforms + Redis bundle cache:**
+```bash
+QT_DECOMPOSE=true QT_HYDE=true QT_STEP_BACK=true \
+  QT_ASYNC=true QT_TRANSFORM_TIMEOUT_MS=400 \
+  QT_CACHE_REDIS_URL=redis://localhost:6379 QT_CACHE_TTL_SECONDS=600 \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Enable Multi-Query + weighted RAG-Fusion:**
+```bash
+QT_MULTI_QUERY=true QT_MULTI_QUERY_N=3 QT_FUSION_WEIGHTED=true \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+**Enable per-query learned routing** (heuristic until an artifact exists):
+```bash
+QT_ROUTER=true QT_ROUTER_MODEL_PATH=data/query_router.joblib \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+`QT_ROUTER` and `QT_MULTI_QUERY` each activate the pipeline on their own — no other `QT_*` flag is required.
+
+**Test it — multi-variant retrieval appends `+rag_fusion` to `retrieval_mode`:**
+```bash
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Compare dense and sparse retrieval", "mode": "chat_loop", "top_k": 5}' \
+  | python -m json.tool | grep -i retrieval_mode
+# → "retrieval_mode": "hybrid+rag_fusion"   (or "hybrid+rag_fusion+reranked" with a reranker)
+```
+
+**Extract metadata filters from natural language** (numeric operators behind `QT_CONSTRUCT_OPERATORS`):
+```bash
+QT_CONSTRUCT_FILTERS=true QT_CONSTRUCT_OPERATORS=true \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+# "arxiv papers after 2023 rated above 4" → filters {date_after: "2023-...", rating_gte: 4}
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "arxiv papers after 2023 rated above 4 on retrieval", "mode": "chat_loop", "top_k": 5}'
+```
+
+**Train the learned router offline:**
+```bash
+python -m src.training.train_query_router --out data/query_router.joblib
+# → wrote data/query_router.joblib
+# Predicts 6 transform labels: decompose, hyde, step_back, keywords, construct_filters, multi_query
+```
+
+**Gate transform latency in CI:**
+```bash
+python -m src.internal.retrieval.eval_runner \
+  --dataset data/eval/qa_pairs.jsonl --top_k 10 --qt-slo-ms 300
+# Records per-query "qt_latency_ms"; exits non-zero when P99 transform latency > 300ms
+```
+
+**Benchmark technique combinations offline** (Python API; the `--dataset` CLI ships a stub `retrieve_fn` to wire to your retriever):
+```python
+from src.context.query_transform import QueryTransformConfig
+from src.internal.retrieval.query_transform_benchmark import run_query_transform_benchmark
+
+dataset = [("what is FAISS", {"doc-1"}), ("compare BM25 and dense", {"doc-2"})]
+
+def retrieve(query, config):
+    # build a pipeline from `config`, run RetrievalService.search, return ranked doc_ids
+    ...
+
+rows = run_query_transform_benchmark(dataset, retrieve, [
+    QueryTransformConfig(),
+    QueryTransformConfig(multi_query=True),
+    QueryTransformConfig(decompose=True, hyde=True),
+], k=10)
+# → [{"config_signature": "...", "recall": 0.91, "ndcg": 0.78, "mean_latency_ms": 142.0}, ...]
 ```
 
 
@@ -977,6 +1072,19 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `QT_KEYWORDS` | `false` | Enable keyword expansion for BM25 variants |
 | `QT_CONSTRUCT_FILTERS` | `false` | Enable NL → metadata filter extraction |
 | `QT_MAX_VARIANTS` | `5` | Max parallel retrieval variants when any `QT_*` is enabled |
+| `QT_ASYNC` | `false` | Run the leaf's transform LLM calls in parallel (`AsyncQueryTransformPipeline`) |
+| `QT_TRANSFORM_TIMEOUT_MS` | `400` | Per-transform timeout; on exceed that field degrades to its default |
+| `QT_MAX_WORKERS` | `5` | Thread-pool size for `AsyncQueryTransformPipeline` |
+| `QT_CACHE_REDIS_URL` | — | Enable `CachedQueryTransformPipeline`; set to a Redis URL |
+| `QT_CACHE_TTL_SECONDS` | `600` | TTL for cached transform bundles |
+| `QT_MULTI_QUERY` | `false` | Enable `MultiQueryGenerator` (N paraphrased query variants) |
+| `QT_MULTI_QUERY_N` | `3` | Number of paraphrases generated per query |
+| `QT_FUSION_WEIGHTED` | `false` | Use `variant_weighted_rrf_fuse` (original query weighted highest) |
+| `QT_SEMANTIC_DEDUP` | `false` | Drop near-duplicate variants before retrieval (needs a backend `embed()`) |
+| `QT_SEMANTIC_DEDUP_THRESHOLD` | `0.95` | Cosine cutoff for variant dedup |
+| `QT_ROUTER` | `false` | Per-query routing of transforms (`QueryRouter` + heuristic fallback) |
+| `QT_ROUTER_MODEL_PATH` | — | Serialized scikit-learn router artifact; heuristic used when unset/missing |
+| `QT_CONSTRUCT_OPERATORS` | `false` | Extract numeric range/comparison filters (`rating_gte`/`rating_lte`) |
 
 
 ## Tests
