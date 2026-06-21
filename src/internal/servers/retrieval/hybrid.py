@@ -6,10 +6,25 @@ backend's "Local Retrieval" provider gets hybrid results with no changes.
 
 from __future__ import annotations
 
+import argparse
 import logging
 from collections.abc import Callable
 
 import numpy as np
+
+from src.internal.document_index.hybrid_retriever import combine_retrieval_results
+from src.internal.servers.app import (
+    add_host_port_args,
+    create_base_app,
+    load_environment,
+    run_uvicorn_app,
+)
+from src.internal.servers.retrieval.demo import (
+    DEFAULT_TOPK,
+    RetrieveRequest,
+    TfidfRetriever,
+    _load_corpus,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -81,3 +96,84 @@ def build_e5_encoder(
         ).astype(np.float32)
 
     return encode
+
+
+def _fuse_rows(
+    dense_rows: list[list[dict]], sparse_rows: list[list[dict]], topk: int
+) -> list[list[dict]]:
+    fused: list[list[dict]] = []
+    for dense_row, sparse_row in zip(dense_rows, sparse_rows):
+        result_sets = [sparse_row] if not dense_row else [dense_row, sparse_row]
+        fused.append(combine_retrieval_results(result_sets)[:topk])
+    return fused
+
+
+def create_app(*, dense: object | None, sparse: object):
+    app = create_base_app("Hybrid Retrieval Server")
+
+    @app.post("/retrieve")
+    def retrieve_endpoint(body: RetrieveRequest):
+        queries = body.resolved_queries()
+        if not queries:
+            return {"results": []}
+        fetch_k = body.topk * 2
+        sparse_rows = sparse.retrieve(queries, topk=fetch_k)
+        if dense is not None:
+            dense_rows = dense.retrieve(queries, topk=fetch_k)
+        else:
+            dense_rows = [[] for _ in queries]
+        rows = _fuse_rows(dense_rows, sparse_rows, body.topk)
+        if not body.return_scores:
+            rows = [[item["document"] for item in row] for row in rows]
+        if body.query is not None:
+            return {"results": rows[0] if rows else []}
+        return {"results": rows}
+
+    return app
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Hybrid (dense + sparse) retrieval server"
+    )
+    parser.add_argument(
+        "--corpus_path", type=str, required=True, help="Path to corpus.jsonl"
+    )
+    parser.add_argument("--topk", type=int, default=DEFAULT_TOPK)
+    parser.add_argument(
+        "--device", type=str, default="mps", help="Device for e5 (mps/cpu/cuda)"
+    )
+    parser.add_argument(
+        "--no-dense", action="store_true", help="Disable the dense leg (TF-IDF only)"
+    )
+    add_host_port_args(
+        parser,
+        "HYBRID_RETRIEVAL_HOST",
+        "HYBRID_RETRIEVAL_PORT",
+        default_host=DEFAULT_HOST,
+        default_port=DEFAULT_PORT,
+    )
+    return parser.parse_args()
+
+
+def _build_dense(corpus_path: str, device: str) -> DenseEmbeddingRetriever | None:
+    try:
+        docs = _load_corpus(corpus_path)
+        encoder = build_e5_encoder(device=device)
+        return DenseEmbeddingRetriever(docs, encoder=encoder)
+    except Exception as exc:  # missing deps, model download, MPS unavailable
+        logger.warning("Dense leg unavailable, falling back to TF-IDF only: %s", exc)
+        return None
+
+
+def main() -> None:
+    load_environment()
+    args = parse_args()
+    sparse = TfidfRetriever(args.corpus_path)
+    dense = None if args.no_dense else _build_dense(args.corpus_path, args.device)
+    app = create_app(dense=dense, sparse=sparse)
+    run_uvicorn_app(app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
