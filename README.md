@@ -235,11 +235,13 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 **Intent badge** (`AnswerPanel.tsx`) — a pill under the answer summarising what ran, derived from `response.intent` + counts: `Searched · 5 sources`, `Answered · 3 citations`, or `Used tools`. Hidden when the answer is empty or the intent is undefined.
 
+**Example-query chips** (`SearchComposer.tsx`) — three chips under the search box, one per routing intent, that populate and run a representative query in a single click so the intent router can be exercised without knowing what triggers each path: 🔍 `find the onboarding checklist` (search), 💬 `explain how FAISS indexing works` (chat), 🛠 `summarize the latest sales figures and chart them` (tool). The chips are hidden while a request is in flight.
+
 **Components** (`web/src/components/`) — each panel is a focused, independently tested unit:
 
 | Component | What it does |
 |-----------|--------------|
-| `SearchComposer` | Single input box (no mode selector), source-provider / retrieval-URL / top-K controls, Cmd+Enter submit |
+| `SearchComposer` | Single input box (no mode selector), per-intent example-query chips, source-provider / retrieval-URL / top-K controls, Cmd+Enter submit |
 | `AnswerPanel` | Streamed markdown answer + intent badge + `[D1]` citation anchor links |
 | `SourceGrid` | Expand/collapse source cards with copy-to-clipboard and citation `id` anchors |
 | `SessionTimeline` | Chat-bubble history (user right, assistant left; system filtered) |
