@@ -22,15 +22,25 @@ layers. Dense uses a local e5 embedding model on Apple Silicon (MPS).
 ## Scope
 
 - New: `src/internal/servers/retrieval/hybrid.py` (`/retrieve` server)
-- Reuse: `DenseRetriever` / `DenseRetrieverConfig.for_e5_base_v2`
-  (`src/internal/document_index/retrieval.py`), `combine_retrieval_results`
-  (`src/internal/document_index/hybrid_retriever.py`), `write_dense_faiss_index`
-  (`src/internal/document_index/index_builder.py`), `TfidfRetriever`
-  (`src/internal/servers/retrieval/demo.py`)
+- Reuse: `combine_retrieval_results` (RRF, `src/internal/document_index/hybrid_retriever.py`),
+  `TfidfRetriever` (`src/internal/servers/retrieval/demo.py`), and the demo `/retrieve`
+  request/response shape.
+- New dense leg: `sentence-transformers` (`intfloat/e5-base-v2`) — already a dependency.
 - Tests under `tests/unit/`
 
-Out of scope: Pyserini/Java BM25; cross-encoder reranking (web backend already supports
-`rerank_url` separately); changing the web backend, agent loops, or frontend.
+Out of scope: Pyserini/Java BM25; `DenseRetriever`/FAISS-on-disk plumbing (the demo corpus
+is tiny and `faiss-cpu` is unreliable on macOS Apple Silicon — see Decision below);
+cross-encoder reranking (web backend already supports `rerank_url` separately); changing the
+web backend, agent loops, or frontend.
+
+### Decision: dense leg implementation
+
+Use `sentence-transformers` directly with an **in-memory** embedding matrix and numpy
+dot-product search — not `DenseRetriever`/FAISS-on-disk. Rationale: the demo corpus is ~30
+docs (brute-force dot product is instant), `DenseRetriever` only exposes e5 *query* encoding
+(passage encoding lives behind private helpers), and `import faiss` currently fails on this
+macOS Apple Silicon setup. The hybrid *fusion* (`combine_retrieval_results`) and the sparse
+leg (`TfidfRetriever`) are still reused unchanged.
 
 ## Design
 
@@ -38,8 +48,11 @@ Out of scope: Pyserini/Java BM25; cross-encoder reranking (web backend already s
 
 - **`hybrid.py`** — a `/retrieve` FastAPI server with the **same request/response contract
   as `demo.py`**, so `SearchClient` and the whole web stack are unchanged.
-- **Dense half (reuse):** `DenseRetriever` via `DenseRetrieverConfig.for_e5_base_v2`
-  (`intfloat/e5-base-v2`), `device="mps"`, over a FAISS index built from the corpus.
+- **Dense half (new, sentence-transformers):** a small `DenseEmbeddingRetriever` wrapping
+  `SentenceTransformer("intfloat/e5-base-v2")` on MPS. Corpus passages are embedded once at
+  startup into an in-memory L2-normalized matrix; per query, encode `"query: <q>"` and take
+  the top matches by dot product. Output shape matches `TfidfRetriever`:
+  `list[list[{"document": {...}, "score": float}]]`.
 - **Sparse half (reuse):** `TfidfRetriever` from `demo.py` (sklearn, no Java).
 - **Fusion (reuse):** `combine_retrieval_results([dense, sparse], rrf_k=60)`.
 
@@ -47,14 +60,14 @@ Out of scope: Pyserini/Java BM25; cross-encoder reranking (web backend already s
 
 1. Load corpus from `--corpus_path`.
 2. Build `TfidfRetriever` in-memory (instant).
-3. Ensure the dense FAISS index exists: if absent, embed the corpus with e5 (MPS) via
-   `write_dense_faiss_index` and cache it under `data/index/e5-<corpus-hash>/`; then load
-   `DenseRetriever`.
+3. Build `DenseEmbeddingRetriever`: load e5 (MPS), embed every corpus passage as
+   `"passage: <title> <text>"` into an in-memory normalized matrix (instant for ~30 docs;
+   one-time model download on first run). No on-disk index.
 
 ### Per-request data flow
 
 ```
-query → dense: e5(MPS) → FAISS → top(2·topk)
+query → dense: e5(MPS) → in-memory matrix dot product → top(2·topk)
       → sparse: TF-IDF → top(2·topk)
       → combine_retrieval_results([dense, sparse], rrf_k=60) → topk
       → {"results": [...]}   (demo /retrieve shape; list-of-lists for batch)
@@ -68,7 +81,7 @@ honoring `query` vs batch `queries` and `return_scores`.
 
 ### Graceful degradation
 
-If the dense half cannot initialize (torch/sentence-transformers missing, model download
+If the dense half cannot initialize (sentence-transformers/torch missing, model download
 fails, MPS unavailable), the server logs a warning and falls back to **TF-IDF-only**, still
 serving the `/retrieve` contract. A `--no-dense` flag forces sparse-only.
 
