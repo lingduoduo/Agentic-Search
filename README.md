@@ -485,7 +485,7 @@ python3 -m examples.run_search_pipeline
 - `LLMGRPOTrainer` — online GRPO for any HuggingFace causal-LM; rolls out G completions per prompt, scores with `judge_fn` + `SearchRewardFunction`, and updates with PPO-clip + KL penalty (`src/training/ppo/llm_grpo_trainer.py`)
 - `SearchAgentGRPOTrainer` — extends `LLMGRPOTrainer` with real `SearchAgentLoop` rollouts to unlock the full shaped-reward signal (citations, search quality, fetch usefulness) (`src/training/ppo/search_agent_grpo_trainer.py`)
 - **Feedback-driven GRPO** — `load_feedback_examples(db_path, min_ratings=10)` (`src/training/data.py`) reads thumbs-up/down sessions from `AgenticSearchStore` (the `retrieval_feedback` table fed by `POST /api/feedback`) into `PromptTrainingExample`s with `metadata["human_signal"] = +1.0 / -1.0`. `SearchRewardFunction` adds a `human_feedback` reward component weighted by `SearchRewardConfig.human_feedback_weight` (default `0.0` → zero regression on existing presets); `SearchAgentGRPOTrainer` threads `human_signal` from batch metadata into the score. Closes the loop: user feedback → reward signal → policy update
-- **SFT warm-start** (`src/training/sft.py`) — `SFTTrainer` / `SFTConfig` / `build_search_sft_example` supervised-fine-tune a base model on agent traces before GRPO, so RL starts from a competent policy rather than cold
+- **SFT warm-start** (`src/training/sft.py`) — `SFTTrainer` / `SFTConfig` (`epochs=3`, `lr=2e-5`) supervised-fine-tune a base model on agent traces before GRPO, so RL starts from a competent policy rather than cold-exploring. `load_sft_examples(db_path, jsonl_path=None, min_ratings=1)` (`src/training/data.py`) merges **thumbs-up** sessions from `AgenticSearchStore` with optional JSONL pairs (`{"question", "response"}`) into `list[SFTExample]` (built via `build_search_sft_example`). Loss is cross-entropy on **assistant tokens only** — system / user / tool-result tokens are masked to `-100` so the model imitates only the agent's own actions. Two-phase via `examples/run_sft_grpo.py`: Phase 1 SFT → intermediate checkpoint (`data/checkpoints/sft_warmstart/`) → Phase 2 GRPO loads it with `SearchAgentGRPOTrainer.from_pretrained(...)`; `--sft_epochs 0` skips straight to GRPO with no code-path change
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 - `bin/generate_training_data.sh` — one-command parquet generation for Bamboogle, NQ, TriviaQA, and HotpotQA; `--preview` mode prints sample records without writing
 
@@ -1032,10 +1032,12 @@ python3 -m examples.run_feedback_grpo \
   --num_rollouts 4 --search_url http://localhost:8001/retrieve --device mps \
   --output_dir data/checkpoints/feedback_grpo/
 
-# SFT warm-start, then GRPO (skip SFT with --sft_epochs 0)
+# SFT warm-start (Phase 1, assistant-token-only CE on thumbs-up traces) then GRPO (Phase 2);
+# --sft_epochs 0 skips Phase 1 and runs pure GRPO from the base model
 python3 -m examples.run_sft_grpo \
   --db_path data/feedback.sqlite3 --model Qwen/Qwen2.5-1.5B-Instruct \
-  --sft_epochs 3 --sft_output_dir data/checkpoints/sft/ \
+  --jsonl_path data/sft_pairs.jsonl \
+  --sft_epochs 3 --sft_lr 2e-5 --sft_output_dir data/checkpoints/sft_warmstart/ \
   --grpo_output_dir data/checkpoints/sft_grpo/ --device mps
 ```
 `load_feedback_examples` raises if fewer than `--min_ratings` rated sessions exist, so collect feedback first (thumbs in the UI, or `POST /api/feedback`). There is **no HTTP training endpoint** — fine-tuning is offline by design; the only backend endpoint in this loop is `POST /api/feedback` (see [Web Backend API](#web-backend-api)).
