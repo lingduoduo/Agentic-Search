@@ -233,6 +233,25 @@ cd web && npm run test -- --run        # Vitest unit tests
 | `tool` | Tool Trace Panel full-width hero; sources and session side-by-side below |
 | narrow (≤720 px) | All intents fall back to single-column stack |
 
+**Intent badge** (`AnswerPanel.tsx`) — a pill under the answer summarising what ran, derived from `response.intent` + counts: `Searched · 5 sources`, `Answered · 3 citations`, or `Used tools`. Hidden when the answer is empty or the intent is undefined.
+
+**Components** (`web/src/components/`) — each panel is a focused, independently tested unit:
+
+| Component | What it does |
+|-----------|--------------|
+| `SearchComposer` | Single input box (no mode selector), source-provider / retrieval-URL / top-K controls, Cmd+Enter submit |
+| `AnswerPanel` | Streamed markdown answer + intent badge + `[D1]` citation anchor links |
+| `SourceGrid` | Expand/collapse source cards with copy-to-clipboard and citation `id` anchors |
+| `SessionTimeline` | Chat-bubble history (user right, assistant left; system filtered) |
+| `ToolCallTracePanel` | Per-tool-call trace (name, ✓/✗ status, JSON args, result summary, latency) for `tool` intent |
+| `AdminOverview` | Single-call health snapshot — connectors, indexing, users, auth, models, tools, analytics with a composite health score |
+| `AnalyticsDashboard` | Usage breakdowns by LLM, persona, and flow (`getAnalyticsBy*`) |
+| `ConnectorPanel` | Lists configured connectors and their sync/index status |
+| `QueryHistoryPanel` | Per-user query history with CSV export (`getQueryHistory`) |
+| `ToolPanel` | Admin view of MCP/OpenAPI tools registered via `tool_registry` |
+
+API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`.
+
 
 ## Intent Routing
 
@@ -371,6 +390,10 @@ python3 -m examples.run_search_pipeline
 - **`FAISSIndexBuilder`** (`src/internal/retrieval/index_optimizer.py`) — builds IVF-PQ indexes (`nlist=4096, m=96, nbits=8, nprobe=64`) cutting memory from ~30 GB to ≤ 4 GB at 10 M docs; `HNSWTuner` finds minimum `ef_search` meeting a recall target; `EmbeddingBatcher` coalesces concurrent embed calls within a 5ms window
 - **`FusionLearner`** (`src/internal/retrieval/fusion_learner.py`) — fits per-source RRF weights `(w_sparse, w_dense)` offline; loaded at startup from `FUSION_WEIGHTS_PATH`; falls back to uniform weights when absent; `adaptive_mmr_lambda` selects `λ` by query length when `ADAPTIVE_MMR=true`
 - **`ResultCache`** (`src/internal/retrieval/result_cache.py`) — Redis-backed full `SearchResponse` cache keyed on canonicalized query + filters + top_k; TTL via `RESULT_CACHE_TTL`; hit/miss stats surfaced via `GET /api/admin/retrieval/stats`
+- **`graph_rag_search`** (`src/internal/retrieval/graph_rag.py`) — GraphRAG retrieval: `extract_entities` + `build_entity_graph` build an `EntityGraph` over the top retrieved passages, then re-rank by entity connectivity; served by `POST /internal/search/graph` (`retrieval_mode: "graph"`)
+- **`CachedEmbedder` / `EmbeddingBatcher`** (`src/internal/retrieval/embedding_cache.py`) — query-embedding cache keyed on `sha256(query)` plus a batcher that coalesces concurrent embed calls within a short window to cut redundant encoder passes
+- **`RetrievalService`** (`src/internal/retrieval/service.py`) — the retrieval core behind the HTTP server: composes sparse + dense backends → RRF fusion → MMR → optional reranker → optional query-transform pipeline; `from_env()` wires every optimization layer from `QT_*` / `RERANKER_*` / cache env vars; exposes `search(query, top_k, filters)` returning `(results, retrieval_mode)`
+- **Offline evaluation** — `run_beir_eval` (`beir_eval.py`) scores BM25/dense/hybrid against BEIR datasets (NDCG/MRR/Recall); `run_ragas_eval` (`ragas_eval.py`) scores end-to-end RAG answers (faithfulness, answer/context relevancy) via `build_ragas_dataset`; `eval_runner.py` is the CI gate (NDCG/MRR/MAP + latency SLO)
 - Local dense retrieval with FAISS-compatible indexes (E5, BGE, custom embedders)
 - Local sparse retrieval with BM25/Pyserini
 - Web search via Google Custom Search, SerpAPI, and playwright-cli
@@ -616,6 +639,109 @@ python -m src.internal.retrieval.reranker_benchmark \
   --max-tokens 256 512 \
   --output results/reranker_bench.jsonl
 # Prints ranked table sorted by NDCG@10
+```
+
+
+## Retrieval Server API
+
+The retrieval server (`src/internal/servers/retrieval/server.py`, examples use `:8001`) exposes the retrieval core over HTTP. The demo server (`demo.py`, TF-IDF) only serves `POST /retrieve`; the full server below adds per-mode and admin endpoints.
+
+**Health:**
+```bash
+curl -s http://localhost:8001/health
+# → {"status": "ok", "backend": "local"}
+```
+
+**Hybrid search with metadata filters** (`POST /search` — sparse+dense → RRF → MMR → optional rerank):
+```bash
+curl -s -X POST http://localhost:8001/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "what is FAISS?", "top_k": 5, "filters": {"source": "arxiv"}}'
+# → {"results": [{"doc_id": "...", "title": "...", "text": "...", "score": 0.71, ...}],
+#    "retrieval_mode": "hybrid", "executed_queries": ["what is FAISS?"], "latency_ms": 41.2}
+```
+
+**Per-mode retrieval** (`/internal/search/*` — isolate one retrieval strategy, e.g. for evals):
+```bash
+# Sparse (BM25) only
+curl -s -X POST http://localhost:8001/internal/search/sparse \
+  -H "Content-Type: application/json" -d '{"query": "vector database", "top_k": 5}'
+# → retrieval_mode: "sparse"
+
+# Dense (embeddings) only
+curl -s -X POST http://localhost:8001/internal/search/dense \
+  -H "Content-Type: application/json" -d '{"query": "vector database", "top_k": 5}'
+# → retrieval_mode: "dense"
+
+# Hybrid with explicit fusion/MMR knobs
+curl -s -X POST http://localhost:8001/internal/search/hybrid \
+  -H "Content-Type: application/json" \
+  -d '{"query": "vector database", "top_k": 5, "over_fetch": 4, "mmr_lambda": 0.5}'
+# → retrieval_mode: "hybrid"
+
+# GraphRAG (entity-graph re-ranking)
+curl -s -X POST http://localhost:8001/internal/search/graph \
+  -H "Content-Type: application/json" -d '{"query": "who founded OpenAI", "top_k": 5}'
+# → retrieval_mode: "graph"
+```
+
+**Demo server** (`demo.py`, TF-IDF, no Java/embeddings — note `topk`):
+```bash
+curl -s -X POST http://localhost:8001/retrieve \
+  -H "Content-Type: application/json" -d '{"query": "what is FAISS?", "topk": 5}'
+```
+
+**Standalone reranker** (`rerank.py` — batch interface: `queries` + per-query `documents` lists):
+```bash
+curl -s -X POST http://localhost:8001/rerank \
+  -H "Content-Type: application/json" \
+  -d '{"queries": ["what is FAISS?"],
+       "documents": [[{"title": "FAISS", "content": "FAISS is a similarity search library"},
+                      {"title": "Cats", "content": "Cats are mammals"}]],
+       "rerank_topk": 2}'
+```
+
+**Inspect / hot-reload retrieval config** (admin):
+```bash
+curl -s http://localhost:8001/api/admin/retrieval/stats
+curl -s -X PATCH http://localhost:8001/api/admin/retrieval/config \
+  -H "Content-Type: application/json" \
+  -d '{"rrf_k": 80, "mmr_lambda": 0.4, "nprobe": 96, "result_cache_ttl": 600}'
+```
+
+
+## Web Backend API
+
+The FastAPI web backend (`src/internal/servers/web/app.py`, `:7860`) drives the UI and agent loops.
+
+**Run the intent-routed agent** (`POST /api/agent`) — auto-routes search / chat / tool; `response.intent` reflects the chosen path:
+```bash
+curl -s -X POST http://localhost:7860/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Compare dense and sparse retrieval", "mode": "chat_loop", "top_k": 5}'
+# → {"answer": "...", "intent": "chat", "citations": ["[D1]"], "documents": [...], "session_id": "..."}
+```
+
+**Stream the same over SSE** (`POST /api/agent/stream`) — yields `progress`, `answer`, and `done` events:
+```bash
+curl -sN -X POST http://localhost:7860/api/agent/stream \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is FAISS?", "top_k": 5}'
+```
+
+**Sessions:**
+```bash
+curl -s -X POST http://localhost:7860/api/sessions \
+  -H "Content-Type: application/json" -d '{"title": "Search session"}'
+curl -s http://localhost:7860/api/sessions/{session_id}
+```
+
+**Submit retrieval feedback** (`POST /api/feedback` — drives the feedback-GRPO training signal):
+```bash
+curl -s -X POST http://localhost:7860/api/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "sess-123", "signal": "thumbs_up"}'
+# → {"ok": true}
 ```
 
 
