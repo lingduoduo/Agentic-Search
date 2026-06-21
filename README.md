@@ -53,6 +53,18 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 | 🏆 Reranking Optimization | `src/internal/retrieval/async_reranker.py`, `src/internal/retrieval/cached_reranker.py`, `src/internal/retrieval/two_stage_reranker.py`, `src/internal/retrieval/onnx_reranker.py`, `src/internal/retrieval/reranker_benchmark.py` |
 
 
+## Contents
+
+- [Repository Structure](#repository-structure)
+- [Install](#install) · [Quick Start](#quick-start) · [Frontend](#frontend) · [Examples](#examples)
+- [Intent Routing](#intent-routing) · [Features](#features) · [Agentic RAG](#agentic-rag)
+- **Retrieval:** [Retrieval Setup](#retrieval-setup) · [Neural Reranking](#neural-reranking) · [Retrieval Optimization](#retrieval-optimization) · [Query Transformation Optimization](#query-transformation-optimization)
+- **HTTP APIs:** [Retrieval Server API](#retrieval-server-api) · [Web Backend API](#web-backend-api) · [Chat & Session API](#chat--session-api)
+- **Training & eval:** [Training](#training) · [Evaluation](#evaluation)
+- **Ops:** [MCP Server](#mcp-server) · [API Health Checks](#api-health-checks) · [Configuration](#configuration) · [Tests](#tests) · [Notes](#notes)
+
+---
+
 ## Repository Structure
 
 ```
@@ -214,7 +226,7 @@ cd web && npm run test -- --run        # Vitest unit tests
 
 ### UI features
 
-**Streaming answers** — Every query streams over SSE. A live `ProgressLog` shows tool-call steps as they arrive (turn number + tool name); collapses to a one-line summary once the answer is complete.
+**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `answer` / `done` events (full schema in the [SSE event table](#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
 
 **Markdown rendering** — Answers render via `react-markdown`: headings, bold/italic, inline code, code blocks, and ordered/unordered lists. Citation markers (`[D1]`, `[D2]`, …) become anchor links that scroll the page to the matching source card.
 
@@ -268,9 +280,9 @@ The intent itself comes from the backend's routing decision — see the `respons
 | `QueryHistoryPanel` | Per-user query history with CSV export (`getQueryHistory`) |
 | `ToolPanel` | Admin view of MCP/OpenAPI tools registered via `tool_registry` |
 
-API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`.
+API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`, `submitFeedback`.
 
-**Chat streaming pipeline** — `streamAgent` consumes the SSE stream and drives the chat UI from three event types: `progress` (live tool-call steps in the `ProgressLog`), `answer` (incremental answer tokens rendered as markdown), and `done` (final citations, documents, tool calls, and `intent`). Backend side, these packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent for a fresh session; each in-flight turn is cancellable via the stop-signal fence.
+**Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](#rl-training) — the human-feedback signal that fine-tunes the policy.
 
 
 ## Intent Routing
@@ -294,7 +306,7 @@ The router is `_run_auto_routed` in `src/internal/servers/web/app.py`. It runs a
 | `progress` | Each agent turn | `{type, turn, text}` |
 | `answer` | Answer token chunks | `{type, text}` |
 | `done` | Stream complete | `{type, session_id, citations, documents, intent, tool_calls}` |
-| `error` | Unhandled exception | `{type, message}` |
+| `error` | Unhandled exception | `{type, detail}` |
 
 The `on_turn` callback (`OnTurnCallback` in `src/agents/base.py`) is the hook that feeds per-turn events into the SSE queue from inside the agent loop.
 
@@ -482,6 +494,8 @@ python3 -m examples.run_search_pipeline
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - `LLMGRPOTrainer` — online GRPO for any HuggingFace causal-LM; rolls out G completions per prompt, scores with `judge_fn` + `SearchRewardFunction`, and updates with PPO-clip + KL penalty (`src/training/ppo/llm_grpo_trainer.py`)
 - `SearchAgentGRPOTrainer` — extends `LLMGRPOTrainer` with real `SearchAgentLoop` rollouts to unlock the full shaped-reward signal (citations, search quality, fetch usefulness) (`src/training/ppo/search_agent_grpo_trainer.py`)
+- **Feedback-driven GRPO** — `load_feedback_examples(db_path, min_ratings=10)` (`src/training/data.py`) reads thumbs-up/down sessions from `AgenticSearchStore` (the `retrieval_feedback` table fed by `POST /api/feedback`) into `PromptTrainingExample`s with `metadata["human_signal"] = +1.0 / -1.0`. `SearchRewardFunction` adds a `human_feedback` reward component weighted by `SearchRewardConfig.human_feedback_weight` (default `0.0` → zero regression on existing presets); `SearchAgentGRPOTrainer` threads `human_signal` from batch metadata into the score. Closes the loop: user feedback → reward signal → policy update
+- **SFT warm-start** (`src/training/sft.py`) — `SFTTrainer` / `SFTConfig` (`epochs=3`, `lr=2e-5`) supervised-fine-tune a base model on agent traces before GRPO, so RL starts from a competent policy rather than cold-exploring. `load_sft_examples(db_path, jsonl_path=None, min_ratings=1)` (`src/training/data.py`) merges **thumbs-up** sessions from `AgenticSearchStore` with optional JSONL pairs (`{"question", "response"}`) into `list[SFTExample]` (built via `build_search_sft_example`). Loss is cross-entropy on **assistant tokens only** — system / user / tool-result tokens are masked to `-100` so the model imitates only the agent's own actions. Two-phase via `examples/run_sft_grpo.py`: Phase 1 SFT → intermediate checkpoint (`data/checkpoints/sft_warmstart/`) → Phase 2 GRPO loads it with `SearchAgentGRPOTrainer.from_pretrained(...)`; `--sft_epochs 0` skips straight to GRPO with no code-path change
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
 - `bin/generate_training_data.sh` — one-command parquet generation for Bamboogle, NQ, TriviaQA, and HotpotQA; `--preview` mode prints sample records without writing
 
@@ -757,12 +771,18 @@ curl -s -X POST http://localhost:7860/api/agent \
 # → search
 ```
 
-**Stream the same over SSE** (`POST /api/agent/stream`) — yields `progress`, `answer`, and `done` events (the `done` event carries `intent`, which the frontend feeds to `setIntent`):
+**Stream the same over SSE** (`POST /api/agent/stream`) — emits one `progress` event after each agent turn (via the `on_turn` callback), then `answer`, then `done` (which carries `intent`, `citations`, and `documents`; the frontend feeds `intent` to `setIntent`). The non-streaming `/api/agent` is unchanged:
 ```bash
 curl -sN -X POST http://localhost:7860/api/agent/stream \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is FAISS?", "top_k": 5}'
+  -d '{"query": "Compare dense and sparse retrieval", "top_k": 5}'
+# Server-Sent Events (one JSON object per `data:` line):
+# data: {"type": "progress", "turn": 1, "text": "search_routing_tool · 5 docs"}
+# data: {"type": "progress", "turn": 2, "text": "writing answer…"}
+# data: {"type": "answer",   "text": "Dense retrieval embeds the query …"}
+# data: {"type": "done",     "session_id": "...", "intent": "chat", "citations": ["[D1]"], "documents": [...]}
 ```
+On failure the stream yields `data: {"type": "error", "detail": "..."}` instead of `done`, which `streamAgent` surfaces as the error banner.
 
 **Sessions:**
 ```bash
@@ -1009,6 +1029,28 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Agent-loop GRPO (full reward) | `src/training/ppo/search_agent_grpo_trainer.py` |
 | PPO core | `src/training/ppo/core_algos.py` |
 | Generation and policy loss | `src/model/generation.py` |
+| Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
+| SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
+
+**Fine-tune from user feedback** — train directly on thumbs-up/down sessions collected via `POST /api/feedback` (no GPU required for the smoke path; `--device mps` on Apple Silicon):
+```bash
+# Feedback-driven GRPO: load rated sessions from the web DB → reward with human_signal → update
+python3 -m examples.run_feedback_grpo \
+  --db_path data/feedback.sqlite3 \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --min_ratings 10 --human_feedback_weight 0.5 \
+  --num_rollouts 4 --search_url http://localhost:8001/retrieve --device mps \
+  --output_dir data/checkpoints/feedback_grpo/
+
+# SFT warm-start (Phase 1, assistant-token-only CE on thumbs-up traces) then GRPO (Phase 2);
+# --sft_epochs 0 skips Phase 1 and runs pure GRPO from the base model
+python3 -m examples.run_sft_grpo \
+  --db_path data/feedback.sqlite3 --model Qwen/Qwen2.5-1.5B-Instruct \
+  --jsonl_path data/sft_pairs.jsonl \
+  --sft_epochs 3 --sft_lr 2e-5 --sft_output_dir data/checkpoints/sft_warmstart/ \
+  --grpo_output_dir data/checkpoints/sft_grpo/ --device mps
+```
+`load_feedback_examples` raises if fewer than `--min_ratings` rated sessions exist, so collect feedback first (thumbs in the UI, or `POST /api/feedback`). There is **no HTTP training endpoint** — fine-tuning is offline by design; the only backend endpoint in this loop is `POST /api/feedback` (see [Web Backend API](#web-backend-api)).
 
 **Reward components** (`SearchRewardFunction`):
 
@@ -1022,6 +1064,7 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Unnecessary fetch | `unnecessary_fetch_penalty` | Penalty per fetched page not cited in the answer |
 | Fetch usefulness | `fetch_usefulness_reward` | Bonus when fetched pages are cited in the final answer |
 | Format compliance | `format_reward_weight` | Structural compliance in the final answer |
+| Human feedback | `human_feedback_weight` | `human_signal` (±1.0) from thumbs-up/down sessions; `0.0` by default (off) |
 
 Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` (see `SearchRewardConfig` in `src/training/reward.py`).
 
