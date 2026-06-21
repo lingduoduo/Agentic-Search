@@ -30,8 +30,15 @@ import type {
   ToolCallTraceView,
 } from "./types";
 
-const DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve";
+const DEFAULT_SEARCH_URL = "http://localhost:8001/retrieve";
 const DEFAULT_BROWSER_SEARCH_URL = "http://localhost:8001/retrieve";
+
+// Dev escape hatch: `?dev=1` reveals the raw Retrieval URL override. In normal
+// use the backend resolves the retrieval URL from the selected Source, so the
+// client never dictates what the server fetches.
+const DEV_MODE =
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).has("dev");
 
 export function App() {
   const [query, setQuery] = useState("");
@@ -105,7 +112,8 @@ export function App() {
       const agentRequest: AgentExperienceRequest = {
         query: normalizedQuery,
         session_id: activeSessionId,
-        search_url: searchUrl,
+        // Only forwarded in dev mode; otherwise the backend resolves the URL.
+        search_url: DEV_MODE ? searchUrl : undefined,
         top_k: topK,
         source_provider: sourceProvider,
       };
@@ -233,6 +241,7 @@ export function App() {
           topK={topK}
           sourceProvider={sourceProvider}
           isLoading={isLoading}
+          showUrlField={DEV_MODE}
           onQueryChange={setQuery}
           onSearchUrlChange={setSearchUrl}
           onTopKChange={handleTopKChange}

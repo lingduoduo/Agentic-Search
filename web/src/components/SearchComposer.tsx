@@ -31,6 +31,9 @@ interface SearchComposerProps {
   topK: number;
   sourceProvider: SearchSourceProvider;
   isLoading: boolean;
+  // When false (default), the raw retrieval URL input is hidden — the backend
+  // resolves the URL from the selected Source. Shown only in dev (?dev=1).
+  showUrlField?: boolean;
   onQueryChange: (value: string) => void;
   onSearchUrlChange: (value: string) => void;
   onTopKChange: (value: number) => void;
@@ -45,6 +48,7 @@ export const SearchComposer = memo(function SearchComposer({
   topK,
   sourceProvider,
   isLoading,
+  showUrlField = false,
   onQueryChange,
   onSearchUrlChange,
   onTopKChange,
@@ -99,10 +103,12 @@ export const SearchComposer = memo(function SearchComposer({
           </select>
         </label>
 
-        <label className="url-field">
-          Retrieval URL
-          <input value={searchUrl} onChange={(e) => onSearchUrlChange(e.target.value)} />
-        </label>
+        {showUrlField && (
+          <label className="url-field">
+            Retrieval URL
+            <input value={searchUrl} onChange={(e) => onSearchUrlChange(e.target.value)} />
+          </label>
+        )}
 
         <label>
           Top K
