@@ -53,6 +53,18 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 | 🏆 Reranking Optimization | `src/internal/retrieval/async_reranker.py`, `src/internal/retrieval/cached_reranker.py`, `src/internal/retrieval/two_stage_reranker.py`, `src/internal/retrieval/onnx_reranker.py`, `src/internal/retrieval/reranker_benchmark.py` |
 
 
+## Contents
+
+- [Repository Structure](#repository-structure)
+- [Install](#install) · [Quick Start](#quick-start) · [Frontend](#frontend) · [Examples](#examples)
+- [Intent Routing](#intent-routing) · [Features](#features) · [Agentic RAG](#agentic-rag)
+- **Retrieval:** [Retrieval Setup](#retrieval-setup) · [Neural Reranking](#neural-reranking) · [Retrieval Optimization](#retrieval-optimization) · [Query Transformation Optimization](#query-transformation-optimization)
+- **HTTP APIs:** [Retrieval Server API](#retrieval-server-api) · [Web Backend API](#web-backend-api) · [Chat & Session API](#chat--session-api)
+- **Training & eval:** [Training](#training) · [Evaluation](#evaluation)
+- **Ops:** [MCP Server](#mcp-server) · [API Health Checks](#api-health-checks) · [Configuration](#configuration) · [Tests](#tests) · [Notes](#notes)
+
+---
+
 ## Repository Structure
 
 ```
