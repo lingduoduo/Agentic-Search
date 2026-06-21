@@ -86,6 +86,7 @@ python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 # Terminal 1 alt — hybrid: RRF-fused dense e5 + sparse TF-IDF, drop-in for demo
 python3 -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl
 # add --no-dense to force TF-IDF only (skips the e5 model download)
+# dense setup / "Dense leg unavailable" troubleshooting: docs/hybrid-dense-setup.md
 
 # Terminal 2 — web backend (port 7860)
 PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860

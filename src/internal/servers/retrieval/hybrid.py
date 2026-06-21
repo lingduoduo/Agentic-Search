@@ -162,7 +162,13 @@ def _build_dense(corpus_path: str, device: str) -> DenseEmbeddingRetriever | Non
         encoder = build_e5_encoder(device=device)
         return DenseEmbeddingRetriever(docs, encoder=encoder)
     except Exception as exc:  # missing deps, model download, MPS unavailable
-        logger.warning("Dense leg unavailable, falling back to TF-IDF only: %s", exc)
+        logger.warning(
+            "Dense leg unavailable, serving TF-IDF only. This usually means the "
+            "embedding stack is misconfigured: sentence-transformers < 3.0, or a "
+            "torch/torchvision version mismatch from a shared env. Install into a "
+            "clean venv per docs/hybrid-dense-setup.md. Cause: %s",
+            exc,
+        )
         return None
 
 
