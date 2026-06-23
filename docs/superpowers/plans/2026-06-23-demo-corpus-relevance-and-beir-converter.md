@@ -27,6 +27,14 @@ Branch: `feat/beir-corpus-converter`
 
 6. **Commit (spec+plan+code), push, open PR** on `feat/beir-corpus-converter`.
 
+7. **Auto-mode hybrid web cascade** → in `_run_hybrid_search`, special-case `source_provider
+   == "auto"` to run local `retrieval` ∥ a web cascade (`serpapi` → `browser` fallback when
+   the fast leg has no usable docs and `browser_search_url` is set), then `_finalize_hybrid`
+   (dedupe + rerank + MMR top_k) as before.
+   Verify (TDD): `tests/unit/servers/web/test_hybrid_web_fallback.py` — fallback-to-browser,
+   skip-browser-when-serpapi-usable, no-web-backend → unreachable. Full web + execution-fallback
+   suites stay green (153 tests).
+
 ## Risk / rollback
 
 Low risk. The filter only removes docs that scored 0 (no shared terms) — these were never

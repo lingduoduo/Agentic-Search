@@ -1603,13 +1603,36 @@ async def _run_hybrid_search(
             logger.warning("Provider %s failed/timed out: %s", provider, exc)
             return [_provider_error_doc(provider, str(exc))]
 
-    provider_docs = await asyncio.gather(
-        *[
-            _fetch_provider_guarded(provider)
-            for provider in _source_providers_for(source_provider)
-        ]
-    )
-    documents = [doc for docs in provider_docs for doc in docs]
+    def _has_usable(docs: list[ContextDocument]) -> bool:
+        return any(not doc.metadata.get("error") for doc in docs)
+
+    async def _fetch_web_with_fallback() -> list[ContextDocument]:
+        """Cascade the web leg for 'auto': try fast web search (SerpAPI) first;
+        if it yields no usable results (missing key, error, or empty), fall back
+        to the browser provider. Keeps internal+web hybrid useful without a key."""
+        web_docs = await _fetch_provider_guarded("serpapi")
+        if _has_usable(web_docs):
+            return web_docs
+        if browser_search_url:
+            browser_docs = await _fetch_provider_guarded("browser")
+            if _has_usable(browser_docs):
+                return browser_docs
+        return web_docs  # propagate error doc so status reflects 'unreachable'
+
+    if source_provider == "auto":
+        # Local retrieval ∥ (SerpAPI → browser fallback); MMR picks top_k below.
+        legs = await asyncio.gather(
+            _fetch_provider_guarded("retrieval"),
+            _fetch_web_with_fallback(),
+        )
+    else:
+        legs = await asyncio.gather(
+            *[
+                _fetch_provider_guarded(provider)
+                for provider in _source_providers_for(source_provider)
+            ]
+        )
+    documents = [doc for docs in legs for doc in docs]
     return await _finalize_hybrid(
         documents,
         executed_queries=executed_queries,
