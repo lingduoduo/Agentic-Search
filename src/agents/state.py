@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..context.search import SearchResult
 
 __all__ = [
     "TaskStatus",
@@ -254,12 +257,12 @@ class SearchAgentState:
 
     question: str
     previous_queries: list[str] = field(default_factory=list)
-    retrieved_docs: list[RetrievedDocument] = field(default_factory=list)
+    retrieved_docs: list[SearchResult] = field(default_factory=list)
     evidence_score: float = 0.0
     search_rounds: int = 0
     citations: list[Citation] = field(default_factory=list)
 
-    def record_search(self, query: str, docs: list[RetrievedDocument]) -> None:
+    def record_search(self, query: str, docs: list[SearchResult]) -> None:
         """Record one retriever call: track the query, keep docs, count the round.
 
         A repeated query is not re-listed, but the round still counts because the
@@ -270,7 +273,7 @@ class SearchAgentState:
         self.retrieved_docs.extend(docs)
         self.search_rounds += 1
 
-    def record_rerank(self, reordered_docs: list[RetrievedDocument]) -> None:
+    def record_rerank(self, reordered_docs: list[SearchResult]) -> None:
         """Replace the working set with a reranked ordering. Not a retriever call."""
         self.retrieved_docs = list(reordered_docs)
 

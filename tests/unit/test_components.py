@@ -1,0 +1,198 @@
+"""Unit tests for the explicit search-loop components (T-A.2, T-A.3).
+
+Each component is exercised in isolation with injected/fake dependencies.
+"""
+
+from __future__ import annotations
+
+from src.agents.state import SearchAgentState
+from src.context.search import AgentContext, SearchContext, SearchResult
+
+
+def _result(
+    text: str = "x" * 20, score: float = 0.5, title: str | None = None
+) -> SearchResult:
+    return SearchResult(contents=text, score=score, title=title)
+
+
+# --------------------------------------------------------------------------- #
+# EvidenceJudge (T-A.2)
+# --------------------------------------------------------------------------- #
+
+
+def test_evidence_judge_empty_round_scores_zero_and_insufficient() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    verdict = EvidenceJudge().judge([])
+
+    assert verdict.score == 0.0
+    assert verdict.is_sufficient is False
+
+
+def test_evidence_judge_score_within_unit_interval() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    ctx = SearchContext(query="q", results=[_result(score=10.0), _result(score=3.0)])
+    verdict = EvidenceJudge().judge([ctx])
+
+    assert 0.0 <= verdict.score <= 1.0
+
+
+def test_evidence_judge_score_monotonic_with_result_scores() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    judge = EvidenceJudge()
+    weak = SearchContext(query="q", results=[_result(score=0.1)])
+    strong = SearchContext(query="q", results=[_result(score=50.0)])
+
+    assert judge.judge([strong]).score > judge.judge([weak]).score
+
+
+def test_evidence_judge_mirrors_evaluator_sufficiency() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    # Two results with enough content clears the default min_total_results=2 gate.
+    sufficient = SearchContext(query="q", results=[_result(), _result()])
+    verdict = EvidenceJudge().judge([sufficient])
+
+    assert verdict.is_sufficient is True
+
+
+def test_evidence_judge_update_state_writes_evidence_score() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    state = SearchAgentState(question="q")
+    ctx = SearchContext(query="q", results=[_result(score=5.0), _result(score=5.0)])
+
+    verdict = EvidenceJudge().update_state(state, [ctx])
+
+    assert state.evidence_score == verdict.score
+    assert state.evidence_score > 0.0
+
+
+# --------------------------------------------------------------------------- #
+# AnswerGenerator (T-A.2)
+# --------------------------------------------------------------------------- #
+
+
+def _ctx_one_round() -> AgentContext:
+    ctx = AgentContext()
+    ctx.add_round(
+        ["q1"],
+        [
+            [
+                _result(text="alpha doc body", title="A"),
+                _result(text="beta doc body", title="B"),
+            ]
+        ],
+    )
+    return ctx
+
+
+def test_answer_generator_builds_citation_for_referenced_key() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_one_round()
+    result = AnswerGenerator().generate("The answer is grounded [R1Q1D2].", ctx)
+
+    assert [c.doc_id for c in result.citations] == ["R1Q1D2"]
+    assert result.citations[0].marker == "[R1Q1D2]"
+    assert result.citations[0].text == "beta doc body"
+
+
+def test_answer_generator_ignores_unknown_citation_keys() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_one_round()
+    result = AnswerGenerator().generate("Bogus cite [R9Q9D9].", ctx)
+
+    assert result.citations == []
+
+
+def test_answer_generator_no_citations_when_none_referenced() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_one_round()
+    result = AnswerGenerator().generate("Plain answer, no citations.", ctx)
+
+    assert result.citations == []
+    assert result.answer == "Plain answer, no citations."
+
+
+def test_answer_generator_update_state_sets_citations() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    state = SearchAgentState(question="q")
+    ctx = _ctx_one_round()
+
+    AnswerGenerator().update_state(state, "Grounded [R1Q1D1].", ctx)
+
+    assert [c.doc_id for c in state.citations] == ["R1Q1D1"]
+
+
+# --------------------------------------------------------------------------- #
+# SearchTool (T-A.3)
+# --------------------------------------------------------------------------- #
+
+
+async def test_search_tool_records_query_and_docs_into_state() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def fake_retrieve(query: str) -> list[SearchResult]:
+        return [_result(title="a"), _result(title="b")]
+
+    state = SearchAgentState(question="q")
+    docs = await SearchTool(fake_retrieve).run(state, "faiss index")
+
+    assert [d.title for d in docs] == ["a", "b"]
+    assert state.previous_queries == ["faiss index"]
+    assert [d.title for d in state.retrieved_docs] == ["a", "b"]
+    assert state.search_rounds == 1
+
+
+async def test_search_tool_accumulates_across_rounds() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def fake_retrieve(query: str) -> list[SearchResult]:
+        return [_result(title=query)]
+
+    tool = SearchTool(fake_retrieve)
+    state = SearchAgentState(question="q")
+    await tool.run(state, "first")
+    await tool.run(state, "second")
+
+    assert state.previous_queries == ["first", "second"]
+    assert state.search_rounds == 2
+
+
+# --------------------------------------------------------------------------- #
+# RerankerTool (T-A.3)
+# --------------------------------------------------------------------------- #
+
+
+def test_reranker_tool_reorders_state_docs_without_counting_a_round() -> None:
+    from src.agents.components.reranker_tool import RerankerTool
+
+    def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        return sorted(docs, key=lambda d: d.score, reverse=True)
+
+    state = SearchAgentState(question="q")
+    state.record_search(
+        "q", [_result(title="lo", score=0.1), _result(title="hi", score=0.9)]
+    )
+
+    reordered = RerankerTool(fake_rerank).run(state)
+
+    assert [d.title for d in reordered] == ["hi", "lo"]
+    assert [d.title for d in state.retrieved_docs] == ["hi", "lo"]
+    assert state.search_rounds == 1  # rerank is not a retriever call
+
+
+def test_reranker_tool_handles_empty_docs() -> None:
+    from src.agents.components.reranker_tool import RerankerTool
+
+    def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        return docs
+
+    state = SearchAgentState(question="q")
+    assert RerankerTool(fake_rerank).run(state) == []

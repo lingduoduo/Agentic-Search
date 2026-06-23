@@ -9,16 +9,14 @@ from __future__ import annotations
 
 from src.agents.state import (
     Citation,
-    RetrievedDocument,
     Retriever,
     SearchAgentState,
 )
+from src.context.search import SearchResult
 
 
-def _doc(doc_id: str, score: float = 1.0) -> RetrievedDocument:
-    return RetrievedDocument(
-        doc_id=doc_id, source="vdb", text=f"text-{doc_id}", score=score
-    )
+def _doc(doc_id: str, score: float = 1.0) -> SearchResult:
+    return SearchResult(contents=f"text-{doc_id}", score=score, title=doc_id)
 
 
 def test_initializes_with_question_and_empty_defaults() -> None:
@@ -38,7 +36,7 @@ def test_record_search_tracks_query_appends_docs_and_increments_round() -> None:
     state.record_search("faiss index", [_doc("a"), _doc("b")])
 
     assert state.previous_queries == ["faiss index"]
-    assert [d.doc_id for d in state.retrieved_docs] == ["a", "b"]
+    assert [d.title for d in state.retrieved_docs] == ["a", "b"]
     assert state.search_rounds == 1
 
 
@@ -50,7 +48,7 @@ def test_record_search_dedupes_query_but_still_counts_the_round() -> None:
     state.record_search("dup", [_doc("b")])
 
     assert state.previous_queries == ["dup"]  # deduped, order preserved
-    assert [d.doc_id for d in state.retrieved_docs] == [
+    assert [d.title for d in state.retrieved_docs] == [
         "a",
         "b",
     ]  # both rounds' docs kept
@@ -74,7 +72,7 @@ def test_record_rerank_reorders_docs_without_incrementing_search_rounds() -> Non
     reordered = list(reversed(state.retrieved_docs))
     state.record_rerank(reordered)
 
-    assert [d.doc_id for d in state.retrieved_docs] == ["b", "a"]
+    assert [d.title for d in state.retrieved_docs] == ["b", "a"]
     assert state.search_rounds == 1  # rerank is not a retriever call
 
 
