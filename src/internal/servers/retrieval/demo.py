@@ -54,9 +54,13 @@ class TfidfRetriever:
         q_matrix = self._vec.transform(queries)
         scores = cosine_similarity(q_matrix, self._matrix)
         for row_scores in scores:
-            ranked = sorted(enumerate(row_scores), key=lambda x: x[1], reverse=True)[
-                :topk
-            ]
+            # Drop zero-relevance docs (no shared terms) so a query absent from
+            # the corpus returns nothing instead of arbitrary top-k filler.
+            ranked = sorted(
+                (pair for pair in enumerate(row_scores) if pair[1] > 0.0),
+                key=lambda x: x[1],
+                reverse=True,
+            )[:topk]
             results.append(
                 [
                     {
