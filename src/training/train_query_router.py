@@ -9,20 +9,25 @@ import argparse
 
 from src.internal.retrieval.query_router import ROUTER_LABELS
 
-# Labels order: decompose, hyde, step_back, keywords, construct_filters, multi_query
+# Labels order: decompose, hyde, step_back, keywords, construct_filters, multi_query, rewrite
 # Each row must have exactly one positive AND one negative across the corpus per column
 # to avoid single-valued columns in MultiOutputClassifier.
 SEED_DATA: list[tuple[str, list[int]]] = [
-    ("faiss index", [0, 0, 0, 1, 0, 0]),
-    ("bm25 tuning", [0, 0, 0, 1, 0, 0]),
-    ("what is reciprocal rank fusion", [0, 1, 1, 0, 0, 1]),
-    ("how does HNSW graph search work", [0, 1, 1, 0, 0, 1]),
-    ("compare dense and sparse retrieval and when each wins", [1, 0, 0, 0, 0, 0]),
-    ("explain reranking and decompose the tradeoffs and latency", [1, 0, 0, 0, 0, 0]),
-    ("FAISS papers after 2023", [0, 0, 0, 0, 1, 0]),
-    ("arxiv papers between 2020 and 2022 on retrieval", [0, 0, 0, 0, 1, 0]),
-    ("best embedding model for semantic search", [0, 1, 1, 0, 0, 1]),
-    ("vector database benchmarks", [0, 0, 0, 1, 0, 0]),
+    ("faiss index", [0, 0, 0, 1, 0, 0, 0]),
+    ("bm25 tuning", [0, 0, 0, 1, 0, 0, 0]),
+    ("what is reciprocal rank fusion", [0, 1, 1, 0, 0, 1, 0]),
+    ("how does HNSW graph search work", [0, 1, 1, 0, 0, 1, 0]),
+    ("compare dense and sparse retrieval and when each wins", [1, 0, 0, 0, 0, 0, 0]),
+    (
+        "explain reranking and decompose the tradeoffs and latency",
+        [1, 0, 0, 0, 0, 0, 0],
+    ),
+    ("FAISS papers after 2023", [0, 0, 0, 0, 1, 0, 0]),
+    ("arxiv papers between 2020 and 2022 on retrieval", [0, 0, 0, 0, 1, 0, 0]),
+    ("best embedding model for semantic search", [0, 1, 1, 0, 0, 1, 0]),
+    ("vector database benchmarks", [0, 0, 0, 1, 0, 0, 0]),
+    ("uhh basically what is faiss vs scann i think faster", [0, 1, 0, 0, 0, 1, 1]),
+    ("so like how do i tune bm25 params kinda confused", [0, 1, 0, 0, 0, 0, 1]),
 ]
 
 

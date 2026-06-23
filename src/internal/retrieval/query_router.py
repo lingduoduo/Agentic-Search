@@ -15,11 +15,13 @@ ROUTER_LABELS = [
     "keywords",
     "construct_filters",
     "multi_query",
+    "rewrite",
 ]
 
 _QUESTION_WORDS = ("what", "why", "how", "when", "where", "who", "which")
 _DATE_RE = re.compile(r"\b(19|20)\d{2}\b")
 _RANGE_WORDS = ("after", "before", "since", "between", "from")
+_NOISE_WORDS = ("uhh", "umm", "basically", "like", "kinda", "i think", "so ")
 
 
 def _heuristic(query: str) -> QueryTransformConfig:
@@ -30,6 +32,7 @@ def _heuristic(query: str) -> QueryTransformConfig:
     multi_clause = (" and " in q) or (";" in q) or (", " in q) or n > 18
     has_date = bool(_DATE_RE.search(q)) or any(w in q for w in _RANGE_WORDS)
     short_keyword = n <= 3
+    noisy = any(w in q for w in _NOISE_WORDS) or "??" in query
     return QueryTransformConfig(
         decompose=multi_clause,
         hyde=has_question and not short_keyword,
@@ -37,6 +40,7 @@ def _heuristic(query: str) -> QueryTransformConfig:
         keywords=short_keyword,
         construct_filters=has_date,
         multi_query=not short_keyword and not multi_clause,
+        rewrite=(noisy or n > 12) and not short_keyword,
     )
 
 
