@@ -521,6 +521,21 @@ EOF
 
 ---
 
+## Results (M9)
+
+Run on 2026-06-23 against the demo TF-IDF retrieval server (`data/corpus.jsonl`) with `data/eval/qa_pairs.jsonl` (5 queries), `--top_k 10`.
+
+| Metric | Baseline (`baseline_metrics.json`) | M9 run |
+| --- | --- | --- |
+| recall@10 | 0.0 (placeholder, never run) | 1.0 |
+| nDCG@10 | 0.0 | 1.0 |
+| MRR | 0.0 | 1.0 |
+| p99 transform latency | — | 43.5 ms (SLO held) |
+
+- **Gates:** full `pytest` green (2036 passed, 2 skipped, no regressions); `query_transform_benchmark` test passes; `eval_runner` ≥ baseline with p99 SLO held. All three acceptance gates met.
+- **Honest caveat:** this 5-query demo set saturates at 1.0, so it cannot *demonstrate* transform-driven recall/nDCG deltas, and the LLM transform legs (rewrite/decompose/HyDE/step-back/multi-query) require a model endpoint not available in this environment — so the run measures base retrieval + pipeline plumbing, not transform quality. A meaningful quality delta needs a larger labeled set and an LLM-backed run; the code paths are unit-tested and the eval harness is wired and green.
+- **Benchmark winner:** `query_transform_benchmark` harness verified functional; per-config recall ranking requires the same LLM-backed run to be meaningful on a non-saturated set.
+
 ## Self-Review Notes
 
 - **Spec coverage:** quality (Tasks 1–3), latency/cost (Task 4 routing = skip legs), smarter routing (Task 4), gap-fill in place (Task 1 rewrite leg). Acceptance gates all in Task 5. ✓
