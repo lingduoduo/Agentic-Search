@@ -45,3 +45,16 @@ def test_constructor_degrades_on_bad_json():
     out = KnowledgeGraphQueryConstructor(_StubLLM("not json")).construct("x", _route())
     assert out.payload["cypher"] is None
     assert out.payload["entity"] is None
+
+
+def test_validate_rejects_set_without_trailing_space():
+    assert not validate_cypher("MATCH (n) SET\nn.x = 1 RETURN n")
+
+
+def test_entity_with_write_keyword_substring_still_builds():
+    out = KnowledgeGraphQueryConstructor(
+        _StubLLM('{"entity": "Drop Table Co", "relation": "uses"}')
+    ).construct("what connects to Drop Table Co", _route())
+    assert out.payload["entity"] == "Drop Table Co"
+    assert out.payload["cypher"] is not None
+    assert "Drop Table Co" in out.payload["cypher"]

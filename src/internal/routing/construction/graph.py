@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from src.context.models import ChatMessage
 
@@ -16,7 +17,9 @@ from .base import ConstructedQuery
 
 logger = logging.getLogger(__name__)
 
-_WRITE_CLAUSES = ("create", "delete", "merge", "set ", "remove", "detach", "drop")
+_WRITE_CLAUSE_RE = re.compile(
+    r"\b(create|delete|merge|set|remove|detach|drop|foreach|call)\b"
+)
 
 _EXTRACT_PROMPT = """Identify the central entity and the relationship the question asks about.
 Return JSON only: {{"entity": "<entity>", "relation": "<relation or empty>"}}.
@@ -25,13 +28,16 @@ JSON:""".strip()
 
 
 def validate_cypher(cypher: str) -> bool:
-    """True iff cypher is a read-only MATCH...RETURN with no write clauses."""
+    """True iff cypher is a read-only MATCH...RETURN with no write clauses.
+
+    Word-boundary keyword matching; this layer never executes Cypher.
+    """
     if not cypher or not cypher.strip():
         return False
     lowered = cypher.lower()
     if "match" not in lowered or "return" not in lowered:
         return False
-    return not any(clause in lowered for clause in _WRITE_CLAUSES)
+    return not _WRITE_CLAUSE_RE.search(lowered)
 
 
 def _escape(value: str) -> str:
@@ -66,11 +72,12 @@ class KnowledgeGraphQueryConstructor:
             return ConstructedQuery(
                 RetrieverTarget.GRAPH, {"cypher": None, "entity": None}, query
             )
-        cypher = f'MATCH (n {{name: "{_escape(entity)}"}})-[r]-(m) RETURN n, r, m'
-        if not validate_cypher(cypher):  # defensive; template is read-only by design
+        template = 'MATCH (n {name: "PLACEHOLDER"})-[r]-(m) RETURN n, r, m'
+        if not validate_cypher(template):  # template is read-only by construction
             return ConstructedQuery(
-                RetrieverTarget.GRAPH, {"cypher": None, "entity": entity}, query
+                RetrieverTarget.GRAPH, {"cypher": None, "entity": None}, query
             )
+        cypher = f'MATCH (n {{name: "{_escape(entity)}"}})-[r]-(m) RETURN n, r, m'
         return ConstructedQuery(
             RetrieverTarget.GRAPH, {"cypher": cypher, "entity": entity}, query
         )
