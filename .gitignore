@@ -234,3 +234,6 @@ __marimo__/
 bin/
 cli/query
 .playwright-cli/
+
+# Superpowers SDD scratch (briefs, reports, diffs, ledger)
+.superpowers/

@@ -1797,3 +1797,22 @@ EOF
 - **Existing modules consumed not rewritten:** `query_constructor.py` imported as `_FilterExtractor`; `fusion_learner.adaptive_mmr_lambda` reused; `service.py`/`eval_runner.py`/`eval_metrics.py` extended only. ✓
 - **Type consistency:** `RetrieverTarget` enum values (`sql/graph/api/hybrid/dense/sparse/metadata`) are used identically across registry, router, constructors, service mode strings (`routed:{value}`), and the labeled dataset. `construct(query, route) -> ConstructedQuery` signature is identical across all six constructors. ✓
 - **Net-new = interface only:** SQL/KG/API constructors build + validate but never execute; service short-circuits their targets to `[]`. ✓
+
+---
+
+## Results (M10)
+
+Executed via subagent-driven development on 2026-06-23. All 10 tasks completed; per-task spec+quality review on every task (4 required one fix loop: Tasks 4, 5, 6, plus a Task 8 implementer retry after a dropped connection); final whole-branch review returned **READY TO MERGE** (0 Critical, 0 Important) followed by a Minor cleanup pass.
+
+| Gate | Result |
+| --- | --- |
+| Routing accuracy (heuristic, no LLM) | **1.0** (12/12) on `data/eval/routing_labels.jsonl`, threshold ≥ 0.8 — PASS |
+| Full `pytest` | **2079 passed, 2 skipped**, 0 failures (baseline 2036; +43 new routing tests) |
+| Routing subsystem tests | 43 passed (`tests/unit/routing/`) |
+| Zero-overhead default-off | Verified: `build_router_from_env()` → `None` when `ROUTING_ENABLED` unset; `search` guard skipped; existing service tests unchanged (30 passed) |
+| `ruff check . && ruff format .` | clean |
+
+- **Routing accuracy breakdown:** SQL (3/3), GRAPH (3/3), API (2/2), HYBRID default (4/4). The labeled set uses realistic natural-language queries (e.g. "explain how HNSW graph search works" correctly falls through to HYBRID despite containing "graph"), confirmed non-gamed in review.
+- **Net-new constructors (SQL / Cypher / API):** build + validate only, **no execution backend** — proven by the absence of any DB/graph driver or HTTP call and the `service.py` short-circuit of SQL/GRAPH/API targets to `([], "routed:{value}")`. Validators: SQL is SELECT-only + table-name allowlist + multi-statement reject; Cypher requires MATCH/RETURN with word-boundary write-clause rejection; API filters to a param allowlist. Residual validator limits (substring matching, CTE shadowing) are acceptable because nothing is executed.
+- **Honest caveat:** the LLM-backed legs (logical routing, and the SQL/Cypher/API generators) are unit-tested with stub LLMs only — no live model endpoint was exercised in this environment. The heuristic router (the accuracy gate) needs no LLM and is fully exercised. The retrieval no-regression gate's served path (`--retrieval_url`) does not build a router, so router on/off equivalence is proven by `test_service_routing.py` rather than an end-to-end served run.
+- **Final-review cleanup (commit 5da9118):** removed dead `Router._route_for_target`; guarded `_logical_route` against an empty LLM reply; corrected `sql.py` module docstring; renamed `--routing_eval` → `--routing-eval`; added clarifying comments. No behavior change.
