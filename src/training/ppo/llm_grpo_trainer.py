@@ -499,3 +499,29 @@ class LLMGRPOTrainer:
         self.optimizer.step()
 
         return metrics
+
+    def save_checkpoint(self, path: str) -> None:
+        """Persist policy weights, tokenizer, and optimizer state for resume.
+
+        Used by ``train_loop`` for periodic checkpointing of long runs. The
+        reference policy is frozen and reconstructable, so it is not saved.
+        """
+        import os
+
+        os.makedirs(path, exist_ok=True)
+        self.policy.save_pretrained(path)
+        self.tokenizer.save_pretrained(path)
+        torch.save(self.optimizer.state_dict(), os.path.join(path, "optimizer.pt"))
+
+    def load_checkpoint(self, path: str) -> None:
+        """Restore policy weights and optimizer state saved by save_checkpoint."""
+        import os
+
+        from transformers import AutoModelForCausalLM
+
+        loaded = AutoModelForCausalLM.from_pretrained(path)
+        self.policy.load_state_dict(loaded.state_dict())
+        self.policy.to(self.device)
+        optimizer_path = os.path.join(path, "optimizer.pt")
+        if os.path.exists(optimizer_path):
+            self.optimizer.load_state_dict(torch.load(optimizer_path))
