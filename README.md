@@ -58,7 +58,7 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 - [Repository Structure](#repository-structure)
 - [Install](#install) · [Quick Start](#quick-start) · [Frontend](#frontend) · [Examples](#examples)
 - [Intent Routing](#intent-routing) · [Features](#features) · [Agentic RAG](#agentic-rag)
-- **Retrieval:** [Retrieval Setup](#retrieval-setup) · [Neural Reranking](#neural-reranking) · [Retrieval Optimization](#retrieval-optimization) · [Query Transformation Optimization](#query-transformation-optimization)
+- **Retrieval:** [Retrieval Setup](#retrieval-setup) · [Neural Reranking](#neural-reranking) · [Retrieval Optimization](#retrieval-optimization) · [Query Transformation Optimization](#query-transformation-optimization) · [Routing & Query Construction](#routing--query-construction)
 - **HTTP APIs:** [Retrieval Server API](#retrieval-server-api) · [Web Backend API](#web-backend-api) · [Chat & Session API](#chat--session-api)
 - **Training & eval:** [Training](#training) · [Evaluation](#evaluation)
 - **Ops:** [MCP Server](#mcp-server) · [API Health Checks](#api-health-checks) · [Configuration](#configuration) · [Tests](#tests) · [Notes](#notes)
@@ -101,6 +101,8 @@ src/
     ├── natural_language_processing/  # NLP utilities
     ├── observability/           # Admin surface summary & health score
     ├── prompts/                 # Prompt templates
+    ├── retrieval/               # Retrieval core: service, fusion, query transforms, routers
+    ├── routing/                 # Routing layer: per-query router + 6 query constructors
     ├── search/                  # Search-vs-chat flow classification
     ├── tools/                   # Internal tool registry
     ├── utils/                   # License, encryption, telemetry utilities
@@ -507,10 +509,17 @@ python3 -m examples.run_search_pipeline
 - **Step-back prompting** — reformulates narrow questions into broader conceptual queries
 - **Multi-Query retrieval** (`MultiQueryGenerator`) — one LLM call yields N paraphrased reformulations retrieved in parallel and fused, distinct from decomposition's sub-questions
 - **Weighted RAG-Fusion** (`variant_weighted_rrf_fuse`) — RRF across all variant result sets with the original query weighted highest; optional pre-retrieval semantic dedup of near-duplicate variants
-- **Learned query routing** (`QueryRouter`) — predicts the per-query transform set from a scikit-learn artifact with a rule-based heuristic fallback, so cheap queries skip expensive transforms
+- **Canonical query rewrite** (`QueryEnhancer.rewrite`, `QT_REWRITE`) — one normalized rewrite that fixes typos and strips verbosity while preserving meaning, distinct from step-back's broadening; threaded through the bundle/router as the 7th transform label
+- **Learned query routing** (`QueryRouter`) — predicts the per-query transform set (7 labels: decompose, hyde, step_back, keywords, construct_filters, multi_query, rewrite) from a scikit-learn artifact with a rule-based heuristic fallback, so cheap/keyword queries skip expensive transforms
 - **Keyword extraction** — strips conversational noise from queries before BM25 retrieval
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/servers/secondary_llm_flows/search_flow_classification.py`)
 - **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
+
+**Routing Layer & Query Construction** (`src/internal/routing/`, default-off behind `ROUTING_ENABLED`)
+- **Per-query Router** (`router.py`) — routes each query to a domain → source(s) → retriever target, emitting a `RouteDecision`. Heuristic strategy by default (no LLM); optional **logical** (LLM structured-classification) and **semantic** (embedding-similarity over route descriptions) strategies, each falling back to the heuristic. Backed by a config-driven `RouteRegistry` (`ROUTING_REGISTRY_PATH`) so domains aren't hardcoded
+- **Six query constructors** behind one `construct(query, route) -> ConstructedQuery` interface (`construction/`): **Metadata Filter** (wraps `QueryConstructor`), **Vector Search** params, **Hybrid** fusion config (reuses `adaptive_mmr_lambda`); plus net-new **SQL** (schema-aware Text-to-SQL, SELECT-only + table allowlist), **Knowledge Graph** (read-only Cypher templating, word-boundary write-clause rejection), and **API Request** (NL → allowlisted request params)
+- **Construct-only safety** — the three net-new constructors build and *validate* a query but never execute it (no SQL/KG/API backend); `RetrievalService` short-circuits those targets to empty results, so routing to them never touches a live system. Every `route()`/`construct()` is fallback-safe (degrades, never raises)
+- **Routing-accuracy gate** (`routing_accuracy`, `eval_runner --routing-eval`) — scores the router's top-1 retriever pick against a labeled `data/eval/routing_labels.jsonl`
 
 **Observability & Feature Flags**
 - `build_admin_surface_summary` — single-call health snapshot: connectors, indexing, users, auth, models, tools, analytics, enterprise controls with a composite health score
@@ -983,7 +992,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 ```bash
 python -m src.training.train_query_router --out data/query_router.joblib
 # → wrote data/query_router.joblib
-# Predicts 6 transform labels: decompose, hyde, step_back, keywords, construct_filters, multi_query
+# Predicts 7 transform labels: decompose, hyde, step_back, keywords, construct_filters, multi_query, rewrite
 ```
 
 **Gate transform latency in CI:**
@@ -1010,6 +1019,58 @@ rows = run_query_transform_benchmark(dataset, retrieve, [
     QueryTransformConfig(decompose=True, hyde=True),
 ], k=10)
 # → [{"config_signature": "...", "recall": 0.91, "ndcg": 0.78, "mean_latency_ms": 142.0}, ...]
+```
+
+
+## Routing & Query Construction
+
+The RAG **Routing → Query Construction** stage (`src/internal/routing/`). It decides **where** a query should go (domain → source → retriever) and **how** to express it for the chosen backend. Distinct from [Intent Routing](#intent-routing) (web-level `search`/`chat`/`tool`) and from `QueryRouter` (which picks *transforms*): this layer picks the *retriever/construction target* per query.
+
+**Backend-only and default-off.** With no `ROUTING_*` env set, `build_router_from_env()` returns `None`, `RetrievalService.search` skips the routing branch entirely, and behavior is byte-identical to today — zero overhead, no frontend change. There is no dedicated HTTP endpoint or UI; routing runs inside `RetrievalService.from_env()`.
+
+**Pipeline:**
+```
+query → Router.route() → RouteDecision(domain, sources, retriever, construction_target)
+      → QueryConstructor.construct() → ConstructedQuery(target, payload, text)
+```
+
+**Router strategies** (heuristic default; LLM strategies fall back to it on any failure):
+
+| Strategy | Env | How it routes |
+|----------|-----|---------------|
+| Heuristic | (default) | Rule-based cue matching → SQL / GRAPH / API / default HYBRID. No LLM; the path the accuracy gate runs against |
+| Logical | `ROUTING_LOGICAL=true` | LLM structured-classification into a registered route by name |
+| Semantic | `ROUTING_SEMANTIC=true` | Embedding cosine between the query and each route's description |
+
+Routes come from a config-driven registry (`ROUTING_REGISTRY_PATH` → JSON of `{name, description, sources, retriever}`; a built-in default mirrors the local corpus). `RetrieverTarget` ∈ `sparse · dense · hybrid · metadata · sql · graph · api`.
+
+**Six query constructors** (`construction/`, one `construct(query, route) -> ConstructedQuery` interface):
+
+| Constructor | Target | Backing | Output |
+|-------------|--------|---------|--------|
+| Metadata Filter | `metadata` | wraps `QueryConstructor` | NL → `{filters}` + cleaned query |
+| Vector Search | `dense` | params | `{top_k, namespace, filters}` |
+| Hybrid Retrieval | `hybrid` | reuses `adaptive_mmr_lambda` | `{rrf_k, w_sparse, w_dense, mmr_lambda}` |
+| SQL Generation | `sql` | net-new (no exec) | schema-aware Text-to-SQL, SELECT-only + table allowlist + multi-statement reject |
+| Knowledge Graph | `graph` | net-new (no exec) | read-only Cypher (`MATCH…RETURN`), word-boundary write-clause rejection |
+| API Request | `api` | net-new (no exec) | `{endpoint, params}` filtered to an `ApiSpec` allowlist |
+
+The three net-new constructors **build and validate but never execute** a query — there is no live SQL/KG/API backend, so `RetrievalService` short-circuits the `sql`/`graph`/`api` targets to `([], "routed:<target>")`. When a real backend is wired later, only the executor changes. Every `route()`/`construct()` degrades to a safe empty/None payload rather than raising.
+
+**Enable per-query routing:**
+```bash
+ROUTING_ENABLED=true \
+  PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+# Optional LLM strategies + a custom route registry:
+ROUTING_ENABLED=true ROUTING_LOGICAL=true ROUTING_SEMANTIC=true \
+  ROUTING_REGISTRY_PATH=data/routes.json  uvicorn ...
+```
+
+**Score routing accuracy** (heuristic router; no LLM needed):
+```bash
+python -m src.internal.retrieval.eval_runner \
+  --routing-eval --dataset data/eval/routing_labels.jsonl
+# → {"routing_accuracy": 1.0, "num_queries": 12}
 ```
 
 
@@ -1338,6 +1399,7 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `QT_STEP_BACK` | `false` | Enable step-back query rephrasing |
 | `QT_KEYWORDS` | `false` | Enable keyword expansion for BM25 variants |
 | `QT_CONSTRUCT_FILTERS` | `false` | Enable NL → metadata filter extraction |
+| `QT_REWRITE` | `false` | Enable canonical query rewrite (`QueryEnhancer.rewrite`); 7th router label |
 | `QT_MAX_VARIANTS` | `5` | Max parallel retrieval variants when any `QT_*` is enabled |
 | `QT_ASYNC` | `false` | Run the leaf's transform LLM calls in parallel (`AsyncQueryTransformPipeline`) |
 | `QT_TRANSFORM_TIMEOUT_MS` | `400` | Per-transform timeout; on exceed that field degrades to its default |
@@ -1352,6 +1414,10 @@ curl -s http://localhost:7860/scim/v2/Groups -H "Authorization: Bearer $SCIM_TOK
 | `QT_ROUTER` | `false` | Per-query routing of transforms (`QueryRouter` + heuristic fallback) |
 | `QT_ROUTER_MODEL_PATH` | — | Serialized scikit-learn router artifact; heuristic used when unset/missing |
 | `QT_CONSTRUCT_OPERATORS` | `false` | Extract numeric range/comparison filters (`rating_gte`/`rating_lte`) |
+| `ROUTING_ENABLED` | `false` | Enable the per-query routing layer in `RetrievalService` (domain/source/retriever + query construction); zero overhead when unset |
+| `ROUTING_LOGICAL` | `false` | Add the LLM structured-classification router strategy (falls back to heuristic) |
+| `ROUTING_SEMANTIC` | `false` | Add the embedding-similarity router strategy (falls back to heuristic) |
+| `ROUTING_REGISTRY_PATH` | — | JSON route registry (`{name, description, sources, retriever}`); built-in default used when unset |
 
 
 ## Tests
