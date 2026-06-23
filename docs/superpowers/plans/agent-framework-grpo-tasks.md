@@ -52,25 +52,31 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
   - Verify: `pytest tests/unit/test_agent_state.py -v` — **9 passed**; lint clean; 62 state-consumer tests green.
   - Files: `src/agents/state.py`, `tests/unit/test_agent_state.py`.
 
-- [ ] **T-A.2: Extract EvidenceJudge + AnswerGenerator (behavior-preserving)** `[P]`
-  - Acceptance: `EvidenceJudge` wraps `SearchResultEvaluator` and maps its verdict to a continuous
-    `evidence_score ∈ [0,1]` written to `AgentState`; `AnswerGenerator` produces `answer + citations`
-    from `retrieved_docs` (the current `<answer>` synthesis, unchanged output). Both pure over `AgentState`.
-  - Verify: `pytest tests/unit/test_components.py -k "evidence or answer" -v`.
-  - Files: `src/agents/components/evidence_judge.py`, `src/agents/components/answer_generator.py`, test.
+- [x] **T-A.2: Extract EvidenceJudge + AnswerGenerator (behavior-preserving)** `[P]` ✅ done
+  - `EvidenceJudge` wraps `SearchResultEvaluator` → continuous `evidence_score ∈ [0,1]`
+    (blends query sufficiency with squashed top scores; monotonic in quality);
+    `AnswerGenerator` resolves `[RxQyDz]` markers to structured `Citation`s via `AgentContext`.
+  - Verify: `pytest tests/unit/test_components.py` — green (9 of the 13 belong here).
+  - Files: `src/agents/components/{evidence_judge,answer_generator}.py`, `tests/unit/test_components.py`.
 
-- [ ] **T-A.3: Extract SearchTool + RerankerTool (single retriever, behavior-preserving)** `[P]`
-  - Acceptance: `SearchTool.run(state, query)` calls the existing `search_url`, appends to
-    `retrieved_docs`, records the round; `RerankerTool.run(state)` reorders `retrieved_docs` in place via
-    `Reranker`. No new behavior yet (retriever defaults to VECTOR_DB; rerank only when invoked).
-  - Verify: `pytest tests/unit/test_components.py -k "search or rerank" -v`.
-  - Files: `src/agents/components/search_tool.py`, `src/agents/components/reranker_tool.py`, test.
+- [x] **T-A.3: Extract SearchTool + RerankerTool (DI, behavior-preserving)** `[P]` ✅ done
+  - `SearchTool(retrieve_fn).run(state, query)` records the round; `RerankerTool(rerank_fn).run(state)`
+    reorders `retrieved_docs` (no round counted). Dependencies injected for isolation; concrete backends
+    (web/vdb URLs, cross-encoder) wired in Phase B where the new actions actually need them.
+  - Verify: `pytest tests/unit/test_components.py` — green (4 of the 13 belong here).
+  - Files: `src/agents/components/{search_tool,reranker_tool}.py`, `tests/unit/test_components.py`.
 
-- [ ] **T-A.4: Re-wire `SearchAgentLoop` onto components + `AgentState`**
-  - Acceptance: loop orchestrates EvidenceJudge/SearchTool/AnswerGenerator over `AgentState`; output
-    metrics derive from `AgentState`. New actions still disabled (single retriever, rerank off).
-  - Verify: `pytest tests/unit/test_agent_loop.py -v` **passes unchanged** (refactor is a no-op).
-  - Files: `src/agents/search.py`, test (assertions may be added, none removed).
+- [ ] **T-A.4: Wire components into `SearchAgentLoop`** — ⚠️ **DECISION NEEDED (recommend deferring into Phase B)**
+  - Finding after reading the loop: its retrieval path is **batch/multi-query with per-run caching and
+    source dedup** (`_retrieve_with_cache`→`_retrieve_many`→`SearchClient.retrieve`, [src/agents/search.py:441](../../../src/agents/search.py)),
+    and evidence/citation/answer logic is already integrated via `AgentContext` + `SearchResultEvaluator`.
+    A pure-no-op re-wire onto the components would be high-churn/high-risk (must keep 62 loop tests
+    byte-green) for **zero behavioral payoff** in Phase A.
+  - **Recommendation:** defer wiring into **Phase B**, at the exact points the new actions need it
+    (SearchTool must grow web/vdb routing + batch there anyway; rerank action introduces the seam). This
+    is the surgical path — wire once, when it changes behavior, instead of a no-op rewrite now + rewrite in B.
+  - Alternative if wanted now: a parallel `SearchAgentState` mirror threaded through the loop (populated
+    from existing data) — moderate effort, low risk, gives Phase B a ready seam.
 
 > **Checkpoint 1 (gate):** full suite green with new actions **disabled** — proves the refactor changed
 > no behavior. `pytest` green, no test-count regression.
