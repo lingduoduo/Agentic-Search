@@ -15,7 +15,12 @@ class MetadataFilterConstructor:
         self._extractor = _FilterExtractor(llm)
 
     def construct(self, query: str, route: RouteDecision) -> ConstructedQuery:
-        cleaned, filters = self._extractor.extract_filters(query)
+        try:
+            cleaned, filters = self._extractor.extract_filters(query)
+        except Exception:
+            return ConstructedQuery(
+                target=RetrieverTarget.METADATA, payload={"filters": {}}, text=query
+            )
         return ConstructedQuery(
             target=RetrieverTarget.METADATA,
             payload={"filters": filters},

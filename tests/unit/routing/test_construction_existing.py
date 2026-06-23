@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.internal.routing.construction.base import ConstructedQuery
 from src.internal.routing.construction.hybrid import HybridRetrievalQueryConstructor
 from src.internal.routing.construction.metadata import MetadataFilterConstructor
