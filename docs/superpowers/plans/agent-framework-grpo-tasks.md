@@ -84,32 +84,36 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
 
 ---
 
-## Phase B — New actions (B.2 ∥ B.3)
+## Phase B — New actions
 
-- [ ] **T-B.1: Planner tag vocabulary → typed decision**
-  - Acceptance: `Planner.decide(state) -> PlannerDecision` parsing `<search retriever="web|vdb">…</search>`,
-    `<rerank/>`, `<answer>…`. Malformed/unknown tags → safe default (single vdb search). Round-trips with
-    the loop's existing tag parser.
-  - Verify: `pytest tests/unit/test_components.py -k planner -v` incl. malformed-tag cases.
-  - Files: `src/agents/components/planner.py`, test.
+- [x] **T-B.1: Planner tag vocabulary → typed decision** ✅ done
+  - `Planner.decide(text) -> SearchAction|RerankAction|AnswerAction`, parsing
+    `<search retriever="web|vdb">`, `<rerank/>`, `<answer>`. Precedence search>rerank>answer; malformed →
+    safe vector-DB search. 7 tests incl. malformed/unknown-retriever cases.
+  - Files: `src/agents/components/planner.py`, `tests/unit/test_components.py`.
 
-- [ ] **T-B.2: SearchTool web vs vector-DB routing + degradation** `[P]`
-  - Acceptance: `SearchTool` routes to one of two configured URLs by `Retriever`; missing web key/server
-    → degrade to VDB + log (no crash). `--web_search_url` flag added to the example + loop config; training
-    config points web URL at the cached corpus.
-  - Verify: `pytest tests/unit/test_components.py -k "retriever or degrade" -v`.
-  - Files: `src/agents/components/search_tool.py`, `src/agents/search.py` (config), `examples/run_agentic_search.py`, test.
+- [x] **T-B.2: SearchTool web vs vector-DB routing + degradation** ✅ done
+  - `SearchTool(vector_db_fn, web_fn=None).run(state, query, retriever)` selects backend; WEB degrades to
+    vdb (logged) when web unconfigured. Backward compatible with the Phase A signature. 3 tests.
+  - Files: `src/agents/components/search_tool.py`, `tests/unit/test_components.py`.
 
-- [ ] **T-B.3: RerankerTool as a policy action** `[P]`
-  - Acceptance: loop dispatches `<rerank/>` to `RerankerTool`; updates doc order + scores in `AgentState`;
-    increments a `rerank_calls` metric. No new docs fetched.
-  - Verify: `pytest tests/unit/test_components.py -k rerank -v`.
-  - Files: `src/agents/components/reranker_tool.py`, `src/agents/search.py`, test.
+- [x] **T-B.4 (routing slice): per-round web/vdb wiring in `SearchAgentLoop`** ✅ done
+  - `web_search_url` config + second `SearchClient`; action regex tolerates attributes;
+    `_parse_round_retriever` reads the choice; threaded through execute/cache/retrieve; cache keyed by
+    (retriever, query); both clients closed; system prompt teaches the attribute. 2 loop tests
+    (web routing + degradation). This is the user-confirmed **per-round** grain + the deferred T-A.4 seam.
+  - Files: `src/agents/search.py`, `tests/unit/test_agent_loop.py`, `tests/unit/test_on_turn_callback.py`.
 
-- [ ] **T-B.4: Dispatch all four actions in the loop**
-  - Acceptance: a single loop test drives a trajectory hitting `search(web)`, `search(vdb)`, `rerank`,
-    `answer`; each updates `AgentState` correctly; degradation path covered.
-  - Verify: `pytest tests/unit/test_agent_loop.py -k "actions or retriever or rerank" -v`.
+- [ ] **T-B.3: RerankerTool as a policy action** — ⚠️ **DEFERRED into Phase C** (recommend)
+  - Why defer: a mid-loop `<rerank/>` reorders a round's results, which **shifts the positional
+    `[RxQyDz]` citation labels** already shown to the model — needs care to stay consistent; the
+    `Reranker` works on `RetrievalResult` while the loop uses `SearchResult` (a type bridge); and it is
+    only meaningful once **priced** by `rerank_cost`, which lands in Phase C (T-C.1). Wiring + pricing
+    rerank together in Phase C is cleaner than shipping an unpriced action now.
+  - The `RerankerTool` component itself already exists + is tested (Phase A); only the loop dispatch is deferred.
+
+> **Checkpoint 2 (gate):** ✅ reached for the retriever actions — loop executes `search(web)`,
+> `search(vdb)`, `answer` + degradation; 249-test slice green, no regression. Rerank action deferred to C.
   - Files: `src/agents/search.py`, `tests/unit/test_agent_loop.py`.
 
 > **Checkpoint 2 (gate):** loop executes every action path incl. degradation. `pytest` green.
@@ -157,9 +161,10 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
 ## PR slicing (revised after T-A.4 deferral)
 - **PR 1 (this one):** Phase A — `SearchAgentState` foundation + four extracted components, additive +
   fully unit-tested. Loop untouched.
-- **PR 2:** Phase B — new actions (Planner tags, web/vdb routing, rerank action) **+ the deferred T-A.4
-  loop wiring**, behind Checkpoint 2.
+- **PR 2 (this one):** Phase B — Planner tags + web/vdb routing (component + live loop) **+ the deferred
+  T-A.4 loop seam**. Rerank-as-action deferred to PR 4. Behind Checkpoint 2.
 - **PR 3:** Phase A0 (durability) — can land any time before Phase C.
-- **PR 4:** Phases C + D (reward + training + eval).
+- **PR 4:** Phases C + D — reward terms (`retriever_cost`, `rerank_cost`, `evidence_gain`) + **rerank
+  loop action (priced)** + eval.
 
 Each PR carries a copy of [SPEC.md](../../../SPEC.md) + this plan/tasks on its branch (repo convention).
