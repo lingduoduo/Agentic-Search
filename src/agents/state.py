@@ -27,6 +27,9 @@ __all__ = [
     "ToolExecutionResult",
     "TaskNode",
     "AgentState",
+    "Retriever",
+    "Citation",
+    "SearchAgentState",
 ]
 
 
@@ -216,6 +219,67 @@ class AgentState:
         if isinstance(result, ToolExecutionResult):
             result = result.to_tool_result()
         self.tool_results.append(result)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class Retriever(Enum):
+    """The retriever backends the policy can choose between per search."""
+
+    WEB = "web"
+    VECTOR_DB = "vector_db"
+
+
+@dataclass(slots=True)
+class Citation:
+    """A reference linking an answer claim back to a retrieved document."""
+
+    doc_id: str
+    marker: str
+    text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class SearchAgentState:
+    """Single source of truth threaded through the search loop for one question.
+
+    Holds exactly the six canonical fields the GRPO policy conditions on. Distinct
+    from the orchestration-level :class:`AgentState`; this one drives the search
+    components (Planner, SearchTool, RerankerTool, EvidenceJudge, AnswerGenerator).
+    """
+
+    question: str
+    previous_queries: list[str] = field(default_factory=list)
+    retrieved_docs: list[RetrievedDocument] = field(default_factory=list)
+    evidence_score: float = 0.0
+    search_rounds: int = 0
+    citations: list[Citation] = field(default_factory=list)
+
+    def record_search(self, query: str, docs: list[RetrievedDocument]) -> None:
+        """Record one retriever call: track the query, keep docs, count the round.
+
+        A repeated query is not re-listed, but the round still counts because the
+        retriever was invoked again.
+        """
+        if query not in self.previous_queries:
+            self.previous_queries.append(query)
+        self.retrieved_docs.extend(docs)
+        self.search_rounds += 1
+
+    def record_rerank(self, reordered_docs: list[RetrievedDocument]) -> None:
+        """Replace the working set with a reranked ordering. Not a retriever call."""
+        self.retrieved_docs = list(reordered_docs)
+
+    def set_evidence(self, score: float) -> None:
+        """Set the latest evidence_score, clamped to [0, 1]."""
+        self.evidence_score = max(0.0, min(1.0, score))
+
+    def set_citations(self, citations: list[Citation]) -> None:
+        self.citations = list(citations)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
