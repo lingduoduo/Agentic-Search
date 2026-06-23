@@ -52,7 +52,7 @@ class TransformedQueryBundle:
     def retrieval_variants(self, max_variants: int = 5) -> list[str]:
         """Return deduplicated query variants, always including original last.
 
-        Order: sub_queries → multi_query → hyde_text → step_back → keywords → original (always last).
+        Order: sub_queries → multi_query → rewrite → hyde_text → step_back → keywords → original (always last).
         Truncated to max_variants total. original is always present.
         """
         seen: set[str] = set()
