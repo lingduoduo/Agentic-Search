@@ -34,3 +34,23 @@ def test_trained_artifact_round_trips(tmp_path):
     cfg = QueryRouter(model_path=path).predict("faiss index")
     # A loaded model returns a valid config (booleans), not a crash.
     assert isinstance(cfg.decompose, bool)
+
+
+def test_router_labels_include_rewrite_last():
+    from src.internal.retrieval.query_router import ROUTER_LABELS
+
+    assert ROUTER_LABELS[-1] == "rewrite"
+    assert len(ROUTER_LABELS) == 7
+
+
+def test_heuristic_routes_rewrite_for_long_noisy_query():
+    cfg = QueryRouter().predict(
+        "uhh so basically what is the deal with faiss vs scann and which one is faster i think"
+    )
+    assert cfg.rewrite is True
+
+
+def test_heuristic_short_keyword_skips_expensive_legs():
+    cfg = QueryRouter().predict("faiss index")
+    assert cfg.hyde is False and cfg.decompose is False and cfg.multi_query is False
+    assert cfg.keywords is True

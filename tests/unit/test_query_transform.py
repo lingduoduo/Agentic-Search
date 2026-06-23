@@ -213,3 +213,26 @@ def test_multi_query_variants_surface():
     b = TransformedQueryBundle(original="orig", multi_query=["p1", "p2"])
     variants = b.retrieval_variants(max_variants=5)
     assert "p1" in variants and "p2" in variants and variants[-1] == "orig"
+
+
+def test_rewrite_flag_threads_into_bundle_and_variants():
+    from unittest.mock import MagicMock
+    from src.context.query_transform import QueryTransformConfig, QueryTransformPipeline
+
+    llm = MagicMock()
+    llm.complete.return_value = "what is faiss"  # rewrite output
+    cfg = QueryTransformConfig(rewrite=True, max_variants=5)
+    bundle = QueryTransformPipeline(cfg, llm).transform("uhh wht is faiss??")
+    assert bundle.rewrite == "what is faiss"
+    assert "what is faiss" in bundle.retrieval_variants(max_variants=5)
+    assert (
+        bundle.retrieval_variants()[-1] == "uhh wht is faiss??"
+    )  # original always last
+
+
+def test_rewrite_in_config_signature():
+    from src.context.query_transform import QueryTransformConfig, config_signature
+
+    on = config_signature(QueryTransformConfig(rewrite=True))
+    off = config_signature(QueryTransformConfig(rewrite=False))
+    assert on != off

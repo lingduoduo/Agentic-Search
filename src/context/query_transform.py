@@ -18,6 +18,7 @@ class QueryTransformConfig:
     keywords: bool = False
     construct_filters: bool = False
     multi_query: bool = False
+    rewrite: bool = False
     max_variants: int = 5
 
 
@@ -31,6 +32,7 @@ def config_signature(config: QueryTransformConfig) -> str:
             f"k={int(config.keywords)}",
             f"c={int(config.construct_filters)}",
             f"m={int(getattr(config, 'multi_query', False))}",
+            f"r={int(getattr(config, 'rewrite', False))}",
             f"mv={config.max_variants}",
         ]
     )
@@ -45,11 +47,12 @@ class TransformedQueryBundle:
     keywords: list[str] = field(default_factory=list)
     merged_filters: dict = field(default_factory=dict)
     multi_query: list[str] = field(default_factory=list)
+    rewrite: str | None = None
 
     def retrieval_variants(self, max_variants: int = 5) -> list[str]:
         """Return deduplicated query variants, always including original last.
 
-        Order: sub_queries → multi_query → hyde_text → step_back → keywords → original (always last).
+        Order: sub_queries → multi_query → rewrite → hyde_text → step_back → keywords → original (always last).
         Truncated to max_variants total. original is always present.
         """
         seen: set[str] = set()
@@ -67,6 +70,7 @@ class TransformedQueryBundle:
             _add(q)
         for q in self.multi_query:
             _add(q)
+        _add(self.rewrite)
         _add(self.hyde_text)
         _add(self.step_back)
         for kw in self.keywords:
@@ -135,6 +139,8 @@ class QueryTransformPipeline:
                 ).generate(query)
 
             jobs["multi_query"] = _mq
+        if config.rewrite:
+            jobs["rewrite"] = lambda: self._enhancer.rewrite(query)
         return jobs
 
     def _assemble(
@@ -149,6 +155,7 @@ class QueryTransformPipeline:
             keywords=results.get("keywords") or [],
             merged_filters={**extracted, **(caller_filters or {})},
             multi_query=results.get("multi_query") or [],
+            rewrite=results.get("rewrite"),
         )
 
     def transform(
@@ -184,6 +191,7 @@ class QueryTransformPipeline:
             keywords=_bool("QT_KEYWORDS"),
             construct_filters=_bool("QT_CONSTRUCT_FILTERS"),
             multi_query=_bool("QT_MULTI_QUERY"),
+            rewrite=_bool("QT_REWRITE"),
             max_variants=_parse_max_variants(),
         )
 
@@ -195,6 +203,7 @@ class QueryTransformPipeline:
                 config.keywords,
                 config.construct_filters,
                 config.multi_query,
+                config.rewrite,
             ]
         ):
             return None
