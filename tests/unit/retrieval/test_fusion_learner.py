@@ -80,5 +80,13 @@ def test_adaptive_mmr_lambda_long_query():
 
 
 def test_adaptive_mmr_lambda_medium_query():
-    result = adaptive_mmr_lambda("retrieval augmented generation")
+    result = adaptive_mmr_lambda("retrieval augmented generation with reranking")
     assert 0.4 <= result <= 0.7
+
+
+def test_adaptive_mmr_lambda_tiers():
+    assert adaptive_mmr_lambda("faiss") == 0.8  # 1 token (≤3)
+    assert adaptive_mmr_lambda("a b c") == 0.8  # 3 tokens (≤3, was 0.5 before)
+    assert adaptive_mmr_lambda("one two three four") == 0.6  # 4-6
+    assert adaptive_mmr_lambda("one two three four five six seven") == 0.5  # 7-9
+    assert adaptive_mmr_lambda(" ".join(["w"] * 12)) == 0.3  # ≥10
