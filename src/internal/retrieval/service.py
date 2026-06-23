@@ -107,12 +107,14 @@ class RetrievalService:
         pipeline: "QueryTransformPipeline | None" = None,
         optimizer: "QueryOptimizer | None" = None,
         result_cache: "ResultCache | None" = None,
+        router: object | None = None,
     ) -> None:
         self._backend = backend
         self._reranker = reranker
         self._pipeline = pipeline
         self._optimizer = optimizer
         self._result_cache = result_cache
+        self._router = router
 
     @classmethod
     def from_env(cls) -> "RetrievalService":
@@ -150,13 +152,16 @@ class RetrievalService:
             except Exception as exc:
                 logger.warning("Result cache disabled: %s", exc)
         from src.internal.retrieval.reranker_factory import build_reranker_from_env
+        from src.internal.routing.routing_factory import build_router_from_env
 
+        router = build_router_from_env()
         return cls(
             _build_backend(),
             reranker=build_reranker_from_env(),
             pipeline=pipeline,
             optimizer=optimizer,
             result_cache=result_cache,
+            router=router,
         )
 
     def _search_one(
@@ -219,6 +224,19 @@ class RetrievalService:
         Without pipeline: single query, identical behaviour to previous releases.
         Result cache (if enabled) is checked before retrieval and populated after.
         """
+        if self._router is not None:
+            from src.internal.routing.route import RetrieverTarget
+
+            decision = self._router.route(query)
+            if decision.retriever in (
+                RetrieverTarget.SQL,
+                RetrieverTarget.GRAPH,
+                RetrieverTarget.API,
+            ):
+                # No execution backend for these targets — construct-only.
+                # Degrade to empty results so routing never breaks a request.
+                return [], f"routed:{decision.retriever.value}"
+
         if self._result_cache:
             cached = self._result_cache.get(query, filters, top_k)
             if cached is not None:

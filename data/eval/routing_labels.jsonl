@@ -1,0 +1,12 @@
+{"query": "how many papers were published per year", "retriever": "sql"}
+{"query": "total number of documents indexed by source", "retriever": "sql"}
+{"query": "average rating of arxiv papers grouped by year", "retriever": "sql"}
+{"query": "what entities are connected to FAISS", "retriever": "graph"}
+{"query": "show the relationship between BM25 and TF-IDF", "retriever": "graph"}
+{"query": "what concepts are linked to dense retrieval", "retriever": "graph"}
+{"query": "what is the current price of an A100 GPU right now", "retriever": "api"}
+{"query": "latest exchange rate for USD to EUR", "retriever": "api"}
+{"query": "what is reciprocal rank fusion", "retriever": "hybrid"}
+{"query": "explain how HNSW graph search works", "retriever": "hybrid"}
+{"query": "compare dense and sparse retrieval", "retriever": "hybrid"}
+{"query": "best embedding model for semantic search", "retriever": "hybrid"}

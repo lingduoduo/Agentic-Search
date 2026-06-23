@@ -71,3 +71,12 @@ def reranker_improvement_ratio(pre_ndcg: float, post_ndcg: float) -> float:
     if pre_ndcg == 0.0:
         return 0.0
     return post_ndcg / pre_ndcg - 1.0
+
+
+def routing_accuracy(predictions: list[str], labels: list[str]) -> float:
+    """Top-1 routing accuracy: fraction of predicted retrievers matching labels."""
+    if not labels:
+        return 0.0
+    # predictions and labels are expected equal-length; denominator is len(labels).
+    correct = sum(1 for p, t in zip(predictions, labels) if p == t)
+    return round(correct / len(labels), 4)
