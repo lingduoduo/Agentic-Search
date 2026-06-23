@@ -78,8 +78,9 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
   - Alternative if wanted now: a parallel `SearchAgentState` mirror threaded through the loop (populated
     from existing data) — moderate effort, low risk, gives Phase B a ready seam.
 
-> **Checkpoint 1 (gate):** full suite green with new actions **disabled** — proves the refactor changed
-> no behavior. `pytest` green, no test-count regression.
+> **Checkpoint 1 (gate):** ✅ reached. Foundation + four components landed additively; 162 tests green
+> across agents/training/new modules, no regression. T-A.4 (loop wiring) **deferred into Phase B** by
+> decision — the loop is untouched, so behavior is provably unchanged.
 
 ---
 
@@ -153,9 +154,12 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
 
 ---
 
-## Suggested PR slicing
-- **PR 1:** Phase A0 (durability) — independently valuable, mergeable alone.
-- **PR 2:** Phases A + B (refactor + new actions) — behind Checkpoint 1 & 2.
-- **PR 3:** Phases C + D (reward + training + eval).
+## PR slicing (revised after T-A.4 deferral)
+- **PR 1 (this one):** Phase A — `SearchAgentState` foundation + four extracted components, additive +
+  fully unit-tested. Loop untouched.
+- **PR 2:** Phase B — new actions (Planner tags, web/vdb routing, rerank action) **+ the deferred T-A.4
+  loop wiring**, behind Checkpoint 2.
+- **PR 3:** Phase A0 (durability) — can land any time before Phase C.
+- **PR 4:** Phases C + D (reward + training + eval).
 
 Each PR carries a copy of [SPEC.md](../../../SPEC.md) + this plan/tasks on its branch (repo convention).
