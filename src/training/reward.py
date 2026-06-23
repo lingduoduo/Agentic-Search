@@ -239,6 +239,18 @@ class SearchRewardConfig:
     # zero — existing reward presets produce identical scores.
     human_feedback_weight: float = 0.0
 
+    # --- Phase C action-policy terms (all 0.0 by default → presets unchanged) ---
+    # Per-round cost of each retriever the policy can choose, so GRPO learns the
+    # "search web vs vector-DB" trade-off.  Negative = cost.  Web is typically
+    # priced higher (e.g. retriever_cost_web = 5 × retriever_cost_vdb).
+    retriever_cost_vdb: float = 0.0
+    retriever_cost_web: float = 0.0
+    # Flat cost charged per rerank action the policy invokes.
+    rerank_cost: float = 0.0
+    # Weight on the per-round improvement in evidence_score (Δ summed over the
+    # run), rewarding searches that actually make the evidence more sufficient.
+    evidence_gain_weight: float = 0.0
+
     @classmethod
     def _zeroed(
         cls,
@@ -266,6 +278,10 @@ class SearchRewardConfig:
             search_budget_exhausted_without_answer_penalty=0.0,
             fetch_usefulness_reward=0.0,
             format_reward_weight=0.0,
+            retriever_cost_vdb=0.0,
+            retriever_cost_web=0.0,
+            rerank_cost=0.0,
+            evidence_gain_weight=0.0,
             max_search_rounds=max_search_rounds,
             reward_scale=reward_scale,
         )
@@ -375,6 +391,37 @@ class SearchRewardConfig:
             unsupported_claim_penalty=unsupported_claim_penalty,
             duplicate_query_penalty=duplicate_query_penalty,
             format_reward_weight=format_reward_weight,
+        )
+
+    @classmethod
+    def retriever_aware(
+        cls,
+        *,
+        correctness_weight: float = 1.0,
+        retriever_cost_vdb: float = -0.01,
+        retriever_cost_web: float = -0.05,
+        rerank_cost: float = -0.02,
+        evidence_gain_weight: float = 0.1,
+    ) -> "SearchRewardConfig":
+        """Phase C preset: second-pass shaping plus action-policy costs.
+
+        Adds the retriever/rerank/evidence-gain terms on top of the Phase 2
+        objective so GRPO learns the action policy:
+
+            reward = second_pass(...)                      ← correctness + shaping
+                   + retriever_cost_vdb * vdb_searches      ← cheap internal search
+                   + retriever_cost_web * web_searches      ← web priced 5× the VDB
+                   + rerank_cost        * rerank_calls      ← flat cost per rerank
+                   + evidence_gain_weight * evidence_gain   ← reward informative rounds
+
+        Existing presets are untouched; this is opt-in for retriever-aware runs.
+        """
+        return replace(
+            cls.second_pass(correctness_weight=correctness_weight),
+            retriever_cost_vdb=retriever_cost_vdb,
+            retriever_cost_web=retriever_cost_web,
+            rerank_cost=rerank_cost,
+            evidence_gain_weight=evidence_gain_weight,
         )
 
 
@@ -626,6 +673,20 @@ class SearchRewardFunction:
             else 0.0
         )
 
+        # 12. Retriever cost: per-round cost differentiated by backend so the
+        # policy learns when web search is worth its higher price vs the VDB.
+        retriever_cost = cfg.retriever_cost_web * metrics.get(
+            "web_searches", 0.0
+        ) + cfg.retriever_cost_vdb * metrics.get("vdb_searches", 0.0)
+
+        # 13. Rerank cost: flat charge per rerank action invoked.
+        rerank_cost = cfg.rerank_cost * metrics.get("rerank_calls", 0.0)
+
+        # 14. Evidence gain: reward improvement in evidence_score across rounds.
+        evidence_gain = cfg.evidence_gain_weight * metrics.get(
+            "evidence_gain_total", 0.0
+        )
+
         human_feedback = (
             cfg.human_feedback_weight * human_signal
             if human_signal is not None and cfg.human_feedback_weight != 0.0
@@ -647,6 +708,9 @@ class SearchRewardFunction:
             + exhausted_without_answer_pen
             + fetch_reward
             + format_reward
+            + retriever_cost
+            + rerank_cost
+            + evidence_gain
         )
         total = self._aggregate_total_reward(terminal_reward, shaping_total)
         if human_feedback is not None:
@@ -669,6 +733,9 @@ class SearchRewardFunction:
             ),
             "fetch_usefulness_reward": fetch_reward,
             "format_reward": format_reward,
+            "retriever_cost": retriever_cost,
+            "rerank_cost": rerank_cost,
+            "evidence_gain": evidence_gain,
             "terminal_reward": terminal_reward,
             "shaping_total": shaping_total,
             "total": total,

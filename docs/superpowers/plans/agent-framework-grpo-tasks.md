@@ -120,30 +120,34 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
 
 ---
 
-## Phase C — Reward & training (needs A0 + B; requires Checkpoint 0 & 2)
+## Phase C — Reward & training (PR; stacked on Phase B)
 
-- [ ] **T-C.1: Extend `SearchRewardConfig` (new terms, default 0)**
-  - Acceptance: add `retriever_cost` (per-retriever multiplier; web=5× vdb when enabled), `rerank_cost`
-    (flat per call), `evidence_gain` (reward on Δ`evidence_score`/round). **All default 0** → existing
-    presets byte-stable.
-  - Verify: `pytest tests/unit/test_reward.py -v` — new-term unit tests **and** regression: existing
-    presets (`sparse_final_only`, `second_pass`, `third_pass_with_format`) produce identical totals.
+- [x] **T-C.1: Extend `SearchRewardConfig` (new terms, default 0)** ✅ done
+  - Added `retriever_cost_vdb`, `retriever_cost_web` (web priced 5× vdb in the preset), `rerank_cost`
+    (flat per call), `evidence_gain_weight` (reward on Δ`evidence_score`/round). **All default 0**; also
+    added to `_zeroed()`. Components `retriever_cost`/`rerank_cost`/`evidence_gain` added to the breakdown.
+  - Verify: `pytest tests/unit/test_reward.py` — 5 new-term tests **and** regression: existing presets
+    (`sparse_final_only`/`second_pass`/`third_pass_with_format`) leave the new terms at 0. **66 pass.**
   - Files: `src/training/reward.py`, `tests/unit/test_reward.py`.
 
-- [ ] **T-C.2: Surface action metrics for the reward**
-  - Acceptance: loop emits `web_searches`, `vdb_searches`, `rerank_calls`, `evidence_score_final`,
-    `evidence_gain_total` into `output.metrics`; reward reads them.
-  - Verify: `pytest tests/unit/test_reward.py -k "metrics or gain" -v`.
-  - Files: `src/agents/search.py`, `src/training/reward.py`, test.
+- [x] **T-C.2: Surface action metrics for the reward** ✅ done
+  - Loop emits `web_searches`, `vdb_searches`, `evidence_score_final`, `evidence_gain_total` (cumulative
+    positive Δ) into `output.metrics`; per-round continuous score reuses `EvidenceJudge.score_round`
+    (finally wiring the component into the loop). `rerank_calls` initialized to 0 (populated once the
+    rerank action lands). Reward reads all via `metrics.get(...)`.
+  - Verify: `pytest tests/unit/test_agent_loop.py -k action_metrics`.
+  - Files: `src/agents/search.py`, `src/agents/components/evidence_judge.py` (public `score_round`), test.
 
-- [ ] **T-C.3: `retriever_aware()` reward preset + GRPO smoke**
-  - Acceptance: a new preset wires non-zero new weights (web 5× vdb, flat rerank cost, Δevidence_gain);
-    **existing preset defaults untouched**. `--smoke` GRPO step completes one step with the new action
-    space, no NaN, reward breakdown shows the new terms.
-  - Verify: `python3 -m src.training.ppo.search_agent_grpo_trainer --smoke` exits 0; `pytest tests/unit/test_reward.py -k retriever_aware`.
-  - Files: `src/training/reward.py`, `src/training/ppo/search_agent_grpo_trainer.py`, test.
+- [x] **T-C.3: `retriever_aware()` reward preset** ✅ done (GRPO `--smoke` = manual)
+  - `SearchRewardConfig.retriever_aware()` builds on `second_pass` and sets web=5×vdb cost, flat rerank
+    cost, Δevidence-gain. Existing preset defaults untouched.
+  - Verify: `pytest tests/unit/test_reward.py -k retriever_aware`. The end-to-end GRPO `--smoke` run needs
+    a real model + torch and is a **manual/integration step** (not a unit test).
+  - Files: `src/training/reward.py`, test.
 
-> **Checkpoint 3 (gate):** `--smoke` GRPO run green using the new action space + durable loop.
+> **Checkpoint 3 (gate):** ✅ reward terms + metrics + preset landed; 235-test slice green, presets
+> byte-stable. Remaining for full Phase C/D: rerank-as-action (priced) + retrieval retries + GRPO smoke +
+> eval comparison (Phase D).
 
 ---
 

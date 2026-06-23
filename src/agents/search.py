@@ -27,6 +27,7 @@ from ..training.evaluation import (
     SearchRoundEvaluation,
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
+from .components.evidence_judge import EvidenceJudge
 from .state import Retriever
 
 # ---------------------------------------------------------------------------
@@ -333,6 +334,12 @@ class SearchAgentLoop(AgentLoopBase):
             "duplicate_search_results_removed": 0.0,
             "implicit_subquestions": 0.0,
             "research_followup_queries": 0.0,
+            # Action-policy metrics consumed by the Phase C reward terms.
+            "web_searches": 0.0,
+            "vdb_searches": 0.0,
+            "rerank_calls": 0.0,
+            "evidence_score_final": 0.0,
+            "evidence_gain_total": 0.0,
         }
 
     def _with_system_prompt(
@@ -760,6 +767,10 @@ class SearchAgentLoop(AgentLoopBase):
             )
             metrics["duplicate_search_results_removed"] += removed
         metrics["search_rounds"] += 1
+        if retriever is Retriever.WEB:
+            metrics["web_searches"] += 1.0
+        else:
+            metrics["vdb_searches"] += 1.0
         logger.debug(
             "search returned %d total results across %d queries in %.2fs",
             sum(len(r) for r in results_by_query),
@@ -783,6 +794,13 @@ class SearchAgentLoop(AgentLoopBase):
                 metrics["evidence_sufficient_rounds"] += 1.0
             else:
                 metrics["evidence_insufficient_rounds"] += 1.0
+            # Continuous evidence_score for this round (reuses EvidenceJudge's
+            # heuristic→[0,1] map). Track the final value and the cumulative
+            # positive improvement so the reward can shape informative searches.
+            round_score = EvidenceJudge.score_round(evaluation)
+            prev_score = metrics["evidence_score_final"]
+            metrics["evidence_gain_total"] += max(0.0, round_score - prev_score)
+            metrics["evidence_score_final"] = round_score
             for tid, ev in self._evaluate_tasks(search_contexts).items():
                 task_statuses[tid] = ev.is_sufficient
             return SearchRoundResult(
