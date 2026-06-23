@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 _LIST_MARKER_RE = re.compile(r"^\s*(?:\d+[.)]\s*|[-*•]\s*)")
 _ARTIFACT_RE = re.compile(r'[\[\]"\'`]')
 
-_DECOMPOSE_PROMPT = """Break the following question into 2-4 focused sub-questions that together cover the full intent.
-Return one sub-question per line. Do not number them. Do not include the original question.
-If the question is already simple, return it unchanged on a single line.
+_DECOMPOSE_PROMPT = """Break the question into 2-4 focused, non-overlapping sub-questions that together cover its full intent.
+Each sub-question must be self-contained and keyword-rich so it retrieves well on its own.
+Return one sub-question per line. Do not number them. Do not repeat the original question.
+If the question is already atomic, return it unchanged on a single line.
 
 Question: {query}""".strip()
 
@@ -25,8 +26,8 @@ Write as if you are an expert. Be factual and specific. Do not say "I" or ask fo
 Question: {query}
 Answer:""".strip()
 
-_STEP_BACK_PROMPT = """Rewrite the following question as a broader, more general question that
-would help retrieve background knowledge useful for answering the original.
+_STEP_BACK_PROMPT = """Write one broader background question whose answer provides the concepts needed to answer the original.
+Keep the same domain and key entities; generalise only the specifics.
 Return only the rewritten question, no explanation.
 
 Question: {query}

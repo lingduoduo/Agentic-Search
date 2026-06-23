@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 _PROMPT = (
     "Generate {n} alternative phrasings of the user's search query. "
     "Keep the meaning identical but vary the wording. "
+    "Each paraphrase must use different wording from the others; do not restate the query verbatim. "
     "Return each on its own line, no numbering needed.\n\nQuery: {query}"
 )
 
