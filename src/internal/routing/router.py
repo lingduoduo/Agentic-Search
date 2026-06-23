@@ -119,9 +119,30 @@ class Router:
             )
         return self._decision(route, confidence=0.7, strategy="heuristic")
 
-    # Logical/semantic strategies are implemented in Task 3.
-    def _logical_route(self, query: str) -> RouteDecision:  # pragma: no cover - Task 3
-        raise NotImplementedError
+    def _logical_route(self, query: str) -> RouteDecision:
+        from src.context.models import ChatMessage
 
-    def _semantic_route(self, query: str) -> RouteDecision:  # pragma: no cover - Task 3
-        raise NotImplementedError
+        names = ", ".join(r.name for r in self._registry.routes)
+        catalog = "\n".join(
+            f"- {r.name}: {r.description}" for r in self._registry.routes
+        )
+        prompt = (
+            "Choose the single best route for the user's query.\n"
+            f"Routes:\n{catalog}\n\n"
+            f"Answer with exactly one route name from: {names}.\n"
+            f"Query: {query}\nRoute:"
+        )
+        resp = self._llm.complete([ChatMessage(role="user", content=prompt)])
+        label = (getattr(resp, "text", None) or str(resp)).strip().lower().split()[0]
+        route = self._registry.get(label)
+        if route is None:
+            return self._heuristic(query)
+        return self._decision(route, confidence=0.9, strategy="logical")
+
+    def _semantic_route(self, query: str) -> RouteDecision:
+        from .semantic_router import cosine_route
+
+        route, score = cosine_route(query, self._registry.routes, self._embedder)
+        return self._decision(
+            route, confidence=round(float(score), 4), strategy="semantic"
+        )
