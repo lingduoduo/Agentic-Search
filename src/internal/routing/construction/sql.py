@@ -33,7 +33,6 @@ _FORBIDDEN = (
     "pragma",
     ";--",
 )
-_IDENT_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 
 
 @dataclass(frozen=True)
@@ -55,7 +54,11 @@ SQL:""".strip()
 
 
 def validate_sql(sql: str, schema: list[TableSchema]) -> bool:
-    """True iff sql is a single read-only SELECT over allowlisted tables/columns."""
+    """True iff sql is a single read-only SELECT over allowlisted tables.
+    Substring-based: keyword checks may false-positive on those words inside
+    string literals; CTE-shadowed names are not resolved (acceptable — this
+    layer never executes SQL).
+    """
     if not sql or not sql.strip():
         return False
     lowered = sql.lower()
@@ -65,12 +68,12 @@ def validate_sql(sql: str, schema: list[TableSchema]) -> bool:
         return False
     if sql.count(";") > 1 or (";" in sql and not lowered.rstrip().endswith(";")):
         return False
-    allowed = {t.name.lower() for t in schema}
-    for t in schema:
-        allowed.update(c.lower() for c in t.columns)
+    allowed_tables = {t.name.lower() for t in schema}
     # Allowlist tables referenced after FROM/JOIN.
     referenced_tables = re.findall(r"(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)", lowered)
-    return all(tbl in allowed for tbl in referenced_tables) and bool(referenced_tables)
+    return all(tbl in allowed_tables for tbl in referenced_tables) and bool(
+        referenced_tables
+    )
 
 
 class SqlQueryConstructor:

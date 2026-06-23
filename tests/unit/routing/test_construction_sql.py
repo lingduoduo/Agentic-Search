@@ -60,3 +60,12 @@ def test_constructor_degrades_on_llm_failure():
 
     out = SqlQueryConstructor(_Boom(), _SCHEMA).construct("x", _route())
     assert out.payload["sql"] is None
+
+
+def test_validate_rejects_multi_statement():
+    assert not validate_sql("SELECT 1; SELECT * FROM papers", _SCHEMA)
+
+
+def test_validate_rejects_table_named_like_a_column():
+    # 'year' is a column, not a table; FROM year must be rejected.
+    assert not validate_sql("SELECT * FROM year", _SCHEMA)
