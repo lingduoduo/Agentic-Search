@@ -9,30 +9,31 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
 
 ---
 
-## Phase A0 — Training durability (parallel with A/B; must precede C)
+## Phase A0 — Training durability (PR 3; off main, independent)
 
-- [ ] **T-A0.1: Checkpointable GRPO outer loop**
-  - Acceptance: a `train_loop(trainer, prompts, max_steps, ckpt_every, ckpt_dir, start_step=0)` runs N
-    `step_async()` calls; every `ckpt_every` it saves `policy`, `optimizer.state_dict()`, scheduler, and
-    `step` to `ckpt_dir`. A `--resume <ckpt_dir>` path restores all four and continues from `step`.
-  - Verify: `pytest tests/unit/test_train_loop.py -v` — run 4 steps, kill, resume, assert identical step
-    counter + optimizer state tensor-equal.
-  - Files: `src/training/ppo/train_loop.py` (new), `examples/run_sft_grpo.py` (use the loop), `tests/unit/test_train_loop.py`.
+- [x] **T-A0.1: Checkpointable GRPO outer loop** ✅ done
+  - `train_loop(trainer, prompts, ground_truths, TrainLoopConfig, *, resume_from, on_metrics)` runs steps
+    `start_step..max_steps`, with **step-level `asyncio.wait_for` timeout + skip** (a hung/failing step is
+    logged and skipped, prior progress intact), periodic checkpoint every `ckpt_every`, resume-from-checkpoint,
+    and per-step **metrics JSONL**. Trainer-agnostic (any `step_async`); model-state delegated to the
+    trainer's `save_checkpoint`/`load_checkpoint`, which were added to `LLMGRPOTrainer` (policy +
+    tokenizer + optimizer state).
+  - Verify: `pytest tests/unit/test_train_loop.py -v` — 5 tests (runs N steps, periodic ckpt + jsonl,
+    resume continues from saved step, hung step skipped, failing step skipped). **No scheduler exists in
+    the trainer**, so checkpoint covers policy+optimizer+step (not scheduler).
+  - Files: `src/training/ppo/train_loop.py` (new), `src/training/ppo/llm_grpo_trainer.py`, `tests/unit/test_train_loop.py`.
 
-- [ ] **T-A0.2: Step-level timeout + skip + retrieval retries** `[P]`
-  - Acceptance: `step_async()` wrapped in `asyncio.wait_for`; on timeout/exception the step is logged and
-    skipped (loop continues, prior progress intact). Retrieval HTTP calls in `_retrieve_many`/`_fetch_pages`
-    get 1–2 bounded retries with backoff before degrading to empty.
-  - Verify: `pytest tests/unit/test_train_loop.py -k "timeout or retry"` — injected hang skips one step;
-    injected transient failure succeeds on retry.
-  - Files: `src/training/ppo/train_loop.py`, `src/agents/search.py` (retry wrap at ~442–453), test.
+- [ ] **T-A0.2: Retrieval-level retries** — ⚠️ **DEFERRED**
+  - Step-level timeout/skip (in train_loop) already prevents a hung rollout from aborting the run. Adding
+    1–2 retries inside `_retrieve_many`/`_fetch_pages` would touch `src/agents/search.py`, which Phase B
+    (#325) also rewrote — a guaranteed merge conflict. Land after #325 merges, as a small focused change.
 
-- [ ] **T-A0.3: Concurrency cap + per-step metric persistence** `[P]`
-  - Acceptance: rollout fan-out always honors `max_concurrent` (default set, not None); each step appends
-    one JSONL row (`step`, `loss`, `mean_reward`, `mean_kl`, action mix) to `ckpt_dir/metrics.jsonl`.
-  - Verify: `pytest tests/unit/test_train_loop.py -k "concurrency or metrics"` — semaphore bounds in-flight
-    rollouts; metrics file grows one row per step.
-  - Files: `src/training/ppo/search_agent_grpo_trainer.py` (~228), `src/training/ppo/train_loop.py`, test.
+- [x] **T-A0.3: Concurrency cap (+ metric persistence, done in T-A0.1)** ✅ done
+  - Rollout fan-out is **always bounded**: `_resolve_max_concurrent(None) -> DEFAULT_MAX_CONCURRENT (8)`,
+    so a B×G batch of live search rollouts can't saturate the retrieval server. Per-step metrics JSONL
+    landed in train_loop.
+  - Verify: `pytest tests/unit/test_search_agent_grpo_trainer.py -k resolve_max_concurrent`.
+  - Files: `src/training/ppo/search_agent_grpo_trainer.py`, test.
 
 > **Checkpoint 0 (gate):** smoke run survives a mid-run kill→resume; a hung search server skips a step
 > instead of stalling. `pytest tests/unit/test_train_loop.py` green.

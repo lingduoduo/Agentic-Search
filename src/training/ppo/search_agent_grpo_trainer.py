@@ -65,6 +65,17 @@ if TYPE_CHECKING:
     from src.training.reward import JudgeFn, SearchRewardFunction
 
 
+# Default ceiling on concurrent agent rollouts. Bounding this (rather than
+# leaving it unbounded) keeps a batch of B×G live search rollouts from
+# saturating / rate-limiting the retrieval server during long runs.
+DEFAULT_MAX_CONCURRENT = 8
+
+
+def _resolve_max_concurrent(value: int | None) -> int:
+    """Always return a positive bound; None falls back to the default ceiling."""
+    return DEFAULT_MAX_CONCURRENT if value is None else value
+
+
 class SearchAgentGRPOTrainer(LLMGRPOTrainer):
     """GRPO trainer that samples via live agent loops for full shaped reward.
 
@@ -122,7 +133,7 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
             "max_tokens": 512,
         }
         self._sampling_variants = sampling_variants
-        self._max_concurrent = max_concurrent
+        self._max_concurrent = _resolve_max_concurrent(max_concurrent)
         self._advantage_config = advantage_config or GRPOAdvantageConfig()
 
     # ------------------------------------------------------------------
@@ -224,12 +235,8 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
             else 0
         ) or 0
 
-        # ── 1. Run G agent loops per prompt (concurrent, optionally bounded) ──
-        semaphore = (
-            asyncio.Semaphore(self._max_concurrent)
-            if self._max_concurrent is not None
-            else None
-        )
+        # ── 1. Run G agent loops per prompt (concurrent, always bounded) ──
+        semaphore = asyncio.Semaphore(self._max_concurrent)
 
         async def _sample_one(messages: list[dict[str, Any]]):
             if semaphore is not None:
