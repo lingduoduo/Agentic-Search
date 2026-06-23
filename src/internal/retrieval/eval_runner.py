@@ -275,7 +275,7 @@ if __name__ == "__main__":
         help="Fail if P99 query-transform latency exceeds this budget",
     )
     parser.add_argument(
-        "--routing_eval",
+        "--routing-eval",
         action="store_true",
         help="Score the router against a labeled routing set (query, retriever).",
     )

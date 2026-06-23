@@ -1,7 +1,7 @@
 """SQL Query Generation — schema-aware Text-to-SQL with read-only validation.
 
 No database is executed against. The LLM proposes SQL; validate_sql enforces
-SELECT-only and a table/column allowlist before the query is returned.
+SELECT-only and a table allowlist before the query is returned.
 """
 
 from __future__ import annotations

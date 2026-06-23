@@ -77,6 +77,9 @@ class KnowledgeGraphQueryConstructor:
             return ConstructedQuery(
                 RetrieverTarget.GRAPH, {"cypher": None, "entity": None}, query
             )
+        # Final query intentionally not re-validated: the read-only template is
+        # already validated above; the escaped entity lives only inside a string
+        # literal and a write-keyword substring there would false-positive.
         cypher = f'MATCH (n {{name: "{_escape(entity)}"}})-[r]-(m) RETURN n, r, m'
         return ConstructedQuery(
             RetrieverTarget.GRAPH, {"cypher": cypher, "entity": entity}, query

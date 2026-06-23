@@ -98,9 +98,6 @@ class Router:
             strategy=strategy,
         )
 
-    def _route_for_target(self, target: RetrieverTarget) -> Route:
-        return self._registry.by_retriever(target) or self._registry.default()
-
     def _heuristic(self, query: str) -> RouteDecision:
         if _matches(query, _SQL_CUES):
             target = RetrieverTarget.SQL
@@ -133,7 +130,8 @@ class Router:
             f"Query: {query}\nRoute:"
         )
         resp = self._llm.complete([ChatMessage(role="user", content=prompt)])
-        label = (getattr(resp, "text", None) or str(resp)).strip().lower().split()[0]
+        parts = (getattr(resp, "text", None) or str(resp)).strip().lower().split()
+        label = parts[0] if parts else ""
         route = self._registry.get(label)
         if route is None:
             return self._heuristic(query)
