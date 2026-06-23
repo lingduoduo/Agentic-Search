@@ -173,6 +173,27 @@ def run_eval(
     return result
 
 
+def run_routing_eval(dataset_path: str, router=None) -> dict:
+    """Score the router's top-1 retriever prediction against a labeled set."""
+    from .eval_metrics import routing_accuracy
+
+    if router is None:
+        from src.internal.routing.registry import DEFAULT_ROUTES, RouteRegistry
+        from src.internal.routing.router import Router
+
+        router = Router(RouteRegistry(DEFAULT_ROUTES))
+
+    with open(dataset_path) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+
+    predictions = [router.route(r["query"]).retriever.value for r in rows]
+    labels = [str(r["retriever"]) for r in rows]
+    return {
+        "routing_accuracy": routing_accuracy(predictions, labels),
+        "num_queries": len(rows),
+    }
+
+
 class _HttpService:
     """Thin sync wrapper around the retrieval HTTP endpoint for CLI use."""
 
@@ -253,7 +274,16 @@ if __name__ == "__main__":
         default=None,
         help="Fail if P99 query-transform latency exceeds this budget",
     )
+    parser.add_argument(
+        "--routing_eval",
+        action="store_true",
+        help="Score the router against a labeled routing set (query, retriever).",
+    )
     args = parser.parse_args()
+
+    if args.routing_eval:
+        print(json.dumps(run_routing_eval(args.dataset), indent=2))
+        raise SystemExit(0)
 
     service = _HttpService(args.retrieval_url) if args.retrieval_url else None
 
