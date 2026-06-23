@@ -64,7 +64,7 @@ async def test_search_agent_on_turn_called_after_search_round(monkeypatch):
 
     dummy = SearchResult(contents="FAISS doc", score=0.9, title="FAISS", url=None)
 
-    async def fake_retrieve_many(queries):
+    async def fake_retrieve_many(queries, retriever=None):
         return [[dummy] for _ in queries]
 
     monkeypatch.setattr(loop, "_retrieve_many", fake_retrieve_many)
