@@ -5,7 +5,7 @@ Each component is exercised in isolation with injected/fake dependencies.
 
 from __future__ import annotations
 
-from src.agents.state import SearchAgentState
+from src.agents.state import Retriever, SearchAgentState
 from src.context.search import AgentContext, SearchContext, SearchResult
 
 
@@ -163,6 +163,115 @@ async def test_search_tool_accumulates_across_rounds() -> None:
 
     assert state.previous_queries == ["first", "second"]
     assert state.search_rounds == 2
+
+
+async def test_search_tool_routes_to_web_when_requested() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def vdb(query: str) -> list[SearchResult]:
+        return [_result(title="vdb")]
+
+    async def web(query: str) -> list[SearchResult]:
+        return [_result(title="web")]
+
+    state = SearchAgentState(question="q")
+    docs = await SearchTool(vdb, web_fn=web).run(state, "q", retriever=Retriever.WEB)
+
+    assert [d.title for d in docs] == ["web"]
+
+
+async def test_search_tool_defaults_to_vector_db() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def vdb(query: str) -> list[SearchResult]:
+        return [_result(title="vdb")]
+
+    async def web(query: str) -> list[SearchResult]:
+        return [_result(title="web")]
+
+    state = SearchAgentState(question="q")
+    docs = await SearchTool(vdb, web_fn=web).run(state, "q")
+
+    assert [d.title for d in docs] == ["vdb"]
+
+
+async def test_search_tool_degrades_to_vdb_when_web_unavailable() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def vdb(query: str) -> list[SearchResult]:
+        return [_result(title="vdb")]
+
+    state = SearchAgentState(question="q")
+    # No web_fn configured -> WEB request degrades to the vector-DB backend.
+    docs = await SearchTool(vdb).run(state, "q", retriever=Retriever.WEB)
+
+    assert [d.title for d in docs] == ["vdb"]
+    assert state.search_rounds == 1
+
+
+# --------------------------------------------------------------------------- #
+# Planner (T-B.1)
+# --------------------------------------------------------------------------- #
+
+
+def test_planner_parses_web_search() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide('<search retriever="web">latest news</search>')
+
+    assert isinstance(decision, SearchAction)
+    assert decision.query == "latest news"
+    assert decision.retriever is Retriever.WEB
+
+
+def test_planner_search_defaults_to_vector_db_without_attribute() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide("<search>what is faiss</search>")
+
+    assert isinstance(decision, SearchAction)
+    assert decision.retriever is Retriever.VECTOR_DB
+
+
+def test_planner_unknown_retriever_value_falls_back_to_vector_db() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide('<search retriever="quantum">q</search>')
+
+    assert isinstance(decision, SearchAction)
+    assert decision.retriever is Retriever.VECTOR_DB
+
+
+def test_planner_parses_rerank_action() -> None:
+    from src.agents.components.planner import Planner, RerankAction
+
+    assert isinstance(Planner().decide("<rerank/>"), RerankAction)
+
+
+def test_planner_parses_answer_action() -> None:
+    from src.agents.components.planner import AnswerAction, Planner
+
+    decision = Planner().decide("<answer>The answer is 42 [R1Q1D1].</answer>")
+
+    assert isinstance(decision, AnswerAction)
+    assert decision.text == "The answer is 42 [R1Q1D1]."
+
+
+def test_planner_search_takes_precedence_over_answer() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide("<search>more</search> then <answer>x</answer>")
+
+    assert isinstance(decision, SearchAction)
+
+
+def test_planner_malformed_text_defaults_to_vector_db_search() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide("no tags here at all")
+
+    assert isinstance(decision, SearchAction)
+    assert decision.retriever is Retriever.VECTOR_DB
 
 
 # --------------------------------------------------------------------------- #
