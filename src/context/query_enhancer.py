@@ -32,6 +32,13 @@ Return only the rewritten question, no explanation.
 Question: {query}
 Broader question:""".strip()
 
+_REWRITE_PROMPT = """Rewrite the following search query into one clear, canonical question.
+Fix typos and remove filler, but preserve the original meaning and all key terms.
+Return only the rewritten query, no explanation.
+
+Query: {query}
+Rewritten query:""".strip()
+
 
 def _clean_line(line: str) -> str:
     return _ARTIFACT_RE.sub("", _LIST_MARKER_RE.sub("", line)).strip()
@@ -144,6 +151,25 @@ class QueryEnhancer:
             return raw or None
         except Exception as exc:
             logger.warning("Step-back generation failed: %s", exc)
+            return None
+
+    def rewrite(self, query: str) -> str | None:
+        """Return a cleaned, canonical rewrite of the query. None on failure/no LLM."""
+        if self.llm is None:
+            return None
+        try:
+            raw = _llm_text(
+                self.llm.complete(
+                    [
+                        ChatMessage(
+                            role="user", content=_REWRITE_PROMPT.format(query=query)
+                        )
+                    ]
+                )
+            ).strip()
+            return _clean_line(raw) or None
+        except Exception as exc:
+            logger.warning("Query rewrite failed: %s", exc)
             return None
 
     def enhance(self, query: str) -> QueryBundle:

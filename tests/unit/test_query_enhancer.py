@@ -185,3 +185,19 @@ def test_enhance_includes_step_back():
     bundle = enhancer.enhance("How does FAISS handle GPU indexing?")
     assert bundle.step_back_query == "What are ANN search algorithms?"
     assert "What are ANN search algorithms?" in bundle.all_queries()
+
+
+# ---------------------------------------------------------------------------
+# rewrite
+# ---------------------------------------------------------------------------
+
+
+def test_rewrite_returns_cleaned_query():
+    llm = _llm("What is FAISS?")
+    enhancer = QueryEnhancer(llm)
+    result = enhancer.rewrite("uhh wht is  faiss???")
+    assert result == "What is FAISS?"
+
+
+def test_rewrite_falls_back_to_none_without_llm():
+    assert QueryEnhancer(None).rewrite("anything") is None
