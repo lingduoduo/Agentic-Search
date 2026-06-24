@@ -310,3 +310,15 @@ def test_grpo_smoke_step_with_retriever_aware_reward():
     assert comps["retriever_cost"] < 0.0  # web (5×) + vdb both priced
     assert comps["rerank_cost"] < 0.0  # rerank priced
     assert comps["evidence_gain"] > 0.0  # evidence improved across rounds
+
+
+def test_resolve_max_concurrent_defaults_when_none():
+    """Concurrency is always bounded so rollouts can't saturate the search server."""
+    from src.training.ppo.search_agent_grpo_trainer import (
+        DEFAULT_MAX_CONCURRENT,
+        _resolve_max_concurrent,
+    )
+
+    assert _resolve_max_concurrent(None) == DEFAULT_MAX_CONCURRENT
+    assert DEFAULT_MAX_CONCURRENT > 0
+    assert _resolve_max_concurrent(3) == 3

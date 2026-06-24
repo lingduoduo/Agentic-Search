@@ -52,3 +52,20 @@ dependency.
 - `pytest tests/unit/servers/retrieval/` green (49 tests).
 - `python3 scripts/beir_to_corpus.py --dataset nfcorpus` writes 3,633 docs; demo server loads
   it, a real query returns ranked docs with nonzero scores, and `GRPO` returns `[]`.
+
+## Addendum — auto-mode hybrid web cascade
+
+Cleaning up the local leg exposed the real "instead of searching" complaint: `auto`
+("internal + web") mode fans out `retrieval` + `serpapi`, but with no `SERP_API_KEY` the web
+leg only ever produces an error doc, so the hybrid collapses to local-only and a query like
+`GRPO` (absent locally) surfaces nothing useful.
+
+**Change** (`_run_hybrid_search`, `src/internal/servers/web/app.py`): in `auto` mode the web
+leg now **cascades** — try SerpAPI first; if it yields no usable (non-error) docs, fall back
+to the browser provider (when `browser_search_url` is set). Local retrieval still runs in
+parallel, and the existing `_finalize_hybrid` dedupe + rerank + MMR picks the final top_k.
+Explicit single-provider modes and `all` are unchanged. Degrades gracefully to
+`unreachable`/`empty` when no web backend is available.
+
+Tests: `tests/unit/servers/web/test_hybrid_web_fallback.py` — fallback-to-browser,
+skip-browser-when-serpapi-usable, and no-web-backend → unreachable.
