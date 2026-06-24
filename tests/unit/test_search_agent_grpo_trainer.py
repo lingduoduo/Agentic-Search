@@ -243,3 +243,70 @@ def test_reference_policy_frozen():
     trainer = _make_trainer()
     for p in trainer.reference.parameters():
         assert not p.requires_grad
+
+
+class _ActionAgentLoop:
+    """Fake loop emitting Phase B/C action metrics for a GRPO smoke step."""
+
+    async def run(self, messages, sampling_params):
+        temp = sampling_params.get("temperature", 0.7)
+        answer = "correct answer [R1Q1D1]" if temp < 0.9 else "wrong"
+        return AgentLoopOutput(
+            prompt_ids=list(range(PROMPT_LEN)),
+            response_ids=[1, 2, 3, 4, 5],
+            response_mask=[1, 1, 1, 1, 1],
+            num_turns=2,
+            final_answer=answer,
+            metrics={
+                "rounds_used": 2.0,
+                "subquestion_coverage_ratio": 0.8,
+                "repeated_search_queries": 0.0,
+                "web_searches": 1.0,
+                "vdb_searches": 1.0,
+                "rerank_calls": 1.0,
+                "evidence_score_final": 0.7,
+                "evidence_gain_total": 0.7,
+            },
+            context=None,
+        )
+
+
+def test_grpo_smoke_step_with_retriever_aware_reward():
+    """A real GRPO step runs end-to-end with the retriever-aware reward + action metrics."""
+    import math
+
+    from src.training.reward import SearchRewardConfig
+
+    policy = _ToyLM()
+    reference = copy.deepcopy(policy)
+    optimizer = torch.optim.SGD(policy.parameters(), lr=1e-3)
+    tokenizer = MagicMock()
+    tokenizer.pad_token_id = 0
+    reward_fn = SearchRewardFunction(SearchRewardConfig.retriever_aware())
+    trainer = SearchAgentGRPOTrainer(
+        policy=policy,
+        reference_policy=reference,
+        tokenizer=tokenizer,
+        optimizer=optimizer,
+        judge_fn=_judge,
+        loop_factory=lambda: _ActionAgentLoop(),
+        config=LLMGRPOConfig(num_rollouts=3, max_new_tokens=RESPONSE_LEN),
+        reward_fn=reward_fn,
+        device="cpu",
+    )
+
+    metrics = trainer.step(
+        prompts=["q1", "q2"],
+        ground_truths=["correct answer", "correct answer"],
+    )
+
+    # The step completes without NaN/inf.
+    assert math.isfinite(metrics["loss"])
+    assert "mean_reward" in metrics
+
+    # The new action terms actually price the rollout.
+    sample = asyncio.run(_ActionAgentLoop().run([], {"temperature": 0.0}))
+    comps = reward_fn.reward_components(sample, "correct answer", _judge)
+    assert comps["retriever_cost"] < 0.0  # web (5×) + vdb both priced
+    assert comps["rerank_cost"] < 0.0  # rerank priced
+    assert comps["evidence_gain"] > 0.0  # evidence improved across rounds
