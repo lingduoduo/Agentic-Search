@@ -159,10 +159,16 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
     trained)` encodes the headline success criterion (**fewer rounds AND correctness preserved**);
     `format_comparison_table` renders it. 6 unit tests. Operates on the metrics already on
     `output.metrics`, so it's ready to consume real eval rollouts.
-- [ ] **T-D.1 (run): baseline-vs-trained numbers** — ⏳ needs a converged GRPO checkpoint
-  - Produce the checkpoint via `train_loop` + `SearchRewardConfig.retriever_aware()`, then feed
-    baseline (heuristic) and trained rollouts through `action_eval`. **Manual/integration step.**
-  - Files: `src/training/eval/action_eval.py` (done), `src/training/eval/bamboogle.py` (wire-up, manual).
+- [x] **T-D.1 (runner): one-command training+eval script** ✅ done
+  - `examples/run_retriever_aware_grpo.py` wires `from_pretrained` policy → on-policy `SearchAgentLoop`
+    rollouts (via an in-process `PolicyServerManager` over the trainer's live policy) →
+    `retriever_aware()` reward → `train_loop` (checkpoint/resume, timeout/skip) → `action_eval`
+    baseline-vs-trained table. Imports `train_loop` (PR #326), so it runs once the stack is merged.
+    Lint clean, compiles, all non-`train_loop` symbols resolve on this branch.
+- [ ] **T-D.1 (run): actual baseline-vs-trained numbers** — ⏳ needs a GPU/MPS run
+  - `python3 -m examples.run_retriever_aware_grpo --model Qwen/Qwen2.5-1.5B-Instruct --device mps ...`
+    to convergence. The GRPO **smoke step** is already proven by
+    `tests/unit/test_search_agent_grpo_trainer.py::test_grpo_smoke_step_with_retriever_aware_reward`.
 
 ---
 
