@@ -243,3 +243,15 @@ def test_reference_policy_frozen():
     trainer = _make_trainer()
     for p in trainer.reference.parameters():
         assert not p.requires_grad
+
+
+def test_resolve_max_concurrent_defaults_when_none():
+    """Concurrency is always bounded so rollouts can't saturate the search server."""
+    from src.training.ppo.search_agent_grpo_trainer import (
+        DEFAULT_MAX_CONCURRENT,
+        _resolve_max_concurrent,
+    )
+
+    assert _resolve_max_concurrent(None) == DEFAULT_MAX_CONCURRENT
+    assert DEFAULT_MAX_CONCURRENT > 0
+    assert _resolve_max_concurrent(3) == 3
