@@ -1758,3 +1758,112 @@ def test_search_agent_loop_web_request_degrades_to_vdb_when_unconfigured():
 
     assert loop._search_client.calls == [["q"]]
     assert output.context.num_rounds == 1
+
+
+def test_search_agent_loop_surfaces_action_metrics_for_reward():
+    """web/vdb counts and evidence_score/gain are surfaced for the Phase C reward."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [
+            tokenizer.encode('<search retriever="web">q</search>'),
+            tokenizer.encode("<answer>done [R1Q1D1]</answer>"),
+        ]
+    )
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            web_search_url="http://web",
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient({})
+    loop._web_search_client = FakeSearchClient(
+        {("q",): [[SearchResult(contents='"T"\nstrong body content', score=5.0)]]}
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "q?"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["web_searches"] == 1.0
+    assert output.metrics["vdb_searches"] == 0.0
+    assert output.metrics["evidence_score_final"] > 0.0
+    assert output.metrics["evidence_gain_total"] > 0.0
+
+
+def test_search_agent_loop_reranks_round_when_requested():
+    """`<search rerank="true">` reorders the round's results and counts a rerank call."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [
+            tokenizer.encode('<search rerank="true">q</search>'),
+            tokenizer.encode("<answer>done [R1Q1D1]</answer>"),
+        ]
+    )
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("q",): [
+                [
+                    SearchResult(contents="low relevance body", score=0.1, title="lo"),
+                    SearchResult(contents="high relevance body", score=0.9, title="hi"),
+                ]
+            ]
+        }
+    )
+    # Inject a simple reranker: sort by score descending.
+    loop._reranker = lambda query, docs: sorted(
+        docs, key=lambda d: d.score, reverse=True
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "q?"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["rerank_calls"] == 1.0
+    # The reranked (high-first) order is what landed in the round.
+    first_round = output.context.rounds[0][0]
+    assert [r.title for r in first_round.results] == ["hi", "lo"]
+
+
+def test_search_agent_loop_rerank_request_is_noop_without_reranker():
+    """rerank requested but none configured: no crash, no rerank counted."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [
+            tokenizer.encode('<search rerank="true">q</search>'),
+            tokenizer.encode("<answer>a [R1Q1D1]</answer>"),
+        ]
+    )
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {("q",): [[SearchResult(contents="body content here", score=0.5)]]}
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "q?"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["rerank_calls"] == 0.0

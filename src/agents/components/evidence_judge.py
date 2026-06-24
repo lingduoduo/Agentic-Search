@@ -61,6 +61,15 @@ class EvidenceJudge:
         return verdict
 
     @staticmethod
+    def score_round(round_eval: SearchRoundEvaluation) -> float:
+        """Public continuous score for an already-computed round evaluation.
+
+        Lets the agent loop reuse the heuristic→[0,1] mapping without re-running
+        the evaluator it already called.
+        """
+        return EvidenceJudge._to_score(round_eval)
+
+    @staticmethod
     def _to_score(round_eval: SearchRoundEvaluation) -> float:
         """Blend the fraction of sufficient queries with squashed top scores.
 

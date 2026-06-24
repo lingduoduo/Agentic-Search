@@ -27,6 +27,8 @@ from ..training.evaluation import (
     SearchRoundEvaluation,
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
+from .components.evidence_judge import EvidenceJudge
+from .components.reranker_tool import RerankFn
 from .state import Retriever
 
 # ---------------------------------------------------------------------------
@@ -122,6 +124,8 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
         "- <searches>parallel precise queries, one per line</searches> for independent subquestions.\n"
         '- <search retriever="web">query</search> to search the live web for current or open-domain '
         'facts; omit the attribute (or use retriever="vdb") to search the internal corpus (the default).\n'
+        '- add rerank="true" to a search (e.g. <search rerank="true">query</search>) to rerank that '
+        "round's results by relevance before reading them; use it when precision matters.\n"
         "- <fetch>comma or newline separated URLs</fetch> when snippets are insufficient.\n\n"
         "Behavior rules:\n"
         "- Open every turn with <think>. Keep it concise — decide the next single useful action.\n"
@@ -291,6 +295,12 @@ class SearchAgentLoop(AgentLoopBase):
             rf'\s+[^>]*retriever="(?P<retriever>\w+)"',
             re.IGNORECASE,
         )
+        # Per-round rerank request: <search rerank="true"> / <searches rerank="true">.
+        self._round_rerank_re = re.compile(
+            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
+            rf'\s+[^>]*rerank="(?P<rerank>\w+)"',
+            re.IGNORECASE,
+        )
         self._search_client = SearchClient(
             SearchClientConfig(
                 url=cfg.search_url,
@@ -313,6 +323,11 @@ class SearchAgentLoop(AgentLoopBase):
             if cfg.web_search_url
             else None
         )
+        # Optional reranker the policy can invoke via <search rerank="true">.
+        # Callable (query, docs) -> reordered docs. None -> rerank is a no-op.
+        # Reranking is applied before results are labeled, so citation labels
+        # ([RxQyDz]) always reflect the order the model actually sees.
+        self._reranker: RerankFn | None = None
 
     def _initial_metrics(self) -> dict[str, float]:
         return {
@@ -333,6 +348,12 @@ class SearchAgentLoop(AgentLoopBase):
             "duplicate_search_results_removed": 0.0,
             "implicit_subquestions": 0.0,
             "research_followup_queries": 0.0,
+            # Action-policy metrics consumed by the Phase C reward terms.
+            "web_searches": 0.0,
+            "vdb_searches": 0.0,
+            "rerank_calls": 0.0,
+            "evidence_score_final": 0.0,
+            "evidence_gain_total": 0.0,
         }
 
     def _with_system_prompt(
@@ -367,6 +388,11 @@ class SearchAgentLoop(AgentLoopBase):
         if match and match.group("retriever").lower() == "web":
             return Retriever.WEB
         return Retriever.VECTOR_DB
+
+    def _parse_round_rerank(self, text: str) -> bool:
+        """Whether this search round requested reranking via ``rerank="true"``."""
+        match = self._round_rerank_re.search(text)
+        return bool(match and match.group("rerank").lower() == "true")
 
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
@@ -733,13 +759,15 @@ class SearchAgentLoop(AgentLoopBase):
         task_statuses: dict[str, bool],
         metrics: dict[str, float],
         retriever: Retriever = Retriever.VECTOR_DB,
+        rerank: bool = False,
     ) -> SearchRoundResult:
         """Execute the model's search tool call and return the observation.
 
         This is the tool_call() invoked when the model outputs
         <search>query</search> or <searches>...</searches>.  Handles retrieval,
         cache, evaluation, and observation formatting in one place. ``retriever``
-        selects the backend (vector-DB or web) for this round.
+        selects the backend (vector-DB or web) for this round; ``rerank`` applies
+        the configured reranker to this round's results before they are labeled.
         """
         queries = tool_call.queries
         task_ids = tool_call.task_ids
@@ -759,7 +787,19 @@ class SearchAgentLoop(AgentLoopBase):
                 results_by_query
             )
             metrics["duplicate_search_results_removed"] += removed
+        # Optional rerank of this round's results, applied before labeling so the
+        # citation labels the model sees match the reranked order.
+        if rerank and self._reranker is not None:
+            results_by_query = [
+                self._reranker(query, results)
+                for query, results in zip(queries, results_by_query)
+            ]
+            metrics["rerank_calls"] += 1.0
         metrics["search_rounds"] += 1
+        if retriever is Retriever.WEB:
+            metrics["web_searches"] += 1.0
+        else:
+            metrics["vdb_searches"] += 1.0
         logger.debug(
             "search returned %d total results across %d queries in %.2fs",
             sum(len(r) for r in results_by_query),
@@ -783,6 +823,13 @@ class SearchAgentLoop(AgentLoopBase):
                 metrics["evidence_sufficient_rounds"] += 1.0
             else:
                 metrics["evidence_insufficient_rounds"] += 1.0
+            # Continuous evidence_score for this round (reuses EvidenceJudge's
+            # heuristic→[0,1] map). Track the final value and the cumulative
+            # positive improvement so the reward can shape informative searches.
+            round_score = EvidenceJudge.score_round(evaluation)
+            prev_score = metrics["evidence_score_final"]
+            metrics["evidence_gain_total"] += max(0.0, round_score - prev_score)
+            metrics["evidence_score_final"] = round_score
             for tid, ev in self._evaluate_tasks(search_contexts).items():
                 task_statuses[tid] = ev.is_sufficient
             return SearchRoundResult(
@@ -1056,6 +1103,7 @@ class SearchAgentLoop(AgentLoopBase):
                         task_statuses=task_statuses,
                         metrics=metrics,
                         retriever=self._parse_round_retriever(response_text),
+                        rerank=self._parse_round_rerank(response_text),
                     )
                     latest_evaluation = round_result.evaluation
                     turn_observations.append(round_result.observation)
