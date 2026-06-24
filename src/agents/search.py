@@ -27,6 +27,9 @@ from ..training.evaluation import (
     SearchRoundEvaluation,
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
+from .components.evidence_judge import EvidenceJudge
+from .components.reranker_tool import RerankFn
+from .state import Retriever
 
 # ---------------------------------------------------------------------------
 # Search tool-call types
@@ -119,6 +122,10 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
         "or <search_decision>search</search_decision> before the first query.\n"
         "- <subquestions>one research subquestion per line</subquestions> when the task has multiple facets.\n"
         "- <searches>parallel precise queries, one per line</searches> for independent subquestions.\n"
+        '- <search retriever="web">query</search> to search the live web for current or open-domain '
+        'facts; omit the attribute (or use retriever="vdb") to search the internal corpus (the default).\n'
+        '- add rerank="true" to a search (e.g. <search rerank="true">query</search>) to rerank that '
+        "round's results by relevance before reading them; use it when precision matters.\n"
         "- <fetch>comma or newline separated URLs</fetch> when snippets are insufficient.\n\n"
         "Behavior rules:\n"
         "- Open every turn with <think>. Keep it concise — decide the next single useful action.\n"
@@ -159,6 +166,9 @@ class SearchAgentLoopConfig(AgentLoopConfig):
 
     max_turns: int = 5
     search_url: str = "http://localhost:8000/retrieve"
+    # Optional second retriever the policy can target via <search retriever="web">.
+    # When None, web requests degrade to the vector-DB (search_url) backend.
+    web_search_url: str | None = None
     topk: int = 5
     search_timeout_seconds: int = 10
     search_max_retries: int = 3
@@ -275,8 +285,21 @@ class SearchAgentLoop(AgentLoopBase):
             cfg.answer_tag,
         ]
         self._action_re = re.compile(
-            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})>" rf"(.*?)</\1>",
+            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})(?:\s+[^>]*)?>"
+            rf"(.*?)</\1>",
             re.DOTALL,
+        )
+        # Per-round retriever selection: <search retriever="web"> / <searches retriever="web">.
+        self._round_retriever_re = re.compile(
+            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
+            rf'\s+[^>]*retriever="(?P<retriever>\w+)"',
+            re.IGNORECASE,
+        )
+        # Per-round rerank request: <search rerank="true"> / <searches rerank="true">.
+        self._round_rerank_re = re.compile(
+            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
+            rf'\s+[^>]*rerank="(?P<rerank>\w+)"',
+            re.IGNORECASE,
         )
         self._search_client = SearchClient(
             SearchClientConfig(
@@ -287,6 +310,24 @@ class SearchAgentLoop(AgentLoopBase):
                 fetch_url=cfg.fetch_url,
             )
         )
+        self._web_search_client = (
+            SearchClient(
+                SearchClientConfig(
+                    url=cfg.web_search_url,
+                    topk=cfg.topk,
+                    timeout_seconds=cfg.search_timeout_seconds,
+                    max_retries=cfg.search_max_retries,
+                    fetch_url=cfg.fetch_url,
+                )
+            )
+            if cfg.web_search_url
+            else None
+        )
+        # Optional reranker the policy can invoke via <search rerank="true">.
+        # Callable (query, docs) -> reordered docs. None -> rerank is a no-op.
+        # Reranking is applied before results are labeled, so citation labels
+        # ([RxQyDz]) always reflect the order the model actually sees.
+        self._reranker: RerankFn | None = None
 
     def _initial_metrics(self) -> dict[str, float]:
         return {
@@ -307,6 +348,12 @@ class SearchAgentLoop(AgentLoopBase):
             "duplicate_search_results_removed": 0.0,
             "implicit_subquestions": 0.0,
             "research_followup_queries": 0.0,
+            # Action-policy metrics consumed by the Phase C reward terms.
+            "web_searches": 0.0,
+            "vdb_searches": 0.0,
+            "rerank_calls": 0.0,
+            "evidence_score_final": 0.0,
+            "evidence_gain_total": 0.0,
         }
 
     def _with_system_prompt(
@@ -330,6 +377,22 @@ class SearchAgentLoop(AgentLoopBase):
         return [
             (m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)
         ]
+
+    def _parse_round_retriever(self, text: str) -> Retriever:
+        """Per-round retriever choice from the search tag's ``retriever`` attribute.
+
+        Defaults to the vector-DB backend when absent or unrecognized, so an
+        un-annotated ``<search>`` behaves exactly as before.
+        """
+        match = self._round_retriever_re.search(text)
+        if match and match.group("retriever").lower() == "web":
+            return Retriever.WEB
+        return Retriever.VECTOR_DB
+
+    def _parse_round_rerank(self, text: str) -> bool:
+        """Whether this search round requested reranking via ``rerank="true"``."""
+        match = self._round_rerank_re.search(text)
+        return bool(match and match.group("rerank").lower() == "true")
 
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
@@ -438,9 +501,16 @@ class SearchAgentLoop(AgentLoopBase):
     # Network helpers (with per-run caches passed in)
     # ------------------------------------------------------------------
 
-    async def _retrieve_many(self, queries: list[str]) -> list[list[SearchResult]]:
+    def _client_for(self, retriever: Retriever) -> SearchClient:
+        if retriever is Retriever.WEB and self._web_search_client is not None:
+            return self._web_search_client
+        return self._search_client
+
+    async def _retrieve_many(
+        self, queries: list[str], retriever: Retriever = Retriever.VECTOR_DB
+    ) -> list[list[SearchResult]]:
         try:
-            return await self._search_client.retrieve(queries)
+            return await self._client_for(retriever).retrieve(queries)
         except Exception as exc:
             logger.warning("Search failed for queries %r: %s", queries, exc)
             return [[] for _ in queries]
@@ -452,16 +522,24 @@ class SearchAgentLoop(AgentLoopBase):
             logger.warning("Page fetch failed for urls %r: %s", urls, exc)
             return []
 
+    @staticmethod
+    def _cache_key(query: str, retriever: Retriever) -> str:
+        return f"{retriever.value}:{query}"
+
     async def _retrieve_with_cache(
         self,
         queries: list[str],
         cache: dict[str, list[SearchResult]],
+        retriever: Retriever = Retriever.VECTOR_DB,
     ) -> list[list[SearchResult]]:
-        uncached = [q for q in queries if q not in cache]
+        keys = [self._cache_key(q, retriever) for q in queries]
+        uncached = [q for q, k in zip(queries, keys) if k not in cache]
         if uncached:
-            rows = await self._retrieve_many(uncached)
-            cache.update(zip(uncached, rows))
-        return [list(cache.get(q, [])) for q in queries]
+            rows = await self._retrieve_many(uncached, retriever)
+            cache.update(
+                (self._cache_key(q, retriever), r) for q, r in zip(uncached, rows)
+            )
+        return [list(cache.get(k, [])) for k in keys]
 
     async def _fetch_with_cache(
         self,
@@ -680,28 +758,48 @@ class SearchAgentLoop(AgentLoopBase):
         active_tasks: dict[str, str],
         task_statuses: dict[str, bool],
         metrics: dict[str, float],
+        retriever: Retriever = Retriever.VECTOR_DB,
+        rerank: bool = False,
     ) -> SearchRoundResult:
         """Execute the model's search tool call and return the observation.
 
         This is the tool_call() invoked when the model outputs
         <search>query</search> or <searches>...</searches>.  Handles retrieval,
-        cache, evaluation, and observation formatting in one place.
+        cache, evaluation, and observation formatting in one place. ``retriever``
+        selects the backend (vector-DB or web) for this round; ``rerank`` applies
+        the configured reranker to this round's results before they are labeled.
         """
         queries = tool_call.queries
         task_ids = tool_call.task_ids
         cfg = self.search_config
 
         metrics["search_queries"] += len(queries)
-        metrics["search_cache_hits"] += sum(1 for q in queries if q in search_cache)
+        metrics["search_cache_hits"] += sum(
+            1 for q in queries if self._cache_key(q, retriever) in search_cache
+        )
 
         t0 = time.perf_counter()
-        results_by_query = await self._retrieve_with_cache(queries, search_cache)
+        results_by_query = await self._retrieve_with_cache(
+            queries, search_cache, retriever
+        )
         if cfg.deduplicate_search_results:
             results_by_query, removed = self._deduplicate_results_by_source(
                 results_by_query
             )
             metrics["duplicate_search_results_removed"] += removed
+        # Optional rerank of this round's results, applied before labeling so the
+        # citation labels the model sees match the reranked order.
+        if rerank and self._reranker is not None:
+            results_by_query = [
+                self._reranker(query, results)
+                for query, results in zip(queries, results_by_query)
+            ]
+            metrics["rerank_calls"] += 1.0
         metrics["search_rounds"] += 1
+        if retriever is Retriever.WEB:
+            metrics["web_searches"] += 1.0
+        else:
+            metrics["vdb_searches"] += 1.0
         logger.debug(
             "search returned %d total results across %d queries in %.2fs",
             sum(len(r) for r in results_by_query),
@@ -725,6 +823,13 @@ class SearchAgentLoop(AgentLoopBase):
                 metrics["evidence_sufficient_rounds"] += 1.0
             else:
                 metrics["evidence_insufficient_rounds"] += 1.0
+            # Continuous evidence_score for this round (reuses EvidenceJudge's
+            # heuristic→[0,1] map). Track the final value and the cumulative
+            # positive improvement so the reward can shape informative searches.
+            round_score = EvidenceJudge.score_round(evaluation)
+            prev_score = metrics["evidence_score_final"]
+            metrics["evidence_gain_total"] += max(0.0, round_score - prev_score)
+            metrics["evidence_score_final"] = round_score
             for tid, ev in self._evaluate_tasks(search_contexts).items():
                 task_statuses[tid] = ev.is_sufficient
             return SearchRoundResult(
@@ -997,6 +1102,8 @@ class SearchAgentLoop(AgentLoopBase):
                         active_tasks=active_tasks,
                         task_statuses=task_statuses,
                         metrics=metrics,
+                        retriever=self._parse_round_retriever(response_text),
+                        rerank=self._parse_round_rerank(response_text),
                     )
                     latest_evaluation = round_result.evaluation
                     turn_observations.append(round_result.observation)
@@ -1033,11 +1140,12 @@ class SearchAgentLoop(AgentLoopBase):
                     {"role": "user", "content": "".join(turn_observations)}
                 )
         finally:
-            close_client = getattr(self._search_client, "aclose", None)
-            if close_client is not None:
-                close_result = close_client()
-                if inspect.isawaitable(close_result):
-                    await close_result
+            for client in (self._search_client, self._web_search_client):
+                close_client = getattr(client, "aclose", None)
+                if close_client is not None:
+                    close_result = close_client()
+                    if inspect.isawaitable(close_result):
+                        await close_result
 
         # Derived metrics used by the reward function — computed once here so
         # callers don't have to re-derive them from the raw counts.

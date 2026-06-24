@@ -1158,3 +1158,86 @@ def test_search_agent_loop_emits_derived_metrics():
     assert "repeated_query_ratio" in output.metrics
     assert "subquestion_coverage_ratio" in output.metrics
     assert "rounds_used" in output.metrics
+
+
+# ---------------------------------------------------------------------------
+# Phase C — retriever_cost / rerank_cost / evidence_gain (T-C.1)
+# ---------------------------------------------------------------------------
+
+
+def test_new_action_terms_default_to_zero():
+    """With default config the new terms contribute nothing, even if metrics exist."""
+    rf = SearchRewardFunction(SearchRewardConfig())
+    output = _output_with_answer(
+        "ans [R1Q1D1]",
+        web_searches=2.0,
+        vdb_searches=3.0,
+        rerank_calls=4.0,
+        evidence_gain_total=0.9,
+    )
+    components = rf.reward_components(output, "anything", lambda a, g: 1.0)
+
+    assert components["retriever_cost"] == 0.0
+    assert components["rerank_cost"] == 0.0
+    assert components["evidence_gain"] == 0.0
+
+
+def test_retriever_cost_prices_web_higher_than_vdb():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(retriever_cost_vdb=-0.01, retriever_cost_web=-0.05)
+    )
+    output = _output_with_answer("ans", web_searches=1.0, vdb_searches=2.0)
+    components = rf.reward_components(output, "anything", lambda a, g: 0.0)
+
+    assert components["retriever_cost"] == pytest.approx(-0.05 * 1 + -0.01 * 2)
+
+
+def test_rerank_cost_is_flat_per_call():
+    rf = SearchRewardFunction(SearchRewardConfig(rerank_cost=-0.02))
+    output = _output_with_answer("ans", rerank_calls=3.0)
+    components = rf.reward_components(output, "anything", lambda a, g: 0.0)
+
+    assert components["rerank_cost"] == pytest.approx(-0.06)
+
+
+def test_evidence_gain_rewards_improvement():
+    rf = SearchRewardFunction(SearchRewardConfig(evidence_gain_weight=0.5))
+    output = _output_with_answer("ans", evidence_gain_total=0.4)
+    components = rf.reward_components(output, "anything", lambda a, g: 0.0)
+
+    assert components["evidence_gain"] == pytest.approx(0.2)
+
+
+def test_existing_presets_unaffected_by_new_terms():
+    """Presets leave the new action terms at zero (byte-stable shaping)."""
+    output = _output_with_answer(
+        "ans [R1Q1D1]",
+        web_searches=1.0,
+        vdb_searches=1.0,
+        rerank_calls=1.0,
+        evidence_gain_total=0.5,
+    )
+    for cfg in (
+        SearchRewardConfig.sparse_final_only(),
+        SearchRewardConfig.second_pass(),
+        SearchRewardConfig.third_pass_with_format(),
+    ):
+        components = SearchRewardFunction(cfg).reward_components(
+            output, "anything", lambda a, g: 1.0
+        )
+        assert components["retriever_cost"] == 0.0
+        assert components["rerank_cost"] == 0.0
+        assert components["evidence_gain"] == 0.0
+
+
+def test_retriever_aware_preset_enables_action_terms():
+    """Phase C preset prices web 5× the VDB and enables rerank/evidence-gain terms."""
+    cfg = SearchRewardConfig.retriever_aware()
+
+    assert cfg.retriever_cost_web == pytest.approx(5 * cfg.retriever_cost_vdb)
+    assert cfg.retriever_cost_web < 0.0
+    assert cfg.rerank_cost < 0.0
+    assert cfg.evidence_gain_weight > 0.0
+    # Inherits second-pass shaping (search efficiency + citation signals).
+    assert cfg.per_search_penalty != 0.0
+    assert cfg.citation_support_weight != 0.0
