@@ -153,14 +153,16 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
 
 ## Phase D — Eval (acceptance) — requires a real trained checkpoint
 
-- [ ] **T-D.1: Eval logging + baseline vs trained comparison** — ⏳ needs a training run
-  - The action-mix metrics (`web_searches`/`vdb_searches`/`rerank_calls`/`evidence_*`/`search_rounds`)
-    are already on `output.metrics`, so eval just needs to aggregate them. The actual baseline-vs-trained
-    table requires a converged GRPO checkpoint produced via `train_loop` + `retriever_aware()` — a
-    **manual/integration step**, not unit-testable here.
-  - Verify (manual): `python3 -m src.training.eval.bamboogle --compare`; trained mean `search_rounds`
-    ≤ baseline at ≥ baseline correctness (the spec's headline success metric).
-  - Files: `src/training/eval/bamboogle.py`.
+- [x] **T-D.1 (scaffold): action-eval aggregation + comparison** ✅ done
+  - `src/training/eval/action_eval.py`: `aggregate_action_metrics(samples)` → mean correctness /
+    search_rounds / web / vdb / web_fraction / rerank_rate / evidence; `compare_action_evals(baseline,
+    trained)` encodes the headline success criterion (**fewer rounds AND correctness preserved**);
+    `format_comparison_table` renders it. 6 unit tests. Operates on the metrics already on
+    `output.metrics`, so it's ready to consume real eval rollouts.
+- [ ] **T-D.1 (run): baseline-vs-trained numbers** — ⏳ needs a converged GRPO checkpoint
+  - Produce the checkpoint via `train_loop` + `SearchRewardConfig.retriever_aware()`, then feed
+    baseline (heuristic) and trained rollouts through `action_eval`. **Manual/integration step.**
+  - Files: `src/training/eval/action_eval.py` (done), `src/training/eval/bamboogle.py` (wire-up, manual).
 
 ---
 
