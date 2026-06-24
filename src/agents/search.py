@@ -28,6 +28,7 @@ from ..training.evaluation import (
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
 from .components.evidence_judge import EvidenceJudge
+from .components.reranker_tool import RerankFn
 from .state import Retriever
 
 # ---------------------------------------------------------------------------
@@ -123,6 +124,8 @@ def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) ->
         "- <searches>parallel precise queries, one per line</searches> for independent subquestions.\n"
         '- <search retriever="web">query</search> to search the live web for current or open-domain '
         'facts; omit the attribute (or use retriever="vdb") to search the internal corpus (the default).\n'
+        '- add rerank="true" to a search (e.g. <search rerank="true">query</search>) to rerank that '
+        "round's results by relevance before reading them; use it when precision matters.\n"
         "- <fetch>comma or newline separated URLs</fetch> when snippets are insufficient.\n\n"
         "Behavior rules:\n"
         "- Open every turn with <think>. Keep it concise — decide the next single useful action.\n"
@@ -292,6 +295,12 @@ class SearchAgentLoop(AgentLoopBase):
             rf'\s+[^>]*retriever="(?P<retriever>\w+)"',
             re.IGNORECASE,
         )
+        # Per-round rerank request: <search rerank="true"> / <searches rerank="true">.
+        self._round_rerank_re = re.compile(
+            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
+            rf'\s+[^>]*rerank="(?P<rerank>\w+)"',
+            re.IGNORECASE,
+        )
         self._search_client = SearchClient(
             SearchClientConfig(
                 url=cfg.search_url,
@@ -314,6 +323,11 @@ class SearchAgentLoop(AgentLoopBase):
             if cfg.web_search_url
             else None
         )
+        # Optional reranker the policy can invoke via <search rerank="true">.
+        # Callable (query, docs) -> reordered docs. None -> rerank is a no-op.
+        # Reranking is applied before results are labeled, so citation labels
+        # ([RxQyDz]) always reflect the order the model actually sees.
+        self._reranker: RerankFn | None = None
 
     def _initial_metrics(self) -> dict[str, float]:
         return {
@@ -374,6 +388,11 @@ class SearchAgentLoop(AgentLoopBase):
         if match and match.group("retriever").lower() == "web":
             return Retriever.WEB
         return Retriever.VECTOR_DB
+
+    def _parse_round_rerank(self, text: str) -> bool:
+        """Whether this search round requested reranking via ``rerank="true"``."""
+        match = self._round_rerank_re.search(text)
+        return bool(match and match.group("rerank").lower() == "true")
 
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
@@ -740,13 +759,15 @@ class SearchAgentLoop(AgentLoopBase):
         task_statuses: dict[str, bool],
         metrics: dict[str, float],
         retriever: Retriever = Retriever.VECTOR_DB,
+        rerank: bool = False,
     ) -> SearchRoundResult:
         """Execute the model's search tool call and return the observation.
 
         This is the tool_call() invoked when the model outputs
         <search>query</search> or <searches>...</searches>.  Handles retrieval,
         cache, evaluation, and observation formatting in one place. ``retriever``
-        selects the backend (vector-DB or web) for this round.
+        selects the backend (vector-DB or web) for this round; ``rerank`` applies
+        the configured reranker to this round's results before they are labeled.
         """
         queries = tool_call.queries
         task_ids = tool_call.task_ids
@@ -766,6 +787,14 @@ class SearchAgentLoop(AgentLoopBase):
                 results_by_query
             )
             metrics["duplicate_search_results_removed"] += removed
+        # Optional rerank of this round's results, applied before labeling so the
+        # citation labels the model sees match the reranked order.
+        if rerank and self._reranker is not None:
+            results_by_query = [
+                self._reranker(query, results)
+                for query, results in zip(queries, results_by_query)
+            ]
+            metrics["rerank_calls"] += 1.0
         metrics["search_rounds"] += 1
         if retriever is Retriever.WEB:
             metrics["web_searches"] += 1.0
@@ -1074,6 +1103,7 @@ class SearchAgentLoop(AgentLoopBase):
                         task_statuses=task_statuses,
                         metrics=metrics,
                         retriever=self._parse_round_retriever(response_text),
+                        rerank=self._parse_round_rerank(response_text),
                     )
                     latest_evaluation = round_result.evaluation
                     turn_observations.append(round_result.observation)

@@ -104,19 +104,16 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
     (web routing + degradation). This is the user-confirmed **per-round** grain + the deferred T-A.4 seam.
   - Files: `src/agents/search.py`, `tests/unit/test_agent_loop.py`, `tests/unit/test_on_turn_callback.py`.
 
-- [ ] **T-B.3: RerankerTool as a policy action** — ⚠️ **DEFERRED into Phase C** (recommend)
-  - Why defer: a mid-loop `<rerank/>` reorders a round's results, which **shifts the positional
-    `[RxQyDz]` citation labels** already shown to the model — needs care to stay consistent; the
-    `Reranker` works on `RetrievalResult` while the loop uses `SearchResult` (a type bridge); and it is
-    only meaningful once **priced** by `rerank_cost`, which lands in Phase C (T-C.1). Wiring + pricing
-    rerank together in Phase C is cleaner than shipping an unpriced action now.
-  - The `RerankerTool` component itself already exists + is tested (Phase A); only the loop dispatch is deferred.
-
-> **Checkpoint 2 (gate):** ✅ reached for the retriever actions — loop executes `search(web)`,
-> `search(vdb)`, `answer` + degradation; 249-test slice green, no regression. Rerank action deferred to C.
+- [x] **T-B.3: Reranker as a policy action** ✅ done (in Phase C, priced by `rerank_cost`)
+  - Landed as a **per-search flag** `<search rerank="true">` rather than a standalone `<rerank/>`: the
+    round's results are reranked **before they are labeled**, so the positional `[RxQyDz]` citations the
+    model sees always match the reranked order — sidestepping the citation-shift problem cleanly. The
+    reranker is injected (`loop._reranker`, callable `(query, docs)->docs`); None → logged no-op. Counts
+    `rerank_calls` (consumed by `rerank_cost`). 2 loop tests (rerank reorders + no-op without reranker).
   - Files: `src/agents/search.py`, `tests/unit/test_agent_loop.py`.
 
-> **Checkpoint 2 (gate):** loop executes every action path incl. degradation. `pytest` green.
+> **Checkpoint 2 (gate):** ✅ reached — loop executes `search(web)`, `search(vdb)`, `rerank`, `answer`
+> + degradation; no regression. (Rerank landed in Phase C alongside its `rerank_cost` pricing.)
 
 ---
 
@@ -145,19 +142,24 @@ Tasks are dependency-ordered. `[P]` = parallelizable with its sibling. Checkpoin
     a real model + torch and is a **manual/integration step** (not a unit test).
   - Files: `src/training/reward.py`, test.
 
-> **Checkpoint 3 (gate):** ✅ reward terms + metrics + preset landed; 235-test slice green, presets
-> byte-stable. Remaining for full Phase C/D: rerank-as-action (priced) + retrieval retries + GRPO smoke +
-> eval comparison (Phase D).
+> **Checkpoint 3 (gate):** ✅ reward terms + metrics + preset + **rerank action (priced)** landed;
+> 237-test slice green, presets byte-stable.
+
+> **T-A0.2 retrieval retries — already covered (no code needed):** `SearchClient` already retries with
+> exponential backoff (`max_retries=3`, 4xx excluded, [src/context/retrieval/client.py:83](../../../src/context/retrieval/client.py));
+> the loop's `_retrieve_many` try/except is the final graceful degrade after retries are exhausted.
 
 ---
 
-## Phase D — Eval (acceptance)
+## Phase D — Eval (acceptance) — requires a real trained checkpoint
 
-- [ ] **T-D.1: Eval logging + baseline vs trained comparison**
-  - Acceptance: eval logs mean `search_rounds`, web/vdb mix, rerank rate, correctness; produces a
-    baseline (heuristic) vs trained (policy) table.
-  - Verify: `python3 -m src.training.eval.bamboogle --compare`; trained mean `search_rounds` ≤ baseline at
-    ≥ baseline correctness (Objective success metric).
+- [ ] **T-D.1: Eval logging + baseline vs trained comparison** — ⏳ needs a training run
+  - The action-mix metrics (`web_searches`/`vdb_searches`/`rerank_calls`/`evidence_*`/`search_rounds`)
+    are already on `output.metrics`, so eval just needs to aggregate them. The actual baseline-vs-trained
+    table requires a converged GRPO checkpoint produced via `train_loop` + `retriever_aware()` — a
+    **manual/integration step**, not unit-testable here.
+  - Verify (manual): `python3 -m src.training.eval.bamboogle --compare`; trained mean `search_rounds`
+    ≤ baseline at ≥ baseline correctness (the spec's headline success metric).
   - Files: `src/training/eval/bamboogle.py`.
 
 ---
