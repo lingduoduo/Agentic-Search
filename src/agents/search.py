@@ -28,6 +28,7 @@ from ..training.evaluation import (
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
 from .components.evidence_judge import EvidenceJudge
+from .components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
 from .components.reranker_tool import RerankFn
 from .state import Retriever
 
@@ -228,11 +229,16 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     )
     allow_internal_knowledge_answer: bool = True
     deduplicate_search_results: bool = True
-    # When set, count rounds whose evidence_score gain falls below this value as
-    # an "early_stops" metric (a plateau signal the reward can price). None
-    # (default) disables it entirely — the metric stays 0 and behavior is
-    # byte-identical. This is observability only; it does not terminate the loop.
-    evidence_plateau_min_gain: float | None = None
+    # Plateau early-stop: stop searching when a round's evidence gain falls below
+    # this threshold. Default-on (0.05). plateau_requires_sufficient gates it so a
+    # plateau only stops the loop when evidence is already sufficient.
+    evidence_plateau_min_gain: float | None = 0.05
+    plateau_requires_sufficient: bool = True
+    # Adaptive search budget: +N rounds per extra subquestion, capped.
+    search_budget_per_subquestion: int = 1
+    max_search_limit_cap: int = 10
+    # Dead-ends emit a best-effort answer from collected evidence instead of None.
+    force_answer_on_deadend: bool = True
 
 
 @register("search_agent")
@@ -278,6 +284,9 @@ class SearchAgentLoop(AgentLoopBase):
             cfg = replace(cfg, **resolved)
 
         self.search_config = cfg
+        from .components.loop_controller import LoopController
+
+        self._loop_controller = LoopController(cfg)
         self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)
         # Per-task evaluator: same config but min_total_results relaxed to per-query minimum
         # so a single-query task isn't rejected just because it has fewer than min_total_results.
@@ -375,6 +384,10 @@ class SearchAgentLoop(AgentLoopBase):
             "exit_search_limit": 0.0,
             "exit_format_error_limit": 0.0,
             "exit_no_action": 0.0,
+            "forced_final_answer": 0.0,
+            "plateau_early_stop": 0.0,
+            "effective_search_limit": 0.0,
+            "adaptive_budget_bonus": 0.0,
         }
 
     @staticmethod
@@ -503,13 +516,14 @@ class SearchAgentLoop(AgentLoopBase):
         query_specs: list[tuple[str | None, str]],
         executed_queries: set[str],
         rounds_used: int,
+        effective_limit: int = 0,
     ) -> tuple[list[tuple[str | None, str]], list[str], list[str]]:
         """Split query_specs into (allowed, repeated, overflow).
 
-        A round is blocked as overflow when rounds_used has reached max_search_limit.
+        A round is blocked as overflow when rounds_used has reached effective_limit.
         Within an allowed round, individual repeated queries are still filtered out.
         """
-        limit = self.search_config.max_search_limit or 0
+        limit = effective_limit or self.search_config.max_search_limit or 0
         at_limit = limit > 0 and rounds_used >= limit
 
         allowed: list[tuple[str | None, str]] = []
@@ -736,6 +750,50 @@ class SearchAgentLoop(AgentLoopBase):
             )
         return "\n".join(sections)
 
+    async def _force_final_answer(
+        self,
+        *,
+        working_messages: list[dict[str, Any]],
+        agent_ctx: AgentContext,
+        request_id: str,
+        sampling_params: dict[str, Any],
+        metrics: dict[str, float],
+        num_turns: int,
+    ) -> tuple[str | None, int]:
+        """One bounded generation that forces a best-effort answer from evidence.
+
+        Returns (answer_or_None, new_num_turns). No-op (returns (None, num_turns))
+        when no evidence was collected — never fabricates.
+        """
+        if agent_ctx.num_rounds == 0:
+            return None, num_turns
+        working_messages.append(
+            {
+                "role": "user",
+                "content": self.search_config.answer_rejection_template.format(
+                    content=self._loop_controller.FORCE_FEEDBACK
+                ),
+            }
+        )
+        prompt_ids = await self.build_prompt_ids(working_messages)
+        response_ids = await self.generate_response_ids(
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+            request_id=f"{request_id}_force",
+        )
+        num_turns += 1
+        text = self.decode_response_ids(response_ids)
+        working_messages.append({"role": "assistant", "content": text})
+        answer_actions = [
+            c
+            for t, c in self._parse_actions(text)
+            if t == self.search_config.answer_tag
+        ]
+        if answer_actions:
+            metrics["forced_final_answer"] = 1.0
+            return answer_actions[0].strip(), num_turns
+        return None, num_turns
+
     def _register_implicit_tasks(
         self,
         query_specs: list[tuple[str | None, str]],
@@ -925,6 +983,7 @@ class SearchAgentLoop(AgentLoopBase):
         consecutive_format_errors = 0
         rounds_used = 0
         exit_status = "max_turns"
+        forced_answer_attempted = False
         executed_queries: set[str] = set()
         task_search_counts: dict[str, int] = {}
         search_cache: dict[str, list[SearchResult]] = {}
@@ -969,6 +1028,19 @@ class SearchAgentLoop(AgentLoopBase):
                     metrics["format_error_turns"] += 1.0
                     if consecutive_format_errors >= cfg.max_consecutive_format_errors:
                         exit_status = "format_error_limit"
+                        if cfg.force_answer_on_deadend and final_answer is None:
+                            # A successful forced answer intentionally retains the dead-end
+                            # exit_status: forced_final_answer records the salvage while
+                            # exit_status records WHY the loop ended.
+                            forced_answer_attempted = True
+                            final_answer, num_turns = await self._force_final_answer(
+                                working_messages=working_messages,
+                                agent_ctx=agent_ctx,
+                                request_id=request_id,
+                                sampling_params=sampling_params,
+                                metrics=metrics,
+                                num_turns=num_turns,
+                            )
                         break
                     needs_more = (
                         cfg.require_sufficient_evidence_before_answer
@@ -999,6 +1071,19 @@ class SearchAgentLoop(AgentLoopBase):
                         )
                         continue
                     exit_status = "no_action"
+                    if cfg.force_answer_on_deadend and final_answer is None:
+                        # A successful forced answer intentionally retains the dead-end
+                        # exit_status: forced_final_answer records the salvage while
+                        # exit_status records WHY the loop ended.
+                        forced_answer_attempted = True
+                        final_answer, num_turns = await self._force_final_answer(
+                            working_messages=working_messages,
+                            agent_ctx=agent_ctx,
+                            request_id=request_id,
+                            sampling_params=sampling_params,
+                            metrics=metrics,
+                            num_turns=num_turns,
+                        )
                     break
                 consecutive_format_errors = 0
 
@@ -1028,10 +1113,18 @@ class SearchAgentLoop(AgentLoopBase):
                 if implicit_tasks:
                     metrics["implicit_subquestions"] += implicit_tasks
                     metrics["active_subquestions"] = float(len(active_tasks))
+                effective_limit = self._loop_controller.effective_search_limit(
+                    len(active_tasks)
+                )
+                metrics["effective_search_limit"] = float(effective_limit)
+                metrics["adaptive_budget_bonus"] = float(
+                    effective_limit - (cfg.max_search_limit or cfg.max_turns)
+                )
                 allowed_specs, repeated, overflow = self._partition_search_requests(
                     query_specs,
                     executed_queries=executed_queries,
                     rounds_used=rounds_used,
+                    effective_limit=effective_limit,
                 )
                 search_tool_call = SearchToolCall(
                     queries=[q for _, q in allowed_specs],
@@ -1065,33 +1158,48 @@ class SearchAgentLoop(AgentLoopBase):
                             await on_turn(num_turns, None, 0)
                         exit_status = "answered"
                         break
-                    if (
-                        not cfg.require_sufficient_evidence_before_answer
-                        or self._has_sufficient_evidence(
+                    _gate_snapshot = LoopSnapshot(
+                        rounds_used=rounds_used,
+                        num_subquestions=len(active_tasks),
+                        evidence_sufficient=self._has_sufficient_evidence(
                             latest_evaluation, task_statuses, active_tasks
-                        )
-                        or consecutive_rejections >= cfg.max_answer_rejections
-                    ):
+                        ),
+                        prev_evidence_score=metrics["evidence_score_final"],
+                        curr_evidence_score=metrics["evidence_score_final"],
+                        consecutive_rejections=consecutive_rejections,
+                        model_emitted_answer=True,
+                    )
+                    _gate_decision = self._loop_controller.final_answer_decision(
+                        _gate_snapshot
+                    )
+                    if _gate_decision.verb is AnswerVerb.ACCEPT:
                         if on_turn is not None:
                             await on_turn(num_turns, None, 0)
                         exit_status = "answered"
                         break
-                    # Answer rejected — clear the tentative candidate so a
-                    # discarded answer is not returned as the final answer.
-                    final_answer = None
-                    consecutive_rejections += 1
-                    metrics["answer_rejections"] += 1
-                    working_messages.append(
-                        {
-                            "role": "user",
-                            "content": cfg.answer_rejection_template.format(
-                                content=self._build_answer_rejection_feedback(
-                                    latest_evaluation, task_statuses, active_tasks
-                                )
-                            ),
-                        }
-                    )
-                    continue
+                    elif _gate_decision.verb is AnswerVerb.FORCE:
+                        metrics["forced_final_answer"] = 1.0
+                        if on_turn is not None:
+                            await on_turn(num_turns, None, 0)
+                        exit_status = "answered"
+                        break
+                    else:  # AnswerVerb.REJECT
+                        # Answer rejected — clear the tentative candidate so a
+                        # discarded answer is not returned as the final answer.
+                        final_answer = None
+                        consecutive_rejections += 1
+                        metrics["answer_rejections"] += 1
+                        working_messages.append(
+                            {
+                                "role": "user",
+                                "content": cfg.answer_rejection_template.format(
+                                    content=self._build_answer_rejection_feedback(
+                                        latest_evaluation, task_statuses, active_tasks
+                                    )
+                                ),
+                            }
+                        )
+                        continue
 
                 # Build observation for this turn (search + fetch combined into one message).
                 turn_observations: list[str] = []
@@ -1152,6 +1260,7 @@ class SearchAgentLoop(AgentLoopBase):
                     executed_queries.update(
                         _normalize_query_key(q) for q in search_tool_call.queries
                     )
+                    prev_evidence_for_round = metrics["evidence_score_final"]
                     round_result = await self._execute_search_round(
                         search_tool_call,
                         agent_ctx=agent_ctx,
@@ -1163,6 +1272,26 @@ class SearchAgentLoop(AgentLoopBase):
                         rerank=self._parse_round_rerank(response_text),
                     )
                     latest_evaluation = round_result.evaluation
+                    _plateau_snapshot = LoopSnapshot(
+                        rounds_used=rounds_used,
+                        num_subquestions=len(active_tasks),
+                        evidence_sufficient=self._has_sufficient_evidence(
+                            latest_evaluation, task_statuses, active_tasks
+                        ),
+                        prev_evidence_score=prev_evidence_for_round,
+                        curr_evidence_score=metrics["evidence_score_final"],
+                        consecutive_rejections=consecutive_rejections,
+                        model_emitted_answer=False,
+                    )
+                    _plateau_stop = self._loop_controller.should_continue_searching(
+                        _plateau_snapshot
+                    )
+                    if _plateau_stop.reason is StopReason.PLATEAU:
+                        metrics["plateau_early_stop"] = 1.0
+                        working_messages.append(
+                            {"role": "user", "content": cfg.search_limit_template}
+                        )
+                        continue
                     turn_observations.append(round_result.observation)
                     if on_turn is not None:
                         doc_count = sum(
@@ -1203,6 +1332,24 @@ class SearchAgentLoop(AgentLoopBase):
                     close_result = close_client()
                     if inspect.isawaitable(close_result):
                         await close_result
+
+        # Post-loop forced-answer hook: if the loop exhausted max_turns without
+        # yielding a final_answer and neither dead-end hook ran, attempt one
+        # bounded generation now.  Safe to call after finally because
+        # _force_final_answer uses the model/server_manager, not search clients.
+        if (
+            cfg.force_answer_on_deadend
+            and final_answer is None
+            and not forced_answer_attempted
+        ):
+            final_answer, num_turns = await self._force_final_answer(
+                working_messages=working_messages,
+                agent_ctx=agent_ctx,
+                request_id=request_id,
+                sampling_params=sampling_params,
+                metrics=metrics,
+                num_turns=num_turns,
+            )
 
         # Derived metrics used by the reward function — computed once here so
         # callers don't have to re-derive them from the raw counts.
@@ -1273,14 +1420,23 @@ class SearchAgentLoop(AgentLoopBase):
         metrics["answer_when_evidence_insufficient"] = (
             1.0
             if (
-                final_answer and not answered_directly and not final_evidence_sufficient
+                final_answer
+                and not answered_directly
+                and not final_evidence_sufficient
+                and metrics["forced_final_answer"] == 0.0
             )
             else 0.0
         )
-        search_limit = float(cfg.max_search_limit or 0)
+        final_effective_limit = self._loop_controller.effective_search_limit(
+            len(active_tasks)
+        )
         metrics["search_budget_exhausted_without_answer"] = (
             1.0
-            if (search_limit > 0 and rounds_used >= search_limit and not final_answer)
+            if (
+                final_effective_limit > 0
+                and rounds_used >= float(final_effective_limit)
+                and not final_answer
+            )
             else 0.0
         )
         if exit_status == "max_turns" and metrics["search_limit_hits"] > 0.0:

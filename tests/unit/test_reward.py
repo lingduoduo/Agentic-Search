@@ -1304,3 +1304,46 @@ def test_existing_presets_leave_early_stop_bonus_zero():
             output, "anything", lambda a, g: 1.0
         )
         assert components["early_stop_bonus"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Task 9 — forced_final_answer_penalty
+# ---------------------------------------------------------------------------
+
+
+def test_forced_final_answer_penalty_applied():
+    cfg = SearchRewardConfig()  # serving defaults
+    assert cfg.forced_final_answer_penalty == -0.05
+    pen = cfg.forced_final_answer_penalty * 1.0
+    assert pen == -0.05
+
+
+def test_zeroed_preset_zeroes_forced_penalty():
+    cfg = SearchRewardConfig._zeroed()
+    assert cfg.forced_final_answer_penalty == 0.0
+
+
+def test_forced_final_answer_penalty_fires_when_metric_set():
+    rf = SearchRewardFunction(
+        SearchRewardConfig(
+            correctness_weight=0.0,
+            citation_support_weight=0.0,
+            subquestion_coverage_weight=0.0,
+            search_quality_weight=0.0,
+            unnecessary_search_penalty=0.0,
+            budget_penalty=0.0,
+            fetch_usefulness_reward=0.0,
+            forced_final_answer_penalty=-0.05,
+        )
+    )
+    output = _output_with_answer("x", forced_final_answer=1.0)
+    reward = rf.compute(output, ground_truth="x", judge_fn=_exact_match)
+    assert reward == pytest.approx(-0.05, abs=0.001)
+
+
+def test_forced_final_answer_penalty_zero_when_metric_absent():
+    """Existing rollouts that omit forced_final_answer are unaffected."""
+    rf = SearchRewardFunction(SearchRewardConfig())
+    output = _output_with_answer("x")
+    components = rf.reward_components(output, "x", lambda a, g: 1.0)
+    assert components["forced_final_answer_penalty"] == pytest.approx(0.0)
