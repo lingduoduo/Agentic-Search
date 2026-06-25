@@ -217,6 +217,11 @@ class SearchRewardConfig:
     # Applied once when the agent answers despite insufficient evidence.
     answer_when_evidence_insufficient_penalty: float = -0.2
 
+    # Applied once when the loop forced a best-effort answer at a dead-end/cap.
+    # A salvage: milder than the voluntary-insufficient penalty, far better than
+    # returning nothing. Mutually exclusive with answer_when_evidence_insufficient.
+    forced_final_answer_penalty: float = -0.05
+
     # Applied once when the search budget is exhausted and no answer is produced.
     search_budget_exhausted_without_answer_penalty: float = -0.2
 
@@ -280,6 +285,7 @@ class SearchRewardConfig:
             unnecessary_fetch_penalty=0.0,
             unsupported_claim_penalty=0.0,
             answer_when_evidence_insufficient_penalty=0.0,
+            forced_final_answer_penalty=0.0,
             search_budget_exhausted_without_answer_penalty=0.0,
             fetch_usefulness_reward=0.0,
             format_reward_weight=0.0,
@@ -661,6 +667,9 @@ class SearchRewardFunction:
             cfg.answer_when_evidence_insufficient_penalty
             * metrics.get("answer_when_evidence_insufficient", 0.0)
         )
+        forced_answer_pen = cfg.forced_final_answer_penalty * metrics.get(
+            "forced_final_answer", 0.0
+        )
         exhausted_without_answer_pen = (
             cfg.search_budget_exhausted_without_answer_penalty
             * metrics.get("search_budget_exhausted_without_answer", 0.0)
@@ -717,6 +726,7 @@ class SearchRewardFunction:
             + unnecessary_fetch_pen
             + unsupported_claim_pen
             + insufficient_answer_pen
+            + forced_answer_pen
             + exhausted_without_answer_pen
             + fetch_reward
             + format_reward
@@ -741,6 +751,7 @@ class SearchRewardFunction:
             "unnecessary_fetch_penalty": unnecessary_fetch_pen,
             "unsupported_claim_penalty": unsupported_claim_pen,
             "answer_when_evidence_insufficient_penalty": insufficient_answer_pen,
+            "forced_final_answer_penalty": forced_answer_pen,
             "search_budget_exhausted_without_answer_penalty": (
                 exhausted_without_answer_pen
             ),

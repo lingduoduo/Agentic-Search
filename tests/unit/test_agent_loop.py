@@ -773,6 +773,8 @@ def test_search_agent_loop_rejects_answer_before_any_search():
         chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
     )
     assert "<answer_feedback>" in second_prompt
+    # Targeted feedback: no search has happened yet, so the builder emits the
+    # "Search first" message rather than the generic controller constant.
     assert "Search first" in second_prompt
     assert output.num_turns == 3
     assert output.context.num_rounds == 1
@@ -820,6 +822,8 @@ def test_search_agent_loop_rejects_answer_when_latest_evidence_is_insufficient()
         chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
     )
     assert "<answer_feedback>" in third_prompt
+    # Targeted feedback: a search happened but evidence was insufficient, so the
+    # builder emits the "latest search evaluation was insufficient" message.
     assert "latest search evaluation was insufficient" in third_prompt
     assert output.num_turns == 4
     assert output.context.num_rounds == 2
@@ -1432,6 +1436,7 @@ def test_search_agent_loop_tracks_budget_exhausted_without_answer():
         search_config=SearchAgentLoopConfig(
             max_turns=2,
             max_search_limit=1,
+            force_answer_on_deadend=False,
             require_sufficient_evidence_before_answer=False,
             evaluation_config=SearchEvaluationConfig(
                 min_results_per_query=1, min_total_results=1
@@ -2149,3 +2154,403 @@ def test_search_agent_loop_counts_empty_rerank_request_as_skipped():
     assert output.metrics["rerank_requested"] == 1.0
     assert output.metrics["rerank_calls"] == 0.0
     assert output.metrics["rerank_skipped"] == 1.0
+
+
+def test_loop_controller_config_defaults():
+    cfg = SearchAgentLoopConfig()
+    assert cfg.evidence_plateau_min_gain == 0.05
+    assert cfg.plateau_requires_sufficient is True
+    assert cfg.search_budget_per_subquestion == 1
+    assert cfg.max_search_limit_cap == 10
+    assert cfg.force_answer_on_deadend is True
+
+
+def test_adaptive_budget_raises_limit_for_multiple_subquestions():
+    """With 3 subquestions and budget_per_subquestion=1: effective_limit = base 2 + (3-1) = 4."""
+    tokenizer = DummyTokenizerWithEncode()
+    # Script: declare 3 subquestions + first search in same turn, then 3 more searches, then answer.
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: first aspect\nT2: second aspect\nT3: third aspect\n</subquestions>"
+            "<searches>\n[T1] first query\n</searches>"
+        ),
+        tokenizer.encode("<searches>\n[T2] second query\n</searches>"),
+        tokenizer.encode("<searches>\n[T3] third query\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R2Q1D1] [R3Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=8,
+            max_search_limit=2,
+            search_budget_per_subquestion=1,
+            max_search_limit_cap=10,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [[SearchResult(contents='"Doc A"\nAlpha body')]],
+            ("second query",): [[SearchResult(contents='"Doc B"\nBeta body')]],
+            ("third query",): [[SearchResult(contents='"Doc C"\nGamma body')]],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["effective_search_limit"] == 4.0  # base 2 + (3-1)*1
+    assert output.metrics["adaptive_budget_bonus"] == 2.0
+
+
+def test_deadend_forces_answer_from_evidence():
+    """Dead-end after one good search round: forced-answer is emitted from evidence."""
+    tokenizer = DummyTokenizerWithEncode()
+    # Turn 1: search round (evidence collected)
+    # Turn 2: no recognised action → dead-end (no_action exit)
+    # Forced turn: model produces <answer> tag
+    responses = [
+        tokenizer.encode("<search>what is FAISS</search>"),
+        tokenizer.encode("I have no idea what to do next."),
+        # forced-answer turn
+        tokenizer.encode(
+            "<answer>FAISS is a library for similarity search [R1Q1D1]</answer>"
+        ),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_search_limit=5,
+            force_answer_on_deadend=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.9
+                    )
+                ],
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is not None
+    assert out.metrics["forced_final_answer"] == 1.0
+    assert out.metrics["search_budget_exhausted_without_answer"] == 0.0
+    assert out.metrics["answer_when_evidence_insufficient"] == 0.0
+
+
+def test_deadend_with_no_evidence_does_not_fabricate():
+    """Dead-end with no search rounds: forced-answer opt-out (never fabricate)."""
+    tokenizer = DummyTokenizerWithEncode()
+    # Immediate format errors, no search → agent_ctx.num_rounds == 0
+    responses = [
+        tokenizer.encode("plain text no tags"),
+        tokenizer.encode("still no tags"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_consecutive_format_errors=2,
+            force_answer_on_deadend=True,
+        ),
+    )
+    loop._search_client = FakeSearchClient({})
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert out.metrics["forced_final_answer"] == 0.0
+
+
+def test_budget_exhausted_forces_answer():
+    """When max_turns exhausts without an answer, _force_final_answer is called.
+
+    Script:
+    - Turn 1: search (evidence collected)
+    - Turn 2: another search (search limit reached after this)
+    - Loop exits via max_turns with final_answer=None
+    - Post-loop hook calls _force_final_answer → model emits <answer>
+
+    Asserts:
+    - out.final_answer is not None
+    - forced_final_answer == 1.0
+    - search_budget_exhausted_without_answer == 0.0
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Turn 1: search round (evidence collected)
+    # Turn 2: search round (hits max_search_limit=1; loop observes limit but continues)
+    # Turn 3 (max_turns=2, so loop exits after turn 2 without getting here)
+    # Forced turn: model produces <answer>
+    responses = [
+        tokenizer.encode("<searches>\nwhat is FAISS\n</searches>"),
+        tokenizer.encode("<searches>\nmore about FAISS\n</searches>"),
+        # forced-answer turn (post-loop hook)
+        tokenizer.encode(
+            "<answer>FAISS is a library for similarity search [R1Q1D1]</answer>"
+        ),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=2,
+            max_search_limit=2,
+            force_answer_on_deadend=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.9
+                    )
+                ],
+            ],
+            ("more about FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS index"\nEfficient similarity indexing',
+                        score=0.8,
+                    )
+                ],
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is not None
+    assert out.metrics["forced_final_answer"] == 1.0
+    assert out.metrics["search_budget_exhausted_without_answer"] == 0.0
+
+
+def test_plateau_stops_searching_when_sufficient():
+    """Plateau early-stop fires when evidence is sufficient and gain stalls.
+
+    Script: round 1 yields sufficient evidence; round 2 returns the same
+    score (gain = 0 < 0.05) and evidence is still sufficient → PLATEAU fires
+    after round 2, appending the search-limit observation and skipping further
+    searches. The model answers on the next turn.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # responses: search round 1, search round 2, answer
+    responses = [
+        tokenizer.encode("<searches>\nfirst query\n</searches>"),
+        tokenizer.encode("<searches>\nsecond query\n</searches>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=8,
+            max_search_limit=5,
+            evidence_plateau_min_gain=0.05,
+            plateau_requires_sufficient=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1,
+                min_total_results=1,
+                min_top_score=0.5,
+            ),
+        ),
+    )
+    # Both rounds return identically-scored sufficient docs → round 2 gain = 0.
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', score=0.9)]
+            ],
+            ("second query",): [
+                [SearchResult(contents='"Doc B"\nBeta body', score=0.9)]
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert out.metrics["plateau_early_stop"] == 1.0
+    assert out.metrics["rounds_used"] < 5.0
+
+
+def test_answer_gate_forces_after_max_rejections():
+    """After max_answer_rejections rejections the gate should FORCE-accept the answer
+    and set metrics["forced_final_answer"] == 1.0.
+
+    Script:
+    - Turn 1: search round (one weak result — insufficient evidence)
+    - Turn 2: answer emitted with insufficient evidence → rejected (rejection 1)
+    - Turn 3: answer emitted again (no new search) → rejected (rejection 2)
+    - Turn 4: answer emitted again → consecutive_rejections == max_answer_rejections (2)
+              → FORCE path: accept answer, set forced_final_answer=1.0
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nwhat is FAISS\n</searches>"),
+        tokenizer.encode("<answer>FAISS is a library [R1Q1D1]</answer>"),
+        tokenizer.encode("<answer>FAISS is a library [R1Q1D1]</answer>"),
+        tokenizer.encode("<answer>FAISS is a library [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=8,
+            max_answer_rejections=2,
+            require_sufficient_evidence_before_answer=True,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=2,
+                min_total_results=2,
+                min_top_score=0.8,
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                # Only one weak result — fails min_results_per_query=2 and min_top_score=0.8
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.5
+                    )
+                ],
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is not None  # forced through after cap
+    assert out.metrics["forced_final_answer"] == 1.0
+
+
+def test_budget_metric_uses_effective_limit_for_multi_subquestions():
+    """With 3 subquestions and base=2 the effective limit is 4.
+    A run that searches 4 rounds (exhausting the effective limit) then emits
+    an answer must NOT fire search_budget_exhausted_without_answer.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Script: declare 3 subquestions + first search in turn 1, then 3 more searches,
+    # then answer — 4 rounds total (effective limit with base=2, 3 subquestions, per_sub=1).
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: first aspect\nT2: second aspect\nT3: third aspect\n</subquestions>"
+            "<searches>\n[T1] first query\n</searches>"
+        ),
+        tokenizer.encode("<searches>\n[T2] second query\n</searches>"),
+        tokenizer.encode("<searches>\n[T3] third query\n</searches>"),
+        tokenizer.encode("<searches>\n[T1] refined query\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R2Q1D1] [R3Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=10,
+            max_search_limit=2,
+            search_budget_per_subquestion=1,
+            max_search_limit_cap=10,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [[SearchResult(contents='"Doc A"\nAlpha body')]],
+            ("second query",): [[SearchResult(contents='"Doc B"\nBeta body')]],
+            ("third query",): [[SearchResult(contents='"Doc C"\nGamma body')]],
+            ("refined query",): [[SearchResult(contents='"Doc D"\nDelta body')]],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    # effective limit = 2 + (3-1)*1 = 4; 4 rounds used; answer produced
+    assert out.metrics["effective_search_limit"] == 4.0
+    assert out.metrics["rounds_used"] == 4.0
+    assert out.final_answer is not None
+    # Must NOT fire even though rounds_used == base limit (2) — effective limit was 4
+    assert out.metrics["search_budget_exhausted_without_answer"] == 0.0
+
+
+def test_forced_turn_emitting_no_answer_returns_none():
+    """When the forced final-answer turn itself emits no <answer> tag and there
+    is no prior tentative answer, final_answer is None and forced_final_answer == 0.0.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Turn 1: one good search round (evidence collected)
+    # Turn 2: no recognised action → dead-end (no_action exit)
+    # Forced turn: model responds with plain text, NO <answer> tag
+    responses = [
+        tokenizer.encode("<searches>\nwhat is FAISS\n</searches>"),
+        tokenizer.encode("I give up."),
+        # forced-answer turn — intentionally no <answer> tag
+        tokenizer.encode("I still cannot provide an answer."),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_search_limit=5,
+            force_answer_on_deadend=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.9
+                    )
+                ]
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is None
+    assert out.metrics["forced_final_answer"] == 0.0
