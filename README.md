@@ -532,6 +532,20 @@ python3 -m examples.run_search_pipeline
 
 The agent layer (`src/agents/`) behind every loop the [Web Backend API](#web-backend-api) and [CLI](#examples) drive.
 
+### Agent taxonomy — two families
+
+The repo has **two parallel agent designs**; "the agent framework" is the first, and the registry covers only it.
+
+| Family | Members | `run()` contract | LLM access | Registry? | GRPO-trainable? |
+|---|---|---|---|---|---|
+| **Framework loops** (`AgentLoopBase`) | `plain_generation`, `single_turn_agent`, `search_agent` (the search/tool agents), `tool_agent` | `run(messages, sampling_params, *, on_turn) → AgentLoopOutput` | injected `server_manager` (token-level) | ✅ | ✅ |
+| **RAG pipeline** | `AgenticRAGLoop` (web `chat_loop`) | `run(question, *, chat_history) → AgenticRAGResult` | `LLMClient` (chat-level) | ❌ | ❌ |
+| **Retrieval pipelines** | `search_tool`, `hybrid_search`, `chat_once` | retrieve → answer functions | — | ❌ | ❌ |
+
+**Tool agents and search agents are members of the framework** — siblings under `AgentLoopBase`, sharing the registry, the `LoopController` + components, and the `server_manager` model boundary. **Agentic RAG sits *beside* the framework, not inside it:** its constructor, `run()` signature, and return type diverge from `AgentLoopBase`, so registering it would break the `dict[str, type[AgentLoopBase]]` contract — it stays a deliberate non-registry loop. A dispatch layer (registry + `resolve_agent_name` + the web intent router) picks one target per request, treating all three families as interchangeable.
+
+**Why they're kept separate (by design).** The framework loops are *token-level* because they're built for GRPO RL training (policy gradients need `prompt_ids`/`response_ids`). `AgenticRAGLoop` is a lighter *chat-level* serving pipeline (`LLMClient`, no tokenizer/`server_manager`) doing query decomposition + HyDE + grounded synthesis. Two simple designs for two purposes beat one contract forced onto both; the boundary is enforced (the registry rejects non-conforming loops) and documented ([`docs/agent-invocation-surface.md`](docs/agent-invocation-surface.md)) so the families don't quietly drift together. Consolidation *is* feasible — `SearchAgentLoop` already does most of what `AgenticRAGLoop` does (sub-questions, iterative retrieval, evidence gating, citations); express agentic-RAG as a `SearchAgentLoop` config + a HyDE query-transform, bridged via the `ServerManager` protocol, and retire `AgenticRAGLoop`. It's deferred architectural-debt work, not a feature, so the families stay separate for now.
+
 **Loop registry — one source of truth.** Agent loops register by name (`@register`) and are resolved through `get_registered_agent_loop(name)`; `resolve_agent_name` maps CLI/web aliases to the canonical loop. The registry covers the four `AgentLoopBase` loops below. `AgenticRAGLoop` (constructor + `run()` signature diverge from `AgentLoopBase`) and the retrieval pipelines (`search_tool` / `hybrid_search` / `chat_once`) are a distinct, non-registry category — see [`docs/agent-invocation-surface.md`](docs/agent-invocation-surface.md).
 
 | Canonical loop | CLI `--mode` | Web `mode` | Purpose |
