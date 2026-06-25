@@ -1420,6 +1420,84 @@ def test_search_agent_loop_tracks_budget_exhausted_without_answer():
     assert output.metrics["search_budget_exhausted_without_answer"] == 1.0
 
 
+def test_search_agent_loop_records_answered_exit_metric():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha query</search>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=3,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("alpha query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body')],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["exit_answered"] == 1.0
+    assert output.metrics["exit_max_turns"] == 0.0
+
+
+def test_search_agent_loop_records_max_turns_exit_metric():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<think>planning</think>"),
+        tokenizer.encode("<think>still planning</think>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(max_turns=2),
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.final_answer is None
+    assert output.metrics["exit_max_turns"] == 1.0
+    assert output.metrics["exit_answered"] == 0.0
+
+
+def test_search_agent_loop_stops_after_repeated_no_action_turns():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("plain text"),
+        tokenizer.encode("still plain text"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_consecutive_format_errors=2,
+        ),
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.num_turns == 2
+    assert output.metrics["format_error_turns"] == 2.0
+    assert output.metrics["exit_format_error_limit"] == 1.0
+    assert output.metrics["exit_no_action"] == 1.0
+
+
 def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():
     tokenizer = DummyTokenizerWithEncode()
     responses = [

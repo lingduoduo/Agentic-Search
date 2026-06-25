@@ -14,7 +14,7 @@ from ..context.search import AgentContext
 JudgeFn = Callable[[str, str], float]
 BatchJudgeFn = Callable[[list[str], list[str]], list[float]]
 _WHITESPACE_PATTERN = re.compile(r"\s+")
-_CITATION_RE = re.compile(r"\[D\d+\]")
+_CITATION_RE = re.compile(r"\[(?:D\d+|R\d+Q\d+D\d+)\]")
 _ANSWER_TAG_RE = re.compile(r"<answer>.*?</answer>", re.DOTALL | re.IGNORECASE)
 
 
@@ -66,7 +66,8 @@ def format_compliance_reward(
     """Reward structural compliance in a search-agent response.
 
     Checks for:
-    - Inline citation markers ``[D1]``, ``[D2]``, … when ``require_citations=True``
+    - Inline citation markers (``[D1]`` or search-loop ``[R1Q1D1]`` labels)
+      when ``require_citations=True``
     - An ``<answer>…</answer>`` block when ``require_answer_tag=True``
 
     Returns the fraction of required checks that pass (0.0, 0.5, or 1.0 when
@@ -226,9 +227,10 @@ class SearchRewardConfig:
     # value as SearchAgentLoopConfig.max_search_limit when known.
     max_search_rounds: int = 5
 
-    # Reward for structural compliance in the answer.  Uses
-    # :func:`format_compliance_reward` with ``require_citations=True`` by
-    # default.  Set to 0.0 to disable (the default).
+    # Reward for structural compliance in the answer. Uses
+    # :func:`format_compliance_reward` with ``require_citations=True`` by default.
+    # Accepts both compact [D1] labels and search-loop [R1Q1D1] labels. Set to
+    # 0.0 to disable (the default).
     format_reward_weight: float = 0.0
 
     # Scale the final total reward before returning.  Useful for aligning
@@ -382,7 +384,7 @@ class SearchRewardConfig:
                    + 0.1  * citation_support
                    - 0.1  * unsupported_claim
                    - 0.05 * repeated_query_count
-                   + 0.1  * format_compliance   ← inline [D1] citations present
+                   + 0.1  * format_compliance   ← inline citation labels present
 
         Use :func:`token_f1_score` as the judge alongside
         :func:`simple_sparse_correctness_reward` via :class:`CompositeRewardConfig`
@@ -672,7 +674,7 @@ class SearchRewardFunction:
         # search results whose URLs were later fetched for deeper inspection.
         fetch_reward = self._fetch_usefulness_reward(answer, ctx)
 
-        # 11. Format compliance: reward for inline [D1] citations in the answer.
+        # 11. Format compliance: reward for inline citation labels in the answer.
         format_reward = (
             cfg.format_reward_weight * format_compliance_reward(answer)
             if cfg.format_reward_weight != 0.0 and answer

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -101,6 +102,13 @@ def test_run_single_turn_is_plain_model_generation(capsys):
     assert "plain answer" in captured.out
     assert len(server_manager.calls) == 1
     assert server_manager.calls[0]["sampling_params"]["max_tokens"] == 16
+
+
+def test_run_agentic_search_has_no_minisweagent_dependency():
+    source = Path("examples/run_agentic_search.py").read_text()
+
+    assert "minisweagent" not in source
+    assert "class DefaultAgent" not in source
 
 
 def test_validate_local_generation_config_rejects_encoder_only_model():
