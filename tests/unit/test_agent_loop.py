@@ -1397,6 +1397,7 @@ def test_search_agent_loop_tracks_budget_exhausted_without_answer():
         search_config=SearchAgentLoopConfig(
             max_turns=2,
             max_search_limit=1,
+            force_answer_on_deadend=False,
             require_sufficient_evidence_before_answer=False,
             evaluation_config=SearchEvaluationConfig(
                 min_results_per_query=1, min_total_results=1
@@ -2241,6 +2242,75 @@ def test_deadend_with_no_evidence_does_not_fabricate():
     )
 
     assert out.metrics["forced_final_answer"] == 0.0
+
+
+def test_budget_exhausted_forces_answer():
+    """When max_turns exhausts without an answer, _force_final_answer is called.
+
+    Script:
+    - Turn 1: search (evidence collected)
+    - Turn 2: another search (search limit reached after this)
+    - Loop exits via max_turns with final_answer=None
+    - Post-loop hook calls _force_final_answer → model emits <answer>
+
+    Asserts:
+    - out.final_answer is not None
+    - forced_final_answer == 1.0
+    - search_budget_exhausted_without_answer == 0.0
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Turn 1: search round (evidence collected)
+    # Turn 2: search round (hits max_search_limit=1; loop observes limit but continues)
+    # Turn 3 (max_turns=2, so loop exits after turn 2 without getting here)
+    # Forced turn: model produces <answer>
+    responses = [
+        tokenizer.encode("<searches>\nwhat is FAISS\n</searches>"),
+        tokenizer.encode("<searches>\nmore about FAISS\n</searches>"),
+        # forced-answer turn (post-loop hook)
+        tokenizer.encode(
+            "<answer>FAISS is a library for similarity search [R1Q1D1]</answer>"
+        ),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=2,
+            max_search_limit=2,
+            force_answer_on_deadend=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.9
+                    )
+                ],
+            ],
+            ("more about FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS index"\nEfficient similarity indexing',
+                        score=0.8,
+                    )
+                ],
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is not None
+    assert out.metrics["forced_final_answer"] == 1.0
+    assert out.metrics["search_budget_exhausted_without_answer"] == 0.0
 
 
 def test_plateau_stops_searching_when_sufficient():

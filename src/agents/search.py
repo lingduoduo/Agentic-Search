@@ -983,6 +983,7 @@ class SearchAgentLoop(AgentLoopBase):
         consecutive_format_errors = 0
         rounds_used = 0
         exit_status = "max_turns"
+        forced_answer_attempted = False
         executed_queries: set[str] = set()
         task_search_counts: dict[str, int] = {}
         search_cache: dict[str, list[SearchResult]] = {}
@@ -1028,6 +1029,7 @@ class SearchAgentLoop(AgentLoopBase):
                     if consecutive_format_errors >= cfg.max_consecutive_format_errors:
                         exit_status = "format_error_limit"
                         if cfg.force_answer_on_deadend and final_answer is None:
+                            forced_answer_attempted = True
                             final_answer, num_turns = await self._force_final_answer(
                                 working_messages=working_messages,
                                 agent_ctx=agent_ctx,
@@ -1067,6 +1069,7 @@ class SearchAgentLoop(AgentLoopBase):
                         continue
                     exit_status = "no_action"
                     if cfg.force_answer_on_deadend and final_answer is None:
+                        forced_answer_attempted = True
                         final_answer, num_turns = await self._force_final_answer(
                             working_messages=working_messages,
                             agent_ctx=agent_ctx,
@@ -1308,6 +1311,24 @@ class SearchAgentLoop(AgentLoopBase):
                     close_result = close_client()
                     if inspect.isawaitable(close_result):
                         await close_result
+
+        # Post-loop forced-answer hook: if the loop exhausted max_turns without
+        # yielding a final_answer and neither dead-end hook ran, attempt one
+        # bounded generation now.  Safe to call after finally because
+        # _force_final_answer uses the model/server_manager, not search clients.
+        if (
+            cfg.force_answer_on_deadend
+            and final_answer is None
+            and not forced_answer_attempted
+        ):
+            final_answer, num_turns = await self._force_final_answer(
+                working_messages=working_messages,
+                agent_ctx=agent_ctx,
+                request_id=request_id,
+                sampling_params=sampling_params,
+                metrics=metrics,
+                num_turns=num_turns,
+            )
 
         # Derived metrics used by the reward function — computed once here so
         # callers don't have to re-derive them from the raw counts.
