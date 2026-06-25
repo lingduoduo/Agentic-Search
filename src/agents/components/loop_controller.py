@@ -56,3 +56,15 @@ class LoopController:
         base = cfg.max_search_limit or cfg.max_turns
         bonus = cfg.search_budget_per_subquestion * max(0, num_subquestions - 1)
         return max(base, min(base + bonus, cfg.max_search_limit_cap))
+
+    def should_continue_searching(self, s: LoopSnapshot) -> StopDecision:
+        cfg = self._cfg
+        if s.rounds_used >= self.effective_search_limit(s.num_subquestions):
+            return StopDecision(StopReason.BUDGET_EXHAUSTED)
+        if cfg.evidence_plateau_min_gain is not None:
+            gain = s.curr_evidence_score - s.prev_evidence_score
+            if gain < cfg.evidence_plateau_min_gain and (
+                s.evidence_sufficient or not cfg.plateau_requires_sufficient
+            ):
+                return StopDecision(StopReason.PLATEAU)
+        return StopDecision(StopReason.CONTINUE)
