@@ -405,3 +405,49 @@ def test_reranker_tool_handles_empty_docs() -> None:
 
     state = SearchAgentState(question="q")
     assert RerankerTool(fake_rerank).run(state) == []
+
+
+def test_reranker_tool_skips_when_single_doc() -> None:
+    from src.agents.components.reranker_tool import RerankerTool
+
+    called = {"n": 0}
+
+    def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        called["n"] += 1
+        return docs
+
+    state = SearchAgentState(question="q")
+    state.record_search("q", [_result(title="only")])
+
+    reordered = RerankerTool(fake_rerank).run(state)
+
+    assert called["n"] == 0  # nothing to reorder with one doc
+    assert [d.title for d in reordered] == ["only"]
+
+
+def test_reranker_tool_limits_to_max_candidates() -> None:
+    from src.agents.components.reranker_tool import RerankerTool
+
+    seen_lengths: list[int] = []
+
+    def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        seen_lengths.append(len(docs))
+        return list(reversed(docs))
+
+    state = SearchAgentState(question="q")
+    state.record_search(
+        "q",
+        [
+            _result(title="a"),
+            _result(title="b"),
+            _result(title="c"),
+            _result(title="d"),
+        ],
+    )
+
+    reordered = RerankerTool(fake_rerank, max_candidates=2).run(state)
+
+    assert seen_lengths == [2]  # only the top-2 were handed to the reranker
+    # top-2 [a, b] reversed -> [b, a], tail [c, d] preserved
+    assert [d.title for d in reordered] == ["b", "a", "c", "d"]
+    assert [d.title for d in state.retrieved_docs] == ["b", "a", "c", "d"]

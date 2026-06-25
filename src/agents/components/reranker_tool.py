@@ -17,16 +17,29 @@ RerankFn = Callable[[str, list[SearchResult]], list[SearchResult]]
 
 
 class RerankerTool:
-    """Re-order ``state.retrieved_docs`` in place using the rerank function."""
+    """Re-order ``state.retrieved_docs`` in place using the rerank function.
 
-    def __init__(self, rerank_fn: RerankFn) -> None:
+    ``max_candidates`` bounds cost: only the top-N docs (by current order) are
+    scored by the cross-encoder; the rest keep their position. ``None`` (default)
+    reranks the whole set. A set of <= 1 doc is a guaranteed no-op, so the
+    reranker is not called at all.
+    """
+
+    def __init__(self, rerank_fn: RerankFn, max_candidates: int | None = None) -> None:
         self._rerank_fn = rerank_fn
+        self._max_candidates = max_candidates
 
     def run(
         self, state: SearchAgentState, query: str | None = None
     ) -> list[SearchResult]:
-        if not state.retrieved_docs:
-            return []
-        reordered = self._rerank_fn(query or state.question, list(state.retrieved_docs))
+        docs = list(state.retrieved_docs)
+        if len(docs) <= 1:
+            return docs
+        if self._max_candidates is None or self._max_candidates >= len(docs):
+            reordered = self._rerank_fn(query or state.question, docs)
+        else:
+            head = docs[: self._max_candidates]
+            tail = docs[self._max_candidates :]
+            reordered = self._rerank_fn(query or state.question, head) + tail
         state.record_rerank(reordered)
         return reordered
