@@ -750,6 +750,50 @@ class SearchAgentLoop(AgentLoopBase):
             )
         return "\n".join(sections)
 
+    async def _force_final_answer(
+        self,
+        *,
+        working_messages: list[dict[str, Any]],
+        agent_ctx: AgentContext,
+        request_id: str,
+        sampling_params: dict[str, Any],
+        metrics: dict[str, float],
+        num_turns: int,
+    ) -> tuple[str | None, int]:
+        """One bounded generation that forces a best-effort answer from evidence.
+
+        Returns (answer_or_None, new_num_turns). No-op (returns (None, num_turns))
+        when no evidence was collected — never fabricates.
+        """
+        if agent_ctx.num_rounds == 0:
+            return None, num_turns
+        working_messages.append(
+            {
+                "role": "user",
+                "content": self.search_config.answer_rejection_template.format(
+                    content=self._loop_controller._FORCE_FEEDBACK
+                ),
+            }
+        )
+        prompt_ids = await self.build_prompt_ids(working_messages)
+        response_ids = await self.generate_response_ids(
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+            request_id=f"{request_id}_force",
+        )
+        num_turns += 1
+        text = self.decode_response_ids(response_ids)
+        working_messages.append({"role": "assistant", "content": text})
+        answer_actions = [
+            c
+            for t, c in self._parse_actions(text)
+            if t == self.search_config.answer_tag
+        ]
+        if answer_actions:
+            metrics["forced_final_answer"] = 1.0
+            return answer_actions[0].strip(), num_turns
+        return None, num_turns
+
     def _register_implicit_tasks(
         self,
         query_specs: list[tuple[str | None, str]],
@@ -983,6 +1027,15 @@ class SearchAgentLoop(AgentLoopBase):
                     metrics["format_error_turns"] += 1.0
                     if consecutive_format_errors >= cfg.max_consecutive_format_errors:
                         exit_status = "format_error_limit"
+                        if cfg.force_answer_on_deadend and final_answer is None:
+                            final_answer, num_turns = await self._force_final_answer(
+                                working_messages=working_messages,
+                                agent_ctx=agent_ctx,
+                                request_id=request_id,
+                                sampling_params=sampling_params,
+                                metrics=metrics,
+                                num_turns=num_turns,
+                            )
                         break
                     needs_more = (
                         cfg.require_sufficient_evidence_before_answer
@@ -1013,6 +1066,15 @@ class SearchAgentLoop(AgentLoopBase):
                         )
                         continue
                     exit_status = "no_action"
+                    if cfg.force_answer_on_deadend and final_answer is None:
+                        final_answer, num_turns = await self._force_final_answer(
+                            working_messages=working_messages,
+                            agent_ctx=agent_ctx,
+                            request_id=request_id,
+                            sampling_params=sampling_params,
+                            metrics=metrics,
+                            num_turns=num_turns,
+                        )
                     break
                 consecutive_format_errors = 0
 
@@ -1316,7 +1378,10 @@ class SearchAgentLoop(AgentLoopBase):
         metrics["answer_when_evidence_insufficient"] = (
             1.0
             if (
-                final_answer and not answered_directly and not final_evidence_sufficient
+                final_answer
+                and not answered_directly
+                and not final_evidence_sufficient
+                and metrics["forced_final_answer"] == 0.0
             )
             else 0.0
         )

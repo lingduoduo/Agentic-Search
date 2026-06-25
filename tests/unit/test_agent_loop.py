@@ -2168,6 +2168,81 @@ def test_adaptive_budget_raises_limit_for_multiple_subquestions():
     assert output.metrics["adaptive_budget_bonus"] == 2.0
 
 
+def test_deadend_forces_answer_from_evidence():
+    """Dead-end after one good search round: forced-answer is emitted from evidence."""
+    tokenizer = DummyTokenizerWithEncode()
+    # Turn 1: search round (evidence collected)
+    # Turn 2: no recognised action → dead-end (no_action exit)
+    # Forced turn: model produces <answer> tag
+    responses = [
+        tokenizer.encode("<search>what is FAISS</search>"),
+        tokenizer.encode("I have no idea what to do next."),
+        # forced-answer turn
+        tokenizer.encode(
+            "<answer>FAISS is a library for similarity search [R1Q1D1]</answer>"
+        ),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_search_limit=5,
+            force_answer_on_deadend=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.9
+                    )
+                ],
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is not None
+    assert out.metrics["forced_final_answer"] == 1.0
+    assert out.metrics["search_budget_exhausted_without_answer"] == 0.0
+    assert out.metrics["answer_when_evidence_insufficient"] == 0.0
+
+
+def test_deadend_with_no_evidence_does_not_fabricate():
+    """Dead-end with no search rounds: forced-answer opt-out (never fabricate)."""
+    tokenizer = DummyTokenizerWithEncode()
+    # Immediate format errors, no search → agent_ctx.num_rounds == 0
+    responses = [
+        tokenizer.encode("plain text no tags"),
+        tokenizer.encode("still no tags"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_consecutive_format_errors=2,
+            force_answer_on_deadend=True,
+        ),
+    )
+    loop._search_client = FakeSearchClient({})
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert out.metrics["forced_final_answer"] == 0.0
+
+
 def test_plateau_stops_searching_when_sufficient():
     """Plateau early-stop fires when evidence is sufficient and gain stalls.
 
