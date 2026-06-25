@@ -19,6 +19,7 @@ from src import (
     normalize_answer_text,
     simple_sparse_correctness_reward,
 )
+from src.training.reward import format_compliance_reward
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +470,30 @@ def test_reward_citation_support():
     output = _output_with_answer(answer)
     reward = rf.compute(output, ground_truth="anything", judge_fn=lambda a, g: 0.0)
     assert reward == pytest.approx(0.5, abs=0.01)
+
+
+def test_format_compliance_reward_accepts_search_agent_citations():
+    assert format_compliance_reward("Use alpha evidence [R1Q1D1].") == pytest.approx(
+        1.0
+    )
+
+
+def test_third_pass_format_reward_accepts_search_agent_citations():
+    rf = SearchRewardFunction(
+        SearchRewardConfig.third_pass_with_format(
+            correctness_weight=0.0,
+            per_search_penalty=0.0,
+            citation_support_weight=0.0,
+            unsupported_claim_penalty=0.0,
+            duplicate_query_penalty=0.0,
+            format_reward_weight=0.1,
+        )
+    )
+    output = _output_with_answer("Use alpha evidence [R1Q1D1].")
+
+    components = rf.reward_components(output, "anything", lambda a, g: 0.0)
+
+    assert components["format_reward"] == pytest.approx(0.1)
 
 
 def test_reward_subquestion_coverage():

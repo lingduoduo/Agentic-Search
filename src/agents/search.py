@@ -208,6 +208,8 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     require_sufficient_evidence_before_answer: bool = True
     # Stop rejecting <answer> after this many consecutive rejections (avoids infinite loops).
     max_answer_rejections: int = 3
+    # Stop after this many consecutive turns without a recognised action tag.
+    max_consecutive_format_errors: int = 3
     evaluation_config: SearchEvaluationConfig = SearchEvaluationConfig()
     obs_template: str = "\n\n<information>\n{content}\n</information>\n\n"
     system_prompt: str | None = None
@@ -367,7 +369,19 @@ class SearchAgentLoop(AgentLoopBase):
             "evidence_score_final": 0.0,
             "evidence_gain_total": 0.0,
             "early_stops": 0.0,
+            "format_error_turns": 0.0,
+            "exit_answered": 0.0,
+            "exit_max_turns": 0.0,
+            "exit_search_limit": 0.0,
+            "exit_format_error_limit": 0.0,
+            "exit_no_action": 0.0,
         }
+
+    @staticmethod
+    def _mark_exit(metrics: dict[str, float], name: str) -> None:
+        key = f"exit_{name}"
+        if key in metrics:
+            metrics[key] = 1.0
 
     def _with_system_prompt(
         self,
@@ -908,7 +922,9 @@ class SearchAgentLoop(AgentLoopBase):
         task_statuses: dict[str, bool] = {}
         latest_search_decision: str | None = None
         consecutive_rejections = 0
+        consecutive_format_errors = 0
         rounds_used = 0
+        exit_status = "max_turns"
         executed_queries: set[str] = set()
         task_search_counts: dict[str, int] = {}
         search_cache: dict[str, list[SearchResult]] = {}
@@ -949,6 +965,11 @@ class SearchAgentLoop(AgentLoopBase):
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
+                    consecutive_format_errors += 1
+                    metrics["format_error_turns"] += 1.0
+                    if consecutive_format_errors >= cfg.max_consecutive_format_errors:
+                        exit_status = "format_error_limit"
+                        break
                     needs_more = (
                         cfg.require_sufficient_evidence_before_answer
                         and not self._has_sufficient_evidence(
@@ -977,7 +998,9 @@ class SearchAgentLoop(AgentLoopBase):
                             }
                         )
                         continue
+                    exit_status = "no_action"
                     break
+                consecutive_format_errors = 0
 
                 # Process <subquestions> declarations.
                 declared_subquestions: dict[str, str] = {}
@@ -1040,6 +1063,7 @@ class SearchAgentLoop(AgentLoopBase):
                         metrics["direct_answers"] += 1.0
                         if on_turn is not None:
                             await on_turn(num_turns, None, 0)
+                        exit_status = "answered"
                         break
                     if (
                         not cfg.require_sufficient_evidence_before_answer
@@ -1050,6 +1074,7 @@ class SearchAgentLoop(AgentLoopBase):
                     ):
                         if on_turn is not None:
                             await on_turn(num_turns, None, 0)
+                        exit_status = "answered"
                         break
                     # Answer rejected — clear the tentative candidate so a
                     # discarded answer is not returned as the final answer.
@@ -1258,6 +1283,11 @@ class SearchAgentLoop(AgentLoopBase):
             if (search_limit > 0 and rounds_used >= search_limit and not final_answer)
             else 0.0
         )
+        if exit_status == "max_turns" and metrics["search_limit_hits"] > 0.0:
+            exit_status = "search_limit"
+        if exit_status in {"no_action", "format_error_limit"}:
+            metrics["exit_no_action"] = 1.0
+        self._mark_exit(metrics, exit_status)
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
