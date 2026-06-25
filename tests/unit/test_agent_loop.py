@@ -2114,3 +2114,12 @@ def test_search_agent_loop_counts_empty_rerank_request_as_skipped():
     assert output.metrics["rerank_requested"] == 1.0
     assert output.metrics["rerank_calls"] == 0.0
     assert output.metrics["rerank_skipped"] == 1.0
+
+
+def test_loop_controller_config_defaults():
+    cfg = SearchAgentLoopConfig()
+    assert cfg.evidence_plateau_min_gain == 0.05
+    assert cfg.plateau_requires_sufficient is True
+    assert cfg.search_budget_per_subquestion == 1
+    assert cfg.max_search_limit_cap == 10
+    assert cfg.force_answer_on_deadend is True

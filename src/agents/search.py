@@ -228,11 +228,16 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     )
     allow_internal_knowledge_answer: bool = True
     deduplicate_search_results: bool = True
-    # When set, count rounds whose evidence_score gain falls below this value as
-    # an "early_stops" metric (a plateau signal the reward can price). None
-    # (default) disables it entirely — the metric stays 0 and behavior is
-    # byte-identical. This is observability only; it does not terminate the loop.
-    evidence_plateau_min_gain: float | None = None
+    # Plateau early-stop: stop searching when a round's evidence gain falls below
+    # this threshold. Default-on (0.05). plateau_requires_sufficient gates it so a
+    # plateau only stops the loop when evidence is already sufficient.
+    evidence_plateau_min_gain: float | None = 0.05
+    plateau_requires_sufficient: bool = True
+    # Adaptive search budget: +N rounds per extra subquestion, capped.
+    search_budget_per_subquestion: int = 1
+    max_search_limit_cap: int = 10
+    # Dead-ends emit a best-effort answer from collected evidence instead of None.
+    force_answer_on_deadend: bool = True
 
 
 @register("search_agent")
@@ -375,6 +380,10 @@ class SearchAgentLoop(AgentLoopBase):
             "exit_search_limit": 0.0,
             "exit_format_error_limit": 0.0,
             "exit_no_action": 0.0,
+            "forced_final_answer": 0.0,
+            "plateau_early_stop": 0.0,
+            "effective_search_limit": 0.0,
+            "adaptive_budget_bonus": 0.0,
         }
 
     @staticmethod
