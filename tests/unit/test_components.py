@@ -274,6 +274,50 @@ def test_planner_malformed_text_defaults_to_vector_db_search() -> None:
     assert decision.retriever is Retriever.VECTOR_DB
 
 
+def test_planner_flags_duplicate_query() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide(
+        "<search>what is faiss</search>", previous_queries=["what is faiss"]
+    )
+
+    assert isinstance(decision, SearchAction)
+    assert decision.query == "what is faiss"
+    assert decision.is_duplicate is True
+
+
+def test_planner_new_query_not_flagged_duplicate() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide(
+        "<search>brand new</search>", previous_queries=["what is faiss"]
+    )
+
+    assert isinstance(decision, SearchAction)
+    assert decision.is_duplicate is False
+
+
+def test_planner_duplicate_match_ignores_whitespace_and_case() -> None:
+    from src.agents.components.planner import Planner
+
+    decision = Planner().decide(
+        "<search>  What  Is   FAISS </search>", previous_queries=["what is faiss"]
+    )
+
+    assert decision.is_duplicate is True
+
+
+def test_planner_fallback_query_is_bounded() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    raw = "first line of reasoning\n" + ("x" * 1000)
+    decision = Planner().decide(raw)
+
+    assert isinstance(decision, SearchAction)
+    assert decision.query == "first line of reasoning"
+    assert len(decision.query) <= 256
+
+
 # --------------------------------------------------------------------------- #
 # RerankerTool (T-A.3)
 # --------------------------------------------------------------------------- #
