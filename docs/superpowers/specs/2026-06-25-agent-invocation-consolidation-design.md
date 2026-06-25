@@ -81,9 +81,10 @@ One canonical registry name per agent; existing CLI/web vocabularies become
 documented aliases resolved to canonical names at the entry-point edge:
 
 ```
-single        → single_turn_agent     (registry loop)
+single        → plain_generation       (registry loop — CLI single = PlainGenerationLoop today)
 search        → search_agent           (registry loop)
 tool          → tool_agent             (registry loop)
+# (single_turn_agent is a registry loop with no CLI alias; reachable by canonical name)
 # unchanged canonical registry loops: plain_generation, single_turn_agent,
 #                                      search_agent, tool_agent
 # NON-registry modes (kept as-is, NOT resolved to a registry name):
