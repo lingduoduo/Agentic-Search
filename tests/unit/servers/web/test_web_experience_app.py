@@ -143,12 +143,20 @@ def test_agent_endpoint_reuses_existing_session_history(monkeypatch, tmp_path):
     session = client.post("/api/sessions", json={"title": "Deployment"}).json()
     client.post(
         "/api/agent",
-        json={"query": "First question", "session_id": session["id"]},
+        json={
+            "query": "First question",
+            "session_id": session["id"],
+            "mode": "chat_once",
+        },
     )
 
     response = client.post(
         "/api/agent",
-        json={"query": "Follow up", "session_id": session["id"]},
+        json={
+            "query": "Follow up",
+            "session_id": session["id"],
+            "mode": "chat_once",
+        },
     )
 
     assert response.status_code == 200
