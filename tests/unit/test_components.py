@@ -153,6 +153,46 @@ def test_answer_generator_update_state_sets_citations() -> None:
     assert [c.doc_id for c in state.citations] == ["R1Q1D1"]
 
 
+def _ctx_two_rounds_dup() -> AgentContext:
+    ctx = AgentContext()
+    ctx.add_round(["q1"], [[_result(text="alpha body", title="A")]])
+    # Second round re-retrieves the same "alpha body" plus a new doc.
+    ctx.add_round(
+        ["q2"],
+        [
+            [
+                _result(text="alpha body", title="A"),
+                _result(text="gamma body", title="G"),
+            ]
+        ],
+    )
+    return ctx
+
+
+def test_answer_generator_orders_citations_by_appearance() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_two_rounds_dup()
+    # Reference the round-2 doc first, then the round-1 doc.
+    answer = "See gamma [R2Q1D2] and also alpha [R1Q1D1]."
+    result = AnswerGenerator().generate(answer, ctx)
+
+    assert [c.doc_id for c in result.citations] == ["R2Q1D2", "R1Q1D1"]
+
+
+def test_answer_generator_collapses_duplicate_doc_contents() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_two_rounds_dup()
+    # Both R1Q1D1 and R2Q1D1 point at identical "alpha body".
+    answer = "Alpha first [R1Q1D1], alpha again [R2Q1D1]."
+    result = AnswerGenerator().generate(answer, ctx)
+
+    # Same contents -> a single citation, keyed by the first-cited marker.
+    assert [c.doc_id for c in result.citations] == ["R1Q1D1"]
+    assert [c.text for c in result.citations] == ["alpha body"]
+
+
 # --------------------------------------------------------------------------- #
 # SearchTool (T-A.3)
 # --------------------------------------------------------------------------- #
