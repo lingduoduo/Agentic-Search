@@ -1187,7 +1187,9 @@ class SearchAgentLoop(AgentLoopBase):
                             {
                                 "role": "user",
                                 "content": cfg.answer_rejection_template.format(
-                                    content=_gate_decision.feedback
+                                    content=self._build_answer_rejection_feedback(
+                                        latest_evaluation, task_statuses, active_tasks
+                                    )
                                 ),
                             }
                         )

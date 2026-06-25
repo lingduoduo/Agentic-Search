@@ -738,9 +738,9 @@ def test_search_agent_loop_rejects_answer_before_any_search():
         chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
     )
     assert "<answer_feedback>" in second_prompt
-    # The gate now delegates to LoopController which supplies a single generic
-    # rejection message regardless of whether the first search has happened yet.
-    assert "Evidence is still insufficient" in second_prompt
+    # Targeted feedback: no search has happened yet, so the builder emits the
+    # "Search first" message rather than the generic controller constant.
+    assert "Search first" in second_prompt
     assert output.num_turns == 3
     assert output.context.num_rounds == 1
 
@@ -787,10 +787,9 @@ def test_search_agent_loop_rejects_answer_when_latest_evidence_is_insufficient()
         chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
     )
     assert "<answer_feedback>" in third_prompt
-    # The gate now delegates to LoopController which supplies the generic rejection
-    # message; the old context-specific "latest search evaluation was insufficient"
-    # text is no longer used in this path.
-    assert "Evidence is still insufficient" in third_prompt
+    # Targeted feedback: a search happened but evidence was insufficient, so the
+    # builder emits the "latest search evaluation was insufficient" message.
+    assert "latest search evaluation was insufficient" in third_prompt
     assert output.num_turns == 4
     assert output.context.num_rounds == 2
 
