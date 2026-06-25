@@ -250,6 +250,9 @@ class SearchRewardConfig:
     # Weight on the per-round improvement in evidence_score (Δ summed over the
     # run), rewarding searches that actually make the evidence more sufficient.
     evidence_gain_weight: float = 0.0
+    # Flat bonus per round flagged as an evidence plateau (early-stop signal).
+    # 0.0 by default → existing presets are byte-stable.
+    early_stop_bonus: float = 0.0
 
     @classmethod
     def _zeroed(
@@ -282,6 +285,7 @@ class SearchRewardConfig:
             retriever_cost_web=0.0,
             rerank_cost=0.0,
             evidence_gain_weight=0.0,
+            early_stop_bonus=0.0,
             max_search_rounds=max_search_rounds,
             reward_scale=reward_scale,
         )
@@ -402,6 +406,7 @@ class SearchRewardConfig:
         retriever_cost_web: float = -0.05,
         rerank_cost: float = -0.02,
         evidence_gain_weight: float = 0.1,
+        early_stop_bonus: float = 0.0,
     ) -> "SearchRewardConfig":
         """Phase C preset: second-pass shaping plus action-policy costs.
 
@@ -422,6 +427,7 @@ class SearchRewardConfig:
             retriever_cost_web=retriever_cost_web,
             rerank_cost=rerank_cost,
             evidence_gain_weight=evidence_gain_weight,
+            early_stop_bonus=early_stop_bonus,
         )
 
 
@@ -687,6 +693,10 @@ class SearchRewardFunction:
             "evidence_gain_total", 0.0
         )
 
+        # 15. Early-stop bonus: reward rounds the loop flagged as an evidence
+        # plateau (opt-in metric; 0 unless evidence_plateau_min_gain is set).
+        early_stop = cfg.early_stop_bonus * metrics.get("early_stops", 0.0)
+
         human_feedback = (
             cfg.human_feedback_weight * human_signal
             if human_signal is not None and cfg.human_feedback_weight != 0.0
@@ -711,6 +721,7 @@ class SearchRewardFunction:
             + retriever_cost
             + rerank_cost
             + evidence_gain
+            + early_stop
         )
         total = self._aggregate_total_reward(terminal_reward, shaping_total)
         if human_feedback is not None:
@@ -736,6 +747,7 @@ class SearchRewardFunction:
             "retriever_cost": retriever_cost,
             "rerank_cost": rerank_cost,
             "evidence_gain": evidence_gain,
+            "early_stop_bonus": early_stop,
             "terminal_reward": terminal_reward,
             "shaping_total": shaping_total,
             "total": total,

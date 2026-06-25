@@ -1241,3 +1241,41 @@ def test_retriever_aware_preset_enables_action_terms():
     # Inherits second-pass shaping (search efficiency + citation signals).
     assert cfg.per_search_penalty != 0.0
     assert cfg.citation_support_weight != 0.0
+
+
+def test_early_stop_bonus_zero_by_default_is_inert():
+    """Default config leaves early_stop_bonus at zero even if the metric exists."""
+    rf = SearchRewardFunction(SearchRewardConfig())
+    output = _output_with_answer("ans", early_stops=3.0)
+    components = rf.reward_components(output, "anything", lambda a, g: 1.0)
+
+    assert SearchRewardConfig().early_stop_bonus == 0.0
+    assert components["early_stop_bonus"] == 0.0
+
+
+def test_early_stop_bonus_rewards_early_stops_metric():
+    rf = SearchRewardFunction(SearchRewardConfig(early_stop_bonus=0.1))
+    output = _output_with_answer("ans", early_stops=2.0)
+    components = rf.reward_components(output, "anything", lambda a, g: 0.0)
+
+    assert components["early_stop_bonus"] == pytest.approx(0.2)
+
+
+def test_retriever_aware_surfaces_early_stop_bonus():
+    cfg = SearchRewardConfig.retriever_aware(early_stop_bonus=0.05)
+    assert cfg.early_stop_bonus == 0.05
+    # Default retriever_aware keeps it inert so existing runs are unchanged.
+    assert SearchRewardConfig.retriever_aware().early_stop_bonus == 0.0
+
+
+def test_existing_presets_leave_early_stop_bonus_zero():
+    output = _output_with_answer("ans [R1Q1D1]", early_stops=2.0)
+    for cfg in (
+        SearchRewardConfig.sparse_final_only(),
+        SearchRewardConfig.second_pass(),
+        SearchRewardConfig.third_pass_with_format(),
+    ):
+        components = SearchRewardFunction(cfg).reward_components(
+            output, "anything", lambda a, g: 1.0
+        )
+        assert components["early_stop_bonus"] == 0.0
