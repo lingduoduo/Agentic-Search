@@ -2584,3 +2584,5 @@ def test_finalize_run_metrics_computes_derived_keys():
     assert metrics["rounds_used"] == 0.0
     # exit fixup recorded
     assert metrics["exit_answered"] == 1.0
+    # seeded search_queries=2, repeated=0 → ratio 0.0 (no divide-by-zero)
+    assert metrics["repeated_query_ratio"] == 0.0
