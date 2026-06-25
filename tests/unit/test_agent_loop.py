@@ -101,7 +101,7 @@ def test_build_prompt_ids_uses_chat_template_when_available():
 
 
 def test_resolve_cli_aliases():
-    assert resolve_agent_name("single") == "single_turn_agent"
+    assert resolve_agent_name("single") == "plain_generation"
     assert resolve_agent_name("search") == "search_agent"
     assert resolve_agent_name("tool") == "tool_agent"
 

@@ -60,7 +60,7 @@ CANONICAL_AGENT_NAMES: frozenset[str] = frozenset(
 
 # CLI/web aliases → canonical registry name. Canonical names map to themselves.
 _AGENT_ALIASES: dict[str, str] = {
-    "single": "single_turn_agent",
+    "single": "plain_generation",
     "search": "search_agent",
     "tool": "tool_agent",
     "plain_generation": "plain_generation",
