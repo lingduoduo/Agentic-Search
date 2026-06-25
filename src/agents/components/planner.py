@@ -12,6 +12,7 @@ turn that contains both is treated as a search step.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..state import Retriever
@@ -29,11 +30,19 @@ _RETRIEVER_BY_NAME = {
     "vector_db": Retriever.VECTOR_DB,
 }
 
+_FALLBACK_QUERY_MAX_CHARS = 256
+
+
+def _normalize_query(query: str) -> str:
+    """Whitespace- and case-insensitive key for duplicate detection."""
+    return " ".join(query.split()).casefold()
+
 
 @dataclass(frozen=True)
 class SearchAction:
     query: str
     retriever: Retriever = Retriever.VECTOR_DB
+    is_duplicate: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,14 +61,20 @@ PlannerDecision = SearchAction | RerankAction | AnswerAction
 class Planner:
     """Parse one generation step into a single typed :class:`PlannerDecision`."""
 
-    def decide(self, text: str) -> PlannerDecision:
+    def decide(
+        self, text: str, previous_queries: Sequence[str] = ()
+    ) -> PlannerDecision:
+        seen = {_normalize_query(q) for q in previous_queries}
         search = _SEARCH_RE.search(text)
         if search:
             retriever = _RETRIEVER_BY_NAME.get(
                 (search.group("retriever") or "").lower(), Retriever.VECTOR_DB
             )
+            query = search.group("query").strip()
             return SearchAction(
-                query=search.group("query").strip(), retriever=retriever
+                query=query,
+                retriever=retriever,
+                is_duplicate=_normalize_query(query) in seen,
             )
 
         if _RERANK_RE.search(text):
@@ -69,5 +84,13 @@ class Planner:
         if answer:
             return AnswerAction(text=answer.group("text").strip())
 
-        # Safe default: best-effort vector-DB search on whatever the model emitted.
-        return SearchAction(query=text.strip(), retriever=Retriever.VECTOR_DB)
+        # Safe default: a *bounded* best-effort vector-DB search on the first
+        # non-empty line, so a long reasoning trace is never dumped at the retriever.
+        fallback = next(
+            (line.strip() for line in text.splitlines() if line.strip()), ""
+        )[:_FALLBACK_QUERY_MAX_CHARS]
+        return SearchAction(
+            query=fallback,
+            retriever=Retriever.VECTOR_DB,
+            is_duplicate=_normalize_query(fallback) in seen,
+        )

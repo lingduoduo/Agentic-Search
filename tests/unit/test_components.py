@@ -5,6 +5,8 @@ Each component is exercised in isolation with injected/fake dependencies.
 
 from __future__ import annotations
 
+import pytest
+
 from src.agents.state import Retriever, SearchAgentState
 from src.context.search import AgentContext, SearchContext, SearchResult
 
@@ -70,6 +72,27 @@ def test_evidence_judge_update_state_writes_evidence_score() -> None:
     assert state.evidence_score > 0.0
 
 
+def test_evidence_judge_marginal_gain_is_delta() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    assert EvidenceJudge.marginal_gain(0.4, 0.7) == pytest.approx(0.3)
+    assert EvidenceJudge.marginal_gain(0.7, 0.7) == 0.0
+
+
+def test_evidence_judge_should_stop_on_plateau() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    # gain 0.01 < min_gain 0.05 -> plateau -> stop
+    assert EvidenceJudge.should_stop(0.70, 0.71, min_gain=0.05) is True
+
+
+def test_evidence_judge_should_not_stop_on_real_gain() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    # gain 0.20 >= min_gain 0.05 -> keep searching
+    assert EvidenceJudge.should_stop(0.50, 0.70, min_gain=0.05) is False
+
+
 # --------------------------------------------------------------------------- #
 # AnswerGenerator (T-A.2)
 # --------------------------------------------------------------------------- #
@@ -128,6 +151,46 @@ def test_answer_generator_update_state_sets_citations() -> None:
     AnswerGenerator().update_state(state, "Grounded [R1Q1D1].", ctx)
 
     assert [c.doc_id for c in state.citations] == ["R1Q1D1"]
+
+
+def _ctx_two_rounds_dup() -> AgentContext:
+    ctx = AgentContext()
+    ctx.add_round(["q1"], [[_result(text="alpha body", title="A")]])
+    # Second round re-retrieves the same "alpha body" plus a new doc.
+    ctx.add_round(
+        ["q2"],
+        [
+            [
+                _result(text="alpha body", title="A"),
+                _result(text="gamma body", title="G"),
+            ]
+        ],
+    )
+    return ctx
+
+
+def test_answer_generator_orders_citations_by_appearance() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_two_rounds_dup()
+    # Reference the round-2 doc first, then the round-1 doc.
+    answer = "See gamma [R2Q1D2] and also alpha [R1Q1D1]."
+    result = AnswerGenerator().generate(answer, ctx)
+
+    assert [c.doc_id for c in result.citations] == ["R2Q1D2", "R1Q1D1"]
+
+
+def test_answer_generator_collapses_duplicate_doc_contents() -> None:
+    from src.agents.components.answer_generator import AnswerGenerator
+
+    ctx = _ctx_two_rounds_dup()
+    # Both R1Q1D1 and R2Q1D1 point at identical "alpha body".
+    answer = "Alpha first [R1Q1D1], alpha again [R2Q1D1]."
+    result = AnswerGenerator().generate(answer, ctx)
+
+    # Same contents -> a single citation, keyed by the first-cited marker.
+    assert [c.doc_id for c in result.citations] == ["R1Q1D1"]
+    assert [c.text for c in result.citations] == ["alpha body"]
 
 
 # --------------------------------------------------------------------------- #
@@ -209,6 +272,62 @@ async def test_search_tool_degrades_to_vdb_when_web_unavailable() -> None:
     assert state.search_rounds == 1
 
 
+async def test_search_tool_caches_repeated_query() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    calls = {"n": 0}
+
+    async def vdb(query: str) -> list[SearchResult]:
+        calls["n"] += 1
+        return [_result(title="vdb")]
+
+    tool = SearchTool(vdb)
+    state = SearchAgentState(question="q")
+    await tool.run(state, "faiss index")
+    await tool.run(state, "  FAISS   index ")  # same query, different spacing/case
+
+    assert calls["n"] == 1  # second call served from cache, no extra backend hit
+
+
+async def test_search_tool_caches_per_backend() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    vdb_calls = {"n": 0}
+    web_calls = {"n": 0}
+
+    async def vdb(query: str) -> list[SearchResult]:
+        vdb_calls["n"] += 1
+        return [_result(title="vdb")]
+
+    async def web(query: str) -> list[SearchResult]:
+        web_calls["n"] += 1
+        return [_result(title="web")]
+
+    tool = SearchTool(vdb, web_fn=web)
+    state = SearchAgentState(question="q")
+    await tool.run(state, "q", retriever=Retriever.VECTOR_DB)
+    await tool.run(state, "q", retriever=Retriever.WEB)  # same text, other backend
+
+    assert vdb_calls["n"] == 1
+    assert web_calls["n"] == 1  # different backend → not a cache hit
+
+
+async def test_search_tool_degrades_to_vdb_when_web_raises() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def vdb(query: str) -> list[SearchResult]:
+        return [_result(title="vdb")]
+
+    async def web(query: str) -> list[SearchResult]:
+        raise RuntimeError("web backend exploded")
+
+    state = SearchAgentState(question="q")
+    docs = await SearchTool(vdb, web_fn=web).run(state, "q", retriever=Retriever.WEB)
+
+    assert [d.title for d in docs] == ["vdb"]
+    assert state.search_rounds == 1
+
+
 # --------------------------------------------------------------------------- #
 # Planner (T-B.1)
 # --------------------------------------------------------------------------- #
@@ -274,6 +393,50 @@ def test_planner_malformed_text_defaults_to_vector_db_search() -> None:
     assert decision.retriever is Retriever.VECTOR_DB
 
 
+def test_planner_flags_duplicate_query() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide(
+        "<search>what is faiss</search>", previous_queries=["what is faiss"]
+    )
+
+    assert isinstance(decision, SearchAction)
+    assert decision.query == "what is faiss"
+    assert decision.is_duplicate is True
+
+
+def test_planner_new_query_not_flagged_duplicate() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    decision = Planner().decide(
+        "<search>brand new</search>", previous_queries=["what is faiss"]
+    )
+
+    assert isinstance(decision, SearchAction)
+    assert decision.is_duplicate is False
+
+
+def test_planner_duplicate_match_ignores_whitespace_and_case() -> None:
+    from src.agents.components.planner import Planner
+
+    decision = Planner().decide(
+        "<search>  What  Is   FAISS </search>", previous_queries=["what is faiss"]
+    )
+
+    assert decision.is_duplicate is True
+
+
+def test_planner_fallback_query_is_bounded() -> None:
+    from src.agents.components.planner import Planner, SearchAction
+
+    raw = "first line of reasoning\n" + ("x" * 1000)
+    decision = Planner().decide(raw)
+
+    assert isinstance(decision, SearchAction)
+    assert decision.query == "first line of reasoning"
+    assert len(decision.query) <= 256
+
+
 # --------------------------------------------------------------------------- #
 # RerankerTool (T-A.3)
 # --------------------------------------------------------------------------- #
@@ -305,3 +468,49 @@ def test_reranker_tool_handles_empty_docs() -> None:
 
     state = SearchAgentState(question="q")
     assert RerankerTool(fake_rerank).run(state) == []
+
+
+def test_reranker_tool_skips_when_single_doc() -> None:
+    from src.agents.components.reranker_tool import RerankerTool
+
+    called = {"n": 0}
+
+    def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        called["n"] += 1
+        return docs
+
+    state = SearchAgentState(question="q")
+    state.record_search("q", [_result(title="only")])
+
+    reordered = RerankerTool(fake_rerank).run(state)
+
+    assert called["n"] == 0  # nothing to reorder with one doc
+    assert [d.title for d in reordered] == ["only"]
+
+
+def test_reranker_tool_limits_to_max_candidates() -> None:
+    from src.agents.components.reranker_tool import RerankerTool
+
+    seen_lengths: list[int] = []
+
+    def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        seen_lengths.append(len(docs))
+        return list(reversed(docs))
+
+    state = SearchAgentState(question="q")
+    state.record_search(
+        "q",
+        [
+            _result(title="a"),
+            _result(title="b"),
+            _result(title="c"),
+            _result(title="d"),
+        ],
+    )
+
+    reordered = RerankerTool(fake_rerank, max_candidates=2).run(state)
+
+    assert seen_lengths == [2]  # only the top-2 were handed to the reranker
+    # top-2 [a, b] reversed -> [b, a], tail [c, d] preserved
+    assert [d.title for d in reordered] == ["b", "a", "c", "d"]
+    assert [d.title for d in state.retrieved_docs] == ["b", "a", "c", "d"]
