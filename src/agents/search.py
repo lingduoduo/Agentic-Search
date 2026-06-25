@@ -79,6 +79,11 @@ def _normalize_task_id(raw: str) -> str:
     return normalized or "T"
 
 
+def _normalize_query_key(query: str) -> str:
+    """Stable key for repeat detection without semantic rewriting."""
+    return _SPACE_RE.sub(" ", query.strip())
+
+
 def _dedupe(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
 
@@ -351,7 +356,9 @@ class SearchAgentLoop(AgentLoopBase):
             # Action-policy metrics consumed by the Phase C reward terms.
             "web_searches": 0.0,
             "vdb_searches": 0.0,
+            "rerank_requested": 0.0,
             "rerank_calls": 0.0,
+            "rerank_skipped": 0.0,
             "evidence_score_final": 0.0,
             "evidence_gain_total": 0.0,
         }
@@ -489,7 +496,8 @@ class SearchAgentLoop(AgentLoopBase):
         repeated: list[str] = []
         overflow: list[str] = []
         for task_id, query in query_specs:
-            if query in executed_queries:
+            query_key = _normalize_query_key(query)
+            if query_key in executed_queries:
                 repeated.append(query)
             elif at_limit:
                 overflow.append(query)
@@ -525,6 +533,11 @@ class SearchAgentLoop(AgentLoopBase):
     @staticmethod
     def _cache_key(query: str, retriever: Retriever) -> str:
         return f"{retriever.value}:{query}"
+
+    @staticmethod
+    def _should_rerank(results_by_query: list[list[SearchResult]]) -> bool:
+        """Rerank only when at least one query has two or more results."""
+        return any(len(results) >= 2 for results in results_by_query)
 
     async def _retrieve_with_cache(
         self,
@@ -789,12 +802,16 @@ class SearchAgentLoop(AgentLoopBase):
             metrics["duplicate_search_results_removed"] += removed
         # Optional rerank of this round's results, applied before labeling so the
         # citation labels the model sees match the reranked order.
-        if rerank and self._reranker is not None:
-            results_by_query = [
-                self._reranker(query, results)
-                for query, results in zip(queries, results_by_query)
-            ]
-            metrics["rerank_calls"] += 1.0
+        if rerank:
+            metrics["rerank_requested"] += 1.0
+            if self._reranker is not None and self._should_rerank(results_by_query):
+                results_by_query = [
+                    self._reranker(query, results)
+                    for query, results in zip(queries, results_by_query)
+                ]
+                metrics["rerank_calls"] += 1.0
+            else:
+                metrics["rerank_skipped"] += 1.0
         metrics["search_rounds"] += 1
         if retriever is Retriever.WEB:
             metrics["web_searches"] += 1.0
@@ -1094,7 +1111,9 @@ class SearchAgentLoop(AgentLoopBase):
                         task_search_counts[task_id] = (
                             task_search_counts.get(task_id, 0) + 1
                         )
-                    executed_queries.update(search_tool_call.queries)
+                    executed_queries.update(
+                        _normalize_query_key(q) for q in search_tool_call.queries
+                    )
                     round_result = await self._execute_search_round(
                         search_tool_call,
                         agent_ctx=agent_ctx,

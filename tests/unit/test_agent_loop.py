@@ -1242,6 +1242,48 @@ def test_search_agent_loop_skips_repeated_queries_with_feedback():
     assert output.metrics["repeated_search_queries"] == 1.0
 
 
+def test_search_agent_loop_skips_repeated_queries_after_whitespace_normalization():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha   query</search>"),
+        tokenizer.encode("<search> alpha query </search>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha   query",): [
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
+    assert fake_client.calls == [["alpha   query"]]
+    assert "Repeated search skipped" in third_prompt
+    assert output.metrics["repeated_search_queries"] == 1.0
+
+
 def test_search_agent_loop_enforces_search_limit():
     tokenizer = DummyTokenizerWithEncode()
     responses = [
@@ -1867,3 +1909,73 @@ def test_search_agent_loop_rerank_request_is_noop_without_reranker():
     )
 
     assert output.metrics["rerank_calls"] == 0.0
+
+
+def test_search_agent_loop_skips_rerank_for_single_result_round():
+    """A one-document round cannot benefit from rerank, so the reranker is not called."""
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [
+            tokenizer.encode('<search rerank="true">q</search>'),
+            tokenizer.encode("<answer>a [R1Q1D1]</answer>"),
+        ]
+    )
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {("q",): [[SearchResult(contents="single body content", score=0.5)]]}
+    )
+    calls: list[str] = []
+
+    def reranker(query: str, docs: list[SearchResult]) -> list[SearchResult]:
+        calls.append(query)
+        return docs
+
+    loop._reranker = reranker
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "q?"}], {"temperature": 0.0})
+    )
+
+    assert calls == []
+    assert output.metrics["rerank_requested"] == 1.0
+    assert output.metrics["rerank_calls"] == 0.0
+    assert output.metrics["rerank_skipped"] == 1.0
+
+
+def test_search_agent_loop_counts_empty_rerank_request_as_skipped():
+    tokenizer = DummyTokenizerWithEncode()
+    server_manager = DummyServerManager(
+        [
+            tokenizer.encode('<search rerank="true">q</search>'),
+            tokenizer.encode("<answer>a</answer>"),
+        ]
+    )
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(
+            max_turns=3,
+            require_sufficient_evidence_before_answer=False,
+        ),
+    )
+    loop._search_client = FakeSearchClient({("q",): [[]]})
+    calls: list[str] = []
+    loop._reranker = lambda query, docs: calls.append(query) or docs
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "q?"}], {"temperature": 0.0})
+    )
+
+    assert calls == []
+    assert output.metrics["rerank_requested"] == 1.0
+    assert output.metrics["rerank_calls"] == 0.0
+    assert output.metrics["rerank_skipped"] == 1.0
