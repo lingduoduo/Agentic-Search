@@ -569,15 +569,15 @@ def create_web_app(
         if resolved.search_agent_server_url:
             try:
                 from transformers import AutoTokenizer
-                from examples.run_agentic_search import OpenAIServerManager
+                from src.model.serving import build_server_manager
 
                 model = resolved.search_agent_model or "Qwen/Qwen2.5-1.5B-Instruct"
                 tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
                 if tokenizer.pad_token_id is None:
                     tokenizer.pad_token_id = tokenizer.eos_token_id
-                manager = OpenAIServerManager(
-                    tokenizer=tokenizer,
-                    base_url=resolved.search_agent_server_url,
+                manager = build_server_manager(
+                    tokenizer,
+                    server_url=resolved.search_agent_server_url,
                     model=model,
                 )
                 _app.state.search_agent_tokenizer = tokenizer
@@ -594,7 +594,7 @@ def create_web_app(
         elif resolved.search_agent_model:
             try:
                 from transformers import AutoTokenizer
-                from examples.run_agentic_search import LocalServerManager
+                from src.model.serving import build_server_manager
 
                 tokenizer = AutoTokenizer.from_pretrained(
                     resolved.search_agent_model,
@@ -603,8 +603,9 @@ def create_web_app(
                 )
                 if tokenizer.pad_token_id is None:
                     tokenizer.pad_token_id = tokenizer.eos_token_id
-                manager = LocalServerManager(
-                    model_path=resolved.search_agent_model,
+                manager = build_server_manager(
+                    tokenizer,
+                    model=resolved.search_agent_model,
                     device=resolved.search_agent_device,
                     allow_unsafe_mps=True,
                     local_files_only=True,

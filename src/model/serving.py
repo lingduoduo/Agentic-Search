@@ -501,3 +501,30 @@ class LocalServerManager:
             )
         print("Status  : generation complete")
         return response_ids
+
+
+# ---------------------------------------------------------------------------
+# Public factory
+# ---------------------------------------------------------------------------
+
+
+def build_server_manager(
+    tokenizer: Any,
+    *,
+    server_url: str | None = None,
+    model: str | None = None,
+    device: str | None = None,
+    **kwargs: Any,
+) -> ServerManager:
+    """Select the serving backend from resolved config.
+
+    server_url set -> OpenAIServerManager (remote); else model set ->
+    LocalServerManager (in-process); else ValueError.
+    """
+    if server_url:
+        return OpenAIServerManager(
+            tokenizer=tokenizer, base_url=server_url, model=model
+        )
+    if model:
+        return LocalServerManager(model_path=model, device=device or "auto", **kwargs)
+    raise ValueError("no model backend configured (set server_url or model)")

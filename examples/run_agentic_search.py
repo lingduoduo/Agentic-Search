@@ -51,6 +51,7 @@ from typing import Any
 from src.model.serving import (  # re-export for back-compat
     OpenAIServerManager as OpenAIServerManager,
     LocalServerManager as LocalServerManager,
+    build_server_manager as build_server_manager,
     _has_accelerate as _has_accelerate,
     _parse_major_minor as _parse_major_minor,
     _resolve_local_device as _resolve_local_device,
@@ -246,8 +247,9 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
     """Create the appropriate generation backend for the current CLI mode."""
 
     if args.local:
-        return LocalServerManager(
-            model_path=args.model,
+        return build_server_manager(
+            tokenizer,
+            model=args.model,
             device=args.device,
             torch_dtype=args.dtype,
             allow_unsafe_mps=args.allow_unsafe_mps,
@@ -255,9 +257,9 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
-    return OpenAIServerManager(
-        tokenizer=tokenizer,
-        base_url=args.server_url,
+    return build_server_manager(
+        tokenizer,
+        server_url=args.server_url,
         model=args.model,
     )
 
