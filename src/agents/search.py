@@ -951,6 +951,34 @@ class SearchAgentLoop(AgentLoopBase):
             ),
         )
 
+    async def _generate_turn(
+        self,
+        working_messages: list[dict[str, Any]],
+        sampling_params: dict[str, Any],
+        request_id: str,
+        turn: int,
+        metrics: dict[str, float],
+    ) -> tuple[list[int], list[int], str, list[tuple[str, str]]]:
+        """Build the prompt, generate, decode, and parse actions for one turn.
+
+        Returns (prompt_ids, response_ids, response_text, actions). Side-effect
+        free on the caller's loop state; the caller applies the returned values.
+        """
+        with simple_timer(f"build_prompt_turn_{turn}", metrics):
+            prompt_ids = await self.build_prompt_ids(working_messages)
+
+        with simple_timer(f"generate_turn_{turn}", metrics):
+            response_ids = await self.generate_response_ids(
+                prompt_ids=prompt_ids,
+                sampling_params=sampling_params,
+                request_id=f"{request_id}_t{turn}",
+            )
+
+        response_text = self.decode_response_ids(response_ids)
+        actions = self._parse_actions(response_text)
+        logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
+        return prompt_ids, response_ids, response_text, actions
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
@@ -998,26 +1026,17 @@ class SearchAgentLoop(AgentLoopBase):
 
         try:
             for turn in range(cfg.max_turns):
-                with simple_timer(f"build_prompt_turn_{turn}", metrics):
-                    prompt_ids = await self.build_prompt_ids(working_messages)
+                (
+                    prompt_ids,
+                    response_ids,
+                    response_text,
+                    actions,
+                ) = await self._generate_turn(
+                    working_messages, sampling_params, request_id, turn, metrics
+                )
                 final_prompt_ids = prompt_ids
-
-                with simple_timer(f"generate_turn_{turn}", metrics):
-                    response_ids = await self.generate_response_ids(
-                        prompt_ids=prompt_ids,
-                        sampling_params=sampling_params,
-                        request_id=f"{request_id}_t{turn}",
-                    )
-
                 all_response_ids.extend(response_ids)
                 num_turns += 1
-
-                response_text = self.decode_response_ids(response_ids)
-                actions = self._parse_actions(response_text)
-                logger.debug(
-                    "turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions]
-                )
-
                 working_messages.append({"role": "assistant", "content": response_text})
                 if actions:
                     action_trace_parts.append(response_text)
