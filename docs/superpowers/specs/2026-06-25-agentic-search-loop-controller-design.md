@@ -225,3 +225,9 @@ changed meaning.
 - Unifying the loop onto `Planner`/`SearchTool` components (Phase 2).
 - Difficulty-classifier-based budgeting (subquestion count only).
 - Fabricating answers when no evidence was collected.
+- **Human-in-the-loop / approval gating.** The `LoopController` adds no
+  interventional HITL. Today's HITL is observational only (the `on_turn`
+  progress callback streamed over SSE); `Plan.requires_human_approval` is a
+  defined-but-unenforced flag. A blocking approval gate is serving-only and
+  training-incompatible, so it belongs in its own later spec as an injected
+  async `ApprovalFn` callable (same model/env/agent decoupling), not here.
