@@ -1,4 +1,5 @@
 from src.agents.components.loop_controller import (
+    AnswerVerb,
     LoopController,
     LoopSnapshot,
     StopReason,
@@ -72,4 +73,36 @@ def test_plateau_stops_only_when_sufficient():
             _snap(evidence_sufficient=False, **stalled)
         ).reason
         is StopReason.CONTINUE
+    )
+
+
+def test_accept_when_sufficient():
+    ctl = _ctl(require_sufficient_evidence_before_answer=True, max_answer_rejections=3)
+    assert (
+        ctl.final_answer_decision(_snap(evidence_sufficient=True)).verb
+        is AnswerVerb.ACCEPT
+    )
+
+
+def test_reject_then_force_at_cap():
+    ctl = _ctl(require_sufficient_evidence_before_answer=True, max_answer_rejections=3)
+    assert (
+        ctl.final_answer_decision(
+            _snap(evidence_sufficient=False, consecutive_rejections=1)
+        ).verb
+        is AnswerVerb.REJECT
+    )
+    assert (
+        ctl.final_answer_decision(
+            _snap(evidence_sufficient=False, consecutive_rejections=3)
+        ).verb
+        is AnswerVerb.FORCE
+    )
+
+
+def test_accept_when_gate_disabled():
+    ctl = _ctl(require_sufficient_evidence_before_answer=False)
+    assert (
+        ctl.final_answer_decision(_snap(evidence_sufficient=False)).verb
+        is AnswerVerb.ACCEPT
     )
