@@ -52,6 +52,39 @@ def list_registered_agent_loops() -> list[str]:
     return sorted(_REGISTERED_AGENT_LOOPS)
 
 
+# The four AgentLoopBase loops the registry consolidates. AgenticRAGLoop and the
+# retrieval-pipeline modes are deliberately NOT here (different contract).
+CANONICAL_AGENT_NAMES: frozenset[str] = frozenset(
+    {"plain_generation", "single_turn_agent", "search_agent", "tool_agent"}
+)
+
+# CLI/web aliases → canonical registry name. Canonical names map to themselves.
+_AGENT_ALIASES: dict[str, str] = {
+    "single": "single_turn_agent",
+    "search": "search_agent",
+    "tool": "tool_agent",
+    "plain_generation": "plain_generation",
+    "single_turn_agent": "single_turn_agent",
+    "search_agent": "search_agent",
+    "tool_agent": "tool_agent",
+}
+
+
+def resolve_agent_name(name: str) -> str:
+    """Resolve a CLI/web alias or canonical name to a canonical registry loop name.
+
+    Raises KeyError for names that are not registry loops (e.g. chat_loop,
+    search_tool, hybrid_search, chat_once) so callers keep dispatching those on
+    their existing non-registry paths.
+    """
+    try:
+        return _AGENT_ALIASES[name]
+    except KeyError as exc:
+        raise KeyError(
+            f"Unknown agent loop alias: {name!r}. Known: {sorted(_AGENT_ALIASES)}"
+        ) from exc
+
+
 @dataclass(frozen=True)
 class AgentLoopConfig:
     prompt_length: int = 4096
