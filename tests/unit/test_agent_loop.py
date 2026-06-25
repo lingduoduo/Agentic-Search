@@ -2123,3 +2123,46 @@ def test_loop_controller_config_defaults():
     assert cfg.search_budget_per_subquestion == 1
     assert cfg.max_search_limit_cap == 10
     assert cfg.force_answer_on_deadend is True
+
+
+def test_adaptive_budget_raises_limit_for_multiple_subquestions():
+    """With 3 subquestions and budget_per_subquestion=1: effective_limit = base 2 + (3-1) = 4."""
+    tokenizer = DummyTokenizerWithEncode()
+    # Script: declare 3 subquestions + first search in same turn, then 3 more searches, then answer.
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: first aspect\nT2: second aspect\nT3: third aspect\n</subquestions>"
+            "<searches>\n[T1] first query\n</searches>"
+        ),
+        tokenizer.encode("<searches>\n[T2] second query\n</searches>"),
+        tokenizer.encode("<searches>\n[T3] third query\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R2Q1D1] [R3Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=8,
+            max_search_limit=2,
+            search_budget_per_subquestion=1,
+            max_search_limit_cap=10,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [[SearchResult(contents='"Doc A"\nAlpha body')]],
+            ("second query",): [[SearchResult(contents='"Doc B"\nBeta body')]],
+            ("third query",): [[SearchResult(contents='"Doc C"\nGamma body')]],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["effective_search_limit"] == 4.0  # base 2 + (3-1)*1
+    assert output.metrics["adaptive_budget_bonus"] == 2.0

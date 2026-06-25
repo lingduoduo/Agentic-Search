@@ -283,6 +283,9 @@ class SearchAgentLoop(AgentLoopBase):
             cfg = replace(cfg, **resolved)
 
         self.search_config = cfg
+        from .components.loop_controller import LoopController
+
+        self._loop_controller = LoopController(cfg)
         self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)
         # Per-task evaluator: same config but min_total_results relaxed to per-query minimum
         # so a single-query task isn't rejected just because it has fewer than min_total_results.
@@ -512,13 +515,14 @@ class SearchAgentLoop(AgentLoopBase):
         query_specs: list[tuple[str | None, str]],
         executed_queries: set[str],
         rounds_used: int,
+        effective_limit: int = 0,
     ) -> tuple[list[tuple[str | None, str]], list[str], list[str]]:
         """Split query_specs into (allowed, repeated, overflow).
 
-        A round is blocked as overflow when rounds_used has reached max_search_limit.
+        A round is blocked as overflow when rounds_used has reached effective_limit.
         Within an allowed round, individual repeated queries are still filtered out.
         """
-        limit = self.search_config.max_search_limit or 0
+        limit = effective_limit or self.search_config.max_search_limit or 0
         at_limit = limit > 0 and rounds_used >= limit
 
         allowed: list[tuple[str | None, str]] = []
@@ -1037,10 +1041,18 @@ class SearchAgentLoop(AgentLoopBase):
                 if implicit_tasks:
                     metrics["implicit_subquestions"] += implicit_tasks
                     metrics["active_subquestions"] = float(len(active_tasks))
+                effective_limit = self._loop_controller.effective_search_limit(
+                    len(active_tasks)
+                )
+                metrics["effective_search_limit"] = float(effective_limit)
+                metrics["adaptive_budget_bonus"] = float(
+                    effective_limit - (cfg.max_search_limit or cfg.max_turns)
+                )
                 allowed_specs, repeated, overflow = self._partition_search_requests(
                     query_specs,
                     executed_queries=executed_queries,
                     rounds_used=rounds_used,
+                    effective_limit=effective_limit,
                 )
                 search_tool_call = SearchToolCall(
                     queries=[q for _, q in allowed_specs],
