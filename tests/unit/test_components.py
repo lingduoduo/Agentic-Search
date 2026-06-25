@@ -209,6 +209,62 @@ async def test_search_tool_degrades_to_vdb_when_web_unavailable() -> None:
     assert state.search_rounds == 1
 
 
+async def test_search_tool_caches_repeated_query() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    calls = {"n": 0}
+
+    async def vdb(query: str) -> list[SearchResult]:
+        calls["n"] += 1
+        return [_result(title="vdb")]
+
+    tool = SearchTool(vdb)
+    state = SearchAgentState(question="q")
+    await tool.run(state, "faiss index")
+    await tool.run(state, "  FAISS   index ")  # same query, different spacing/case
+
+    assert calls["n"] == 1  # second call served from cache, no extra backend hit
+
+
+async def test_search_tool_caches_per_backend() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    vdb_calls = {"n": 0}
+    web_calls = {"n": 0}
+
+    async def vdb(query: str) -> list[SearchResult]:
+        vdb_calls["n"] += 1
+        return [_result(title="vdb")]
+
+    async def web(query: str) -> list[SearchResult]:
+        web_calls["n"] += 1
+        return [_result(title="web")]
+
+    tool = SearchTool(vdb, web_fn=web)
+    state = SearchAgentState(question="q")
+    await tool.run(state, "q", retriever=Retriever.VECTOR_DB)
+    await tool.run(state, "q", retriever=Retriever.WEB)  # same text, other backend
+
+    assert vdb_calls["n"] == 1
+    assert web_calls["n"] == 1  # different backend → not a cache hit
+
+
+async def test_search_tool_degrades_to_vdb_when_web_raises() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def vdb(query: str) -> list[SearchResult]:
+        return [_result(title="vdb")]
+
+    async def web(query: str) -> list[SearchResult]:
+        raise RuntimeError("web backend exploded")
+
+    state = SearchAgentState(question="q")
+    docs = await SearchTool(vdb, web_fn=web).run(state, "q", retriever=Retriever.WEB)
+
+    assert [d.title for d in docs] == ["vdb"]
+    assert state.search_rounds == 1
+
+
 # --------------------------------------------------------------------------- #
 # Planner (T-B.1)
 # --------------------------------------------------------------------------- #
