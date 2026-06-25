@@ -37,7 +37,7 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 | Feature | Key modules |
 |---------|-------------|
 | 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
-| 🤖 Custom Agents | `src/agents/search.py`, `src/agents/custom.py`, `src/agents/tool_calling.py`, `src/agents/base.py` |
+| 🤖 Custom Agents | `src/agents/search.py`, `src/agents/components/loop_controller.py`, `src/agents/tool_calling.py`, `src/agents/base.py` |
 | 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
 | 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/connectors/`, `src/internal/servers/oauth/` |
@@ -57,7 +57,7 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 - [Repository Structure](#repository-structure)
 - [Install](#install) · [Quick Start](#quick-start) · [Frontend](#frontend) · [Examples](#examples)
-- [Intent Routing](#intent-routing) · [Features](#features) · [Agentic RAG](#agentic-rag)
+- [Intent Routing](#intent-routing) · [Features](#features) · [Agent Framework & Control Flow](#agent-framework--control-flow) · [Agentic RAG](#agentic-rag)
 - **Retrieval:** [Retrieval Setup](#retrieval-setup) · [Neural Reranking](#neural-reranking) · [Retrieval Optimization](#retrieval-optimization) · [Query Transformation Optimization](#query-transformation-optimization) · [Routing & Query Construction](#routing--query-construction)
 - **HTTP APIs:** [Retrieval Server API](#retrieval-server-api) · [Web Backend API](#web-backend-api) · [Chat & Session API](#chat--session-api)
 - **Training & eval:** [Training](#training) · [Evaluation](#evaluation)
@@ -527,6 +527,75 @@ python3 -m examples.run_search_pipeline
 - `event_telemetry` / `identify_user` — PostHog event capture helpers; no-ops when PostHog is not configured
 - Feature flags — composable chain: `EnvFeatureFlagProvider` → `PostHogFeatureFlagProvider`; `StaticFeatureFlagProvider` for tests; single call-site via `is_feature_enabled`
 
+
+## Agent Framework & Control Flow
+
+The agent layer (`src/agents/`) behind every loop the [Web Backend API](#web-backend-api) and [CLI](#examples) drive.
+
+### Agent taxonomy — two families
+
+The repo has **two parallel agent designs**; "the agent framework" is the first, and the registry covers only it.
+
+| Family | Members | `run()` contract | LLM access | Registry? | GRPO-trainable? |
+|---|---|---|---|---|---|
+| **Framework loops** (`AgentLoopBase`) | `plain_generation`, `single_turn_agent`, `search_agent` (the search/tool agents), `tool_agent` | `run(messages, sampling_params, *, on_turn) → AgentLoopOutput` | injected `server_manager` (token-level) | ✅ | ✅ |
+| **RAG pipeline** | `AgenticRAGLoop` (web `chat_loop`) | `run(question, *, chat_history) → AgenticRAGResult` | `LLMClient` (chat-level) | ❌ | ❌ |
+| **Retrieval pipelines** | `search_tool`, `hybrid_search`, `chat_once` | retrieve → answer functions | — | ❌ | ❌ |
+
+**Tool agents and search agents are members of the framework** — siblings under `AgentLoopBase`, sharing the registry, the `LoopController` + components, and the `server_manager` model boundary. **Agentic RAG sits *beside* the framework, not inside it:** its constructor, `run()` signature, and return type diverge from `AgentLoopBase`, so registering it would break the `dict[str, type[AgentLoopBase]]` contract — it stays a deliberate non-registry loop. A dispatch layer (registry + `resolve_agent_name` + the web intent router) picks one target per request, treating all three families as interchangeable.
+
+**Why they're kept separate (by design).** The framework loops are *token-level* because they're built for GRPO RL training (policy gradients need `prompt_ids`/`response_ids`). `AgenticRAGLoop` is a lighter *chat-level* serving pipeline (`LLMClient`, no tokenizer/`server_manager`) doing query decomposition + HyDE + grounded synthesis. Two simple designs for two purposes beat one contract forced onto both; the boundary is enforced (the registry rejects non-conforming loops) and documented ([`docs/agent-invocation-surface.md`](docs/agent-invocation-surface.md)) so the families don't quietly drift together. Consolidation *is* feasible — `SearchAgentLoop` already does most of what `AgenticRAGLoop` does (sub-questions, iterative retrieval, evidence gating, citations); express agentic-RAG as a `SearchAgentLoop` config + a HyDE query-transform, bridged via the `ServerManager` protocol, and retire `AgenticRAGLoop`. It's deferred architectural-debt work, not a feature, so the families stay separate for now.
+
+**Loop registry — one source of truth.** Agent loops register by name (`@register`) and are resolved through `get_registered_agent_loop(name)`; `resolve_agent_name` maps CLI/web aliases to the canonical loop. The registry covers the four `AgentLoopBase` loops below. `AgenticRAGLoop` (constructor + `run()` signature diverge from `AgentLoopBase`) and the retrieval pipelines (`search_tool` / `hybrid_search` / `chat_once`) are a distinct, non-registry category — see [`docs/agent-invocation-surface.md`](docs/agent-invocation-surface.md).
+
+| Canonical loop | CLI `--mode` | Web `mode` | Purpose |
+|---|---|---|---|
+| `plain_generation` | `single` | — | one-shot generation, no retrieval |
+| `single_turn_agent` | — | — | one-shot RAG |
+| `search_agent` | `search` | `search_agent` | multi-turn retrieval QA |
+| `tool_agent` | `tool` | `tool_agent` | generic function calling |
+
+```bash
+python -c "from src import list_registered_agent_loops, resolve_agent_name; \
+print(list_registered_agent_loops()); print(resolve_agent_name('search'))"
+# → ['plain_generation', 'search_agent', 'single_turn_agent', 'tool_agent']
+# → search_agent
+```
+
+**LoopController — the search loop's two decisions.** `SearchAgentLoop` consults a stateless `LoopController` (`src/agents/components/loop_controller.py`) for *keep searching?* and *how to answer?*. Four **default-on** behaviors (tunable via `SearchAgentLoopConfig`):
+
+- **Adaptive search budget** — `effective_search_limit` scales rounds by subquestion count: `max_search_limit + search_budget_per_subquestion·(n−1)`, capped at `max_search_limit_cap` (default `10`); single-subquestion runs are unchanged.
+- **Plateau early-stop** — stops searching when a round's evidence gain `< evidence_plateau_min_gain` (default `0.05`) **and** evidence is already sufficient (`plateau_requires_sufficient`); never forces a thin answer.
+- **Graceful dead-end answer** — at a dead-end / budget-exhaust with evidence collected, one bounded turn yields a best-effort answer instead of returning nothing (`force_answer_on_deadend`); never fabricates when no evidence exists.
+- **Smarter answer-gating** — accept / reject (with targeted per-subquestion feedback) / force, decided by the controller.
+
+Each surfaces an additive `metrics` key — `effective_search_limit`, `adaptive_budget_bonus`, `plateau_early_stop`, `forced_final_answer` — the last priced by `SearchRewardConfig.forced_final_answer_penalty` (`-0.05`, mutually exclusive with `answer_when_evidence_insufficient`). Existing reward presets stay byte-stable.
+
+**`run()` control flow** is a linear, append-only turn loop. Each turn: `_generate_turn` (build prompt → generate → decode → parse actions) → action dispatch → `_apply_answer_gate` / `_handle_no_action`, which return a `TurnControl` directive (`CONTINUE` / `BREAK`) the loop acts on → the observation is appended as a `user` message. `_finalize_run_metrics` computes the derived/reward metrics once after the loop.
+
+**Model backend.** Every loop receives an injected `server_manager` satisfying the `ServerManager` protocol (`src/model/serving.py`); `build_server_manager(tokenizer, server_url=…, model=…)` selects the OpenAI-compatible (remote) or in-process HuggingFace (local) backend — shared by the CLI and the web app.
+
+**Drive it from the CLI** (control-flow knobs in `examples/run_agentic_search.py`):
+```bash
+python -m examples.run_agentic_search --mode search \
+  --question "Compare dense and sparse retrieval" \
+  --model meta-llama/Llama-3.1-8B-Instruct --vllm_url http://localhost:8080 \
+  --search_url http://localhost:8001/retrieve \
+  --max_search_limit 5 --max_turns 8 --max_answer_rejections 3
+# --no_evidence_gate disables the require-sufficient-evidence answer gate
+```
+
+**Drive it over the API / UI.** `POST /api/agent` picks the loop by `mode`; `POST /api/agent/stream` emits a `progress` SSE event after each turn via the `OnTurnCallback`, so plateau early-stops and forced dead-end answers appear live in the UI progress trace:
+```bash
+curl -sN -X POST http://localhost:7860/api/agent/stream \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Compare dense and sparse retrieval", "mode": "search_agent", "top_k": 5}'
+# data: {"type": "progress", "turn": 1, "text": "search_routing_tool · 5 docs"}
+# data: {"type": "progress", "turn": 2, "text": "writing answer…"}
+# data: {"type": "answer", "text": "..."}
+# data: {"type": "done", "intent": "search", "citations": ["[D1]"], "documents": [...]}
+```
+See [Web Backend API](#web-backend-api) for the full request/response schema.
 
 ## Agentic RAG
 
