@@ -589,6 +589,63 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
     assert output.num_turns == 4
 
 
+def _two_round_plateau_loop(evidence_plateau_min_gain):
+    """A 2-round search loop where round 2's evidence equals round 1 (a plateau)."""
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nfirst query\n</searches>"),
+        tokenizer.encode("<searches>\nsecond query\n</searches>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=6,
+            require_sufficient_evidence_before_answer=False,
+            evidence_plateau_min_gain=evidence_plateau_min_gain,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    # Both rounds return one equally-strong doc → identical per-round evidence
+    # score → round 2's marginal gain is 0 (a plateau).
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', score=0.5)]
+            ],
+            ("second query",): [
+                [SearchResult(contents='"Doc B"\nBeta body', score=0.5)]
+            ],
+        }
+    )
+    return loop
+
+
+def test_loop_emits_early_stops_when_plateau_configured():
+    loop = _two_round_plateau_loop(evidence_plateau_min_gain=0.05)
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["search_rounds"] == 2.0
+    assert output.metrics["early_stops"] >= 1.0
+
+
+def test_loop_early_stops_zero_by_default():
+    loop = _two_round_plateau_loop(evidence_plateau_min_gain=None)
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert output.metrics["search_rounds"] == 2.0
+    assert output.metrics["early_stops"] == 0.0
+
+
 def test_search_agent_loop_injects_search_evaluation_feedback():
     tokenizer = DummyTokenizerWithEncode()
     responses = [

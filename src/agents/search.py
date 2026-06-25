@@ -226,6 +226,11 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     )
     allow_internal_knowledge_answer: bool = True
     deduplicate_search_results: bool = True
+    # When set, count rounds whose evidence_score gain falls below this value as
+    # an "early_stops" metric (a plateau signal the reward can price). None
+    # (default) disables it entirely — the metric stays 0 and behavior is
+    # byte-identical. This is observability only; it does not terminate the loop.
+    evidence_plateau_min_gain: float | None = None
 
 
 @register("search_agent")
@@ -361,6 +366,7 @@ class SearchAgentLoop(AgentLoopBase):
             "rerank_skipped": 0.0,
             "evidence_score_final": 0.0,
             "evidence_gain_total": 0.0,
+            "early_stops": 0.0,
         }
 
     def _with_system_prompt(
@@ -847,6 +853,13 @@ class SearchAgentLoop(AgentLoopBase):
             prev_score = metrics["evidence_score_final"]
             metrics["evidence_gain_total"] += max(0.0, round_score - prev_score)
             metrics["evidence_score_final"] = round_score
+            # Opt-in plateau detection: count rounds whose evidence gain falls
+            # below the configured threshold so the reward can price early-stops.
+            # Disabled (None) by default → metric stays 0, behavior unchanged.
+            if cfg.evidence_plateau_min_gain is not None and EvidenceJudge.should_stop(
+                prev_score, round_score, cfg.evidence_plateau_min_gain
+            ):
+                metrics["early_stops"] += 1.0
             for tid, ev in self._evaluate_tasks(search_contexts).items():
                 task_statuses[tid] = ev.is_sufficient
             return SearchRoundResult(
