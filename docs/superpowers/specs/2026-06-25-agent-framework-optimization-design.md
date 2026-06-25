@@ -54,8 +54,24 @@ convergence is proven later on a GPU.
 | **Reranker Tool** | `max_candidates` window (rerank only the top-N by current order) + skip when `len(docs) <= 1` | Cost/latency | Default `max_candidates=None` (off) keeps current behavior |
 | **Evidence Judge** | `marginal_gain(prev, curr)` + `should_stop(prev, curr, min_gain)` plateau signal; verdict gains nothing new (helpers are pure/static) | Quality, Cost | Additive API only |
 | **Answer Generator** | Order citations by first appearance in the answer text; collapse duplicate doc contents to one citation | Quality | Output list re-ordered/deduped |
-| **Reward (GRPO)** | Two new zero-default terms: `duplicate_search_penalty` × `duplicate_searches`, `early_stop_bonus` × `early_stops`; surfaced in `retriever_aware()` preset | GRPO reward | Presets byte-stable at weight 0 |
-| **Loop wiring** | `SearchAgentLoop` passes `previous_queries` to the planner and skips a flagged duplicate; consults the judge's `should_stop`; emits `duplicate_searches` and `early_stops` metrics | integration | New conservative behavior, metrics additive |
+| **Reward (GRPO)** | One new zero-default term: `early_stop_bonus` × `early_stops`; surfaced in `retriever_aware()` preset | GRPO reward | Presets byte-stable at weight 0 |
+| **Loop wiring** | `SearchAgentLoop` gains an opt-in `evidence_plateau_min_gain` config: when set, it consults `EvidenceJudge.should_stop` at the round-scoring site and *emits* an `early_stops` metric counting plateau rounds. Default `None` → metric never fires, behavior byte-identical | observability | Side-effect-free counter; opt-in only |
+
+### Scope correction (discovered during planning)
+
+Two facts changed the original two-reward-term plan:
+
+1. **The production `SearchAgentLoop` does not consume the `Planner`/`SearchTool`/`RerankerTool`/
+   `AnswerGenerator` objects** — only `EvidenceJudge.score_round` (a static helper). Those four are the
+   **standalone component API** (exercised by `tests/unit/test_components.py` and available to
+   component-based consumers such as the GRPO rollout path). Optimizing them improves the documented
+   component contract and its tests; it does **not** silently change production loop behavior. This PR
+   does **not** rewire the loop to adopt the components (that would be a refactor — out of scope).
+2. **Duplicate-search penalization already exists** in the reward as `duplicate_query_penalty` ×
+   `repeated_search_queries`. A second `duplicate_search_penalty` term would double-count, so it is
+   **dropped**. The Planner/SearchTool dedup optimizations still pay off through the *existing*
+   penalty plus fewer wasted rounds (lower `per_search_penalty` / `retriever_cost`). Only the genuinely
+   new signal — **`early_stop_bonus`** — is added.
 
 ### Design notes / decisions
 
@@ -72,10 +88,14 @@ convergence is proven later on a GPU.
 - **Reranker window is opt-in.** `max_candidates=None` (default) preserves today's behavior exactly;
   set to an int to bound cost. Reranking ≤1 doc is a guaranteed no-op, so we skip it and avoid a
   needless cross-encoder call.
-- **Early-stop is reward-shaped, not hard-wired.** The judge exposes the *signal*; the loop emits an
-  `early_stops` metric when it stops on a plateau instead of spending another round. `early_stop_bonus`
-  (default 0) lets GRPO learn to value it. The existing evidence safety rail is untouched — early-stop
-  only *prevents extra searches*, it never forces a premature answer below the evidence floor.
+- **Early-stop is opt-in, observed before it is acted on.** The judge exposes the *signal*
+  (`should_stop`); the loop, when `evidence_plateau_min_gain` is configured (default `None` = disabled),
+  *counts* plateau rounds into the `early_stops` metric at the round-scoring site — a side-effect-free
+  counter that does not alter control flow. `early_stop_bonus` (default 0) lets GRPO learn to value
+  reaching a plateau. Actually terminating the search early to bank the saved round is a deliberate
+  **follow-up** validated on GPU first; this PR ships the signal + reward hook so behavior stays
+  byte-identical by default and there is no untested control-flow gamble. The evidence safety rail is
+  untouched.
 - **Citation ordering** matches reading order so the rendered answer's `[R1Q1D1]` markers and the
   citation list agree; duplicate doc *contents* (same text retrieved under different keys across rounds)
   collapse to the first-cited key.
@@ -95,8 +115,8 @@ src/agents/components/search_tool.py      → result cache + web-exception degra
 src/agents/components/reranker_tool.py    → max_candidates window + ≤1-doc skip
 src/agents/components/evidence_judge.py   → marginal_gain() + should_stop() static helpers
 src/agents/components/answer_generator.py → appearance-order + dedup citations
-src/agents/search.py                      → pass previous_queries, skip dup, early-stop, emit metrics
-src/training/reward.py                    → duplicate_search_penalty + early_stop_bonus (zero-default)
+src/agents/search.py                      → opt-in evidence_plateau_min_gain early-stop + early_stops metric
+src/training/reward.py                    → early_stop_bonus term (zero-default)
 
 tests/unit/test_components.py             → new cases per component optimization
 tests/unit/test_reward.py                 → new terms in isolation + preset regression
@@ -117,10 +137,11 @@ docs/superpowers/plans/2026-06-25-agent-framework-optimization-tasks.md     → 
     default `None` preserves full-set rerank.
   - EvidenceJudge: `marginal_gain` arithmetic; `should_stop` true iff gain `< min_gain`; bounds.
   - AnswerGenerator: citations ordered by appearance; duplicate contents collapsed; markers still valid.
-- **Reward:** each new term in isolation; **regression** that `sparse_final_only`, `second_pass`,
-  `third_pass_with_format`, and `retriever_aware` totals are unchanged when new weights are 0.
-- **Loop regression:** `test_agent_loop.py` — a duplicate planned query consumes no extra round; a
-  plateau triggers `early_stops`; a raising web backend degrades instead of crashing. Existing tests pass.
+- **Reward:** `early_stop_bonus` in isolation; **regression** that `sparse_final_only`, `second_pass`,
+  `third_pass_with_format`, and `retriever_aware` totals are unchanged when the new weight is 0.
+- **Loop regression:** `test_agent_loop.py` — with `evidence_plateau_min_gain` set, a plateau round
+  increments `early_stops`; with it `None` (default), `early_stops` stays 0 and behavior is unchanged.
+  Existing tests pass.
 - **Smoke:** the existing GRPO smoke test
   (`test_search_agent_grpo_trainer.py::test_grpo_smoke_step_with_retriever_aware_reward`) stays green.
 - **No test-count regression**; new modules' new branches covered.
@@ -140,10 +161,11 @@ docs/superpowers/plans/2026-06-25-agent-framework-optimization-tasks.md     → 
 1. Each of the five components gains exactly its one optimization, unit-tested in isolation.
 2. `SearchTool` serves a repeated query from cache (no second backend call) and survives a raising web
    backend by degrading to vdb.
-3. Planner flags a duplicate query and the loop skips it (no extra `search_rounds`), emitting a
-   `duplicate_searches` metric.
-4. EvidenceJudge exposes `marginal_gain` + `should_stop`; the loop emits `early_stops` on a plateau.
+3. Planner flags a duplicate query (`SearchAction.is_duplicate`) when it repeats a prior query and
+   bounds the fallback query for unparseable/over-long input.
+4. EvidenceJudge exposes `marginal_gain` + `should_stop`; with `evidence_plateau_min_gain` set, the
+   loop counts plateau rounds into `early_stops` (default `None` → metric 0, behavior unchanged).
 5. AnswerGenerator citations are appearance-ordered and de-duplicated; markers remain valid.
-6. `SearchRewardConfig` gains `duplicate_search_penalty` + `early_stop_bonus`; with weights 0 every
-   existing reward test is unchanged (regression green); `retriever_aware()` surfaces them.
+6. `SearchRewardConfig` gains `early_stop_bonus`; with weight 0 every existing reward test is unchanged
+   (regression green); `retriever_aware()` surfaces it.
 7. Full suite green; GRPO smoke step still passes; no test-count regression.
