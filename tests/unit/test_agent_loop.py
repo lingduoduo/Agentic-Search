@@ -1242,6 +1242,48 @@ def test_search_agent_loop_skips_repeated_queries_with_feedback():
     assert output.metrics["repeated_search_queries"] == 1.0
 
 
+def test_search_agent_loop_skips_repeated_queries_after_whitespace_normalization():
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<search>alpha   query</search>"),
+        tokenizer.encode("<search> alpha query </search>"),
+        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    fake_client = FakeSearchClient(
+        {
+            ("alpha   query",): [
+                [
+                    SearchResult(
+                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
+                    )
+                ],
+            ],
+        }
+    )
+    loop._search_client = fake_client
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    third_prompt = "".join(
+        chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
+    )
+    assert fake_client.calls == [["alpha   query"]]
+    assert "Repeated search skipped" in third_prompt
+    assert output.metrics["repeated_search_queries"] == 1.0
+
+
 def test_search_agent_loop_enforces_search_limit():
     tokenizer = DummyTokenizerWithEncode()
     responses = [

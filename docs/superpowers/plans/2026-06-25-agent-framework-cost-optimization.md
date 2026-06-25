@@ -160,7 +160,7 @@ Run: `pytest tests/unit/test_agent_loop.py -k "rerank" -v`
 
 Expected: all rerank tests pass, including the existing test where two results are reordered and `rerank_calls == 1.0`.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add src/agents/search.py tests/unit/test_agent_loop.py docs/superpowers/plans/2026-06-25-agent-framework-cost-optimization.md
@@ -177,7 +177,7 @@ git commit -m "feat: gate low-value rerank requests"
 - Consumes: existing `_partition_search_requests(query_specs, executed_queries, rounds_used)`
 - Produces: helper `_normalize_query_key(query: str) -> str`; `executed_queries` stores normalized query keys
 
-- [ ] **Step 1: Write failing test for normalized repeats**
+- [x] **Step 1: Write failing test for normalized repeats**
 
 Add this test near `test_search_agent_loop_skips_repeated_queries_with_feedback` in `tests/unit/test_agent_loop.py`:
 
@@ -224,13 +224,13 @@ def test_search_agent_loop_skips_repeated_queries_after_whitespace_normalization
     assert output.metrics["repeated_search_queries"] == 1.0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_agent_loop.py -k "repeated_queries" -v`
 
 Expected: the new test fails because the second query is currently treated as distinct.
 
-- [ ] **Step 3: Add normalized query keys**
+- [x] **Step 3: Add normalized query keys**
 
 In `src/agents/search.py`, add this helper near `_normalize_task_id`:
 
@@ -259,13 +259,13 @@ Update the call site after a search round is accepted:
 executed_queries.update(_normalize_query_key(q) for q in search_tool_call.queries)
 ```
 
-- [ ] **Step 4: Run repeated-query tests**
+- [x] **Step 4: Run repeated-query tests**
 
 Run: `pytest tests/unit/test_agent_loop.py -k "repeated_queries" -v`
 
 Expected: both exact repeated query and normalized whitespace repeated query tests pass.
 
-- [ ] **Step 5: Run focused regression**
+- [x] **Step 5: Run focused regression**
 
 Run:
 
