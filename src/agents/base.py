@@ -69,6 +69,10 @@ _AGENT_ALIASES: dict[str, str] = {
     "tool_agent": "tool_agent",
 }
 
+# Guard the two hand-maintained literals against silent drift: every alias must
+# resolve to a canonical name, and every canonical name must be reachable.
+assert set(_AGENT_ALIASES.values()) == CANONICAL_AGENT_NAMES
+
 
 def resolve_agent_name(name: str) -> str:
     """Resolve a CLI/web alias or canonical name to a canonical registry loop name.

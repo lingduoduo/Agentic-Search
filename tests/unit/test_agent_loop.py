@@ -124,6 +124,16 @@ def test_canonical_names_are_registered():
     assert CANONICAL_AGENT_NAMES <= registered
 
 
+def test_resolver_is_exported_from_public_package():
+    # The CLI and web app import these from the public ``src`` package, so the
+    # __init__ export path must work — not just the submodule path.
+    from src import resolve_agent_name as public_resolve
+    from src import CANONICAL_AGENT_NAMES as public_canonical
+
+    assert public_resolve("search") == "search_agent"
+    assert public_canonical == CANONICAL_AGENT_NAMES
+
+
 def test_build_prompt_ids_falls_back_to_encode():
     loop = ConcreteAgentLoop(
         tokenizer=DummyTokenizerWithEncode(),
