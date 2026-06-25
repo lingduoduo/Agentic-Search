@@ -2166,3 +2166,54 @@ def test_adaptive_budget_raises_limit_for_multiple_subquestions():
 
     assert output.metrics["effective_search_limit"] == 4.0  # base 2 + (3-1)*1
     assert output.metrics["adaptive_budget_bonus"] == 2.0
+
+
+def test_plateau_stops_searching_when_sufficient():
+    """Plateau early-stop fires when evidence is sufficient and gain stalls.
+
+    Script: round 1 yields sufficient evidence; round 2 returns the same
+    score (gain = 0 < 0.05) and evidence is still sufficient → PLATEAU fires
+    after round 2, appending the search-limit observation and skipping further
+    searches. The model answers on the next turn.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # responses: search round 1, search round 2, answer
+    responses = [
+        tokenizer.encode("<searches>\nfirst query\n</searches>"),
+        tokenizer.encode("<searches>\nsecond query\n</searches>"),
+        tokenizer.encode("<answer>Done</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=8,
+            max_search_limit=5,
+            evidence_plateau_min_gain=0.05,
+            plateau_requires_sufficient=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1,
+                min_total_results=1,
+                min_top_score=0.5,
+            ),
+        ),
+    )
+    # Both rounds return identically-scored sufficient docs → round 2 gain = 0.
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [
+                [SearchResult(contents='"Doc A"\nAlpha body', score=0.9)]
+            ],
+            ("second query",): [
+                [SearchResult(contents='"Doc B"\nBeta body', score=0.9)]
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    assert out.metrics["plateau_early_stop"] == 1.0
+    assert out.metrics["rounds_used"] < 5.0

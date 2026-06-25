@@ -28,6 +28,7 @@ from ..training.evaluation import (
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
 from .components.evidence_judge import EvidenceJudge
+from .components.loop_controller import LoopSnapshot, StopReason
 from .components.reranker_tool import RerankFn
 from .state import Retriever
 
@@ -1173,6 +1174,7 @@ class SearchAgentLoop(AgentLoopBase):
                     executed_queries.update(
                         _normalize_query_key(q) for q in search_tool_call.queries
                     )
+                    prev_evidence_for_round = metrics["evidence_score_final"]
                     round_result = await self._execute_search_round(
                         search_tool_call,
                         agent_ctx=agent_ctx,
@@ -1184,6 +1186,26 @@ class SearchAgentLoop(AgentLoopBase):
                         rerank=self._parse_round_rerank(response_text),
                     )
                     latest_evaluation = round_result.evaluation
+                    _plateau_snapshot = LoopSnapshot(
+                        rounds_used=rounds_used,
+                        num_subquestions=len(active_tasks),
+                        evidence_sufficient=self._has_sufficient_evidence(
+                            latest_evaluation, task_statuses, active_tasks
+                        ),
+                        prev_evidence_score=prev_evidence_for_round,
+                        curr_evidence_score=metrics["evidence_score_final"],
+                        consecutive_rejections=consecutive_rejections,
+                        model_emitted_answer=False,
+                    )
+                    _plateau_stop = self._loop_controller.should_continue_searching(
+                        _plateau_snapshot
+                    )
+                    if _plateau_stop.reason is StopReason.PLATEAU:
+                        metrics["plateau_early_stop"] = 1.0
+                        working_messages.append(
+                            {"role": "user", "content": cfg.search_limit_template}
+                        )
+                        continue
                     turn_observations.append(round_result.observation)
                     if on_turn is not None:
                         doc_count = sum(
