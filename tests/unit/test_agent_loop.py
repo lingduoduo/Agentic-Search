@@ -2586,3 +2586,70 @@ def test_finalize_run_metrics_computes_derived_keys():
     assert metrics["exit_answered"] == 1.0
     # seeded search_queries=2, repeated=0 → ratio 0.0 (no divide-by-zero)
     assert metrics["repeated_query_ratio"] == 0.0
+
+
+def _gate_loop():
+    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
+
+    return SearchAgentLoop(
+        tokenizer=DummyTokenizerWithEncode(),
+        server_manager=DummyServerManager([]),
+        search_config=SearchAgentLoopConfig(max_answer_rejections=3),
+    )
+
+
+def test_apply_answer_gate_rejects_insufficient_evidence():
+    import asyncio
+    from src.agents.search import TurnControl
+
+    loop = _gate_loop()
+    metrics = loop._initial_metrics()
+    d = asyncio.run(
+        loop._apply_answer_gate(
+            on_turn=None,
+            num_turns=1,
+            rounds_used=1,
+            active_tasks={},
+            task_statuses={},
+            latest_evaluation=None,
+            latest_search_decision=None,
+            consecutive_rejections=0,
+            final_answer="draft",
+            metrics=metrics,
+            working_messages=[],
+        )
+    )
+    assert d.control is TurnControl.CONTINUE
+    assert d.final_answer is None
+    assert d.consecutive_rejections == 1
+    assert metrics["answer_rejections"] == 1.0
+
+
+def test_apply_answer_gate_accepts_with_internal_knowledge():
+    import asyncio
+    from src.agents.search import TurnControl, SearchAgentLoopConfig, SearchAgentLoop
+
+    loop = SearchAgentLoop(
+        tokenizer=DummyTokenizerWithEncode(),
+        server_manager=DummyServerManager([]),
+        search_config=SearchAgentLoopConfig(allow_internal_knowledge_answer=True),
+    )
+    metrics = loop._initial_metrics()
+    d = asyncio.run(
+        loop._apply_answer_gate(
+            on_turn=None,
+            num_turns=1,
+            rounds_used=0,
+            active_tasks={},
+            task_statuses={},
+            latest_evaluation=None,
+            latest_search_decision="answer",
+            consecutive_rejections=0,
+            final_answer="ans",
+            metrics=metrics,
+            working_messages=[],
+        )
+    )
+    assert d.control is TurnControl.BREAK
+    assert d.exit_status == "answered"
+    assert metrics["direct_answers"] == 1.0
