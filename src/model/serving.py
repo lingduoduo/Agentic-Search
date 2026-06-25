@@ -526,5 +526,9 @@ def build_server_manager(
             tokenizer=tokenizer, base_url=server_url, model=model
         )
     if model:
-        return LocalServerManager(model_path=model, device=device or "auto", **kwargs)
+        # Pass device through unchanged (do not coerce None -> "auto"): the prior
+        # call sites passed device verbatim to LocalServerManager, and
+        # _resolve_local_device treats None and "auto" differently. Keeping this a
+        # transparent pass-through makes the factory strictly behavior-preserving.
+        return LocalServerManager(model_path=model, device=device, **kwargs)
     raise ValueError("no model backend configured (set server_url or model)")
