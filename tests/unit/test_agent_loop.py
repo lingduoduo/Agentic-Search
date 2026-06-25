@@ -2653,3 +2653,85 @@ def test_apply_answer_gate_accepts_with_internal_knowledge():
     assert d.control is TurnControl.BREAK
     assert d.exit_status == "answered"
     assert metrics["direct_answers"] == 1.0
+
+
+def test_handle_no_action_format_error_limit_breaks():
+    from src.agents.search import (
+        SearchAgentLoop,
+        SearchAgentLoopConfig,
+        TurnControl,
+    )
+    from src.context.search import AgentContext
+
+    loop = SearchAgentLoop(
+        tokenizer=DummyTokenizerWithEncode(),
+        server_manager=DummyServerManager([]),
+        search_config=SearchAgentLoopConfig(
+            max_consecutive_format_errors=1, force_answer_on_deadend=False
+        ),
+    )
+    metrics = loop._initial_metrics()
+    d = asyncio.run(
+        loop._handle_no_action(
+            working_messages=[],
+            agent_ctx=AgentContext(),
+            request_id="r",
+            sampling_params={},
+            metrics=metrics,
+            latest_evaluation=None,
+            task_statuses={},
+            active_tasks={},
+            rounds_used=1,
+            consecutive_format_errors=0,
+            consecutive_rejections=0,
+            forced_answer_attempted=False,
+            final_answer=None,
+            num_turns=1,
+        )
+    )
+    assert d.control is TurnControl.BREAK
+    assert d.exit_status == "format_error_limit"
+    assert d.consecutive_format_errors == 1
+    assert metrics["format_error_turns"] == 1.0
+
+
+def test_handle_no_action_below_limit_reprompts_continue():
+    from src.agents.search import (
+        SearchAgentLoop,
+        SearchAgentLoopConfig,
+        TurnControl,
+    )
+    from src.context.search import AgentContext
+
+    loop = SearchAgentLoop(
+        tokenizer=DummyTokenizerWithEncode(),
+        server_manager=DummyServerManager([]),
+        search_config=SearchAgentLoopConfig(
+            max_consecutive_format_errors=5,
+            require_sufficient_evidence_before_answer=True,
+            max_answer_rejections=3,
+        ),
+    )
+    metrics = loop._initial_metrics()
+    msgs = []
+    d = asyncio.run(
+        loop._handle_no_action(
+            working_messages=msgs,
+            agent_ctx=AgentContext(),
+            request_id="r",
+            sampling_params={},
+            metrics=metrics,
+            latest_evaluation=None,
+            task_statuses={},
+            active_tasks={},
+            rounds_used=0,
+            consecutive_format_errors=0,
+            consecutive_rejections=0,
+            forced_answer_attempted=False,
+            final_answer=None,
+            num_turns=1,
+        )
+    )
+    assert d.control is TurnControl.CONTINUE
+    assert d.consecutive_rejections == 1
+    assert len(msgs) == 1  # a re-prompt was appended
