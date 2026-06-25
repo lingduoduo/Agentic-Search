@@ -771,7 +771,7 @@ class SearchAgentLoop(AgentLoopBase):
             {
                 "role": "user",
                 "content": self.search_config.answer_rejection_template.format(
-                    content=self._loop_controller._FORCE_FEEDBACK
+                    content=self._loop_controller.FORCE_FEEDBACK
                 ),
             }
         )
@@ -1029,6 +1029,9 @@ class SearchAgentLoop(AgentLoopBase):
                     if consecutive_format_errors >= cfg.max_consecutive_format_errors:
                         exit_status = "format_error_limit"
                         if cfg.force_answer_on_deadend and final_answer is None:
+                            # A successful forced answer intentionally retains the dead-end
+                            # exit_status: forced_final_answer records the salvage while
+                            # exit_status records WHY the loop ended.
                             forced_answer_attempted = True
                             final_answer, num_turns = await self._force_final_answer(
                                 working_messages=working_messages,
@@ -1069,6 +1072,9 @@ class SearchAgentLoop(AgentLoopBase):
                         continue
                     exit_status = "no_action"
                     if cfg.force_answer_on_deadend and final_answer is None:
+                        # A successful forced answer intentionally retains the dead-end
+                        # exit_status: forced_final_answer records the salvage while
+                        # exit_status records WHY the loop ended.
                         forced_answer_attempted = True
                         final_answer, num_turns = await self._force_final_answer(
                             working_messages=working_messages,
@@ -1421,10 +1427,16 @@ class SearchAgentLoop(AgentLoopBase):
             )
             else 0.0
         )
-        search_limit = float(cfg.max_search_limit or 0)
+        final_effective_limit = self._loop_controller.effective_search_limit(
+            len(active_tasks)
+        )
         metrics["search_budget_exhausted_without_answer"] = (
             1.0
-            if (search_limit > 0 and rounds_used >= search_limit and not final_answer)
+            if (
+                final_effective_limit > 0
+                and rounds_used >= float(final_effective_limit)
+                and not final_answer
+            )
             else 0.0
         )
         if exit_status == "max_turns" and metrics["search_limit_hits"] > 0.0:

@@ -106,3 +106,20 @@ def test_accept_when_gate_disabled():
         ctl.final_answer_decision(_snap(evidence_sufficient=False)).verb
         is AnswerVerb.ACCEPT
     )
+
+
+def test_none_gain_disables_plateau():
+    """With evidence_plateau_min_gain=None, should_continue_searching returns CONTINUE
+    even when evidence is sufficient and stalled (below budget)."""
+    ctl = _ctl(max_search_limit=5, evidence_plateau_min_gain=None)
+    stalled = dict(prev_evidence_score=0.80, curr_evidence_score=0.82)  # gain 0.02
+    d = ctl.should_continue_searching(
+        _snap(rounds_used=1, evidence_sufficient=True, **stalled)
+    )
+    assert d.reason is StopReason.CONTINUE
+
+
+def test_effective_limit_falls_back_to_max_turns_when_limit_none():
+    """With max_search_limit=None, effective_search_limit falls back to max_turns."""
+    ctl = _ctl(max_search_limit=None, max_turns=3, max_search_limit_cap=10)
+    assert ctl.effective_search_limit(1) == 3

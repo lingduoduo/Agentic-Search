@@ -19,7 +19,7 @@ class LoopSnapshot:
     prev_evidence_score: float
     curr_evidence_score: float
     consecutive_rejections: int
-    model_emitted_answer: bool
+    model_emitted_answer: bool  # reserved for Phase 2 state machine; not yet read
 
 
 class StopReason(Enum):
@@ -73,7 +73,7 @@ class LoopController:
         "Evidence is still insufficient for the question. Issue another search "
         "to gather more evidence before answering."
     )
-    _FORCE_FEEDBACK = (
+    FORCE_FEEDBACK = (
         "You cannot gather more evidence (budget reached). Give your best answer "
         "now, grounded only in the evidence already collected. State explicitly "
         "what remains uncertain, and cite evidence labels."
@@ -84,5 +84,5 @@ class LoopController:
         if s.evidence_sufficient or not cfg.require_sufficient_evidence_before_answer:
             return AnswerDecision(AnswerVerb.ACCEPT)
         if s.consecutive_rejections >= cfg.max_answer_rejections:
-            return AnswerDecision(AnswerVerb.FORCE, feedback=self._FORCE_FEEDBACK)
+            return AnswerDecision(AnswerVerb.FORCE, feedback=self.FORCE_FEEDBACK)
         return AnswerDecision(AnswerVerb.REJECT, feedback=self._REJECT_FEEDBACK)

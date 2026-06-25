@@ -2419,3 +2419,103 @@ def test_answer_gate_forces_after_max_rejections():
 
     assert out.final_answer is not None  # forced through after cap
     assert out.metrics["forced_final_answer"] == 1.0
+
+
+def test_budget_metric_uses_effective_limit_for_multi_subquestions():
+    """With 3 subquestions and base=2 the effective limit is 4.
+    A run that searches 4 rounds (exhausting the effective limit) then emits
+    an answer must NOT fire search_budget_exhausted_without_answer.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Script: declare 3 subquestions + first search in turn 1, then 3 more searches,
+    # then answer — 4 rounds total (effective limit with base=2, 3 subquestions, per_sub=1).
+    responses = [
+        tokenizer.encode(
+            "<subquestions>\nT1: first aspect\nT2: second aspect\nT3: third aspect\n</subquestions>"
+            "<searches>\n[T1] first query\n</searches>"
+        ),
+        tokenizer.encode("<searches>\n[T2] second query\n</searches>"),
+        tokenizer.encode("<searches>\n[T3] third query\n</searches>"),
+        tokenizer.encode("<searches>\n[T1] refined query\n</searches>"),
+        tokenizer.encode("<answer>Done [R1Q1D1] [R2Q1D1] [R3Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=10,
+            max_search_limit=2,
+            search_budget_per_subquestion=1,
+            max_search_limit_cap=10,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("first query",): [[SearchResult(contents='"Doc A"\nAlpha body')]],
+            ("second query",): [[SearchResult(contents='"Doc B"\nBeta body')]],
+            ("third query",): [[SearchResult(contents='"Doc C"\nGamma body')]],
+            ("refined query",): [[SearchResult(contents='"Doc D"\nDelta body')]],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
+    )
+
+    # effective limit = 2 + (3-1)*1 = 4; 4 rounds used; answer produced
+    assert out.metrics["effective_search_limit"] == 4.0
+    assert out.metrics["rounds_used"] == 4.0
+    assert out.final_answer is not None
+    # Must NOT fire even though rounds_used == base limit (2) — effective limit was 4
+    assert out.metrics["search_budget_exhausted_without_answer"] == 0.0
+
+
+def test_forced_turn_emitting_no_answer_returns_none():
+    """When the forced final-answer turn itself emits no <answer> tag and there
+    is no prior tentative answer, final_answer is None and forced_final_answer == 0.0.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Turn 1: one good search round (evidence collected)
+    # Turn 2: no recognised action → dead-end (no_action exit)
+    # Forced turn: model responds with plain text, NO <answer> tag
+    responses = [
+        tokenizer.encode("<searches>\nwhat is FAISS\n</searches>"),
+        tokenizer.encode("I give up."),
+        # forced-answer turn — intentionally no <answer> tag
+        tokenizer.encode("I still cannot provide an answer."),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=5,
+            max_search_limit=5,
+            force_answer_on_deadend=True,
+            require_sufficient_evidence_before_answer=False,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.9
+                    )
+                ]
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is None
+    assert out.metrics["forced_final_answer"] == 0.0

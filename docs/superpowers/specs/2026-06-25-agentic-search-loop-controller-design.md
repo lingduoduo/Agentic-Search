@@ -142,9 +142,9 @@ evidence exists** · plateau-stop where the model still fails to emit an answer.
    evidence only, state uncertainty, and cite evidence labels.
 2. Generate once; accept its `<answer>` **unconditionally** (gate bypassed).
 3. **Bounded fallback:** if the forced turn still emits no `<answer>`, fall back to
-   the last tentative `final_answer` (`search.py:1047`); if none, synthesize a
-   minimal templated answer from top cited evidence. Never loops, never returns
-   `None` when evidence exists.
+   the last tentative `final_answer`; if none, return `None`. Never loops.
+   Synthesizing a templated answer was dropped during implementation as it
+   conflicts with the never-fabricate principle.
 
 **Guardrails:**
 - Strictly one generation — a `forced_answer_attempted` flag prevents re-entry.
