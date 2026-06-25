@@ -9,6 +9,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, replace
+from enum import Enum
 from typing import Any
 from uuid import uuid4
 
@@ -31,6 +32,35 @@ from .components.evidence_judge import EvidenceJudge
 from .components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
 from .components.reranker_tool import RerankFn
 from .state import Retriever
+
+# ---------------------------------------------------------------------------
+# Turn control
+# ---------------------------------------------------------------------------
+
+
+class TurnControl(Enum):
+    CONTINUE = "continue"
+    BREAK = "break"
+
+
+@dataclass(frozen=True)
+class _GateDirective:
+    control: TurnControl
+    exit_status: str | None
+    final_answer: str | None
+    consecutive_rejections: int
+
+
+@dataclass(frozen=True)
+class _NoActionDirective:
+    control: TurnControl
+    exit_status: str | None
+    consecutive_format_errors: int
+    consecutive_rejections: int
+    forced_answer_attempted: bool
+    final_answer: str | None
+    num_turns: int
+
 
 # ---------------------------------------------------------------------------
 # Search tool-call types
@@ -1088,6 +1118,177 @@ class SearchAgentLoop(AgentLoopBase):
             metrics["exit_no_action"] = 1.0
         self._mark_exit(metrics, exit_status)
 
+    async def _apply_answer_gate(
+        self,
+        *,
+        on_turn,
+        num_turns: int,
+        rounds_used: int,
+        active_tasks: dict[str, str],
+        task_statuses: dict[str, bool],
+        latest_evaluation,
+        latest_search_decision,
+        consecutive_rejections: int,
+        final_answer: str | None,
+        metrics: dict[str, float],
+        working_messages: list[dict[str, Any]],
+    ) -> _GateDirective:
+        """Apply the answer-gate to a turn that emitted only an <answer>.
+
+        Caller invokes this inside the answer guard. metrics/working_messages are
+        mutated in place; scalar updates travel back in the directive.
+        """
+        cfg = self.search_config
+        if (
+            cfg.allow_internal_knowledge_answer
+            and rounds_used == 0
+            and latest_search_decision == "answer"
+            and not active_tasks
+        ):
+            metrics["direct_answers"] += 1.0
+            if on_turn is not None:
+                await on_turn(num_turns, None, 0)
+            return _GateDirective(
+                TurnControl.BREAK, "answered", final_answer, consecutive_rejections
+            )
+        snapshot = LoopSnapshot(
+            rounds_used=rounds_used,
+            num_subquestions=len(active_tasks),
+            evidence_sufficient=self._has_sufficient_evidence(
+                latest_evaluation, task_statuses, active_tasks
+            ),
+            prev_evidence_score=metrics["evidence_score_final"],
+            curr_evidence_score=metrics["evidence_score_final"],
+            consecutive_rejections=consecutive_rejections,
+            model_emitted_answer=True,
+        )
+        decision = self._loop_controller.final_answer_decision(snapshot)
+        if decision.verb is AnswerVerb.ACCEPT:
+            if on_turn is not None:
+                await on_turn(num_turns, None, 0)
+            return _GateDirective(
+                TurnControl.BREAK, "answered", final_answer, consecutive_rejections
+            )
+        if decision.verb is AnswerVerb.FORCE:
+            metrics["forced_final_answer"] = 1.0
+            if on_turn is not None:
+                await on_turn(num_turns, None, 0)
+            return _GateDirective(
+                TurnControl.BREAK, "answered", final_answer, consecutive_rejections
+            )
+        # AnswerVerb.REJECT
+        metrics["answer_rejections"] += 1
+        working_messages.append(
+            {
+                "role": "user",
+                "content": cfg.answer_rejection_template.format(
+                    content=self._build_answer_rejection_feedback(
+                        latest_evaluation, task_statuses, active_tasks
+                    )
+                ),
+            }
+        )
+        return _GateDirective(
+            TurnControl.CONTINUE, None, None, consecutive_rejections + 1
+        )
+
+    async def _handle_no_action(
+        self,
+        *,
+        working_messages: list[dict[str, Any]],
+        agent_ctx,
+        request_id: str,
+        sampling_params: dict[str, Any],
+        metrics: dict[str, float],
+        latest_evaluation,
+        task_statuses: dict[str, bool],
+        active_tasks: dict[str, str],
+        rounds_used: int,
+        consecutive_format_errors: int,
+        consecutive_rejections: int,
+        forced_answer_attempted: bool,
+        final_answer: str | None,
+        num_turns: int,
+    ) -> _NoActionDirective:
+        """Handle a turn that produced no recognised action tag."""
+        cfg = self.search_config
+        consecutive_format_errors += 1
+        metrics["format_error_turns"] += 1.0
+        if consecutive_format_errors >= cfg.max_consecutive_format_errors:
+            exit_status = "format_error_limit"
+            if cfg.force_answer_on_deadend and final_answer is None:
+                forced_answer_attempted = True
+                final_answer, num_turns = await self._force_final_answer(
+                    working_messages=working_messages,
+                    agent_ctx=agent_ctx,
+                    request_id=request_id,
+                    sampling_params=sampling_params,
+                    metrics=metrics,
+                    num_turns=num_turns,
+                )
+            return _NoActionDirective(
+                TurnControl.BREAK,
+                exit_status,
+                consecutive_format_errors,
+                consecutive_rejections,
+                forced_answer_attempted,
+                final_answer,
+                num_turns,
+            )
+        needs_more = (
+            cfg.require_sufficient_evidence_before_answer
+            and not self._has_sufficient_evidence(
+                latest_evaluation, task_statuses, active_tasks
+            )
+            and consecutive_rejections < cfg.max_answer_rejections
+        )
+        if needs_more:
+            consecutive_rejections += 1
+            metrics["answer_rejections"] += 1
+            if rounds_used == 0:
+                metrics["decision_prompts"] += 1
+                feedback = self._build_decision_feedback(None)
+            else:
+                feedback = (
+                    "No action detected. Evidence is still insufficient. "
+                    "Issue a <searches> block to gather more evidence before answering."
+                )
+            working_messages.append(
+                {
+                    "role": "user",
+                    "content": cfg.answer_rejection_template.format(content=feedback),
+                }
+            )
+            return _NoActionDirective(
+                TurnControl.CONTINUE,
+                None,
+                consecutive_format_errors,
+                consecutive_rejections,
+                forced_answer_attempted,
+                final_answer,
+                num_turns,
+            )
+        exit_status = "no_action"
+        if cfg.force_answer_on_deadend and final_answer is None:
+            forced_answer_attempted = True
+            final_answer, num_turns = await self._force_final_answer(
+                working_messages=working_messages,
+                agent_ctx=agent_ctx,
+                request_id=request_id,
+                sampling_params=sampling_params,
+                metrics=metrics,
+                num_turns=num_turns,
+            )
+        return _NoActionDirective(
+            TurnControl.BREAK,
+            exit_status,
+            consecutive_format_errors,
+            consecutive_rejections,
+            forced_answer_attempted,
+            final_answer,
+            num_turns,
+        )
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
@@ -1152,67 +1353,31 @@ class SearchAgentLoop(AgentLoopBase):
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
-                    consecutive_format_errors += 1
-                    metrics["format_error_turns"] += 1.0
-                    if consecutive_format_errors >= cfg.max_consecutive_format_errors:
-                        exit_status = "format_error_limit"
-                        if cfg.force_answer_on_deadend and final_answer is None:
-                            # A successful forced answer intentionally retains the dead-end
-                            # exit_status: forced_final_answer records the salvage while
-                            # exit_status records WHY the loop ended.
-                            forced_answer_attempted = True
-                            final_answer, num_turns = await self._force_final_answer(
-                                working_messages=working_messages,
-                                agent_ctx=agent_ctx,
-                                request_id=request_id,
-                                sampling_params=sampling_params,
-                                metrics=metrics,
-                                num_turns=num_turns,
-                            )
-                        break
-                    needs_more = (
-                        cfg.require_sufficient_evidence_before_answer
-                        and not self._has_sufficient_evidence(
-                            latest_evaluation, task_statuses, active_tasks
-                        )
-                        and consecutive_rejections < cfg.max_answer_rejections
+                    d = await self._handle_no_action(
+                        working_messages=working_messages,
+                        agent_ctx=agent_ctx,
+                        request_id=request_id,
+                        sampling_params=sampling_params,
+                        metrics=metrics,
+                        latest_evaluation=latest_evaluation,
+                        task_statuses=task_statuses,
+                        active_tasks=active_tasks,
+                        rounds_used=rounds_used,
+                        consecutive_format_errors=consecutive_format_errors,
+                        consecutive_rejections=consecutive_rejections,
+                        forced_answer_attempted=forced_answer_attempted,
+                        final_answer=final_answer,
+                        num_turns=num_turns,
                     )
-                    if needs_more:
-                        consecutive_rejections += 1
-                        metrics["answer_rejections"] += 1
-                        if rounds_used == 0:
-                            # No search has happened yet — ask the model to decide whether it needs one.
-                            metrics["decision_prompts"] += 1
-                            feedback = self._build_decision_feedback(None)
-                        else:
-                            feedback = (
-                                "No action detected. Evidence is still insufficient. "
-                                "Issue a <searches> block to gather more evidence before answering."
-                            )
-                        working_messages.append(
-                            {
-                                "role": "user",
-                                "content": cfg.answer_rejection_template.format(
-                                    content=feedback
-                                ),
-                            }
-                        )
-                        continue
-                    exit_status = "no_action"
-                    if cfg.force_answer_on_deadend and final_answer is None:
-                        # A successful forced answer intentionally retains the dead-end
-                        # exit_status: forced_final_answer records the salvage while
-                        # exit_status records WHY the loop ended.
-                        forced_answer_attempted = True
-                        final_answer, num_turns = await self._force_final_answer(
-                            working_messages=working_messages,
-                            agent_ctx=agent_ctx,
-                            request_id=request_id,
-                            sampling_params=sampling_params,
-                            metrics=metrics,
-                            num_turns=num_turns,
-                        )
-                    break
+                    consecutive_format_errors = d.consecutive_format_errors
+                    consecutive_rejections = d.consecutive_rejections
+                    forced_answer_attempted = d.forced_answer_attempted
+                    final_answer = d.final_answer
+                    num_turns = d.num_turns
+                    if d.control is TurnControl.BREAK:
+                        exit_status = d.exit_status
+                        break
+                    continue
                 consecutive_format_errors = 0
 
                 # Process <subquestions> declarations.
@@ -1275,59 +1440,25 @@ class SearchAgentLoop(AgentLoopBase):
                     and not search_tool_call.has_new_queries
                     and not fetch_urls
                 ):
-                    if (
-                        cfg.allow_internal_knowledge_answer
-                        and rounds_used == 0
-                        and latest_search_decision == "answer"
-                        and not active_tasks
-                    ):
-                        metrics["direct_answers"] += 1.0
-                        if on_turn is not None:
-                            await on_turn(num_turns, None, 0)
-                        exit_status = "answered"
-                        break
-                    _gate_snapshot = LoopSnapshot(
+                    d = await self._apply_answer_gate(
+                        on_turn=on_turn,
+                        num_turns=num_turns,
                         rounds_used=rounds_used,
-                        num_subquestions=len(active_tasks),
-                        evidence_sufficient=self._has_sufficient_evidence(
-                            latest_evaluation, task_statuses, active_tasks
-                        ),
-                        prev_evidence_score=metrics["evidence_score_final"],
-                        curr_evidence_score=metrics["evidence_score_final"],
+                        active_tasks=active_tasks,
+                        task_statuses=task_statuses,
+                        latest_evaluation=latest_evaluation,
+                        latest_search_decision=latest_search_decision,
                         consecutive_rejections=consecutive_rejections,
-                        model_emitted_answer=True,
+                        final_answer=final_answer,
+                        metrics=metrics,
+                        working_messages=working_messages,
                     )
-                    _gate_decision = self._loop_controller.final_answer_decision(
-                        _gate_snapshot
-                    )
-                    if _gate_decision.verb is AnswerVerb.ACCEPT:
-                        if on_turn is not None:
-                            await on_turn(num_turns, None, 0)
-                        exit_status = "answered"
+                    final_answer = d.final_answer
+                    consecutive_rejections = d.consecutive_rejections
+                    if d.control is TurnControl.BREAK:
+                        exit_status = d.exit_status
                         break
-                    elif _gate_decision.verb is AnswerVerb.FORCE:
-                        metrics["forced_final_answer"] = 1.0
-                        if on_turn is not None:
-                            await on_turn(num_turns, None, 0)
-                        exit_status = "answered"
-                        break
-                    else:  # AnswerVerb.REJECT
-                        # Answer rejected — clear the tentative candidate so a
-                        # discarded answer is not returned as the final answer.
-                        final_answer = None
-                        consecutive_rejections += 1
-                        metrics["answer_rejections"] += 1
-                        working_messages.append(
-                            {
-                                "role": "user",
-                                "content": cfg.answer_rejection_template.format(
-                                    content=self._build_answer_rejection_feedback(
-                                        latest_evaluation, task_statuses, active_tasks
-                                    )
-                                ),
-                            }
-                        )
-                        continue
+                    continue
 
                 # Build observation for this turn (search + fetch combined into one message).
                 turn_observations: list[str] = []
