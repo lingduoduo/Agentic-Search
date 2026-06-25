@@ -61,6 +61,21 @@ class EvidenceJudge:
         return verdict
 
     @staticmethod
+    def marginal_gain(prev: float, curr: float) -> float:
+        """Improvement in evidence_score from one round to the next."""
+        return curr - prev
+
+    @staticmethod
+    def should_stop(prev: float, curr: float, min_gain: float) -> bool:
+        """True when the latest round's gain falls below ``min_gain`` (plateau).
+
+        A plateau means another search round is unlikely to help, so the policy
+        (or an opt-in loop) can choose to stop searching. This never forces an
+        answer; it only signals that more searching has diminishing returns.
+        """
+        return EvidenceJudge.marginal_gain(prev, curr) < min_gain
+
+    @staticmethod
     def score_round(round_eval: SearchRoundEvaluation) -> float:
         """Public continuous score for an already-computed round evaluation.
 

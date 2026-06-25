@@ -5,6 +5,8 @@ Each component is exercised in isolation with injected/fake dependencies.
 
 from __future__ import annotations
 
+import pytest
+
 from src.agents.state import Retriever, SearchAgentState
 from src.context.search import AgentContext, SearchContext, SearchResult
 
@@ -68,6 +70,27 @@ def test_evidence_judge_update_state_writes_evidence_score() -> None:
 
     assert state.evidence_score == verdict.score
     assert state.evidence_score > 0.0
+
+
+def test_evidence_judge_marginal_gain_is_delta() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    assert EvidenceJudge.marginal_gain(0.4, 0.7) == pytest.approx(0.3)
+    assert EvidenceJudge.marginal_gain(0.7, 0.7) == 0.0
+
+
+def test_evidence_judge_should_stop_on_plateau() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    # gain 0.01 < min_gain 0.05 -> plateau -> stop
+    assert EvidenceJudge.should_stop(0.70, 0.71, min_gain=0.05) is True
+
+
+def test_evidence_judge_should_not_stop_on_real_gain() -> None:
+    from src.agents.components.evidence_judge import EvidenceJudge
+
+    # gain 0.20 >= min_gain 0.05 -> keep searching
+    assert EvidenceJudge.should_stop(0.50, 0.70, min_gain=0.05) is False
 
 
 # --------------------------------------------------------------------------- #
