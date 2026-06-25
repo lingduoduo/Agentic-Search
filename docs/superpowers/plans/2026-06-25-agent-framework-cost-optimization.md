@@ -277,7 +277,7 @@ pytest tests/unit/test_reward.py -k "rerank or retriever_aware" -v
 
 Expected: all selected tests pass.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add src/agents/search.py tests/unit/test_agent_loop.py docs/superpowers/plans/2026-06-25-agent-framework-cost-optimization.md
@@ -286,8 +286,8 @@ git commit -m "feat: normalize repeated search queries"
 
 ## Final Verification
 
-- [ ] Run `git diff --check`.
-- [ ] Run `pytest tests/unit/test_agent_loop.py -k "rerank or repeated" -v`.
-- [ ] Run `pytest tests/unit/test_components.py -v`.
-- [ ] Run `pytest tests/unit/test_reward.py -k "rerank or retriever_aware" -v`.
-- [ ] Run `git status --short` and confirm only intended files are changed or the branch is clean.
+- [x] Run `git diff --check`.
+- [x] Run `pytest tests/unit/test_agent_loop.py -k "rerank or repeated" -v`.
+- [x] Run `pytest tests/unit/test_components.py -v`.
+- [x] Run `pytest tests/unit/test_reward.py -k "rerank or retriever_aware" -v`.
+- [x] Run `git status --short` and confirm only intended files are changed or the branch is clean.
