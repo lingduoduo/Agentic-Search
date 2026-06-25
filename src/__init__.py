@@ -14,9 +14,11 @@ from .agents.base import AgentLoopBase as AgentLoopBase
 from .agents.base import AgentLoopConfig as AgentLoopConfig
 from .agents.base import AgentLoopOutput as AgentLoopOutput
 from .agents.base import RolloutStep as RolloutStep
+from .agents.base import CANONICAL_AGENT_NAMES as CANONICAL_AGENT_NAMES
 from .agents.base import get_registered_agent_loop as get_registered_agent_loop
 from .agents.base import list_registered_agent_loops as list_registered_agent_loops
 from .agents.base import register as register
+from .agents.base import resolve_agent_name as resolve_agent_name
 from .agents.base import simple_timer as simple_timer
 from .agents.plain import PlainGenerationLoop as PlainGenerationLoop
 from .agents.plain import PlainGenerationLoopConfig as PlainGenerationLoopConfig

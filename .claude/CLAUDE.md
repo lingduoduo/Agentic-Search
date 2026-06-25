@@ -165,7 +165,7 @@ React 19 + Vite + TypeScript. No component library — custom components only. P
 - `plain.py` — `PlainGenerationLoop` (no retrieval)
 - `search.py` — `SearchAgentLoop` (retrieval-grounded, multi-turn)
 - `tool_calling.py` — `ToolAgentLoop` (generic function calling)
-- `custom.py` — `CustomAgent` with configurable instructions + knowledge + tools
+- Agent loops are selected via the registry (`get_registered_agent_loop` + `resolve_agent_name` in `src/agents/base.py`); see `docs/agent-invocation-surface.md` for the full mode→loop map.
 
 **Context pipeline** (`src/context/`)
 `answer_with_retrieval` wires retrieval → context-building → prompting → LLM call. `preprocessing/` holds access filters applied before retrieval.

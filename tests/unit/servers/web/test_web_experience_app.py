@@ -434,6 +434,17 @@ def test_tool_agent_returns_400_when_not_configured(tmp_path):
     assert "SEARCH_AGENT_MODEL" in response.json()["detail"]
 
 
+def test_web_registry_modes_map_to_classes():
+    from src import get_registered_agent_loop, resolve_agent_name
+    from src.agents.search import SearchAgentLoop
+    from src.agents.tool_calling import ToolAgentLoop
+
+    assert (
+        get_registered_agent_loop(resolve_agent_name("search_agent")) is SearchAgentLoop
+    )
+    assert get_registered_agent_loop(resolve_agent_name("tool_agent")) is ToolAgentLoop
+
+
 def test_run_agent_search_tool_mode_returns_documents(monkeypatch, tmp_path):
     from src.context.models import ContextDocument
 

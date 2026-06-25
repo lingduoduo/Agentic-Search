@@ -339,3 +339,16 @@ def test_local_generate_sync_adds_attention_mask_for_greedy_decode():
     # max_time replaced by a wall-clock StoppingCriteria; verify it is present
     assert "stopping_criteria" in kwargs
     assert kwargs["attention_mask"].tolist() == [[1, 1]]
+
+
+def test_cli_mode_resolves_to_registry_class():
+    from src import get_registered_agent_loop, resolve_agent_name
+    from src.agents.search import SearchAgentLoop
+    from src.agents.tool_calling import ToolAgentLoop
+    from src.agents.plain import PlainGenerationLoop
+
+    assert get_registered_agent_loop(resolve_agent_name("search")) is SearchAgentLoop
+    assert get_registered_agent_loop(resolve_agent_name("tool")) is ToolAgentLoop
+    assert (
+        get_registered_agent_loop(resolve_agent_name("single")) is PlainGenerationLoop
+    )

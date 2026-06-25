@@ -24,6 +24,7 @@ from src import (
     list_registered_agent_loops,
     register,
 )
+from src.agents.base import resolve_agent_name, CANONICAL_AGENT_NAMES
 
 
 class DummyTokenizerWithTemplate:
@@ -97,6 +98,40 @@ def test_build_prompt_ids_uses_chat_template_when_available():
         loop.build_prompt_ids([{"role": "user", "content": "hello"}])
     )
     assert prompt_ids == [65, 66, 67]  # ord("ABC"), prompt_length=3
+
+
+def test_resolve_cli_aliases():
+    assert resolve_agent_name("single") == "plain_generation"
+    assert resolve_agent_name("search") == "search_agent"
+    assert resolve_agent_name("tool") == "tool_agent"
+
+
+def test_resolve_canonical_names_passthrough():
+    for name in ("plain_generation", "single_turn_agent", "search_agent", "tool_agent"):
+        assert resolve_agent_name(name) == name
+
+
+def test_resolve_rejects_non_registry_modes():
+    for mode in ("chat_loop", "search_tool", "hybrid_search", "chat_once", "nope"):
+        with pytest.raises(KeyError):
+            resolve_agent_name(mode)
+
+
+def test_canonical_names_are_registered():
+    from src.agents.base import list_registered_agent_loops
+
+    registered = set(list_registered_agent_loops())
+    assert CANONICAL_AGENT_NAMES <= registered
+
+
+def test_resolver_is_exported_from_public_package():
+    # The CLI and web app import these from the public ``src`` package, so the
+    # __init__ export path must work — not just the submodule path.
+    from src import resolve_agent_name as public_resolve
+    from src import CANONICAL_AGENT_NAMES as public_canonical
+
+    assert public_resolve("search") == "search_agent"
+    assert public_canonical == CANONICAL_AGENT_NAMES
 
 
 def test_build_prompt_ids_falls_back_to_encode():

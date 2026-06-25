@@ -57,14 +57,23 @@ loop = loop_cls(tokenizer, server_manager, config=...)
 output = await loop.run(messages, sampling_params, on_turn=on_turn)
 ```
 
-### 2. Register `AgenticRAGLoop` (close the gap)
+### 2. `AgenticRAGLoop` stays a non-registry loop (open item RESOLVED)
 
-`AgenticRAGLoop` (`agents/agentic_rag.py:101`) is loop-shaped but unregistered and
-does not inherit `AgentLoopBase`. **Open item (verify in plan):** confirm it
-conforms to the `run(messages, sampling_params, *, on_turn) -> AgentLoopOutput`
-contract. If yes → add `@register("agentic_rag")`. If it diverges → either adapt
-it to the contract or document it as a deliberate non-registry loop. Do **not**
-register a class that violates the `dict[str, type[AgentLoopBase]]` contract.
+`AgenticRAGLoop` (`agents/agentic_rag.py:101`) is loop-shaped but **does not
+conform** to the `AgentLoopBase` contract, verified during planning:
+- Constructor is `__init__(self, config: AgenticRAGConfig, llm: LLMClient | None)`
+  — not `(tokenizer, server_manager, config)`.
+- `run(self, question: str, *, chat_history) -> AgenticRAGResult` — not
+  `run(messages, sampling_params, *, on_turn) -> AgentLoopOutput`.
+
+Registering it would violate `dict[str, type[AgentLoopBase]]` and crash when a
+caller does `get_registered_agent_loop(name)(tokenizer, server_manager, ...)`.
+**Resolution:** it is NOT registered. It is documented as a deliberate
+non-registry loop, in the same non-`AgentLoopBase` category as the retrieval
+pipelines (it is the web `chat_loop` mode, constructed via its own path). Adapting
+it to the contract is a larger change, explicitly out of scope for this
+consolidation. The registry therefore covers exactly the four `AgentLoopBase`
+loops: `plain_generation`, `single_turn_agent`, `search_agent`, `tool_agent`.
 
 ### 3. Canonical names + alias map (don't break callers)
 
@@ -72,15 +81,21 @@ One canonical registry name per agent; existing CLI/web vocabularies become
 documented aliases resolved to canonical names at the entry-point edge:
 
 ```
-single        → single_turn_agent
-search        → search_agent
-tool          → tool_agent
-chat_loop     → agentic_rag        (pending registration)
-# unchanged canonical: plain_generation, search_agent, tool_agent
+single        → plain_generation       (registry loop — CLI single = PlainGenerationLoop today)
+search        → search_agent           (registry loop)
+tool          → tool_agent             (registry loop)
+# (single_turn_agent is a registry loop with no CLI alias; reachable by canonical name)
+# unchanged canonical registry loops: plain_generation, single_turn_agent,
+#                                      search_agent, tool_agent
+# NON-registry modes (kept as-is, NOT resolved to a registry name):
+#   chat_loop → AgenticRAGLoop (own construction path)
+#   search_tool / hybrid_search / chat_once → retrieval pipelines
 ```
 
-A tiny alias dict at each entry point (not a new framework). No public name is
-removed; callers keep working.
+A tiny alias dict at each entry point (not a new framework) resolves CLI/web
+aliases to canonical registry names **only for the four registry loops**. No
+public name is removed; callers keep working. Non-registry modes keep their
+existing dispatch untouched.
 
 ### 4. Thin scenario→agent map
 

@@ -765,11 +765,16 @@ async def run_single_turn(
     search_url: str = "http://localhost:8000/retrieve",
     topk: int = 5,
 ) -> None:
-    from src import PlainGenerationLoop, PlainGenerationLoopConfig
+    from src import (
+        PlainGenerationLoopConfig,
+        get_registered_agent_loop,
+        resolve_agent_name,
+    )
 
     del search_url, topk
 
-    loop = PlainGenerationLoop(
+    loop_cls = get_registered_agent_loop(resolve_agent_name("single"))
+    loop = loop_cls(
         tokenizer=tokenizer,
         server_manager=server_manager,
         config=PlainGenerationLoopConfig(response_length=max_tokens),
@@ -820,9 +825,10 @@ async def run_search_agent(
         )
     """
     from src import (
-        SearchAgentLoop,
         SearchAgentLoopConfig,
         SearchEvaluationConfig,
+        get_registered_agent_loop,
+        resolve_agent_name,
     )
 
     sampling_params = sampling_params or {"temperature": 0.7, "max_tokens": 512}
@@ -849,7 +855,8 @@ async def run_search_agent(
     else:
         resolved_topk = topk
         intent_metadata: dict[str, Any] = {"intent_routing_used": False}
-    loop = SearchAgentLoop(
+    loop_cls = get_registered_agent_loop(resolve_agent_name("search"))
+    loop = loop_cls(
         tokenizer=tokenizer,
         server_manager=server_manager,
         search_config=SearchAgentLoopConfig(
@@ -903,8 +910,9 @@ async def run_tool_agent(
     """
     from src import (
         FunctionTool,
-        ToolAgentLoop,
         ToolAgentLoopConfig,
+        get_registered_agent_loop,
+        resolve_agent_name,
     )
     import aiohttp
 
@@ -941,7 +949,8 @@ async def run_tool_agent(
         },
     )
 
-    loop = ToolAgentLoop(
+    loop_cls = get_registered_agent_loop(resolve_agent_name("tool"))
+    loop = loop_cls(
         tokenizer=tokenizer,
         server_manager=server_manager,
         tools=[search_tool],
