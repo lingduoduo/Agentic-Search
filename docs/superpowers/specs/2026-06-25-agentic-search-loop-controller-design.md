@@ -129,9 +129,13 @@ behavior change.
 
 Unifies graceful-dead-end and smarter-gating.
 
-**Triggered when** (any): budget/plateau stop with no accepted answer ·
+**Plateau-stop is not a forced answer.** Plateau-stop fires only when evidence is
+already sufficient (floor guard), so it ends the search and the model's *next*
+`<answer>` passes the gate normally (ACCEPT). FORCE is the dead-end/cap path only.
+
+**Triggered when** (any): budget-exhausted stop with no accepted answer ·
 `rejections ≥ max_answer_rejections` · no-action/format-error dead-end **while
-evidence exists**.
+evidence exists** · plateau-stop where the model still fails to emit an answer.
 
 **Behavior** — exactly one extra generation turn:
 1. Append a user message instructing the model to answer now from collected
