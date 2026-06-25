@@ -932,7 +932,8 @@ def create_web_app(
                 )
 
             if mode == "search_agent":
-                from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
+                from src import get_registered_agent_loop, resolve_agent_name
+                from src.agents.search import SearchAgentLoopConfig
 
                 if manager is None or tokenizer is None:
                     raise HTTPException(
@@ -942,7 +943,8 @@ def create_web_app(
                             "Set SEARCH_AGENT_MODEL in .env and restart the server."
                         ),
                     )
-                loop = SearchAgentLoop(
+                loop_cls = get_registered_agent_loop(resolve_agent_name("search_agent"))
+                loop = loop_cls(
                     tokenizer=tokenizer,
                     server_manager=manager,
                     search_config=SearchAgentLoopConfig(
@@ -994,7 +996,8 @@ def create_web_app(
                 )
 
             if mode == "tool_agent":
-                from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+                from src import get_registered_agent_loop, resolve_agent_name
+                from src.agents.tool_calling import ToolAgentLoopConfig
                 from src.tools import build_search_tool, tool_registry
 
                 if manager is None or tokenizer is None:
@@ -1008,7 +1011,8 @@ def create_web_app(
                 tools = [
                     build_search_tool(search_url=search_url)
                 ] + tool_registry.list_tools()
-                loop = ToolAgentLoop(
+                loop_cls = get_registered_agent_loop(resolve_agent_name("tool_agent"))
+                loop = loop_cls(
                     tokenizer=tokenizer,
                     server_manager=manager,
                     tools=tools,
