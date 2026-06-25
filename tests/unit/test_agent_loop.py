@@ -738,7 +738,9 @@ def test_search_agent_loop_rejects_answer_before_any_search():
         chr(token) for token in loop.server_manager.calls[1]["prompt_ids"]
     )
     assert "<answer_feedback>" in second_prompt
-    assert "Search first" in second_prompt
+    # The gate now delegates to LoopController which supplies a single generic
+    # rejection message regardless of whether the first search has happened yet.
+    assert "Evidence is still insufficient" in second_prompt
     assert output.num_turns == 3
     assert output.context.num_rounds == 1
 
@@ -785,7 +787,10 @@ def test_search_agent_loop_rejects_answer_when_latest_evidence_is_insufficient()
         chr(token) for token in loop.server_manager.calls[2]["prompt_ids"]
     )
     assert "<answer_feedback>" in third_prompt
-    assert "latest search evaluation was insufficient" in third_prompt
+    # The gate now delegates to LoopController which supplies the generic rejection
+    # message; the old context-specific "latest search evaluation was insufficient"
+    # text is no longer used in this path.
+    assert "Evidence is still insufficient" in third_prompt
     assert output.num_turns == 4
     assert output.context.num_rounds == 2
 
@@ -2362,3 +2367,56 @@ def test_plateau_stops_searching_when_sufficient():
 
     assert out.metrics["plateau_early_stop"] == 1.0
     assert out.metrics["rounds_used"] < 5.0
+
+
+def test_answer_gate_forces_after_max_rejections():
+    """After max_answer_rejections rejections the gate should FORCE-accept the answer
+    and set metrics["forced_final_answer"] == 1.0.
+
+    Script:
+    - Turn 1: search round (one weak result — insufficient evidence)
+    - Turn 2: answer emitted with insufficient evidence → rejected (rejection 1)
+    - Turn 3: answer emitted again (no new search) → rejected (rejection 2)
+    - Turn 4: answer emitted again → consecutive_rejections == max_answer_rejections (2)
+              → FORCE path: accept answer, set forced_final_answer=1.0
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [
+        tokenizer.encode("<searches>\nwhat is FAISS\n</searches>"),
+        tokenizer.encode("<answer>FAISS is a library [R1Q1D1]</answer>"),
+        tokenizer.encode("<answer>FAISS is a library [R1Q1D1]</answer>"),
+        tokenizer.encode("<answer>FAISS is a library [R1Q1D1]</answer>"),
+    ]
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=8,
+            max_answer_rejections=2,
+            require_sufficient_evidence_before_answer=True,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=2,
+                min_total_results=2,
+                min_top_score=0.8,
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("what is FAISS",): [
+                # Only one weak result — fails min_results_per_query=2 and min_top_score=0.8
+                [
+                    SearchResult(
+                        contents='"FAISS"\nFacebook AI Similarity Search', score=0.5
+                    )
+                ],
+            ],
+        }
+    )
+
+    out = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert out.final_answer is not None  # forced through after cap
+    assert out.metrics["forced_final_answer"] == 1.0
