@@ -1,0 +1,58 @@
+"""LoopController: the search loop's two control decisions, pure over a snapshot.
+
+Owns no mutable state (only config). ``SearchAgentLoop.run`` builds a
+``LoopSnapshot`` of the relevant loop state and consults the controller, keeping
+all mutable state in the loop itself.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+@dataclass(frozen=True)
+class LoopSnapshot:
+    rounds_used: int
+    num_subquestions: int
+    evidence_sufficient: bool
+    prev_evidence_score: float
+    curr_evidence_score: float
+    consecutive_rejections: int
+    model_emitted_answer: bool
+
+
+class StopReason(Enum):
+    CONTINUE = "continue"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    PLATEAU = "plateau"
+
+
+class AnswerVerb(Enum):
+    ACCEPT = "accept"
+    REJECT = "reject"
+    FORCE = "force"
+
+
+@dataclass(frozen=True)
+class StopDecision:
+    reason: StopReason
+
+
+@dataclass(frozen=True)
+class AnswerDecision:
+    verb: AnswerVerb
+    feedback: str = ""
+
+
+class LoopController:
+    """Stateless policy for the loop's keep-searching / how-to-answer decisions."""
+
+    def __init__(self, cfg) -> None:
+        self._cfg = cfg
+
+    def effective_search_limit(self, num_subquestions: int) -> int:
+        cfg = self._cfg
+        base = cfg.max_search_limit or cfg.max_turns
+        bonus = cfg.search_budget_per_subquestion * max(0, num_subquestions - 1)
+        return max(base, min(base + bonus, cfg.max_search_limit_cap))
