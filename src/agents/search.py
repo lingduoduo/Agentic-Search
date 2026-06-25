@@ -979,6 +979,115 @@ class SearchAgentLoop(AgentLoopBase):
         logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
         return prompt_ids, response_ids, response_text, actions
 
+    def _finalize_run_metrics(
+        self,
+        metrics: dict[str, float],
+        *,
+        rounds_used: int,
+        task_statuses: dict[str, bool],
+        task_search_counts: dict[str, int],
+        active_tasks: dict[str, str],
+        agent_ctx: "AgentContext",
+        latest_evaluation: "SearchRoundEvaluation | None",
+        final_answer: str | None,
+        exit_status: str,
+    ) -> None:
+        """Compute the derived/reward metrics and finalize exit status, in place."""
+        cfg = self.search_config
+        # Derived metrics used by the reward function — computed once here so
+        # callers don't have to re-derive them from the raw counts.
+        # Use total *attempted* queries (executed + duplicates) as denominator
+        # so the ratio stays in [0, 1] even when duplicates exceed new queries.
+        total_attempted = metrics["search_queries"] + metrics["repeated_search_queries"]
+        metrics["repeated_query_ratio"] = (
+            metrics["repeated_search_queries"] / total_attempted
+            if total_attempted
+            else 0.0
+        )
+        metrics["subquestion_coverage_ratio"] = (
+            sum(task_statuses.values()) / len(task_statuses) if task_statuses else 1.0
+        )
+        metrics["subquestions_covered"] = float(sum(task_statuses.values()))
+        metrics["research_tasks_with_followup"] = float(
+            sum(1 for count in task_search_counts.values() if count > 1)
+        )
+        metrics["rounds_used"] = float(rounds_used)
+        metrics["budget_used_ratio"] = rounds_used / max(cfg.max_search_limit or 1, 1)
+        metrics["search_quality_score"] = (
+            metrics["search_quality_score_sum"] / metrics["search_rounds"]
+            if metrics["search_rounds"]
+            else 0.0
+        )
+        cited_contexts = agent_ctx.cited_search_contexts(final_answer or "")
+        cited_task_ids = agent_ctx.cited_task_ids(final_answer or "")
+        metrics["citation_count"] = float(
+            len(agent_ctx.cited_result_ids(final_answer or ""))
+        )
+        metrics["cited_search_contexts"] = float(len(cited_contexts))
+        metrics["cited_task_coverage_ratio"] = (
+            len(cited_task_ids) / len(active_tasks) if active_tasks else 1.0
+        )
+        answer_allowed = False
+        if final_answer:
+            answer_allowed = bool(
+                (
+                    cfg.allow_internal_knowledge_answer
+                    and metrics["direct_answers"] > 0
+                    and rounds_used == 0
+                )
+                or not cfg.require_sufficient_evidence_before_answer
+                or self._has_sufficient_evidence(
+                    latest_evaluation, task_statuses, active_tasks
+                )
+            )
+        metrics["answer_allowed"] = 1.0 if answer_allowed else 0.0
+        final_evidence_sufficient = self._has_sufficient_evidence(
+            latest_evaluation, task_statuses, active_tasks
+        )
+        metrics["final_evidence_sufficient"] = 1.0 if final_evidence_sufficient else 0.0
+        useful_fetched_pages = 0.0
+        if final_answer and agent_ctx.fetched_pages:
+            cited_urls = {
+                result.url
+                for result in agent_ctx.cited_results(final_answer)
+                if result.url
+            }
+            useful_fetched_pages = float(
+                sum(1 for page in agent_ctx.fetched_pages if page.url in cited_urls)
+            )
+        metrics["useful_fetched_pages"] = useful_fetched_pages
+        metrics["unnecessary_fetch_count"] = max(
+            0.0, metrics["fetched_pages"] - useful_fetched_pages
+        )
+        answered_directly = metrics["direct_answers"] > 0.0 and rounds_used == 0
+        metrics["answer_when_evidence_insufficient"] = (
+            1.0
+            if (
+                final_answer
+                and not answered_directly
+                and not final_evidence_sufficient
+                and metrics["forced_final_answer"] == 0.0
+            )
+            else 0.0
+        )
+        final_effective_limit = self._loop_controller.effective_search_limit(
+            len(active_tasks)
+        )
+        metrics["search_budget_exhausted_without_answer"] = (
+            1.0
+            if (
+                final_effective_limit > 0
+                and rounds_used >= float(final_effective_limit)
+                and not final_answer
+            )
+            else 0.0
+        )
+        if exit_status == "max_turns" and metrics["search_limit_hits"] > 0.0:
+            exit_status = "search_limit"
+        if exit_status in {"no_action", "format_error_limit"}:
+            metrics["exit_no_action"] = 1.0
+        self._mark_exit(metrics, exit_status)
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
@@ -1370,99 +1479,17 @@ class SearchAgentLoop(AgentLoopBase):
                 num_turns=num_turns,
             )
 
-        # Derived metrics used by the reward function — computed once here so
-        # callers don't have to re-derive them from the raw counts.
-        # Use total *attempted* queries (executed + duplicates) as denominator
-        # so the ratio stays in [0, 1] even when duplicates exceed new queries.
-        total_attempted = metrics["search_queries"] + metrics["repeated_search_queries"]
-        metrics["repeated_query_ratio"] = (
-            metrics["repeated_search_queries"] / total_attempted
-            if total_attempted
-            else 0.0
+        self._finalize_run_metrics(
+            metrics,
+            rounds_used=rounds_used,
+            task_statuses=task_statuses,
+            task_search_counts=task_search_counts,
+            active_tasks=active_tasks,
+            agent_ctx=agent_ctx,
+            latest_evaluation=latest_evaluation,
+            final_answer=final_answer,
+            exit_status=exit_status,
         )
-        metrics["subquestion_coverage_ratio"] = (
-            sum(task_statuses.values()) / len(task_statuses) if task_statuses else 1.0
-        )
-        metrics["subquestions_covered"] = float(sum(task_statuses.values()))
-        metrics["research_tasks_with_followup"] = float(
-            sum(1 for count in task_search_counts.values() if count > 1)
-        )
-        metrics["rounds_used"] = float(rounds_used)
-        metrics["budget_used_ratio"] = rounds_used / max(cfg.max_search_limit or 1, 1)
-        metrics["search_quality_score"] = (
-            metrics["search_quality_score_sum"] / metrics["search_rounds"]
-            if metrics["search_rounds"]
-            else 0.0
-        )
-        cited_contexts = agent_ctx.cited_search_contexts(final_answer or "")
-        cited_task_ids = agent_ctx.cited_task_ids(final_answer or "")
-        metrics["citation_count"] = float(
-            len(agent_ctx.cited_result_ids(final_answer or ""))
-        )
-        metrics["cited_search_contexts"] = float(len(cited_contexts))
-        metrics["cited_task_coverage_ratio"] = (
-            len(cited_task_ids) / len(active_tasks) if active_tasks else 1.0
-        )
-        answer_allowed = False
-        if final_answer:
-            answer_allowed = bool(
-                (
-                    cfg.allow_internal_knowledge_answer
-                    and metrics["direct_answers"] > 0
-                    and rounds_used == 0
-                )
-                or not cfg.require_sufficient_evidence_before_answer
-                or self._has_sufficient_evidence(
-                    latest_evaluation, task_statuses, active_tasks
-                )
-            )
-        metrics["answer_allowed"] = 1.0 if answer_allowed else 0.0
-        final_evidence_sufficient = self._has_sufficient_evidence(
-            latest_evaluation, task_statuses, active_tasks
-        )
-        metrics["final_evidence_sufficient"] = 1.0 if final_evidence_sufficient else 0.0
-        useful_fetched_pages = 0.0
-        if final_answer and agent_ctx.fetched_pages:
-            cited_urls = {
-                result.url
-                for result in agent_ctx.cited_results(final_answer)
-                if result.url
-            }
-            useful_fetched_pages = float(
-                sum(1 for page in agent_ctx.fetched_pages if page.url in cited_urls)
-            )
-        metrics["useful_fetched_pages"] = useful_fetched_pages
-        metrics["unnecessary_fetch_count"] = max(
-            0.0, metrics["fetched_pages"] - useful_fetched_pages
-        )
-        answered_directly = metrics["direct_answers"] > 0.0 and rounds_used == 0
-        metrics["answer_when_evidence_insufficient"] = (
-            1.0
-            if (
-                final_answer
-                and not answered_directly
-                and not final_evidence_sufficient
-                and metrics["forced_final_answer"] == 0.0
-            )
-            else 0.0
-        )
-        final_effective_limit = self._loop_controller.effective_search_limit(
-            len(active_tasks)
-        )
-        metrics["search_budget_exhausted_without_answer"] = (
-            1.0
-            if (
-                final_effective_limit > 0
-                and rounds_used >= float(final_effective_limit)
-                and not final_answer
-            )
-            else 0.0
-        )
-        if exit_status == "max_turns" and metrics["search_limit_hits"] > 0.0:
-            exit_status = "search_limit"
-        if exit_status in {"no_action", "format_error_limit"}:
-            metrics["exit_no_action"] = 1.0
-        self._mark_exit(metrics, exit_status)
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,

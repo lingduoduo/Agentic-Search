@@ -2554,3 +2554,33 @@ def test_forced_turn_emitting_no_answer_returns_none():
 
     assert out.final_answer is None
     assert out.metrics["forced_final_answer"] == 0.0
+
+
+def test_finalize_run_metrics_computes_derived_keys():
+    loop = SearchAgentLoop(
+        tokenizer=DummyTokenizerWithEncode(),
+        server_manager=DummyServerManager([]),
+        search_config=SearchAgentLoopConfig(max_search_limit=3),
+    )
+    metrics = loop._initial_metrics()
+    metrics["search_queries"] = 2.0
+    metrics["repeated_search_queries"] = 0.0
+    loop._finalize_run_metrics(
+        metrics,
+        rounds_used=0,
+        task_statuses={},
+        task_search_counts={},
+        active_tasks={},
+        agent_ctx=AgentContext(),
+        final_answer=None,
+        latest_evaluation=None,
+        exit_status="answered",
+    )
+    # No subquestions → coverage ratio defaults to 1.0
+    assert metrics["subquestion_coverage_ratio"] == 1.0
+    # No answer → answer_allowed stays 0.0
+    assert metrics["answer_allowed"] == 0.0
+    # rounds_used surfaced as float
+    assert metrics["rounds_used"] == 0.0
+    # exit fixup recorded
+    assert metrics["exit_answered"] == 1.0
