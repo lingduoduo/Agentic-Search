@@ -39,7 +39,9 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from enum import Enum
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from src.agents.core.base import (
@@ -50,12 +52,30 @@ from src.agents.core.base import (
     register,
     simple_timer,
 )
-from src.tools.base import Tool
-from src.tools.parsers import FunctionCall, ToolParser
 from src.agents.core.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
+from src.tools.base import Tool, ToolEffect
+from src.tools.parsers import FunctionCall, ToolParser
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
+
+
+class ApprovalDecision(str, Enum):
+    APPROVE = "approve"
+    DENY = "deny"
+    EXPIRED = "expired"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolApprovalRequest:
+    approval_id: str
+    tool_name: str
+    arguments: dict[str, Any]
+    created_at: datetime
+    expires_at: datetime
+
+
+ToolApprovalCallback = Callable[[ToolApprovalRequest], Awaitable[ApprovalDecision]]
 
 
 @dataclass(frozen=True)
@@ -75,6 +95,7 @@ class ToolAgentLoopConfig(AgentLoopConfig):
     #   "middle" — keep equal halves from start and end
     tool_response_truncate_side: str = "right"
     tool_parser_format: str = "json"
+    approval_timeout_seconds: float = 60.0
 
 
 @register("tool_agent")
@@ -198,14 +219,90 @@ class ToolAgentLoop(AgentLoopBase):
             error_message=error_message,
         )
 
+    async def _request_approval(
+        self,
+        tool_call: FunctionCall,
+        on_approval: ToolApprovalCallback | None,
+        metrics: dict[str, float],
+    ) -> ApprovalDecision:
+        tool = self.tools.get(tool_call.name)
+        if tool is None or tool.effect is not ToolEffect.SIDE_EFFECTING:
+            return ApprovalDecision.APPROVE
+
+        metrics["tool_approvals_requested"] += 1
+        if on_approval is None:
+            metrics["tool_approvals_denied"] += 1
+            return ApprovalDecision.DENY
+
+        created_at = datetime.now(UTC)
+        request = ToolApprovalRequest(
+            approval_id=uuid4().hex,
+            tool_name=tool_call.name,
+            arguments=tool_call.parsed_arguments(),
+            created_at=created_at,
+            expires_at=created_at
+            + timedelta(seconds=self.tool_config.approval_timeout_seconds),
+        )
+        try:
+            decision = await asyncio.wait_for(
+                on_approval(request), timeout=self.tool_config.approval_timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            metrics["tool_approvals_expired"] += 1
+            return ApprovalDecision.EXPIRED
+        except asyncio.CancelledError:
+            metrics["tool_approvals_cancelled"] += 1
+            raise
+        except Exception:
+            logger.exception("Approval callback failed for tool %r", tool_call.name)
+            metrics["tool_approval_errors"] += 1
+            metrics["tool_approvals_denied"] += 1
+            return ApprovalDecision.DENY
+
+        metrics[
+            "tool_approvals_approved"
+            if decision is ApprovalDecision.APPROVE
+            else "tool_approvals_expired"
+            if decision is ApprovalDecision.EXPIRED
+            else "tool_approvals_denied"
+        ] += 1
+        return decision
+
+    @staticmethod
+    def _skipped_tool_result(
+        tool_call: FunctionCall, decision: ApprovalDecision
+    ) -> ToolExecutionResult:
+        error_code = (
+            "approval_expired"
+            if decision is ApprovalDecision.EXPIRED
+            else "approval_denied"
+        )
+        return ToolExecutionResult(
+            tool_name=tool_call.name,
+            status=TaskStatus.SKIPPED,
+            result=None,
+            arguments=tool_call.parsed_arguments(),
+            performance=PerformanceMetrics(execution_time=0.0, success_rate=0.0),
+            error_code=error_code,
+            error_message="Tool execution skipped because approval was not granted.",
+        )
+
     async def run(
         self,
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
         *,
         on_turn: "OnTurnCallback | None" = None,
+        on_approval: ToolApprovalCallback | None = None,
     ) -> AgentLoopOutput:
-        metrics: dict[str, float] = {}
+        metrics: dict[str, float] = {
+            "tool_approvals_requested": 0,
+            "tool_approvals_approved": 0,
+            "tool_approvals_denied": 0,
+            "tool_approvals_expired": 0,
+            "tool_approvals_cancelled": 0,
+            "tool_approval_errors": 0,
+        }
         request_id = uuid4().hex
         event_loop = await self.get_loop()
         prompt_ids: list[int] = await event_loop.run_in_executor(
@@ -255,12 +352,25 @@ class ToolAgentLoop(AgentLoopBase):
             if not tool_calls:
                 break
 
-            # ── execute tools in parallel ─────────────────────────────────
+            # Resolve the whole batch before any tool may execute.
+            truncated_calls = tool_calls[: self.tool_config.max_parallel_calls]
+            decisions = await asyncio.gather(
+                *[
+                    self._request_approval(tc, on_approval, metrics)
+                    for tc in truncated_calls
+                ]
+            )
+
+            # ── execute approved tools in parallel ────────────────────────
             with simple_timer("tool_calls", metrics):
                 tool_execution_results = await asyncio.gather(
                     *[
                         self._call_tool(tc)
-                        for tc in tool_calls[: self.tool_config.max_parallel_calls]
+                        if decision is ApprovalDecision.APPROVE
+                        else asyncio.sleep(
+                            0, result=self._skipped_tool_result(tc, decision)
+                        )
+                        for tc, decision in zip(truncated_calls, decisions)
                     ]
                 )
             tool_results.extend(tool_execution_results)
@@ -268,15 +378,22 @@ class ToolAgentLoop(AgentLoopBase):
                 for r in tool_execution_results:
                     await on_turn(assistant_turns, r.tool_name, 0)
 
-            if any(
-                r.status is not TaskStatus.COMPLETED for r in tool_execution_results
-            ):
+            if any(r.status is TaskStatus.FAILED for r in tool_execution_results):
                 break
 
             tool_responses = [
                 {
                     "role": "tool",
-                    "content": self._truncate_tool_response(str(result.result)),
+                    "content": self._truncate_tool_response(
+                        str(result.result)
+                        if result.status is TaskStatus.COMPLETED
+                        else json.dumps(
+                            {
+                                "status": "skipped",
+                                "error_code": result.error_code,
+                            }
+                        )
+                    ),
                 }
                 for result in tool_execution_results
             ]
