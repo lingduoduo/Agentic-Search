@@ -1,16 +1,12 @@
-"""Unit tests for SearchAgentState — the six-field search-loop state (T-A.1).
-
-SearchAgentState is the single source of truth threaded through the search
-components (Planner, SearchTool, RerankerTool, EvidenceJudge, AnswerGenerator).
-It is distinct from the orchestration-level ``AgentState`` in the same module.
-"""
+"""Unit tests for the canonical search fields on AgentState."""
 
 from __future__ import annotations
 
 from src.agents.state import (
+    AgentState,
     Citation,
     Retriever,
-    SearchAgentState,
+    UserRequest,
 )
 from src.context.search import SearchResult
 
@@ -19,8 +15,16 @@ def _doc(doc_id: str, score: float = 1.0) -> SearchResult:
     return SearchResult(contents=f"text-{doc_id}", score=score, title=doc_id)
 
 
+def _state(question: str = "q") -> AgentState:
+    return AgentState(
+        request_id="req-1",
+        user_request=UserRequest(user_id="u1", channel="test", message=question),
+        question=question,
+    )
+
+
 def test_initializes_with_question_and_empty_defaults() -> None:
-    state = SearchAgentState(question="what is faiss?")
+    state = _state("what is faiss?")
 
     assert state.question == "what is faiss?"
     assert state.previous_queries == []
@@ -30,22 +34,21 @@ def test_initializes_with_question_and_empty_defaults() -> None:
     assert state.citations == []
 
 
-def test_record_search_tracks_query_appends_docs_and_increments_round() -> None:
-    state = SearchAgentState(question="q")
+def test_record_search_round_tracks_queries_docs_and_increments_once() -> None:
+    state = _state()
 
-    state.record_search("faiss index", [_doc("a"), _doc("b")])
+    state.record_search_round(["faiss index", "vector index"], [_doc("a"), _doc("b")])
 
-    assert state.previous_queries == ["faiss index"]
+    assert state.previous_queries == ["faiss index", "vector index"]
     assert [d.title for d in state.retrieved_docs] == ["a", "b"]
     assert state.search_rounds == 1
 
 
-def test_record_search_dedupes_query_but_still_counts_the_round() -> None:
-    """A repeated query is not re-listed, but it still consumed a retriever call."""
-    state = SearchAgentState(question="q")
+def test_record_search_round_dedupes_queries_but_counts_each_round() -> None:
+    state = _state()
 
-    state.record_search("dup", [_doc("a")])
-    state.record_search("dup", [_doc("b")])
+    state.record_search_round(["dup", "dup"], [_doc("a")])
+    state.record_search_round(["dup"], [_doc("b")])
 
     assert state.previous_queries == ["dup"]  # deduped, order preserved
     assert [d.title for d in state.retrieved_docs] == [
@@ -55,19 +58,19 @@ def test_record_search_dedupes_query_but_still_counts_the_round() -> None:
     assert state.search_rounds == 2  # each retriever call counts
 
 
-def test_record_search_preserves_insertion_order_across_distinct_queries() -> None:
-    state = SearchAgentState(question="q")
+def test_record_search_round_preserves_distinct_query_order() -> None:
+    state = _state()
 
-    state.record_search("first", [_doc("a")])
-    state.record_search("second", [_doc("b")])
+    state.record_search_round(["first"], [_doc("a")])
+    state.record_search_round(["second"], [_doc("b")])
 
     assert state.previous_queries == ["first", "second"]
     assert state.search_rounds == 2
 
 
 def test_record_rerank_reorders_docs_without_incrementing_search_rounds() -> None:
-    state = SearchAgentState(question="q")
-    state.record_search("query", [_doc("a", 0.1), _doc("b", 0.9)])
+    state = _state()
+    state.record_search_round(["query"], [_doc("a", 0.1), _doc("b", 0.9)])
 
     reordered = list(reversed(state.retrieved_docs))
     state.record_rerank(reordered)
@@ -77,7 +80,7 @@ def test_record_rerank_reorders_docs_without_incrementing_search_rounds() -> Non
 
 
 def test_set_evidence_clamps_to_unit_interval() -> None:
-    state = SearchAgentState(question="q")
+    state = _state()
 
     state.set_evidence(0.42)
     assert state.evidence_score == 0.42
@@ -90,7 +93,7 @@ def test_set_evidence_clamps_to_unit_interval() -> None:
 
 
 def test_set_citations_replaces_citations() -> None:
-    state = SearchAgentState(question="q")
+    state = _state()
     cites = [Citation(doc_id="a", marker="[1]", text="snippet")]
 
     state.set_citations(cites)
@@ -99,9 +102,9 @@ def test_set_citations_replaces_citations() -> None:
 
 
 def test_question_is_preserved_across_all_operations() -> None:
-    state = SearchAgentState(question="immutable?")
+    state = _state("immutable?")
 
-    state.record_search("q", [_doc("a")])
+    state.record_search_round(["q"], [_doc("a")])
     state.record_rerank([_doc("a")])
     state.set_evidence(0.5)
     state.set_citations([Citation(doc_id="a", marker="[1]")])

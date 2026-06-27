@@ -66,7 +66,14 @@ def test_agent_state_keeps_runtime_fields_structured_and_slotted():
 
     assert not hasattr(state, "__dict__")
     assert state.tool_results[0].success is True
+    assert state.question == "Find docs"
+    assert state.previous_queries == []
+    assert state.retrieved_docs == []
+    assert state.evidence_score == 0.0
+    assert state.search_rounds == 0
+    assert state.citations == []
     assert state.to_dict()["route"]["confidence"] == 0.91
+    assert state.to_dict()["question"] == "Find docs"
     assert state.trace == [{"event": "route_selected", "target_agent": "qa"}]
 
 

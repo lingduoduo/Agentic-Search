@@ -200,33 +200,6 @@ class TaskNode:
         return asdict(self)
 
 
-@dataclass(slots=True)
-class AgentState:
-    request_id: str
-    user_request: UserRequest
-    route: RouteDecision | None = None
-    short_term_memory: list[dict[str, str]] = field(default_factory=list)
-    long_term_memory: dict[str, Any] = field(default_factory=dict)
-    retrieved_user_docs: list[RetrievedDocument] = field(default_factory=list)
-    retrieved_policy_docs: list[RetrievedDocument] = field(default_factory=list)
-    plan: Plan | None = None
-    tool_results: list[ToolResult] = field(default_factory=list)
-    draft_response: str | None = None
-    final_response: str | None = None
-    trace: list[dict[str, Any]] = field(default_factory=list)
-
-    def record_trace(self, event: str, **payload: Any) -> None:
-        self.trace.append({"event": event, **payload})
-
-    def add_tool_result(self, result: ToolResult | ToolExecutionResult) -> None:
-        if isinstance(result, ToolExecutionResult):
-            result = result.to_tool_result()
-        self.tool_results.append(result)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
 class Retriever(Enum):
     """The retriever backends the policy can choose between per search."""
 
@@ -241,6 +214,59 @@ class Citation:
     doc_id: str
     marker: str
     text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class AgentState:
+    request_id: str
+    user_request: UserRequest
+    question: str = ""
+    previous_queries: list[str] = field(default_factory=list)
+    retrieved_docs: list[SearchResult] = field(default_factory=list)
+    evidence_score: float = 0.0
+    search_rounds: int = 0
+    citations: list[Citation] = field(default_factory=list)
+    route: RouteDecision | None = None
+    short_term_memory: list[dict[str, str]] = field(default_factory=list)
+    long_term_memory: dict[str, Any] = field(default_factory=dict)
+    retrieved_user_docs: list[RetrievedDocument] = field(default_factory=list)
+    retrieved_policy_docs: list[RetrievedDocument] = field(default_factory=list)
+    plan: Plan | None = None
+    tool_results: list[ToolResult] = field(default_factory=list)
+    draft_response: str | None = None
+    final_response: str | None = None
+    trace: list[dict[str, Any]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.question:
+            self.question = self.user_request.message
+
+    def record_search_round(self, queries: list[str], docs: list[SearchResult]) -> None:
+        for query in queries:
+            if query not in self.previous_queries:
+                self.previous_queries.append(query)
+        self.retrieved_docs.extend(docs)
+        self.search_rounds += 1
+
+    def record_rerank(self, reordered_docs: list[SearchResult]) -> None:
+        self.retrieved_docs = list(reordered_docs)
+
+    def set_evidence(self, score: float) -> None:
+        self.evidence_score = max(0.0, min(1.0, score))
+
+    def set_citations(self, citations: list[Citation]) -> None:
+        self.citations = list(citations)
+
+    def record_trace(self, event: str, **payload: Any) -> None:
+        self.trace.append({"event": event, **payload})
+
+    def add_tool_result(self, result: ToolResult | ToolExecutionResult) -> None:
+        if isinstance(result, ToolExecutionResult):
+            result = result.to_tool_result()
+        self.tool_results.append(result)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
