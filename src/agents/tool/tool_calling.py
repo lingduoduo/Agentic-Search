@@ -226,7 +226,7 @@ class ToolAgentLoop(AgentLoopBase):
         metrics: dict[str, float],
     ) -> ApprovalDecision:
         tool = self.tools.get(tool_call.name)
-        if tool is None or tool.effect is not ToolEffect.SIDE_EFFECTING:
+        if tool is not None and tool.effect is ToolEffect.READ_ONLY:
             return ApprovalDecision.APPROVE
 
         metrics["tool_approvals_requested"] += 1

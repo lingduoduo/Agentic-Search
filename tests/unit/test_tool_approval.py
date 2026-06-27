@@ -71,6 +71,46 @@ def test_approval_contract_and_missing_callback_fail_closed():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("decision", "expected_executions", "expected_error"),
+    [
+        (None, [], "approval_denied"),
+        (ApprovalDecision.APPROVE, [5], None),
+        (ApprovalDecision.DENY, [], "approval_denied"),
+    ],
+)
+async def test_unspecified_tools_require_approval(
+    decision, expected_executions, expected_error
+):
+    executions = []
+
+    @FunctionTool.from_fn()
+    def legacy_tool(value: int):
+        executions.append(value)
+        return value
+
+    requests = []
+
+    async def decide(request):
+        requests.append(request)
+        return decision
+
+    loop, _ = _loop(
+        [legacy_tool],
+        ['{"name":"legacy_tool","arguments":{"value":5}}', "done"],
+    )
+    output = await loop.run(
+        [{"role": "user", "content": "go"}],
+        {},
+        on_approval=decide if decision is not None else None,
+    )
+
+    assert executions == expected_executions
+    assert _trace(output)[0]["error_code"] == expected_error
+    assert len(requests) == (decision is not None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("decision", "code", "executions"),
     [
         (ApprovalDecision.APPROVE, None, [7]),
