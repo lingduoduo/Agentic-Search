@@ -124,11 +124,24 @@ def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):
     """When SearchAgentLoop.run fires on_turn, progress SSE events appear before done."""
     from src.agents.search import SearchAgentLoop
     from src.agents.base import AgentLoopOutput
+    from src.agents.control_flow_trace import ControlFlowEvent
 
-    async def fake_run(self, messages, sampling_params, *, on_turn=None):
+    event = ControlFlowEvent(
+        sequence=1,
+        timestamp="2026-06-27T12:00:00.000Z",
+        turn=1,
+        component="planner",
+        action="search_planned",
+        status="decided",
+        details={"decision": "search"},
+    )
+
+    async def fake_run(self, messages, sampling_params, *, on_turn=None, on_trace=None):
         if on_turn is not None:
             await on_turn(1, "search_routing_tool", 5)
             await on_turn(2, None, 0)
+        if on_trace is not None:
+            await on_trace(event)
         return AgentLoopOutput(
             prompt_ids=[],
             response_ids=[],
@@ -136,6 +149,7 @@ def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):
             num_turns=2,
             final_answer="FAISS is fast.",
             action_trace=None,
+            control_flow_trace=[event],
         )
 
     monkeypatch.setattr(SearchAgentLoop, "run", fake_run)
@@ -170,6 +184,7 @@ def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
     assert "progress" in types, "Expected at least one progress event"
+    assert "trace" in types
     assert "done" in types
 
     # Progress must arrive before done
@@ -183,3 +198,13 @@ def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):
 
     done_event = next(e for e in events if e["type"] == "done")
     assert "intent" in done_event  # done event now includes intent
+    assert done_event["control_flow_trace"] == [event.to_dict()]
+
+    trace_event = next(e for e in events if e["type"] == "trace")
+    assert trace_event["event"] == event.to_dict()
+    assert events.index(trace_event) < done_index
+
+    session = client.get(f"/api/sessions/{done_event['session_id']}").json()
+    assert session["messages"][-1]["metadata"]["control_flow_trace"] == [
+        event.to_dict()
+    ]
