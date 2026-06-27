@@ -33,6 +33,7 @@ from .components.evidence_judge import EvidenceJudge
 from .components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
 from .components.planner import Planner
 from .components.reranker_tool import RerankFn
+from .control_flow_trace import ControlFlowRecorder, EventSink
 from .state import AgentState, Retriever, UserRequest
 
 # ---------------------------------------------------------------------------
@@ -1251,10 +1252,12 @@ class SearchAgentLoop(AgentLoopBase):
         sampling_params: dict[str, Any],
         *,
         on_turn: "OnTurnCallback | None" = None,
+        on_trace: EventSink | None = None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = self._initial_metrics()
         request_id = uuid4().hex
         agent_ctx = AgentContext()
+        recorder = ControlFlowRecorder(request_id, sink=on_trace)
         question = self._question_from_messages(messages)
         state = AgentState(
             request_id=request_id,
@@ -1311,6 +1314,13 @@ class SearchAgentLoop(AgentLoopBase):
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
+                    recorder.record(
+                        turn=num_turns,
+                        component="planner",
+                        action="format_recovery",
+                        status="decided",
+                        details={"decision": "retry"},
+                    )
                     d = await self._handle_no_action(
                         working_messages=working_messages,
                         agent_ctx=agent_ctx,
@@ -1585,6 +1595,7 @@ class SearchAgentLoop(AgentLoopBase):
             final_answer=final_answer,
             exit_status=exit_status,
         )
+        await recorder.drain()
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
@@ -1597,4 +1608,5 @@ class SearchAgentLoop(AgentLoopBase):
             trajectory_messages=list(working_messages),
             action_trace="\n".join(action_trace_parts) if action_trace_parts else None,
             final_answer=final_answer,
+            control_flow_trace=recorder.snapshot(),
         )

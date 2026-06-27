@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from .control_flow_trace import ControlFlowEvent
+
 # Matches the first recognised action tag in a model response.
 # Covers all tags used by SearchAgentLoop; callers can override via action_re.
 _DEFAULT_ACTION_RE: re.Pattern[str] = re.compile(
@@ -128,6 +130,7 @@ class AgentLoopOutput:
     trajectory_messages: list[dict[str, Any]] = field(default_factory=list)
     action_trace: str | None = None
     final_answer: str | None = None  # Content of the last <answer> tag, if any
+    control_flow_trace: list[ControlFlowEvent] = field(default_factory=list)
 
 
 @contextmanager
