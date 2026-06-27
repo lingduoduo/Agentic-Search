@@ -11,7 +11,14 @@ import asyncio
 import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Callable
+
+
+class ToolEffect(str, Enum):
+    READ_ONLY = "read_only"
+    SIDE_EFFECTING = "side_effecting"
+    UNSPECIFIED = "unspecified"
 
 
 @dataclass(slots=True)
@@ -41,6 +48,10 @@ class Tool(ABC):
         response, raw, meta = await tool.execute(instance_id, arguments)
         await tool.release(instance_id)
     """
+
+    @property
+    def effect(self) -> ToolEffect:
+        return ToolEffect.UNSPECIFIED
 
     @property
     @abstractmethod
@@ -88,10 +99,12 @@ class FunctionTool(Tool):
         name: str | None = None,
         description: str = "",
         parameters: dict[str, Any] | None = None,
+        effect: ToolEffect = ToolEffect.UNSPECIFIED,
     ) -> None:
         super().__init__()
         self._fn = fn
         self._name = name or fn.__name__
+        self._effect = effect
         self._schema = ToolSchema(
             name=self._name,
             description=description or (fn.__doc__ or "").strip(),
@@ -105,6 +118,10 @@ class FunctionTool(Tool):
     @property
     def schema(self) -> ToolSchema:
         return self._schema
+
+    @property
+    def effect(self) -> ToolEffect:
+        return self._effect
 
     async def execute(
         self, instance_id: str, arguments: dict[str, Any]
@@ -122,10 +139,17 @@ class FunctionTool(Tool):
         description: str = "",
         parameters: dict[str, Any] | None = None,
         name: str | None = None,
+        effect: ToolEffect = ToolEffect.UNSPECIFIED,
     ) -> Callable:
         """Decorator factory that wraps a function as a FunctionTool."""
 
         def decorator(fn: Callable) -> "FunctionTool":
-            return cls(fn, name=name, description=description, parameters=parameters)
+            return cls(
+                fn,
+                name=name,
+                description=description,
+                parameters=parameters,
+                effect=effect,
+            )
 
         return decorator

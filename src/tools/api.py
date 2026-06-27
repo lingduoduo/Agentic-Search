@@ -14,9 +14,9 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from ..context.retrieval.client import aiohttp
-from .base import Tool, ToolSchema
+from .base import Tool, ToolEffect, ToolSchema
 
-HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
+HTTP_METHODS = {"get", "head", "options", "post", "put", "patch", "delete"}
 _NAME_RE = re.compile(r"[^A-Za-z0-9_]+")
 _PATH_PARAM_RE = re.compile(r"\{([^{}]+)\}")
 
@@ -88,6 +88,12 @@ class ApiRequestTool(Tool):
     @property
     def schema(self) -> ToolSchema:
         return self._schema
+
+    @property
+    def effect(self) -> ToolEffect:
+        if self._spec.method in {"get", "head", "options"}:
+            return ToolEffect.READ_ONLY
+        return ToolEffect.SIDE_EFFECTING
 
     async def execute(
         self, instance_id: str, arguments: dict[str, Any]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+from src.tools import ToolEffect
 from src.tools.search import (
     MultiQueryWebSearchTool,
     SearchPage,
@@ -253,6 +254,7 @@ def test_build_search_tool_wraps_formatted_search(monkeypatch):
     )
 
     tool = build_search_tool(page_size=3)
+    assert tool.effect is ToolEffect.READ_ONLY
     text, raw, meta = asyncio.run(tool.execute("default", {"query": "faiss"}))
 
     assert text == "formatted"

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from src.agents.core.base import AgentLoopOutput
 from src.internal.servers.web.intent_routing import _infer_intent_from_output
 from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
+from src.tools import ToolEffect
 
 
 def _make_output(
@@ -73,6 +74,7 @@ def test_build_search_routing_tool_schema():
         search_url="http://localhost:8001/retrieve", top_k=3
     )
     assert tool.schema.name == "search_routing_tool"
+    assert tool.effect is ToolEffect.READ_ONLY
     assert "query" in tool.schema.parameters.get("properties", {})
 
 
@@ -81,6 +83,7 @@ def test_build_rag_routing_tool_schema():
         llm=None, search_url="http://localhost:8001/retrieve", top_k=3
     )
     assert tool.schema.name == "rag_routing_tool"
+    assert tool.effect is ToolEffect.READ_ONLY
     assert "query" in tool.schema.parameters.get("properties", {})
 
 

@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import pytest
 
+from src.tools import FunctionTool, ToolEffect
 from src.tools.registry import (
     ToolRegistry,
     _check_json_type,
     _params_from_signature,
     _validate_arguments,
 )
+
+
+def test_function_tool_defaults_to_unspecified_effect() -> None:
+    tool = FunctionTool(lambda: "ok", name="unknown")
+    assert tool.effect is ToolEffect.UNSPECIFIED
+    assert "effect" not in tool.schema.to_dict()["function"]
+
+
+def test_registry_decorator_accepts_read_only_effect() -> None:
+    registry = ToolRegistry()
+
+    @registry.tool(effect=ToolEffect.READ_ONLY)
+    def lookup() -> str:
+        return "ok"
+
+    assert registry.get("lookup").effect is ToolEffect.READ_ONLY
 
 
 # ---------------------------------------------------------------------------

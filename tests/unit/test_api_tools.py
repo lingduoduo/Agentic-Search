@@ -13,6 +13,7 @@ from src.tools.api import (
     ApiToolRegistry,
     parse_openapi_schema,
 )
+from src.tools.base import ToolEffect
 from src.tools.openapi_schema import OpenAPISchema
 from src.tools.registry import ToolRegistry
 
@@ -137,6 +138,25 @@ def test_api_tool_registry_creates_provider_and_tools():
     assert provider.tools["YoudaoSuggest"].parameters["required"] == ["doctype", "q"]
     assert "rank" in provider.tools["createItem"].parameters["properties"]
     assert registry.list_providers("dem") == [provider]
+
+
+def test_api_request_tool_infers_effect_from_http_method():
+    methods = ("get", "head", "options", "post", "put", "patch", "delete")
+    schema = json.dumps(
+        {
+            "paths": {
+                f"/{method}": {method: {"operationId": method}} for method in methods
+            }
+        }
+    )
+    registry = ApiToolRegistry()
+    provider = registry.create_provider(name="effects", openapi_schema=schema)
+    tools = {tool.name: tool for tool in registry.build_tools(provider.id)}
+
+    for method in ("get", "head", "options"):
+        assert tools[method].effect is ToolEffect.READ_ONLY
+    for method in ("post", "put", "patch", "delete"):
+        assert tools[method].effect is ToolEffect.SIDE_EFFECTING
 
 
 def test_api_tool_registry_rejects_duplicate_provider_and_tool_names():

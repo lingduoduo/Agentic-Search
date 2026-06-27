@@ -14,7 +14,7 @@ from urllib.parse import urlunsplit
 
 from ..context.search import SearchResult
 from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
-from .base import FunctionTool, Tool, ToolSchema
+from .base import FunctionTool, Tool, ToolEffect, ToolSchema
 
 SearchProvider = Literal["retrieval", "google", "serpapi", "serper"]
 
@@ -526,6 +526,7 @@ def build_search_tool(
             "properties": {"query": {"type": "string", "description": "Search query"}},
             "required": ["query"],
         },
+        effect=ToolEffect.READ_ONLY,
     )
 
 
