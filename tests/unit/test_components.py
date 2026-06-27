@@ -488,6 +488,21 @@ def test_planner_parses_complete_mixed_turn() -> None:
     assert planner.round_rerank(text, ["search", "searches"]) is True
 
 
+def test_planner_partitions_requests_from_agent_state() -> None:
+    from src.agents.components.planner import Planner
+
+    state = _state()
+    state.record_search_round(["seen"], [])
+
+    allowed, repeated, overflow = Planner().partition_search_requests(
+        [(None, "seen"), (None, "new")], state, effective_limit=2
+    )
+
+    assert allowed == [(None, "new")]
+    assert repeated == ["seen"]
+    assert overflow == []
+
+
 # --------------------------------------------------------------------------- #
 # RerankerTool (T-A.3)
 # --------------------------------------------------------------------------- #

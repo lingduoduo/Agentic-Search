@@ -95,6 +95,26 @@ class Planner:
         )
         return bool(match and match.group("rerank").lower() == "true")
 
+    @staticmethod
+    def partition_search_requests(
+        query_specs: list[tuple[str | None, str]],
+        state: AgentState,
+        effective_limit: int,
+    ) -> tuple[list[tuple[str | None, str]], list[str], list[str]]:
+        seen = {_normalize_query(query) for query in state.previous_queries}
+        at_limit = effective_limit > 0 and state.search_rounds >= effective_limit
+        allowed: list[tuple[str | None, str]] = []
+        repeated: list[str] = []
+        overflow: list[str] = []
+        for task_id, query in query_specs:
+            if _normalize_query(query) in seen:
+                repeated.append(query)
+            elif at_limit:
+                overflow.append(query)
+            else:
+                allowed.append((task_id, query))
+        return allowed, repeated, overflow
+
     def decide(self, text: str, state: AgentState) -> PlannerDecision:
         seen = {_normalize_query(q) for q in state.previous_queries}
         search = _SEARCH_RE.search(text)
