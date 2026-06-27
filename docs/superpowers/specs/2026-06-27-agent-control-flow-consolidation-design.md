@@ -2,11 +2,11 @@
 
 **Date:** 2026-06-27
 **Status:** Approved for implementation planning
-**Scope:** Consolidate the existing search-agent state and component control flow without changing the public XML protocol or observable loop behavior.
+**Scope:** Improve the existing automated search workflow by consolidating state, component execution, and loop decisions without changing the public XML protocol or observable behavior.
 
 ## Goal
 
-Make the existing `AgentState` the single mutable state object used by the agent loop and its five existing components:
+Make the existing workflow easier to reason about, test, and extend. The existing `AgentState` becomes the single mutable state object used by the agent loop and its five existing components:
 
 - `Planner`
 - `SearchTool`
@@ -14,7 +14,41 @@ Make the existing `AgentState` the single mutable state object used by the agent
 - `EvidenceJudge`
 - `AnswerGenerator`
 
-Remove the duplicate `SearchAgentState`. Do not introduce another state class, compatibility wrapper, or alias. Preserve current search-loop behavior, output shape, metrics, XML actions, retries, caching, and answer gating.
+Remove the duplicate `SearchAgentState`, route work through the existing components, and make `LoopController` the explicit home of continuation and answer policy. Do not introduce another state class, compatibility wrapper, or alias. Preserve current search-loop behavior, output shape, metrics, XML actions, retries, caching, and answer gating.
+
+## Workflow Improvement
+
+This work is not merely a type consolidation. It replaces scattered implicit control flow with one visible automated cycle:
+
+```text
+Generate
+   |
+   v
+Planner ---- no valid action ----> existing format-recovery path
+   |
+   v
+LoopController -- stop/force -----> Answer Generator
+   |
+   v
+Search Tool ---- optional ----> Reranker Tool
+   |                                |
+   +----------------+---------------+
+                    v
+              Evidence Judge
+                    |
+                    v
+              LoopController
+          continue / accept / reject / force
+```
+
+The improved workflow has four properties:
+
+1. **One state owner:** components mutate their owned fields on the same `AgentState`.
+2. **One policy owner:** `LoopController` decides whether searching continues and how an answer is handled.
+3. **Explicit component boundaries:** parsing, retrieval, reranking, evidence evaluation, and answer citation resolution run through their named components rather than parallel inline implementations.
+4. **Derived observability:** metrics report decisions and state; they do not independently drive the workflow.
+
+The loop remains fully automated. Human approval, pausing, and resumption are not part of this change.
 
 ## Current Problem
 
@@ -144,6 +178,19 @@ Remain the single policy location for search continuation and final-answer decis
 10. `AnswerGenerator` resolves citations and updates state.
 11. The loop derives metrics and the unchanged `AgentLoopOutput` from state and compatibility context.
 
+### Decision ownership
+
+| Decision | Owner | Inputs | Outcomes |
+|---|---|---|---|
+| What action did the model request? | Planner | generated XML, previous queries | search, rerank, fetch, answer, or format recovery |
+| Is another search allowed? | Loop Controller | search rounds, effective budget, evidence gain and sufficiency | continue, budget exhausted, or plateau |
+| Which backend executes the search? | Search Tool | planned retriever and query batch | vector DB, web, or configured fallback |
+| Is evidence sufficient? | Evidence Judge | accumulated search contexts | score plus boolean sufficiency verdict |
+| Can the candidate answer finish the run? | Loop Controller | evidence verdict and rejection count | accept, reject, or force |
+| Which citations are valid? | Answer Generator | answer text and compatibility context | answer plus structured citations |
+
+This table is the control-flow contract. New behavior should be added to the owning component instead of introducing another branch in `SearchAgentLoop.run()`.
+
 ## Compatibility and Error Handling
 
 - Preserve `SearchAgentLoop.run(...)` and `AgentLoopOutput` signatures.
@@ -222,3 +269,11 @@ Run the full default `pytest` suite before completion.
 - Changes to GRPO rewards or training policy
 - Removal of `AgentContext` from the public output
 - Refactoring unrelated orchestration or graph-agent state types
+
+## Future Extension: Human-in-the-Loop
+
+The improved workflow intentionally leaves a seam for later human oversight without implementing it now. A future design may add a `PAUSE_FOR_HUMAN` outcome at the `LoopController` boundary before high-risk, side-effecting, or unusually expensive actions.
+
+That future work would need to define approval requests, persistence, timeout policy, idempotent resume, and user-interface/API contracts. It should use existing orchestration concerns such as plans and traces rather than adding approval data to the six canonical search fields.
+
+Until that separate design is approved, the loop remains automated and no current task may add approval prompts, pause states, resume tokens, or human-response handling.

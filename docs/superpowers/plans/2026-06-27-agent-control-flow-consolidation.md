@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the existing exported `AgentState` the single state object used by `SearchAgentLoop`, Planner, Search Tool, Reranker Tool, Evidence Judge, Answer Generator, and Loop Controller.
+**Goal:** Improve the existing automated search workflow by making the exported `AgentState`, named components, and Loop Controller the authoritative execution path.
 
-**Architecture:** Merge the six existing search fields and transition methods into `AgentState`, then delete `SearchAgentState`. Migrate one concern at a time from loop locals and metrics into that state while retaining `AgentContext` solely for evidence formatting and output compatibility; preserve all current XML and `AgentLoopOutput` behavior.
+**Architecture:** Merge the six existing search fields and transition methods into `AgentState`, then delete `SearchAgentState`. Route parsing, retrieval, reranking, evidence evaluation, answer handling, and continue/stop policy through their existing named components while retaining `AgentContext` solely for evidence formatting and output compatibility.
 
 **Tech Stack:** Python 3.11+, slotted dataclasses, asyncio, pytest, Ruff.
 
@@ -15,6 +15,7 @@
 - `search_rounds` counts completed search rounds; parallel queries in one round increment it once.
 - Keep existing `AgentState` orchestration fields and construction compatible.
 - Add no dependency, endpoint, configuration setting, or model action.
+- Keep the workflow fully automated; do not add human approval, pause/resume state, or user-response handling.
 - Follow TDD for every behavior change and commit after each task passes its focused tests.
 
 ---
@@ -535,3 +536,7 @@ git commit -m "test: verify unified agent control flow"
 - [ ] Metrics are derived from state and fixed trajectories are unchanged.
 - [ ] `AgentContext` output and citation labels remain compatible.
 - [ ] Focused tests, full tests, Ruff, formatting, and `git diff --check` pass.
+
+## Future Extension (Not an Implementation Task)
+
+The final workflow leaves `LoopController` as the future policy seam for human-in-the-loop control. A separate design may later introduce a `PAUSE_FOR_HUMAN` decision for high-risk, side-effecting, or unusually expensive actions. It must define persistence, timeout, idempotent resume, and UI/API contracts before implementation; none of those behaviors belong in this plan.
