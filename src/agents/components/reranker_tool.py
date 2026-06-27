@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ...context.search import SearchResult
-from ..state import SearchAgentState
+from ..state import AgentState
 
 RerankFn = Callable[[str, list[SearchResult]], list[SearchResult]]
 
@@ -29,9 +29,7 @@ class RerankerTool:
         self._rerank_fn = rerank_fn
         self._max_candidates = max_candidates
 
-    def run(
-        self, state: SearchAgentState, query: str | None = None
-    ) -> list[SearchResult]:
+    def run(self, state: AgentState, query: str | None = None) -> list[SearchResult]:
         docs = list(state.retrieved_docs)
         if len(docs) <= 1:
             return docs

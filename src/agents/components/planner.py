@@ -12,10 +12,9 @@ turn that contains both is treated as a search step.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..state import Retriever
+from ..state import AgentState, Retriever
 
 _SEARCH_RE = re.compile(
     r"<search(?:\s+retriever=\"(?P<retriever>\w+)\")?\s*>(?P<query>.*?)</search>",
@@ -61,10 +60,8 @@ PlannerDecision = SearchAction | RerankAction | AnswerAction
 class Planner:
     """Parse one generation step into a single typed :class:`PlannerDecision`."""
 
-    def decide(
-        self, text: str, previous_queries: Sequence[str] = ()
-    ) -> PlannerDecision:
-        seen = {_normalize_query(q) for q in previous_queries}
+    def decide(self, text: str, state: AgentState) -> PlannerDecision:
+        seen = {_normalize_query(q) for q in state.previous_queries}
         search = _SEARCH_RE.search(text)
         if search:
             retriever = _RETRIEVER_BY_NAME.get(
