@@ -1503,6 +1503,18 @@ def test_search_agent_loop_records_answered_exit_metric():
 
     assert output.metrics["exit_answered"] == 1.0
     assert output.metrics["exit_max_turns"] == 0.0
+    assert [
+        (event.component, event.action, event.status)
+        for event in output.control_flow_trace
+    ] == [
+        ("planner", "search_planned", "decided"),
+        ("search_tool", "vector_db_search", "completed"),
+        ("evidence_judge", "evidence_evaluated", "completed"),
+        ("loop_controller", "search_continued", "decided"),
+        ("planner", "answer_planned", "decided"),
+        ("loop_controller", "answer_accepted", "decided"),
+        ("answer_generator", "citations_resolved", "completed"),
+    ]
 
 
 def test_search_agent_loop_records_max_turns_exit_metric():

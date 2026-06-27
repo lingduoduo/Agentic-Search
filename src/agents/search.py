@@ -811,6 +811,8 @@ class SearchAgentLoop(AgentLoopBase):
         tool_call: SearchToolCall,
         *,
         state: AgentState,
+        recorder: ControlFlowRecorder,
+        turn: int,
         agent_ctx: AgentContext,
         search_cache: dict[str, list[SearchResult]],
         active_tasks: dict[str, str],
@@ -855,12 +857,39 @@ class SearchAgentLoop(AgentLoopBase):
                     for query, results in zip(queries, results_by_query)
                 ]
                 metrics["rerank_calls"] += 1.0
+                recorder.record(
+                    turn=turn,
+                    component="reranker_tool",
+                    action="rerank",
+                    status="completed",
+                    details={"document_count": sum(map(len, results_by_query))},
+                )
             else:
                 metrics["rerank_skipped"] += 1.0
+                recorder.record(
+                    turn=turn,
+                    component="reranker_tool",
+                    action="rerank_skipped",
+                    status="skipped",
+                    details={"document_count": sum(map(len, results_by_query))},
+                )
         state.record_search_round(
             queries, [result for row in results_by_query for result in row]
         )
         metrics["search_rounds"] = float(state.search_rounds)
+        recorder.record(
+            turn=turn,
+            component="search_tool",
+            action=("web_search" if retriever is Retriever.WEB else "vector_db_search"),
+            status="completed",
+            duration_ms=round((time.perf_counter() - t0) * 1000),
+            details={
+                "retriever": retriever.value,
+                "query_count": len(queries),
+                "document_count": sum(map(len, results_by_query)),
+                "search_round": state.search_rounds,
+            },
+        )
         if retriever is Retriever.WEB:
             metrics["web_searches"] += 1.0
         else:
@@ -880,6 +909,17 @@ class SearchAgentLoop(AgentLoopBase):
             )
             verdict = self._evidence_judge.update_state(state, search_contexts)
             evaluation = verdict.round_eval
+            recorder.record(
+                turn=turn,
+                component="evidence_judge",
+                action="evidence_evaluated",
+                status="completed",
+                details={
+                    "evidence_score": verdict.score,
+                    "sufficient": verdict.is_sufficient,
+                    "document_count": sum(len(ctx.results) for ctx in search_contexts),
+                },
+            )
             sufficient_queries = sum(1 for qe in evaluation.queries if qe.is_sufficient)
             if evaluation.queries:
                 metrics["search_quality_score_sum"] += sufficient_queries / len(
@@ -1073,6 +1113,7 @@ class SearchAgentLoop(AgentLoopBase):
         final_answer: str | None,
         metrics: dict[str, float],
         working_messages: list[dict[str, Any]],
+        recorder: ControlFlowRecorder | None = None,
     ) -> _GateDirective:
         """Apply the answer-gate to a turn that emitted only an <answer>.
 
@@ -1087,6 +1128,14 @@ class SearchAgentLoop(AgentLoopBase):
             and not active_tasks
         ):
             metrics["direct_answers"] += 1.0
+            if recorder is not None:
+                recorder.record(
+                    turn=num_turns,
+                    component="loop_controller",
+                    action="answer_accepted",
+                    status="decided",
+                    details={"decision": "accept"},
+                )
             if on_turn is not None:
                 await on_turn(num_turns, None, 0)
             return _GateDirective(
@@ -1105,12 +1154,28 @@ class SearchAgentLoop(AgentLoopBase):
         )
         decision = self._loop_controller.final_answer_decision(snapshot)
         if decision.verb is AnswerVerb.ACCEPT:
+            if recorder is not None:
+                recorder.record(
+                    turn=num_turns,
+                    component="loop_controller",
+                    action="answer_accepted",
+                    status="decided",
+                    details={"decision": "accept"},
+                )
             if on_turn is not None:
                 await on_turn(num_turns, None, 0)
             return _GateDirective(
                 TurnControl.BREAK, "answered", final_answer, consecutive_rejections
             )
         if decision.verb is AnswerVerb.FORCE:
+            if recorder is not None:
+                recorder.record(
+                    turn=num_turns,
+                    component="loop_controller",
+                    action="answer_forced",
+                    status="decided",
+                    details={"decision": "force"},
+                )
             metrics["forced_final_answer"] = 1.0
             if on_turn is not None:
                 await on_turn(num_turns, None, 0)
@@ -1118,6 +1183,14 @@ class SearchAgentLoop(AgentLoopBase):
                 TurnControl.BREAK, "answered", final_answer, consecutive_rejections
             )
         # AnswerVerb.REJECT
+        if recorder is not None:
+            recorder.record(
+                turn=num_turns,
+                component="loop_controller",
+                action="answer_rejected",
+                status="decided",
+                details={"decision": "reject"},
+            )
         metrics["answer_rejections"] += 1
         working_messages.append(
             {
@@ -1311,6 +1384,19 @@ class SearchAgentLoop(AgentLoopBase):
                 working_messages.append({"role": "assistant", "content": response_text})
                 if actions:
                     action_trace_parts.append(response_text)
+                    action_names = {tag for tag, _ in actions}
+                    if action_names & search_tags:
+                        planned_action = "search_planned"
+                    elif answer_tag in action_names:
+                        planned_action = "answer_planned"
+                    else:
+                        planned_action = "turn_parsed"
+                    recorder.record(
+                        turn=num_turns,
+                        component="planner",
+                        action=planned_action,
+                        status="decided",
+                    )
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
@@ -1419,6 +1505,7 @@ class SearchAgentLoop(AgentLoopBase):
                         final_answer=final_answer,
                         metrics=metrics,
                         working_messages=working_messages,
+                        recorder=recorder,
                     )
                     final_answer = d.final_answer
                     consecutive_rejections = d.consecutive_rejections
@@ -1486,6 +1573,8 @@ class SearchAgentLoop(AgentLoopBase):
                     round_result = await self._execute_search_round(
                         search_tool_call,
                         state=state,
+                        recorder=recorder,
+                        turn=num_turns,
                         agent_ctx=agent_ctx,
                         search_cache=search_cache,
                         active_tasks=active_tasks,
@@ -1514,11 +1603,25 @@ class SearchAgentLoop(AgentLoopBase):
                         _plateau_snapshot
                     )
                     if _plateau_stop.reason is StopReason.PLATEAU:
+                        recorder.record(
+                            turn=num_turns,
+                            component="loop_controller",
+                            action="plateau_stopped",
+                            status="decided",
+                            details={"decision": "stop"},
+                        )
                         metrics["plateau_early_stop"] = 1.0
                         working_messages.append(
                             {"role": "user", "content": cfg.search_limit_template}
                         )
                         continue
+                    recorder.record(
+                        turn=num_turns,
+                        component="loop_controller",
+                        action="search_continued",
+                        status="decided",
+                        details={"decision": "continue"},
+                    )
                     turn_observations.append(round_result.observation)
                     if on_turn is not None:
                         doc_count = sum(
@@ -1583,6 +1686,13 @@ class SearchAgentLoop(AgentLoopBase):
                 state, final_answer, agent_ctx
             )
             final_answer = answer_result.answer
+            recorder.record(
+                turn=num_turns,
+                component="answer_generator",
+                action="citations_resolved",
+                status="completed",
+                details={"citation_count": len(answer_result.citations)},
+            )
 
         self._finalize_run_metrics(
             metrics,
