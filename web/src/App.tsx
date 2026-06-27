@@ -14,6 +14,7 @@ import { ToolCallTracePanel } from "./components/ToolCallTracePanel";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { ConnectorPanel } from "./components/ConnectorPanel";
+import { ControlFlowTracePanel } from "./components/ControlFlowTracePanel";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { ToolPanel } from "./components/ToolPanel";
 import { SearchComposer } from "./components/SearchComposer";
@@ -24,6 +25,7 @@ import type {
   AgentExperienceRequest,
   BreakdownAnalytics,
   ChatMessageView,
+  ControlFlowEventView,
   ProgressStep,
   SearchSourceProvider,
   SourceDocumentView,
@@ -32,6 +34,14 @@ import type {
 
 const DEFAULT_SEARCH_URL = "http://localhost:8001/retrieve";
 const DEFAULT_BROWSER_SEARCH_URL = "http://localhost:8001/retrieve";
+
+function upsertTrace(
+  events: ControlFlowEventView[],
+  event: ControlFlowEventView,
+): ControlFlowEventView[] {
+  return [...events.filter((item) => item.sequence !== event.sequence), event]
+    .sort((a, b) => a.sequence - b.sequence);
+}
 
 // Dev escape hatch: `?dev=1` reveals the raw Retrieval URL override. In normal
 // use the backend resolves the retrieval URL from the selected Source, so the
@@ -62,6 +72,7 @@ export function App() {
   const [analyticsByPersona, setAnalyticsByPersona] = useState<BreakdownAnalytics | null>(null);
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const [toolCalls, setToolCalls] = useState<ToolCallTraceView[]>([]);
+  const [controlFlowTrace, setControlFlowTrace] = useState<ControlFlowEventView[]>([]);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
@@ -107,6 +118,7 @@ export function App() {
     setStreamingAnswer("");
     setProgressSteps([]);
     setCompletedSteps([]);
+    setControlFlowTrace([]);
     try {
       const activeSessionId = await ensureSession(controller.signal);
       const agentRequest: AgentExperienceRequest = {
@@ -124,6 +136,8 @@ export function App() {
         if (event.type === "progress") {
           liveSteps = [...liveSteps, { turn: event.turn, text: event.text }];
           setProgressSteps(liveSteps);
+        } else if (event.type === "trace") {
+          setControlFlowTrace((current) => upsertTrace(current, event.event));
         } else if (event.type === "answer") {
           accumulatedAnswer = event.text;
           setStreamingAnswer(event.text);
@@ -132,6 +146,11 @@ export function App() {
           setCitations(event.citations);
           setDocuments(event.documents);
           setToolCalls(event.tool_calls ?? []);
+          setControlFlowTrace(
+            [...(event.control_flow_trace ?? [])].sort(
+              (a, b) => a.sequence - b.sequence,
+            ),
+          );
           if (event.intent) setIntent(event.intent);
           setAnswer(accumulatedAnswer);
           setCompletedSteps(liveSteps);
@@ -160,6 +179,7 @@ export function App() {
     setCitations([]);
     setDocuments([]);
     setToolCalls([]);
+    setControlFlowTrace([]);
     setMessages([]);
     setError(null);
     setIntent(undefined);
@@ -285,6 +305,7 @@ export function App() {
               progressSteps={progressSteps}
               completedSteps={completedSteps}
             />
+            <ControlFlowTracePanel events={controlFlowTrace} live={isLoading} />
             {intent === "tool" && <ToolCallTracePanel calls={toolCalls} />}
           </section>
 

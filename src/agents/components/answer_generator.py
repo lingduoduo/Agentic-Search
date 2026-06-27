@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...context.search import AgentContext
-from ..state import Citation, SearchAgentState
+from ..state import AgentState, Citation
 
 
 @dataclass(frozen=True)
@@ -47,7 +47,7 @@ class AnswerGenerator:
         return AnswerResult(answer=answer_text, citations=citations)
 
     def update_state(
-        self, state: SearchAgentState, answer_text: str, ctx: AgentContext
+        self, state: AgentState, answer_text: str, ctx: AgentContext
     ) -> AnswerResult:
         result = self.generate(answer_text, ctx)
         state.set_citations(result.citations)

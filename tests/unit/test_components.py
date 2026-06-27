@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.agents.state import Retriever, SearchAgentState
+from src.agents.state import AgentState, Retriever, UserRequest
 from src.context.search import AgentContext, SearchContext, SearchResult
 
 
@@ -15,6 +15,14 @@ def _result(
     text: str = "x" * 20, score: float = 0.5, title: str | None = None
 ) -> SearchResult:
     return SearchResult(contents=text, score=score, title=title)
+
+
+def _state(question: str = "q") -> AgentState:
+    return AgentState(
+        request_id="req-1",
+        user_request=UserRequest(user_id="u1", channel="test", message=question),
+        question=question,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -63,7 +71,7 @@ def test_evidence_judge_mirrors_evaluator_sufficiency() -> None:
 def test_evidence_judge_update_state_writes_evidence_score() -> None:
     from src.agents.components.evidence_judge import EvidenceJudge
 
-    state = SearchAgentState(question="q")
+    state = _state()
     ctx = SearchContext(query="q", results=[_result(score=5.0), _result(score=5.0)])
 
     verdict = EvidenceJudge().update_state(state, [ctx])
@@ -145,7 +153,7 @@ def test_answer_generator_no_citations_when_none_referenced() -> None:
 def test_answer_generator_update_state_sets_citations() -> None:
     from src.agents.components.answer_generator import AnswerGenerator
 
-    state = SearchAgentState(question="q")
+    state = _state()
     ctx = _ctx_one_round()
 
     AnswerGenerator().update_state(state, "Grounded [R1Q1D1].", ctx)
@@ -204,12 +212,26 @@ async def test_search_tool_records_query_and_docs_into_state() -> None:
     async def fake_retrieve(query: str) -> list[SearchResult]:
         return [_result(title="a"), _result(title="b")]
 
-    state = SearchAgentState(question="q")
+    state = _state()
     docs = await SearchTool(fake_retrieve).run(state, "faiss index")
 
     assert [d.title for d in docs] == ["a", "b"]
     assert state.previous_queries == ["faiss index"]
     assert [d.title for d in state.retrieved_docs] == ["a", "b"]
+    assert state.search_rounds == 1
+
+
+async def test_search_tool_records_parallel_queries_as_one_round() -> None:
+    from src.agents.components.search_tool import SearchTool
+
+    async def fake_retrieve(query: str) -> list[SearchResult]:
+        return [_result(title=query)]
+
+    state = _state()
+    rows = await SearchTool(fake_retrieve).run_round(state, ["one", "two"])
+
+    assert [[doc.title for doc in row] for row in rows] == [["one"], ["two"]]
+    assert state.previous_queries == ["one", "two"]
     assert state.search_rounds == 1
 
 
@@ -220,7 +242,7 @@ async def test_search_tool_accumulates_across_rounds() -> None:
         return [_result(title=query)]
 
     tool = SearchTool(fake_retrieve)
-    state = SearchAgentState(question="q")
+    state = _state()
     await tool.run(state, "first")
     await tool.run(state, "second")
 
@@ -237,7 +259,7 @@ async def test_search_tool_routes_to_web_when_requested() -> None:
     async def web(query: str) -> list[SearchResult]:
         return [_result(title="web")]
 
-    state = SearchAgentState(question="q")
+    state = _state()
     docs = await SearchTool(vdb, web_fn=web).run(state, "q", retriever=Retriever.WEB)
 
     assert [d.title for d in docs] == ["web"]
@@ -252,7 +274,7 @@ async def test_search_tool_defaults_to_vector_db() -> None:
     async def web(query: str) -> list[SearchResult]:
         return [_result(title="web")]
 
-    state = SearchAgentState(question="q")
+    state = _state()
     docs = await SearchTool(vdb, web_fn=web).run(state, "q")
 
     assert [d.title for d in docs] == ["vdb"]
@@ -264,7 +286,7 @@ async def test_search_tool_degrades_to_vdb_when_web_unavailable() -> None:
     async def vdb(query: str) -> list[SearchResult]:
         return [_result(title="vdb")]
 
-    state = SearchAgentState(question="q")
+    state = _state()
     # No web_fn configured -> WEB request degrades to the vector-DB backend.
     docs = await SearchTool(vdb).run(state, "q", retriever=Retriever.WEB)
 
@@ -282,7 +304,7 @@ async def test_search_tool_caches_repeated_query() -> None:
         return [_result(title="vdb")]
 
     tool = SearchTool(vdb)
-    state = SearchAgentState(question="q")
+    state = _state()
     await tool.run(state, "faiss index")
     await tool.run(state, "  FAISS   index ")  # same query, different spacing/case
 
@@ -304,7 +326,7 @@ async def test_search_tool_caches_per_backend() -> None:
         return [_result(title="web")]
 
     tool = SearchTool(vdb, web_fn=web)
-    state = SearchAgentState(question="q")
+    state = _state()
     await tool.run(state, "q", retriever=Retriever.VECTOR_DB)
     await tool.run(state, "q", retriever=Retriever.WEB)  # same text, other backend
 
@@ -321,7 +343,7 @@ async def test_search_tool_degrades_to_vdb_when_web_raises() -> None:
     async def web(query: str) -> list[SearchResult]:
         raise RuntimeError("web backend exploded")
 
-    state = SearchAgentState(question="q")
+    state = _state()
     docs = await SearchTool(vdb, web_fn=web).run(state, "q", retriever=Retriever.WEB)
 
     assert [d.title for d in docs] == ["vdb"]
@@ -336,7 +358,9 @@ async def test_search_tool_degrades_to_vdb_when_web_raises() -> None:
 def test_planner_parses_web_search() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide('<search retriever="web">latest news</search>')
+    decision = Planner().decide(
+        '<search retriever="web">latest news</search>', _state()
+    )
 
     assert isinstance(decision, SearchAction)
     assert decision.query == "latest news"
@@ -346,7 +370,7 @@ def test_planner_parses_web_search() -> None:
 def test_planner_search_defaults_to_vector_db_without_attribute() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide("<search>what is faiss</search>")
+    decision = Planner().decide("<search>what is faiss</search>", _state())
 
     assert isinstance(decision, SearchAction)
     assert decision.retriever is Retriever.VECTOR_DB
@@ -355,7 +379,7 @@ def test_planner_search_defaults_to_vector_db_without_attribute() -> None:
 def test_planner_unknown_retriever_value_falls_back_to_vector_db() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide('<search retriever="quantum">q</search>')
+    decision = Planner().decide('<search retriever="quantum">q</search>', _state())
 
     assert isinstance(decision, SearchAction)
     assert decision.retriever is Retriever.VECTOR_DB
@@ -364,13 +388,13 @@ def test_planner_unknown_retriever_value_falls_back_to_vector_db() -> None:
 def test_planner_parses_rerank_action() -> None:
     from src.agents.components.planner import Planner, RerankAction
 
-    assert isinstance(Planner().decide("<rerank/>"), RerankAction)
+    assert isinstance(Planner().decide("<rerank/>", _state()), RerankAction)
 
 
 def test_planner_parses_answer_action() -> None:
     from src.agents.components.planner import AnswerAction, Planner
 
-    decision = Planner().decide("<answer>The answer is 42 [R1Q1D1].</answer>")
+    decision = Planner().decide("<answer>The answer is 42 [R1Q1D1].</answer>", _state())
 
     assert isinstance(decision, AnswerAction)
     assert decision.text == "The answer is 42 [R1Q1D1]."
@@ -379,7 +403,9 @@ def test_planner_parses_answer_action() -> None:
 def test_planner_search_takes_precedence_over_answer() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide("<search>more</search> then <answer>x</answer>")
+    decision = Planner().decide(
+        "<search>more</search> then <answer>x</answer>", _state()
+    )
 
     assert isinstance(decision, SearchAction)
 
@@ -387,7 +413,7 @@ def test_planner_search_takes_precedence_over_answer() -> None:
 def test_planner_malformed_text_defaults_to_vector_db_search() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide("no tags here at all")
+    decision = Planner().decide("no tags here at all", _state())
 
     assert isinstance(decision, SearchAction)
     assert decision.retriever is Retriever.VECTOR_DB
@@ -396,9 +422,9 @@ def test_planner_malformed_text_defaults_to_vector_db_search() -> None:
 def test_planner_flags_duplicate_query() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide(
-        "<search>what is faiss</search>", previous_queries=["what is faiss"]
-    )
+    state = _state()
+    state.record_search_round(["what is faiss"], [])
+    decision = Planner().decide("<search>what is faiss</search>", state)
 
     assert isinstance(decision, SearchAction)
     assert decision.query == "what is faiss"
@@ -408,9 +434,9 @@ def test_planner_flags_duplicate_query() -> None:
 def test_planner_new_query_not_flagged_duplicate() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
-    decision = Planner().decide(
-        "<search>brand new</search>", previous_queries=["what is faiss"]
-    )
+    state = _state()
+    state.record_search_round(["what is faiss"], [])
+    decision = Planner().decide("<search>brand new</search>", state)
 
     assert isinstance(decision, SearchAction)
     assert decision.is_duplicate is False
@@ -419,9 +445,9 @@ def test_planner_new_query_not_flagged_duplicate() -> None:
 def test_planner_duplicate_match_ignores_whitespace_and_case() -> None:
     from src.agents.components.planner import Planner
 
-    decision = Planner().decide(
-        "<search>  What  Is   FAISS </search>", previous_queries=["what is faiss"]
-    )
+    state = _state()
+    state.record_search_round(["what is faiss"], [])
+    decision = Planner().decide("<search>  What  Is   FAISS </search>", state)
 
     assert decision.is_duplicate is True
 
@@ -430,11 +456,51 @@ def test_planner_fallback_query_is_bounded() -> None:
     from src.agents.components.planner import Planner, SearchAction
 
     raw = "first line of reasoning\n" + ("x" * 1000)
-    decision = Planner().decide(raw)
+    decision = Planner().decide(raw, _state())
 
     assert isinstance(decision, SearchAction)
     assert decision.query == "first line of reasoning"
     assert len(decision.query) <= 256
+
+
+def test_planner_parses_complete_mixed_turn() -> None:
+    from src.agents.components.planner import Planner
+
+    text = (
+        "<think>plan</think>"
+        "<subquestions>T1: first</subquestions>"
+        '<searches retriever="web" rerank="true"><query>[T1] q</query></searches>'
+        "<fetch>https://example.com</fetch>"
+        "<answer>candidate</answer>"
+    )
+    planner = Planner()
+
+    assert planner.parse_actions(
+        text, ["think", "subquestions", "search", "searches", "fetch", "answer"]
+    ) == [
+        ("think", "plan"),
+        ("subquestions", "T1: first"),
+        ("searches", "<query>[T1] q</query>"),
+        ("fetch", "https://example.com"),
+        ("answer", "candidate"),
+    ]
+    assert planner.round_retriever(text, ["search", "searches"]) is Retriever.WEB
+    assert planner.round_rerank(text, ["search", "searches"]) is True
+
+
+def test_planner_partitions_requests_from_agent_state() -> None:
+    from src.agents.components.planner import Planner
+
+    state = _state()
+    state.record_search_round(["seen"], [])
+
+    allowed, repeated, overflow = Planner().partition_search_requests(
+        [(None, "seen"), (None, "new")], state, effective_limit=2
+    )
+
+    assert allowed == [(None, "new")]
+    assert repeated == ["seen"]
+    assert overflow == []
 
 
 # --------------------------------------------------------------------------- #
@@ -448,9 +514,9 @@ def test_reranker_tool_reorders_state_docs_without_counting_a_round() -> None:
     def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
         return sorted(docs, key=lambda d: d.score, reverse=True)
 
-    state = SearchAgentState(question="q")
-    state.record_search(
-        "q", [_result(title="lo", score=0.1), _result(title="hi", score=0.9)]
+    state = _state()
+    state.record_search_round(
+        ["q"], [_result(title="lo", score=0.1), _result(title="hi", score=0.9)]
     )
 
     reordered = RerankerTool(fake_rerank).run(state)
@@ -466,7 +532,7 @@ def test_reranker_tool_handles_empty_docs() -> None:
     def fake_rerank(query: str, docs: list[SearchResult]) -> list[SearchResult]:
         return docs
 
-    state = SearchAgentState(question="q")
+    state = _state()
     assert RerankerTool(fake_rerank).run(state) == []
 
 
@@ -479,8 +545,8 @@ def test_reranker_tool_skips_when_single_doc() -> None:
         called["n"] += 1
         return docs
 
-    state = SearchAgentState(question="q")
-    state.record_search("q", [_result(title="only")])
+    state = _state()
+    state.record_search_round(["q"], [_result(title="only")])
 
     reordered = RerankerTool(fake_rerank).run(state)
 
@@ -497,9 +563,9 @@ def test_reranker_tool_limits_to_max_candidates() -> None:
         seen_lengths.append(len(docs))
         return list(reversed(docs))
 
-    state = SearchAgentState(question="q")
-    state.record_search(
-        "q",
+    state = _state()
+    state.record_search_round(
+        ["q"],
         [
             _result(title="a"),
             _result(title="b"),

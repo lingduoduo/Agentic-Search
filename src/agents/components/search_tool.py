@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from ...context.search import SearchResult
-from ..state import Retriever, SearchAgentState
+from ..state import AgentState, Retriever
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +37,29 @@ class SearchTool:
 
     async def run(
         self,
-        state: SearchAgentState,
+        state: AgentState,
         query: str,
         retriever: Retriever = Retriever.VECTOR_DB,
     ) -> list[SearchResult]:
-        key = (retriever, " ".join(query.split()).casefold())
-        if key in self._cache:
-            docs = self._cache[key]
-        else:
-            docs = await self._retrieve(retriever, query)
-            self._cache[key] = docs
-        state.record_search(query, docs)
-        return docs
+        rows = await self.run_round(state, [query], retriever)
+        return rows[0]
+
+    async def run_round(
+        self,
+        state: AgentState,
+        queries: list[str],
+        retriever: Retriever = Retriever.VECTOR_DB,
+    ) -> list[list[SearchResult]]:
+        if not queries:
+            return []
+        rows: list[list[SearchResult]] = []
+        for query in queries:
+            key = (retriever, " ".join(query.split()).casefold())
+            if key not in self._cache:
+                self._cache[key] = await self._retrieve(retriever, query)
+            rows.append(list(self._cache[key]))
+        state.record_search_round(queries, [doc for row in rows for doc in row])
+        return rows
 
     async def _retrieve(self, retriever: Retriever, query: str) -> list[SearchResult]:
         if retriever is Retriever.WEB and self._web_fn is not None:

@@ -28,10 +28,13 @@ from ..training.evaluation import (
     SearchRoundEvaluation,
 )
 from ..context.retrieval.client import SearchClient, SearchClientConfig
+from .components.answer_generator import AnswerGenerator
 from .components.evidence_judge import EvidenceJudge
 from .components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
+from .components.planner import Planner
 from .components.reranker_tool import RerankFn
-from .state import Retriever
+from .control_flow_trace import ControlFlowRecorder, EventSink
+from .state import AgentState, Retriever, UserRequest
 
 # ---------------------------------------------------------------------------
 # Turn control
@@ -108,11 +111,6 @@ _SPACE_RE = re.compile(r"\s+")
 def _normalize_task_id(raw: str) -> str:
     normalized = _TASK_ID_RE.sub("", raw.strip())
     return normalized or "T"
-
-
-def _normalize_query_key(query: str) -> str:
-    """Stable key for repeat detection without semantic rewriting."""
-    return _SPACE_RE.sub(" ", query.strip())
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -318,6 +316,8 @@ class SearchAgentLoop(AgentLoopBase):
 
         self._loop_controller = LoopController(cfg)
         self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)
+        self._evidence_judge = EvidenceJudge(evaluator=self._result_evaluator)
+        self._answer_generator = AnswerGenerator()
         # Per-task evaluator: same config but min_total_results relaxed to per-query minimum
         # so a single-query task isn't rejected just because it has fewer than min_total_results.
         task_eval_config = replace(
@@ -326,7 +326,7 @@ class SearchAgentLoop(AgentLoopBase):
         )
         self._task_evaluator = SearchResultEvaluator(task_eval_config)
 
-        action_tags = [
+        self._action_tags = [
             cfg.plan_tag,
             cfg.decision_tag,
             cfg.subquestions_tag,
@@ -335,23 +335,8 @@ class SearchAgentLoop(AgentLoopBase):
             cfg.fetch_tag,
             cfg.answer_tag,
         ]
-        self._action_re = re.compile(
-            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})(?:\s+[^>]*)?>"
-            rf"(.*?)</\1>",
-            re.DOTALL,
-        )
-        # Per-round retriever selection: <search retriever="web"> / <searches retriever="web">.
-        self._round_retriever_re = re.compile(
-            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
-            rf'\s+[^>]*retriever="(?P<retriever>\w+)"',
-            re.IGNORECASE,
-        )
-        # Per-round rerank request: <search rerank="true"> / <searches rerank="true">.
-        self._round_rerank_re = re.compile(
-            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
-            rf'\s+[^>]*rerank="(?P<rerank>\w+)"',
-            re.IGNORECASE,
-        )
+        self._search_action_tags = [cfg.search_tag, cfg.searches_tag]
+        self._planner = Planner()
         self._search_client = SearchClient(
             SearchClientConfig(
                 url=cfg.search_url,
@@ -443,27 +428,6 @@ class SearchAgentLoop(AgentLoopBase):
     # Parsing helpers
     # ------------------------------------------------------------------
 
-    def _parse_actions(self, text: str) -> list[tuple[str, str]]:
-        return [
-            (m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)
-        ]
-
-    def _parse_round_retriever(self, text: str) -> Retriever:
-        """Per-round retriever choice from the search tag's ``retriever`` attribute.
-
-        Defaults to the vector-DB backend when absent or unrecognized, so an
-        un-annotated ``<search>`` behaves exactly as before.
-        """
-        match = self._round_retriever_re.search(text)
-        if match and match.group("retriever").lower() == "web":
-            return Retriever.WEB
-        return Retriever.VECTOR_DB
-
-    def _parse_round_rerank(self, text: str) -> bool:
-        """Whether this search round requested reranking via ``rerank="true"``."""
-        match = self._round_rerank_re.search(text)
-        return bool(match and match.group("rerank").lower() == "true")
-
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
             return [content] if content else []
@@ -540,34 +504,6 @@ class SearchAgentLoop(AgentLoopBase):
         # Deduplicate while preserving order.
         deduped_specs = list(dict.fromkeys(raw_query_specs))
         return deduped_specs, _dedupe(raw_urls)
-
-    def _partition_search_requests(
-        self,
-        query_specs: list[tuple[str | None, str]],
-        executed_queries: set[str],
-        rounds_used: int,
-        effective_limit: int = 0,
-    ) -> tuple[list[tuple[str | None, str]], list[str], list[str]]:
-        """Split query_specs into (allowed, repeated, overflow).
-
-        A round is blocked as overflow when rounds_used has reached effective_limit.
-        Within an allowed round, individual repeated queries are still filtered out.
-        """
-        limit = effective_limit or self.search_config.max_search_limit or 0
-        at_limit = limit > 0 and rounds_used >= limit
-
-        allowed: list[tuple[str | None, str]] = []
-        repeated: list[str] = []
-        overflow: list[str] = []
-        for task_id, query in query_specs:
-            query_key = _normalize_query_key(query)
-            if query_key in executed_queries:
-                repeated.append(query)
-            elif at_limit:
-                overflow.append(query)
-            else:
-                allowed.append((task_id, query))
-        return allowed, repeated, overflow
 
     # ------------------------------------------------------------------
     # Network helpers (with per-run caches passed in)
@@ -816,7 +752,7 @@ class SearchAgentLoop(AgentLoopBase):
         working_messages.append({"role": "assistant", "content": text})
         answer_actions = [
             c
-            for t, c in self._parse_actions(text)
+            for t, c in self._planner.parse_actions(text, self._action_tags)
             if t == self.search_config.answer_tag
         ]
         if answer_actions:
@@ -874,6 +810,9 @@ class SearchAgentLoop(AgentLoopBase):
         self,
         tool_call: SearchToolCall,
         *,
+        state: AgentState,
+        recorder: ControlFlowRecorder,
+        turn: int,
         agent_ctx: AgentContext,
         search_cache: dict[str, list[SearchResult]],
         active_tasks: dict[str, str],
@@ -918,9 +857,39 @@ class SearchAgentLoop(AgentLoopBase):
                     for query, results in zip(queries, results_by_query)
                 ]
                 metrics["rerank_calls"] += 1.0
+                recorder.record(
+                    turn=turn,
+                    component="reranker_tool",
+                    action="rerank",
+                    status="completed",
+                    details={"document_count": sum(map(len, results_by_query))},
+                )
             else:
                 metrics["rerank_skipped"] += 1.0
-        metrics["search_rounds"] += 1
+                recorder.record(
+                    turn=turn,
+                    component="reranker_tool",
+                    action="rerank_skipped",
+                    status="skipped",
+                    details={"document_count": sum(map(len, results_by_query))},
+                )
+        state.record_search_round(
+            queries, [result for row in results_by_query for result in row]
+        )
+        metrics["search_rounds"] = float(state.search_rounds)
+        recorder.record(
+            turn=turn,
+            component="search_tool",
+            action=("web_search" if retriever is Retriever.WEB else "vector_db_search"),
+            status="completed",
+            duration_ms=round((time.perf_counter() - t0) * 1000),
+            details={
+                "retriever": retriever.value,
+                "query_count": len(queries),
+                "document_count": sum(map(len, results_by_query)),
+                "search_round": state.search_rounds,
+            },
+        )
         if retriever is Retriever.WEB:
             metrics["web_searches"] += 1.0
         else:
@@ -938,7 +907,19 @@ class SearchAgentLoop(AgentLoopBase):
                 results_by_query=results_by_query,
                 task_ids=task_ids,
             )
-            evaluation = self._result_evaluator.evaluate_round(search_contexts)
+            verdict = self._evidence_judge.update_state(state, search_contexts)
+            evaluation = verdict.round_eval
+            recorder.record(
+                turn=turn,
+                component="evidence_judge",
+                action="evidence_evaluated",
+                status="completed",
+                details={
+                    "evidence_score": verdict.score,
+                    "sufficient": verdict.is_sufficient,
+                    "document_count": sum(len(ctx.results) for ctx in search_contexts),
+                },
+            )
             sufficient_queries = sum(1 for qe in evaluation.queries if qe.is_sufficient)
             if evaluation.queries:
                 metrics["search_quality_score_sum"] += sufficient_queries / len(
@@ -951,7 +932,7 @@ class SearchAgentLoop(AgentLoopBase):
             # Continuous evidence_score for this round (reuses EvidenceJudge's
             # heuristic→[0,1] map). Track the final value and the cumulative
             # positive improvement so the reward can shape informative searches.
-            round_score = EvidenceJudge.score_round(evaluation)
+            round_score = state.evidence_score
             prev_score = metrics["evidence_score_final"]
             metrics["evidence_gain_total"] += max(0.0, round_score - prev_score)
             metrics["evidence_score_final"] = round_score
@@ -1005,7 +986,7 @@ class SearchAgentLoop(AgentLoopBase):
             )
 
         response_text = self.decode_response_ids(response_ids)
-        actions = self._parse_actions(response_text)
+        actions = self._planner.parse_actions(response_text, self._action_tags)
         logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
         return prompt_ids, response_ids, response_text, actions
 
@@ -1132,6 +1113,7 @@ class SearchAgentLoop(AgentLoopBase):
         final_answer: str | None,
         metrics: dict[str, float],
         working_messages: list[dict[str, Any]],
+        recorder: ControlFlowRecorder | None = None,
     ) -> _GateDirective:
         """Apply the answer-gate to a turn that emitted only an <answer>.
 
@@ -1146,6 +1128,14 @@ class SearchAgentLoop(AgentLoopBase):
             and not active_tasks
         ):
             metrics["direct_answers"] += 1.0
+            if recorder is not None:
+                recorder.record(
+                    turn=num_turns,
+                    component="loop_controller",
+                    action="answer_accepted",
+                    status="decided",
+                    details={"decision": "accept"},
+                )
             if on_turn is not None:
                 await on_turn(num_turns, None, 0)
             return _GateDirective(
@@ -1164,12 +1154,28 @@ class SearchAgentLoop(AgentLoopBase):
         )
         decision = self._loop_controller.final_answer_decision(snapshot)
         if decision.verb is AnswerVerb.ACCEPT:
+            if recorder is not None:
+                recorder.record(
+                    turn=num_turns,
+                    component="loop_controller",
+                    action="answer_accepted",
+                    status="decided",
+                    details={"decision": "accept"},
+                )
             if on_turn is not None:
                 await on_turn(num_turns, None, 0)
             return _GateDirective(
                 TurnControl.BREAK, "answered", final_answer, consecutive_rejections
             )
         if decision.verb is AnswerVerb.FORCE:
+            if recorder is not None:
+                recorder.record(
+                    turn=num_turns,
+                    component="loop_controller",
+                    action="answer_forced",
+                    status="decided",
+                    details={"decision": "force"},
+                )
             metrics["forced_final_answer"] = 1.0
             if on_turn is not None:
                 await on_turn(num_turns, None, 0)
@@ -1177,6 +1183,14 @@ class SearchAgentLoop(AgentLoopBase):
                 TurnControl.BREAK, "answered", final_answer, consecutive_rejections
             )
         # AnswerVerb.REJECT
+        if recorder is not None:
+            recorder.record(
+                turn=num_turns,
+                component="loop_controller",
+                action="answer_rejected",
+                status="decided",
+                details={"decision": "reject"},
+            )
         metrics["answer_rejections"] += 1
         working_messages.append(
             {
@@ -1293,16 +1307,38 @@ class SearchAgentLoop(AgentLoopBase):
     # Main loop
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _question_from_messages(messages: list[dict[str, Any]]) -> str:
+        return next(
+            (
+                str(message.get("content", "")).strip()
+                for message in reversed(messages)
+                if message.get("role") == "user"
+                and str(message.get("content", "")).strip()
+            ),
+            "",
+        )
+
     async def run(
         self,
         messages: list[dict[str, Any]],
         sampling_params: dict[str, Any],
         *,
         on_turn: "OnTurnCallback | None" = None,
+        on_trace: EventSink | None = None,
     ) -> AgentLoopOutput:
         metrics: dict[str, float] = self._initial_metrics()
         request_id = uuid4().hex
         agent_ctx = AgentContext()
+        recorder = ControlFlowRecorder(request_id, sink=on_trace)
+        question = self._question_from_messages(messages)
+        state = AgentState(
+            request_id=request_id,
+            user_request=UserRequest(
+                user_id="", channel="search_agent", message=question
+            ),
+            question=question,
+        )
 
         working_messages = self._with_system_prompt(list(messages))
 
@@ -1319,10 +1355,8 @@ class SearchAgentLoop(AgentLoopBase):
         latest_search_decision: str | None = None
         consecutive_rejections = 0
         consecutive_format_errors = 0
-        rounds_used = 0
         exit_status = "max_turns"
         forced_answer_attempted = False
-        executed_queries: set[str] = set()
         task_search_counts: dict[str, int] = {}
         search_cache: dict[str, list[SearchResult]] = {}
         page_cache: dict[str, SearchResult] = {}
@@ -1350,9 +1384,29 @@ class SearchAgentLoop(AgentLoopBase):
                 working_messages.append({"role": "assistant", "content": response_text})
                 if actions:
                     action_trace_parts.append(response_text)
+                    action_names = {tag for tag, _ in actions}
+                    if action_names & search_tags:
+                        planned_action = "search_planned"
+                    elif answer_tag in action_names:
+                        planned_action = "answer_planned"
+                    else:
+                        planned_action = "turn_parsed"
+                    recorder.record(
+                        turn=num_turns,
+                        component="planner",
+                        action=planned_action,
+                        status="decided",
+                    )
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
+                    recorder.record(
+                        turn=num_turns,
+                        component="planner",
+                        action="format_recovery",
+                        status="decided",
+                        details={"decision": "retry"},
+                    )
                     d = await self._handle_no_action(
                         working_messages=working_messages,
                         agent_ctx=agent_ctx,
@@ -1362,7 +1416,7 @@ class SearchAgentLoop(AgentLoopBase):
                         latest_evaluation=latest_evaluation,
                         task_statuses=task_statuses,
                         active_tasks=active_tasks,
-                        rounds_used=rounds_used,
+                        rounds_used=state.search_rounds,
                         consecutive_format_errors=consecutive_format_errors,
                         consecutive_rejections=consecutive_rejections,
                         forced_answer_attempted=forced_answer_attempted,
@@ -1413,11 +1467,10 @@ class SearchAgentLoop(AgentLoopBase):
                 metrics["adaptive_budget_bonus"] = float(
                     effective_limit - (cfg.max_search_limit or cfg.max_turns)
                 )
-                allowed_specs, repeated, overflow = self._partition_search_requests(
-                    query_specs,
-                    executed_queries=executed_queries,
-                    rounds_used=rounds_used,
-                    effective_limit=effective_limit,
+                allowed_specs, repeated, overflow = (
+                    self._planner.partition_search_requests(
+                        query_specs, state, effective_limit
+                    )
                 )
                 search_tool_call = SearchToolCall(
                     queries=[q for _, q in allowed_specs],
@@ -1443,7 +1496,7 @@ class SearchAgentLoop(AgentLoopBase):
                     d = await self._apply_answer_gate(
                         on_turn=on_turn,
                         num_turns=num_turns,
-                        rounds_used=rounds_used,
+                        rounds_used=state.search_rounds,
                         active_tasks=active_tasks,
                         task_statuses=task_statuses,
                         latest_evaluation=latest_evaluation,
@@ -1452,6 +1505,7 @@ class SearchAgentLoop(AgentLoopBase):
                         final_answer=final_answer,
                         metrics=metrics,
                         working_messages=working_messages,
+                        recorder=recorder,
                     )
                     final_answer = d.final_answer
                     consecutive_rejections = d.consecutive_rejections
@@ -1507,7 +1561,6 @@ class SearchAgentLoop(AgentLoopBase):
                 # Parallel search round (before fetch so evidence appears first).
                 if search_tool_call.has_new_queries:
                     consecutive_rejections = 0
-                    rounds_used += 1  # count rounds, not individual queries
                     for task_id in search_tool_call.task_ids:
                         if not task_id:
                             continue
@@ -1516,29 +1569,33 @@ class SearchAgentLoop(AgentLoopBase):
                         task_search_counts[task_id] = (
                             task_search_counts.get(task_id, 0) + 1
                         )
-                    executed_queries.update(
-                        _normalize_query_key(q) for q in search_tool_call.queries
-                    )
-                    prev_evidence_for_round = metrics["evidence_score_final"]
+                    prev_evidence_for_round = state.evidence_score
                     round_result = await self._execute_search_round(
                         search_tool_call,
+                        state=state,
+                        recorder=recorder,
+                        turn=num_turns,
                         agent_ctx=agent_ctx,
                         search_cache=search_cache,
                         active_tasks=active_tasks,
                         task_statuses=task_statuses,
                         metrics=metrics,
-                        retriever=self._parse_round_retriever(response_text),
-                        rerank=self._parse_round_rerank(response_text),
+                        retriever=self._planner.round_retriever(
+                            response_text, self._search_action_tags
+                        ),
+                        rerank=self._planner.round_rerank(
+                            response_text, self._search_action_tags
+                        ),
                     )
                     latest_evaluation = round_result.evaluation
                     _plateau_snapshot = LoopSnapshot(
-                        rounds_used=rounds_used,
+                        rounds_used=state.search_rounds,
                         num_subquestions=len(active_tasks),
                         evidence_sufficient=self._has_sufficient_evidence(
                             latest_evaluation, task_statuses, active_tasks
                         ),
                         prev_evidence_score=prev_evidence_for_round,
-                        curr_evidence_score=metrics["evidence_score_final"],
+                        curr_evidence_score=state.evidence_score,
                         consecutive_rejections=consecutive_rejections,
                         model_emitted_answer=False,
                     )
@@ -1546,11 +1603,25 @@ class SearchAgentLoop(AgentLoopBase):
                         _plateau_snapshot
                     )
                     if _plateau_stop.reason is StopReason.PLATEAU:
+                        recorder.record(
+                            turn=num_turns,
+                            component="loop_controller",
+                            action="plateau_stopped",
+                            status="decided",
+                            details={"decision": "stop"},
+                        )
                         metrics["plateau_early_stop"] = 1.0
                         working_messages.append(
                             {"role": "user", "content": cfg.search_limit_template}
                         )
                         continue
+                    recorder.record(
+                        turn=num_turns,
+                        component="loop_controller",
+                        action="search_continued",
+                        status="decided",
+                        details={"decision": "continue"},
+                    )
                     turn_observations.append(round_result.observation)
                     if on_turn is not None:
                         doc_count = sum(
@@ -1610,9 +1681,22 @@ class SearchAgentLoop(AgentLoopBase):
                 num_turns=num_turns,
             )
 
+        if final_answer is not None:
+            answer_result = self._answer_generator.update_state(
+                state, final_answer, agent_ctx
+            )
+            final_answer = answer_result.answer
+            recorder.record(
+                turn=num_turns,
+                component="answer_generator",
+                action="citations_resolved",
+                status="completed",
+                details={"citation_count": len(answer_result.citations)},
+            )
+
         self._finalize_run_metrics(
             metrics,
-            rounds_used=rounds_used,
+            rounds_used=state.search_rounds,
             task_statuses=task_statuses,
             task_search_counts=task_search_counts,
             active_tasks=active_tasks,
@@ -1621,6 +1705,7 @@ class SearchAgentLoop(AgentLoopBase):
             final_answer=final_answer,
             exit_status=exit_status,
         )
+        await recorder.drain()
 
         return AgentLoopOutput(
             prompt_ids=final_prompt_ids,
@@ -1633,4 +1718,5 @@ class SearchAgentLoop(AgentLoopBase):
             trajectory_messages=list(working_messages),
             action_trace="\n".join(action_trace_parts) if action_trace_parts else None,
             final_answer=final_answer,
+            control_flow_trace=recorder.snapshot(),
         )

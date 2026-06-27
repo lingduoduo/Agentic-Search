@@ -24,7 +24,7 @@ from src import (
     list_registered_agent_loops,
     register,
 )
-from src.agents.base import resolve_agent_name, CANONICAL_AGENT_NAMES
+from src.agents.base import AgentLoopOutput, resolve_agent_name, CANONICAL_AGENT_NAMES
 
 
 class DummyTokenizerWithTemplate:
@@ -86,6 +86,19 @@ class ConcreteAgentLoop(AgentLoopBase):
     async def run(self, messages, sampling_params):
         del messages, sampling_params
         raise NotImplementedError
+
+
+def test_agent_loop_output_defaults_to_empty_control_flow_trace() -> None:
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=0,
+        metrics={},
+        request_id="req",
+    )
+
+    assert output.control_flow_trace == []
 
 
 def test_build_prompt_ids_uses_chat_template_when_available():
@@ -1490,6 +1503,18 @@ def test_search_agent_loop_records_answered_exit_metric():
 
     assert output.metrics["exit_answered"] == 1.0
     assert output.metrics["exit_max_turns"] == 0.0
+    assert [
+        (event.component, event.action, event.status)
+        for event in output.control_flow_trace
+    ] == [
+        ("planner", "search_planned", "decided"),
+        ("search_tool", "vector_db_search", "completed"),
+        ("evidence_judge", "evidence_evaluated", "completed"),
+        ("loop_controller", "search_continued", "decided"),
+        ("planner", "answer_planned", "decided"),
+        ("loop_controller", "answer_accepted", "decided"),
+        ("answer_generator", "citations_resolved", "completed"),
+    ]
 
 
 def test_search_agent_loop_records_max_turns_exit_metric():
@@ -1536,6 +1561,10 @@ def test_search_agent_loop_stops_after_repeated_no_action_turns():
     assert output.metrics["format_error_turns"] == 2.0
     assert output.metrics["exit_format_error_limit"] == 1.0
     assert output.metrics["exit_no_action"] == 1.0
+    assert [(event.component, event.action) for event in output.control_flow_trace] == [
+        ("planner", "format_recovery"),
+        ("planner", "format_recovery"),
+    ]
 
 
 def test_search_agent_loop_allows_direct_answer_before_search_when_enabled():

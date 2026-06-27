@@ -32,7 +32,6 @@ __all__ = [
     "AgentState",
     "Retriever",
     "Citation",
-    "SearchAgentState",
 ]
 
 
@@ -200,33 +199,6 @@ class TaskNode:
         return asdict(self)
 
 
-@dataclass(slots=True)
-class AgentState:
-    request_id: str
-    user_request: UserRequest
-    route: RouteDecision | None = None
-    short_term_memory: list[dict[str, str]] = field(default_factory=list)
-    long_term_memory: dict[str, Any] = field(default_factory=dict)
-    retrieved_user_docs: list[RetrievedDocument] = field(default_factory=list)
-    retrieved_policy_docs: list[RetrievedDocument] = field(default_factory=list)
-    plan: Plan | None = None
-    tool_results: list[ToolResult] = field(default_factory=list)
-    draft_response: str | None = None
-    final_response: str | None = None
-    trace: list[dict[str, Any]] = field(default_factory=list)
-
-    def record_trace(self, event: str, **payload: Any) -> None:
-        self.trace.append({"event": event, **payload})
-
-    def add_tool_result(self, result: ToolResult | ToolExecutionResult) -> None:
-        if isinstance(result, ToolExecutionResult):
-            result = result.to_tool_result()
-        self.tool_results.append(result)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
 class Retriever(Enum):
     """The retriever backends the policy can choose between per search."""
 
@@ -247,42 +219,53 @@ class Citation:
 
 
 @dataclass(slots=True)
-class SearchAgentState:
-    """Single source of truth threaded through the search loop for one question.
-
-    Holds exactly the six canonical fields the GRPO policy conditions on. Distinct
-    from the orchestration-level :class:`AgentState`; this one drives the search
-    components (Planner, SearchTool, RerankerTool, EvidenceJudge, AnswerGenerator).
-    """
-
-    question: str
+class AgentState:
+    request_id: str
+    user_request: UserRequest
+    question: str = ""
     previous_queries: list[str] = field(default_factory=list)
     retrieved_docs: list[SearchResult] = field(default_factory=list)
     evidence_score: float = 0.0
     search_rounds: int = 0
     citations: list[Citation] = field(default_factory=list)
+    route: RouteDecision | None = None
+    short_term_memory: list[dict[str, str]] = field(default_factory=list)
+    long_term_memory: dict[str, Any] = field(default_factory=dict)
+    retrieved_user_docs: list[RetrievedDocument] = field(default_factory=list)
+    retrieved_policy_docs: list[RetrievedDocument] = field(default_factory=list)
+    plan: Plan | None = None
+    tool_results: list[ToolResult] = field(default_factory=list)
+    draft_response: str | None = None
+    final_response: str | None = None
+    trace: list[dict[str, Any]] = field(default_factory=list)
 
-    def record_search(self, query: str, docs: list[SearchResult]) -> None:
-        """Record one retriever call: track the query, keep docs, count the round.
+    def __post_init__(self) -> None:
+        if not self.question:
+            self.question = self.user_request.message
 
-        A repeated query is not re-listed, but the round still counts because the
-        retriever was invoked again.
-        """
-        if query not in self.previous_queries:
-            self.previous_queries.append(query)
+    def record_search_round(self, queries: list[str], docs: list[SearchResult]) -> None:
+        for query in queries:
+            if query not in self.previous_queries:
+                self.previous_queries.append(query)
         self.retrieved_docs.extend(docs)
         self.search_rounds += 1
 
     def record_rerank(self, reordered_docs: list[SearchResult]) -> None:
-        """Replace the working set with a reranked ordering. Not a retriever call."""
         self.retrieved_docs = list(reordered_docs)
 
     def set_evidence(self, score: float) -> None:
-        """Set the latest evidence_score, clamped to [0, 1]."""
         self.evidence_score = max(0.0, min(1.0, score))
 
     def set_citations(self, citations: list[Citation]) -> None:
         self.citations = list(citations)
+
+    def record_trace(self, event: str, **payload: Any) -> None:
+        self.trace.append({"event": event, **payload})
+
+    def add_tool_result(self, result: ToolResult | ToolExecutionResult) -> None:
+        if isinstance(result, ToolExecutionResult):
+            result = result.to_tool_result()
+        self.tool_results.append(result)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

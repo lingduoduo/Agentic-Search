@@ -16,7 +16,7 @@ from ...training.evaluation import (
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from ..state import SearchAgentState
+from ..state import AgentState
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ class EvidenceJudge:
         )
 
     def update_state(
-        self, state: SearchAgentState, contexts: list[SearchContext]
+        self, state: AgentState, contexts: list[SearchContext]
     ) -> EvidenceVerdict:
         verdict = self.judge(contexts)
         state.set_evidence(verdict.score)

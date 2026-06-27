@@ -32,6 +32,7 @@ from src.internal.servers.secondary_llm_flows.query_expansion import (
 )
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.agents.base import OnTurnCallback
+from src.agents.control_flow_trace import ControlFlowEvent, EventSink
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
@@ -199,6 +200,17 @@ class ToolCallView(BaseModel):
     error: str | None = None
 
 
+class ControlFlowEventView(BaseModel):
+    sequence: int
+    timestamp: str
+    turn: int
+    component: str
+    action: str
+    status: str
+    duration_ms: int | None = None
+    details: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
 class AgentExperienceResponse(BaseModel):
     session_id: str
     answer: str
@@ -208,11 +220,16 @@ class AgentExperienceResponse(BaseModel):
     hook_metadata: dict[str, object] = Field(default_factory=dict)
     intent: str = "chat"  # "search" | "chat" | "tool"
     tool_calls: list[ToolCallView] = Field(default_factory=list)
+    control_flow_trace: list[ControlFlowEventView] = Field(default_factory=list)
 
 
 class QueryProcessingHookResponse(BaseModel):
     query: str | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+def _control_flow_event_view(event: ControlFlowEvent) -> ControlFlowEventView:
+    return ControlFlowEventView(**event.to_dict())
 
 
 @dataclass(frozen=True)
@@ -698,6 +715,7 @@ def create_web_app(
         request: AgentExperienceRequest,
         http_request: Request,
         on_turn: "OnTurnCallback | None" = None,
+        on_trace: EventSink | None = None,
     ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:
@@ -958,6 +976,7 @@ def create_web_app(
                     [{"role": "user", "content": query}],
                     sampling_params={"temperature": 0.0, "max_tokens": 256},
                     on_turn=on_turn,
+                    on_trace=on_trace,
                 )
                 answer = output.final_answer or ""
                 sa_documents: list[ContextDocument] = []
@@ -970,6 +989,11 @@ def create_web_app(
                                 )
                             )
                 sa_documents = _dedupe_documents(sa_documents)
+                control_flow_trace = [
+                    _control_flow_event_view(event)
+                    for event in output.control_flow_trace
+                ]
+                trace_payload = [event.model_dump() for event in control_flow_trace]
                 db.add_chat_message(
                     session_id,
                     role="assistant",
@@ -980,6 +1004,7 @@ def create_web_app(
                         "hooks": hook_metadata,
                         "mode": mode,
                         "num_turns": output.num_turns,
+                        "control_flow_trace": trace_payload,
                     },
                 )
                 messages = [
@@ -994,6 +1019,7 @@ def create_web_app(
                     messages=messages,
                     hook_metadata=hook_metadata,
                     intent="search",
+                    control_flow_trace=control_flow_trace,
                 )
 
             if mode == "tool_agent":
@@ -1131,6 +1157,7 @@ def create_web_app(
             return f"data: {_json.dumps(data)}\n\n"
 
         queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
+        dropped_trace_events = 0
 
         async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
             text = (
@@ -1138,9 +1165,26 @@ def create_web_app(
             )
             await queue.put({"type": "progress", "turn": turn, "text": text})
 
+        async def on_trace(event: ControlFlowEvent) -> None:
+            nonlocal dropped_trace_events
+            try:
+                queue.put_nowait(
+                    {
+                        "type": "trace",
+                        "event": _control_flow_event_view(event).model_dump(),
+                    }
+                )
+            except asyncio.QueueFull:
+                dropped_trace_events += 1
+
         async def _generate():
             task = asyncio.create_task(
-                _run_agent_impl(request, http_request, on_turn=on_turn)
+                _run_agent_impl(
+                    request,
+                    http_request,
+                    on_turn=on_turn,
+                    on_trace=on_trace,
+                )
             )
             try:
                 while not task.done():
@@ -1161,8 +1205,16 @@ def create_web_app(
                         "documents": [d.model_dump() for d in result.documents],
                         "intent": result.intent,
                         "tool_calls": [tc.model_dump() for tc in result.tool_calls],
+                        "control_flow_trace": [
+                            event.model_dump() for event in result.control_flow_trace
+                        ],
                     }
                 )
+                if dropped_trace_events:
+                    logger.warning(
+                        "dropped %d live control-flow trace events",
+                        dropped_trace_events,
+                    )
             except BaseException as exc:
                 if not task.done():
                     task.cancel()
