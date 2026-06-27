@@ -8,9 +8,10 @@ import json as _json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from itertools import islice
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
@@ -84,6 +85,13 @@ from src.internal.servers.reporting.api import create_reporting_router
 from src.internal.servers.scim.api import create_scim_router
 from src.internal.servers.scim.api import register_scim_exception_handlers
 from src.internal.servers.web.seeding import seed_db
+from src.internal.servers.web.tool_approval import (
+    ApprovalConflict,
+    ApprovalExpired,
+    ApprovalForbidden,
+    ApprovalNotFound,
+    ToolApprovalBroker,
+)
 from src.internal.servers.settings.api import create_settings_router
 from src.internal.servers.tenants.api import router as tenants_router
 from src.internal.servers.token_rate_limits.api import create_token_rate_limits_router
@@ -145,6 +153,15 @@ class SearchExperienceSettings:
 class SessionCreateRequest(BaseModel):
     title: str | None = None
     user_id: str | None = None
+
+
+class ToolApprovalDecisionRequest(BaseModel):
+    decision: Literal["approve", "deny"]
+
+
+class ToolApprovalDecisionResponse(BaseModel):
+    id: str
+    decision: str
 
 
 class ChatMessageView(BaseModel):
@@ -568,6 +585,7 @@ async def _run_tool_agent(
     history: list,
     resolved,
     on_turn=None,
+    on_approval=None,
     with_search_tool: bool,
 ) -> tuple:
     """Run the ToolAgentLoop. Assumes a local model is configured.
@@ -588,7 +606,10 @@ async def _run_tool_agent(
         tokenizer=tokenizer,
         server_manager=manager,
         tools=tools,
-        config=ToolAgentLoopConfig(tool_parser_format=resolved.tool_agent_parser),
+        config=ToolAgentLoopConfig(
+            tool_parser_format=resolved.tool_agent_parser,
+            approval_timeout_seconds=resolved.tool_approval_timeout_seconds,
+        ),
     )
     messages = [{"role": m.role, "content": m.content} for m in history] + [
         {"role": "user", "content": query}
@@ -597,6 +618,7 @@ async def _run_tool_agent(
         messages,
         sampling_params={"temperature": 0.0, "max_tokens": 512},
         on_turn=on_turn,
+        on_approval=on_approval,
     )
     tool_calls, documents = _extract_tool_calls_and_docs(output)
     fallback = next(
@@ -690,6 +712,7 @@ async def _run_auto_routed(
     resolved,
     source_provider: str = "retrieval",
     on_turn=None,
+    on_approval=None,
 ) -> tuple:
     """3-way agentic routing. Returns (answer, citations, documents, intent, extra).
 
@@ -723,6 +746,7 @@ async def _run_auto_routed(
                     history=history,
                     resolved=resolved,
                     on_turn=on_turn,
+                    on_approval=on_approval,
                     with_search_tool=False,
                 )
             except Exception as exc:
@@ -895,6 +919,9 @@ def create_web_app(
                 db.close()
 
     app = FastAPI(title="Agentic Search Web", lifespan=lifespan)
+    app.state.tool_approval_broker = ToolApprovalBroker(
+        resolved.tool_approval_timeout_seconds
+    )
     add_api_server_tenant_id_middleware(app, resolved)
     add_license_enforcement_middleware(app, resolved)
     add_tier_gate_middleware(app, resolved)
@@ -973,6 +1000,7 @@ def create_web_app(
         http_request: Request,
         on_turn: "OnTurnCallback | None" = None,
         on_trace: EventSink | None = None,
+        on_approval=None,
     ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:
@@ -1046,6 +1074,7 @@ def create_web_app(
                     resolved=resolved,
                     source_provider=_normalize_source_provider(request.source_provider),
                     on_turn=on_turn,
+                    on_approval=on_approval,
                 )
                 return _finalize_response(
                     db,
@@ -1190,6 +1219,7 @@ def create_web_app(
                     history=history,
                     resolved=resolved,
                     on_turn=on_turn,
+                    on_approval=on_approval,
                     with_search_tool=True,
                 )
                 # Explicit mode falls back to the last assistant message on an
@@ -1245,6 +1275,38 @@ def create_web_app(
     ) -> AgentExperienceResponse:
         return await _run_agent_impl(request, http_request, on_turn=None)
 
+    @app.post(
+        "/api/agent/approvals/{approval_id}",
+        response_model=ToolApprovalDecisionResponse,
+    )
+    async def decide_tool_approval(
+        approval_id: str,
+        request: ToolApprovalDecisionRequest,
+        http_request: Request,
+    ) -> ToolApprovalDecisionResponse:
+        from src.agents.tool import ApprovalDecision
+
+        auth_user = _optional_user_from_request(http_request)
+        if auth_user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        try:
+            await http_request.app.state.tool_approval_broker.decide(
+                approval_id,
+                auth_user.id,
+                ApprovalDecision(request.decision),
+            )
+        except ApprovalForbidden as exc:
+            raise HTTPException(status_code=403, detail="Approval forbidden") from exc
+        except ApprovalNotFound as exc:
+            raise HTTPException(status_code=404, detail="Approval not found") from exc
+        except ApprovalConflict as exc:
+            raise HTTPException(
+                status_code=409, detail="Approval already decided"
+            ) from exc
+        except ApprovalExpired as exc:
+            raise HTTPException(status_code=410, detail="Approval expired") from exc
+        return ToolApprovalDecisionResponse(id=approval_id, decision=request.decision)
+
     @app.post("/api/agent/stream")
     async def stream_agent(
         request: AgentExperienceRequest,
@@ -1264,6 +1326,7 @@ def create_web_app(
 
         queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
         dropped_trace_events = 0
+        auth_user = _optional_user_from_request(http_request)
 
         async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
             text = (
@@ -1283,6 +1346,20 @@ def create_web_app(
             except asyncio.QueueFull:
                 dropped_trace_events += 1
 
+        async def on_approval(approval_request):
+            broker = http_request.app.state.tool_approval_broker
+
+            def publish(view) -> None:
+                queue.put_nowait(
+                    {"type": "approval_required", "approval": asdict(view)}
+                )
+
+            return await broker.request(
+                auth_user.id,
+                approval_request,
+                on_registered=publish,
+            )
+
         async def _generate():
             task = asyncio.create_task(
                 _run_agent_impl(
@@ -1290,6 +1367,7 @@ def create_web_app(
                     http_request,
                     on_turn=on_turn,
                     on_trace=on_trace,
+                    on_approval=on_approval if auth_user is not None else None,
                 )
             )
             try:

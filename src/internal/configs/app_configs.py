@@ -142,6 +142,7 @@ class AppSettings:
     search_agent_device: str = "mps"
     search_agent_server_url: str | None = None
     tool_agent_parser: str = "json"
+    tool_approval_timeout_seconds: float = 60.0
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -152,6 +153,11 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     """
 
     source = env if env is not None else os.environ
+    tool_approval_timeout_seconds = get_env_float(
+        source, "TOOL_APPROVAL_TIMEOUT_SECONDS", 60.0
+    )
+    if tool_approval_timeout_seconds <= 0:
+        raise ValueError("TOOL_APPROVAL_TIMEOUT_SECONDS must be positive.")
     return AppSettings(
         services=ServiceSettings(
             retrieval_url=get_env_str(
@@ -232,6 +238,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         search_agent_device=get_env_str(source, "SEARCH_AGENT_DEVICE", "mps"),
         search_agent_server_url=get_env_str(source, "SEARCH_AGENT_SERVER_URL", None),
         tool_agent_parser=get_env_str(source, "TOOL_AGENT_PARSER", "json"),
+        tool_approval_timeout_seconds=tool_approval_timeout_seconds,
     )
 
 

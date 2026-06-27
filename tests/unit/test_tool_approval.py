@@ -7,7 +7,7 @@ from datetime import UTC
 import pytest
 
 from src.agents import ApprovalDecision, ToolAgentLoop, ToolAgentLoopConfig
-from src.agents.state import TaskStatus
+from src.agents.core.state import TaskStatus
 from src.tools import FunctionTool, ToolEffect
 
 

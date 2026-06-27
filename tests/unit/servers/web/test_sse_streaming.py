@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -149,6 +152,79 @@ def test_stream_done_event_contains_documents(monkeypatch, tmp_path):
     assert isinstance(done_event["documents"], list)
     assert len(done_event["documents"]) >= 1
     assert done_event["documents"][0]["title"] == "T"
+
+
+def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
+    from src.agents.core.base import AgentLoopOutput
+    from src.agents.tool import ApprovalDecision, ToolAgentLoop, ToolApprovalRequest
+    from src.internal.auth import generate_user_jwt_token
+
+    executions: list[str] = []
+
+    async def fake_run(
+        self, messages, sampling_params, *, on_turn=None, on_approval=None, **kwargs
+    ):
+        assert on_approval is not None
+        now = datetime.now(UTC)
+        decision = await on_approval(
+            ToolApprovalRequest(
+                approval_id="approval-1",
+                tool_name="create_ticket",
+                arguments={"title": "Fix it", "token": "hidden"},
+                created_at=now,
+                expires_at=now + timedelta(seconds=30),
+            )
+        )
+        if decision is ApprovalDecision.APPROVE:
+            executions.append("create_ticket")
+        return AgentLoopOutput(
+            prompt_ids=[],
+            response_ids=[],
+            response_mask=[],
+            num_turns=1,
+            final_answer="Ticket created.",
+        )
+
+    monkeypatch.setattr(ToolAgentLoop, "run", fake_run)
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    token = generate_user_jwt_token(user_id="user-1")
+    headers = {"Authorization": f"Bearer {token}"}
+    result: dict[str, object] = {}
+
+    with TestClient(app) as client:
+        app.state.search_agent_manager = object()
+        app.state.search_agent_tokenizer = object()
+
+        def stream_request() -> None:
+            result["response"] = client.post(
+                "/api/agent/stream",
+                json={"query": "Create a ticket", "mode": "tool_agent"},
+                headers=headers,
+            )
+
+        thread = threading.Thread(target=stream_request)
+        thread.start()
+        deadline = time.monotonic() + 5
+        while app.state.tool_approval_broker.pending_count == 0:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+
+        decision = client.post(
+            "/api/agent/approvals/approval-1",
+            json={"decision": "approve"},
+            headers=headers,
+        )
+        thread.join(timeout=5)
+
+    assert decision.status_code == 200
+    assert not thread.is_alive()
+    response = result["response"]
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    approval = next(event for event in events if event["type"] == "approval_required")
+    assert approval["approval"]["arguments"] == {"title": "Fix it"}
+    assert [event["type"] for event in events][-2:] == ["answer", "done"]
+    assert executions == ["create_ticket"]
 
 
 def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):

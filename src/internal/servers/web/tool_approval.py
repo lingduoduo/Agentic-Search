@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from src.agents.tool_calling import ApprovalDecision, ToolApprovalRequest
+from src.agents.tool import ApprovalDecision, ToolApprovalRequest
 
 logger = logging.getLogger(__name__)
 

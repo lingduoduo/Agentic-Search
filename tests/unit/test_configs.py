@@ -122,3 +122,17 @@ def test_tool_agent_parser_defaults_to_json():
 def test_tool_agent_parser_reads_from_env():
     settings = load_app_settings({"TOOL_AGENT_PARSER": "hermes"})
     assert settings.tool_agent_parser == "hermes"
+
+
+def test_tool_approval_timeout_defaults_to_sixty_seconds() -> None:
+    assert load_app_settings({}).tool_approval_timeout_seconds == 60.0
+
+
+def test_tool_approval_timeout_reads_environment() -> None:
+    settings = load_app_settings({"TOOL_APPROVAL_TIMEOUT_SECONDS": "12.5"})
+    assert settings.tool_approval_timeout_seconds == 12.5
+
+
+def test_tool_approval_timeout_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="TOOL_APPROVAL_TIMEOUT_SECONDS"):
+        load_app_settings({"TOOL_APPROVAL_TIMEOUT_SECONDS": "0"})

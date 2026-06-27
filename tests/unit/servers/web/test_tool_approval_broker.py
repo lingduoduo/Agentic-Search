@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.agents.tool_calling import ApprovalDecision, ToolApprovalRequest
+from src.agents.tool import ApprovalDecision, ToolApprovalRequest
 from src.internal.servers.web.tool_approval import (
     ApprovalConflict,
     ApprovalExpired,
