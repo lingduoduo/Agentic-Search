@@ -463,6 +463,31 @@ def test_planner_fallback_query_is_bounded() -> None:
     assert len(decision.query) <= 256
 
 
+def test_planner_parses_complete_mixed_turn() -> None:
+    from src.agents.components.planner import Planner
+
+    text = (
+        "<think>plan</think>"
+        "<subquestions>T1: first</subquestions>"
+        '<searches retriever="web" rerank="true"><query>[T1] q</query></searches>'
+        "<fetch>https://example.com</fetch>"
+        "<answer>candidate</answer>"
+    )
+    planner = Planner()
+
+    assert planner.parse_actions(
+        text, ["think", "subquestions", "search", "searches", "fetch", "answer"]
+    ) == [
+        ("think", "plan"),
+        ("subquestions", "T1: first"),
+        ("searches", "<query>[T1] q</query>"),
+        ("fetch", "https://example.com"),
+        ("answer", "candidate"),
+    ]
+    assert planner.round_retriever(text, ["search", "searches"]) is Retriever.WEB
+    assert planner.round_rerank(text, ["search", "searches"]) is True
+
+
 # --------------------------------------------------------------------------- #
 # RerankerTool (T-A.3)
 # --------------------------------------------------------------------------- #

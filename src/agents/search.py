@@ -30,6 +30,7 @@ from ..training.evaluation import (
 from ..context.retrieval.client import SearchClient, SearchClientConfig
 from .components.evidence_judge import EvidenceJudge
 from .components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
+from .components.planner import Planner
 from .components.reranker_tool import RerankFn
 from .state import Retriever
 
@@ -326,7 +327,7 @@ class SearchAgentLoop(AgentLoopBase):
         )
         self._task_evaluator = SearchResultEvaluator(task_eval_config)
 
-        action_tags = [
+        self._action_tags = [
             cfg.plan_tag,
             cfg.decision_tag,
             cfg.subquestions_tag,
@@ -335,23 +336,8 @@ class SearchAgentLoop(AgentLoopBase):
             cfg.fetch_tag,
             cfg.answer_tag,
         ]
-        self._action_re = re.compile(
-            rf"<({'|'.join(re.escape(tag) for tag in action_tags)})(?:\s+[^>]*)?>"
-            rf"(.*?)</\1>",
-            re.DOTALL,
-        )
-        # Per-round retriever selection: <search retriever="web"> / <searches retriever="web">.
-        self._round_retriever_re = re.compile(
-            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
-            rf'\s+[^>]*retriever="(?P<retriever>\w+)"',
-            re.IGNORECASE,
-        )
-        # Per-round rerank request: <search rerank="true"> / <searches rerank="true">.
-        self._round_rerank_re = re.compile(
-            rf"<(?:{re.escape(cfg.search_tag)}|{re.escape(cfg.searches_tag)})"
-            rf'\s+[^>]*rerank="(?P<rerank>\w+)"',
-            re.IGNORECASE,
-        )
+        self._search_action_tags = [cfg.search_tag, cfg.searches_tag]
+        self._planner = Planner()
         self._search_client = SearchClient(
             SearchClientConfig(
                 url=cfg.search_url,
@@ -442,27 +428,6 @@ class SearchAgentLoop(AgentLoopBase):
     # ------------------------------------------------------------------
     # Parsing helpers
     # ------------------------------------------------------------------
-
-    def _parse_actions(self, text: str) -> list[tuple[str, str]]:
-        return [
-            (m.group(1), m.group(2).strip()) for m in self._action_re.finditer(text)
-        ]
-
-    def _parse_round_retriever(self, text: str) -> Retriever:
-        """Per-round retriever choice from the search tag's ``retriever`` attribute.
-
-        Defaults to the vector-DB backend when absent or unrecognized, so an
-        un-annotated ``<search>`` behaves exactly as before.
-        """
-        match = self._round_retriever_re.search(text)
-        if match and match.group("retriever").lower() == "web":
-            return Retriever.WEB
-        return Retriever.VECTOR_DB
-
-    def _parse_round_rerank(self, text: str) -> bool:
-        """Whether this search round requested reranking via ``rerank="true"``."""
-        match = self._round_rerank_re.search(text)
-        return bool(match and match.group("rerank").lower() == "true")
 
     def _parse_queries(self, content: str, action: str | None) -> list[str]:
         if action == self.search_config.search_tag:
@@ -816,7 +781,7 @@ class SearchAgentLoop(AgentLoopBase):
         working_messages.append({"role": "assistant", "content": text})
         answer_actions = [
             c
-            for t, c in self._parse_actions(text)
+            for t, c in self._planner.parse_actions(text, self._action_tags)
             if t == self.search_config.answer_tag
         ]
         if answer_actions:
@@ -1005,7 +970,7 @@ class SearchAgentLoop(AgentLoopBase):
             )
 
         response_text = self.decode_response_ids(response_ids)
-        actions = self._parse_actions(response_text)
+        actions = self._planner.parse_actions(response_text, self._action_tags)
         logger.debug("turn=%d actions=%r", turn, [(t, c[:60]) for t, c in actions])
         return prompt_ids, response_ids, response_text, actions
 
@@ -1527,8 +1492,12 @@ class SearchAgentLoop(AgentLoopBase):
                         active_tasks=active_tasks,
                         task_statuses=task_statuses,
                         metrics=metrics,
-                        retriever=self._parse_round_retriever(response_text),
-                        rerank=self._parse_round_rerank(response_text),
+                        retriever=self._planner.round_retriever(
+                            response_text, self._search_action_tags
+                        ),
+                        rerank=self._planner.round_rerank(
+                            response_text, self._search_action_tags
+                        ),
                     )
                     latest_evaluation = round_result.evaluation
                     _plateau_snapshot = LoopSnapshot(

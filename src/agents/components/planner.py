@@ -12,6 +12,7 @@ turn that contains both is treated as a search step.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..state import AgentState, Retriever
@@ -59,6 +60,40 @@ PlannerDecision = SearchAction | RerankAction | AnswerAction
 
 class Planner:
     """Parse one generation step into a single typed :class:`PlannerDecision`."""
+
+    @staticmethod
+    def parse_actions(text: str, action_tags: Sequence[str]) -> list[tuple[str, str]]:
+        tags = "|".join(re.escape(tag) for tag in action_tags)
+        action_re = re.compile(
+            rf"<({tags})(?:\s+[^>]*)?>(.*?)</\1>",
+            re.DOTALL,
+        )
+        return [
+            (match.group(1), match.group(2).strip())
+            for match in action_re.finditer(text)
+        ]
+
+    @staticmethod
+    def round_retriever(text: str, search_tags: Sequence[str]) -> Retriever:
+        tags = "|".join(re.escape(tag) for tag in search_tags)
+        match = re.search(
+            rf'<(?:{tags})\s+[^>]*retriever="(?P<retriever>\w+)"',
+            text,
+            re.IGNORECASE,
+        )
+        if match and match.group("retriever").lower() == "web":
+            return Retriever.WEB
+        return Retriever.VECTOR_DB
+
+    @staticmethod
+    def round_rerank(text: str, search_tags: Sequence[str]) -> bool:
+        tags = "|".join(re.escape(tag) for tag in search_tags)
+        match = re.search(
+            rf'<(?:{tags})\s+[^>]*rerank="(?P<rerank>\w+)"',
+            text,
+            re.IGNORECASE,
+        )
+        return bool(match and match.group("rerank").lower() == "true")
 
     def decide(self, text: str, state: AgentState) -> PlannerDecision:
         seen = {_normalize_query(q) for q in state.previous_queries}
