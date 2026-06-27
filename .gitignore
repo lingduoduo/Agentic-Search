@@ -237,3 +237,4 @@ cli/query
 
 # Superpowers SDD scratch (briefs, reports, diffs, ledger)
 .superpowers/
+.worktrees/
