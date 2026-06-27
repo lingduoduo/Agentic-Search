@@ -115,3 +115,10 @@ def test_question_is_preserved_across_all_operations() -> None:
 def test_retriever_enum_has_web_and_vector_db() -> None:
     assert Retriever.WEB.value == "web"
     assert Retriever.VECTOR_DB.value == "vector_db"
+
+
+def test_search_agent_state_is_not_exported() -> None:
+    import src.agents.state as state_module
+
+    assert not hasattr(state_module, "SearchAgentState")
+    assert "SearchAgentState" not in state_module.__all__
