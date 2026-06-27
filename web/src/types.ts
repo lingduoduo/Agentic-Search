@@ -51,6 +51,17 @@ export interface ToolCallTraceView {
   error: string | null;
 }
 
+export interface ControlFlowEventView {
+  sequence: number;
+  timestamp: string;
+  turn: number;
+  component: string;
+  action: string;
+  status: "started" | "completed" | "decided" | "skipped" | "failed" | string;
+  duration_ms: number | null;
+  details: Record<string, string | number | boolean | null>;
+}
+
 export interface AgentExperienceResponse {
   session_id: string;
   answer: string;
@@ -59,6 +70,7 @@ export interface AgentExperienceResponse {
   messages: ChatMessageView[];
   intent?: "search" | "chat" | "tool";
   tool_calls?: ToolCallTraceView[];
+  control_flow_trace?: ControlFlowEventView[];
 }
 
 export interface SessionCreateRequest {
@@ -217,6 +229,11 @@ export interface SSEAnswerEvent {
   text: string;
 }
 
+export interface SSETraceEvent {
+  type: "trace";
+  event: ControlFlowEventView;
+}
+
 export interface SSEDoneEvent {
   type: "done";
   session_id: string;
@@ -224,6 +241,7 @@ export interface SSEDoneEvent {
   documents: SourceDocumentView[];
   intent?: "search" | "chat" | "tool";
   tool_calls?: ToolCallTraceView[];
+  control_flow_trace?: ControlFlowEventView[];
 }
 
 export interface SSEErrorEvent {
@@ -234,6 +252,7 @@ export interface SSEErrorEvent {
 export type SSEEvent =
   | SSEProgressEvent
   | SSEAnswerEvent
+  | SSETraceEvent
   | SSEDoneEvent
   | SSEErrorEvent;
 

@@ -96,6 +96,38 @@ describe("App adaptive layout", () => {
     });
   });
 
+  it("shows the authoritative control-flow trace after streaming completes", async () => {
+    const trace = [{
+      sequence: 1,
+      timestamp: "2026-06-27T12:00:00.000Z",
+      turn: 1,
+      component: "planner",
+      action: "search_planned",
+      status: "decided",
+      duration_ms: null,
+      details: { decision: "search" },
+    }];
+    async function* tracedStream() {
+      yield { type: "trace" as const, event: trace[0] };
+      yield { type: "answer" as const, text: baseResponse.answer };
+      yield {
+        type: "done" as const,
+        session_id: baseResponse.session_id,
+        citations: baseResponse.citations,
+        documents: baseResponse.documents,
+        intent: "search" as const,
+        control_flow_trace: trace,
+      };
+    }
+    mockStreamAgent.mockReturnValue(tracedStream());
+
+    render(<App />);
+    await submitQuery("trace this search");
+
+    const summary = await screen.findByRole("button", { name: /show control flow/i });
+    expect(summary).toHaveTextContent("1 control-flow events");
+  });
+
   it("clears error when new session is created", async () => {
     mockStreamAgent.mockReturnValue(errorStream("failed"));
     render(<App />);
