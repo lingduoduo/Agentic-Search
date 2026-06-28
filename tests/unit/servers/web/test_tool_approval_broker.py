@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -53,6 +54,33 @@ def test_sanitizer_bounds_strings_collections_depth_and_secret_keys() -> None:
     assert result["items"] == list(range(10))
     assert result["nested"] == {"level1": "…"}
     assert set(result) == {"text", "items", "nested"}
+
+
+def test_sanitizer_removes_secret_key_variants_at_every_visible_depth() -> None:
+    result = sanitize_tool_arguments(
+        {
+            "access_token": "hidden",
+            "refreshToken": "hidden",
+            "CLIENT_SECRET": "hidden",
+            "auth-token": "hidden",
+            "apiKey": "hidden",
+            "nested": {
+                "AccessToken": "hidden",
+                "client_secret": "hidden",
+                "safeValue": "visible",
+            },
+            "tokenizer": "visible",
+            "secretariat": "visible",
+            "cookie_policy": "visible",
+        }
+    )
+
+    assert result == {
+        "nested": {"safeValue": "visible"},
+        "tokenizer": "visible",
+        "secretariat": "visible",
+        "cookie_policy": "visible",
+    }
 
 
 @pytest.mark.asyncio
@@ -153,3 +181,23 @@ async def test_cancellation_cleans_up_and_counts_once() -> None:
         await task
     assert broker.counters["cancelled"] == 1
     assert broker.pending_count == 0
+
+
+@pytest.mark.asyncio
+async def test_registration_callback_failure_cleans_up_and_logs_error(
+    caplog,
+) -> None:
+    broker = ToolApprovalBroker()
+
+    def fail_registration(_view) -> None:
+        raise RuntimeError("publication failed")
+
+    with caplog.at_level(logging.INFO, logger="src.internal.servers.web.tool_approval"):
+        with pytest.raises(RuntimeError, match="publication failed"):
+            await broker.request("owner", _request(), fail_registration)
+
+    assert broker.pending_count == 0
+    assert broker.counters["errors"] == 1
+    assert broker.counters["cancelled"] == 0
+    assert "decision=error" in caplog.text
+    assert "decision=cancelled" not in caplog.text

@@ -19,7 +19,11 @@ _SECRET_KEYS = {
     "cookie",
     "authorization",
     "headers",
-    "api_key",
+    "apikey",
+    "accesstoken",
+    "refreshtoken",
+    "clientsecret",
+    "authtoken",
 }
 _ELLIPSIS = "…"
 
@@ -72,7 +76,10 @@ def _sanitize(value: object, *, depth: int) -> object:
         result: dict[str, object] = {}
         for key, item in list(value.items())[:10]:
             key_text = str(key)
-            if key_text.casefold() in _SECRET_KEYS:
+            normalized_key = "".join(
+                character for character in key_text.casefold() if character.isalnum()
+            )
+            if normalized_key in _SECRET_KEYS:
                 continue
             result[key_text] = _sanitize(item, depth=depth + 1)
         return result
@@ -124,6 +131,7 @@ class ToolApprovalBroker:
         future = asyncio.get_running_loop().create_future()
         pending = _PendingApproval(owner_user_id, future, request.expires_at, view)
         started = time.perf_counter()
+        completion_label: str | None = None
 
         async with self._lock:
             if request.approval_id in self._pending:
@@ -154,13 +162,16 @@ class ToolApprovalBroker:
             raise
         except Exception:
             async with self._lock:
+                if not future.done():
+                    future.cancel()
                 self.counters["errors"] += 1
+            completion_label = "error"
             raise
         finally:
             async with self._lock:
                 if self._pending.get(request.approval_id) is pending:
                     del self._pending[request.approval_id]
-            decision_text = (
+            decision_text = completion_label or (
                 future.result().value
                 if future.done() and not future.cancelled()
                 else "cancelled"
