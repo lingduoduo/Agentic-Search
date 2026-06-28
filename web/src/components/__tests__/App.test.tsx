@@ -18,6 +18,7 @@ import * as api from "../../api";
 
 const mockStreamAgent = api.streamAgent as ReturnType<typeof vi.fn>;
 const mockSubmitToolApproval = api.submitToolApproval as ReturnType<typeof vi.fn>;
+const mockCreateSession = api.createSession as ReturnType<typeof vi.fn>;
 
 const baseResponse = {
   session_id: "s1", answer: "The answer", citations: ["[D1]"],
@@ -320,5 +321,124 @@ describe("App tool approvals", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Approval service unavailable");
     expect(screen.getByLabelText(/approval required for send_email/i)).toBeInTheDocument();
     expect(mockStreamAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let an aborted older search clear a newer search's approval", async () => {
+    let rejectOlder!: (reason: unknown) => void;
+    let olderSettled = false;
+    const olderFailure = new Promise<never>((_, reject) => { rejectOlder = reject; });
+    async function* olderStream() {
+      try {
+        await olderFailure;
+        yield { type: "answer" as const, text: "unreachable" };
+      } finally {
+        olderSettled = true;
+      }
+    }
+    async function* newerStream() {
+      yield { type: "approval_required" as const, approval };
+      await new Promise(() => undefined);
+    }
+    mockStreamAgent
+      .mockReturnValueOnce(olderStream())
+      .mockReturnValueOnce(newerStream());
+
+    render(<App />);
+    await submitQuery("first search");
+    const textarea = screen.getByRole("textbox", { name: /question/i });
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, "second search{Control>}{Enter}{/Control}");
+    expect(await screen.findByLabelText(/approval required for send_email/i)).toBeInTheDocument();
+
+    rejectOlder(new DOMException("Aborted", "AbortError"));
+
+    await waitFor(() => expect(olderSettled).toBe(true));
+    expect(mockStreamAgent).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText(/approval required for send_email/i)).toBeInTheDocument();
+  });
+
+  it("clears approvals immediately when starting a new session", async () => {
+    const newSession = { id: "s2", messages: [], title: null, user_id: null };
+    const pendingSession = new Promise<typeof newSession>(() => undefined);
+    mockCreateSession
+      .mockResolvedValueOnce({ id: "s1", messages: [], title: null, user_id: null })
+      .mockReturnValueOnce(pendingSession);
+    async function* approvalStream() {
+      yield { type: "approval_required" as const, approval };
+      await new Promise(() => undefined);
+    }
+    mockStreamAgent.mockReturnValue(approvalStream());
+
+    render(<App />);
+    await submitQuery("send an email");
+    expect(await screen.findByLabelText(/approval required for send_email/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /new/i }));
+
+    expect(screen.queryByLabelText(/approval required for send_email/i)).not.toBeInTheDocument();
+  });
+
+  it("upserts repeated approval IDs", async () => {
+    async function* approvalsStream() {
+      yield { type: "approval_required" as const, approval };
+      yield {
+        type: "approval_required" as const,
+        approval: { ...approval, tool_name: "send_updated_email" },
+      };
+      await new Promise(() => undefined);
+    }
+    mockStreamAgent.mockReturnValue(approvalsStream());
+
+    render(<App />);
+    await submitQuery("send an email");
+
+    expect(await screen.findByLabelText(/approval required for send_updated_email/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^approval required for send_email$/i)).not.toBeInTheDocument();
+  });
+
+  it("renders concurrent approvals independently", async () => {
+    async function* approvalsStream() {
+      yield { type: "approval_required" as const, approval };
+      yield {
+        type: "approval_required" as const,
+        approval: { ...approval, id: "approval-2", tool_name: "delete_file" },
+      };
+      await new Promise(() => undefined);
+    }
+    mockStreamAgent.mockReturnValue(approvalsStream());
+
+    render(<App />);
+    await submitQuery("run tools");
+
+    expect(await screen.findByLabelText(/approval required for send_email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/approval required for delete_file/i)).toBeInTheDocument();
+  });
+
+  it.each(["done", "error"] as const)("clears approvals on stream %s", async (ending) => {
+    let finish!: () => void;
+    const readyToFinish = new Promise<void>((resolve) => { finish = resolve; });
+    async function* approvalStream() {
+      yield { type: "approval_required" as const, approval };
+      await readyToFinish;
+      if (ending === "error") {
+        yield { type: "error" as const, detail: "stream failed" };
+      } else {
+        yield {
+          type: "done" as const,
+          session_id: baseResponse.session_id,
+          citations: [],
+          documents: [],
+        };
+      }
+    }
+    mockStreamAgent.mockReturnValue(approvalStream());
+
+    render(<App />);
+    await submitQuery("run a tool");
+    expect(await screen.findByLabelText(/approval required for send_email/i)).toBeInTheDocument();
+    finish();
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/approval required for send_email/i)).not.toBeInTheDocument();
+    });
   });
 });

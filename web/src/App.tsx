@@ -183,6 +183,7 @@ export function App() {
         }
       }
     } catch (caught) {
+      if (requestRef.current !== controller) return;
       setPendingApprovals([]);
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
@@ -208,6 +209,7 @@ export function App() {
 
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
+    setPendingApprovals([]);
     const session = await createSession({ title: "Search session" });
     setSessionId(session.id);
     setAnswer("");
@@ -215,7 +217,6 @@ export function App() {
     setDocuments([]);
     setToolCalls([]);
     setControlFlowTrace([]);
-    setPendingApprovals([]);
     setMessages([]);
     setError(null);
     setIntent(undefined);
