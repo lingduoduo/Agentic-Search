@@ -267,6 +267,12 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     max_search_limit_cap: int = 10
     # Dead-ends emit a best-effort answer from collected evidence instead of None.
     force_answer_on_deadend: bool = True
+    # Deterministic control flow: when the first turn produces no recognized
+    # action tag and no search has run yet, auto-issue a search on the user's
+    # question so retrieval always fires at least once instead of dead-ending on
+    # format recovery. RL rollouts may set this False to preserve dead-end
+    # penalties during training.
+    auto_search_on_deadend: bool = True
 
 
 @register("search_agent")
@@ -1400,38 +1406,64 @@ class SearchAgentLoop(AgentLoopBase):
 
                 # No recognised tag: re-prompt depending on where we are in the workflow.
                 if not actions:
-                    recorder.record(
-                        turn=num_turns,
-                        component="planner",
-                        action="format_recovery",
-                        status="decided",
-                        details={"decision": "retry"},
-                    )
-                    d = await self._handle_no_action(
-                        working_messages=working_messages,
-                        agent_ctx=agent_ctx,
-                        request_id=request_id,
-                        sampling_params=sampling_params,
-                        metrics=metrics,
-                        latest_evaluation=latest_evaluation,
-                        task_statuses=task_statuses,
-                        active_tasks=active_tasks,
-                        rounds_used=state.search_rounds,
-                        consecutive_format_errors=consecutive_format_errors,
-                        consecutive_rejections=consecutive_rejections,
-                        forced_answer_attempted=forced_answer_attempted,
-                        final_answer=final_answer,
-                        num_turns=num_turns,
-                    )
-                    consecutive_format_errors = d.consecutive_format_errors
-                    consecutive_rejections = d.consecutive_rejections
-                    forced_answer_attempted = d.forced_answer_attempted
-                    final_answer = d.final_answer
-                    num_turns = d.num_turns
-                    if d.control is TurnControl.BREAK:
-                        exit_status = d.exit_status
-                        break
-                    continue
+                    # Deterministic control flow: at the format-error dead-end,
+                    # if the model has never produced a search, auto-issue a
+                    # search on the user's question so retrieval fires at least
+                    # once instead of giving up with no evidence. Earlier
+                    # no-action turns still re-prompt (e.g. <think>/decision
+                    # steps) via _handle_no_action below.
+                    if (
+                        cfg.auto_search_on_deadend
+                        and state.search_rounds == 0
+                        and question
+                        and consecutive_format_errors + 1
+                        >= cfg.max_consecutive_format_errors
+                    ):
+                        consecutive_format_errors = 0
+                        actions = [(cfg.search_tag, question)]
+                        recorder.record(
+                            turn=num_turns,
+                            component="planner",
+                            action="auto_search",
+                            status="decided",
+                            details={
+                                "query": question,
+                                "reason": "deadend_no_search",
+                            },
+                        )
+                    else:
+                        recorder.record(
+                            turn=num_turns,
+                            component="planner",
+                            action="format_recovery",
+                            status="decided",
+                            details={"decision": "retry"},
+                        )
+                        d = await self._handle_no_action(
+                            working_messages=working_messages,
+                            agent_ctx=agent_ctx,
+                            request_id=request_id,
+                            sampling_params=sampling_params,
+                            metrics=metrics,
+                            latest_evaluation=latest_evaluation,
+                            task_statuses=task_statuses,
+                            active_tasks=active_tasks,
+                            rounds_used=state.search_rounds,
+                            consecutive_format_errors=consecutive_format_errors,
+                            consecutive_rejections=consecutive_rejections,
+                            forced_answer_attempted=forced_answer_attempted,
+                            final_answer=final_answer,
+                            num_turns=num_turns,
+                        )
+                        consecutive_format_errors = d.consecutive_format_errors
+                        consecutive_rejections = d.consecutive_rejections
+                        forced_answer_attempted = d.forced_answer_attempted
+                        final_answer = d.final_answer
+                        num_turns = d.num_turns
+                        if d.control is TurnControl.BREAK:
+                            exit_status = d.exit_status
+                            break
+                        continue
                 consecutive_format_errors = 0
 
                 # Process <subquestions> declarations.
