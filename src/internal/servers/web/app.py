@@ -251,6 +251,54 @@ def _control_flow_event_view(event: ControlFlowEvent) -> ControlFlowEventView:
     return ControlFlowEventView(**event.to_dict())
 
 
+async def _request_tool_approval(
+    broker: ToolApprovalBroker,
+    owner_user_id: str,
+    approval_request,
+    queue: asyncio.Queue[dict],
+):
+    registered = asyncio.Event()
+    publish_task: asyncio.Task[None] | None = None
+
+    def publish(view) -> None:
+        nonlocal publish_task
+        publish_task = asyncio.create_task(
+            queue.put({"type": "approval_required", "approval": asdict(view)})
+        )
+        registered.set()
+
+    request_task = asyncio.create_task(
+        broker.request(owner_user_id, approval_request, on_registered=publish)
+    )
+    registration_task = asyncio.create_task(registered.wait())
+    try:
+        done, _ = await asyncio.wait(
+            (request_task, registration_task),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if request_task in done and not registered.is_set():
+            return await request_task
+
+        await registration_task
+        assert publish_task is not None
+        done, _ = await asyncio.wait(
+            (request_task, publish_task),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if request_task in done and not publish_task.done():
+            return await request_task
+        await publish_task
+        return await request_task
+    finally:
+        tracked_tasks = [request_task, registration_task]
+        if publish_task is not None:
+            tracked_tasks.append(publish_task)
+        for task in tracked_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tracked_tasks, return_exceptions=True)
+
+
 @dataclass(frozen=True)
 class _HybridSearchResult:
     executed_queries: list[str]
@@ -1347,31 +1395,11 @@ def create_web_app(
                 dropped_trace_events += 1
 
         async def on_approval(approval_request):
-            broker = http_request.app.state.tool_approval_broker
-
-            def publish(view) -> None:
-                nonlocal dropped_trace_events
-                if queue.full():
-                    retained: list[dict] = []
-                    evicted = False
-                    while not queue.empty():
-                        item = queue.get_nowait()
-                        if not evicted and item.get("type") in {"progress", "trace"}:
-                            evicted = True
-                            if item.get("type") == "trace":
-                                dropped_trace_events += 1
-                            continue
-                        retained.append(item)
-                    for item in retained:
-                        queue.put_nowait(item)
-                queue.put_nowait(
-                    {"type": "approval_required", "approval": asdict(view)}
-                )
-
-            return await broker.request(
+            return await _request_tool_approval(
+                http_request.app.state.tool_approval_broker,
                 auth_user.id,
                 approval_request,
-                on_registered=publish,
+                queue,
             )
 
         async def _generate():

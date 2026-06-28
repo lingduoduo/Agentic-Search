@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 import time
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
+import pytest
 
 from src.context.models import (
     AnswerGenerationResult,
@@ -15,7 +17,12 @@ from src.context.models import (
     PromptBundle,
     SearchContextBundle,
 )
-from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
+from src.internal.servers.web.app import (
+    SearchExperienceSettings,
+    _request_tool_approval,
+    create_web_app,
+)
+from src.internal.servers.web.tool_approval import ToolApprovalBroker
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -43,6 +50,70 @@ def _answer_result(question: str) -> AnswerGenerationResult:
         context=SearchContextBundle(query=question, documents=[doc]),
         prompt=PromptBundle(system="", user="", messages=[]),
     )
+
+
+def _approval_request(approval_id: str):
+    from src.agents.tool_calling import ToolApprovalRequest
+
+    now = datetime.now(UTC)
+    return ToolApprovalRequest(
+        approval_id=approval_id,
+        tool_name="create_ticket",
+        arguments={"title": "Fix it"},
+        created_at=now,
+        expires_at=now + timedelta(seconds=30),
+    )
+
+
+@pytest.mark.asyncio
+async def test_approval_publication_backpressures_without_evicting_approvals():
+    from src.agents.tool_calling import ApprovalDecision
+
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=2)
+    first = {"type": "approval_required", "approval": {"id": "first"}}
+    second = {"type": "approval_required", "approval": {"id": "second"}}
+    queue.put_nowait(first)
+    queue.put_nowait(second)
+    broker = ToolApprovalBroker()
+
+    task = asyncio.create_task(
+        _request_tool_approval(broker, "user-1", _approval_request("third"), queue)
+    )
+    while broker.pending_count == 0:
+        await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not task.done()
+    assert queue.get_nowait() == first
+    await asyncio.sleep(0)
+    assert queue.get_nowait() == second
+    published = await queue.get()
+    assert published["approval"]["id"] == "third"
+
+    await broker.decide("third", "user-1", ApprovalDecision.APPROVE)
+    assert await task is ApprovalDecision.APPROVE
+
+
+@pytest.mark.asyncio
+async def test_cancelled_approval_cleans_blocked_publication_task():
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=1)
+    original = {"type": "approval_required", "approval": {"id": "first"}}
+    queue.put_nowait(original)
+    broker = ToolApprovalBroker()
+    before = set(asyncio.all_tasks())
+
+    task = asyncio.create_task(
+        _request_tool_approval(broker, "user-1", _approval_request("second"), queue)
+    )
+    while broker.pending_count == 0:
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0)
+
+    assert broker.pending_count == 0
+    assert queue.get_nowait() == original
+    assert set(asyncio.all_tasks()) - before == set()
 
 
 def test_stream_endpoint_exists(tmp_path):
@@ -227,7 +298,7 @@ def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
     approval = next(event for event in events if event["type"] == "approval_required")
     assert approval["approval"]["arguments"] == {"title": "Fix it"}
     approval_index = events.index(approval)
-    assert [event["turn"] for event in events[:approval_index]] == list(range(1, 100))
+    assert [event["turn"] for event in events[:approval_index]] == list(range(100))
     assert [event["type"] for event in events][-2:] == ["answer", "done"]
     assert executions == ["create_ticket"]
 
