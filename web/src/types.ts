@@ -234,6 +234,18 @@ export interface SSETraceEvent {
   event: ControlFlowEventView;
 }
 
+export interface ToolApprovalView {
+  id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  expires_at: string;
+}
+
+export interface SSEApprovalRequiredEvent {
+  type: "approval_required";
+  approval: ToolApprovalView;
+}
+
 export interface SSEDoneEvent {
   type: "done";
   session_id: string;
@@ -255,6 +267,7 @@ export type SSEEvent =
   | SSEProgressEvent
   | SSEAnswerEvent
   | SSETraceEvent
+  | SSEApprovalRequiredEvent
   | SSEDoneEvent
   | SSEErrorEvent;
 
