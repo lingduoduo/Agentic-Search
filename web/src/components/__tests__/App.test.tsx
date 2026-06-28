@@ -7,6 +7,7 @@ vi.mock("../../api", () => ({
   createSession: vi.fn().mockResolvedValue({ id: "s1", messages: [], title: null, user_id: null }),
   runAgent: vi.fn(),
   streamAgent: vi.fn(),
+  submitToolApproval: vi.fn(),
   getAdminSummary: vi.fn().mockRejectedValue(new Error("no admin")),
   getAnalyticsByLLM: vi.fn().mockRejectedValue(new Error()),
   getAnalyticsByPersona: vi.fn().mockRejectedValue(new Error()),
@@ -16,6 +17,7 @@ vi.mock("../../api", () => ({
 import * as api from "../../api";
 
 const mockStreamAgent = api.streamAgent as ReturnType<typeof vi.fn>;
+const mockSubmitToolApproval = api.submitToolApproval as ReturnType<typeof vi.fn>;
 
 const baseResponse = {
   session_id: "s1", answer: "The answer", citations: ["[D1]"],
@@ -254,5 +256,69 @@ describe("App retrieval URL handling", () => {
     };
     expect(sentRequest.search_url).toBeUndefined();
     expect(sentRequest.source_provider).toBeUndefined();
+  });
+});
+
+describe("App tool approvals", () => {
+  const approval = {
+    id: "approval-1",
+    tool_name: "send_email",
+    arguments: { recipient: "ops@example.com" },
+    expires_at: "2099-01-01T00:00:00.000Z",
+  };
+
+  it.each(["approve", "deny"] as const)(
+    "submits an %s decision without restarting the stream",
+    async (decision) => {
+      let resumeStream!: () => void;
+      const decisionSubmitted = new Promise<void>((resolve) => { resumeStream = resolve; });
+      async function* approvalStream() {
+        yield { type: "approval_required" as const, approval };
+        await decisionSubmitted;
+        yield { type: "answer" as const, text: baseResponse.answer };
+        yield {
+          type: "done" as const,
+          session_id: baseResponse.session_id,
+          citations: baseResponse.citations,
+          documents: baseResponse.documents,
+          intent: "tool" as const,
+        };
+      }
+      mockStreamAgent.mockReturnValue(approvalStream());
+      mockSubmitToolApproval.mockImplementation(async () => { resumeStream(); });
+
+      render(<App />);
+      await submitQuery("send an email");
+      await userEvent.click(await screen.findByRole("button", {
+        name: decision === "approve" ? /approve/i : /deny/i,
+      }));
+
+      await waitFor(() => expect(screen.getByText(baseResponse.answer)).toBeInTheDocument());
+      expect(mockSubmitToolApproval).toHaveBeenCalledTimes(1);
+      expect(mockSubmitToolApproval).toHaveBeenCalledWith(
+        approval.id,
+        decision,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(mockStreamAgent).toHaveBeenCalledTimes(1);
+      expect(screen.queryByLabelText(/approval required for send_email/i)).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps the approval available and shows an error when submission fails", async () => {
+    async function* approvalStream() {
+      yield { type: "approval_required" as const, approval };
+      await new Promise(() => undefined);
+    }
+    mockStreamAgent.mockReturnValue(approvalStream());
+    mockSubmitToolApproval.mockRejectedValue(new Error("Approval service unavailable"));
+
+    render(<App />);
+    await submitQuery("send an email");
+    await userEvent.click(await screen.findByRole("button", { name: /approve/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Approval service unavailable");
+    expect(screen.getByLabelText(/approval required for send_email/i)).toBeInTheDocument();
+    expect(mockStreamAgent).toHaveBeenCalledTimes(1);
   });
 });
