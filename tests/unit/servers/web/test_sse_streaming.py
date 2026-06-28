@@ -165,6 +165,9 @@ def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
         self, messages, sampling_params, *, on_turn=None, on_approval=None, **kwargs
     ):
         assert on_approval is not None
+        assert on_turn is not None
+        for turn in range(100):
+            await on_turn(turn, "queued_tool", 0)
         now = datetime.now(UTC)
         decision = await on_approval(
             ToolApprovalRequest(
@@ -223,6 +226,8 @@ def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
     events = _parse_sse(response.text)
     approval = next(event for event in events if event["type"] == "approval_required")
     assert approval["approval"]["arguments"] == {"title": "Fix it"}
+    approval_index = events.index(approval)
+    assert [event["turn"] for event in events[:approval_index]] == list(range(1, 100))
     assert [event["type"] for event in events][-2:] == ["answer", "done"]
     assert executions == ["create_ticket"]
 

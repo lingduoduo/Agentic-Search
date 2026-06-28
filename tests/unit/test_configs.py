@@ -136,3 +136,9 @@ def test_tool_approval_timeout_reads_environment() -> None:
 def test_tool_approval_timeout_must_be_positive() -> None:
     with pytest.raises(ValueError, match="TOOL_APPROVAL_TIMEOUT_SECONDS"):
         load_app_settings({"TOOL_APPROVAL_TIMEOUT_SECONDS": "0"})
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "+inf", "-inf"])
+def test_tool_approval_timeout_must_be_finite(value: str) -> None:
+    with pytest.raises(ValueError, match="TOOL_APPROVAL_TIMEOUT_SECONDS"):
+        load_app_settings({"TOOL_APPROVAL_TIMEOUT_SECONDS": value})

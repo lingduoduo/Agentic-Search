@@ -1350,6 +1350,20 @@ def create_web_app(
             broker = http_request.app.state.tool_approval_broker
 
             def publish(view) -> None:
+                nonlocal dropped_trace_events
+                if queue.full():
+                    retained: list[dict] = []
+                    evicted = False
+                    while not queue.empty():
+                        item = queue.get_nowait()
+                        if not evicted and item.get("type") in {"progress", "trace"}:
+                            evicted = True
+                            if item.get("type") == "trace":
+                                dropped_trace_events += 1
+                            continue
+                        retained.append(item)
+                    for item in retained:
+                        queue.put_nowait(item)
                 queue.put_nowait(
                     {"type": "approval_required", "approval": asdict(view)}
                 )

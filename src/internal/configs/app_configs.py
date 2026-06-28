@@ -9,6 +9,7 @@ sync cadence.
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -156,7 +157,10 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     tool_approval_timeout_seconds = get_env_float(
         source, "TOOL_APPROVAL_TIMEOUT_SECONDS", 60.0
     )
-    if tool_approval_timeout_seconds <= 0:
+    if (
+        not math.isfinite(tool_approval_timeout_seconds)
+        or tool_approval_timeout_seconds <= 0
+    ):
         raise ValueError("TOOL_APPROVAL_TIMEOUT_SECONDS must be positive.")
     return AppSettings(
         services=ServiceSettings(
