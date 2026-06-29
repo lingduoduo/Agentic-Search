@@ -281,7 +281,11 @@ request for free. F6 is **render + enrich**, not greenfield.
   `status`, grouped by `component` / `turn`). Click a span → show its `details`.
 - **D1.1 — Enrich `details` at emit sites → absorbs R1 / F5 / P1 as drill-downs:**
   add additive payload keys where each component emits —
-  route span → `{retriever, confidence, construction_target}` (**R1**),
+  route span → `{retriever, confidence, construction_target}` **and the
+  `ConstructedQuery` from the routing layer** (`src/internal/routing/`, default-off behind
+  `ROUTING_ENABLED`) — the generated SQL / Cypher / API params / metadata filters **plus the
+  construct-only validation result** (SELECT-only check, table/param allowlist, "would have
+  run but didn't" for the short-circuited SQL/GRAPH/API targets) (**R1**),
   query-transform span → `variants[]` + filters (**F5**),
   search_tool span → top docs (Lab-style table),
   answer_generator span → assembled prompt + completion (**P1**),
