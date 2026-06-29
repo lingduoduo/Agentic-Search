@@ -88,9 +88,11 @@ export function App() {
   const status = useMemo(() => {
     if (isLoading) return "Searching";
     if (error) return "Needs attention";
-    if (answer) return "Grounded";
+    // "Grounded" only when the answer is backed by retrieved sources; an
+    // answer with no citations is parametric, so call it "Answered".
+    if (answer) return citations.length > 0 ? "Grounded" : "Answered";
     return "Ready";
-  }, [answer, error, isLoading]);
+  }, [answer, citations, error, isLoading]);
   const ensureSession = useCallback(
     async (signal: AbortSignal) => {
       if (sessionId) return sessionId;

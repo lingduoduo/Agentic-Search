@@ -158,6 +158,38 @@ describe("App adaptive layout", () => {
   });
 });
 
+describe("App grounding status", () => {
+  it("shows 'Grounded' when the answer has citations", async () => {
+    mockStreamAgent.mockReturnValue(fakeStream("chat"));
+    render(<App />);
+    await submitQuery("explain FAISS");
+    await waitFor(() =>
+      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+    );
+    expect(document.querySelector(".status-pill")?.textContent).toBe("Grounded");
+  });
+
+  it("shows 'Answered' (not 'Grounded') when the answer has no citations", async () => {
+    async function* noCitationsStream() {
+      yield { type: "answer" as const, text: baseResponse.answer };
+      yield {
+        type: "done" as const,
+        session_id: baseResponse.session_id,
+        citations: [] as string[],
+        documents: [],
+        intent: "chat",
+      };
+    }
+    mockStreamAgent.mockReturnValue(noCitationsStream());
+    render(<App />);
+    await submitQuery("FAISS");
+    await waitFor(() =>
+      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+    );
+    expect(document.querySelector(".status-pill")?.textContent).toBe("Answered");
+  });
+});
+
 describe("App example chips", () => {
   it("runs the agent with the chip's query in one click and applies the intent layout", async () => {
     mockStreamAgent.mockReturnValue(fakeStream("search"));
