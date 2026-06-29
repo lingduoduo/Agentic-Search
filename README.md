@@ -546,7 +546,7 @@ python3 -m examples.run_search_pipeline
 - **Learned query routing** (`QueryRouter`) — predicts the per-query transform set (7 labels: decompose, hyde, step_back, keywords, construct_filters, multi_query, rewrite) from a scikit-learn artifact with a rule-based heuristic fallback, so cheap/keyword queries skip expensive transforms
 - **Keyword extraction** — strips conversational noise from queries before BM25 retrieval
 - **Search vs chat** (`classify_is_search_flow`) — LLM-backed binary router; defaults to chat on ambiguous input (`src/internal/servers/secondary_llm_flows/search_flow_classification.py`)
-- **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; selects fast / balanced / reasoning model tier (`src/model/intent_classifier.py`)
+- **Intent classifier** (`IntentPipeline`) — trainable feedforward ML model classifying `purchase` / `navigate` / `qa` / `recommendation`; `resolve_search_settings` maps the predicted intent to per-query retrieval settings (`top_k`, search budget, require-evidence / allow-internal-knowledge flags), applied only above a confidence threshold (`min_confidence=0.6`) (`src/model/intent_classifier.py`)
 
 **Routing Layer & Query Construction** (`src/internal/routing/`, default-off behind `ROUTING_ENABLED`)
 - **Per-query Router** (`router.py`) — routes each query to a domain → source(s) → retriever target, emitting a `RouteDecision`. Heuristic strategy by default (no LLM); optional **logical** (LLM structured-classification) and **semantic** (embedding-similarity over route descriptions) strategies, each falling back to the heuristic. Backed by a config-driven `RouteRegistry` (`ROUTING_REGISTRY_PATH`) so domains aren't hardcoded
