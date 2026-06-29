@@ -172,6 +172,34 @@ pipeline endpoint. Either way the panel renders `original → bundle/variants`.
   `hyde_text == None`, `step_back_query == None`, and an explicit "no LLM" state; with an
   LLM, sub_queries/hyde/step_back populate and render.
 
+#### F5b — Pipeline wrapper stack (which layers are active)
+Like the reranker (§F1b-2), query transform is a **composable `*Pipeline` stack**
+(verified 2026-06-29), assembled by `build_query_transform_pipeline_from_env`
+(`src/internal/retrieval/query_transform_factory.py`), outermost → innermost:
+`RoutedQueryTransformPipeline → CachedQueryTransformPipeline →
+AsyncQueryTransformPipeline → QueryTransformPipeline`. Each layer optional.
+- **Naming (verified):** the classes are all `*Pipeline`-suffixed —
+  `QueryTransformPipeline` / `AsyncQueryTransformPipeline` / `CachedQueryTransformPipeline`
+  / `RoutedQueryTransformPipeline`. There are **no** bare `QueryTransform` /
+  `AsyncQueryTransform` / `CachedQueryTransform` classes. Build against the real names.
+- **Fallback-safe (verified):** `build_query_transform_pipeline_from_env(None|llm)` → `None`
+  when no `QT_*` legs are set (service degrades to single-query). `QueryTransformPipeline.from_env(None)` → `None`.
+- **Gating is inconsistent across layers — the status surface must read the factory's
+  flags, not infer from object types:**
+  - `CachedQueryTransformPipeline.from_env(base)` **self-gates** on its cache URL —
+    returns `base` unchanged when unset (transparent no-op, verified `is base`).
+  - `AsyncQueryTransformPipeline.from_env(base)` **wraps unconditionally**; the factory
+    gates it behind the `QT_ASYNC` flag, not the object.
+  - `RoutedQueryTransformPipeline` is applied only under `QT_ROUTER` (and can run standalone
+    over an all-off leaf).
+- **Debug surface:** beyond `raw → variants`, report the **active stack** — base + which
+  wrappers (routed? cached? async?) are on, derived from the `QT_*` flags / factory — so
+  "transform inactive," "router-only," and "cached/async enabled" are all visible. If
+  `CachedQueryTransformPipeline` exposes cache stats, surface them like the reranker's.
+- **Acceptance:** status reports the active layer set from the factory flags; nothing
+  configured → "transform inactive" (pipeline `None`), not an error; `QT_ASYNC`/`QT_ROUTER`
+  on → those layers show active even though `Async` wouldn't self-report from its type.
+
 > **Related finding (out of scope here):** on the main `/search`, `executed_queries`
 > is hardcoded to `[request.query]` ([server.py:89]) — `service.search()` returns only
 > `(results, mode)` and discards the variants, so the schema's `executed_queries` field

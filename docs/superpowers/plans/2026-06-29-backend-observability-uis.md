@@ -133,6 +133,16 @@ view by adding filters + route + per-leg state.
 - verify: pytest — stub pipeline returns >1 variant + filters; disabled pipeline
   returns `[query]` and the inactive state; no exception when LLM absent.
 
+**T4b.2 — Wrapper-stack status (which `*Pipeline` layers are active)** *(spec §F5b)*
+Report the active layer set — base + routed/cached/async — derived from the **factory
+`QT_*` flags**, not from object types (`Async` wraps unconditionally; `Cached` self-gates
+on URL). Build against the verified `*Pipeline` names (no bare `QueryTransform` classes).
+Stack already verified fallback-safe (no flags → factory returns `None`; no cache URL →
+base unchanged).
+- verify: pytest — factory with no flags → status "transform inactive" (`None`), no error;
+  `QT_ASYNC`/`QT_ROUTER` set → those layers report active; no cache URL → cached layer
+  reported off.
+
 **T4b.2 — `QueryTransformInspector` panel**
 Raw query input → render `raw → [variants]`, merged filters, route target, active legs.
 - verify: vitest — variants render; "no transform active" state renders; api called with the query.
