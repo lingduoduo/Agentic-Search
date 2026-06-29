@@ -21,6 +21,41 @@ def _client(handler) -> TestClient:
     return TestClient(app)
 
 
+def test_health_reports_retrieval_up_and_web_self():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/health"
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = _client(handler)
+    resp = client.get("/api/debug/health")
+    assert resp.status_code == 200
+    servers = {s["name"]: s for s in resp.json()["servers"]}
+    assert servers["retrieval"]["status"] == "up"
+    assert servers["web"]["status"] == "up"
+
+
+def test_health_reports_retrieval_down_when_unreachable_no_500():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    client = _client(handler)
+    resp = client.get("/api/debug/health")
+    assert resp.status_code == 200  # never raises
+    servers = {s["name"]: s for s in resp.json()["servers"]}
+    assert servers["retrieval"]["status"] == "down"
+    assert servers["web"]["status"] == "up"
+
+
+def test_health_reports_retrieval_down_on_non_200():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "unhealthy"})
+
+    client = _client(handler)
+    resp = client.get("/api/debug/health")
+    servers = {s["name"]: s for s in resp.json()["servers"]}
+    assert servers["retrieval"]["status"] == "down"
+
+
 def test_retrieval_proxy_forwards_to_internal_search_and_returns_results():
     captured = {}
 

@@ -37,6 +37,18 @@ def create_debug_router(
     base = _retrieval_base(search_url)
     client = http_client or httpx.Client(timeout=15.0)
 
+    @router.get("/health")
+    def health() -> dict:
+        """Reachability of the configured servers. Never raises — up/down each."""
+        servers = [{"name": "web", "url": "self", "status": "up"}]
+        try:
+            r = client.get(f"{base}/health", timeout=3.0)
+            status = "up" if r.status_code == 200 else "down"
+        except Exception:
+            status = "down"
+        servers.append({"name": "retrieval", "url": base, "status": status})
+        return {"servers": servers}
+
     @router.post("/retrieval/{mode}")
     def retrieval(mode: str, body: DebugRetrievalRequest) -> Response:
         if mode not in _MODES:

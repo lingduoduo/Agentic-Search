@@ -1676,3 +1676,34 @@ option:disabled,
   font-size: 0.74rem;
   color: var(--warning-fg, #92400e);
 }
+
+/* --- Server health grid + grounding (F4) --- */
+.server-health {
+  margin-bottom: 1rem;
+}
+.server-health__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.server-health__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  border-left-width: 4px;
+}
+.server-health__cell--up { border-left-color: #16a34a; }
+.server-health__cell--down { border-left-color: var(--danger, #b91c1c); }
+.server-health__name { font-weight: 600; }
+.server-health__status { font-size: 0.78rem; text-transform: uppercase; }
+.server-health__url { font-size: 0.72rem; color: var(--muted, #6b7280); }
+.server-health__error { color: var(--danger, #b91c1c); font-size: 0.8rem; }
+.server-health__grounding { font-size: 0.85rem; }
+.server-health__grounding--ok { color: #16a34a; }
+.server-health__grounding--warn { color: var(--warning-fg, #92400e); }
+.server-health__grounding--idle { color: var(--muted, #6b7280); }
+.server-health__grounding-detail { color: var(--muted, #6b7280); font-size: 0.78rem; }

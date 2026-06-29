@@ -9,6 +9,7 @@ import type {
   DebugRetrievalParams,
   DebugRetrievalResponse,
   RetrievalMode,
+  ServerHealth,
   ConnectorCreateRequest,
   ConnectorDetailView,
   ConnectorView,
@@ -53,6 +54,11 @@ export async function runDebugRetrieval(
     data: data as DebugRetrievalResponse,
     detail: null,
   };
+}
+
+/** Fetch reachability of the configured backend servers (dev console). */
+export function getServerHealth(): Promise<{ servers: ServerHealth[] }> {
+  return requestJson<{ servers: ServerHealth[] }>("/api/debug/health");
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {

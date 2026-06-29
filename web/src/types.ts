@@ -296,3 +296,9 @@ export interface DebugRetrievalOutcome {
   data: DebugRetrievalResponse | null;
   detail: string | null;
 }
+
+export interface ServerHealth {
+  name: string;
+  url: string;
+  status: "up" | "down" | string;
+}
