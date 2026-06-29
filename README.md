@@ -214,6 +214,25 @@ SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct PYTHONPATH=src:. uvicorn src.inter
 
 Or use `bin/run_web_stack.sh` which reads `SEARCH_AGENT_MODEL` from `.env` and starts all three processes in one command (~30–60s first response on MPS).
 
+> **Model capability matters — `search_agent` is only as good as this local model.**
+> `SEARCH_AGENT_MODEL` is the *policy* model that must emit the multi-turn
+> `<search>` / `<answer>` tags. A small model (≤3B, e.g. `Qwen2.5-0.5B`) often
+> can't, so the loop dead-ends and the answer comes back **empty with 0 sources**
+> — even when routing is correct and the corpus has matching docs. This is a
+> model-capability limit, not a routing or retrieval bug.
+>
+> For grounded answers on modest hardware you have three options, no code change:
+> - **Use a capable policy model** — 7B+ reliably emits the tags (needs 16 GB+).
+> - **Lean on the OpenAI-backed paths**, which don't use the local model:
+>   `"mode": "chat_loop"` (Agentic RAG — LLM-synthesized grounded prose answer
+>   with citations) or `"mode": "hybrid_search"` (deterministic retrieval that
+>   returns the ranked sources + citations without prose synthesis).
+> - **Unset `SEARCH_AGENT_MODEL`** — then auto-routed `search_agent` queries
+>   gracefully **degrade to the OpenAI hybrid pipeline** instead of the weak loop.
+>
+> Note the auto-router sends bare entity lookups (e.g. `FAISS`) to `search_agent`;
+> with a weak local model those return empty. Prefer one of the options above.
+
 
 ## Frontend
 
