@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import pytest
 
+pytest.importorskip("torch")
+
 from src.internal.db import AgenticSearchStore
 from src.training.data import load_sft_examples
 from src.training.sft import SFTExample

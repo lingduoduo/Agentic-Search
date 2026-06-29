@@ -96,15 +96,17 @@ from .tools.parsers import HermesToolParser as HermesToolParser
 from .tools.parsers import JSONToolParser as JSONToolParser
 from .tools.parsers import Llama3ToolParser as Llama3ToolParser
 from .tools.parsers import ToolParser as ToolParser
-from .training.evaluation import QueryEvaluation as QueryEvaluation
-from .training.evaluation import SearchEvaluationConfig as SearchEvaluationConfig
-from .training.evaluation import SearchResultEvaluator as SearchResultEvaluator
-from .training.evaluation import SearchRoundEvaluation as SearchRoundEvaluation
-from .training.sft import SFTExample as SFTExample
-from .training.sft import build_search_sft_example as build_search_sft_example
 
 # Torch-heavy modules — loaded on first access, never at import time.
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    # training.evaluation (pulls torch transitively — keep lazy)
+    "QueryEvaluation": (".training.evaluation", "QueryEvaluation"),
+    "SearchEvaluationConfig": (".training.evaluation", "SearchEvaluationConfig"),
+    "SearchResultEvaluator": (".training.evaluation", "SearchResultEvaluator"),
+    "SearchRoundEvaluation": (".training.evaluation", "SearchRoundEvaluation"),
+    # training.sft (imports torch at module level)
+    "SFTExample": (".training.sft", "SFTExample"),
+    "build_search_sft_example": (".training.sft", "build_search_sft_example"),
     # training.data
     "DEFAULT_TOOL_SYSTEM_PROMPT": (".training.data", "DEFAULT_TOOL_SYSTEM_PROMPT"),
     "PromptBatch": (".training.data", "PromptBatch"),
