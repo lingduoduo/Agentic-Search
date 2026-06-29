@@ -262,3 +262,36 @@ export interface ProgressStep {
   turn: number;
   text: string;  // e.g. "search_routing_tool · 5 docs" or "writing answer..."
 }
+
+// --- Dev console: per-mode retrieval inspection ---
+
+export type RetrievalMode = "sparse" | "dense" | "hybrid" | "graph";
+
+export interface RetrievalResultRow {
+  doc_id: string;
+  title: string;
+  text?: string;
+  score: number;
+}
+
+export interface DebugRetrievalResponse {
+  results: RetrievalResultRow[];
+  retrieval_mode: string;
+  executed_queries: string[];
+  latency_ms: number;
+}
+
+export interface DebugRetrievalParams {
+  query: string;
+  top_k: number;
+  rrf_k?: number;
+  mmr_lambda?: number;
+  over_fetch?: number;
+}
+
+export interface DebugRetrievalOutcome {
+  status: number;
+  ok: boolean;
+  data: DebugRetrievalResponse | null;
+  detail: string | null;
+}

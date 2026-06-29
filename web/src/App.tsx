@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bot, ClipboardList, FileSearch, MessageSquarePlus, Plug, Search, Wrench } from "lucide-react";
+import { Bot, ClipboardList, FileSearch, Gauge, MessageSquarePlus, Plug, Search, Wrench } from "lucide-react";
 import {
   createSession,
   getAdminSummary,
@@ -15,6 +15,7 @@ import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { ConnectorPanel } from "./components/ConnectorPanel";
 import { ControlFlowTracePanel } from "./components/ControlFlowTracePanel";
+import { DevConsole } from "./components/debug/DevConsole";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { ToolPanel } from "./components/ToolPanel";
 import { SearchComposer } from "./components/SearchComposer";
@@ -78,6 +79,9 @@ export function App() {
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showConsole, setShowConsole] = useState(false);
+  // Dev-only observability console; gated at build time, never on in prod.
+  const debugPanels = import.meta.env.VITE_DEBUG_PANELS === "1";
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -269,6 +273,17 @@ export function App() {
               <ClipboardList size={18} />
               <span>History</span>
             </button>
+            {debugPanels && (
+              <button
+                className={`icon-button${showConsole ? " active" : ""}`}
+                type="button"
+                onClick={() => setShowConsole((v) => !v)}
+                title="Dev console — backend observability"
+              >
+                <Gauge size={18} />
+                <span>Console</span>
+              </button>
+            )}
             <button className="icon-button" type="button" onClick={handleNewSession}>
               <MessageSquarePlus size={18} />
               <span>New</span>
@@ -296,6 +311,8 @@ export function App() {
         />
 
         {error && <div className="error-banner">{error}</div>}
+
+        {debugPanels && showConsole && <DevConsole />}
 
         {adminSummary && <AdminOverview summary={adminSummary} />}
         {(analyticsByLLM || analyticsByPersona || analyticsByFlow) && (

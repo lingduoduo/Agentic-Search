@@ -5,6 +5,10 @@ import type {
   AuditSummary,
   BreakdownAnalytics,
   ChatSessionView,
+  DebugRetrievalOutcome,
+  DebugRetrievalParams,
+  DebugRetrievalResponse,
+  RetrievalMode,
   ConnectorCreateRequest,
   ConnectorDetailView,
   ConnectorView,
@@ -17,6 +21,39 @@ import type {
   ToolInvokeResponse,
   ToolView,
 } from "./types";
+
+/**
+ * Run one per-mode retrieval against the dev-console proxy.
+ *
+ * Unlike {@link requestJson}, this never throws on a non-2xx response: the
+ * Retrieval Lab needs to render mode-specific states (503 = dense unavailable,
+ * 404 = endpoint not mounted) rather than a generic error.
+ */
+export async function runDebugRetrieval(
+  mode: RetrievalMode,
+  params: DebugRetrievalParams,
+): Promise<DebugRetrievalOutcome> {
+  const response = await fetch(`/api/debug/retrieval/${mode}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail =
+      data && typeof data === "object" && "detail" in data
+        ? String((data as { detail: unknown }).detail)
+        : `Request failed with ${response.status}`;
+    return { status: response.status, ok: false, data: null, detail };
+  }
+  return {
+    status: response.status,
+    ok: true,
+    data: data as DebugRetrievalResponse,
+    detail: null,
+  };
+}
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {

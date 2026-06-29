@@ -115,6 +115,8 @@ class SearchExperienceSettings:
     # client could point the backend at an arbitrary URL. Enable only for local
     # dev/debugging via AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL=true.
     allow_client_search_url: bool = False
+    # Dev-only observability console. Off by default; never enable in prod.
+    debug_panels: bool = False
 
     @classmethod
     def from_app_settings(
@@ -123,17 +125,16 @@ class SearchExperienceSettings:
     ) -> "SearchExperienceSettings":
         import os
 
+        def _flag(name: str) -> bool:
+            return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
         app_settings = settings or load_app_settings()
         return cls(
             search_url=app_settings.services.retrieval_url,
             top_k=app_settings.services.web_top_k,
             db_path=app_settings.services.web_db_path,
-            allow_client_search_url=os.environ.get(
-                "AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL", ""
-            )
-            .strip()
-            .lower()
-            in {"1", "true", "yes"},
+            allow_client_search_url=_flag("AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL"),
+            debug_panels=_flag("AGENTIC_SEARCH_DEBUG_PANELS"),
         )
 
 
@@ -241,6 +242,7 @@ def _register_routers(
     db: AgenticSearchStore,
     settings: AppSettings,
     search_url: str,
+    debug_panels: bool = False,
 ) -> None:
     """Attach all API routers and exception handlers to *app*."""
 
@@ -292,6 +294,12 @@ def _register_routers(
     from src.internal.servers.retrieval.feedback_router import create_feedback_router
 
     app.include_router(create_feedback_router(db))
+
+    # --- Dev console (gated; dev-only observability) ---
+    if debug_panels:
+        from src.internal.servers.web.debug_router import create_debug_router
+
+        app.include_router(create_debug_router(search_url=search_url))
 
 
 def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
@@ -904,7 +912,13 @@ def create_web_app(
     add_license_enforcement_middleware(app, resolved)
     add_tier_gate_middleware(app, resolved)
 
-    _register_routers(app, db, resolved, search_url=settings.search_url)
+    _register_routers(
+        app,
+        db,
+        resolved,
+        search_url=settings.search_url,
+        debug_panels=settings.debug_panels,
+    )
 
     frontend_dist = _frontend_dist_path()
 
