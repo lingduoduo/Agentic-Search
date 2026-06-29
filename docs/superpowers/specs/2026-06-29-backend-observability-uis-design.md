@@ -110,6 +110,49 @@ toggle.
 > never reflects the real transformed queries. F5 reads the pipeline directly and does
 > not depend on fixing this, but the gap is worth a separate change.
 
+### F6 — Request Trace (the console spine)
+A single query's full journey across every stage as a timed waterfall — the
+unifying view the per-stage inspectors drill into.
+
+**Key fact: the data model already exists.** The agent loop emits a per-request
+`control_flow_trace` of `ControlFlowEventView { sequence, timestamp, turn, component,
+action, status, duration_ms, details }` from the *real* path (this is what
+`ControlFlowTracePanel` renders live, streamed over SSE). So F6 needs no new span
+collection, no hot-path instrumentation, no debug re-run — it observes the real
+request for free. F6 is **render + enrich**, not greenfield.
+
+- **D1.0 — Waterfall (no backend change):** a `RequestTracePanel` lays out
+  `control_flow_trace` as a horizontal timeline (bar width ∝ `duration_ms`, color by
+  `status`, grouped by `component` / `turn`). Click a span → show its `details`.
+- **D1.1 — Enrich `details` at emit sites → absorbs R1 / F5 / P1 as drill-downs:**
+  add additive payload keys where each component emits —
+  route span → `{retriever, confidence, construction_target}` (**R1**),
+  query-transform span → `variants[]` + filters (**F5**),
+  search_tool span → top docs (Lab-style table),
+  answer_generator span → assembled prompt + completion (**P1**).
+  The per-stage inspectors become **drill-down renderers keyed by `component`** — R1,
+  F5, and P1 ship as trace drill-downs rather than standalone panels.
+- **D1.2 — Live waterfall:** the trace already streams; render it filling in during a run.
+
+**Design decisions:**
+1. New `RequestTracePanel` (console) rather than mutating `ControlFlowTracePanel` —
+   surgical; the existing list panel is untouched.
+2. **Byte-stability guard:** heavy payloads (full prompt, completion, all docs) are added
+   to `details` **only when the debug/trace flag is set**. The default trace stays lean;
+   production `/api/agent` responses and reward byte-stability are unchanged.
+
+- **Acceptance:**
+  - D1.0: given a `control_flow_trace`, the panel renders one bar per event with width
+    proportional to `duration_ms`; clicking a bar reveals its `details`.
+  - D1.1: a route event's drill-down shows retriever + confidence; an answer_generator
+    event's drill-down shows prompt + completion **only** under the debug flag.
+  - With the flag off, the agent response payload is byte-identical to today.
+
+> **Supersession:** R1 (Router Inspector) and P1 (Prompt Inspector) are realized as F6
+> drill-downs (D1.1), not standalone panels. F5 keeps its standalone `/api/debug/query-transform`
+> endpoint (lets you inspect the transform *without* running a full request) **and** also
+> appears as the query-transform drill-down in the trace.
+
 **Global gating:** all Console panels are gated behind a `DEBUG_PANELS` flag (backend env + frontend build flag). **Default off in production.**
 
 ---

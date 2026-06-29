@@ -120,6 +120,36 @@ Raw query input → render `raw → [variants]`, merged filters, route target, a
 
 ---
 
+## Phase 6 — Request Trace spine (F6)  *(spans PR-2/PR-3; absorbs R1/P1, links F5)*
+
+The control-flow event model already exists (`control_flow_trace` with `duration_ms` +
+`details`), emitted from the real path. F6 is render + enrich, not greenfield.
+
+**T6.1 — `RequestTracePanel` waterfall (D1.0; frontend-only, PR-2)**
+Lay out `control_flow_trace` as a timeline (bar width ∝ `duration_ms`, color by `status`,
+grouped by `component`/`turn`); click a span → render `details`.
+- verify: vitest — from a fixture trace, bars render with width ∝ duration_ms; clicking a
+  bar reveals its details; empty trace → "no trace yet".
+
+**T6.2 — Drill-down renderer registry (D1.1; PR-3)**
+Map `component → renderer`: route → R1 view (retriever/confidence/construction_target),
+query_transform → F5 view (variants/filters), search_tool → docs table, answer_generator →
+prompt+completion. Fall back to raw JSON for unknown components.
+- verify: vitest — each known component renders its typed drill-down; unknown → JSON.
+
+**T6.3 — Enrich `details` at emit sites (D1.1; PR-3)**
+Add additive payload keys at the route / query-transform / search_tool / answer_generator
+emit sites. Heavy payloads (prompt, completion, all docs) **only when the debug/trace flag
+is set**.
+- verify: pytest — with flag on, the emitted events carry the new keys; **with flag off,
+  the agent response payload is byte-identical to a golden snapshot** (byte-stability guard).
+
+**T6.4 — Live waterfall (D1.2; PR-3, optional)**
+Render the streamed trace events filling the timeline during a run.
+- verify: vitest — events appended to the panel as a fixture stream yields them.
+
+---
+
 ## Phase 5 — Wire-up, docs, ship
 
 **T5.1 — Console assembly**
@@ -150,6 +180,10 @@ If any of these three should flip, say so before Phase 1.
 
 ## Suggested PR slicing
 - PR-1: Phase 0 + Phase 1 (gate + Retrieval Lab) — self-contained, highest value. **(open: #353)**
-- PR-2: Phase 1b + Phase 2 + Phase 3 (rerank A/B + health/grounding + workers).
-- PR-3: Phase 4 + Phase 4b + Phase 5 (chat trace + query-transform inspector + docs/ship).
+- PR-2: Phase 1b + Phase 2 + Phase 3 + T6.1 (rerank A/B + health/grounding + workers + Request Trace waterfall).
+- PR-3: Phase 4 + Phase 4b + Phase 6 (T6.2–T6.4) + Phase 5 (chat trace + QT inspector + trace drill-downs/enrichment + docs/ship).
 Each PR carries its own spec/plan reference per convention.
+
+**F6 is the spine:** R1 (Router) and P1 (Prompt) ship as F6 drill-downs (T6.2/T6.3), not
+standalone panels. F5 keeps its standalone endpoint *and* appears as a trace drill-down.
+D2 (Compare two traces) and D3 (Diagnostics overlay) are natural follow-ups once F6 lands.
