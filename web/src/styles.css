@@ -138,6 +138,12 @@ h3 {
   cursor: default;
 }
 
+/* A degraded route (its preferred backend was unavailable) reads amber. */
+.route-pill--degraded {
+  background: #fdf0d5;
+  color: #8a5a00;
+}
+
 .icon-button,
 .composer button {
   min-height: 42px;

@@ -231,7 +231,7 @@ export function App() {
             <span className="status-pill">{status}</span>
             {route && (
               <span
-                className="route-pill"
+                className={`route-pill${routeDegraded ? " route-pill--degraded" : ""}`}
                 title={
                   routeDegraded
                     ? `Routed to ${route} (degraded: ${routeDegraded})`

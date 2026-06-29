@@ -211,6 +211,7 @@ describe("App grounding status", () => {
     const pill = document.querySelector(".route-pill");
     expect(pill?.textContent).toContain("search_agent");
     expect(pill?.getAttribute("title")).toContain("degraded: no_local_model");
+    expect(pill?.classList.contains("route-pill--degraded")).toBe(true);
   });
 
   it("renders no route chip when the response omits route", async () => {
