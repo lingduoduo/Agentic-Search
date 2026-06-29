@@ -1,5 +1,7 @@
 # Server/runtime dependencies for FastAPI search services.
-fastapi>=0.136.1
+# Cap <0.138: fastapi 0.138.x regresses app.include_router (silently mounts no
+# routes), breaking every API router. 0.136.1 is the known-good version.
+fastapi>=0.136.1,<0.138
 faiss-cpu==1.13.2
 uvicorn>=0.31.1
 python-multipart>=0.0.9
