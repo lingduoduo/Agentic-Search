@@ -638,15 +638,21 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
 
 
 def test_search_agent_loop_auto_searches_when_model_emits_no_action():
-    """Deterministic control flow: a tag-less first turn still triggers a search
-    on the user's question instead of dead-ending on format recovery."""
+    """The real guarantee: a tag-less dead-end still fires retrieval once.
+
+    The model here is *genuinely* tag-less — it never emits a parseable tag on
+    any turn, including the forced-answer turn. The auto-search therefore makes
+    retrieval run (search_rounds == 1) instead of dead-ending with zero
+    evidence. It does NOT manufacture an answer: with no <answer> tag and only a
+    refusal-style generation, ``final_answer`` stays None (the no-fabricate
+    invariant, see test_forced_turn_emitting_no_answer_returns_none). The
+    feature's honest contract is "retrieval fires at least once", not "produces
+    a non-empty answer" — a capable model that emits <answer> when prompted is
+    covered by test_deadend_forces_answer_from_evidence.
+    """
     tokenizer = DummyTokenizerWithEncode()
-    responses = [
-        # Turn 1: no recognized action tag — just prose.
-        tokenizer.encode("I think the answer is probably something."),
-        # Turn 2: with evidence in context, the model answers.
-        tokenizer.encode("<answer>FAISS is a similarity search library.</answer>"),
-    ]
+    # Never emits any recognized tag, on every turn (incl. the forced turn).
+    responses = [tokenizer.encode("I cannot follow the required format.")] * 6
     loop = SearchAgentLoop(
         tokenizer=tokenizer,
         server_manager=DummyServerManager(responses),
@@ -672,13 +678,15 @@ def test_search_agent_loop_auto_searches_when_model_emits_no_action():
         loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
     )
 
-    # The auto-search fired on the user's question despite no <search> tag.
+    # Auto-search fired on the user's question despite no <search> tag: retrieval
+    # ran exactly once, evidence was collected, and the event was recorded.
     assert loop._search_client.calls == [["What is FAISS?"]]
     assert output.context is not None
     assert output.context.num_rounds == 1
     assert output.metrics["search_rounds"] == 1.0
-    assert output.final_answer == "FAISS is a similarity search library."
     assert any(e.action == "auto_search" for e in output.control_flow_trace)
+    # No <answer> tag ever emitted → no fabricated answer.
+    assert output.final_answer is None
 
 
 def test_search_agent_loop_auto_search_disabled_preserves_format_recovery():

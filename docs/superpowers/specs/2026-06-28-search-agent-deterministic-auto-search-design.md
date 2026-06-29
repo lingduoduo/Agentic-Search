@@ -28,6 +28,22 @@ Consequently a small or weakly-instruction-tuned policy model (e.g.
 the loop to return an **empty answer with zero retrieved documents** — retrieval
 is never invoked at all.
 
+### Scope: what this guarantees (and what it does not)
+
+This change guarantees only that **retrieval fires at least once**; it does not
+by itself guarantee a non-empty answer. Producing the final answer still flows
+through the existing forced-answer path (`_force_final_answer`), which requires
+the model to emit an `<answer>` tag and otherwise returns `None` — the
+**no-fabricate invariant** (a model refusal is never passed off as an answer; see
+`test_forced_turn_emitting_no_answer_returns_none`). So:
+
+- A capable model that emits `<answer>` when prompted with the retrieved
+  evidence now produces a *grounded* answer instead of dead-ending empty
+  (the realistic weak-model case).
+- A model that emits no tag on any turn, including the forced turn, still
+  returns `None` — but now with evidence retrieved rather than none. The honest
+  win is "retrieval always runs", not "the answer is always non-empty".
+
 There is already a dormant fallback: `Planner.decide()` returns a best-effort
 `SearchAction` for unparseable input (`src/agents/components/planner.py:139-148`),
 but the run loop uses `parse_actions`, so `decide()` is never called. The intent
