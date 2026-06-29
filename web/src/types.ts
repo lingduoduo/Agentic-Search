@@ -287,6 +287,7 @@ export interface DebugRetrievalParams {
   rrf_k?: number;
   mmr_lambda?: number;
   over_fetch?: number;
+  rerank?: boolean;
 }
 
 export interface DebugRetrievalOutcome {

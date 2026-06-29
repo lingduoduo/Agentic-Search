@@ -20,6 +20,7 @@ class DebugRetrievalRequest(BaseModel):
     rrf_k: int = Field(default=60, ge=10, le=200)
     mmr_lambda: float = Field(default=0.5, ge=0.0, le=1.0)
     over_fetch: int = Field(default=2, ge=1, le=4)
+    rerank: bool = False
 
 
 def _retrieval_base(search_url: str) -> str:
@@ -44,7 +45,11 @@ def create_debug_router(
                 status_code=404,
                 media_type="application/json",
             )
-        payload: dict = {"query": body.query, "top_k": body.top_k}
+        payload: dict = {
+            "query": body.query,
+            "top_k": body.top_k,
+            "rerank": body.rerank,
+        }
         if mode == "hybrid":
             payload.update(
                 rrf_k=body.rrf_k,

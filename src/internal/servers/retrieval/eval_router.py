@@ -14,13 +14,32 @@ from pydantic import BaseModel, Field
 
 from src.internal.retrieval.backends.base import RetrievalResult
 from src.internal.retrieval.fusion import mmr_rerank, rrf_fuse
+from src.internal.retrieval.reranker_factory import build_reranker_from_env
 from src.internal.retrieval.service import RetrievalService
 from src.internal.servers.retrieval.server import SearchResponse, _to_item
+
+
+def _maybe_rerank(
+    results: list[RetrievalResult], query: str, top_k: int, mode: str, do_rerank: bool
+) -> tuple[list[RetrievalResult], str]:
+    """Apply the env-configured cross-encoder when requested.
+
+    Returns ``(reranked, "{mode}+reranked")`` if a reranker is configured, else
+    ``(results, mode)`` unchanged — so "no reranker active" stays visible and the
+    debug surface never errors.
+    """
+    if not do_rerank:
+        return results, mode
+    reranker = build_reranker_from_env()
+    if reranker is None:
+        return results, mode
+    return reranker.rerank(query, results, top_k), f"{mode}+reranked"
 
 
 class InternalSearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=100)
+    rerank: bool = False
 
 
 class HybridSearchRequest(InternalSearchRequest):
@@ -46,9 +65,12 @@ def create_eval_router(
     def search_sparse(request: InternalSearchRequest) -> SearchResponse:
         t0 = time.monotonic()
         results = service._backend.search_sparse(request.query, top_k=request.top_k)
+        results, mode = _maybe_rerank(
+            results, request.query, request.top_k, "sparse", request.rerank
+        )
         return SearchResponse(
             results=[_to_item(r) for r in results],
-            retrieval_mode="sparse",
+            retrieval_mode=mode,
             executed_queries=[request.query],
             latency_ms=round((time.monotonic() - t0) * 1000, 1),
         )
@@ -60,9 +82,12 @@ def create_eval_router(
             results = service._backend.search_dense(request.query, top_k=request.top_k)
         except NotImplementedError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        results, mode = _maybe_rerank(
+            results, request.query, request.top_k, "dense", request.rerank
+        )
         return SearchResponse(
             results=[_to_item(r) for r in results],
-            retrieval_mode="dense",
+            retrieval_mode=mode,
             executed_queries=[request.query],
             latency_ms=round((time.monotonic() - t0) * 1000, 1),
         )
@@ -79,10 +104,13 @@ def create_eval_router(
         except NotImplementedError:
             dense = []
         fused = rrf_fuse([sparse, dense] if dense else [sparse], rrf_k=request.rrf_k)
-        reranked = mmr_rerank(fused, top_k=request.top_k, mmr_lambda=request.mmr_lambda)
+        mmr = mmr_rerank(fused, top_k=request.top_k, mmr_lambda=request.mmr_lambda)
+        results, mode = _maybe_rerank(
+            mmr, request.query, request.top_k, "hybrid", request.rerank
+        )
         return SearchResponse(
-            results=[_to_item(r) for r in reranked],
-            retrieval_mode="hybrid",
+            results=[_to_item(r) for r in results],
+            retrieval_mode=mode,
             executed_queries=[request.query],
             latency_ms=round((time.monotonic() - t0) * 1000, 1),
         )
@@ -96,9 +124,12 @@ def create_eval_router(
             initial_k=request.initial_k,
             max_entity_queries=request.max_entity_queries,
         )
+        results, mode = _maybe_rerank(
+            results, request.query, request.top_k, "graph", request.rerank
+        )
         return SearchResponse(
             results=[_to_item(r) for r in results],
-            retrieval_mode="graph",
+            retrieval_mode=mode,
             executed_queries=[request.query],
             latency_ms=round((time.monotonic() - t0) * 1000, 1),
         )

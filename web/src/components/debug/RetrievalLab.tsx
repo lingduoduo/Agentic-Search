@@ -17,6 +17,8 @@ export function RetrievalLab() {
   const [rrfK, setRrfK] = useState(60);
   const [mmrLambda, setMmrLambda] = useState(0.5);
   const [overFetch, setOverFetch] = useState(2);
+  const [rerank, setRerank] = useState(false);
+  const [rerankRequested, setRerankRequested] = useState(false);
   const [outcomes, setOutcomes] = useState<Outcomes>({});
   const [running, setRunning] = useState(false);
 
@@ -26,12 +28,14 @@ export function RetrievalLab() {
     if (!query.trim()) return;
     setRunning(true);
     setOutcomes({});
+    setRerankRequested(rerank);
     const params = {
       query,
       top_k: topK,
       rrf_k: rrfK,
       mmr_lambda: mmrLambda,
       over_fetch: overFetch,
+      rerank,
     };
     const results = await Promise.all(
       MODES.map((mode) => runDebugRetrieval(mode, params).then((o) => [mode, o] as const)),
@@ -88,6 +92,14 @@ export function RetrievalLab() {
             onChange={(e) => setOverFetch(Number(e.target.value))}
           />
         </label>
+        <label className="retrieval-lab__rerank">
+          <input
+            type="checkbox"
+            checked={rerank}
+            onChange={(e) => setRerank(e.target.checked)}
+          />
+          rerank
+        </label>
         <button type="button" onClick={run} disabled={running}>
           {running ? "Running…" : "Run"}
         </button>
@@ -101,7 +113,12 @@ export function RetrievalLab() {
 
       <div className="retrieval-lab__grid">
         {MODES.map((mode) => (
-          <ModeColumn key={mode} mode={mode} outcome={outcomes[mode]} />
+          <ModeColumn
+            key={mode}
+            mode={mode}
+            outcome={outcomes[mode]}
+            rerankRequested={rerankRequested}
+          />
         ))}
       </div>
     </section>
@@ -111,13 +128,22 @@ export function RetrievalLab() {
 function ModeColumn({
   mode,
   outcome,
+  rerankRequested,
 }: {
   mode: RetrievalMode;
   outcome: DebugRetrievalOutcome | undefined;
+  rerankRequested: boolean;
 }) {
+  const rerankInactive =
+    rerankRequested &&
+    outcome?.ok &&
+    !outcome.data?.retrieval_mode.includes("+reranked");
   return (
     <div className="retrieval-lab__mode">
       <h3>{mode}</h3>
+      {rerankInactive && (
+        <p className="retrieval-lab__note">no reranker active</p>
+      )}
       {!outcome && <p className="retrieval-lab__idle">—</p>}
       {outcome && outcome.status === 404 && (
         <p className="retrieval-lab__error">

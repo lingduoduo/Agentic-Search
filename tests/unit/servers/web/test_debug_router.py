@@ -75,10 +75,44 @@ def test_hybrid_proxy_forwards_tuning_knobs():
     assert captured["body"] == {
         "query": "q",
         "top_k": 5,
+        "rerank": False,
         "rrf_k": 30,
         "mmr_lambda": 0.7,
         "over_fetch": 3,
     }
+
+
+def test_proxy_forwards_rerank_flag():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"retrieval_mode": "sparse", "results": []})
+
+    client = _client(handler)
+    resp = client.post(
+        "/api/debug/retrieval/sparse",
+        json={"query": "q", "top_k": 5, "rerank": True},
+    )
+
+    assert resp.status_code == 200
+    assert captured["body"]["rerank"] is True
+
+
+def test_proxy_rerank_defaults_false():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"retrieval_mode": "sparse", "results": []})
+
+    client = _client(handler)
+    client.post("/api/debug/retrieval/sparse", json={"query": "q", "top_k": 5})
+    assert captured["body"]["rerank"] is False
 
 
 def test_proxy_passes_through_503_when_dense_unavailable():

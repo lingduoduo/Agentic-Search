@@ -62,6 +62,41 @@ describe("RetrievalLab", () => {
     });
   });
 
+  it("re-requests with rerank=true when the toggle is on, and renders reranked mode", async () => {
+    mockRun.mockImplementation(async (mode: RetrievalMode) => {
+      const o = ok(mode, `${mode}-1`);
+      o.data!.retrieval_mode = `${mode}+reranked`;
+      return o;
+    });
+
+    render(<RetrievalLab />);
+    fireEvent.change(screen.getByLabelText(/query/i), { target: { value: "q" } });
+    fireEvent.click(screen.getByLabelText(/rerank/i));
+    fireEvent.click(screen.getByRole("button", { name: /run/i }));
+
+    await waitFor(() => {
+      expect(mockRun).toHaveBeenCalledWith(
+        "sparse",
+        expect.objectContaining({ rerank: true }),
+      );
+    });
+    expect(screen.getAllByText(/sparse\+reranked/i).length).toBeGreaterThan(0);
+  });
+
+  it("shows 'no reranker active' when rerank is on but mode is unchanged", async () => {
+    // rerank requested but server returns plain mode (no reranker configured)
+    mockRun.mockImplementation(async (mode: RetrievalMode) => ok(mode, `${mode}-1`));
+
+    render(<RetrievalLab />);
+    fireEvent.change(screen.getByLabelText(/query/i), { target: { value: "q" } });
+    fireEvent.click(screen.getByLabelText(/rerank/i));
+    fireEvent.click(screen.getByRole("button", { name: /run/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/no reranker active/i).length).toBeGreaterThan(0);
+    });
+  });
+
   it("flags dense unavailable on 503", async () => {
     mockRun.mockImplementation(async (mode: RetrievalMode) =>
       mode === "dense"

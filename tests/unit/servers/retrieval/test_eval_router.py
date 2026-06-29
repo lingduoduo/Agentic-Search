@@ -102,3 +102,49 @@ def test_graph_endpoint_empty_corpus_returns_empty():
     )
     assert resp.status_code == 200
     assert resp.json()["results"] == []
+
+
+class _ReverseReranker:
+    """Stub reranker that reverses order — proves reranking actually ran."""
+
+    def rerank(self, query, results, top_k):
+        return list(reversed(results))[:top_k]
+
+
+def test_rerank_true_applies_reranker_and_tags_mode(monkeypatch):
+    import src.internal.servers.retrieval.eval_router as mod
+
+    monkeypatch.setattr(mod, "build_reranker_from_env", lambda: _ReverseReranker())
+    client = _app_with_router(
+        _make_backend(sparse=[_result("a"), _result("b"), _result("c")])
+    )
+    resp = client.post(
+        "/internal/search/sparse", json={"query": "q", "top_k": 5, "rerank": True}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["retrieval_mode"] == "sparse+reranked"
+    # same candidate set, reordered
+    assert [r["doc_id"] for r in body["results"]] == ["c", "b", "a"]
+
+
+def test_rerank_true_without_reranker_is_noop(monkeypatch):
+    import src.internal.servers.retrieval.eval_router as mod
+
+    monkeypatch.setattr(mod, "build_reranker_from_env", lambda: None)
+    client = _app_with_router(_make_backend(sparse=[_result("a"), _result("b")]))
+    resp = client.post(
+        "/internal/search/sparse", json={"query": "q", "top_k": 5, "rerank": True}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # no reranker configured → order unchanged, mode NOT tagged (visible "no reranker")
+    assert body["retrieval_mode"] == "sparse"
+    assert [r["doc_id"] for r in body["results"]] == ["a", "b"]
+
+
+def test_rerank_default_false_unchanged():
+    client = _app_with_router(_make_backend(sparse=[_result("a")]))
+    resp = client.post("/internal/search/sparse", json={"query": "q", "top_k": 5})
+    assert resp.status_code == 200
+    assert resp.json()["retrieval_mode"] == "sparse"
