@@ -245,6 +245,20 @@ cd web && npm run typecheck            # TypeScript check
 cd web && npm run test -- --run        # Vitest unit tests
 ```
 
+### Dev Console (observability)
+
+A gated, dev-only console for inspecting the backend servers from the web UI. **Off by default** — enable both flags (never in production):
+
+```bash
+# backend: mount /api/debug/* on the web app
+AGENTIC_SEARCH_DEBUG_PANELS=1 PYTHONPATH=src:. \
+  uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+# frontend: reveal the "Console" toggle in the top bar
+cd web && VITE_DEBUG_PANELS=1 npm run dev
+```
+
+Click **Console** in the top bar to open it. **Retrieval Lab** runs a query against each per-mode endpoint (`sparse` / `dense` / `hybrid` / `graph`) via the `POST /api/debug/retrieval/{mode}` proxy and shows results side by side, surfacing **503** (dense not configured → hybrid collapses to sparse) and **404** (endpoint not mounted, e.g. against `demo.py`) explicitly instead of as a generic error. (Health/workers/chat-trace panels land in later phases — see [the plan](docs/superpowers/plans/2026-06-29-backend-observability-uis.md).)
+
 ### UI features
 
 **Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `answer` / `done` events (full schema in the [SSE event table](#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
