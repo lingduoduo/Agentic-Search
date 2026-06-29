@@ -104,6 +104,37 @@ toggle.
   - With no LLM / pipeline disabled: returns `variants == [query]` and an explicit
     "no transform active" state, no 500.
 
+#### F5a — Primitive layer: `QueryEnhancer` (the raw building block)
+`QueryTransformPipeline` is built on a lower-level primitive,
+`QueryEnhancer` (`src/context/query_enhancer.py`) — the raw decompose/HyDE/step-back
+methods the pipeline composes. Used directly by `AgenticRAGLoop` (`chat_loop`) and by
+`query_transform.py` / `cached_query_transform.py`. **Verified behavior (exercised
+2026-06-29, no LLM + LLM-raises + real-output paths):**
+- `decompose(query) -> list[str]` — prompt asks for **2–4** focused, keyword-rich
+  sub-questions; strips list markers and dedups the original out. **The 2–4 count is
+  prompt-advisory, not code-enforced** — it can return 1 (atomic) or >4 depending on the LLM.
+- `hyde(query) -> str | None` — one hypothetical-answer paragraph.
+- `step_back(query) -> str | None` — one broader background reformulation.
+- `rewrite(query) -> str | None` — canonical cleanup. **Exists but is NOT part of
+  `enhance()`** — `enhance()` runs exactly decompose + hyde + step_back.
+- `enhance(query) -> QueryBundle{ original, sub_queries, hyde_text, step_back_query }`;
+  `QueryBundle.all_queries()` dedups sub_queries → hyde → step_back, falling back to
+  `[original]`.
+- **Fallback-safe on both no-LLM *and* LLM failure** (each method try/excepts and logs a
+  warning): `decompose -> [query]`, `hyde / step_back / rewrite -> None`.
+
+**Implementation option — minimal primitive inspector:** a thin
+`POST /api/debug/query-enhance` running `QueryEnhancer(llm).enhance(query)` and returning
+the `QueryBundle` gives the F5 essence at the raw layer without the full pipeline (no
+filters/route). Cheaper than the pipeline endpoint and useful for debugging
+`chat_loop`/AgenticRAGLoop specifically. Decision for F5 build time: ship the
+`QueryEnhancer` inspector first (smaller, already verified callable) and layer the
+`QueryTransformPipeline` view (`variants + filters + route`) on top, OR go straight to the
+pipeline endpoint. Either way the panel renders `original → bundle/variants`.
+- **Acceptance (primitive path):** no LLM → `QueryBundle` with `sub_queries == [query]`,
+  `hyde_text == None`, `step_back_query == None`, and an explicit "no LLM" state; with an
+  LLM, sub_queries/hyde/step_back populate and render.
+
 > **Related finding (out of scope here):** on the main `/search`, `executed_queries`
 > is hardcoded to `[request.query]` ([server.py:89]) — `service.search()` returns only
 > `(results, mode)` and discards the variants, so the schema's `executed_queries` field

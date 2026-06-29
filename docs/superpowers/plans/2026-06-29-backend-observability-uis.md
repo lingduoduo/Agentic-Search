@@ -106,11 +106,20 @@ Reuse `/api/agent/stream` `progress` events for a `chat_loop` query; render expa
 
 Pre-retrieval stage; its own panel + endpoint (per-mode endpoints bypass the pipeline).
 
+**T4b.0 — (optional, smaller first slice) `/api/debug/query-enhance` (primitive layer)**
+Thin endpoint running `QueryEnhancer(llm).enhance(query)` → `QueryBundle`
+{ original, sub_queries, hyde_text, step_back_query }. No filters/route — the raw
+decompose/HyDE/step-back layer that `AgenticRAGLoop` uses. `QueryEnhancer` is already
+verified fallback-safe (no-LLM and LLM-raise) and trivially callable. See spec §F5a.
+- verify: pytest — no LLM → `sub_queries == [query]`, `hyde_text/step_back_query == None`,
+  no 500; stub LLM → populated bundle.
+
 **T4b.1 — `/api/debug/query-transform` endpoint**
 Build a `QueryTransformPipeline` from env (`build_query_transform_pipeline_from_env`)
 and run **only** `pipeline.transform(query, filters)`; return
 `{ variants, merged_filters, route, active_legs }`. No pipeline / no LLM →
-`variants == [query]` + "no transform active", never 500.
+`variants == [query]` + "no transform active", never 500. Builds on / supersedes T4b.0's
+view by adding filters + route + per-leg state.
 - verify: pytest — stub pipeline returns >1 variant + filters; disabled pipeline
   returns `[query]` and the inactive state; no exception when LLM absent.
 
