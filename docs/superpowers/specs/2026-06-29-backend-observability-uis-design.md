@@ -66,6 +66,14 @@ Show background-worker health (`light` / `heavy` / `beat` / `monitoring`).
 - Data source: `monitoring_worker` health snapshots persisted to `AgenticSearchStore` (workers expose no HTTP; the backend reads the store).
 - **Acceptance:** panel lists each worker with status + last-seen; when no monitoring data exists, degrades to "no data yet" rather than erroring.
 
+> **Connectors are out of scope as a new panel** — they already have a full UI
+> (`ConnectorPanel.tsx`: CRUD + run + per-connector `last_attempt` status, last sync,
+> doc count). That is the **source-side** view. F2 is the complementary **pipeline-side**
+> view (the workers that process connector output: in-flight index attempts, queue
+> depth, `ConnectorFailure` error detail that ConnectorPanel does not surface). F2 should
+> deep-link a worker/attempt row to the matching ConnectorPanel row rather than duplicate
+> connector management. No standalone connectors console panel.
+
 ### F3 — Chat Loop Trace
 Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query.
 - Renders the full per-stage trace: sub-query decomposition → HyDE → per-round retrieval → sufficiency check → follow-up queries → grounded synthesis.

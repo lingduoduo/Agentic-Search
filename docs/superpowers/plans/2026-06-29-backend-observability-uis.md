@@ -85,7 +85,11 @@ Read latest per-worker snapshots from store; empty → `[]` (not error).
 
 **T3.3 — `WorkerMonitor.tsx`**
 Per-worker cards (status, last-seen, queue depth, errors); "no data yet" when empty.
-- verify: vitest — renders worker cards; empty state renders without error.
+Pipeline-side view that complements the existing `ConnectorPanel` (source-side) — surface
+in-flight index attempts + `ConnectorFailure` detail, and deep-link a row to the matching
+ConnectorPanel entry. **No standalone connectors panel** (already covered).
+- verify: vitest — renders worker cards; empty state renders without error; a row with a
+  connector id links to the connector view.
 
 ---
 
