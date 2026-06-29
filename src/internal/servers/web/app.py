@@ -32,7 +32,11 @@ from src.internal.servers.secondary_llm_flows.query_expansion import (
 )
 from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
 from src.agents.base import OnTurnCallback
-from src.agents.control_flow_trace import ControlFlowEvent, EventSink
+from src.agents.control_flow_trace import (
+    ControlFlowEvent,
+    ControlFlowRecorder,
+    EventSink,
+)
 from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
@@ -243,6 +247,7 @@ def _register_routers(
     settings: AppSettings,
     search_url: str,
     debug_panels: bool = False,
+    llm: LLMClient | None = None,
 ) -> None:
     """Attach all API routers and exception handlers to *app*."""
 
@@ -299,7 +304,7 @@ def _register_routers(
     if debug_panels:
         from src.internal.servers.web.debug_router import create_debug_router
 
-        app.include_router(create_debug_router(search_url=search_url))
+        app.include_router(create_debug_router(search_url=search_url, llm=llm, db=db))
 
 
 def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
@@ -538,13 +543,19 @@ async def _run_agentic_rag(
         AgenticRAGConfig(max_rounds=3, topk=top_k, retrieval_url=search_url),
         llm=llm,
     )
-    rag = await rag_loop.run(query, chat_history=history)
+    from uuid import uuid4
+
+    recorder = ControlFlowRecorder(uuid4().hex)
+    rag = await rag_loop.run(query, chat_history=history, recorder=recorder)
     return (
         rag.answer,
         rag.citations,
         rag.context.documents,
         "chat",
-        {"rounds_used": rag.rounds_used},
+        {
+            "rounds_used": rag.rounds_used,
+            "control_flow_trace": recorder.snapshot(),
+        },
     )
 
 
@@ -918,6 +929,7 @@ def create_web_app(
         resolved,
         search_url=settings.search_url,
         debug_panels=settings.debug_panels,
+        llm=llm,
     )
 
     frontend_dist = _frontend_dist_path()

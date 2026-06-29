@@ -287,6 +287,7 @@ export interface DebugRetrievalParams {
   rrf_k?: number;
   mmr_lambda?: number;
   over_fetch?: number;
+  rerank?: boolean;
 }
 
 export interface DebugRetrievalOutcome {
@@ -294,4 +295,34 @@ export interface DebugRetrievalOutcome {
   ok: boolean;
   data: DebugRetrievalResponse | null;
   detail: string | null;
+}
+
+export interface ServerHealth {
+  name: string;
+  url: string;
+  status: "up" | "down" | string;
+}
+
+export interface WorkerMetrics {
+  process_memory_mb: number;
+  pending_index_attempts: number;
+  in_progress_index_attempts: number;
+  active_connectors: number;
+  total_documents: number;
+  timestamp: string;
+}
+
+export interface QueryTransformResult {
+  original: string;
+  variants: string[];
+  merged_filters: Record<string, unknown>;
+  active: boolean;
+  legs: {
+    sub_queries?: string[];
+    multi_query?: string[];
+    rewrite?: string | null;
+    hyde_text?: string | null;
+    step_back?: string | null;
+    keywords?: string[];
+  };
 }

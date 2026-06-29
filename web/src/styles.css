@@ -1661,3 +1661,127 @@ option:disabled,
   border-bottom: 1px solid var(--border, #f1f5f9);
   font-variant-numeric: tabular-nums;
 }
+
+.retrieval-lab__rerank {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted, #6b7280);
+}
+
+.retrieval-lab__note {
+  margin: 0 0 0.35rem;
+  font-size: 0.74rem;
+  color: var(--warning-fg, #92400e);
+}
+
+/* --- Server health grid + grounding (F4) --- */
+.server-health {
+  margin-bottom: 1rem;
+}
+.server-health__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.server-health__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  border-left-width: 4px;
+}
+.server-health__cell--up { border-left-color: #16a34a; }
+.server-health__cell--down { border-left-color: var(--danger, #b91c1c); }
+.server-health__name { font-weight: 600; }
+.server-health__status { font-size: 0.78rem; text-transform: uppercase; }
+.server-health__url { font-size: 0.72rem; color: var(--muted, #6b7280); }
+.server-health__error { color: var(--danger, #b91c1c); font-size: 0.8rem; }
+.server-health__grounding { font-size: 0.85rem; }
+.server-health__grounding--ok { color: #16a34a; }
+.server-health__grounding--warn { color: var(--warning-fg, #92400e); }
+.server-health__grounding--idle { color: var(--muted, #6b7280); }
+.server-health__grounding-detail { color: var(--muted, #6b7280); font-size: 0.78rem; }
+
+/* --- Request Trace waterfall (F6) --- */
+.request-trace { margin-bottom: 1rem; }
+.request-trace__empty { color: var(--muted, #6b7280); font-size: 0.85rem; }
+.request-trace__rows { display: flex; flex-direction: column; gap: 0.25rem; }
+.request-trace__row {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr 60px;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.request-trace__row:hover { background: var(--surface-strong, #f1f5f9); }
+.request-trace__row--selected { background: var(--surface-strong, #e5e7eb); }
+.request-trace__label { font-size: 0.76rem; color: var(--muted, #374151); }
+.request-trace__track {
+  height: 0.7rem;
+  background: var(--border, #f1f5f9);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.request-trace__bar { display: block; height: 100%; background: #2563eb; }
+.request-trace__row--failed .request-trace__bar { background: var(--danger, #b91c1c); }
+.request-trace__row--skipped .request-trace__bar { background: #9ca3af; }
+.request-trace__dur {
+  font-size: 0.72rem; color: var(--muted, #6b7280);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.request-trace__details {
+  margin-top: 0.5rem; padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
+  font-size: 0.78rem;
+}
+.request-trace__detail-key { color: var(--muted, #6b7280); padding-right: 0.75rem; }
+
+/* --- Query Transform Inspector (F5) --- */
+.query-transform { margin-bottom: 1rem; }
+.query-transform__controls {
+  display: flex; gap: 0.75rem; align-items: flex-end; margin-bottom: 0.5rem;
+}
+.query-transform__controls label {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  font-size: 0.78rem; color: var(--muted, #6b7280); flex: 1;
+}
+.query-transform__controls input {
+  padding: 0.4rem 0.55rem; border: 1px solid var(--border, #e5e7eb); border-radius: 8px;
+}
+.query-transform__inactive {
+  padding: 0.5rem 0.75rem; border-radius: 8px;
+  background: var(--warning-bg, #fef3c7); color: var(--warning-fg, #92400e);
+  font-size: 0.82rem;
+}
+.query-transform__original { font-size: 0.82rem; }
+.query-transform__variants { margin: 0.25rem 0 0.5rem 1rem; font-size: 0.82rem; }
+.query-transform__legs, .query-transform__filters {
+  font-size: 0.78rem; color: var(--muted, #6b7280);
+}
+
+/* --- Indexing / Workers Monitor (F2) --- */
+.worker-monitor { margin-bottom: 1rem; }
+.worker-monitor__empty { color: var(--muted, #6b7280); font-size: 0.85rem; }
+.worker-monitor__grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem;
+}
+.worker-monitor__card {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.6rem 0.7rem; border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
+}
+.worker-monitor__value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.worker-monitor__label { font-size: 0.72rem; color: var(--muted, #6b7280); }
+.worker-monitor__meta { margin-top: 0.4rem; font-size: 0.72rem; color: var(--muted, #6b7280); }

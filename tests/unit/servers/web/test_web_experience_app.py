@@ -927,3 +927,37 @@ def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
         )
     )
     assert browser_calls == ["q"]  # non-auto still gets the sidecar
+
+
+async def test_run_agentic_rag_populates_control_flow_trace():
+    """chat_loop runs now emit a control-flow trace (F3) → renders in the F6 waterfall."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from src.internal.servers.web.app import _run_agentic_rag
+
+    bundle = SearchContextBundle(
+        query="q",
+        documents=[
+            ContextDocument(id="d1", title="T", content="c about faiss", score=0.9)
+        ],
+    )
+    llm = MagicMock()
+    llm.complete.side_effect = ["sub-q", "hyde text", "broader", "yes", "Answer [D1]."]
+
+    with patch(
+        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+    ):
+        _, _, _, intent, extra = await _run_agentic_rag(
+            "what is faiss",
+            llm=llm,
+            search_url="http://x/retrieve",
+            top_k=5,
+            history=[],
+        )
+
+    assert intent == "chat"
+    trace = extra["control_flow_trace"]
+    assert len(trace) >= 2
+    components = [e.component for e in trace]
+    assert "query_enhancer" in components
+    assert "answer_generator" in components

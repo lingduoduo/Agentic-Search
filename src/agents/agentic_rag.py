@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import logging
+import time
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.agents.control_flow_trace import ControlFlowRecorder
 
 from src.context.models import (
     AnswerGenerationRequest,
@@ -119,15 +124,41 @@ class AgenticRAGLoop:
         question: str,
         *,
         chat_history: list[ChatMessage] | None = None,
+        recorder: "ControlFlowRecorder | None" = None,
     ) -> AgenticRAGResult:
-        bundle = self._enhancer.enhance(question)
-        current_queries = bundle.all_queries()
+        def _emit(
+            component: str,
+            action: str,
+            status: str,
+            duration_ms: int | None = None,
+            **details: object,
+        ) -> None:
+            if recorder is not None:
+                recorder.record(
+                    turn=max(rounds_used, 1),
+                    component=component,
+                    action=action,
+                    status=status,
+                    duration_ms=duration_ms,
+                    details=details,
+                )
 
-        # Key by content fingerprint so docs from different retrieve_context() calls
-        # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
         accumulated: dict[str, ContextDocument] = {}
         seen_queries: set[str] = set()
         rounds_used = 0
+
+        t0 = time.perf_counter()
+        bundle = self._enhancer.enhance(question)
+        current_queries = bundle.all_queries()
+        # Key by content fingerprint so docs from different retrieve_context() calls
+        # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
+        _emit(
+            "query_enhancer",
+            "enhance",
+            "completed",
+            duration_ms=round((time.perf_counter() - t0) * 1000),
+            query_count=len(current_queries),
+        )
 
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
@@ -136,6 +167,7 @@ class AgenticRAGLoop:
                 break
             seen_queries.update(novel_queries)
 
+            t_retr = time.perf_counter()
             for q in novel_queries:
                 try:
                     ctx = await retrieve_context(
@@ -149,6 +181,7 @@ class AgenticRAGLoop:
                             accumulated[key] = doc
                 except Exception as exc:
                     logger.warning("Retrieval failed for query %r: %s", q, exc)
+            retr_ms = round((time.perf_counter() - t_retr) * 1000)
 
             # Re-assign stable D1..DN IDs so citations are consistent across rounds.
             stable_docs = [
@@ -163,11 +196,30 @@ class AgenticRAGLoop:
                 for i, doc in enumerate(accumulated.values(), 1)
             ]
             merged = SearchContextBundle(query=question, documents=stable_docs)
+            _emit(
+                "search_tool",
+                "vector_db_search",
+                "completed",
+                duration_ms=retr_ms,
+                query_count=len(novel_queries),
+                document_count=len(stable_docs),
+                search_round=rounds_used,
+            )
 
             # On the last round always proceed to synthesis; otherwise check sufficiency.
             is_last = round_idx == self.config.max_rounds - 1
             if not is_last:
-                if self._is_sufficient(question, merged):
+                t_suff = time.perf_counter()
+                sufficient = self._is_sufficient(question, merged)
+                _emit(
+                    "evidence_judge",
+                    "sufficiency_check",
+                    "decided",
+                    duration_ms=round((time.perf_counter() - t_suff) * 1000),
+                    sufficient=sufficient,
+                    search_round=rounds_used,
+                )
+                if sufficient:
                     break
                 follow_ups = self._generate_followup(question, merged)
                 novel_follow_ups = [q for q in follow_ups if q not in seen_queries]
@@ -175,6 +227,7 @@ class AgenticRAGLoop:
                     break
                 current_queries = novel_follow_ups
 
+        t_syn = time.perf_counter()
         gen_result = generate_answer(
             AnswerGenerationRequest(
                 question=question,
@@ -182,6 +235,14 @@ class AgenticRAGLoop:
                 chat_history=chat_history or [],
             ),
             llm=self.llm,
+        )
+        _emit(
+            "answer_generator",
+            "synthesize",
+            "completed",
+            duration_ms=round((time.perf_counter() - t_syn) * 1000),
+            citation_count=len(gen_result.citations),
+            document_count=len(merged.documents),
         )
         return AgenticRAGResult(
             answer=gen_result.answer,

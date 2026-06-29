@@ -59,6 +59,16 @@ the reranked ordering (mark rows whose rank changed vs. the un-reranked run).
 - verify: vitest — toggling re-requests with `rerank: true`; reranked `retrieval_mode`
   renders; "no reranker active" state renders when order is unchanged.
 
+**T1b.4 — Reranker stack status (which reranker + cache stats + timeout)** *(spec §F1b-2)*
+Additive status fields: active base (`Reranker`/`ONNX`/none) + wrappers (cached/async/
+two-stage); `CachedReranker.stats()` (hits/misses/hit_rate) when present; surface
+`RerankerTimeoutError` as a per-call warning. Build against `CachedReranker.from_env(base)`
+(not `wrap`). Reranker stack is already verified fallback-safe (no provider → None; no
+Redis → base unchanged).
+- verify: pytest — status reports base+wrappers; with a cached stub, hit_rate increments on
+  repeat query; no cache → stats omitted, no error; simulated timeout → warning + un-reranked
+  fallback order.
+
 ---
 
 ## Phase 2 — Server Health Grid + Grounding Debug (F4)  *(small, unblocks "empty answer")*
@@ -70,6 +80,16 @@ Aggregate reachability of configured servers (retrieval `/health`, web self, ind
 **T2.2 — `ServerHealthGrid.tsx` + grounding view**
 Health grid; grounding panel reads last agent run → shows grounded? (citations) and answered? (text) → labels "grounded, no answer" vs "answer, ungrounded".
 - verify: vitest — grid renders up/down; grounding view distinguishes the two cases from fixture data.
+
+**T2.3 — LLM-backend status block** *(spec §F4a)*
+Show resolved provider/model (`GEN_AI_*`), mode (server-backed `OpenAIServerManager` vs
+in-process HF + device), and endpoint reachability (`GET {api_base}/v1/models`). Nothing
+configured → "no LLM configured" (the empty-answer reason). `OpenAICompatibleLLM` covers
+OpenAI/Azure/Anthropic-via-compat/Ollama/LiteLLM/vLLM.
+- verify: pytest — resolves provider/model from env; unreachable base → "down" not 500;
+  unset key/base → "no LLM configured".
+- deferred (not this task): docs fix `--vllm_url → --server_url` (README/CLAUDE.md/AGENTS.md/
+  SKILL.md) — real copy-paste bug, parked until vLLM is set up.
 
 ---
 
@@ -99,6 +119,12 @@ ConnectorPanel entry. **No standalone connectors panel** (already covered).
 Reuse `/api/agent/stream` `progress` events for a `chat_loop` query; render expanded per-stage trace (decompose → HyDE → retrieve → sufficiency → follow-up → synthesis) instead of the collapsed summary.
 - verify: vitest — each stage from a fixture event stream renders as a row.
 - note: no new backend if existing progress events carry stage detail; if not, **stop and confirm** before extending the stream schema (boundary: no agent-output changes without sign-off).
+- agent-loop UI already exists (progress log via `OnTurnCallback` + `ControlFlowTracePanel`
+  + `ToolCallTracePanel`) — F3 extends it. Parse `ToolAgentLoop.action_trace` as
+  newline-JSON of `ToolExecutionResult.to_dict()`.
+- ⚠️ honor finding: `ToolAgentLoop` passes `doc_count=0` to `on_turn` — the "· N docs"
+  progress line is `0` in tool mode; label honestly, don't imply "no docs."
+- `BaseAgent`/`graph_base.py` is a separate Pydantic agent track, **not** covered here.
 
 ---
 
@@ -106,13 +132,32 @@ Reuse `/api/agent/stream` `progress` events for a `chat_loop` query; render expa
 
 Pre-retrieval stage; its own panel + endpoint (per-mode endpoints bypass the pipeline).
 
+**T4b.0 — (optional, smaller first slice) `/api/debug/query-enhance` (primitive layer)**
+Thin endpoint running `QueryEnhancer(llm).enhance(query)` → `QueryBundle`
+{ original, sub_queries, hyde_text, step_back_query }. No filters/route — the raw
+decompose/HyDE/step-back layer that `AgenticRAGLoop` uses. `QueryEnhancer` is already
+verified fallback-safe (no-LLM and LLM-raise) and trivially callable. See spec §F5a.
+- verify: pytest — no LLM → `sub_queries == [query]`, `hyde_text/step_back_query == None`,
+  no 500; stub LLM → populated bundle.
+
 **T4b.1 — `/api/debug/query-transform` endpoint**
 Build a `QueryTransformPipeline` from env (`build_query_transform_pipeline_from_env`)
 and run **only** `pipeline.transform(query, filters)`; return
 `{ variants, merged_filters, route, active_legs }`. No pipeline / no LLM →
-`variants == [query]` + "no transform active", never 500.
+`variants == [query]` + "no transform active", never 500. Builds on / supersedes T4b.0's
+view by adding filters + route + per-leg state.
 - verify: pytest — stub pipeline returns >1 variant + filters; disabled pipeline
   returns `[query]` and the inactive state; no exception when LLM absent.
+
+**T4b.2 — Wrapper-stack status (which `*Pipeline` layers are active)** *(spec §F5b)*
+Report the active layer set — base + routed/cached/async — derived from the **factory
+`QT_*` flags**, not from object types (`Async` wraps unconditionally; `Cached` self-gates
+on URL). Build against the verified `*Pipeline` names (no bare `QueryTransform` classes).
+Stack already verified fallback-safe (no flags → factory returns `None`; no cache URL →
+base unchanged).
+- verify: pytest — factory with no flags → status "transform inactive" (`None`), no error;
+  `QT_ASYNC`/`QT_ROUTER` set → those layers report active; no cache URL → cached layer
+  reported off.
 
 **T4b.2 — `QueryTransformInspector` panel**
 Raw query input → render `raw → [variants]`, merged filters, route target, active legs.
@@ -134,8 +179,11 @@ grouped by `component`/`turn`); click a span → render `details`.
 **T6.2 — Drill-down renderer registry (D1.1; PR-3)**
 Map `component → renderer`: route → R1 view (retriever/confidence/construction_target),
 query_transform → F5 view (variants/filters), search_tool → docs table, answer_generator →
-prompt+completion. Fall back to raw JSON for unknown components.
-- verify: vitest — each known component renders its typed drill-down; unknown → JSON.
+prompt+completion, **`SearchAgentLoop` turn → raw `<think>/<search>/<information>/<answer>`
+view** (the only four tags emitted; the model's reasoning the action trace elides). Fall
+back to raw JSON for unknown components.
+- verify: vitest — each known component renders its typed drill-down; a turn span with raw
+  tags renders the think/search/answer view; unknown → JSON.
 
 **T6.3 — Enrich `details` at emit sites (D1.1; PR-3)**
 Add additive payload keys at the route / query-transform / search_tool / answer_generator

@@ -9,16 +9,124 @@ from fastapi.testclient import TestClient
 from src.internal.servers.web.debug_router import create_debug_router
 
 
-def _client(handler) -> TestClient:
+def _client(handler, db=None) -> TestClient:
     """Mount the debug router with an injected httpx client backed by *handler*."""
     http_client = httpx.Client(transport=httpx.MockTransport(handler))
     app = FastAPI()
     app.include_router(
         create_debug_router(
-            search_url="http://retrieval:8001/retrieve", http_client=http_client
+            search_url="http://retrieval:8001/retrieve",
+            http_client=http_client,
+            db=db,
         )
     )
     return TestClient(app)
+
+
+def test_workers_returns_live_snapshot_from_store():
+    from src.internal.db import AgenticSearchStore
+
+    db = AgenticSearchStore(":memory:")
+    client = _client(lambda r: httpx.Response(200, json={}), db=db)
+    resp = client.get("/api/debug/workers")
+    assert resp.status_code == 200
+    m = resp.json()["metrics"]
+    # empty store → zeros, never errors
+    assert m["pending_index_attempts"] == 0
+    assert m["in_progress_index_attempts"] == 0
+    assert m["total_documents"] == 0
+    assert "timestamp" in m
+
+
+def test_workers_without_store_returns_empty_not_500():
+    client = _client(lambda r: httpx.Response(200, json={}), db=None)
+    resp = client.get("/api/debug/workers")
+    assert resp.status_code == 200
+    assert resp.json()["metrics"] is None
+
+
+class _StubPipeline:
+    def __init__(self, bundle):
+        self._bundle = bundle
+
+    def transform(self, query, filters=None):
+        return self._bundle
+
+
+def test_query_transform_returns_variants_and_filters(monkeypatch):
+    import src.internal.servers.web.debug_router as mod
+    from src.context.query_transform import TransformedQueryBundle
+
+    bundle = TransformedQueryBundle(
+        original="vector db",
+        sub_queries=["what is a vector database", "how do embeddings index"],
+        merged_filters={"year": 2024},
+    )
+    monkeypatch.setattr(
+        mod,
+        "build_query_transform_pipeline_from_env",
+        lambda llm: _StubPipeline(bundle),
+    )
+    client = _client(lambda r: httpx.Response(200, json={}))
+    resp = client.post("/api/debug/query-transform", json={"query": "vector db"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is True
+    assert "what is a vector database" in body["variants"]
+    assert body["merged_filters"] == {"year": 2024}
+    assert body["legs"]["sub_queries"] == [
+        "what is a vector database",
+        "how do embeddings index",
+    ]
+
+
+def test_query_transform_no_pipeline_is_inactive(monkeypatch):
+    import src.internal.servers.web.debug_router as mod
+
+    monkeypatch.setattr(
+        mod, "build_query_transform_pipeline_from_env", lambda llm: None
+    )
+    client = _client(lambda r: httpx.Response(200, json={}))
+    resp = client.post("/api/debug/query-transform", json={"query": "vector db"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is False
+    assert body["variants"] == ["vector db"]
+
+
+def test_health_reports_retrieval_up_and_web_self():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/health"
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = _client(handler)
+    resp = client.get("/api/debug/health")
+    assert resp.status_code == 200
+    servers = {s["name"]: s for s in resp.json()["servers"]}
+    assert servers["retrieval"]["status"] == "up"
+    assert servers["web"]["status"] == "up"
+
+
+def test_health_reports_retrieval_down_when_unreachable_no_500():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    client = _client(handler)
+    resp = client.get("/api/debug/health")
+    assert resp.status_code == 200  # never raises
+    servers = {s["name"]: s for s in resp.json()["servers"]}
+    assert servers["retrieval"]["status"] == "down"
+    assert servers["web"]["status"] == "up"
+
+
+def test_health_reports_retrieval_down_on_non_200():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "unhealthy"})
+
+    client = _client(handler)
+    resp = client.get("/api/debug/health")
+    servers = {s["name"]: s for s in resp.json()["servers"]}
+    assert servers["retrieval"]["status"] == "down"
 
 
 def test_retrieval_proxy_forwards_to_internal_search_and_returns_results():
@@ -75,10 +183,44 @@ def test_hybrid_proxy_forwards_tuning_knobs():
     assert captured["body"] == {
         "query": "q",
         "top_k": 5,
+        "rerank": False,
         "rrf_k": 30,
         "mmr_lambda": 0.7,
         "over_fetch": 3,
     }
+
+
+def test_proxy_forwards_rerank_flag():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"retrieval_mode": "sparse", "results": []})
+
+    client = _client(handler)
+    resp = client.post(
+        "/api/debug/retrieval/sparse",
+        json={"query": "q", "top_k": 5, "rerank": True},
+    )
+
+    assert resp.status_code == 200
+    assert captured["body"]["rerank"] is True
+
+
+def test_proxy_rerank_defaults_false():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"retrieval_mode": "sparse", "results": []})
+
+    client = _client(handler)
+    client.post("/api/debug/retrieval/sparse", json={"query": "q", "top_k": 5})
+    assert captured["body"]["rerank"] is False
 
 
 def test_proxy_passes_through_503_when_dense_unavailable():

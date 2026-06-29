@@ -60,6 +60,43 @@ is **before vs. after on identical candidates**.
     unchanged (and the mode string makes "no reranker active" visible) rather than
     erroring — itself a useful signal.
 
+#### F1b-2 — Reranker stack observability (which reranker, cache, timeout)
+The reranker isn't one object — it's a **composable stack** (verified 2026-06-29,
+`src/internal/retrieval/`), all sharing a `rerank(query, results, top_k)` interface:
+- `Reranker` (`reranker.py`) — base cross-encoder; `from_env()` → `None` if
+  `RERANKER_PROVIDER` unset (**fallback-safe, verified**).
+- `ONNXReranker` (`onnx_reranker.py`) — drop-in via ONNX runtime (needs `optimum`);
+  `from_env()` falls back to `Reranker`, `None` if no provider (**verified**).
+- `CachedReranker` (`cached_reranker.py`) — Redis score cache (key = query + sorted
+  doc_ids); `from_env(base)` returns **`base` unchanged** when `RERANKER_CACHE_REDIS_URL`
+  is unset (transparent no-op, **verified `is base`**). Exposes `stats() →
+  {hits, misses, hit_rate}`.
+- `AsyncReranker` (`async_reranker.py`) — wraps any reranker, offloads to a thread pool
+  with a timeout (`RerankerTimeoutError` on overrun).
+- `TwoStageReranker` (`two_stage_reranker.py`) — fast pre-filter on all candidates →
+  heavy scorer on top-N.
+- Assembled by `reranker_factory.py`; `reranker_benchmark.py` exists for offline timing.
+
+So beyond before/after ordering, the debug surface should answer **"what is actually
+running and is it healthy?"** Additive fields on the rerank response / a small status block:
+- **active stack** — base provider (`Reranker`/`ONNX`/none) + which wrappers are on
+  (cached? async? two-stage?). Makes "no reranker active" and "ONNX fell back to
+  cross-encoder" visible.
+- **cache stats** — `CachedReranker.stats()` (`hits / misses / hit_rate`) — currently
+  surfaced **nowhere**; high-value, cheap to expose.
+- **timeout signal** — surface `RerankerTimeoutError` (async overrun) as a per-call
+  warning rather than a silent drop to un-reranked order.
+- **Acceptance:**
+  - Status block reports the active base + wrappers; with nothing configured it reads
+    "no reranker active" (not an error).
+  - When `CachedReranker` is in the stack, `hit_rate` renders and increments on a repeat
+    query; absent cache → stats omitted/"n/a", no error.
+  - An async timeout shows as a labeled per-mode warning, and the column still renders the
+    un-reranked fallback order.
+
+> **Naming note (verified):** the cache wrap helper is `CachedReranker.from_env(base)`,
+> **not** `CachedReranker.wrap(...)`. Build against `from_env`.
+
 ### F2 — Indexing / Workers Monitor
 Show background-worker health (`light` / `heavy` / `beat` / `monitoring`).
 - Per worker: status, last-run timestamp, queue depth, docs indexed, recent errors.
@@ -75,15 +112,74 @@ Show background-worker health (`light` / `heavy` / `beat` / `monitoring`).
 > connector management. No standalone connectors console panel.
 
 ### F3 — Chat Loop Trace
-Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query.
+Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query. **Scope (verified
+2026-06-29):** F3 observes the web path's `AgenticRAGLoop` (`src/agents/agentic_rag.py`).
+The separate `src/internal/chat/` pipeline (`build_chat_turn`/`run_llm_loop`,
+`DynamicCitationProcessor`, `compress_chat_history`, `Emitter`/`AgentQueueManager`, stop
+fence) is **not imported by the web backend** — it's used by model-generation/training, off
+the `/api/agent` path — so F3 does **not** cover it. Don't wire F3 to that pipeline.
 - Renders the full per-stage trace: sub-query decomposition → HyDE → per-round retrieval → sufficiency check → follow-up queries → grounded synthesis.
 - Reuses the existing `/api/agent/stream` `progress` events; adds an expanded (non-collapsed) debug rendering.
 - **Acceptance:** each loop stage appears as a row showing its inputs/outputs; works for a `chat_loop` query end-to-end.
+
+> **Agent-loop UI: what already exists (verified 2026-06-29).** Agent loops are the
+> best-covered area — three live surfaces already render loop activity, so F3/F6 *extend*,
+> not introduce:
+> - `AnswerPanel` per-turn progress log ← `OnTurnCallback(turn, tool_name, doc_count)`
+>   (`base.py:27`, async) → SSE `progress` events. Wired through `SearchAgentLoop`,
+>   `ToolAgentLoop`, `PlainGenerationLoop`, **and** `SingleTurnGenerationLoop`.
+> - `ControlFlowTracePanel` ← `control_flow_trace` (component/action/status/`duration_ms`).
+> - `ToolCallTracePanel` ← the loops' `action_trace`.
+>
+> **Verified data sources to render from:**
+> - `ToolAgentLoop.action_trace` is **newline-delimited JSON of each `ToolExecutionResult.to_dict()`**
+>   (`tool_calling.py:315`) — parse line-per-tool-call for F3/tool views.
+> - `SearchAgentLoop` emits exactly four action tags — `<think>` / `<search>` / `<information>`
+>   / `<answer>` (`search.py`). The current trace shows *components/actions*, **not** the raw
+>   `<think>` content — surface the raw tagged text as an **F6 drill-down** (see F6).
+>
+> **Findings to honor when building:**
+> - ⚠️ `ToolAgentLoop` passes **`doc_count = 0` hardcoded** to `on_turn` (`tool_calling.py:269`);
+>   only `SearchAgentLoop` passes a real count. So the progress log's "· N docs" reads `0` in
+>   tool mode — F3/progress UI should not imply "no docs retrieved" there. (Fixing the caller
+>   is a separate change; the UI should label honestly.)
+> - `BaseAgent` (`src/agents/graph_base.py`) is a **separate Pydantic agent track** (streams via
+>   `AgentQueueManager`, `invoke()`-based) — **not** one of the main loops and **not** surfaced by
+>   any panel. Out of scope for F3/F6 unless explicitly added; noted so it isn't assumed covered.
 
 ### F4 — Server Health Grid + Grounding Debug
 - Health grid: reachability/up-down per configured server (retrieval, web, indexing/monitoring).
 - Grounding debug: for the last agent run, show whether retrieval grounded (citations present) **and** whether the answer leg produced text — directly explaining the "sources but empty answer" case.
 - **Acceptance:** grid shows up/down per server; grounding view distinguishes "grounded, no answer" from "answer, ungrounded".
+
+#### F4a — LLM-backend status (which model, is it reachable)
+There is currently **no UI for LLM backends** (verified 2026-06-29) — the active
+provider/model and whether it's server-backed vs in-process is invisible, so "which model
+am I actually talking to, and is it up?" is unanswerable from the console. Extend F4's grid
+with an LLM-backend block.
+- **The backends (verified):**
+  - `OpenAICompatibleLLM` (`src/internal/llm/providers.py:102`) — one client for any
+    OpenAI-compatible API: OpenAI, Azure OpenAI, **Anthropic *via compatibility layer*** (not
+    native), Ollama, LiteLLM, vLLM/mlx-lm (OpenAI-compatible; not named in the docstring but
+    supported). Configured via `GEN_AI_MODEL_PROVIDER` / `GEN_AI_MODEL_VERSION` /
+    `GEN_AI_API_KEY` / `GEN_AI_API_BASE` (verified, `app_configs.py:90-93`).
+  - Search-agent serving (`src/model/serving.py`): `OpenAIServerManager` (server-backed,
+    `/v1/completions`) vs **in-process HuggingFace** on CPU/CUDA/MPS, selected by
+    `build_server_manager(...)`.
+- **Surface:** active provider + model id; mode (server-backed vs in-process + device);
+  endpoint reachability (e.g. `GET {api_base}/v1/models` ping); "no LLM configured" when
+  `GEN_AI_API_KEY`/base unset (directly explains empty-answer runs, complementing the
+  grounding debug above).
+- **Acceptance:** block shows the resolved provider/model + mode; unreachable endpoint →
+  "down" (not a 500); nothing configured → "no LLM configured", surfaced as the reason
+  answers come back empty.
+
+> **Related finding — deferred (no vLLM setup yet, per owner):** the CLI server-URL flag is
+> **`--server_url`** (`run_agentic_search.py:619`), but **`--vllm_url`** — which does **not**
+> exist — is referenced in `README.md` (×4), `.claude/CLAUDE.md`, `AGENTS.md`, and
+> `.claude/skills/SKILL.md`. Copy-paste from those docs fails with
+> `unrecognized arguments: --vllm_url`. Fix is a docs find-replace `--vllm_url → --server_url`;
+> deferred until vLLM is actually set up. Not an F4 blocker.
 
 ### F5 — Query Transform Inspector
 Query transform is a **pre-retrieval** stage (the mirror of reranking's post-retrieval
@@ -103,6 +199,65 @@ toggle.
     legs are listed.
   - With no LLM / pipeline disabled: returns `variants == [query]` and an explicit
     "no transform active" state, no 500.
+
+#### F5a — Primitive layer: `QueryEnhancer` (the raw building block)
+`QueryTransformPipeline` is built on a lower-level primitive,
+`QueryEnhancer` (`src/context/query_enhancer.py`) — the raw decompose/HyDE/step-back
+methods the pipeline composes. Used directly by `AgenticRAGLoop` (`chat_loop`) and by
+`query_transform.py` / `cached_query_transform.py`. **Verified behavior (exercised
+2026-06-29, no LLM + LLM-raises + real-output paths):**
+- `decompose(query) -> list[str]` — prompt asks for **2–4** focused, keyword-rich
+  sub-questions; strips list markers and dedups the original out. **The 2–4 count is
+  prompt-advisory, not code-enforced** — it can return 1 (atomic) or >4 depending on the LLM.
+- `hyde(query) -> str | None` — one hypothetical-answer paragraph.
+- `step_back(query) -> str | None` — one broader background reformulation.
+- `rewrite(query) -> str | None` — canonical cleanup. **Exists but is NOT part of
+  `enhance()`** — `enhance()` runs exactly decompose + hyde + step_back.
+- `enhance(query) -> QueryBundle{ original, sub_queries, hyde_text, step_back_query }`;
+  `QueryBundle.all_queries()` dedups sub_queries → hyde → step_back, falling back to
+  `[original]`.
+- **Fallback-safe on both no-LLM *and* LLM failure** (each method try/excepts and logs a
+  warning): `decompose -> [query]`, `hyde / step_back / rewrite -> None`.
+
+**Implementation option — minimal primitive inspector:** a thin
+`POST /api/debug/query-enhance` running `QueryEnhancer(llm).enhance(query)` and returning
+the `QueryBundle` gives the F5 essence at the raw layer without the full pipeline (no
+filters/route). Cheaper than the pipeline endpoint and useful for debugging
+`chat_loop`/AgenticRAGLoop specifically. Decision for F5 build time: ship the
+`QueryEnhancer` inspector first (smaller, already verified callable) and layer the
+`QueryTransformPipeline` view (`variants + filters + route`) on top, OR go straight to the
+pipeline endpoint. Either way the panel renders `original → bundle/variants`.
+- **Acceptance (primitive path):** no LLM → `QueryBundle` with `sub_queries == [query]`,
+  `hyde_text == None`, `step_back_query == None`, and an explicit "no LLM" state; with an
+  LLM, sub_queries/hyde/step_back populate and render.
+
+#### F5b — Pipeline wrapper stack (which layers are active)
+Like the reranker (§F1b-2), query transform is a **composable `*Pipeline` stack**
+(verified 2026-06-29), assembled by `build_query_transform_pipeline_from_env`
+(`src/internal/retrieval/query_transform_factory.py`), outermost → innermost:
+`RoutedQueryTransformPipeline → CachedQueryTransformPipeline →
+AsyncQueryTransformPipeline → QueryTransformPipeline`. Each layer optional.
+- **Naming (verified):** the classes are all `*Pipeline`-suffixed —
+  `QueryTransformPipeline` / `AsyncQueryTransformPipeline` / `CachedQueryTransformPipeline`
+  / `RoutedQueryTransformPipeline`. There are **no** bare `QueryTransform` /
+  `AsyncQueryTransform` / `CachedQueryTransform` classes. Build against the real names.
+- **Fallback-safe (verified):** `build_query_transform_pipeline_from_env(None|llm)` → `None`
+  when no `QT_*` legs are set (service degrades to single-query). `QueryTransformPipeline.from_env(None)` → `None`.
+- **Gating is inconsistent across layers — the status surface must read the factory's
+  flags, not infer from object types:**
+  - `CachedQueryTransformPipeline.from_env(base)` **self-gates** on its cache URL —
+    returns `base` unchanged when unset (transparent no-op, verified `is base`).
+  - `AsyncQueryTransformPipeline.from_env(base)` **wraps unconditionally**; the factory
+    gates it behind the `QT_ASYNC` flag, not the object.
+  - `RoutedQueryTransformPipeline` is applied only under `QT_ROUTER` (and can run standalone
+    over an all-off leaf).
+- **Debug surface:** beyond `raw → variants`, report the **active stack** — base + which
+  wrappers (routed? cached? async?) are on, derived from the `QT_*` flags / factory — so
+  "transform inactive," "router-only," and "cached/async enabled" are all visible. If
+  `CachedQueryTransformPipeline` exposes cache stats, surface them like the reranker's.
+- **Acceptance:** status reports the active layer set from the factory flags; nothing
+  configured → "transform inactive" (pipeline `None`), not an error; `QT_ASYNC`/`QT_ROUTER`
+  on → those layers show active even though `Async` wouldn't self-report from its type.
 
 > **Related finding (out of scope here):** on the main `/search`, `executed_queries`
 > is hardcoded to `[request.query]` ([server.py:89]) — `service.search()` returns only
@@ -126,12 +281,19 @@ request for free. F6 is **render + enrich**, not greenfield.
   `status`, grouped by `component` / `turn`). Click a span → show its `details`.
 - **D1.1 — Enrich `details` at emit sites → absorbs R1 / F5 / P1 as drill-downs:**
   add additive payload keys where each component emits —
-  route span → `{retriever, confidence, construction_target}` (**R1**),
+  route span → `{retriever, confidence, construction_target}` **and the
+  `ConstructedQuery` from the routing layer** (`src/internal/routing/`, default-off behind
+  `ROUTING_ENABLED`) — the generated SQL / Cypher / API params / metadata filters **plus the
+  construct-only validation result** (SELECT-only check, table/param allowlist, "would have
+  run but didn't" for the short-circuited SQL/GRAPH/API targets) (**R1**),
   query-transform span → `variants[]` + filters (**F5**),
   search_tool span → top docs (Lab-style table),
-  answer_generator span → assembled prompt + completion (**P1**).
+  answer_generator span → assembled prompt + completion (**P1**),
+  `SearchAgentLoop` turn span → the raw **`<think>` / `<search>` / `<information>` /
+  `<answer>`** tagged text (verified the only four tags emitted, `search.py`) — the model's
+  reasoning, which the component/action trace currently elides.
   The per-stage inspectors become **drill-down renderers keyed by `component`** — R1,
-  F5, and P1 ship as trace drill-downs rather than standalone panels.
+  F5, P1, and the raw-action view ship as trace drill-downs rather than standalone panels.
 - **D1.2 — Live waterfall:** the trace already streams; render it filling in during a run.
 
 **Design decisions:**
