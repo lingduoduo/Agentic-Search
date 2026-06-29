@@ -244,3 +244,52 @@ async def test_follow_up_queries_do_not_duplicate_seen_queries():
         result = await loop.run(original_question)
 
     assert isinstance(result, AgenticRAGResult)
+
+
+# ---------------------------------------------------------------------------
+# Control-flow trace instrumentation (F3) — chat_loop stages become observable
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_emits_control_flow_events_to_recorder():
+    from src.agents.control_flow_trace import ControlFlowRecorder
+
+    bundle = _make_bundle(["d1", "d2"])
+    llm = _llm_responses(
+        "what is FAISS",  # decompose
+        "FAISS is a vector search library.",  # hyde
+        "broader query",  # step_back
+        "yes",  # sufficiency → stop
+        "Answer text [D1].",  # synthesis
+    )
+    recorder = ControlFlowRecorder("req-1", session_id="sess-1")
+
+    with patch(
+        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+    ):
+        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=3, topk=5), llm=llm)
+        await loop.run("what is FAISS?", recorder=recorder)
+
+    events = recorder.snapshot()
+    components = [e.component for e in events]
+    # the loop's stages are now observable in the trace
+    assert "query_enhancer" in components
+    assert "search_tool" in components
+    assert "evidence_judge" in components
+    assert "answer_generator" in components
+    # answer leg is the terminal stage
+    assert components[-1] == "answer_generator"
+
+
+@pytest.mark.asyncio
+async def test_run_without_recorder_is_unchanged():
+    bundle = _make_bundle(["d1"])
+    llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
+    with patch(
+        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+    ):
+        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=3, topk=5), llm=llm)
+        result = await loop.run("q")  # no recorder → no crash, same result
+    assert result.answer
+    assert result.rounds_used == 1
