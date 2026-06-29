@@ -112,7 +112,12 @@ Show background-worker health (`light` / `heavy` / `beat` / `monitoring`).
 > connector management. No standalone connectors console panel.
 
 ### F3 — Chat Loop Trace
-Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query.
+Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query. **Scope (verified
+2026-06-29):** F3 observes the web path's `AgenticRAGLoop` (`src/agents/agentic_rag.py`).
+The separate `src/internal/chat/` pipeline (`build_chat_turn`/`run_llm_loop`,
+`DynamicCitationProcessor`, `compress_chat_history`, `Emitter`/`AgentQueueManager`, stop
+fence) is **not imported by the web backend** — it's used by model-generation/training, off
+the `/api/agent` path — so F3 does **not** cover it. Don't wire F3 to that pipeline.
 - Renders the full per-stage trace: sub-query decomposition → HyDE → per-round retrieval → sufficiency check → follow-up queries → grounded synthesis.
 - Reuses the existing `/api/agent/stream` `progress` events; adds an expanded (non-collapsed) debug rendering.
 - **Acceptance:** each loop stage appears as a row showing its inputs/outputs; works for a `chat_loop` query end-to-end.
