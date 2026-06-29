@@ -109,6 +109,12 @@ ConnectorPanel entry. **No standalone connectors panel** (already covered).
 Reuse `/api/agent/stream` `progress` events for a `chat_loop` query; render expanded per-stage trace (decompose → HyDE → retrieve → sufficiency → follow-up → synthesis) instead of the collapsed summary.
 - verify: vitest — each stage from a fixture event stream renders as a row.
 - note: no new backend if existing progress events carry stage detail; if not, **stop and confirm** before extending the stream schema (boundary: no agent-output changes without sign-off).
+- agent-loop UI already exists (progress log via `OnTurnCallback` + `ControlFlowTracePanel`
+  + `ToolCallTracePanel`) — F3 extends it. Parse `ToolAgentLoop.action_trace` as
+  newline-JSON of `ToolExecutionResult.to_dict()`.
+- ⚠️ honor finding: `ToolAgentLoop` passes `doc_count=0` to `on_turn` — the "· N docs"
+  progress line is `0` in tool mode; label honestly, don't imply "no docs."
+- `BaseAgent`/`graph_base.py` is a separate Pydantic agent track, **not** covered here.
 
 ---
 
@@ -163,8 +169,11 @@ grouped by `component`/`turn`); click a span → render `details`.
 **T6.2 — Drill-down renderer registry (D1.1; PR-3)**
 Map `component → renderer`: route → R1 view (retriever/confidence/construction_target),
 query_transform → F5 view (variants/filters), search_tool → docs table, answer_generator →
-prompt+completion. Fall back to raw JSON for unknown components.
-- verify: vitest — each known component renders its typed drill-down; unknown → JSON.
+prompt+completion, **`SearchAgentLoop` turn → raw `<think>/<search>/<information>/<answer>`
+view** (the only four tags emitted; the model's reasoning the action trace elides). Fall
+back to raw JSON for unknown components.
+- verify: vitest — each known component renders its typed drill-down; a turn span with raw
+  tags renders the think/search/answer view; unknown → JSON.
 
 **T6.3 — Enrich `details` at emit sites (D1.1; PR-3)**
 Add additive payload keys at the route / query-transform / search_tool / answer_generator

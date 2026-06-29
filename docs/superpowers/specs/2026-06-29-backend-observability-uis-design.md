@@ -117,6 +117,31 @@ Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query.
 - Reuses the existing `/api/agent/stream` `progress` events; adds an expanded (non-collapsed) debug rendering.
 - **Acceptance:** each loop stage appears as a row showing its inputs/outputs; works for a `chat_loop` query end-to-end.
 
+> **Agent-loop UI: what already exists (verified 2026-06-29).** Agent loops are the
+> best-covered area — three live surfaces already render loop activity, so F3/F6 *extend*,
+> not introduce:
+> - `AnswerPanel` per-turn progress log ← `OnTurnCallback(turn, tool_name, doc_count)`
+>   (`base.py:27`, async) → SSE `progress` events. Wired through `SearchAgentLoop`,
+>   `ToolAgentLoop`, `PlainGenerationLoop`, **and** `SingleTurnGenerationLoop`.
+> - `ControlFlowTracePanel` ← `control_flow_trace` (component/action/status/`duration_ms`).
+> - `ToolCallTracePanel` ← the loops' `action_trace`.
+>
+> **Verified data sources to render from:**
+> - `ToolAgentLoop.action_trace` is **newline-delimited JSON of each `ToolExecutionResult.to_dict()`**
+>   (`tool_calling.py:315`) — parse line-per-tool-call for F3/tool views.
+> - `SearchAgentLoop` emits exactly four action tags — `<think>` / `<search>` / `<information>`
+>   / `<answer>` (`search.py`). The current trace shows *components/actions*, **not** the raw
+>   `<think>` content — surface the raw tagged text as an **F6 drill-down** (see F6).
+>
+> **Findings to honor when building:**
+> - ⚠️ `ToolAgentLoop` passes **`doc_count = 0` hardcoded** to `on_turn` (`tool_calling.py:269`);
+>   only `SearchAgentLoop` passes a real count. So the progress log's "· N docs" reads `0` in
+>   tool mode — F3/progress UI should not imply "no docs retrieved" there. (Fixing the caller
+>   is a separate change; the UI should label honestly.)
+> - `BaseAgent` (`src/agents/graph_base.py`) is a **separate Pydantic agent track** (streams via
+>   `AgentQueueManager`, `invoke()`-based) — **not** one of the main loops and **not** surfaced by
+>   any panel. Out of scope for F3/F6 unless explicitly added; noted so it isn't assumed covered.
+
 ### F4 — Server Health Grid + Grounding Debug
 - Health grid: reachability/up-down per configured server (retrieval, web, indexing/monitoring).
 - Grounding debug: for the last agent run, show whether retrieval grounded (citations present) **and** whether the answer leg produced text — directly explaining the "sources but empty answer" case.
@@ -225,9 +250,12 @@ request for free. F6 is **render + enrich**, not greenfield.
   route span → `{retriever, confidence, construction_target}` (**R1**),
   query-transform span → `variants[]` + filters (**F5**),
   search_tool span → top docs (Lab-style table),
-  answer_generator span → assembled prompt + completion (**P1**).
+  answer_generator span → assembled prompt + completion (**P1**),
+  `SearchAgentLoop` turn span → the raw **`<think>` / `<search>` / `<information>` /
+  `<answer>`** tagged text (verified the only four tags emitted, `search.py`) — the model's
+  reasoning, which the component/action trace currently elides.
   The per-stage inspectors become **drill-down renderers keyed by `component`** — R1,
-  F5, and P1 ship as trace drill-downs rather than standalone panels.
+  F5, P1, and the raw-action view ship as trace drill-downs rather than standalone panels.
 - **D1.2 — Live waterfall:** the trace already streams; render it filling in during a run.
 
 **Design decisions:**
