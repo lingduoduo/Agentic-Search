@@ -55,6 +55,8 @@ export function App() {
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
   const [intent, setIntent] = useState<"search" | "chat" | "tool" | undefined>(undefined);
+  const [route, setRoute] = useState<string | undefined>(undefined);
+  const [routeDegraded, setRouteDegraded] = useState<string | undefined>(undefined);
   const [sourceProvider, setSourceProvider] =
     useState<SearchSourceProvider>("auto");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -117,6 +119,8 @@ export function App() {
     setIsLoading(true);
     setError(null);
     setIntent(undefined);
+    setRoute(undefined);
+    setRouteDegraded(undefined);
     setStreamingAnswer("");
     setProgressSteps([]);
     setCompletedSteps([]);
@@ -154,6 +158,8 @@ export function App() {
             ),
           );
           if (event.intent) setIntent(event.intent);
+          setRoute(event.route ?? undefined);
+          setRouteDegraded(event.route_degraded ?? undefined);
           setAnswer(accumulatedAnswer);
           setCompletedSteps(liveSteps);
           setProgressSteps([]);
@@ -223,6 +229,19 @@ export function App() {
           </div>
           <div className="topbar-actions">
             <span className="status-pill">{status}</span>
+            {route && (
+              <span
+                className="route-pill"
+                title={
+                  routeDegraded
+                    ? `Routed to ${route} (degraded: ${routeDegraded})`
+                    : `Routed to ${route}`
+                }
+              >
+                via {route}
+                {routeDegraded ? " ⚠" : ""}
+              </span>
+            )}
             <button
               className={`icon-button${showConnectors ? " active" : ""}`}
               type="button"

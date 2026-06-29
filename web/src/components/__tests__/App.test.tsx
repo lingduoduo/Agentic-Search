@@ -188,6 +188,40 @@ describe("App grounding status", () => {
     );
     expect(document.querySelector(".status-pill")?.textContent).toBe("Answered");
   });
+
+  it("shows the chosen route chip, with a degraded marker", async () => {
+    async function* routedStream() {
+      yield { type: "answer" as const, text: baseResponse.answer };
+      yield {
+        type: "done" as const,
+        session_id: baseResponse.session_id,
+        citations: [] as string[],
+        documents: [],
+        intent: "search",
+        route: "search_agent",
+        route_degraded: "no_local_model",
+      };
+    }
+    mockStreamAgent.mockReturnValue(routedStream());
+    render(<App />);
+    await submitQuery("FAISS");
+    await waitFor(() =>
+      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+    );
+    const pill = document.querySelector(".route-pill");
+    expect(pill?.textContent).toContain("search_agent");
+    expect(pill?.getAttribute("title")).toContain("degraded: no_local_model");
+  });
+
+  it("renders no route chip when the response omits route", async () => {
+    mockStreamAgent.mockReturnValue(fakeStream("chat"));
+    render(<App />);
+    await submitQuery("explain FAISS");
+    await waitFor(() =>
+      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+    );
+    expect(document.querySelector(".route-pill")).toBeNull();
+  });
 });
 
 describe("App example chips", () => {
