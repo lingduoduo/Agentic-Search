@@ -60,6 +60,43 @@ is **before vs. after on identical candidates**.
     unchanged (and the mode string makes "no reranker active" visible) rather than
     erroring — itself a useful signal.
 
+#### F1b-2 — Reranker stack observability (which reranker, cache, timeout)
+The reranker isn't one object — it's a **composable stack** (verified 2026-06-29,
+`src/internal/retrieval/`), all sharing a `rerank(query, results, top_k)` interface:
+- `Reranker` (`reranker.py`) — base cross-encoder; `from_env()` → `None` if
+  `RERANKER_PROVIDER` unset (**fallback-safe, verified**).
+- `ONNXReranker` (`onnx_reranker.py`) — drop-in via ONNX runtime (needs `optimum`);
+  `from_env()` falls back to `Reranker`, `None` if no provider (**verified**).
+- `CachedReranker` (`cached_reranker.py`) — Redis score cache (key = query + sorted
+  doc_ids); `from_env(base)` returns **`base` unchanged** when `RERANKER_CACHE_REDIS_URL`
+  is unset (transparent no-op, **verified `is base`**). Exposes `stats() →
+  {hits, misses, hit_rate}`.
+- `AsyncReranker` (`async_reranker.py`) — wraps any reranker, offloads to a thread pool
+  with a timeout (`RerankerTimeoutError` on overrun).
+- `TwoStageReranker` (`two_stage_reranker.py`) — fast pre-filter on all candidates →
+  heavy scorer on top-N.
+- Assembled by `reranker_factory.py`; `reranker_benchmark.py` exists for offline timing.
+
+So beyond before/after ordering, the debug surface should answer **"what is actually
+running and is it healthy?"** Additive fields on the rerank response / a small status block:
+- **active stack** — base provider (`Reranker`/`ONNX`/none) + which wrappers are on
+  (cached? async? two-stage?). Makes "no reranker active" and "ONNX fell back to
+  cross-encoder" visible.
+- **cache stats** — `CachedReranker.stats()` (`hits / misses / hit_rate`) — currently
+  surfaced **nowhere**; high-value, cheap to expose.
+- **timeout signal** — surface `RerankerTimeoutError` (async overrun) as a per-call
+  warning rather than a silent drop to un-reranked order.
+- **Acceptance:**
+  - Status block reports the active base + wrappers; with nothing configured it reads
+    "no reranker active" (not an error).
+  - When `CachedReranker` is in the stack, `hit_rate` renders and increments on a repeat
+    query; absent cache → stats omitted/"n/a", no error.
+  - An async timeout shows as a labeled per-mode warning, and the column still renders the
+    un-reranked fallback order.
+
+> **Naming note (verified):** the cache wrap helper is `CachedReranker.from_env(base)`,
+> **not** `CachedReranker.wrap(...)`. Build against `from_env`.
+
 ### F2 — Indexing / Workers Monitor
 Show background-worker health (`light` / `heavy` / `beat` / `monitoring`).
 - Per worker: status, last-run timestamp, queue depth, docs indexed, recent errors.

@@ -59,6 +59,16 @@ the reranked ordering (mark rows whose rank changed vs. the un-reranked run).
 - verify: vitest — toggling re-requests with `rerank: true`; reranked `retrieval_mode`
   renders; "no reranker active" state renders when order is unchanged.
 
+**T1b.4 — Reranker stack status (which reranker + cache stats + timeout)** *(spec §F1b-2)*
+Additive status fields: active base (`Reranker`/`ONNX`/none) + wrappers (cached/async/
+two-stage); `CachedReranker.stats()` (hits/misses/hit_rate) when present; surface
+`RerankerTimeoutError` as a per-call warning. Build against `CachedReranker.from_env(base)`
+(not `wrap`). Reranker stack is already verified fallback-safe (no provider → None; no
+Redis → base unchanged).
+- verify: pytest — status reports base+wrappers; with a cached stub, hit_rate increments on
+  repeat query; no cache → stats omitted, no error; simulated timeout → warning + un-reranked
+  fallback order.
+
 ---
 
 ## Phase 2 — Server Health Grid + Grounding Debug (F4)  *(small, unblocks "empty answer")*
