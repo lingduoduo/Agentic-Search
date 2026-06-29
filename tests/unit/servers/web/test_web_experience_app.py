@@ -99,6 +99,7 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         "/api/agent",
         json={
             "query": "How do I deploy?",
+            "mode": "chat_once",
             "search_url": "http://search.test/retrieve",
             "top_k": 3,
         },
@@ -586,27 +587,40 @@ def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
     assert data["intent"] in ("search", "chat", "tool")
 
 
-def test_auto_route_chat_uses_answer_with_retrieval(monkeypatch, tmp_path):
-    """No mode in request → auto-routes to chat via answer_with_retrieval."""
-    called = {}
-
-    async def fake_answer(q, *, llm, chat_history, search_url, top_k, filters):
-        called["answer"] = True
-        return _answer_result(q)
+def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
+    """AGENTIC_RAG route → AgenticRAGLoop (decompose + HyDE), intent='chat'."""
+    from unittest.mock import AsyncMock
+    from src.agents.agentic_rag import AgenticRAGResult
+    from src.context.models import SearchContextBundle
+    from src.internal.servers.web.intent_routing import RouteStrategy
 
     monkeypatch.setattr(
-        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.AGENTIC_RAG,
+    )
+    fake_result = AgenticRAGResult(
+        answer="Grounded answer [D1]",
+        citations=[],
+        context=SearchContextBundle(query="explain FAISS", documents=[]),
+        rounds_used=2,
+    )
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.AgenticRAGLoop.run",
+        AsyncMock(return_value=fake_result),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     client = TestClient(app)
     response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 200
-    assert called.get("answer") is True
-    assert response.json()["intent"] == "chat"
+    data = response.json()
+    assert data["intent"] == "chat"
+    assert data["answer"] == "Grounded answer [D1]"
 
 
-def test_auto_route_search_via_rule_based(monkeypatch, tmp_path):
-    """Short keyword query → rule-based classifies as search → hybrid_search runs."""
+def test_auto_route_search_degrades_to_hybrid_without_local_model(
+    monkeypatch, tmp_path
+):
+    """SEARCH_AGENT route with no local model → hybrid_search pipeline, intent='search'."""
     called = {}
 
     async def fake_hybrid(
@@ -625,13 +639,20 @@ def test_auto_route_search_via_rule_based(monkeypatch, tmp_path):
 
         return _HybridSearchResult(executed_queries=[query], documents=[])
 
+    from src.internal.servers.web.intent_routing import RouteStrategy
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.SEARCH_AGENT,
+    )
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     client = TestClient(app)
-    response = client.post("/api/agent", json={"query": "procurement process"})
+    response = client.post("/api/agent", json={"query": "find the onboarding doc"})
     assert response.status_code == 200
     assert called.get("hybrid") is True
-    assert response.json()["intent"] == "search"
+    data = response.json()
+    assert data["intent"] == "search"
 
 
 def test_explicit_mode_still_works(monkeypatch, tmp_path):
@@ -653,12 +674,19 @@ def test_explicit_mode_still_works(monkeypatch, tmp_path):
     assert response.json()["intent"] == "chat"
 
 
-def test_auto_route_tier1_tool_loop_runs_when_model_available(monkeypatch, tmp_path):
-    """When manager+tokenizer are set, ToolAgentLoop is used as Tier 1 router."""
+def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
+    monkeypatch, tmp_path
+):
+    """TOOL_AGENT route with a local model → ToolAgentLoop runs with real tools."""
     from unittest.mock import AsyncMock, MagicMock
     from src.agents.base import AgentLoopOutput
+    from src.internal.servers.web.intent_routing import RouteStrategy
     import json
 
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+    )
     # A trace that says search_routing_tool was called
     fake_trace = json.dumps(
         {"tool_name": "search_routing_tool", "status": "completed", "result": "[]"}
@@ -698,14 +726,15 @@ def test_agent_no_llm_no_model_returns_400(monkeypatch, tmp_path):
     no-LLM 400 branch is exercised even when a retrieval server happens to be up
     (otherwise extractive retrieval would answer without an LLM → 200).
     """
-    from unittest.mock import AsyncMock
     from src.internal.configs import AppSettings
+    from src.internal.servers.web.intent_routing import RouteStrategy
 
     monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    # DIRECT_LLM with neither an LLM client nor a local model → 400.
     monkeypatch.setattr(
-        "src.internal.servers.web.app.answer_with_retrieval",
-        AsyncMock(side_effect=RuntimeError("no retrieval backend")),
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.DIRECT_LLM,
     )
     app = create_web_app(
         SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"),

@@ -637,6 +637,81 @@ def test_search_agent_loop_supports_plan_parallel_search_and_research_rounds():
     assert output.num_turns == 4
 
 
+def test_search_agent_loop_auto_searches_when_model_emits_no_action():
+    """The real guarantee: a tag-less dead-end still fires retrieval once.
+
+    The model here is *genuinely* tag-less — it never emits a parseable tag on
+    any turn, including the forced-answer turn. The auto-search therefore makes
+    retrieval run (search_rounds == 1) instead of dead-ending with zero
+    evidence. It does NOT manufacture an answer: with no <answer> tag and only a
+    refusal-style generation, ``final_answer`` stays None (the no-fabricate
+    invariant, see test_forced_turn_emitting_no_answer_returns_none). The
+    feature's honest contract is "retrieval fires at least once", not "produces
+    a non-empty answer" — a capable model that emits <answer> when prompted is
+    covered by test_deadend_forces_answer_from_evidence.
+    """
+    tokenizer = DummyTokenizerWithEncode()
+    # Never emits any recognized tag, on every turn (incl. the forced turn).
+    responses = [tokenizer.encode("I cannot follow the required format.")] * 6
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            # First tag-less turn is the dead-end, so the auto-search fires
+            # immediately rather than after re-prompts.
+            max_consecutive_format_errors=1,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1, min_total_results=1
+            ),
+        ),
+    )
+    loop._search_client = FakeSearchClient(
+        {
+            ("What is FAISS?",): [
+                [SearchResult(contents='"FAISS"\nFacebook AI Similarity Search')],
+            ],
+        }
+    )
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    # Auto-search fired on the user's question despite no <search> tag: retrieval
+    # ran exactly once, evidence was collected, and the event was recorded.
+    assert loop._search_client.calls == [["What is FAISS?"]]
+    assert output.context is not None
+    assert output.context.num_rounds == 1
+    assert output.metrics["search_rounds"] == 1.0
+    assert any(e.action == "auto_search" for e in output.control_flow_trace)
+    # No <answer> tag ever emitted → no fabricated answer.
+    assert output.final_answer is None
+
+
+def test_search_agent_loop_auto_search_disabled_preserves_format_recovery():
+    """With auto_search_on_deadend=False, a tag-less run never triggers search."""
+    tokenizer = DummyTokenizerWithEncode()
+    responses = [tokenizer.encode("just rambling, no tags here")] * 5
+    loop = SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=DummyServerManager(responses),
+        search_config=SearchAgentLoopConfig(
+            max_turns=4,
+            auto_search_on_deadend=False,
+            force_answer_on_deadend=False,
+        ),
+    )
+    loop._search_client = FakeSearchClient({})
+
+    output = asyncio.run(
+        loop.run([{"role": "user", "content": "What is FAISS?"}], {"temperature": 0.0})
+    )
+
+    assert loop._search_client.calls == []  # retrieval never invoked
+    assert output.metrics["search_rounds"] == 0.0
+
+
 def _two_round_plateau_loop(evidence_plateau_min_gain):
     """A 2-round search loop where round 2's evidence equals round 1 (a plateau)."""
     tokenizer = DummyTokenizerWithEncode()
@@ -1550,6 +1625,8 @@ def test_search_agent_loop_stops_after_repeated_no_action_turns():
         search_config=SearchAgentLoopConfig(
             max_turns=5,
             max_consecutive_format_errors=2,
+            # Exercise the legacy format-error stop path, not the auto-search.
+            auto_search_on_deadend=False,
         ),
     )
 
@@ -2301,6 +2378,8 @@ def test_deadend_with_no_evidence_does_not_fabricate():
             max_turns=5,
             max_consecutive_format_errors=2,
             force_answer_on_deadend=True,
+            # Validate the no-evidence dead-end opt-out, not the auto-search.
+            auto_search_on_deadend=False,
         ),
     )
     loop._search_client = FakeSearchClient({})
