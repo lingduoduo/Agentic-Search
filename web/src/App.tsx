@@ -313,7 +313,11 @@ export function App() {
         {error && <div className="error-banner">{error}</div>}
 
         {debugPanels && showConsole && (
-          <DevConsole answer={streamingAnswer || answer} citations={citations} />
+          <DevConsole
+            answer={streamingAnswer || answer}
+            citations={citations}
+            controlFlowTrace={controlFlowTrace}
+          />
         )}
 
         {adminSummary && <AdminOverview summary={adminSummary} />}

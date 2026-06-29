@@ -1707,3 +1707,44 @@ option:disabled,
 .server-health__grounding--warn { color: var(--warning-fg, #92400e); }
 .server-health__grounding--idle { color: var(--muted, #6b7280); }
 .server-health__grounding-detail { color: var(--muted, #6b7280); font-size: 0.78rem; }
+
+/* --- Request Trace waterfall (F6) --- */
+.request-trace { margin-bottom: 1rem; }
+.request-trace__empty { color: var(--muted, #6b7280); font-size: 0.85rem; }
+.request-trace__rows { display: flex; flex-direction: column; gap: 0.25rem; }
+.request-trace__row {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr 60px;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.request-trace__row:hover { background: var(--surface-strong, #f1f5f9); }
+.request-trace__row--selected { background: var(--surface-strong, #e5e7eb); }
+.request-trace__label { font-size: 0.76rem; color: var(--muted, #374151); }
+.request-trace__track {
+  height: 0.7rem;
+  background: var(--border, #f1f5f9);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.request-trace__bar { display: block; height: 100%; background: #2563eb; }
+.request-trace__row--failed .request-trace__bar { background: var(--danger, #b91c1c); }
+.request-trace__row--skipped .request-trace__bar { background: #9ca3af; }
+.request-trace__dur {
+  font-size: 0.72rem; color: var(--muted, #6b7280);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.request-trace__details {
+  margin-top: 0.5rem; padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
+  font-size: 0.78rem;
+}
+.request-trace__detail-key { color: var(--muted, #6b7280); padding-right: 0.75rem; }
