@@ -58,7 +58,38 @@ def test_route_query_uses_llm_classifier_when_available():
     assert llm.calls  # the classifier consulted the LLM
 
 
+def test_route_query_bare_lookup_is_search_and_skips_classifier():
+    # A bare entity/term lookup like "FAISS" is unambiguously a grounded search,
+    # so it must NOT reach the (over-eager) LLM classifier that would otherwise
+    # send it to direct_llm. Deterministic regardless of the LLM reply.
+    llm = _FakeLLM("direct_llm")
+    strategy = route_query(
+        "FAISS", llm=llm, has_local_model=True, explicit_source=False
+    )
+    assert strategy is RouteStrategy.SEARCH_AGENT
+    assert llm.calls == []  # classifier was never consulted
+
+
+def test_route_query_descriptive_phrase_still_uses_classifier():
+    # A multi-word descriptive phrase is NOT a bare lookup → classifier decides.
+    llm = _FakeLLM("agentic_rag")
+    strategy = route_query(
+        "the procurement approval flow",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.AGENTIC_RAG
+    assert llm.calls  # the classifier was consulted
+
+
 # --- _rule_based_route ---
+
+
+def test_rule_based_bare_entity_lookup_routes_to_search_agent():
+    # Short, verb-less term lookups are grounded searches, not chat/direct.
+    assert _rule_based_route("FAISS") is RouteStrategy.SEARCH_AGENT
+    assert _rule_based_route("vector database") is RouteStrategy.SEARCH_AGENT
 
 
 def test_rule_based_tool_verbs_route_to_tool_agent():
