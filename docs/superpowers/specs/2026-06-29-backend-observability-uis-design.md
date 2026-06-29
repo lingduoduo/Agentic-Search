@@ -41,6 +41,25 @@ Inspect the retrieval server's per-mode endpoints.
   - Against `demo.py` (no `/internal/search/*`): shows a clear "endpoint not available (404)" message, not a cryptic parse error.
   - Dense unavailable: `/dense` shows **503 "dense not configured"**; hybrid panel notes it collapsed to sparse-only.
 
+### F1b — Rerank A/B (Retrieval Lab enhancement)
+Reranking is **not** a 5th mode peer to sparse/dense/hybrid/graph — it is a
+post-retrieval reordering stage applied *on top of* a mode (the cross-encoder in
+`RetrievalService`, tagged `{mode}+reranked`). The per-mode endpoints today apply
+only `mmr_rerank` (diversity), never the cross-encoder. So the useful observability
+is **before vs. after on identical candidates**.
+- Internal endpoints gain an optional `rerank: bool` (default false). When true,
+  the endpoint fetches the mode's candidates then applies the env-configured
+  cross-encoder (`build_reranker_from_env()`) and returns `retrieval_mode = "{mode}+reranked"`.
+- The Lab gains a **rerank toggle**; when on, each mode column shows the reranked
+  ordering (and, ideally, a marker on rows whose rank changed).
+- **Acceptance:**
+  - With a reranker configured: `hybrid` with `rerank=true` returns
+    `retrieval_mode = "hybrid+reranked"` and a (possibly) reordered list over the
+    *same* candidate doc_ids.
+  - With **no** reranker configured: the endpoint returns the un-reranked order
+    unchanged (and the mode string makes "no reranker active" visible) rather than
+    erroring — itself a useful signal.
+
 ### F2 — Indexing / Workers Monitor
 Show background-worker health (`light` / `heavy` / `beat` / `monitoring`).
 - Per worker: status, last-run timestamp, queue depth, docs indexed, recent errors.

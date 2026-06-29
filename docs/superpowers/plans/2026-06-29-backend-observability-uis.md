@@ -36,6 +36,31 @@ Inputs (base URL default = configured host, query, `top_k`, `rrf_k`, `mmr_lambda
 
 ---
 
+## Phase 1b — Rerank A/B (F1b)  *(PR-2; builds on the Retrieval Lab)*
+
+Reranking is a post-retrieval stage, surfaced as a before/after toggle — not a new mode.
+
+**T1b.1 — `rerank` param on internal endpoints**
+Add `rerank: bool = False` to the internal search request(s). When true, fetch the
+mode's candidates then apply `build_reranker_from_env()`; return
+`retrieval_mode = "{mode}+reranked"`. No reranker configured → return the
+un-reranked order unchanged (do not error).
+- verify: pytest — `rerank=true` with a stub reranker returns `{mode}+reranked` and
+  reordered ids over the same candidate set; with no reranker, order is unchanged
+  and no 500.
+
+**T1b.2 — Debug proxy passes `rerank` through**
+`/api/debug/retrieval/{mode}` forwards the `rerank` flag.
+- verify: pytest (MockTransport) — flag present in the forwarded body when set.
+
+**T1b.3 — Lab rerank toggle**
+Toggle in `RetrievalLab`; when on, each mode column requests `rerank=true` and shows
+the reranked ordering (mark rows whose rank changed vs. the un-reranked run).
+- verify: vitest — toggling re-requests with `rerank: true`; reranked `retrieval_mode`
+  renders; "no reranker active" state renders when order is unchanged.
+
+---
+
 ## Phase 2 — Server Health Grid + Grounding Debug (F4)  *(small, unblocks "empty answer")*
 
 **T2.1 — `GET /api/debug/health`**
@@ -102,7 +127,7 @@ Carried as decisions to confirm at the top of Phase 1/3:
 If any of these three should flip, say so before Phase 1.
 
 ## Suggested PR slicing
-- PR-1: Phase 0 + Phase 1 (gate + Retrieval Lab) — self-contained, highest value.
-- PR-2: Phase 2 + Phase 3 (health/grounding + workers).
+- PR-1: Phase 0 + Phase 1 (gate + Retrieval Lab) — self-contained, highest value. **(open: #353)**
+- PR-2: Phase 1b + Phase 2 + Phase 3 (rerank A/B + health/grounding + workers).
 - PR-3: Phase 4 + Phase 5 (chat trace + docs/ship).
 Each PR carries its own spec/plan reference per convention.
