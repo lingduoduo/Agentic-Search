@@ -300,7 +300,7 @@ def _register_routers(
     if debug_panels:
         from src.internal.servers.web.debug_router import create_debug_router
 
-        app.include_router(create_debug_router(search_url=search_url, llm=llm))
+        app.include_router(create_debug_router(search_url=search_url, llm=llm, db=db))
 
 
 def _extract_tool_calls_and_docs(output) -> tuple[list, list]:

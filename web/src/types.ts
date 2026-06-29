@@ -303,6 +303,15 @@ export interface ServerHealth {
   status: "up" | "down" | string;
 }
 
+export interface WorkerMetrics {
+  process_memory_mb: number;
+  pending_index_attempts: number;
+  in_progress_index_attempts: number;
+  active_connectors: number;
+  total_documents: number;
+  timestamp: string;
+}
+
 export interface QueryTransformResult {
   original: string;
   variants: string[];

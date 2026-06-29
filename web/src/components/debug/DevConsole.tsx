@@ -3,6 +3,7 @@ import { QueryTransformInspector } from "./QueryTransformInspector";
 import { RequestTracePanel } from "./RequestTracePanel";
 import { RetrievalLab } from "./RetrievalLab";
 import { ServerHealthGrid } from "./ServerHealthGrid";
+import { WorkerMonitor } from "./WorkerMonitor";
 
 interface Props {
   /** Last agent run — feeds the grounding debug ("sources but empty answer"). */
@@ -21,6 +22,7 @@ export function DevConsole({ answer, citations, controlFlowTrace }: Props) {
     <section className="dev-console" aria-label="Dev console">
       <RequestTracePanel events={controlFlowTrace} />
       <ServerHealthGrid answer={answer} citations={citations} />
+      <WorkerMonitor />
       <QueryTransformInspector />
       <RetrievalLab />
     </section>

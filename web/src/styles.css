@@ -1771,3 +1771,17 @@ option:disabled,
 .query-transform__legs, .query-transform__filters {
   font-size: 0.78rem; color: var(--muted, #6b7280);
 }
+
+/* --- Indexing / Workers Monitor (F2) --- */
+.worker-monitor { margin-bottom: 1rem; }
+.worker-monitor__empty { color: var(--muted, #6b7280); font-size: 0.85rem; }
+.worker-monitor__grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem;
+}
+.worker-monitor__card {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.6rem 0.7rem; border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
+}
+.worker-monitor__value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.worker-monitor__label { font-size: 0.72rem; color: var(--muted, #6b7280); }
+.worker-monitor__meta { margin-top: 0.4rem; font-size: 0.72rem; color: var(--muted, #6b7280); }

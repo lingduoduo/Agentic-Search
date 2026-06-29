@@ -42,10 +42,34 @@ def create_debug_router(
     search_url: str,
     http_client: httpx.Client | None = None,
     llm: object | None = None,
+    db: object | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/debug", tags=["debug"])
     base = _retrieval_base(search_url)
     client = http_client or httpx.Client(timeout=15.0)
+
+    @router.get("/workers")
+    def workers() -> dict:
+        """Live indexing-pipeline snapshot (queue depth, docs, connectors).
+
+        Computed on-demand from the store via MonitoringWorker — no persisted
+        snapshots, so it's never stale. Returns ``metrics: null`` when no store is
+        wired; never 500.
+        """
+        if db is None:
+            return {"metrics": None}
+        try:
+            from src.internal.servers.backgroundworker.monitoring_worker import (
+                MonitoringConfig,
+                MonitoringWorker,
+            )
+
+            worker = MonitoringWorker(
+                db, config=MonitoringConfig(cloud_report_url=None)
+            )
+            return {"metrics": worker.run_once().as_dict()}
+        except Exception as exc:  # never break the console on a metrics hiccup
+            return {"metrics": None, "error": str(exc)}
 
     @router.post("/query-transform")
     def query_transform(body: DebugQueryTransformRequest) -> dict:
