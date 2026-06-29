@@ -1748,3 +1748,26 @@ option:disabled,
   font-size: 0.78rem;
 }
 .request-trace__detail-key { color: var(--muted, #6b7280); padding-right: 0.75rem; }
+
+/* --- Query Transform Inspector (F5) --- */
+.query-transform { margin-bottom: 1rem; }
+.query-transform__controls {
+  display: flex; gap: 0.75rem; align-items: flex-end; margin-bottom: 0.5rem;
+}
+.query-transform__controls label {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  font-size: 0.78rem; color: var(--muted, #6b7280); flex: 1;
+}
+.query-transform__controls input {
+  padding: 0.4rem 0.55rem; border: 1px solid var(--border, #e5e7eb); border-radius: 8px;
+}
+.query-transform__inactive {
+  padding: 0.5rem 0.75rem; border-radius: 8px;
+  background: var(--warning-bg, #fef3c7); color: var(--warning-fg, #92400e);
+  font-size: 0.82rem;
+}
+.query-transform__original { font-size: 0.82rem; }
+.query-transform__variants { margin: 0.25rem 0 0.5rem 1rem; font-size: 0.82rem; }
+.query-transform__legs, .query-transform__filters {
+  font-size: 0.78rem; color: var(--muted, #6b7280);
+}

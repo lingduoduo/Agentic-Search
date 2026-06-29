@@ -15,6 +15,7 @@ vi.mock("../../api", () => ({
   getAnalyticsByFlow: vi.fn().mockRejectedValue(new Error()),
   runDebugRetrieval: vi.fn(),
   getServerHealth: vi.fn().mockResolvedValue({ servers: [] }),
+  runQueryTransform: vi.fn(),
 }));
 
 beforeEach(() => vi.clearAllMocks());

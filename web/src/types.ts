@@ -302,3 +302,18 @@ export interface ServerHealth {
   url: string;
   status: "up" | "down" | string;
 }
+
+export interface QueryTransformResult {
+  original: string;
+  variants: string[];
+  merged_filters: Record<string, unknown>;
+  active: boolean;
+  legs: {
+    sub_queries?: string[];
+    multi_query?: string[];
+    rewrite?: string | null;
+    hyde_text?: string | null;
+    step_back?: string | null;
+    keywords?: string[];
+  };
+}

@@ -243,6 +243,7 @@ def _register_routers(
     settings: AppSettings,
     search_url: str,
     debug_panels: bool = False,
+    llm: LLMClient | None = None,
 ) -> None:
     """Attach all API routers and exception handlers to *app*."""
 
@@ -299,7 +300,7 @@ def _register_routers(
     if debug_panels:
         from src.internal.servers.web.debug_router import create_debug_router
 
-        app.include_router(create_debug_router(search_url=search_url))
+        app.include_router(create_debug_router(search_url=search_url, llm=llm))
 
 
 def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
@@ -918,6 +919,7 @@ def create_web_app(
         resolved,
         search_url=settings.search_url,
         debug_panels=settings.debug_panels,
+        llm=llm,
     )
 
     frontend_dist = _frontend_dist_path()

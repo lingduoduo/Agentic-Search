@@ -1,4 +1,5 @@
 import type { ControlFlowEventView } from "../../types";
+import { QueryTransformInspector } from "./QueryTransformInspector";
 import { RequestTracePanel } from "./RequestTracePanel";
 import { RetrievalLab } from "./RetrievalLab";
 import { ServerHealthGrid } from "./ServerHealthGrid";
@@ -20,6 +21,7 @@ export function DevConsole({ answer, citations, controlFlowTrace }: Props) {
     <section className="dev-console" aria-label="Dev console">
       <RequestTracePanel events={controlFlowTrace} />
       <ServerHealthGrid answer={answer} citations={citations} />
+      <QueryTransformInspector />
       <RetrievalLab />
     </section>
   );

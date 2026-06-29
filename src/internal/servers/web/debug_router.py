@@ -11,6 +11,10 @@ import httpx
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 
+from src.internal.retrieval.query_transform_factory import (
+    build_query_transform_pipeline_from_env,
+)
+
 _MODES = {"sparse", "dense", "hybrid", "graph"}
 
 
@@ -23,6 +27,11 @@ class DebugRetrievalRequest(BaseModel):
     rerank: bool = False
 
 
+class DebugQueryTransformRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    filters: dict | None = None
+
+
 def _retrieval_base(search_url: str) -> str:
     """Strip a trailing /retrieve so we can address /internal/search/*."""
     return search_url.rstrip("/").removesuffix("/retrieve").rstrip("/")
@@ -32,10 +41,44 @@ def create_debug_router(
     *,
     search_url: str,
     http_client: httpx.Client | None = None,
+    llm: object | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/debug", tags=["debug"])
     base = _retrieval_base(search_url)
     client = http_client or httpx.Client(timeout=15.0)
+
+    @router.post("/query-transform")
+    def query_transform(body: DebugQueryTransformRequest) -> dict:
+        """Run *only* the query-transform pipeline (no retrieval).
+
+        Returns the variants + merged filters + per-leg breakdown. When no
+        pipeline is configured (no LLM / no QT_* flags) the factory returns None;
+        we report ``active=false`` with the original query unchanged — never 500.
+        """
+        pipe = build_query_transform_pipeline_from_env(llm)
+        if pipe is None:
+            return {
+                "original": body.query,
+                "variants": [body.query],
+                "merged_filters": {},
+                "active": False,
+                "legs": {},
+            }
+        bundle = pipe.transform(body.query, body.filters)
+        return {
+            "original": bundle.original,
+            "variants": bundle.retrieval_variants(),
+            "merged_filters": bundle.merged_filters,
+            "active": True,
+            "legs": {
+                "sub_queries": bundle.sub_queries,
+                "multi_query": bundle.multi_query,
+                "rewrite": bundle.rewrite,
+                "hyde_text": bundle.hyde_text,
+                "step_back": bundle.step_back,
+                "keywords": bundle.keywords,
+            },
+        }
 
     @router.get("/health")
     def health() -> dict:

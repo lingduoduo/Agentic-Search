@@ -21,6 +21,55 @@ def _client(handler) -> TestClient:
     return TestClient(app)
 
 
+class _StubPipeline:
+    def __init__(self, bundle):
+        self._bundle = bundle
+
+    def transform(self, query, filters=None):
+        return self._bundle
+
+
+def test_query_transform_returns_variants_and_filters(monkeypatch):
+    import src.internal.servers.web.debug_router as mod
+    from src.context.query_transform import TransformedQueryBundle
+
+    bundle = TransformedQueryBundle(
+        original="vector db",
+        sub_queries=["what is a vector database", "how do embeddings index"],
+        merged_filters={"year": 2024},
+    )
+    monkeypatch.setattr(
+        mod,
+        "build_query_transform_pipeline_from_env",
+        lambda llm: _StubPipeline(bundle),
+    )
+    client = _client(lambda r: httpx.Response(200, json={}))
+    resp = client.post("/api/debug/query-transform", json={"query": "vector db"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is True
+    assert "what is a vector database" in body["variants"]
+    assert body["merged_filters"] == {"year": 2024}
+    assert body["legs"]["sub_queries"] == [
+        "what is a vector database",
+        "how do embeddings index",
+    ]
+
+
+def test_query_transform_no_pipeline_is_inactive(monkeypatch):
+    import src.internal.servers.web.debug_router as mod
+
+    monkeypatch.setattr(
+        mod, "build_query_transform_pipeline_from_env", lambda llm: None
+    )
+    client = _client(lambda r: httpx.Response(200, json={}))
+    resp = client.post("/api/debug/query-transform", json={"query": "vector db"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is False
+    assert body["variants"] == ["vector db"]
+
+
 def test_health_reports_retrieval_up_and_web_self():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/health"

@@ -8,6 +8,7 @@ import type {
   DebugRetrievalOutcome,
   DebugRetrievalParams,
   DebugRetrievalResponse,
+  QueryTransformResult,
   RetrievalMode,
   ServerHealth,
   ConnectorCreateRequest,
@@ -59,6 +60,14 @@ export async function runDebugRetrieval(
 /** Fetch reachability of the configured backend servers (dev console). */
 export function getServerHealth(): Promise<{ servers: ServerHealth[] }> {
   return requestJson<{ servers: ServerHealth[] }>("/api/debug/health");
+}
+
+/** Run only the query-transform pipeline for a query (dev console). */
+export function runQueryTransform(query: string): Promise<QueryTransformResult> {
+  return requestJson<QueryTransformResult>("/api/debug/query-transform", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
