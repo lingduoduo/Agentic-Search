@@ -27,6 +27,7 @@ def test_vocabulary_build_and_encode_support_sequence_training():
 
 
 def test_pipeline_predict_requires_training():
+    pytest.importorskip("torch")
     pipeline = IntentPipeline()
     try:
         pipeline.predict(["buy", "phone"])
@@ -132,6 +133,7 @@ def test_intent_pipeline_save_and_load_round_trip(tmp_path):
 
 
 def test_intent_pipeline_save_requires_training(tmp_path):
+    pytest.importorskip("torch")
     pipeline = IntentPipeline()
     try:
         pipeline.save(str(tmp_path / "intent.pt"))
