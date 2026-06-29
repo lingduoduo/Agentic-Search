@@ -1,6 +1,8 @@
 # Agent Dispatch Consolidation — Plan
 
-Spec: `docs/superpowers/specs/2026-06-29-dispatch-consolidation-design.md`
+Spec: [2026-06-29-dispatch-consolidation-design.md](../specs/2026-06-29-dispatch-consolidation-design.md)
+Status: shipped (consolidated in PR #347, alongside the router and the
+deterministic auto-search).
 
 **Goal:** One place builds/runs each agent loop; one place assembles the response.
 `_run_auto_routed` and the explicit-mode chain in `app.py` both dispatch through
