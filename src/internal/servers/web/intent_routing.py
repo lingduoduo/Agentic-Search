@@ -99,8 +99,31 @@ _DIRECT_RE = re.compile(
 )
 
 
+def _is_bare_lookup(query: str) -> bool:
+    """True for a short, verb-less term/entity, e.g. "FAISS", "vector database".
+
+    Such a query is unambiguously a grounded lookup, so it routes to
+    SEARCH_AGENT deterministically rather than risking the LLM classifier
+    sending it to direct_llm (ungrounded). Anything carrying a tool, search,
+    generative, conversational, question, or auxiliary-verb signal is excluded —
+    those are handled by the normal cascade / classifier.
+    """
+    q = query.strip()
+    if not q or q.endswith("?"):
+        return False
+    if (
+        _TOOL_RE.search(q)
+        or _SEARCH_RE.search(q)
+        or _DIRECT_RE.search(q)
+        or _CHAT_RE.search(q)
+        or _VERB_RE.search(q)
+    ):
+        return False
+    return len(q.split()) <= 3
+
+
 def _rule_based_route(query: str) -> RouteStrategy:
-    """Heuristic 4-way route. Precedence: tool > search > direct-llm > rag.
+    """Heuristic 4-way route. Precedence: tool > search > direct-llm > lookup > rag.
 
     The default is AGENTIC_RAG: when no signal dominates, a grounded answer is
     safer than an ungrounded one.
@@ -114,20 +137,26 @@ def _rule_based_route(query: str) -> RouteStrategy:
         return RouteStrategy.SEARCH_AGENT
     if _DIRECT_RE.search(q):
         return RouteStrategy.DIRECT_LLM
-    # No dominant signal → grounded RAG (incl. short keyword lookups).
+    # A bare term/entity is a grounded lookup, not chat (e.g. "FAISS").
+    if _is_bare_lookup(q):
+        return RouteStrategy.SEARCH_AGENT
+    # No dominant signal → grounded RAG.
     return RouteStrategy.AGENTIC_RAG
 
 
 _ROUTE_PROMPT = (
     "Classify how to best answer the user's request. Reply with exactly one "
     "label and nothing else:\n"
-    "- direct_llm: answerable from general knowledge, no document lookup "
-    "(e.g. writing, translation, general explanations)\n"
-    "- agentic_rag: needs grounding in the knowledge base with synthesis "
-    "(e.g. summaries, comparisons, how-tos over internal docs)\n"
-    "- search_agent: needs iterative document/web search to gather facts "
-    "(e.g. find/look up specific or current information)\n"
-    "- tool_agent: needs to take an action via a tool or API "
+    "- direct_llm: a self-contained generative or conversational request that "
+    "names no entity to look up (e.g. write a poem, translate this, say hello). "
+    "Do NOT use this for a question about a named tool, product, library, "
+    "person, term, or concept.\n"
+    "- agentic_rag: a descriptive question best answered from the knowledge base "
+    "with synthesis (e.g. summaries, comparisons, how-tos over internal docs)\n"
+    "- search_agent: look up facts about a specific entity/term or current "
+    "information — including a bare keyword or product/library name "
+    "(e.g. 'FAISS', 'vector database benchmarks', find/look up X)\n"
+    "- tool_agent: take an action via a tool or API "
     "(e.g. send, create, schedule, call an API)\n\n"
     "Request: {user_query}\n"
     "Label:"
@@ -174,8 +203,11 @@ def route_query(
 
     Cascade:
       1. An explicit non-default source provider is a search command.
-      2. With an LLM, use the 4-way classifier (rule-based on error).
-      3. Without an LLM, use the rule-based route.
+      2. A bare term/entity lookup (e.g. "FAISS") is a grounded search — decided
+         deterministically so it never reaches the classifier, which tends to
+         over-route such lookups to direct_llm (ungrounded).
+      3. With an LLM, use the 4-way classifier (rule-based on error).
+      4. Without an LLM, use the rule-based route.
 
     ``has_local_model`` is accepted so callers can reason about capability, but
     capability-aware *degradation* happens at dispatch time, not here — this
@@ -183,6 +215,8 @@ def route_query(
     """
     del has_local_model  # dispatch layer handles capability degradation
     if explicit_source:
+        return RouteStrategy.SEARCH_AGENT
+    if _is_bare_lookup(query):
         return RouteStrategy.SEARCH_AGENT
     if llm is not None:
         try:
