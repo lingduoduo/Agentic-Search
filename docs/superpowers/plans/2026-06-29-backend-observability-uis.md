@@ -81,6 +81,16 @@ Aggregate reachability of configured servers (retrieval `/health`, web self, ind
 Health grid; grounding panel reads last agent run → shows grounded? (citations) and answered? (text) → labels "grounded, no answer" vs "answer, ungrounded".
 - verify: vitest — grid renders up/down; grounding view distinguishes the two cases from fixture data.
 
+**T2.3 — LLM-backend status block** *(spec §F4a)*
+Show resolved provider/model (`GEN_AI_*`), mode (server-backed `OpenAIServerManager` vs
+in-process HF + device), and endpoint reachability (`GET {api_base}/v1/models`). Nothing
+configured → "no LLM configured" (the empty-answer reason). `OpenAICompatibleLLM` covers
+OpenAI/Azure/Anthropic-via-compat/Ollama/LiteLLM/vLLM.
+- verify: pytest — resolves provider/model from env; unreachable base → "down" not 500;
+  unset key/base → "no LLM configured".
+- deferred (not this task): docs fix `--vllm_url → --server_url` (README/CLAUDE.md/AGENTS.md/
+  SKILL.md) — real copy-paste bug, parked until vLLM is set up.
+
 ---
 
 ## Phase 3 — Workers Monitor (F2)

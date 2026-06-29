@@ -147,6 +147,35 @@ Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query.
 - Grounding debug: for the last agent run, show whether retrieval grounded (citations present) **and** whether the answer leg produced text — directly explaining the "sources but empty answer" case.
 - **Acceptance:** grid shows up/down per server; grounding view distinguishes "grounded, no answer" from "answer, ungrounded".
 
+#### F4a — LLM-backend status (which model, is it reachable)
+There is currently **no UI for LLM backends** (verified 2026-06-29) — the active
+provider/model and whether it's server-backed vs in-process is invisible, so "which model
+am I actually talking to, and is it up?" is unanswerable from the console. Extend F4's grid
+with an LLM-backend block.
+- **The backends (verified):**
+  - `OpenAICompatibleLLM` (`src/internal/llm/providers.py:102`) — one client for any
+    OpenAI-compatible API: OpenAI, Azure OpenAI, **Anthropic *via compatibility layer*** (not
+    native), Ollama, LiteLLM, vLLM/mlx-lm (OpenAI-compatible; not named in the docstring but
+    supported). Configured via `GEN_AI_MODEL_PROVIDER` / `GEN_AI_MODEL_VERSION` /
+    `GEN_AI_API_KEY` / `GEN_AI_API_BASE` (verified, `app_configs.py:90-93`).
+  - Search-agent serving (`src/model/serving.py`): `OpenAIServerManager` (server-backed,
+    `/v1/completions`) vs **in-process HuggingFace** on CPU/CUDA/MPS, selected by
+    `build_server_manager(...)`.
+- **Surface:** active provider + model id; mode (server-backed vs in-process + device);
+  endpoint reachability (e.g. `GET {api_base}/v1/models` ping); "no LLM configured" when
+  `GEN_AI_API_KEY`/base unset (directly explains empty-answer runs, complementing the
+  grounding debug above).
+- **Acceptance:** block shows the resolved provider/model + mode; unreachable endpoint →
+  "down" (not a 500); nothing configured → "no LLM configured", surfaced as the reason
+  answers come back empty.
+
+> **Related finding — deferred (no vLLM setup yet, per owner):** the CLI server-URL flag is
+> **`--server_url`** (`run_agentic_search.py:619`), but **`--vllm_url`** — which does **not**
+> exist — is referenced in `README.md` (×4), `.claude/CLAUDE.md`, `AGENTS.md`, and
+> `.claude/skills/SKILL.md`. Copy-paste from those docs fails with
+> `unrecognized arguments: --vllm_url`. Fix is a docs find-replace `--vllm_url → --server_url`;
+> deferred until vLLM is actually set up. Not an F4 blocker.
+
 ### F5 — Query Transform Inspector
 Query transform is a **pre-retrieval** stage (the mirror of reranking's post-retrieval
 A/B): `QueryTransformPipeline` turns one input query into N variants + merged filters +
