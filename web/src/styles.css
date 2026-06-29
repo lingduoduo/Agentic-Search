@@ -117,6 +117,7 @@ h3 {
 }
 
 .status-pill,
+.route-pill,
 .count,
 .source-meta span {
   border-radius: 999px;
@@ -128,6 +129,19 @@ h3 {
 .status-pill {
   background: #e3f3ef;
   color: var(--accent-strong);
+}
+
+.route-pill {
+  background: #eef1f6;
+  color: #46506a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: default;
+}
+
+/* A degraded route (its preferred backend was unavailable) reads amber. */
+.route-pill--degraded {
+  background: #fdf0d5;
+  color: #8a5a00;
 }
 
 .icon-button,

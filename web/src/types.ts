@@ -240,6 +240,8 @@ export interface SSEDoneEvent {
   citations: string[];
   documents: SourceDocumentView[];
   intent?: "search" | "chat" | "tool";
+  route?: string | null;
+  route_degraded?: string | null;
   tool_calls?: ToolCallTraceView[];
   control_flow_trace?: ControlFlowEventView[];
 }

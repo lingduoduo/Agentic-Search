@@ -1308,6 +1308,8 @@ def create_web_app(
                         "citations": result.citations,
                         "documents": [d.model_dump() for d in result.documents],
                         "intent": result.intent,
+                        "route": result.hook_metadata.get("route"),
+                        "route_degraded": result.hook_metadata.get("route_degraded"),
                         "tool_calls": [tc.model_dump() for tc in result.tool_calls],
                         "control_flow_trace": [
                             event.model_dump() for event in result.control_flow_trace

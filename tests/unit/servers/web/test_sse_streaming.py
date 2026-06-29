@@ -79,6 +79,32 @@ def test_stream_chat_once_emits_answer_and_done(monkeypatch, tmp_path):
     assert "D1" in done_event["citations"]
 
 
+def test_stream_done_event_includes_route(monkeypatch, tmp_path):
+    """The auto-route done event carries the chosen route + degradation."""
+    from src.internal.servers.web.intent_routing import RouteStrategy
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.DIRECT_LLM,
+    )
+
+    class _LLM:
+        def complete(self, messages, **_):
+            return "parametric answer"
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"), llm=_LLM()
+    )
+    client = TestClient(app)
+
+    resp = client.post("/api/agent/stream", json={"query": "FAISS"})
+    assert resp.status_code == 200
+    done_event = next(e for e in _parse_sse(resp.text) if e["type"] == "done")
+    assert done_event["route"] == "direct_llm"
+    assert done_event["route_degraded"] is None
+    assert done_event["intent"] == "chat"
+
+
 def test_stream_emits_error_event_on_failure(monkeypatch, tmp_path):
     async def bad_answer(question, **kw):
         raise RuntimeError("simulated backend failure")

@@ -1,15 +1,23 @@
-# Spec: Grounding-accurate answer status
+# Spec: Answer-grounding visibility
 
 ## Objective
 
-The web UI's status pill showed **"Grounded"** whenever an answer existed —
-even for parametric answers with **0 citations** (e.g. a bare `direct_llm`
-route). That misrepresents whether the answer is backed by retrieved sources.
-**Make the status reflect actual grounding** so users can trust the label.
+Two related problems made the UI misrepresent *whether and why* an answer was
+grounded:
+
+1. **Status pill** showed "Grounded" for any answer, including parametric
+   answers with **0 citations** (e.g. a bare `direct_llm` route).
+2. **No route visibility** — users couldn't see *which strategy* answered
+   (`direct_llm` / `agentic_rag` / `search_agent` / `tool_agent`) or whether it
+   **degraded**, so an ungrounded answer looked unexplained.
+
+**Make grounding legible:** the status reflects actual grounding, and the UI
+surfaces the chosen route (and any degradation).
 
 User: anyone using the search UI on `:7860`. Success: an answer with citations
-reads "Grounded"; an answer with no citations reads "Answered"; in-flight reads
-"Searching"; errors read "Needs attention"; idle reads "Ready".
+reads "Grounded", without reads "Answered"; loading reads "Searching"; errors
+"Needs attention"; idle "Ready". When an answer arrives, a route chip shows the
+strategy (e.g. "via direct_llm"), with a degraded marker when one fired.
 
 ## Tech Stack
 
@@ -68,11 +76,14 @@ citations present → "Grounded"; citations empty → "Answered".
 
 - [x] `citations.length > 0` → "Grounded"; `=== 0` → "Answered".
 - [x] Loading/error/idle states unchanged.
-- [x] New tests pin both cases; full frontend suite + typecheck green.
-- [x] No backend or contract change.
+- [x] SSE `done` event carries `route` and `route_degraded` (from
+      `result.hook_metadata`); the non-stream response already exposes them.
+- [x] When an answer arrives, the UI shows a route chip ("via <route>"), with a
+      degraded marker when `route_degraded` is set; cleared on new query/session.
+- [x] Tests pin status + route rendering and the `done`-event field; frontend
+      suite + typecheck + backend SSE tests green.
+- [x] No response-contract break (additive `done`-event fields only).
 
 ## Open Questions
 
-- Follow-up (separate PR): surface the chosen `route` / `route_degraded` in the
-  UI so users see *why* an answer was or wasn't grounded. Needs the SSE `done`
-  event to carry `route` (currently only `intent`).
+- None open. Route is surfaced read-only; no per-route UI actions are in scope.
