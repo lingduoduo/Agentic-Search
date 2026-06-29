@@ -80,7 +80,9 @@ async def test_run_agentic_rag_returns_canonical_tuple(monkeypatch):
     assert answer == "synth"
     assert intent == "chat"
     assert citations == ["[D1]"]
-    assert extra == {"rounds_used": 2}
+    # F3: _run_agentic_rag now returns the chat-loop control-flow trace in extra.
+    # The monkeypatched run() ignores the recorder, so the trace is empty here.
+    assert extra == {"rounds_used": 2, "control_flow_trace": []}
 
 
 @pytest.mark.asyncio
