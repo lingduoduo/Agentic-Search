@@ -77,6 +77,31 @@ Visualize `AgenticRAGLoop` (`chat_loop`) stages for a query.
 - Grounding debug: for the last agent run, show whether retrieval grounded (citations present) **and** whether the answer leg produced text — directly explaining the "sources but empty answer" case.
 - **Acceptance:** grid shows up/down per server; grounding view distinguishes "grounded, no answer" from "answer, ungrounded".
 
+### F5 — Query Transform Inspector
+Query transform is a **pre-retrieval** stage (the mirror of reranking's post-retrieval
+A/B): `QueryTransformPipeline` turns one input query into N variants + merged filters +
+a route decision (legs gated by `QT_DECOMPOSE` / `QT_HYDE` / `QT_STEP_BACK` /
+`QT_KEYWORDS` / `QT_MULTI_QUERY` / `QT_CONSTRUCT_FILTERS` / `QT_ROUTER`). The per-mode
+`/internal/search/*` endpoints bypass the pipeline, so this is its own panel, not a Lab
+toggle.
+- `POST /api/debug/query-transform` runs **only** `pipeline.transform(query, filters)`
+  and returns `{ variants, merged_filters, route }` — no retrieval.
+- Panel: enter a raw query, see `raw → [variants]` + merged filters + route target;
+  surface which `QT_*` legs are active.
+- Decompose/HyDE are LLM-backed: with no LLM configured the legs no-op — the panel
+  shows "legs inactive (no LLM)" rather than erroring.
+- **Acceptance:**
+  - With LLM + a multi-leg config: a decomposable query returns >1 variant; the active
+    legs are listed.
+  - With no LLM / pipeline disabled: returns `variants == [query]` and an explicit
+    "no transform active" state, no 500.
+
+> **Related finding (out of scope here):** on the main `/search`, `executed_queries`
+> is hardcoded to `[request.query]` ([server.py:89]) — `service.search()` returns only
+> `(results, mode)` and discards the variants, so the schema's `executed_queries` field
+> never reflects the real transformed queries. F5 reads the pipeline directly and does
+> not depend on fixing this, but the gap is worth a separate change.
+
 **Global gating:** all Console panels are gated behind a `DEBUG_PANELS` flag (backend env + frontend build flag). **Default off in production.**
 
 ---

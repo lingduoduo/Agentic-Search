@@ -98,6 +98,24 @@ Reuse `/api/agent/stream` `progress` events for a `chat_loop` query; render expa
 
 ---
 
+## Phase 4b — Query Transform Inspector (F5)  *(PR-3)*
+
+Pre-retrieval stage; its own panel + endpoint (per-mode endpoints bypass the pipeline).
+
+**T4b.1 — `/api/debug/query-transform` endpoint**
+Build a `QueryTransformPipeline` from env (`build_query_transform_pipeline_from_env`)
+and run **only** `pipeline.transform(query, filters)`; return
+`{ variants, merged_filters, route, active_legs }`. No pipeline / no LLM →
+`variants == [query]` + "no transform active", never 500.
+- verify: pytest — stub pipeline returns >1 variant + filters; disabled pipeline
+  returns `[query]` and the inactive state; no exception when LLM absent.
+
+**T4b.2 — `QueryTransformInspector` panel**
+Raw query input → render `raw → [variants]`, merged filters, route target, active legs.
+- verify: vitest — variants render; "no transform active" state renders; api called with the query.
+
+---
+
 ## Phase 5 — Wire-up, docs, ship
 
 **T5.1 — Console assembly**
@@ -129,5 +147,5 @@ If any of these three should flip, say so before Phase 1.
 ## Suggested PR slicing
 - PR-1: Phase 0 + Phase 1 (gate + Retrieval Lab) — self-contained, highest value. **(open: #353)**
 - PR-2: Phase 1b + Phase 2 + Phase 3 (rerank A/B + health/grounding + workers).
-- PR-3: Phase 4 + Phase 5 (chat trace + docs/ship).
+- PR-3: Phase 4 + Phase 4b + Phase 5 (chat trace + query-transform inspector + docs/ship).
 Each PR carries its own spec/plan reference per convention.
