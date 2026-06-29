@@ -877,6 +877,61 @@ curl -s -X POST http://localhost:7860/api/feedback \
 # → {"ok": true}
 ```
 
+### Request paths & dispatch
+
+Both `POST /api/agent` and `/api/agent/stream` run the same dispatcher
+(`_run_agent_impl`). The optional `mode` field selects the path; **when `mode` is
+omitted (the default, and what the bundled UI always sends) the request goes
+through the 4-way auto-router.** Every path returns the same shape
+`(answer, citations, documents, intent, …)` with `intent ∈ {search, chat, tool}`.
+
+| `mode` | Path / loop | `intent` | Requires |
+|---|---|---|---|
+| _(omitted)_ | auto-router → one of the four below | varies | — |
+| `search_agent` | `SearchAgentLoop` (multi-turn search) | `search` | local model (else `400`) |
+| `tool_agent` | `ToolAgentLoop` (OpenAPI/MCP tools) | `tool`/`search`/`chat` | local model (else `400`) |
+| `chat_loop` | `AgenticRAGLoop` (decompose + HyDE) | `chat` | LLM client |
+| `hybrid_search` | internal + web fan-out, MMR-merged | `search` | — |
+| `search_tool` | raw retrieval, no synthesis | `search` | — |
+
+**Auto-router** (`route_query`, `src/internal/servers/web/intent_routing.py`):
+explicit non-`auto` source → `search_agent`; otherwise an LLM 4-way classifier
+(`classify_route`) when an LLM is present, else a rule-based route. The chosen
+strategy (`direct_llm` / `agentic_rag` / `search_agent` / `tool_agent`) dispatches
+the matching loop and **degrades** when its backend is absent (e.g.
+`search_agent`→hybrid pipeline with no local model; `agentic_rag`→pipeline with no
+LLM). `extra["route"]` / `extra["route_degraded"]` record the decision. The three
+routing axes — strategy, web-vs-internal (`source_provider`), and internal backend
+(the server-side M10 router) — are described in [docs/routing-axes.md](docs/routing-axes.md).
+
+**`source_provider`** (web vs internal corpus): `auto` (default — internal
+`retrieval` ∥ web `serpapi`, merged via MMR), `retrieval`, `serpapi`, `google`,
+`browser`, `all`. The bundled UI sends `source_provider` and `search_url` only in
+dev builds; in production it sends neither, so the backend uses `auto`.
+
+### Web reachability of auto-routed queries (known gap)
+
+Whether an auto-routed UI query actually reaches the **web** is config-dependent
+and currently narrower than the `source_provider=auto` default suggests:
+
+- **With a local model configured** (`SEARCH_AGENT_MODEL`): the auto path runs
+  either `SearchAgentLoop` (search) or `AgenticRAGLoop` (chat) — **both are
+  internal-corpus only**. `AgenticRAGLoop` retrieves only from `retrieval_url`;
+  `SearchAgentLoop`'s web retriever (`web_search_url`) is never wired in the web
+  backend, so `<search retriever="web">` silently degrades to the internal corpus.
+- **The web is reached only via the retrieval-first pipeline**
+  (`_auto_search_pipeline` → `_run_hybrid_search`, `source_provider=auto`), which
+  the auto path uses only as a **degradation** — `search_agent` with no local
+  model, or `agentic_rag` with no LLM — or via explicit `mode=hybrid_search`.
+- Even then, the web leg needs `SERP_API_KEY`/`SERPAPI_API_KEY` (SerpAPI) or a
+  configured `browser_search_url`; without them it returns error docs and the
+  result is effectively internal-only.
+- `direct_llm` performs no retrieval at all.
+
+Net: in the common single-machine setup (local model set, no SerpAPI key), every
+UI query stays on the internal corpus. Routing the multi-turn loop to the web via
+the existing `source_provider` infrastructure is a possible future change.
+
 
 ## Chat & Session API
 
