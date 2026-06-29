@@ -454,6 +454,208 @@ async def _auto_search_pipeline(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+# ---------------------------------------------------------------------------
+# Loop runners — single source of truth for building + running each agent loop.
+# Each returns the canonical (answer, citations, documents, intent, extra) tuple
+# consumed by both _run_auto_routed and the explicit-mode chain. Runners hold no
+# capability policy: degradation lives in _run_auto_routed and the explicit-mode
+# 400 guards live at those call sites.
+# ---------------------------------------------------------------------------
+
+
+def _search_agent_documents(output) -> list[ContextDocument]:
+    """Extract + dedupe documents from a SearchAgentLoop output's turn contexts."""
+    documents: list[ContextDocument] = []
+    if output.context is not None:
+        for sc in output.context.turns:
+            for result in sc.results:
+                documents.append(
+                    ContextDocument.from_search_result(result, index=len(documents) + 1)
+                )
+    return _dedupe_documents(documents)
+
+
+async def _run_search_agent(
+    query: str,
+    *,
+    manager,
+    tokenizer,
+    search_url: str,
+    top_k: int,
+    on_turn=None,
+    on_trace=None,
+) -> tuple:
+    """Run the multi-turn SearchAgentLoop. Assumes a local model is configured."""
+    from src import get_registered_agent_loop, resolve_agent_name
+    from src.agents.search import SearchAgentLoopConfig
+
+    loop_cls = get_registered_agent_loop(resolve_agent_name("search_agent"))
+    loop = loop_cls(
+        tokenizer=tokenizer,
+        server_manager=manager,
+        search_config=SearchAgentLoopConfig(
+            search_url=search_url, topk=top_k, max_turns=3
+        ),
+    )
+    output = await loop.run(
+        [{"role": "user", "content": query}],
+        sampling_params={"temperature": 0.0, "max_tokens": 256},
+        on_turn=on_turn,
+        on_trace=on_trace,
+    )
+    documents = _search_agent_documents(output)
+    extra = {
+        "control_flow_trace": output.control_flow_trace,
+        "num_turns": output.num_turns,
+    }
+    return (
+        output.final_answer or "",
+        [d.citation for d in documents],
+        documents,
+        "search",
+        extra,
+    )
+
+
+async def _run_agentic_rag(
+    query: str,
+    *,
+    llm,
+    search_url: str,
+    top_k: int,
+    history: list,
+) -> tuple:
+    """Run the AgenticRAGLoop (decompose + HyDE). Assumes an LLM is configured."""
+    rag_loop = AgenticRAGLoop(
+        AgenticRAGConfig(max_rounds=3, topk=top_k, retrieval_url=search_url),
+        llm=llm,
+    )
+    rag = await rag_loop.run(query, chat_history=history)
+    return (
+        rag.answer,
+        rag.citations,
+        rag.context.documents,
+        "chat",
+        {"rounds_used": rag.rounds_used},
+    )
+
+
+async def _run_tool_agent(
+    query: str,
+    *,
+    manager,
+    tokenizer,
+    search_url: str,
+    history: list,
+    resolved,
+    on_turn=None,
+    with_search_tool: bool,
+) -> tuple:
+    """Run the ToolAgentLoop. Assumes a local model is configured.
+
+    ``answer`` is ``output.final_answer or ""`` with no fallback applied; the
+    last assistant message is exposed in ``extra["_assistant_fallback"]`` so the
+    auto-route (degrade on empty) and explicit mode (fall back to it) can each
+    apply their own policy. Callers must pop ``_assistant_fallback`` before it
+    reaches the response/metadata.
+    """
+    from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+    from src.tools import build_search_tool, tool_registry
+
+    tools = list(tool_registry.list_tools())
+    if with_search_tool:
+        tools = [build_search_tool(search_url=search_url)] + tools
+    loop = ToolAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=manager,
+        tools=tools,
+        config=ToolAgentLoopConfig(tool_parser_format=resolved.tool_agent_parser),
+    )
+    messages = [{"role": m.role, "content": m.content} for m in history] + [
+        {"role": "user", "content": query}
+    ]
+    output = await loop.run(
+        messages,
+        sampling_params={"temperature": 0.0, "max_tokens": 512},
+        on_turn=on_turn,
+    )
+    tool_calls, documents = _extract_tool_calls_and_docs(output)
+    fallback = next(
+        (
+            m["content"]
+            for m in reversed(output.trajectory_messages)
+            if m.get("role") == "assistant"
+        ),
+        "",
+    )
+    extra = {
+        "tool_calls": tool_calls,
+        "num_turns": output.num_turns,
+        "_assistant_fallback": fallback,
+    }
+    return (
+        output.final_answer or "",
+        [d.citation for d in documents],
+        documents,
+        _infer_intent_from_output(output),
+        extra,
+    )
+
+
+def _finalize_response(
+    db,
+    session_id: str,
+    *,
+    answer: str,
+    citations: list,
+    documents: list,
+    intent: str,
+    hook_metadata: dict,
+    extra: dict,
+    mode: str,
+) -> "AgentExperienceResponse":
+    """Persist the assistant turn and build the response. Single response tail.
+
+    ``extra`` carries loop-specific data on the canonical tuple. ``tool_calls``
+    and ``control_flow_trace`` are response fields (not metadata); everything else
+    in ``extra`` is merged into the persisted metadata and the response's
+    ``hook_metadata``. The private ``_assistant_fallback`` key is dropped.
+    """
+    extra = dict(extra)
+    extra.pop("_assistant_fallback", None)
+    tool_calls = extra.pop("tool_calls", [])
+    raw_trace = extra.pop("control_flow_trace", None)
+    trace_views = (
+        [_control_flow_event_view(event) for event in raw_trace] if raw_trace else []
+    )
+    metadata = {
+        "citations": citations,
+        "document_ids": [d.id for d in documents],
+        "hooks": hook_metadata,
+        "mode": mode,
+        "intent": intent,
+        **extra,
+    }
+    if trace_views:
+        metadata["control_flow_trace"] = [view.model_dump() for view in trace_views]
+    db.add_chat_message(session_id, role="assistant", content=answer, metadata=metadata)
+    messages = [
+        ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
+        for m in db.list_chat_messages(session_id)
+    ]
+    return AgentExperienceResponse(
+        session_id=session_id,
+        answer=answer,
+        citations=citations,
+        documents=[_document_view(d) for d in documents],
+        messages=messages,
+        hook_metadata={**hook_metadata, **extra},
+        intent=intent,
+        tool_calls=tool_calls,
+        control_flow_trace=trace_views,
+    )
+
+
 async def _run_auto_routed(
     query: str,
     *,
@@ -492,39 +694,26 @@ async def _run_auto_routed(
     # ---- TOOL_AGENT: run ToolAgentLoop with the real registered tools ----
     if strategy is RouteStrategy.TOOL_AGENT:
         if has_local_model:
-            from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
-            from src.tools import tool_registry
-
-            loop = ToolAgentLoop(
-                tokenizer=tokenizer,
-                server_manager=manager,
-                tools=tool_registry.list_tools(),
-                config=ToolAgentLoopConfig(
-                    tool_parser_format=resolved.tool_agent_parser
-                ),
-            )
-            output = None
+            result = None
             try:
-                messages = [{"role": m.role, "content": m.content} for m in history] + [
-                    {"role": "user", "content": query}
-                ]
-                output = await loop.run(
-                    messages,
-                    sampling_params={"temperature": 0.0, "max_tokens": 512},
+                result = await _run_tool_agent(
+                    query,
+                    manager=manager,
+                    tokenizer=tokenizer,
+                    search_url=search_url,
+                    history=history,
+                    resolved=resolved,
                     on_turn=on_turn,
+                    with_search_tool=False,
                 )
             except Exception as exc:
                 logger.warning("ToolAgentLoop failed, degrading to RAG: %s", exc)
-            if output is not None and (output.final_answer or "").strip():
-                tool_calls, documents = _extract_tool_calls_and_docs(output)
-                extra["tool_calls"] = tool_calls
-                return (
-                    output.final_answer or "",
-                    [d.citation for d in documents],
-                    documents,
-                    _infer_intent_from_output(output),
-                    extra,
-                )
+            if result is not None:
+                answer, citations, documents, intent, run_extra = result
+                run_extra.pop("_assistant_fallback", None)
+                if answer.strip():
+                    extra.update(run_extra)
+                    return answer, citations, documents, intent, extra
             extra["route_degraded"] = "tool_unavailable"
         else:
             extra["route_degraded"] = "no_local_model"
@@ -533,39 +722,17 @@ async def _run_auto_routed(
     # ---- SEARCH_AGENT: multi-turn SearchAgentLoop (degrade to hybrid pipeline) ----
     if strategy is RouteStrategy.SEARCH_AGENT:
         if has_local_model:
-            from src import get_registered_agent_loop, resolve_agent_name
-            from src.agents.search import SearchAgentLoopConfig
-
-            loop_cls = get_registered_agent_loop(resolve_agent_name("search_agent"))
-            loop = loop_cls(
+            answer, citations, documents, intent, run_extra = await _run_search_agent(
+                query,
+                manager=manager,
                 tokenizer=tokenizer,
-                server_manager=manager,
-                search_config=SearchAgentLoopConfig(
-                    search_url=search_url, topk=top_k, max_turns=3
-                ),
-            )
-            output = await loop.run(
-                [{"role": "user", "content": query}],
-                sampling_params={"temperature": 0.0, "max_tokens": 256},
+                search_url=search_url,
+                top_k=top_k,
                 on_turn=on_turn,
+                on_trace=None,
             )
-            sa_documents: list[ContextDocument] = []
-            if output.context is not None:
-                for sc in output.context.turns:
-                    for result in sc.results:
-                        sa_documents.append(
-                            ContextDocument.from_search_result(
-                                result, index=len(sa_documents) + 1
-                            )
-                        )
-            sa_documents = _dedupe_documents(sa_documents)
-            return (
-                output.final_answer or "",
-                [d.citation for d in sa_documents],
-                sa_documents,
-                "search",
-                extra,
-            )
+            extra.update(run_extra)
+            return answer, citations, documents, intent, extra
         extra.setdefault("route_degraded", "no_local_model")
         return await _auto_search_pipeline(
             query,
@@ -583,19 +750,15 @@ async def _run_auto_routed(
     # ---- AGENTIC_RAG: decompose + HyDE via AgenticRAGLoop (degrade to pipeline) ----
     if strategy is RouteStrategy.AGENTIC_RAG:
         if llm is not None:
-            rag_loop = AgenticRAGLoop(
-                AgenticRAGConfig(max_rounds=3, topk=top_k, retrieval_url=search_url),
+            answer, citations, documents, intent, run_extra = await _run_agentic_rag(
+                query,
                 llm=llm,
+                search_url=search_url,
+                top_k=top_k,
+                history=history,
             )
-            rag = await rag_loop.run(query, chat_history=history)
-            extra["rounds_used"] = rag.rounds_used
-            return (
-                rag.answer,
-                rag.citations,
-                rag.context.documents,
-                "chat",
-                extra,
-            )
+            extra.update(run_extra)
+            return answer, citations, documents, intent, extra
         extra.setdefault("route_degraded", "no_llm")
         return await _auto_search_pipeline(
             query,
@@ -867,13 +1030,7 @@ def create_web_app(
         try:
             if normalized_mode is None:
                 # Auto-routing path
-                (
-                    answer,
-                    citations,
-                    documents,
-                    intent,
-                    extra_meta,
-                ) = await _run_auto_routed(
+                answer, citations, documents, intent, extra = await _run_auto_routed(
                     query,
                     llm=llm,
                     manager=manager,
@@ -888,37 +1045,19 @@ def create_web_app(
                     source_provider=_normalize_source_provider(request.source_provider),
                     on_turn=on_turn,
                 )
-                tool_calls = extra_meta.pop("tool_calls", [])
-                merged_metadata = {**hook_metadata, **extra_meta}
-                db.add_chat_message(
+                return _finalize_response(
+                    db,
                     session_id,
-                    role="assistant",
-                    content=answer,
-                    metadata={
-                        "citations": citations,
-                        "document_ids": [d.id for d in documents],
-                        "hooks": hook_metadata,
-                        "mode": "auto",
-                        "intent": intent,
-                        **extra_meta,
-                    },
-                )
-                messages = [
-                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
-                    for m in db.list_chat_messages(session_id)
-                ]
-                return AgentExperienceResponse(
-                    session_id=session_id,
                     answer=answer,
                     citations=citations,
-                    documents=[_document_view(d) for d in documents],
-                    messages=messages,
-                    hook_metadata=merged_metadata,
+                    documents=documents,
                     intent=intent,
-                    tool_calls=tool_calls,
+                    hook_metadata=hook_metadata,
+                    extra=extra,
+                    mode="auto",
                 )
 
-            # Explicit mode — fall through to existing if/elif chain
+            # Explicit mode — pin the dispatch, then share the runners + tail.
             mode = normalized_mode
 
             if mode == "search_tool":
@@ -937,30 +1076,16 @@ def create_web_app(
                     documents=documents,
                     source_provider=source_provider,
                 )
-                db.add_chat_message(
+                return _finalize_response(
+                    db,
                     session_id,
-                    role="assistant",
-                    content=answer,
-                    metadata={
-                        "citations": [doc.citation for doc in documents],
-                        "document_ids": [doc.id for doc in documents],
-                        "hooks": hook_metadata,
-                        "mode": mode,
-                        "source_provider": source_provider,
-                    },
-                )
-                messages = [
-                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
-                    for m in db.list_chat_messages(session_id)
-                ]
-                return AgentExperienceResponse(
-                    session_id=session_id,
                     answer=answer,
                     citations=[doc.citation for doc in documents],
-                    documents=[_document_view(doc) for doc in documents],
-                    messages=messages,
-                    hook_metadata=hook_metadata,
+                    documents=documents,
                     intent="search",
+                    hook_metadata=hook_metadata,
+                    extra={"source_provider": source_provider},
+                    mode=mode,
                 )
 
             if mode == "hybrid_search":
@@ -981,71 +1106,42 @@ def create_web_app(
                     documents=search_result.documents,
                     source_provider=source_provider,
                 )
-                db.add_chat_message(
+                return _finalize_response(
+                    db,
                     session_id,
-                    role="assistant",
-                    content=answer,
-                    metadata={
-                        "citations": [doc.citation for doc in search_result.documents],
-                        "document_ids": [doc.id for doc in search_result.documents],
-                        "hooks": hook_metadata,
-                        "mode": mode,
+                    answer=answer,
+                    citations=[doc.citation for doc in search_result.documents],
+                    documents=search_result.documents,
+                    intent="search",
+                    hook_metadata=hook_metadata,
+                    extra={
                         "source_provider": source_provider,
                         "executed_queries": search_result.executed_queries,
                     },
-                )
-                messages = [
-                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
-                    for m in db.list_chat_messages(session_id)
-                ]
-                return AgentExperienceResponse(
-                    session_id=session_id,
-                    answer=answer,
-                    citations=[doc.citation for doc in search_result.documents],
-                    documents=[_document_view(doc) for doc in search_result.documents],
-                    messages=messages,
-                    hook_metadata=hook_metadata,
-                    intent="search",
+                    mode=mode,
                 )
 
             if mode == "chat_loop":
-                rag_loop = AgenticRAGLoop(
-                    AgenticRAGConfig(
-                        max_rounds=3, topk=top_k, retrieval_url=search_url
-                    ),
+                answer, citations, documents, intent, extra = await _run_agentic_rag(
+                    query,
                     llm=llm,
+                    search_url=search_url,
+                    top_k=top_k,
+                    history=history,
                 )
-                rag = await rag_loop.run(query, chat_history=history)
-                db.add_chat_message(
+                return _finalize_response(
+                    db,
                     session_id,
-                    role="assistant",
-                    content=rag.answer,
-                    metadata={
-                        "citations": rag.citations,
-                        "document_ids": [doc.id for doc in rag.context.documents],
-                        "hooks": hook_metadata,
-                        "rounds_used": rag.rounds_used,
-                        "mode": mode,
-                    },
-                )
-                messages = [
-                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
-                    for m in db.list_chat_messages(session_id)
-                ]
-                return AgentExperienceResponse(
-                    session_id=session_id,
-                    answer=rag.answer,
-                    citations=rag.citations,
-                    documents=[_document_view(doc) for doc in rag.context.documents],
-                    messages=messages,
+                    answer=answer,
+                    citations=citations,
+                    documents=documents,
+                    intent=intent,
                     hook_metadata=hook_metadata,
-                    intent="chat",
+                    extra=extra,
+                    mode=mode,
                 )
 
             if mode == "search_agent":
-                from src import get_registered_agent_loop, resolve_agent_name
-                from src.agents.search import SearchAgentLoopConfig
-
                 if manager is None or tokenizer is None:
                     raise HTTPException(
                         status_code=400,
@@ -1054,71 +1150,28 @@ def create_web_app(
                             "Set SEARCH_AGENT_MODEL in .env and restart the server."
                         ),
                     )
-                loop_cls = get_registered_agent_loop(resolve_agent_name("search_agent"))
-                loop = loop_cls(
+                answer, citations, documents, intent, extra = await _run_search_agent(
+                    query,
+                    manager=manager,
                     tokenizer=tokenizer,
-                    server_manager=manager,
-                    search_config=SearchAgentLoopConfig(
-                        search_url=search_url,
-                        topk=top_k,
-                        max_turns=3,
-                    ),
-                )
-                output = await loop.run(
-                    [{"role": "user", "content": query}],
-                    sampling_params={"temperature": 0.0, "max_tokens": 256},
+                    search_url=search_url,
+                    top_k=top_k,
                     on_turn=on_turn,
                     on_trace=on_trace,
                 )
-                answer = output.final_answer or ""
-                sa_documents: list[ContextDocument] = []
-                if output.context is not None:
-                    for sc in output.context.turns:
-                        for result in sc.results:
-                            sa_documents.append(
-                                ContextDocument.from_search_result(
-                                    result, index=len(sa_documents) + 1
-                                )
-                            )
-                sa_documents = _dedupe_documents(sa_documents)
-                control_flow_trace = [
-                    _control_flow_event_view(event)
-                    for event in output.control_flow_trace
-                ]
-                trace_payload = [event.model_dump() for event in control_flow_trace]
-                db.add_chat_message(
+                return _finalize_response(
+                    db,
                     session_id,
-                    role="assistant",
-                    content=answer,
-                    metadata={
-                        "citations": [doc.citation for doc in sa_documents],
-                        "document_ids": [doc.id for doc in sa_documents],
-                        "hooks": hook_metadata,
-                        "mode": mode,
-                        "num_turns": output.num_turns,
-                        "control_flow_trace": trace_payload,
-                    },
-                )
-                messages = [
-                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
-                    for m in db.list_chat_messages(session_id)
-                ]
-                return AgentExperienceResponse(
-                    session_id=session_id,
                     answer=answer,
-                    citations=[doc.citation for doc in sa_documents],
-                    documents=[_document_view(doc) for doc in sa_documents],
-                    messages=messages,
+                    citations=citations,
+                    documents=documents,
+                    intent=intent,
                     hook_metadata=hook_metadata,
-                    intent="search",
-                    control_flow_trace=control_flow_trace,
+                    extra=extra,
+                    mode=mode,
                 )
 
             if mode == "tool_agent":
-                from src import get_registered_agent_loop, resolve_agent_name
-                from src.agents.tool_calling import ToolAgentLoopConfig
-                from src.tools import build_search_tool, tool_registry
-
                 if manager is None or tokenizer is None:
                     raise HTTPException(
                         status_code=400,
@@ -1127,53 +1180,29 @@ def create_web_app(
                             "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
                         ),
                     )
-                tools = [
-                    build_search_tool(search_url=search_url)
-                ] + tool_registry.list_tools()
-                loop_cls = get_registered_agent_loop(resolve_agent_name("tool_agent"))
-                loop = loop_cls(
+                answer, citations, documents, intent, extra = await _run_tool_agent(
+                    query,
+                    manager=manager,
                     tokenizer=tokenizer,
-                    server_manager=manager,
-                    tools=tools,
-                    config=ToolAgentLoopConfig(
-                        tool_parser_format=resolved.tool_agent_parser,
-                    ),
-                )
-                output = await loop.run(
-                    [{"role": "user", "content": query}],
-                    sampling_params={"temperature": 0.0, "max_tokens": 512},
+                    search_url=search_url,
+                    history=history,
+                    resolved=resolved,
                     on_turn=on_turn,
+                    with_search_tool=True,
                 )
-                answer = output.final_answer or next(
-                    (
-                        m["content"]
-                        for m in reversed(output.trajectory_messages)
-                        if m.get("role") == "assistant"
-                    ),
-                    "",
-                )
-                db.add_chat_message(
+                # Explicit mode falls back to the last assistant message on an
+                # empty final answer (the auto-route instead degrades to RAG).
+                answer = answer or extra.pop("_assistant_fallback", "")
+                return _finalize_response(
+                    db,
                     session_id,
-                    role="assistant",
-                    content=answer,
-                    metadata={
-                        "mode": mode,
-                        "hooks": hook_metadata,
-                        "num_turns": output.num_turns,
-                    },
-                )
-                messages = [
-                    ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
-                    for m in db.list_chat_messages(session_id)
-                ]
-                return AgentExperienceResponse(
-                    session_id=session_id,
                     answer=answer,
-                    citations=[],
-                    documents=[],
-                    messages=messages,
+                    citations=citations,
+                    documents=documents,
+                    intent=intent,
                     hook_metadata=hook_metadata,
-                    intent="tool",
+                    extra=extra,
+                    mode=mode,
                 )
 
             result = await answer_with_retrieval(
@@ -1195,33 +1224,16 @@ def create_web_app(
             )
             raise HTTPException(status_code=502, detail=detail) from exc
 
-        db.add_chat_message(
+        return _finalize_response(
+            db,
             session_id,
-            role="assistant",
-            content=result.answer,
-            metadata={
-                "citations": result.citations,
-                "document_ids": [document.id for document in result.context.documents],
-                "hooks": hook_metadata,
-                "mode": mode,
-            },
-        )
-        messages = [
-            ChatMessageView(
-                role=message.role, content=message.content, metadata=message.metadata
-            )
-            for message in db.list_chat_messages(session_id)
-        ]
-        return AgentExperienceResponse(
-            session_id=session_id,
             answer=result.answer,
             citations=result.citations,
-            documents=[
-                _document_view(document) for document in result.context.documents
-            ],
-            messages=messages,
-            hook_metadata=hook_metadata,
+            documents=result.context.documents,
             intent="chat",
+            hook_metadata=hook_metadata,
+            extra={},
+            mode=mode,
         )
 
     @app.post("/api/agent")
