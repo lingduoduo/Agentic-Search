@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -125,28 +126,37 @@ class AgenticRAGLoop:
         chat_history: list[ChatMessage] | None = None,
         recorder: "ControlFlowRecorder | None" = None,
     ) -> AgenticRAGResult:
-        def _emit(component: str, action: str, status: str, **details: object) -> None:
+        def _emit(
+            component: str,
+            action: str,
+            status: str,
+            duration_ms: int | None = None,
+            **details: object,
+        ) -> None:
             if recorder is not None:
                 recorder.record(
                     turn=max(rounds_used, 1),
                     component=component,
                     action=action,
                     status=status,
+                    duration_ms=duration_ms,
                     details=details,
                 )
 
-        bundle = self._enhancer.enhance(question)
-        current_queries = bundle.all_queries()
-
-        # Key by content fingerprint so docs from different retrieve_context() calls
-        # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
         accumulated: dict[str, ContextDocument] = {}
         seen_queries: set[str] = set()
         rounds_used = 0
+
+        t0 = time.perf_counter()
+        bundle = self._enhancer.enhance(question)
+        current_queries = bundle.all_queries()
+        # Key by content fingerprint so docs from different retrieve_context() calls
+        # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
         _emit(
             "query_enhancer",
             "enhance",
             "completed",
+            duration_ms=round((time.perf_counter() - t0) * 1000),
             query_count=len(current_queries),
         )
 
@@ -157,6 +167,7 @@ class AgenticRAGLoop:
                 break
             seen_queries.update(novel_queries)
 
+            t_retr = time.perf_counter()
             for q in novel_queries:
                 try:
                     ctx = await retrieve_context(
@@ -170,6 +181,7 @@ class AgenticRAGLoop:
                             accumulated[key] = doc
                 except Exception as exc:
                     logger.warning("Retrieval failed for query %r: %s", q, exc)
+            retr_ms = round((time.perf_counter() - t_retr) * 1000)
 
             # Re-assign stable D1..DN IDs so citations are consistent across rounds.
             stable_docs = [
@@ -188,6 +200,7 @@ class AgenticRAGLoop:
                 "search_tool",
                 "vector_db_search",
                 "completed",
+                duration_ms=retr_ms,
                 query_count=len(novel_queries),
                 document_count=len(stable_docs),
                 search_round=rounds_used,
@@ -196,11 +209,13 @@ class AgenticRAGLoop:
             # On the last round always proceed to synthesis; otherwise check sufficiency.
             is_last = round_idx == self.config.max_rounds - 1
             if not is_last:
+                t_suff = time.perf_counter()
                 sufficient = self._is_sufficient(question, merged)
                 _emit(
                     "evidence_judge",
                     "sufficiency_check",
                     "decided",
+                    duration_ms=round((time.perf_counter() - t_suff) * 1000),
                     sufficient=sufficient,
                     search_round=rounds_used,
                 )
@@ -212,6 +227,7 @@ class AgenticRAGLoop:
                     break
                 current_queries = novel_follow_ups
 
+        t_syn = time.perf_counter()
         gen_result = generate_answer(
             AnswerGenerationRequest(
                 question=question,
@@ -224,6 +240,7 @@ class AgenticRAGLoop:
             "answer_generator",
             "synthesize",
             "completed",
+            duration_ms=round((time.perf_counter() - t_syn) * 1000),
             citation_count=len(gen_result.citations),
             document_count=len(merged.documents),
         )
