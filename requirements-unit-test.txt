@@ -1,8 +1,8 @@
 # Minimal requirements for running unit tests in CI.
 # Excludes heavy ML packages (torch, transformers, faiss, mlx-lm, pyserini)
 # that are mocked in unit tests. Tests needing torch use pytest.importorskip.
-# Cap <0.138: fastapi 0.138.x regresses include_router (mounts no routes).
-fastapi>=0.136.1,<0.138
+# Cap <0.137: fastapi 0.137.x+ regresses include_router (mounts no routes).
+fastapi>=0.136.1,<0.137
 uvicorn>=0.31.1
 python-multipart>=0.0.9
 prometheus-client>=0.20.0
