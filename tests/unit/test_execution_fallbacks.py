@@ -99,7 +99,9 @@ def test_hybrid_search_and_rag_both_fail_returns_502(monkeypatch, tmp_path):
         "src.internal.servers.web.app._run_direct_search",
         AsyncMock(side_effect=ConnectionError("still down")),
     )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=MagicMock()
+    )
     with TestClient(app) as client:
         response = client.post("/api/agent", json={"query": "find doc"})
     assert response.status_code == 502
@@ -124,7 +126,9 @@ def test_rag_fails_falls_back_to_raw_docs(monkeypatch, tmp_path):
         "src.internal.servers.web.app._run_direct_search",
         AsyncMock(return_value=[raw_doc, raw_doc, raw_doc]),
     )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=MagicMock()
+    )
     with TestClient(app) as client:
         response = client.post("/api/agent", json={"query": "find doc"})
     assert response.status_code == 200
@@ -194,7 +198,9 @@ def test_tool_loop_failure_degrades_to_agentic_rag(monkeypatch, tmp_path):
             )
         ),
     )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=MagicMock()
+    )
     with TestClient(app) as client:
         app.state.search_agent_manager = MagicMock()
         app.state.search_agent_tokenizer = MagicMock()
@@ -233,7 +239,9 @@ def test_tool_loop_empty_output_degrades(monkeypatch, tmp_path):
             )
         ),
     )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=MagicMock()
+    )
     with TestClient(app) as client:
         app.state.search_agent_manager = MagicMock()
         app.state.search_agent_tokenizer = MagicMock()

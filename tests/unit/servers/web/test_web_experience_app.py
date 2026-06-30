@@ -589,7 +589,7 @@ def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
 
 def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
     """AGENTIC_RAG route → AgenticRAGLoop (decompose + HyDE), intent='chat'."""
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
     from src.agents.agentic_rag import AgenticRAGResult
     from src.context.models import SearchContextBundle
     from src.internal.servers.web.intent_routing import RouteStrategy
@@ -608,7 +608,9 @@ def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
         "src.internal.servers.web.app.AgenticRAGLoop.run",
         AsyncMock(return_value=fake_result),
     )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=MagicMock()
+    )
     client = TestClient(app)
     response = client.post("/api/agent", json={"query": "explain FAISS"})
     assert response.status_code == 200
