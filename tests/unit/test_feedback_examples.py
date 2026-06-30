@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("torch")
+
 from src.internal.db import AgenticSearchStore
 from src.training.data import PromptTrainingExample, load_feedback_examples
 

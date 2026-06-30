@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from examples.run_grpo_training_pipeline import run_demo as run_grpo_demo
 from examples.run_search_pipeline import AccessPolicy
 from examples.run_search_pipeline import InMemorySearchIndex
@@ -14,6 +16,7 @@ from examples.run_search_pipeline import search_pipeline
 
 
 def test_grpo_training_pipeline_example_runs_without_model_backends():
+    pytest.importorskip("torch")
     result = run_grpo_demo()
 
     assert [round(value, 2) for value in result["rewards"]] == [0.96, 0.64, -0.08]

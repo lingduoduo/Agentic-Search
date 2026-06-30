@@ -1,7 +1,8 @@
 # Minimal requirements for running unit tests in CI.
 # Excludes heavy ML packages (torch, transformers, faiss, mlx-lm, pyserini)
 # that are mocked in unit tests. Tests needing torch use pytest.importorskip.
-fastapi>=0.136.1
+# Cap <0.137: fastapi 0.137.x+ regresses include_router (mounts no routes).
+fastapi>=0.136.1,<0.137
 uvicorn>=0.31.1
 python-multipart>=0.0.9
 prometheus-client>=0.20.0
@@ -13,6 +14,9 @@ httpx2>=0.28.0
 aiohttp==3.9.3
 beautifulsoup4==4.13.4
 numpy==1.26.4
+# scikit-learn powers the lightweight demo/TF-IDF retrieval (servers/retrieval/demo.py)
+# exercised by unit tests — light enough for CI (not one of the mocked heavy ML deps).
+scikit-learn==1.4.2
 redis>=4.0.0
 python-dotenv
 mcp>=1.0.0

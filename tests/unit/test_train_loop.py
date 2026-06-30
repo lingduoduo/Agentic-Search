@@ -11,6 +11,10 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("torch")
+
 from src.training.ppo.train_loop import TrainLoopConfig, train_loop
 
 
