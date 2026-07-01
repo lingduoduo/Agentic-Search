@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -123,6 +124,7 @@ class AgenticRAGConfig:
     topk: int = 5
     retrieval_url: str = "http://localhost:8001/retrieve"
     max_followups_per_round: int = 5
+    sufficiency_timeout_s: float = 5.0
 
 
 @dataclass
@@ -247,7 +249,7 @@ class AgenticRAGLoop:
             is_last = round_idx == self.config.max_rounds - 1
             if not is_last:
                 t_suff = time.perf_counter()
-                sufficient = self._is_sufficient(question, merged)
+                sufficient = await self._is_sufficient(question, merged)
                 _emit(
                     "evidence_judge",
                     "sufficiency_check",
@@ -290,7 +292,7 @@ class AgenticRAGLoop:
             context=merged,
         )
 
-    def _is_sufficient(self, question: str, context: SearchContextBundle) -> bool:
+    async def _is_sufficient(self, question: str, context: SearchContextBundle) -> bool:
         if not context.documents:
             return False
         if self.llm is None:
@@ -300,15 +302,17 @@ class AgenticRAGLoop:
             context=context.to_context_text()[:1500],
         )
         try:
-            raw = (
-                _llm_text(self.llm.complete([ChatMessage(role="user", content=prompt)]))
-                .strip()
-                .lower()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.llm.complete,
+                    [ChatMessage(role="user", content=prompt)],
+                ),
+                timeout=self.config.sufficiency_timeout_s,
             )
-            return raw.startswith("yes")
-        except Exception as exc:
-            logger.warning("Sufficiency check failed: %s", exc)
-            return True  # assume sufficient → stop looping on LLM error
+            return _llm_text(response).strip().lower().startswith("yes")
+        except Exception as exc:  # includes asyncio.TimeoutError
+            logger.warning("Sufficiency check failed or timed out: %s", exc)
+            return True  # fail-open → stop looping on error/timeout
 
     def _generate_followup(
         self, question: str, context: SearchContextBundle

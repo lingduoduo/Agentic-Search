@@ -367,6 +367,24 @@ async def test_follow_ups_capped_per_round():
 
 
 @pytest.mark.asyncio
+async def test_sufficiency_check_times_out_fail_open():
+    import time as _time
+
+    def _slow_complete(messages, **kwargs):
+        _time.sleep(1.0)  # exceeds the tiny timeout
+        return "no"
+
+    llm = MagicMock()
+    llm.complete.side_effect = _slow_complete
+    config = AgenticRAGConfig(sufficiency_timeout_s=0.05)
+    loop = AgenticRAGLoop(config, llm=llm)
+    bundle = _make_bundle(["d1"])
+
+    result = await loop._is_sufficient("q?", bundle)
+    assert result is True  # fail-open on timeout, and returns promptly
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
