@@ -969,3 +969,30 @@ async def test_run_agentic_rag_populates_control_flow_trace():
     components = [e.component for e in trace]
     assert "query_enhancer" in components
     assert "answer_generator" in components
+
+
+def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
+    """A generative ask (former direct_llm) now routes to CHAT → grounded path,
+    and dispatches cleanly even when retrieval yields zero documents."""
+    dispatched = {}
+
+    async def fake_rag(query, **kw):
+        dispatched["query"] = query
+        return "here is a haiku", [], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
+
+    class _LLM:
+        def complete(self, messages, **_):
+            return "chat"  # LLM classifier picks the chat label
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=_LLM()
+    )
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "write a haiku about the sea"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "chat"
+    assert body["documents"] == []  # zero relevant docs, no crash
+    assert dispatched["query"] == "write a haiku about the sea"
