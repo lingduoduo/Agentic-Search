@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 import re
@@ -88,6 +89,12 @@ def _dedupe_novel(queries: list[str], seen: set[str]) -> list[str]:
             seen.add(norm)
             novel.append(q)
     return novel
+
+
+def _doc_key(doc: ContextDocument) -> str:
+    if doc.url:
+        return doc.url.strip().lower()
+    return hashlib.sha256(doc.content.encode("utf-8")).hexdigest()
 
 
 def _parse_gap_queries(raw: str) -> list[str]:
@@ -196,7 +203,7 @@ class AgenticRAGLoop:
                         top_k=self.config.topk,
                     )
                     for doc in ctx.documents:
-                        key = doc.url or doc.content[:120]
+                        key = _doc_key(doc)
                         if key not in accumulated:
                             accumulated[key] = doc
                 except Exception as exc:

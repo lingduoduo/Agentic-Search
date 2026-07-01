@@ -324,6 +324,21 @@ async def test_case_and_whitespace_variants_retrieve_once():
 
 
 @pytest.mark.asyncio
+async def test_url_less_docs_dedup_by_full_content():
+    # first 120 chars identical but full content differs → hash keeps both
+    dup_a = ContextDocument(id="a", title="A", content="X" * 200, score=0.9)
+    near = ContextDocument(id="b", title="B", content="X" * 120 + "Z" * 80, score=0.8)
+    bundle = SearchContextBundle(query="q", documents=[dup_a, near])
+    config = AgenticRAGConfig(max_rounds=1, topk=5)
+    with patch(
+        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+    ):
+        loop = AgenticRAGLoop(config, llm=None)
+        result = await loop.run("q?")
+    assert len(result.context.documents) == 2
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
