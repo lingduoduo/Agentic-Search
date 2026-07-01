@@ -588,7 +588,7 @@ def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
 
 
 def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
-    """AGENTIC_RAG route → AgenticRAGLoop (decompose + HyDE), intent='chat'."""
+    """CHAT route → AgenticRAGLoop (decompose + HyDE), intent='chat'."""
     from unittest.mock import AsyncMock, MagicMock
     from src.agents.agentic_rag import AgenticRAGResult
     from src.context.models import SearchContextBundle
@@ -596,7 +596,7 @@ def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.AGENTIC_RAG,
+        lambda *a, **k: RouteStrategy.CHAT,
     )
     fake_result = AgenticRAGResult(
         answer="Grounded answer [D1]",
@@ -622,7 +622,7 @@ def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
 def test_auto_route_search_degrades_to_hybrid_without_local_model(
     monkeypatch, tmp_path
 ):
-    """SEARCH_AGENT route with no local model → hybrid_search pipeline, intent='search'."""
+    """SEARCH route with no local model → hybrid_search pipeline, intent='search'."""
     called = {}
 
     async def fake_hybrid(
@@ -645,7 +645,7 @@ def test_auto_route_search_degrades_to_hybrid_without_local_model(
 
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.SEARCH_AGENT,
+        lambda *a, **k: RouteStrategy.SEARCH,
     )
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -679,7 +679,7 @@ def test_explicit_mode_still_works(monkeypatch, tmp_path):
 def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
     monkeypatch, tmp_path
 ):
-    """TOOL_AGENT route with a local model → ToolAgentLoop runs with real tools."""
+    """TOOL route with a local model → ToolAgentLoop runs with real tools."""
     from unittest.mock import AsyncMock, MagicMock
     from src.agents.base import AgentLoopOutput
     from src.internal.servers.web.intent_routing import RouteStrategy
@@ -687,7 +687,7 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
 
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+        lambda *a, **k: RouteStrategy.TOOL,
     )
     # A trace that says search_routing_tool was called
     fake_trace = json.dumps(
@@ -716,27 +716,31 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
     assert data["answer"] == "Here are the results."
 
 
-def test_agent_no_llm_no_model_returns_400(monkeypatch, tmp_path):
-    """App with no LLM and no local model → chat query → 400.
+def test_agent_no_llm_chat_degrades_to_pipeline(monkeypatch, tmp_path):
+    """No LLM + CHAT route → _auto_search_pipeline (grounded degradation), not a 400.
 
-    Deterministic regardless of local environment. Two real-world leak paths are
-    closed so ``llm`` is genuinely None: (1) inject empty app_settings so the
-    config loader's GEN_AI key can't set ``resolved.llm.api_key``; (2) set
-    OPENAI_API_KEY="" — python-dotenv won't override an already-present var, so
-    create_web_app's internal .env reload can't repopulate it (delenv alone is
-    insufficient — the reload re-adds it). Synthesis is then forced to fail so the
-    no-LLM 400 branch is exercised even when a retrieval server happens to be up
-    (otherwise extractive retrieval would answer without an LLM → 200).
+    Two real-world leak paths are closed so ``llm`` is genuinely None: (1) inject
+    empty app_settings so the config loader's GEN_AI key can't set
+    ``resolved.llm.api_key``; (2) set OPENAI_API_KEY="" — python-dotenv won't
+    override an already-present var, so create_web_app's internal .env reload
+    can't repopulate it (delenv alone is insufficient — the reload re-adds it).
     """
     from src.internal.configs import AppSettings
     from src.internal.servers.web.intent_routing import RouteStrategy
 
     monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
     monkeypatch.setenv("OPENAI_API_KEY", "")
-    # DIRECT_LLM with neither an LLM client nor a local model → 400.
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.DIRECT_LLM,
+        lambda *a, **k: RouteStrategy.CHAT,
+    )
+
+    async def fake_pipeline(query, **kw):
+        extra = kw.get("extra", {})
+        return "extractive answer", ["[D1]"], [], "chat", extra
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._auto_search_pipeline", fake_pipeline
     )
     app = create_web_app(
         SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"),
@@ -744,8 +748,10 @@ def test_agent_no_llm_no_model_returns_400(monkeypatch, tmp_path):
     )
     client = TestClient(app)
     response = client.post("/api/agent", json={"query": "explain FAISS"})
-    assert response.status_code == 400
-    assert "no llm" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "chat"
+    assert body["answer"] == "extractive answer"
 
 
 def test_agent_tool_mode_without_model_returns_clear_400(tmp_path):
@@ -963,3 +969,30 @@ async def test_run_agentic_rag_populates_control_flow_trace():
     components = [e.component for e in trace]
     assert "query_enhancer" in components
     assert "answer_generator" in components
+
+
+def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
+    """A generative ask (former direct_llm) now routes to CHAT → grounded path,
+    and dispatches cleanly even when retrieval yields zero documents."""
+    dispatched = {}
+
+    async def fake_rag(query, **kw):
+        dispatched["query"] = query
+        return "here is a haiku", [], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
+
+    class _LLM:
+        def complete(self, messages, **_):
+            return "chat"  # LLM classifier picks the chat label
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=_LLM()
+    )
+    client = TestClient(app)
+    response = client.post("/api/agent", json={"query": "write a haiku about the sea"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "chat"
+    assert body["documents"] == []  # zero relevant docs, no crash
+    assert dispatched["query"] == "write a haiku about the sea"

@@ -1,9 +1,9 @@
-"""Tests for mid-execution fallbacks in the 4-way agentic router.
+"""Tests for mid-execution fallbacks in the 3-way agentic router.
 
 The router (`route_query`) picks a strategy; dispatch is capability-aware. The
 retrieval-first fallback chain (hybrid -> RAG -> raw docs -> 502) lives in
-`_auto_search_pipeline`, reached when SEARCH_AGENT has no local model or
-AGENTIC_RAG has no LLM. These tests force a strategy via `route_query` and assert
+`_auto_search_pipeline`, reached when SEARCH has no local model or
+CHAT has no LLM. These tests force a strategy via `route_query` and assert
 the resulting dispatch / fallback behavior.
 """
 
@@ -38,18 +38,18 @@ def _force_route(monkeypatch, strategy: RouteStrategy) -> None:
     )
 
 
-# --- SEARCH_AGENT without a local model degrades to the hybrid pipeline ---
+# --- SEARCH without a local model degrades to the hybrid pipeline ---
 
 
 def test_search_agent_without_model_runs_hybrid_pipeline(monkeypatch, tmp_path):
-    """SEARCH_AGENT + no local model → hybrid pipeline, intent='search'."""
+    """SEARCH + no local model → hybrid pipeline, intent='search'."""
     from src.internal.servers.web.app import _HybridSearchResult
 
     async def fake_hybrid(query, **kwargs):
         doc = ContextDocument(id="D1", title="t", content="c", url=None, score=0.0)
         return _HybridSearchResult(executed_queries=[query], documents=[doc])
 
-    _force_route(monkeypatch, RouteStrategy.SEARCH_AGENT)
+    _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
@@ -63,7 +63,7 @@ def test_search_agent_without_model_runs_hybrid_pipeline(monkeypatch, tmp_path):
 
 def test_hybrid_search_fails_falls_back_to_rag_without_context(monkeypatch, tmp_path):
     """hybrid raises → answer_with_retrieval called with top_k=0, intent='chat'."""
-    _force_route(monkeypatch, RouteStrategy.SEARCH_AGENT)
+    _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_hybrid_search",
         AsyncMock(side_effect=ConnectionError("retrieval down")),
@@ -86,7 +86,7 @@ def test_hybrid_search_fails_falls_back_to_rag_without_context(monkeypatch, tmp_
 
 def test_hybrid_search_and_rag_both_fail_returns_502(monkeypatch, tmp_path):
     """hybrid raises, RAG raises, raw search raises → 502."""
-    _force_route(monkeypatch, RouteStrategy.SEARCH_AGENT)
+    _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_hybrid_search",
         AsyncMock(side_effect=ConnectionError("down")),
@@ -110,7 +110,7 @@ def test_hybrid_search_and_rag_both_fail_returns_502(monkeypatch, tmp_path):
 
 def test_rag_fails_falls_back_to_raw_docs(monkeypatch, tmp_path):
     """hybrid raises, RAG raises, raw search returns docs → 200 with search intent."""
-    _force_route(monkeypatch, RouteStrategy.SEARCH_AGENT)
+    _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_hybrid_search",
         AsyncMock(side_effect=ConnectionError("down")),
@@ -145,7 +145,7 @@ def test_search_unreachable_returns_clear_message(monkeypatch, tmp_path):
             executed_queries=[query], documents=[], status="unreachable"
         )
 
-    _force_route(monkeypatch, RouteStrategy.SEARCH_AGENT)
+    _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
@@ -164,7 +164,7 @@ def test_search_empty_uses_no_results_message(monkeypatch, tmp_path):
             executed_queries=[query], documents=[], status="empty"
         )
 
-    _force_route(monkeypatch, RouteStrategy.SEARCH_AGENT)
+    _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
@@ -175,14 +175,14 @@ def test_search_empty_uses_no_results_message(monkeypatch, tmp_path):
     assert "no results" in data["answer"].lower()
 
 
-# --- TOOL_AGENT degrade ---
+# --- TOOL degrade ---
 
 
 def test_tool_loop_failure_degrades_to_agentic_rag(monkeypatch, tmp_path):
-    """TOOL_AGENT with a model but the loop raises → degrade to AGENTIC_RAG."""
+    """TOOL with a model but the loop raises → degrade to CHAT."""
     from src.agents.agentic_rag import AgenticRAGResult
 
-    _force_route(monkeypatch, RouteStrategy.TOOL_AGENT)
+    _force_route(monkeypatch, RouteStrategy.TOOL)
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",
         AsyncMock(side_effect=RuntimeError("OOM")),
@@ -212,10 +212,10 @@ def test_tool_loop_failure_degrades_to_agentic_rag(monkeypatch, tmp_path):
 
 
 def test_tool_loop_empty_output_degrades(monkeypatch, tmp_path):
-    """TOOL_AGENT loop returns an empty answer → degrade to AGENTIC_RAG."""
+    """TOOL loop returns an empty answer → degrade to CHAT."""
     from src.agents.agentic_rag import AgenticRAGResult
 
-    _force_route(monkeypatch, RouteStrategy.TOOL_AGENT)
+    _force_route(monkeypatch, RouteStrategy.TOOL)
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",
         AsyncMock(
@@ -254,7 +254,7 @@ def test_tool_loop_empty_output_degrades(monkeypatch, tmp_path):
 
 
 def test_explicit_source_forces_search_against_that_provider(monkeypatch, tmp_path):
-    """source_provider='serpapi' → route_query returns SEARCH_AGENT; the chosen
+    """source_provider='serpapi' → route_query returns SEARCH; the chosen
     provider flows through to hybrid search.
     """
     from src.internal.servers.web.app import _HybridSearchResult
@@ -266,7 +266,7 @@ def test_explicit_source_forces_search_against_that_provider(monkeypatch, tmp_pa
         doc = ContextDocument(id="D1", title="t", content="c", url=None, score=0.0)
         return _HybridSearchResult(executed_queries=[query], documents=[doc])
 
-    # No route_query override: explicit_source must drive SEARCH_AGENT on its own.
+    # No route_query override: explicit_source must drive SEARCH on its own.
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:

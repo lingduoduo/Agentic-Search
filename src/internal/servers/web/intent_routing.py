@@ -26,24 +26,13 @@ _VERB_RE = re.compile(
     r"\b(is|are|was|were|do|does|did|have|has|can|could|would|should|will)\b",
     re.IGNORECASE,
 )
-
-
-def _rule_based_is_search(query: str) -> bool:
-    """Return True if the query looks like a search/retrieval intent."""
-    q = query.strip()
-    if not q:
-        return False
-    # Check for explicit chat keywords first
-    if _CHAT_RE.search(q):
-        return False
-    # Check for explicit search keywords
-    if _SEARCH_RE.search(q):
-        return True
-    # Short queries without verbs are treated as search (e.g., "procurement process")
-    tokens = q.split()
-    if len(tokens) <= 5 and not _VERB_RE.search(q) and not q.endswith("?"):
-        return True
-    return False
+# Conversational / generative asks that need no retrieval — used only to keep
+# such queries out of the bare-lookup fast path so they fall through to CHAT.
+_GENERATIVE_RE = re.compile(
+    r"\b(write|translate|rephrase|reword|rewrite|draft|brainstorm|"
+    r"hello|hi there|thanks|joke|poem|haiku)\b",
+    re.IGNORECASE,
+)
 
 
 def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
@@ -70,18 +59,22 @@ def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
 
 
 # ---------------------------------------------------------------------------
-# 4-way agentic routing: pick the strategy, then the web layer dispatches the
-# matching agent loop (direct LLM / agentic RAG / multi-turn search / tool use).
+# 3-way agentic routing: pick the strategy, then the web layer dispatches the
+# matching agent loop (grounded chat / multi-turn search / tool use).
 # ---------------------------------------------------------------------------
 
 
 class RouteStrategy(str, Enum):
-    """High-level agent strategy chosen by the entry-point router."""
+    """High-level agent strategy chosen by the entry-point router.
 
-    DIRECT_LLM = "direct_llm"  # parametric answer, no retrieval
-    AGENTIC_RAG = "agentic_rag"  # query decompose + HyDE + grounded synthesis
-    SEARCH_AGENT = "search_agent"  # multi-turn search until evidence suffices
-    TOOL_AGENT = "tool_agent"  # OpenAPI / MCP function calling
+    Values match the user-facing ``intent`` vocabulary so ``extra["route"]``
+    (the chosen strategy) reads the same as the surfaced ``intent`` (what
+    actually ran after degradation).
+    """
+
+    CHAT = "chat"  # grounded synthesis via AgenticRAGLoop / degraded pipeline
+    SEARCH = "search"  # multi-turn search until evidence suffices
+    TOOL = "tool"  # OpenAPI / MCP function calling
 
 
 # Imperative verbs that imply taking an action through a tool/MCP.
@@ -91,22 +84,16 @@ _TOOL_RE = re.compile(
     r"post to|update the|delete the|add to)\b",
     re.IGNORECASE,
 )
-# Conversational / generative asks that need no retrieval.
-_DIRECT_RE = re.compile(
-    r"\b(write|translate|rephrase|reword|rewrite|draft|brainstorm|"
-    r"hello|hi there|thanks|joke|poem|haiku)\b",
-    re.IGNORECASE,
-)
 
 
 def _is_bare_lookup(query: str) -> bool:
     """True for a short, verb-less term/entity, e.g. "FAISS", "vector database".
 
     Such a query is unambiguously a grounded lookup, so it routes to
-    SEARCH_AGENT deterministically rather than risking the LLM classifier
-    sending it to direct_llm (ungrounded). Anything carrying a tool, search,
-    generative, conversational, question, or auxiliary-verb signal is excluded —
-    those are handled by the normal cascade / classifier.
+    SEARCH deterministically rather than risking the LLM classifier
+    sending it to chat/direct answers (ungrounded). Anything carrying a tool,
+    search, conversational, generative, question, or auxiliary-verb signal is
+    excluded — those are handled by the normal cascade / classifier.
     """
     q = query.strip()
     if not q or q.endswith("?"):
@@ -114,7 +101,7 @@ def _is_bare_lookup(query: str) -> bool:
     if (
         _TOOL_RE.search(q)
         or _SEARCH_RE.search(q)
-        or _DIRECT_RE.search(q)
+        or _GENERATIVE_RE.search(q)
         or _CHAT_RE.search(q)
         or _VERB_RE.search(q)
     ):
@@ -123,40 +110,35 @@ def _is_bare_lookup(query: str) -> bool:
 
 
 def _rule_based_route(query: str) -> RouteStrategy:
-    """Heuristic 4-way route. Precedence: tool > search > direct-llm > lookup > rag.
+    """Heuristic 3-way route. Precedence: tool > search > bare-lookup > chat.
 
-    The default is AGENTIC_RAG: when no signal dominates, a grounded answer is
-    safer than an ungrounded one.
+    The default is CHAT: when no signal dominates, a grounded answer is safer
+    than an ungrounded one.
     """
     q = query.strip()
     if not q:
-        return RouteStrategy.AGENTIC_RAG
+        return RouteStrategy.CHAT
     if _TOOL_RE.search(q):
-        return RouteStrategy.TOOL_AGENT
+        return RouteStrategy.TOOL
     if _SEARCH_RE.search(q):
-        return RouteStrategy.SEARCH_AGENT
-    if _DIRECT_RE.search(q):
-        return RouteStrategy.DIRECT_LLM
+        return RouteStrategy.SEARCH
     # A bare term/entity is a grounded lookup, not chat (e.g. "FAISS").
     if _is_bare_lookup(q):
-        return RouteStrategy.SEARCH_AGENT
-    # No dominant signal → grounded RAG.
-    return RouteStrategy.AGENTIC_RAG
+        return RouteStrategy.SEARCH
+    # No dominant signal → grounded chat.
+    return RouteStrategy.CHAT
 
 
 _ROUTE_PROMPT = (
     "Classify how to best answer the user's request. Reply with exactly one "
     "label and nothing else:\n"
-    "- direct_llm: a self-contained generative or conversational request that "
-    "names no entity to look up (e.g. write a poem, translate this, say hello). "
-    "Do NOT use this for a question about a named tool, product, library, "
-    "person, term, or concept.\n"
-    "- agentic_rag: a descriptive question best answered from the knowledge base "
-    "with synthesis (e.g. summaries, comparisons, how-tos over internal docs)\n"
-    "- search_agent: look up facts about a specific entity/term or current "
+    "- chat: a descriptive or conversational question best answered from the "
+    "knowledge base with synthesis, or a self-contained generative request "
+    "(e.g. summaries, comparisons, how-tos, write a poem, translate this)\n"
+    "- search: look up facts about a specific entity/term or current "
     "information — including a bare keyword or product/library name "
     "(e.g. 'FAISS', 'vector database benchmarks', find/look up X)\n"
-    "- tool_agent: take an action via a tool or API "
+    "- tool: take an action via a tool or API "
     "(e.g. send, create, schedule, call an API)\n\n"
     "Request: {user_query}\n"
     "Label:"
@@ -166,9 +148,9 @@ _LABEL_BY_VALUE = {s.value: s for s in RouteStrategy}
 
 
 def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
-    """LLM-backed 4-way route classification.
+    """LLM-backed 3-way route classification.
 
-    Single completion that returns one label; defaults to AGENTIC_RAG on an
+    Single completion that returns one label; defaults to CHAT on an
     empty or unexpected response (grounded is the safe fallback).
     """
     from src.context.models import ChatMessage
@@ -179,17 +161,16 @@ def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
         (response if isinstance(response, str) else response.content).strip().lower()
     )
     if not content:
-        logger.warning("Route classification empty; defaulting to agentic_rag.")
-        return RouteStrategy.AGENTIC_RAG
+        logger.warning("Route classification empty; defaulting to chat.")
+        return RouteStrategy.CHAT
     for value, strategy in _LABEL_BY_VALUE.items():
-        if value in content:
+        if re.search(rf"\b{value}\b", content):
             return strategy
     logger.warning(
-        "Route classification returned unexpected response %r; defaulting to "
-        "agentic_rag.",
+        "Route classification returned unexpected response %r; defaulting to chat.",
         content,
     )
-    return RouteStrategy.AGENTIC_RAG
+    return RouteStrategy.CHAT
 
 
 def route_query(
@@ -205,8 +186,8 @@ def route_query(
       1. An explicit non-default source provider is a search command.
       2. A bare term/entity lookup (e.g. "FAISS") is a grounded search — decided
          deterministically so it never reaches the classifier, which tends to
-         over-route such lookups to direct_llm (ungrounded).
-      3. With an LLM, use the 4-way classifier (rule-based on error).
+         over-route such lookups to chat/direct answers (ungrounded).
+      3. With an LLM, use the 3-way classifier (rule-based on error).
       4. Without an LLM, use the rule-based route.
 
     ``has_local_model`` is accepted so callers can reason about capability, but
@@ -215,9 +196,9 @@ def route_query(
     """
     del has_local_model  # dispatch layer handles capability degradation
     if explicit_source:
-        return RouteStrategy.SEARCH_AGENT
+        return RouteStrategy.SEARCH
     if _is_bare_lookup(query):
-        return RouteStrategy.SEARCH_AGENT
+        return RouteStrategy.SEARCH
     if llm is not None:
         try:
             return classify_route(query, llm)

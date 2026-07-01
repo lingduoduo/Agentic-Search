@@ -85,22 +85,27 @@ def test_stream_done_event_includes_route(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.DIRECT_LLM,
+        lambda *a, **k: RouteStrategy.CHAT,
     )
+
+    async def fake_rag(query, **kw):
+        return "grounded answer", ["[D1]"], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
 
     class _LLM:
         def complete(self, messages, **_):
-            return "parametric answer"
+            return "unused"
 
     app = create_web_app(
         SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"), llm=_LLM()
     )
     client = TestClient(app)
 
-    resp = client.post("/api/agent/stream", json={"query": "FAISS"})
+    resp = client.post("/api/agent/stream", json={"query": "explain FAISS"})
     assert resp.status_code == 200
     done_event = next(e for e in _parse_sse(resp.text) if e["type"] == "done")
-    assert done_event["route"] == "direct_llm"
+    assert done_event["route"] == "chat"
     assert done_event["route_degraded"] is None
     assert done_event["intent"] == "chat"
 
