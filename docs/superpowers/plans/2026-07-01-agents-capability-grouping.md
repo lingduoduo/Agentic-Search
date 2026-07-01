@@ -30,6 +30,7 @@
 ### Task 4: Update external deep-import sites (~29)
 
 - [ ] Rewrite each site (src/, tests/, examples/) to `from src.agents.<capability> import <symbol>` per the spec's list.
+- [ ] **Also rewrite string-literal path references** — `patch("src.agents.<oldmodule>.X")` targets in tests are NOT import statements and are easy to miss. Grep `src\.agents\.(agentic_rag|tool_calling|plain|single_turn)\.` and rewrite `agentic_rag.` → `search.agentic_rag.`, `tool_calling.` → `tool.tool_calling.`, `plain.`/`single_turn.` → `generation.…`. Leave `src.agents.search.<Class>` strings — they still resolve via the package re-export.
 - [ ] Verify: `grep -rn "from src.agents.\(plain\|single_turn\|search\|tool_calling\|agentic_rag\) import" src tests examples | grep -v "agents/\(generation\|search\|tool\)/"` returns nothing (old module-path imports gone), EXCEPT `from src.agents.search import` lines that now resolve to the package (acceptable — they hit `search/__init__`).
 
 ### Task 5: Verify + commit

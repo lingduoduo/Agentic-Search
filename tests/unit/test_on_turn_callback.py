@@ -3,7 +3,7 @@
 from __future__ import annotations
 import pytest
 from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
 from src.agents.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
 from src.context.search import SearchResult
 from src.tools.parsers import FunctionCall

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.context.models import ContextDocument, SearchContextBundle
-from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop, AgenticRAGResult
+from src.agents.search import AgenticRAGConfig, AgenticRAGLoop, AgenticRAGResult
 
 
 def _make_bundle(doc_ids: list[str], query: str = "q") -> SearchContextBundle:
@@ -43,7 +43,7 @@ async def test_run_returns_result_on_single_round():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("what is FAISS?")
@@ -75,7 +75,7 @@ async def test_run_iterates_when_insufficient():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("what is FAISS?")
@@ -104,7 +104,7 @@ async def test_run_caps_at_max_rounds():
     config = AgenticRAGConfig(max_rounds=2, topk=5)
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("q?")
@@ -123,7 +123,7 @@ async def test_run_no_llm_returns_extractive_answer():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(config, llm=None)
         result = await loop.run("what is content about d1?")
@@ -155,7 +155,7 @@ async def test_accumulates_unique_docs_across_rounds():
         call_count += 1
         return b
 
-    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_retrieve):
+    with patch("src.agents.search.agentic_rag.retrieve_context", side_effect=_retrieve):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("multi-hop question?")
 
@@ -173,7 +173,7 @@ async def test_run_handles_retrieval_error_gracefully():
     config = AgenticRAGConfig(max_rounds=2, topk=5)
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context",
+        "src.agents.search.agentic_rag.retrieve_context",
         AsyncMock(side_effect=RuntimeError("server down")),
     ):
         loop = AgenticRAGLoop(config, llm=None)
@@ -207,7 +207,9 @@ async def test_no_duplicate_retrieval_queries_across_rounds():
         retrieval_calls.append(query)
         return bundle
 
-    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track_retrieve):
+    with patch(
+        "src.agents.search.agentic_rag.retrieve_context", side_effect=_track_retrieve
+    ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("what is FAISS?")
 
@@ -238,7 +240,7 @@ async def test_follow_up_queries_do_not_duplicate_seen_queries():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run(original_question)
@@ -266,7 +268,7 @@ async def test_run_emits_control_flow_events_to_recorder():
     recorder = ControlFlowRecorder("req-1", session_id="sess-1")
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=3, topk=5), llm=llm)
         await loop.run("what is FAISS?", recorder=recorder)
@@ -287,7 +289,7 @@ async def test_run_with_zero_max_rounds_returns_empty_context():
     llm = _llm_responses("sub", "hyde", "broader", "answer")
     config = AgenticRAGConfig(max_rounds=0, topk=5)
     with patch(
-        "src.agents.agentic_rag.retrieve_context",
+        "src.agents.search.agentic_rag.retrieve_context",
         AsyncMock(return_value=_make_bundle(["d1"])),
     ):
         loop = AgenticRAGLoop(config, llm=llm)
@@ -315,7 +317,7 @@ async def test_case_and_whitespace_variants_retrieve_once():
         calls.append(query)
         return bundle
 
-    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track):
+    with patch("src.agents.search.agentic_rag.retrieve_context", side_effect=_track):
         loop = AgenticRAGLoop(config, llm=llm)
         await loop.run("gpt-4 cost?")
 
@@ -331,7 +333,7 @@ async def test_url_less_docs_dedup_by_full_content():
     bundle = SearchContextBundle(query="q", documents=[dup_a, near])
     config = AgenticRAGConfig(max_rounds=1, topk=5)
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(config, llm=None)
         result = await loop.run("q?")
@@ -358,7 +360,7 @@ async def test_follow_ups_capped_per_round():
         calls.append(query)
         return bundle
 
-    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track):
+    with patch("src.agents.search.agentic_rag.retrieve_context", side_effect=_track):
         loop = AgenticRAGLoop(config, llm=llm)
         await loop.run("q?")
 
@@ -389,7 +391,7 @@ async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=3, topk=5), llm=llm)
         result = await loop.run("q")  # no recorder → no crash, same result

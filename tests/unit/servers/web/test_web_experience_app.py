@@ -438,7 +438,7 @@ def test_tool_agent_returns_400_when_not_configured(tmp_path):
 def test_web_registry_modes_map_to_classes():
     from src import get_registered_agent_loop, resolve_agent_name
     from src.agents.search import SearchAgentLoop
-    from src.agents.tool_calling import ToolAgentLoop
+    from src.agents.tool import ToolAgentLoop
 
     assert (
         get_registered_agent_loop(resolve_agent_name("search_agent")) is SearchAgentLoop
@@ -590,7 +590,7 @@ def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
 def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
     """CHAT route → AgenticRAGLoop (decompose + HyDE), intent='chat'."""
     from unittest.mock import AsyncMock, MagicMock
-    from src.agents.agentic_rag import AgenticRAGResult
+    from src.agents.search import AgenticRAGResult
     from src.context.models import SearchContextBundle
     from src.internal.servers.web.intent_routing import RouteStrategy
 
@@ -702,7 +702,7 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
         final_answer="Here are the results.",
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=fake_output),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -953,7 +953,7 @@ async def test_run_agentic_rag_populates_control_flow_trace():
     llm.complete.side_effect = ["sub-q", "hyde text", "broader", "yes", "Answer [D1]."]
 
     with patch(
-        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):
         _, _, _, intent, extra = await _run_agentic_rag(
             "what is faiss",

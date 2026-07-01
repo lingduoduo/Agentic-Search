@@ -180,11 +180,11 @@ def test_search_empty_uses_no_results_message(monkeypatch, tmp_path):
 
 def test_tool_loop_failure_degrades_to_agentic_rag(monkeypatch, tmp_path):
     """TOOL with a model but the loop raises → degrade to CHAT."""
-    from src.agents.agentic_rag import AgenticRAGResult
+    from src.agents.search import AgenticRAGResult
 
     _force_route(monkeypatch, RouteStrategy.TOOL)
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(side_effect=RuntimeError("OOM")),
     )
     monkeypatch.setattr(
@@ -213,11 +213,11 @@ def test_tool_loop_failure_degrades_to_agentic_rag(monkeypatch, tmp_path):
 
 def test_tool_loop_empty_output_degrades(monkeypatch, tmp_path):
     """TOOL loop returns an empty answer → degrade to CHAT."""
-    from src.agents.agentic_rag import AgenticRAGResult
+    from src.agents.search import AgenticRAGResult
 
     _force_route(monkeypatch, RouteStrategy.TOOL)
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(
             return_value=AgentLoopOutput(
                 prompt_ids=[],
