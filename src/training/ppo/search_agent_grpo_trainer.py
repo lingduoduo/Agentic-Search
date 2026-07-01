@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import torch
 import torch.nn as nn
 
-from src.agents.base import AgentLoopBase
+from src.agents.core.base import AgentLoopBase
 from src.training.grpo import (
     GRPOAdvantageConfig,
     score_prompt_group,
@@ -81,11 +81,11 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
 
     Inherits ``compute_loss()`` and ``step()`` from :class:`LLMGRPOTrainer`
     unchanged — only ``rollout()`` is replaced with an async agent-loop version
-    that produces real :class:`~src.agents.base.AgentLoopOutput` objects.
+    that produces real :class:`~src.agents.core.base.AgentLoopOutput` objects.
 
     Args:
         loop_factory: Zero-argument callable that returns a fresh
-            :class:`~src.agents.base.AgentLoopBase` instance per rollout.
+            :class:`~src.agents.core.base.AgentLoopBase` instance per rollout.
             Called ``num_rollouts`` times per prompt group concurrently.
         sampling_params: Default sampling parameters forwarded to
             ``AgentLoopBase.run()``.  Individual rollouts receive per-rollout
@@ -214,7 +214,7 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
         """Run live agent loops for each prompt and assemble an LLMRolloutResult.
 
         Each prompt spawns ``num_rollouts`` concurrent :class:`AgentLoopBase`
-        executions, each producing a real :class:`~src.agents.base.AgentLoopOutput`
+        executions, each producing a real :class:`~src.agents.core.base.AgentLoopOutput`
         with populated ``metrics`` and ``context``.  These are scored by
         ``score_prompt_group`` using the full :class:`SearchRewardFunction`
         signal (citations, search quality, etc.).

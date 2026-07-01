@@ -13,7 +13,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.search import AgenticRAGResult
-from src.agents.base import AgentLoopOutput
+from src.agents.core.base import AgentLoopOutput
 from src.context.models import SearchContextBundle
 from src.context.search import SearchResult
 from src.internal.servers.web import app as web_app

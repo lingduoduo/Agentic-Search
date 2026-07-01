@@ -15,7 +15,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..state import AgentState, Retriever
+from ..core.state import AgentState, Retriever
 
 _SEARCH_RE = re.compile(
     r"<search(?:\s+retriever=\"(?P<retriever>\w+)\")?\s*>(?P<query>.*?)</search>",

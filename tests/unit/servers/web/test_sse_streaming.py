@@ -154,8 +154,8 @@ def test_stream_done_event_contains_documents(monkeypatch, tmp_path):
 def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):
     """When SearchAgentLoop.run fires on_turn, progress SSE events appear before done."""
     from src.agents.search import SearchAgentLoop
-    from src.agents.base import AgentLoopOutput
-    from src.agents.control_flow_trace import ControlFlowEvent
+    from src.agents.core.base import AgentLoopOutput
+    from src.agents.core.control_flow_trace import ControlFlowEvent
 
     event = ControlFlowEvent(
         sequence=1,

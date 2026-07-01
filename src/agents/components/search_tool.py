@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from ...context.search import SearchResult
-from ..state import AgentState, Retriever
+from ..core.state import AgentState, Retriever
 
 logger = logging.getLogger(__name__)
 

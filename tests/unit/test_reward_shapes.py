@@ -180,7 +180,7 @@ class TestCompositeRewardConfig:
 
 class TestSearchRewardConfigNewFields:
     def _make_output(self, answer: str = ""):
-        from src.agents.base import AgentLoopOutput
+        from src.agents.core.base import AgentLoopOutput
 
         return AgentLoopOutput(
             prompt_ids=[0],
@@ -280,7 +280,7 @@ class TestComputeDapoAdvantages:
 
 class TestReinforceBaselineMode:
     def _make_sample(self, answer: str, group_id: str = "g0"):
-        from src.agents.base import AgentLoopOutput
+        from src.agents.core.base import AgentLoopOutput
         from src.training.grpo import GRPORolloutSample
 
         output = AgentLoopOutput(

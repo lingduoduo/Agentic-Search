@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.agents.state import AgentState, Retriever, UserRequest
+from src.agents.core.state import AgentState, Retriever, UserRequest
 from src.context.search import AgentContext, SearchContext, SearchResult
 
 

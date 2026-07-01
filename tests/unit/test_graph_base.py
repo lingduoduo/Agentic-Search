@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.agents.graph_base import (
+from src.agents.core.graph_base import (
     AgentBuildError,
     AgentConfig,
     AgentResult,

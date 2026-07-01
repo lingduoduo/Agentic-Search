@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...context.search import AgentContext
-from ..state import AgentState, Citation
+from ..core.state import AgentState, Citation
 
 
 @dataclass(frozen=True)

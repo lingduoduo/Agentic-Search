@@ -38,9 +38,9 @@ _REWARD_PRESETS = {
 def _build_agent(args: argparse.Namespace):
     """Construct a BaseAgent-compatible agent from CLI arguments."""
 
-    from src.agents.graph_base import BaseAgent, AgentState
+    from src.agents.core.graph_base import BaseAgent, AgentState
     from src.agents.search import SearchAgentLoop
-    from src.agents.base import AgentLoopConfig
+    from src.agents.core.base import AgentLoopConfig
 
     # Inline agent that wraps SearchAgentLoop.run() inside invoke().
     class _SearchAgent(BaseAgent):

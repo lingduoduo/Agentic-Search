@@ -12,7 +12,7 @@ pytest.importorskip("torch")
 import torch
 import torch.nn as nn
 
-from src.agents.base import AgentLoopOutput
+from src.agents.core.base import AgentLoopOutput
 from src.training.ppo.llm_grpo_trainer import LLMGRPOConfig
 from src.training.ppo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
 from src.training.reward import SearchRewardFunction, SearchRewardConfig
