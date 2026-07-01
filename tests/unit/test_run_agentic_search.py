@@ -344,8 +344,8 @@ def test_local_generate_sync_adds_attention_mask_for_greedy_decode():
 def test_cli_mode_resolves_to_registry_class():
     from src import get_registered_agent_loop, resolve_agent_name
     from src.agents.search import SearchAgentLoop
-    from src.agents.tool_calling import ToolAgentLoop
-    from src.agents.plain import PlainGenerationLoop
+    from src.agents.tool import ToolAgentLoop
+    from src.agents.generation import PlainGenerationLoop
 
     assert get_registered_agent_loop(resolve_agent_name("search")) is SearchAgentLoop
     assert get_registered_agent_loop(resolve_agent_name("tool")) is ToolAgentLoop

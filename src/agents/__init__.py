@@ -4,12 +4,12 @@ from .base import AgentLoopOutput as AgentLoopOutput
 from .base import RolloutStep as RolloutStep
 from .base import register as register
 from .base import simple_timer as simple_timer
-from .plain import PlainGenerationLoop as PlainGenerationLoop
-from .plain import PlainGenerationLoopConfig as PlainGenerationLoopConfig
+from .generation import PlainGenerationLoop as PlainGenerationLoop
+from .generation import PlainGenerationLoopConfig as PlainGenerationLoopConfig
+from .generation import SingleTurnAgentLoop as SingleTurnAgentLoop
+from .generation import SingleTurnAgentLoopConfig as SingleTurnAgentLoopConfig
 from .search import SearchAgentLoop as SearchAgentLoop
 from .search import SearchAgentLoopConfig as SearchAgentLoopConfig
-from .single_turn import SingleTurnAgentLoop as SingleTurnAgentLoop
-from .single_turn import SingleTurnAgentLoopConfig as SingleTurnAgentLoopConfig
 from .state import AgentState as AgentState
 from .state import PerformanceMetrics as PerformanceMetrics
 from .state import Plan as Plan
@@ -24,5 +24,5 @@ from .state import ToolExecutionResult as ToolExecutionResult
 from .state import ToolResult as ToolResult
 from .state import ToolType as ToolType
 from .state import UserRequest as UserRequest
-from .tool_calling import ToolAgentLoop as ToolAgentLoop
-from .tool_calling import ToolAgentLoopConfig as ToolAgentLoopConfig
+from .tool import ToolAgentLoop as ToolAgentLoop
+from .tool import ToolAgentLoopConfig as ToolAgentLoopConfig

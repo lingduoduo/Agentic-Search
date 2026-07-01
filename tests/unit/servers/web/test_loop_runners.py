@@ -12,7 +12,7 @@ import types
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.agents.agentic_rag import AgenticRAGResult
+from src.agents.search import AgenticRAGResult
 from src.agents.base import AgentLoopOutput
 from src.context.models import SearchContextBundle
 from src.context.search import SearchResult
@@ -67,7 +67,7 @@ async def test_run_agentic_rag_returns_canonical_tuple(monkeypatch):
         context=SearchContextBundle(query="q", documents=[]),
     )
     monkeypatch.setattr(
-        "src.agents.agentic_rag.AgenticRAGLoop.run",
+        "src.agents.search.agentic_rag.AgenticRAGLoop.run",
         AsyncMock(return_value=result),
     )
     answer, citations, documents, intent, extra = await web_app._run_agentic_rag(
@@ -97,7 +97,7 @@ async def test_run_tool_agent_exposes_assistant_fallback(monkeypatch):
         trajectory_messages=[{"role": "assistant", "content": "fallback text"}],
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=output),
     )
     answer, citations, documents, intent, extra = await web_app._run_tool_agent(

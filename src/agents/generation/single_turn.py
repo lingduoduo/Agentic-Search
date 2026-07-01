@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from .base import (
+from src.agents.base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
@@ -29,8 +29,8 @@ from .base import (
     register,
     simple_timer,
 )
-from ..context.search import AgentContext
-from ..context.retrieval.client import SearchClient, SearchClientConfig
+from src.context.search import AgentContext
+from src.context.retrieval.client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
 logger.setLevel(

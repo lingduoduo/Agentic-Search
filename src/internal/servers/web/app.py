@@ -30,7 +30,7 @@ from src.internal.servers.secondary_llm_flows import expand_keywords
 from src.internal.servers.secondary_llm_flows.query_expansion import (
     with_temporal_context,
 )
-from src.agents.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
+from src.agents.search import AgenticRAGConfig, AgenticRAGLoop
 from src.agents.base import OnTurnCallback
 from src.agents.control_flow_trace import (
     ControlFlowEvent,
@@ -578,7 +578,7 @@ async def _run_tool_agent(
     apply their own policy. Callers must pop ``_assistant_fallback`` before it
     reaches the response/metadata.
     """
-    from src.agents.tool_calling import ToolAgentLoop, ToolAgentLoopConfig
+    from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
     from src.tools import build_search_tool, tool_registry
 
     tools = list(tool_registry.list_tools())

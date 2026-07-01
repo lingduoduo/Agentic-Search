@@ -20,8 +20,8 @@ from .agents.base import list_registered_agent_loops as list_registered_agent_lo
 from .agents.base import register as register
 from .agents.base import resolve_agent_name as resolve_agent_name
 from .agents.base import simple_timer as simple_timer
-from .agents.plain import PlainGenerationLoop as PlainGenerationLoop
-from .agents.plain import PlainGenerationLoopConfig as PlainGenerationLoopConfig
+from .agents.generation import PlainGenerationLoop as PlainGenerationLoop
+from .agents.generation import PlainGenerationLoopConfig as PlainGenerationLoopConfig
 from .agents.search import SearchAgentLoop as SearchAgentLoop
 from .agents.search import SearchAgentLoopConfig as SearchAgentLoopConfig
 from .agents.search import SearchRoundResult as SearchRoundResult
@@ -29,8 +29,8 @@ from .agents.search import SearchToolCall as SearchToolCall
 from .agents.search import (
     build_search_agent_instruction as build_search_agent_instruction,
 )
-from .agents.single_turn import SingleTurnAgentLoop as SingleTurnAgentLoop
-from .agents.single_turn import SingleTurnAgentLoopConfig as SingleTurnAgentLoopConfig
+from .agents.generation import SingleTurnAgentLoop as SingleTurnAgentLoop
+from .agents.generation import SingleTurnAgentLoopConfig as SingleTurnAgentLoopConfig
 from .agents.state import AgentState as AgentState
 from .agents.state import PerformanceMetrics as PerformanceMetrics
 from .agents.state import Plan as Plan
@@ -45,8 +45,8 @@ from .agents.state import ToolExecutionResult as ToolExecutionResult
 from .agents.state import ToolResult as ToolResult
 from .agents.state import ToolType as ToolType
 from .agents.state import UserRequest as UserRequest
-from .agents.tool_calling import ToolAgentLoop as ToolAgentLoop
-from .agents.tool_calling import ToolAgentLoopConfig as ToolAgentLoopConfig
+from .agents.tool import ToolAgentLoop as ToolAgentLoop
+from .agents.tool import ToolAgentLoopConfig as ToolAgentLoopConfig
 from .internal.connectors import BaseConnector as BaseConnector
 from .internal.connectors import CheckpointedConnector as CheckpointedConnector
 from .internal.connectors import (

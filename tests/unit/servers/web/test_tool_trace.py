@@ -60,7 +60,7 @@ def test_tool_calls_populated_from_action_trace(monkeypatch, tmp_path):
         lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=_make_output(trace)),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -82,7 +82,7 @@ def test_latency_computed_from_execution_time(monkeypatch, tmp_path):
         lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=_make_output(trace)),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -105,7 +105,7 @@ def test_list_result_becomes_n_items(monkeypatch, tmp_path):
         lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=_make_output(trace)),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -125,7 +125,7 @@ def test_string_result_truncated_to_200(monkeypatch, tmp_path):
         lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=_make_output(trace)),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -144,7 +144,7 @@ def test_failed_tool_call_error_message(monkeypatch, tmp_path):
         lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
-        "src.agents.tool_calling.ToolAgentLoop.run",
+        "src.agents.tool.tool_calling.ToolAgentLoop.run",
         AsyncMock(return_value=_make_output(trace)),
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))

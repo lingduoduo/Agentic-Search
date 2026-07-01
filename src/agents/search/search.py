@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from .base import (
+from src.agents.base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
@@ -21,20 +21,20 @@ from .base import (
     register,
     simple_timer,
 )
-from ..context.search import AgentContext, SearchContext, SearchResult
-from ..training.evaluation import (
+from src.context.search import AgentContext, SearchContext, SearchResult
+from src.training.evaluation import (
     SearchEvaluationConfig,
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from ..context.retrieval.client import SearchClient, SearchClientConfig
-from .components.answer_generator import AnswerGenerator
-from .components.evidence_judge import EvidenceJudge
-from .components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
-from .components.planner import Planner
-from .components.reranker_tool import RerankFn
-from .control_flow_trace import ControlFlowRecorder, EventSink
-from .state import AgentState, Retriever, UserRequest
+from src.context.retrieval.client import SearchClient, SearchClientConfig
+from src.agents.components.answer_generator import AnswerGenerator
+from src.agents.components.evidence_judge import EvidenceJudge
+from src.agents.components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
+from src.agents.components.planner import Planner
+from src.agents.components.reranker_tool import RerankFn
+from src.agents.control_flow_trace import ControlFlowRecorder, EventSink
+from src.agents.state import AgentState, Retriever, UserRequest
 
 # ---------------------------------------------------------------------------
 # Turn control
@@ -318,7 +318,7 @@ class SearchAgentLoop(AgentLoopBase):
             cfg = replace(cfg, **resolved)
 
         self.search_config = cfg
-        from .components.loop_controller import LoopController
+        from src.agents.components.loop_controller import LoopController
 
         self._loop_controller = LoopController(cfg)
         self._result_evaluator = SearchResultEvaluator(cfg.evaluation_config)

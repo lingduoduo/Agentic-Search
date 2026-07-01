@@ -3091,7 +3091,7 @@ class LLMGenerationManager:
         ``response_mask`` / ``old_log_probs`` alignment for policy-gradient updates.
 
         Contrast with the one-shot retrieval path in
-        ``src/agents/single_turn.py``:
+        ``src/agents/generation/single_turn.py``:
 
         +-----------------------------+----------------------------------------+
         | ``SingleTurnAgentLoop``     | ``LLMGenerationManager.run_llm_loop``  |
