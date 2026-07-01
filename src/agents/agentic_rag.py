@@ -199,6 +199,9 @@ class AgenticRAGLoop:
             # current_queries is already deduped+recorded into seen_queries when
             # it originates from the follow-up branch below; only the initial
             # enhance() batch (round_idx == 0) still needs deduping here.
+            # INVARIANT: every in-loop assignment to current_queries must route
+            # through _dedupe_novel (see the follow-up branch), or round 2+ would
+            # retrieve un-deduped queries.
             if round_idx == 0:
                 novel_queries = _dedupe_novel(current_queries, seen_queries)
             else:
