@@ -486,7 +486,7 @@ Rewrite `_is_sufficient` as async with a bounded off-thread call:
                 timeout=self.config.sufficiency_timeout_s,
             )
             return _llm_text(response).strip().lower().startswith("yes")
-        except (asyncio.TimeoutError, Exception) as exc:
+        except Exception as exc:  # includes asyncio.TimeoutError
             logger.warning("Sufficiency check failed or timed out: %s", exc)
             return True  # fail-open → stop looping on error/timeout
 ```
@@ -540,3 +540,5 @@ Ensure the spec ([docs/superpowers/specs/2026-07-01-agentic-rag-loop-optimizatio
 **Type consistency:** `_norm_query`, `_dedupe_novel`, `_doc_key` signatures match between definition (Tasks 2–3) and use (Tasks 2–4). `sufficiency_timeout_s` / `max_followups_per_round` field names consistent across Tasks 4 and 6. `_is_sufficient` async + awaited at its single call site.
 
 **Note on cap + dedup interaction (Task 4):** `_dedupe_novel` marks all follow-ups as seen before truncation, so follow-ups beyond the cap are dropped permanently (not retried later). This is acceptable for cost control and consistent with the spec's intent.
+
+**Deviation applied during execution (Task 2 + Task 4):** Because `_dedupe_novel` records queries into `seen_queries` as a side effect, calling it at the round-top on follow-up queries that the follow-up branch already deduped-and-marked would find them all already `seen` and return an empty list — silently killing all round-2+ follow-up retrieval. Fix: only run the round-top `_dedupe_novel` on the initial `enhance()` batch (`round_idx == 0`); for later rounds `current_queries` already comes deduped from the follow-up branch and is used as-is. This is covered by `test_follow_ups_capped_per_round` (which fails without the fix).
