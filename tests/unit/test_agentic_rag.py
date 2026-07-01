@@ -283,6 +283,21 @@ async def test_run_emits_control_flow_events_to_recorder():
 
 
 @pytest.mark.asyncio
+async def test_run_with_zero_max_rounds_returns_empty_context():
+    llm = _llm_responses("sub", "hyde", "broader", "answer")
+    config = AgenticRAGConfig(max_rounds=0, topk=5)
+    with patch(
+        "src.agents.agentic_rag.retrieve_context",
+        AsyncMock(return_value=_make_bundle(["d1"])),
+    ):
+        loop = AgenticRAGLoop(config, llm=llm)
+        result = await loop.run("q?")
+    assert isinstance(result, AgenticRAGResult)
+    assert result.rounds_used == 0
+    assert result.context.documents == []
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")

@@ -160,6 +160,8 @@ class AgenticRAGLoop:
             query_count=len(current_queries),
         )
 
+        merged = SearchContextBundle(query=question, documents=[])
+
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
             novel_queries = [q for q in current_queries if q not in seen_queries]
