@@ -57,7 +57,7 @@ def test_tool_calls_populated_from_action_trace(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+        lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",
@@ -79,7 +79,7 @@ def test_latency_computed_from_execution_time(monkeypatch, tmp_path):
     trace = _trace_line("my_tool", "TaskStatus.COMPLETED", "ok", execution_time=0.456)
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+        lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",
@@ -102,7 +102,7 @@ def test_list_result_becomes_n_items(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+        lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",
@@ -122,7 +122,7 @@ def test_string_result_truncated_to_200(monkeypatch, tmp_path):
     trace = _trace_line("my_tool", "TaskStatus.COMPLETED", long_result)
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+        lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",
@@ -141,7 +141,7 @@ def test_failed_tool_call_error_message(monkeypatch, tmp_path):
     trace = _trace_line("bad_tool", "TaskStatus.FAILED", None, error_message="timeout")
     monkeypatch.setattr(
         "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL_AGENT,
+        lambda *a, **k: RouteStrategy.TOOL,
     )
     monkeypatch.setattr(
         "src.agents.tool_calling.ToolAgentLoop.run",

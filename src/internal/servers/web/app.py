@@ -691,10 +691,10 @@ async def _run_auto_routed(
     source_provider: str = "retrieval",
     on_turn=None,
 ) -> tuple:
-    """4-way agentic routing. Returns (answer, citations, documents, intent, extra).
+    """3-way agentic routing. Returns (answer, citations, documents, intent, extra).
 
-    `route_query` picks one of {direct_llm, agentic_rag, search_agent, tool_agent};
-    dispatch is capability-aware and degrades gracefully when a required backend
+    `route_query` picks one of {chat, search, tool}; dispatch is
+    capability-aware and degrades gracefully when a required backend
     (local model vs LLM client) is unavailable. `extra["route"]` records the
     chosen strategy and `extra["route_degraded"]` records any degradation.
     """
@@ -710,8 +710,8 @@ async def _run_auto_routed(
     )
     extra["route"] = strategy.value
 
-    # ---- TOOL_AGENT: run ToolAgentLoop with the real registered tools ----
-    if strategy is RouteStrategy.TOOL_AGENT:
+    # ---- TOOL: run ToolAgentLoop with the real registered tools ----
+    if strategy is RouteStrategy.TOOL:
         if has_local_model:
             result = None
             try:
@@ -736,10 +736,10 @@ async def _run_auto_routed(
             extra["route_degraded"] = "tool_unavailable"
         else:
             extra["route_degraded"] = "no_local_model"
-        strategy = RouteStrategy.AGENTIC_RAG
+        strategy = RouteStrategy.CHAT
 
-    # ---- SEARCH_AGENT: multi-turn SearchAgentLoop (degrade to hybrid pipeline) ----
-    if strategy is RouteStrategy.SEARCH_AGENT:
+    # ---- SEARCH: multi-turn SearchAgentLoop (degrade to hybrid pipeline) ----
+    if strategy is RouteStrategy.SEARCH:
         if has_local_model:
             answer, citations, documents, intent, run_extra = await _run_search_agent(
                 query,
@@ -766,8 +766,8 @@ async def _run_auto_routed(
             extra=extra,
         )
 
-    # ---- AGENTIC_RAG: decompose + HyDE via AgenticRAGLoop (degrade to pipeline) ----
-    if strategy is RouteStrategy.AGENTIC_RAG:
+    # ---- CHAT: grounded synthesis via AgenticRAGLoop (degrade to pipeline) ----
+    if strategy is RouteStrategy.CHAT:
         if llm is not None:
             answer, citations, documents, intent, run_extra = await _run_agentic_rag(
                 query,
@@ -791,30 +791,6 @@ async def _run_auto_routed(
             source_provider=source_provider,
             extra=extra,
         )
-
-    # ---- DIRECT_LLM: parametric answer, no retrieval ----
-    if llm is not None:
-        messages = [ChatMessage(role=m.role, content=m.content) for m in history] + [
-            ChatMessage(role="user", content=query)
-        ]
-        response = await asyncio.to_thread(llm.complete, messages)
-        answer = response if isinstance(response, str) else response.content
-        return answer, [], [], "chat", extra
-    if has_local_model:
-        from src import get_registered_agent_loop, resolve_agent_name
-
-        loop_cls = get_registered_agent_loop(resolve_agent_name("plain_generation"))
-        loop = loop_cls(tokenizer=tokenizer, server_manager=manager)
-        output = await loop.run(
-            [{"role": "user", "content": query}],
-            sampling_params={"temperature": 0.0, "max_tokens": 512},
-            on_turn=on_turn,
-        )
-        return output.final_answer or "", [], [], "chat", extra
-    raise HTTPException(
-        status_code=400,
-        detail="No LLM configured. Set OPENAI_API_KEY or equivalent in .env.",
-    )
 
 
 def create_web_app(

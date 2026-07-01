@@ -32,29 +32,29 @@ def test_explicit_source_routes_to_search_agent():
         has_local_model=True,
         explicit_source=True,
     )
-    assert strategy is RouteStrategy.SEARCH_AGENT
+    assert strategy is RouteStrategy.SEARCH
 
 
 def test_route_query_without_llm_uses_rule_based():
-    # No LLM → rule-based route; a search verb yields SEARCH_AGENT.
+    # No LLM → rule-based route; a search verb yields SEARCH.
     strategy = route_query(
         "find the latest pricing sheet",
         llm=None,
         has_local_model=False,
         explicit_source=False,
     )
-    assert strategy is RouteStrategy.SEARCH_AGENT
+    assert strategy is RouteStrategy.SEARCH
 
 
 def test_route_query_uses_llm_classifier_when_available():
-    llm = _FakeLLM("tool_agent")
+    llm = _FakeLLM("tool")
     strategy = route_query(
         "create a Jira ticket for the outage",
         llm=llm,
         has_local_model=True,
         explicit_source=False,
     )
-    assert strategy is RouteStrategy.TOOL_AGENT
+    assert strategy is RouteStrategy.TOOL
     assert llm.calls  # the classifier consulted the LLM
 
 
@@ -66,56 +66,48 @@ def test_route_query_bare_lookup_is_search_and_skips_classifier():
     strategy = route_query(
         "FAISS", llm=llm, has_local_model=True, explicit_source=False
     )
-    assert strategy is RouteStrategy.SEARCH_AGENT
+    assert strategy is RouteStrategy.SEARCH
     assert llm.calls == []  # classifier was never consulted
 
 
 def test_route_query_descriptive_phrase_still_uses_classifier():
     # A multi-word descriptive phrase is NOT a bare lookup → classifier decides.
-    llm = _FakeLLM("agentic_rag")
+    llm = _FakeLLM("chat")
     strategy = route_query(
         "the procurement approval flow",
         llm=llm,
         has_local_model=True,
         explicit_source=False,
     )
-    assert strategy is RouteStrategy.AGENTIC_RAG
+    assert strategy is RouteStrategy.CHAT
     assert llm.calls  # the classifier was consulted
 
 
 # --- _rule_based_route ---
 
 
-def test_rule_based_bare_entity_lookup_routes_to_search_agent():
-    # Short, verb-less term lookups are grounded searches, not chat/direct.
-    assert _rule_based_route("FAISS") is RouteStrategy.SEARCH_AGENT
-    assert _rule_based_route("vector database") is RouteStrategy.SEARCH_AGENT
+def test_rule_based_bare_lookup_routes_to_search():
+    assert _rule_based_route("FAISS") is RouteStrategy.SEARCH
+    assert _rule_based_route("vector database") is RouteStrategy.SEARCH
 
 
-def test_rule_based_tool_verbs_route_to_tool_agent():
-    assert _rule_based_route("send an email to the team") is RouteStrategy.TOOL_AGENT
-    assert _rule_based_route("create a ticket for this bug") is RouteStrategy.TOOL_AGENT
+def test_rule_based_action_routes_to_tool():
+    assert _rule_based_route("send an email to the team") is RouteStrategy.TOOL
+    assert _rule_based_route("create a ticket for this bug") is RouteStrategy.TOOL
 
 
-def test_rule_based_search_verbs_route_to_search_agent():
-    assert _rule_based_route("find the Q3 revenue report") is RouteStrategy.SEARCH_AGENT
-    assert _rule_based_route("look up the latest release notes") is (
-        RouteStrategy.SEARCH_AGENT
-    )
+def test_rule_based_search_verb_routes_to_search():
+    assert _rule_based_route("find the Q3 revenue report") is RouteStrategy.SEARCH
+    assert _rule_based_route("look up the latest release notes") is RouteStrategy.SEARCH
 
 
-def test_rule_based_conversational_routes_to_direct_llm():
-    assert _rule_based_route("write a haiku about the sea") is RouteStrategy.DIRECT_LLM
-    assert _rule_based_route("translate this sentence to French") is (
-        RouteStrategy.DIRECT_LLM
-    )
+def test_rule_based_generative_routes_to_chat():
+    assert _rule_based_route("write a haiku about the sea") is RouteStrategy.CHAT
+    assert _rule_based_route("translate this sentence to French") is RouteStrategy.CHAT
 
 
-def test_rule_based_ambiguous_defaults_to_agentic_rag():
-    # No strong signal → grounded RAG is the safe default.
-    assert _rule_based_route("the procurement approval flow") is (
-        RouteStrategy.AGENTIC_RAG
-    )
+def test_rule_based_default_no_signal_routes_to_chat():
+    assert _rule_based_route("the procurement approval flow") is RouteStrategy.CHAT
 
 
 # --- classify_route ---
@@ -123,14 +115,13 @@ def test_rule_based_ambiguous_defaults_to_agentic_rag():
 
 def test_classify_route_parses_each_label():
     for label, expected in [
-        ("direct_llm", RouteStrategy.DIRECT_LLM),
-        ("agentic_rag", RouteStrategy.AGENTIC_RAG),
-        ("search_agent", RouteStrategy.SEARCH_AGENT),
-        ("tool_agent", RouteStrategy.TOOL_AGENT),
+        ("chat", RouteStrategy.CHAT),
+        ("search", RouteStrategy.SEARCH),
+        ("tool", RouteStrategy.TOOL),
     ]:
         assert classify_route("q", _FakeLLM(label)) is expected
 
 
-def test_classify_route_defaults_to_agentic_rag_on_garbage():
-    assert classify_route("q", _FakeLLM("nonsense reply")) is RouteStrategy.AGENTIC_RAG
-    assert classify_route("q", _FakeLLM("")) is RouteStrategy.AGENTIC_RAG
+def test_classify_route_defaults_to_chat_on_garbage():
+    assert classify_route("q", _FakeLLM("nonsense reply")) is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM("")) is RouteStrategy.CHAT
