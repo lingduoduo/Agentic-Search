@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from src.agents.base import (
+from src.agents.core.base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
@@ -52,7 +52,7 @@ from src.agents.base import (
 )
 from src.tools.base import Tool
 from src.tools.parsers import FunctionCall, ToolParser
-from src.agents.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
+from src.agents.core.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ...context.search import SearchResult
-from ..state import AgentState
+from ..core.state import AgentState
 
 RerankFn = Callable[[str, list[SearchResult]], list[SearchResult]]
 

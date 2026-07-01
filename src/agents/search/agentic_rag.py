@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.agents.control_flow_trace import ControlFlowRecorder
+    from src.agents.core.control_flow_trace import ControlFlowRecorder
 
 from src.context.models import (
     AnswerGenerationRequest,

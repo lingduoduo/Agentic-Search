@@ -7,7 +7,7 @@ contains-match, and (optionally) shaped GRPO reward metrics.
 
 Quick start::
 
-    from src.agents.graph_base import BaseAgent          # your subclass
+    from src.agents.core.graph_base import BaseAgent          # your subclass
     from src.training.eval.bamboogle import evaluate_bamboogle
     from src.training.reward import SearchRewardFunction, SearchRewardConfig
 
@@ -21,9 +21,9 @@ Quick start::
 
 Notes on reward scoring
 -----------------------
-``reward_fn.reward_components()`` expects an :class:`~src.agents.base.AgentLoopOutput`
+``reward_fn.reward_components()`` expects an :class:`~src.agents.core.base.AgentLoopOutput`
 with populated ``metrics`` and ``context``.  When the agent is a
-:class:`~src.agents.graph_base.BaseAgent` (invoke-based), only the answer
+:class:`~src.agents.core.graph_base.BaseAgent` (invoke-based), only the answer
 string is available, so a minimal stub output is used — ``correctness_weight``
 and ``format_reward_weight`` fire; search-quality components are zero.
 
@@ -197,7 +197,7 @@ def _to_loop_output(agent_result: Any) -> Any:
     is built from the answer string alone (search-quality reward components
     will be zero).
     """
-    from src.agents.base import AgentLoopOutput
+    from src.agents.core.base import AgentLoopOutput
 
     # Rich path: agent stored the real loop output in metadata.
     if hasattr(agent_result, "metadata") and isinstance(agent_result.metadata, dict):
@@ -259,7 +259,7 @@ def evaluate_bamboogle(
 
     Args:
         agent: Any object with an ``invoke(state: dict) -> Any`` method.
-            Compatible with :class:`~src.agents.graph_base.BaseAgent`.
+            Compatible with :class:`~src.agents.core.graph_base.BaseAgent`.
         reward_fn: Optional :class:`~src.training.reward.SearchRewardFunction`.
             When provided, ``reward_components()`` is called on each result and
             the per-component breakdown is stored alongside accuracy scores.

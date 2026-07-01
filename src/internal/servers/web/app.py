@@ -31,8 +31,8 @@ from src.internal.servers.secondary_llm_flows.query_expansion import (
     with_temporal_context,
 )
 from src.agents.search import AgenticRAGConfig, AgenticRAGLoop
-from src.agents.base import OnTurnCallback
-from src.agents.control_flow_trace import (
+from src.agents.core.base import OnTurnCallback
+from src.agents.core.control_flow_trace import (
     ControlFlowEvent,
     ControlFlowRecorder,
     EventSink,

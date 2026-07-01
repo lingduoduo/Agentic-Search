@@ -350,7 +350,7 @@ class LLMGRPOTrainer:
             prompt_idx = flat_idx // G
             gt = ground_truths[prompt_idx]
             if self.reward_fn is not None:
-                from src.agents.base import AgentLoopOutput
+                from src.agents.core.base import AgentLoopOutput
 
                 pseudo_output = AgentLoopOutput(
                     prompt_ids=[],

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from src.agents.base import (
+from src.agents.core.base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,

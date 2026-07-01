@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from src.agents.base import (
+from src.agents.core.base import (
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
@@ -33,8 +33,8 @@ from src.agents.components.evidence_judge import EvidenceJudge
 from src.agents.components.loop_controller import AnswerVerb, LoopSnapshot, StopReason
 from src.agents.components.planner import Planner
 from src.agents.components.reranker_tool import RerankFn
-from src.agents.control_flow_trace import ControlFlowRecorder, EventSink
-from src.agents.state import AgentState, Retriever, UserRequest
+from src.agents.core.control_flow_trace import ControlFlowRecorder, EventSink
+from src.agents.core.state import AgentState, Retriever, UserRequest
 
 # ---------------------------------------------------------------------------
 # Turn control

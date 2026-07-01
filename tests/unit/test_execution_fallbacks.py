@@ -20,7 +20,7 @@ from src.context.models import (
 )
 from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
 from src.internal.servers.web.intent_routing import RouteStrategy
-from src.agents.base import AgentLoopOutput
+from src.agents.core.base import AgentLoopOutput
 
 
 def _make_answer_result(answer: str = "ok") -> AnswerGenerationResult:
