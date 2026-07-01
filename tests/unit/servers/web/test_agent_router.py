@@ -1,4 +1,4 @@
-"""Unit tests for the 4-way agentic router decision logic."""
+"""Unit tests for the 3-way agentic router decision logic."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def test_explicit_source_routes_to_search_agent():
     # An explicit source provider is an unambiguous search command.
     strategy = route_query(
         "anything at all",
-        llm=_FakeLLM("direct_llm"),
+        llm=_FakeLLM("chat"),
         has_local_model=True,
         explicit_source=True,
     )
@@ -61,8 +61,8 @@ def test_route_query_uses_llm_classifier_when_available():
 def test_route_query_bare_lookup_is_search_and_skips_classifier():
     # A bare entity/term lookup like "FAISS" is unambiguously a grounded search,
     # so it must NOT reach the (over-eager) LLM classifier that would otherwise
-    # send it to direct_llm. Deterministic regardless of the LLM reply.
-    llm = _FakeLLM("direct_llm")
+    # send it to chat. Deterministic regardless of the LLM reply.
+    llm = _FakeLLM("chat")
     strategy = route_query(
         "FAISS", llm=llm, has_local_model=True, explicit_source=False
     )
@@ -125,3 +125,29 @@ def test_classify_route_parses_each_label():
 def test_classify_route_defaults_to_chat_on_garbage():
     assert classify_route("q", _FakeLLM("nonsense reply")) is RouteStrategy.CHAT
     assert classify_route("q", _FakeLLM("")) is RouteStrategy.CHAT
+
+
+def test_bare_lookup_excludes_greetings_and_generative():
+    from src.internal.servers.web.intent_routing import _is_bare_lookup
+
+    assert _is_bare_lookup("hello") is False
+    assert _is_bare_lookup("poem") is False
+    assert _is_bare_lookup("translate this") is False
+    # A genuine entity lookup is still a bare lookup.
+    assert _is_bare_lookup("FAISS") is True
+
+
+def test_route_query_greeting_routes_to_chat_without_llm():
+    # No LLM → rule-based; a bare greeting must NOT short-circuit to SEARCH.
+    strategy = route_query(
+        "hello", llm=None, has_local_model=False, explicit_source=False
+    )
+    assert strategy is RouteStrategy.CHAT
+
+
+def test_classify_route_ignores_substring_false_positives():
+    # Word-boundary match: "research" must not count as the "search" label.
+    assert classify_route("q", _FakeLLM("researching options")) is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM("chatbot style")) is RouteStrategy.CHAT
+    # Exact labels still parse.
+    assert classify_route("q", _FakeLLM("search")) is RouteStrategy.SEARCH

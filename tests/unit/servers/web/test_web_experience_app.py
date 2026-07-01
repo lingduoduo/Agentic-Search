@@ -622,7 +622,7 @@ def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
 def test_auto_route_search_degrades_to_hybrid_without_local_model(
     monkeypatch, tmp_path
 ):
-    """SEARCH_AGENT route with no local model → hybrid_search pipeline, intent='search'."""
+    """SEARCH route with no local model → hybrid_search pipeline, intent='search'."""
     called = {}
 
     async def fake_hybrid(
@@ -679,7 +679,7 @@ def test_explicit_mode_still_works(monkeypatch, tmp_path):
 def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
     monkeypatch, tmp_path
 ):
-    """TOOL_AGENT route with a local model → ToolAgentLoop runs with real tools."""
+    """TOOL route with a local model → ToolAgentLoop runs with real tools."""
     from unittest.mock import AsyncMock, MagicMock
     from src.agents.base import AgentLoopOutput
     from src.internal.servers.web.intent_routing import RouteStrategy

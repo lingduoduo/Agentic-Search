@@ -915,12 +915,12 @@ curl -s -X POST http://localhost:7860/api/feedback \
 Both `POST /api/agent` and `/api/agent/stream` run the same dispatcher
 (`_run_agent_impl`). The optional `mode` field selects the path; **when `mode` is
 omitted (the default, and what the bundled UI always sends) the request goes
-through the 4-way auto-router.** Every path returns the same shape
+through the 3-way auto-router.** Every path returns the same shape
 `(answer, citations, documents, intent, …)` with `intent ∈ {search, chat, tool}`.
 
 | `mode` | Path / loop | `intent` | Requires |
 |---|---|---|---|
-| _(omitted)_ | auto-router → one of the four below | varies | — |
+| _(omitted)_ | auto-router → chat/search/tool strategy below | varies | — |
 | `search_agent` | `SearchAgentLoop` (multi-turn search) | `search` | local model (else `400`) |
 | `tool_agent` | `ToolAgentLoop` (OpenAPI/MCP tools) | `tool`/`search`/`chat` | local model (else `400`) |
 | `chat_loop` | `AgenticRAGLoop` (decompose + HyDE) | `chat` | LLM client |

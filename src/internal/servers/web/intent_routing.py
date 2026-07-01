@@ -26,6 +26,13 @@ _VERB_RE = re.compile(
     r"\b(is|are|was|were|do|does|did|have|has|can|could|would|should|will)\b",
     re.IGNORECASE,
 )
+# Conversational / generative asks that need no retrieval — used only to keep
+# such queries out of the bare-lookup fast path so they fall through to CHAT.
+_GENERATIVE_RE = re.compile(
+    r"\b(write|translate|rephrase|reword|rewrite|draft|brainstorm|"
+    r"hello|hi there|thanks|joke|poem|haiku)\b",
+    re.IGNORECASE,
+)
 
 
 def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
@@ -85,8 +92,8 @@ def _is_bare_lookup(query: str) -> bool:
     Such a query is unambiguously a grounded lookup, so it routes to
     SEARCH deterministically rather than risking the LLM classifier
     sending it to chat/direct answers (ungrounded). Anything carrying a tool,
-    search, conversational, question, or auxiliary-verb signal is excluded —
-    those are handled by the normal cascade / classifier.
+    search, conversational, generative, question, or auxiliary-verb signal is
+    excluded — those are handled by the normal cascade / classifier.
     """
     q = query.strip()
     if not q or q.endswith("?"):
@@ -94,6 +101,7 @@ def _is_bare_lookup(query: str) -> bool:
     if (
         _TOOL_RE.search(q)
         or _SEARCH_RE.search(q)
+        or _GENERATIVE_RE.search(q)
         or _CHAT_RE.search(q)
         or _VERB_RE.search(q)
     ):
@@ -156,7 +164,7 @@ def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
         logger.warning("Route classification empty; defaulting to chat.")
         return RouteStrategy.CHAT
     for value, strategy in _LABEL_BY_VALUE.items():
-        if value in content:
+        if re.search(rf"\b{value}\b", content):
             return strategy
     logger.warning(
         "Route classification returned unexpected response %r; defaulting to chat.",
