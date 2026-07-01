@@ -109,9 +109,12 @@ def _parse_gap_queries(raw: str) -> list[str]:
         return []
     else:
         queries_section = raw
-    return [
-        _clean_line(line) for line in queries_section.splitlines() if _clean_line(line)
-    ]
+    queries: list[str] = []
+    for line in queries_section.splitlines():
+        cleaned = _clean_line(line)
+        if cleaned:
+            queries.append(cleaned)
+    return queries
 
 
 @dataclass(frozen=True)
