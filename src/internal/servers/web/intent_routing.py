@@ -9,7 +9,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.agents.base import AgentLoopOutput
+    from src.agents.core.base import AgentLoopOutput
     from src.context.models import LLMClient
 
 logger = logging.getLogger(__name__)

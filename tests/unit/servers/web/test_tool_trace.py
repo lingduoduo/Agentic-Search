@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
 from src.internal.servers.web.intent_routing import RouteStrategy
-from src.agents.base import AgentLoopOutput
+from src.agents.core.base import AgentLoopOutput
 
 
 def _make_output(action_trace: str) -> AgentLoopOutput:

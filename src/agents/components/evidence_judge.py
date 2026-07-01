@@ -16,7 +16,7 @@ from ...training.evaluation import (
     SearchResultEvaluator,
     SearchRoundEvaluation,
 )
-from ..state import AgentState
+from ..core.state import AgentState
 
 
 @dataclass(frozen=True)

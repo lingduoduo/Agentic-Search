@@ -681,7 +681,7 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
 ):
     """TOOL route with a local model → ToolAgentLoop runs with real tools."""
     from unittest.mock import AsyncMock, MagicMock
-    from src.agents.base import AgentLoopOutput
+    from src.agents.core.base import AgentLoopOutput
     from src.internal.servers.web.intent_routing import RouteStrategy
     import json
 

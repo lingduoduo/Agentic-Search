@@ -255,7 +255,7 @@ async def test_follow_up_queries_do_not_duplicate_seen_queries():
 
 @pytest.mark.asyncio
 async def test_run_emits_control_flow_events_to_recorder():
-    from src.agents.control_flow_trace import ControlFlowRecorder
+    from src.agents.core.control_flow_trace import ControlFlowRecorder
 
     bundle = _make_bundle(["d1", "d2"])
     llm = _llm_responses(

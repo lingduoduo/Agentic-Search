@@ -21,7 +21,7 @@ from src.training.eval.bamboogle import (
     _make_judge_fn,
     _to_loop_output,
 )
-from src.agents.base import AgentLoopOutput
+from src.agents.core.base import AgentLoopOutput
 
 
 # ---------------------------------------------------------------------------

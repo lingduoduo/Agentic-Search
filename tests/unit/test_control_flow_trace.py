@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from src.agents.control_flow_trace import ControlFlowEvent, ControlFlowRecorder
+from src.agents.core.control_flow_trace import ControlFlowEvent, ControlFlowRecorder
 
 
 def test_recorder_sequences_and_sanitizes_details() -> None:

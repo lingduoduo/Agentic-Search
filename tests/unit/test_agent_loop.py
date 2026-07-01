@@ -24,7 +24,11 @@ from src import (
     list_registered_agent_loops,
     register,
 )
-from src.agents.base import AgentLoopOutput, resolve_agent_name, CANONICAL_AGENT_NAMES
+from src.agents.core.base import (
+    AgentLoopOutput,
+    resolve_agent_name,
+    CANONICAL_AGENT_NAMES,
+)
 
 
 class DummyTokenizerWithTemplate:
@@ -131,7 +135,7 @@ def test_resolve_rejects_non_registry_modes():
 
 
 def test_canonical_names_are_registered():
-    from src.agents.base import list_registered_agent_loops
+    from src.agents.core.base import list_registered_agent_loops
 
     registered = set(list_registered_agent_loops())
     assert CANONICAL_AGENT_NAMES <= registered

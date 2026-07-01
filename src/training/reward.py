@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
-from ..agents.base import AgentLoopOutput
+from ..agents.core.base import AgentLoopOutput
 from ..context.search import AgentContext
 
 # Type aliases for judge callables.

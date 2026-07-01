@@ -4,7 +4,7 @@ import json
 import json as _json
 from unittest.mock import AsyncMock, patch
 
-from src.agents.base import AgentLoopOutput
+from src.agents.core.base import AgentLoopOutput
 from src.internal.servers.web.intent_routing import _infer_intent_from_output
 from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
 
