@@ -119,6 +119,7 @@ class AgenticRAGConfig:
     max_rounds: int = 3
     topk: int = 5
     retrieval_url: str = "http://localhost:8001/retrieve"
+    max_followups_per_round: int = 5
 
 
 @dataclass
@@ -190,7 +191,13 @@ class AgenticRAGLoop:
 
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
-            novel_queries = _dedupe_novel(current_queries, seen_queries)
+            # current_queries is already deduped+recorded into seen_queries when
+            # it originates from the follow-up branch below; only the initial
+            # enhance() batch (round_idx == 0) still needs deduping here.
+            if round_idx == 0:
+                novel_queries = _dedupe_novel(current_queries, seen_queries)
+            else:
+                novel_queries = current_queries
             if not novel_queries:
                 break
 
@@ -252,7 +259,9 @@ class AgenticRAGLoop:
                 novel_follow_ups = _dedupe_novel(follow_ups, seen_queries)
                 if not novel_follow_ups:
                     break
-                current_queries = novel_follow_ups
+                current_queries = novel_follow_ups[
+                    : self.config.max_followups_per_round
+                ]
 
         t_syn = time.perf_counter()
         gen_result = generate_answer(

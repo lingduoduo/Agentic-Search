@@ -339,6 +339,34 @@ async def test_url_less_docs_dedup_by_full_content():
 
 
 @pytest.mark.asyncio
+async def test_follow_ups_capped_per_round():
+    bundle = _make_bundle(["d1"])
+    eight = "\n".join(f"followup query {i}" for i in range(8))
+    llm = _llm_responses(
+        "sub",
+        "hyde",
+        "broader",  # enhance
+        "no",  # sufficiency round 1
+        f"GAPS:\ng\nQUERIES:\n{eight}",  # 8 follow-ups
+        "yes",  # sufficiency round 2
+        "answer",  # generate_answer
+    )
+    config = AgenticRAGConfig(max_rounds=3, topk=5, max_followups_per_round=5)
+    calls: list[str] = []
+
+    async def _track(query, **kwargs):
+        calls.append(query)
+        return bundle
+
+    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track):
+        loop = AgenticRAGLoop(config, llm=llm)
+        await loop.run("q?")
+
+    followup_calls = [c for c in calls if c.startswith("followup query")]
+    assert len(followup_calls) == 5
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
