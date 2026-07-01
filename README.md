@@ -186,6 +186,20 @@ Three processes, each in its own terminal:
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 ```
 
+The bundled `data/corpus.jsonl` is a 30-doc demo. For a larger, real corpus, convert a
+[BEIR](https://github.com/beir-cellar/beir) dataset into the same JSONL format (`pip install beir` first):
+```bash
+python3 scripts/beir_to_corpus.py --dataset scifact        # → data/corpus_scifact.jsonl (~5K docs)
+# other datasets: nfcorpus (~3.6K), arguana (~8.7K), scidocs (~25K), fiqa (~57K), trec-covid (~171K)
+```
+Then point the demo server at it and sanity-check with a query:
+```bash
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus_scifact.jsonl
+curl -s -X POST http://127.0.0.1:8001/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "diffusion tensor imaging of white matter", "top_k": 3}' | python3 -m json.tool
+```
+
 **Web API** — `http://localhost:7860`
 ```bash
 PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
