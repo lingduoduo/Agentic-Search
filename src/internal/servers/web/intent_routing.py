@@ -28,24 +28,6 @@ _VERB_RE = re.compile(
 )
 
 
-def _rule_based_is_search(query: str) -> bool:
-    """Return True if the query looks like a search/retrieval intent."""
-    q = query.strip()
-    if not q:
-        return False
-    # Check for explicit chat keywords first
-    if _CHAT_RE.search(q):
-        return False
-    # Check for explicit search keywords
-    if _SEARCH_RE.search(q):
-        return True
-    # Short queries without verbs are treated as search (e.g., "procurement process")
-    tokens = q.split()
-    if len(tokens) <= 5 and not _VERB_RE.search(q) and not q.endswith("?"):
-        return True
-    return False
-
-
 def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
     """Infer search/chat/tool intent from the first tool called in the output.
 
