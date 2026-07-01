@@ -283,6 +283,108 @@ async def test_run_emits_control_flow_events_to_recorder():
 
 
 @pytest.mark.asyncio
+async def test_run_with_zero_max_rounds_returns_empty_context():
+    llm = _llm_responses("sub", "hyde", "broader", "answer")
+    config = AgenticRAGConfig(max_rounds=0, topk=5)
+    with patch(
+        "src.agents.agentic_rag.retrieve_context",
+        AsyncMock(return_value=_make_bundle(["d1"])),
+    ):
+        loop = AgenticRAGLoop(config, llm=llm)
+        result = await loop.run("q?")
+    assert isinstance(result, AgenticRAGResult)
+    assert result.rounds_used == 0
+    assert result.context.documents == []
+
+
+@pytest.mark.asyncio
+async def test_case_and_whitespace_variants_retrieve_once():
+    bundle = _make_bundle(["d1"])
+    # decompose/hyde/step_back produce case/whitespace variants of one query
+    llm = _llm_responses(
+        "GPT-4 cost",  # decompose
+        "gpt-4   cost ",  # hyde (normalizes to same as decompose)
+        " GPT-4 Cost",  # step_back (same normalized form)
+        "yes",  # sufficiency
+        "answer",  # generate_answer
+    )
+    config = AgenticRAGConfig(max_rounds=3, topk=5)
+    calls: list[str] = []
+
+    async def _track(query, **kwargs):
+        calls.append(query)
+        return bundle
+
+    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track):
+        loop = AgenticRAGLoop(config, llm=llm)
+        await loop.run("gpt-4 cost?")
+
+    # all three enhanced queries normalize identically → retrieved once
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_url_less_docs_dedup_by_full_content():
+    # first 120 chars identical but full content differs → hash keeps both
+    dup_a = ContextDocument(id="a", title="A", content="X" * 200, score=0.9)
+    near = ContextDocument(id="b", title="B", content="X" * 120 + "Z" * 80, score=0.8)
+    bundle = SearchContextBundle(query="q", documents=[dup_a, near])
+    config = AgenticRAGConfig(max_rounds=1, topk=5)
+    with patch(
+        "src.agents.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+    ):
+        loop = AgenticRAGLoop(config, llm=None)
+        result = await loop.run("q?")
+    assert len(result.context.documents) == 2
+
+
+@pytest.mark.asyncio
+async def test_follow_ups_capped_per_round():
+    bundle = _make_bundle(["d1"])
+    eight = "\n".join(f"followup query {i}" for i in range(8))
+    llm = _llm_responses(
+        "sub",
+        "hyde",
+        "broader",  # enhance
+        "no",  # sufficiency round 1
+        f"GAPS:\ng\nQUERIES:\n{eight}",  # 8 follow-ups
+        "yes",  # sufficiency round 2
+        "answer",  # generate_answer
+    )
+    config = AgenticRAGConfig(max_rounds=3, topk=5, max_followups_per_round=5)
+    calls: list[str] = []
+
+    async def _track(query, **kwargs):
+        calls.append(query)
+        return bundle
+
+    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track):
+        loop = AgenticRAGLoop(config, llm=llm)
+        await loop.run("q?")
+
+    followup_calls = [c for c in calls if c.startswith("followup query")]
+    assert len(followup_calls) == 5
+
+
+@pytest.mark.asyncio
+async def test_sufficiency_check_times_out_fail_open():
+    import time as _time
+
+    def _slow_complete(messages, **kwargs):
+        _time.sleep(1.0)  # exceeds the tiny timeout
+        return "no"
+
+    llm = MagicMock()
+    llm.complete.side_effect = _slow_complete
+    config = AgenticRAGConfig(sufficiency_timeout_s=0.05)
+    loop = AgenticRAGLoop(config, llm=llm)
+    bundle = _make_bundle(["d1"])
+
+    result = await loop._is_sufficient("q?", bundle)
+    assert result is True  # fail-open on timeout, and returns promptly
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")

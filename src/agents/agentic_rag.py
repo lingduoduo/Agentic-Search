@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import time
 import re
@@ -71,6 +73,31 @@ def _clean_line(line: str) -> str:
     return _ARTIFACT_RE.sub("", _LIST_MARKER_RE.sub("", line)).strip()
 
 
+def _norm_query(q: str) -> str:
+    return " ".join(q.lower().split())
+
+
+def _dedupe_novel(queries: list[str], seen: set[str]) -> list[str]:
+    """Return queries whose normalized form is new; record each into `seen`.
+
+    Dedupes both within this batch and against earlier rounds. Returned
+    strings are the original queries — retrieval must use the raw text.
+    """
+    novel: list[str] = []
+    for q in queries:
+        norm = _norm_query(q)
+        if norm not in seen:
+            seen.add(norm)
+            novel.append(q)
+    return novel
+
+
+def _doc_key(doc: ContextDocument) -> str:
+    if doc.url:
+        return doc.url.strip().lower()
+    return hashlib.sha256(doc.content.encode("utf-8")).hexdigest()
+
+
 def _parse_gap_queries(raw: str) -> list[str]:
     """Extract the QUERIES section from a structured gap-analysis response.
 
@@ -83,9 +110,12 @@ def _parse_gap_queries(raw: str) -> list[str]:
         return []
     else:
         queries_section = raw
-    return [
-        _clean_line(line) for line in queries_section.splitlines() if _clean_line(line)
-    ]
+    queries: list[str] = []
+    for line in queries_section.splitlines():
+        cleaned = _clean_line(line)
+        if cleaned:
+            queries.append(cleaned)
+    return queries
 
 
 @dataclass(frozen=True)
@@ -93,6 +123,8 @@ class AgenticRAGConfig:
     max_rounds: int = 3
     topk: int = 5
     retrieval_url: str = "http://localhost:8001/retrieve"
+    max_followups_per_round: int = 5
+    sufficiency_timeout_s: float = 5.0
 
 
 @dataclass
@@ -160,12 +192,22 @@ class AgenticRAGLoop:
             query_count=len(current_queries),
         )
 
+        merged = SearchContextBundle(query=question, documents=[])
+
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
-            novel_queries = [q for q in current_queries if q not in seen_queries]
+            # current_queries is already deduped+recorded into seen_queries when
+            # it originates from the follow-up branch below; only the initial
+            # enhance() batch (round_idx == 0) still needs deduping here.
+            # INVARIANT: every in-loop assignment to current_queries must route
+            # through _dedupe_novel (see the follow-up branch), or round 2+ would
+            # retrieve un-deduped queries.
+            if round_idx == 0:
+                novel_queries = _dedupe_novel(current_queries, seen_queries)
+            else:
+                novel_queries = current_queries
             if not novel_queries:
                 break
-            seen_queries.update(novel_queries)
 
             t_retr = time.perf_counter()
             for q in novel_queries:
@@ -176,7 +218,7 @@ class AgenticRAGLoop:
                         top_k=self.config.topk,
                     )
                     for doc in ctx.documents:
-                        key = doc.url or doc.content[:120]
+                        key = _doc_key(doc)
                         if key not in accumulated:
                             accumulated[key] = doc
                 except Exception as exc:
@@ -210,7 +252,7 @@ class AgenticRAGLoop:
             is_last = round_idx == self.config.max_rounds - 1
             if not is_last:
                 t_suff = time.perf_counter()
-                sufficient = self._is_sufficient(question, merged)
+                sufficient = await self._is_sufficient(question, merged)
                 _emit(
                     "evidence_judge",
                     "sufficiency_check",
@@ -222,10 +264,12 @@ class AgenticRAGLoop:
                 if sufficient:
                     break
                 follow_ups = self._generate_followup(question, merged)
-                novel_follow_ups = [q for q in follow_ups if q not in seen_queries]
+                novel_follow_ups = _dedupe_novel(follow_ups, seen_queries)
                 if not novel_follow_ups:
                     break
-                current_queries = novel_follow_ups
+                current_queries = novel_follow_ups[
+                    : self.config.max_followups_per_round
+                ]
 
         t_syn = time.perf_counter()
         gen_result = generate_answer(
@@ -251,7 +295,7 @@ class AgenticRAGLoop:
             context=merged,
         )
 
-    def _is_sufficient(self, question: str, context: SearchContextBundle) -> bool:
+    async def _is_sufficient(self, question: str, context: SearchContextBundle) -> bool:
         if not context.documents:
             return False
         if self.llm is None:
@@ -261,15 +305,17 @@ class AgenticRAGLoop:
             context=context.to_context_text()[:1500],
         )
         try:
-            raw = (
-                _llm_text(self.llm.complete([ChatMessage(role="user", content=prompt)]))
-                .strip()
-                .lower()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.llm.complete,
+                    [ChatMessage(role="user", content=prompt)],
+                ),
+                timeout=self.config.sufficiency_timeout_s,
             )
-            return raw.startswith("yes")
-        except Exception as exc:
-            logger.warning("Sufficiency check failed: %s", exc)
-            return True  # assume sufficient → stop looping on LLM error
+            return _llm_text(response).strip().lower().startswith("yes")
+        except Exception as exc:  # includes asyncio.TimeoutError
+            logger.warning("Sufficiency check failed or timed out: %s", exc)
+            return True  # fail-open → stop looping on error/timeout
 
     def _generate_followup(
         self, question: str, context: SearchContextBundle
