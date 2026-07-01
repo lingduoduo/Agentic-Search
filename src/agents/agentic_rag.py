@@ -71,6 +71,25 @@ def _clean_line(line: str) -> str:
     return _ARTIFACT_RE.sub("", _LIST_MARKER_RE.sub("", line)).strip()
 
 
+def _norm_query(q: str) -> str:
+    return " ".join(q.lower().split())
+
+
+def _dedupe_novel(queries: list[str], seen: set[str]) -> list[str]:
+    """Return queries whose normalized form is new; record each into `seen`.
+
+    Dedupes both within this batch and against earlier rounds. Returned
+    strings are the original queries — retrieval must use the raw text.
+    """
+    novel: list[str] = []
+    for q in queries:
+        norm = _norm_query(q)
+        if norm not in seen:
+            seen.add(norm)
+            novel.append(q)
+    return novel
+
+
 def _parse_gap_queries(raw: str) -> list[str]:
     """Extract the QUERIES section from a structured gap-analysis response.
 
@@ -164,10 +183,9 @@ class AgenticRAGLoop:
 
         for round_idx in range(self.config.max_rounds):
             rounds_used += 1
-            novel_queries = [q for q in current_queries if q not in seen_queries]
+            novel_queries = _dedupe_novel(current_queries, seen_queries)
             if not novel_queries:
                 break
-            seen_queries.update(novel_queries)
 
             t_retr = time.perf_counter()
             for q in novel_queries:
@@ -224,7 +242,7 @@ class AgenticRAGLoop:
                 if sufficient:
                     break
                 follow_ups = self._generate_followup(question, merged)
-                novel_follow_ups = [q for q in follow_ups if q not in seen_queries]
+                novel_follow_ups = _dedupe_novel(follow_ups, seen_queries)
                 if not novel_follow_ups:
                     break
                 current_queries = novel_follow_ups

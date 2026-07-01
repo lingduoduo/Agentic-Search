@@ -298,6 +298,32 @@ async def test_run_with_zero_max_rounds_returns_empty_context():
 
 
 @pytest.mark.asyncio
+async def test_case_and_whitespace_variants_retrieve_once():
+    bundle = _make_bundle(["d1"])
+    # decompose/hyde/step_back produce case/whitespace variants of one query
+    llm = _llm_responses(
+        "GPT-4 cost",  # decompose
+        "gpt-4   cost ",  # hyde (normalizes to same as decompose)
+        " GPT-4 Cost",  # step_back (same normalized form)
+        "yes",  # sufficiency
+        "answer",  # generate_answer
+    )
+    config = AgenticRAGConfig(max_rounds=3, topk=5)
+    calls: list[str] = []
+
+    async def _track(query, **kwargs):
+        calls.append(query)
+        return bundle
+
+    with patch("src.agents.agentic_rag.retrieve_context", side_effect=_track):
+        loop = AgenticRAGLoop(config, llm=llm)
+        await loop.run("gpt-4 cost?")
+
+    # all three enhanced queries normalize identically → retrieved once
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
