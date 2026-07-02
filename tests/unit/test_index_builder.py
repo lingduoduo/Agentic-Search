@@ -301,10 +301,10 @@ class TestIndexBuilderInternals:
 
     def test_faiss_gpu_with_hnsw_raises_in_build_dense_index(self, monkeypatch):
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._require_faiss", lambda: object()
+            "src.internal.document_index._common._require_faiss", lambda: object()
         )
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._require_torch", lambda: object()
+            "src.internal.document_index.cli._require_torch", lambda: object()
         )
         builder = IndexBuilder.__new__(IndexBuilder)
         builder.faiss_type = "HNSW64"
@@ -354,10 +354,10 @@ class TestIndexBuilderInternals:
         )
 
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._require_torch", lambda: object()
+            "src.internal.document_index.cli._require_torch", lambda: object()
         )
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._require_tqdm",
+            "src.internal.document_index.cli._require_tqdm",
             lambda: lambda seq, **_: seq,
         )
 
@@ -373,7 +373,7 @@ class TestIndexBuilderInternals:
             )
 
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._encode_batch", fake_encode_batch
+            "src.internal.document_index.cli._encode_batch", fake_encode_batch
         )
 
         embeddings = builder.encode_all(encoder=object(), tokenizer=object())
@@ -404,10 +404,10 @@ class TestIndexBuilderInternals:
         )
 
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._require_torch", lambda: object()
+            "src.internal.document_index.cli._require_torch", lambda: object()
         )
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._require_tqdm",
+            "src.internal.document_index.cli._require_tqdm",
             lambda: lambda seq, **_: seq,
         )
 
@@ -423,7 +423,7 @@ class TestIndexBuilderInternals:
             )
 
         monkeypatch.setattr(
-            "src.internal.document_index.index_builder._encode_batch", fake_encode_batch
+            "src.internal.document_index.cli._encode_batch", fake_encode_batch
         )
 
         embeddings = builder.encode_all_to_memmap(encoder=object(), tokenizer=object())
