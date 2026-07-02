@@ -53,7 +53,7 @@ def _answer_result(question: str) -> AnswerGenerationResult:
 
 
 def _approval_request(approval_id: str):
-    from src.agents.tool_calling import ToolApprovalRequest
+    from src.agents.tool import ToolApprovalRequest
 
     now = datetime.now(UTC)
     return ToolApprovalRequest(
@@ -67,7 +67,7 @@ def _approval_request(approval_id: str):
 
 @pytest.mark.asyncio
 async def test_approval_publication_backpressures_without_evicting_approvals():
-    from src.agents.tool_calling import ApprovalDecision
+    from src.agents.tool import ApprovalDecision
 
     queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=2)
     first = {"type": "approval_required", "approval": {"id": "first"}}
