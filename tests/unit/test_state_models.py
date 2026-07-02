@@ -17,6 +17,7 @@ from src import (
     ToolResult,
     UserRequest,
 )
+from src.tools import ToolEffect
 
 
 class _CharTokenizer:
@@ -94,7 +95,7 @@ def test_tool_execution_result_converts_to_simple_tool_result():
 def test_tool_agent_loop_records_structured_tool_trace():
     tokenizer = _CharTokenizer()
 
-    @FunctionTool.from_fn(name="echo")
+    @FunctionTool.from_fn(name="echo", effect=ToolEffect.READ_ONLY)
     def echo(text: str) -> str:
         return text.upper()
 

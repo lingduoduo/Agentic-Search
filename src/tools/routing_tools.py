@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
-from .base import FunctionTool
+from .base import FunctionTool, ToolEffect
 from .search import search_tool
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ def build_search_routing_tool(*, search_url: str, top_k: int) -> FunctionTool:
         name="search_routing_tool",
         description="Retrieve relevant documents from the corpus given a search query.",
         parameters=_SEARCH_TOOL_PARAMS,
+        effect=ToolEffect.READ_ONLY,
     )
 
 
@@ -88,4 +89,5 @@ def build_rag_routing_tool(
         name="rag_routing_tool",
         description="Answer a question using retrieval-augmented generation.",
         parameters=_RAG_TOOL_PARAMS,
+        effect=ToolEffect.READ_ONLY,
     )

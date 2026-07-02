@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runAgent, streamAgent } from "../api";
+import { runAgent, streamAgent, submitToolApproval } from "../api";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -17,6 +17,25 @@ describe("runAgent", () => {
     });
     const result = await runAgent({ query: "find docs" });
     expect(result.intent).toBe("search");
+  });
+});
+
+describe("submitToolApproval", () => {
+  it("posts the approval decision to the pending approval", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ status: "accepted" }),
+    });
+
+    await submitToolApproval("a1", "approve");
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/agent/approvals/a1", {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ decision: "approve" }),
+      signal: undefined,
+    });
   });
 });
 

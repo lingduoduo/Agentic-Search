@@ -159,6 +159,18 @@ export function runAgent(
   });
 }
 
+export function submitToolApproval(
+  approvalId: string,
+  decision: "approve" | "deny",
+  init?: Pick<RequestInit, "signal">,
+): Promise<unknown> {
+  return requestJson<unknown>(`/api/agent/approvals/${approvalId}`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+    signal: init?.signal,
+  });
+}
+
 export async function* streamAgent(
   request: AgentExperienceRequest,
   init?: Pick<RequestInit, "signal">,

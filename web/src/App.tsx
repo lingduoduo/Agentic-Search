@@ -8,6 +8,7 @@ import {
   getAnalyticsByLLM,
   getAnalyticsByPersona,
   streamAgent,
+  submitToolApproval,
 } from "./api";
 import { AdminOverview } from "./components/AdminOverview";
 import { ToolCallTracePanel } from "./components/ToolCallTracePanel";
@@ -18,6 +19,7 @@ import { ControlFlowTracePanel } from "./components/ControlFlowTracePanel";
 import { DevConsole } from "./components/debug/DevConsole";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { ToolPanel } from "./components/ToolPanel";
+import { ToolApprovalCard } from "./components/ToolApprovalCard";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
@@ -31,6 +33,7 @@ import type {
   SearchSourceProvider,
   SourceDocumentView,
   ToolCallTraceView,
+  ToolApprovalView,
 } from "./types";
 
 const DEFAULT_SEARCH_URL = "http://localhost:8001/retrieve";
@@ -76,6 +79,7 @@ export function App() {
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const [toolCalls, setToolCalls] = useState<ToolCallTraceView[]>([]);
   const [controlFlowTrace, setControlFlowTrace] = useState<ControlFlowEventView[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<ToolApprovalView[]>([]);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
@@ -129,6 +133,7 @@ export function App() {
     setProgressSteps([]);
     setCompletedSteps([]);
     setControlFlowTrace([]);
+    setPendingApprovals([]);
     try {
       const activeSessionId = await ensureSession(controller.signal);
       const agentRequest: AgentExperienceRequest = {
@@ -148,6 +153,11 @@ export function App() {
           setProgressSteps(liveSteps);
         } else if (event.type === "trace") {
           setControlFlowTrace((current) => upsertTrace(current, event.event));
+        } else if (event.type === "approval_required") {
+          setPendingApprovals((current) => [
+            ...current.filter((approval) => approval.id !== event.approval.id),
+            event.approval,
+          ]);
         } else if (event.type === "answer") {
           accumulatedAnswer = event.text;
           setStreamingAnswer(event.text);
@@ -167,11 +177,14 @@ export function App() {
           setAnswer(accumulatedAnswer);
           setCompletedSteps(liveSteps);
           setProgressSteps([]);
+          setPendingApprovals([]);
         } else if (event.type === "error") {
           throw new Error(event.detail);
         }
       }
     } catch (caught) {
+      if (requestRef.current !== controller) return;
+      setPendingApprovals([]);
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
       setDocuments([]);
@@ -183,8 +196,20 @@ export function App() {
     }
   }, [ensureSession, query, searchUrl, sourceProvider, topK]);
 
+  const handleApprovalDecision = useCallback(async (
+    approvalId: string,
+    decision: "approve" | "deny",
+  ) => {
+    const signal = requestRef.current?.signal;
+    await submitToolApproval(approvalId, decision, { signal });
+    setPendingApprovals((current) =>
+      current.filter((approval) => approval.id !== approvalId),
+    );
+  }, []);
+
   const handleNewSession = useCallback(async () => {
     requestRef.current?.abort();
+    setPendingApprovals([]);
     const session = await createSession({ title: "Search session" });
     setSessionId(session.id);
     setAnswer("");
@@ -349,6 +374,15 @@ export function App() {
               progressSteps={progressSteps}
               completedSteps={completedSteps}
             />
+            {pendingApprovals.map((approval) => (
+              <ToolApprovalCard
+                key={approval.id}
+                approval={approval}
+                onDecision={(decision) =>
+                  handleApprovalDecision(approval.id, decision)
+                }
+              />
+            ))}
             <ControlFlowTracePanel events={controlFlowTrace} live={isLoading} />
             {intent === "tool" && <ToolCallTracePanel calls={toolCalls} />}
           </section>

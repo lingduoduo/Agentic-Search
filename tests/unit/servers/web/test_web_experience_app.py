@@ -701,9 +701,10 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
         action_trace=fake_trace,
         final_answer="Here are the results.",
     )
+    run_mock = AsyncMock(return_value=fake_output)
     monkeypatch.setattr(
         "src.agents.tool.tool_calling.ToolAgentLoop.run",
-        AsyncMock(return_value=fake_output),
+        run_mock,
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
@@ -714,6 +715,7 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
     data = response.json()
     assert data["intent"] == "search"
     assert data["answer"] == "Here are the results."
+    assert run_mock.await_args.kwargs["on_approval"] is None
 
 
 def test_agent_no_llm_chat_degrades_to_pipeline(monkeypatch, tmp_path):
@@ -763,6 +765,31 @@ def test_agent_tool_mode_without_model_returns_clear_400(tmp_path):
     )
     assert response.status_code == 400
     assert "local model" in response.json()["detail"].lower()
+
+
+def test_tool_approval_decision_requires_authentication(tmp_path):
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+
+    response = client.post("/api/agent/approvals/missing", json={"decision": "approve"})
+
+    assert response.status_code == 401
+
+
+def test_tool_approval_decision_returns_not_found_for_unknown_id(tmp_path):
+    from src.internal.auth import generate_user_jwt_token
+
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    client = TestClient(app)
+    token = generate_user_jwt_token(user_id="user-1")
+
+    response = client.post(
+        "/api/agent/approvals/missing",
+        json={"decision": "deny"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
 
 
 def test_agent_other_exception_returns_502_with_message(monkeypatch, tmp_path):

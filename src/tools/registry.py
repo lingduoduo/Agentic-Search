@@ -40,7 +40,7 @@ from typing import (
 from uuid import UUID
 
 from .api import ApiToolRegistry, ApiToolNotFoundError
-from .base import FunctionTool, Tool
+from .base import FunctionTool, Tool, ToolEffect
 
 if TYPE_CHECKING:
     from src.tools.openapi_schema import OpenAPISchema
@@ -174,6 +174,7 @@ class ToolRegistry:
         name: str | None = None,
         description: str = "",
         parameters: dict[str, Any] | None = None,
+        effect: ToolEffect = ToolEffect.UNSPECIFIED,
     ) -> Any:
         """Decorator that registers a Python function as a tool.
 
@@ -196,6 +197,7 @@ class ToolRegistry:
                 name=name or f.__name__,
                 description=resolved_desc,
                 parameters=resolved_params,
+                effect=effect,
             )
             self.register(t, source="function")
             return (

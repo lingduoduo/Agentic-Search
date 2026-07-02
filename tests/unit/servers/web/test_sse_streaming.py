@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
+import pytest
 
 from src.context.models import (
     AnswerGenerationResult,
@@ -12,7 +17,12 @@ from src.context.models import (
     PromptBundle,
     SearchContextBundle,
 )
-from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
+from src.internal.servers.web.app import (
+    SearchExperienceSettings,
+    _request_tool_approval,
+    create_web_app,
+)
+from src.internal.servers.web.tool_approval import ToolApprovalBroker
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -40,6 +50,70 @@ def _answer_result(question: str) -> AnswerGenerationResult:
         context=SearchContextBundle(query=question, documents=[doc]),
         prompt=PromptBundle(system="", user="", messages=[]),
     )
+
+
+def _approval_request(approval_id: str):
+    from src.agents.tool import ToolApprovalRequest
+
+    now = datetime.now(UTC)
+    return ToolApprovalRequest(
+        approval_id=approval_id,
+        tool_name="create_ticket",
+        arguments={"title": "Fix it"},
+        created_at=now,
+        expires_at=now + timedelta(seconds=30),
+    )
+
+
+@pytest.mark.asyncio
+async def test_approval_publication_backpressures_without_evicting_approvals():
+    from src.agents.tool import ApprovalDecision
+
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=2)
+    first = {"type": "approval_required", "approval": {"id": "first"}}
+    second = {"type": "approval_required", "approval": {"id": "second"}}
+    queue.put_nowait(first)
+    queue.put_nowait(second)
+    broker = ToolApprovalBroker()
+
+    task = asyncio.create_task(
+        _request_tool_approval(broker, "user-1", _approval_request("third"), queue)
+    )
+    while broker.pending_count == 0:
+        await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not task.done()
+    assert queue.get_nowait() == first
+    await asyncio.sleep(0)
+    assert queue.get_nowait() == second
+    published = await queue.get()
+    assert published["approval"]["id"] == "third"
+
+    await broker.decide("third", "user-1", ApprovalDecision.APPROVE)
+    assert await task is ApprovalDecision.APPROVE
+
+
+@pytest.mark.asyncio
+async def test_cancelled_approval_cleans_blocked_publication_task():
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=1)
+    original = {"type": "approval_required", "approval": {"id": "first"}}
+    queue.put_nowait(original)
+    broker = ToolApprovalBroker()
+    before = set(asyncio.all_tasks())
+
+    task = asyncio.create_task(
+        _request_tool_approval(broker, "user-1", _approval_request("second"), queue)
+    )
+    while broker.pending_count == 0:
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0)
+
+    assert broker.pending_count == 0
+    assert queue.get_nowait() == original
+    assert set(asyncio.all_tasks()) - before == set()
 
 
 def test_stream_endpoint_exists(tmp_path):
@@ -149,6 +223,84 @@ def test_stream_done_event_contains_documents(monkeypatch, tmp_path):
     assert isinstance(done_event["documents"], list)
     assert len(done_event["documents"]) >= 1
     assert done_event["documents"][0]["title"] == "T"
+
+
+def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
+    from src.agents.core.base import AgentLoopOutput
+    from src.agents.tool import ApprovalDecision, ToolAgentLoop, ToolApprovalRequest
+    from src.internal.auth import generate_user_jwt_token
+
+    executions: list[str] = []
+
+    async def fake_run(
+        self, messages, sampling_params, *, on_turn=None, on_approval=None, **kwargs
+    ):
+        assert on_approval is not None
+        assert on_turn is not None
+        for turn in range(100):
+            await on_turn(turn, "queued_tool", 0)
+        now = datetime.now(UTC)
+        decision = await on_approval(
+            ToolApprovalRequest(
+                approval_id="approval-1",
+                tool_name="create_ticket",
+                arguments={"title": "Fix it", "token": "hidden"},
+                created_at=now,
+                expires_at=now + timedelta(seconds=30),
+            )
+        )
+        if decision is ApprovalDecision.APPROVE:
+            executions.append("create_ticket")
+        return AgentLoopOutput(
+            prompt_ids=[],
+            response_ids=[],
+            response_mask=[],
+            num_turns=1,
+            final_answer="Ticket created.",
+        )
+
+    monkeypatch.setattr(ToolAgentLoop, "run", fake_run)
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    token = generate_user_jwt_token(user_id="user-1")
+    headers = {"Authorization": f"Bearer {token}"}
+    result: dict[str, object] = {}
+
+    with TestClient(app) as client:
+        app.state.search_agent_manager = object()
+        app.state.search_agent_tokenizer = object()
+
+        def stream_request() -> None:
+            result["response"] = client.post(
+                "/api/agent/stream",
+                json={"query": "Create a ticket", "mode": "tool_agent"},
+                headers=headers,
+            )
+
+        thread = threading.Thread(target=stream_request)
+        thread.start()
+        deadline = time.monotonic() + 5
+        while app.state.tool_approval_broker.pending_count == 0:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+
+        decision = client.post(
+            "/api/agent/approvals/approval-1",
+            json={"decision": "approve"},
+            headers=headers,
+        )
+        thread.join(timeout=5)
+
+    assert decision.status_code == 200
+    assert not thread.is_alive()
+    response = result["response"]
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    approval = next(event for event in events if event["type"] == "approval_required")
+    assert approval["approval"]["arguments"] == {"title": "Fix it"}
+    approval_index = events.index(approval)
+    assert [event["turn"] for event in events[:approval_index]] == list(range(100))
+    assert [event["type"] for event in events][-2:] == ["answer", "done"]
+    assert executions == ["create_ticket"]
 
 
 def test_stream_emits_progress_events_before_done(monkeypatch, tmp_path):

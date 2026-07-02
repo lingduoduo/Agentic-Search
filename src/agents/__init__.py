@@ -26,3 +26,6 @@ from .core.state import ToolType as ToolType
 from .core.state import UserRequest as UserRequest
 from .tool import ToolAgentLoop as ToolAgentLoop
 from .tool import ToolAgentLoopConfig as ToolAgentLoopConfig
+from .tool import ApprovalDecision as ApprovalDecision
+from .tool import ToolApprovalCallback as ToolApprovalCallback
+from .tool import ToolApprovalRequest as ToolApprovalRequest
