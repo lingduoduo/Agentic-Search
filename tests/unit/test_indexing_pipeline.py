@@ -422,7 +422,7 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
         index_path.write_text("index", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.internal.document_index.index_builder.write_dense_faiss_index",
+        "src.internal.document_index.faiss_io.write_dense_faiss_index",
         fake_write_dense_faiss_index,
     )
 
