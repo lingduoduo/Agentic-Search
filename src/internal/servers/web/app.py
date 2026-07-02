@@ -656,7 +656,9 @@ async def _run_tool_agent(
         tools=tools,
         config=ToolAgentLoopConfig(
             tool_parser_format=resolved.tool_agent_parser,
-            approval_timeout_seconds=resolved.tool_approval_timeout_seconds,
+            approval_timeout_seconds=getattr(
+                resolved, "tool_approval_timeout_seconds", 60.0
+            ),
         ),
     )
     messages = [{"role": m.role, "content": m.content} for m in history] + [
