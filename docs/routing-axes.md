@@ -32,7 +32,7 @@ retrieval-bearing strategies; Backend picks the internal index server-side.
   selectable by the policy via `<search retriever="web">`. But `_run_search_agent`
   in `app.py` never sets `web_search_url`, so `_web_search_client` is `None` and
   `retriever="web"` **silently degrades to the internal corpus**
-  (`_client_for`, `src/agents/search.py`). `web_search_url` is set only in the
+  (`_client_for`, `src/agents/search/search.py`). `web_search_url` is set only in the
   CLI training example, not in production. This is separate from `source_provider`.
 
 ### Consequence
