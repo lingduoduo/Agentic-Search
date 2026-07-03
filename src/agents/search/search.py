@@ -65,6 +65,33 @@ class _NoActionDirective:
     num_turns: int
 
 
+@dataclass(frozen=True)
+class _AbsentActionsDirective:
+    """Outcome of a turn that parsed no recognised tag.
+
+    ``injected_actions`` set means "proceed this turn with these actions"
+    (deadend auto-search); otherwise ``control`` says continue or break.
+    """
+
+    control: TurnControl
+    injected_actions: list[tuple[str, str]] | None
+    exit_status: str | None
+    consecutive_format_errors: int
+    consecutive_rejections: int
+    forced_answer_attempted: bool
+    final_answer: str | None
+    num_turns: int
+
+
+@dataclass(frozen=True)
+class _SearchStageResult:
+    """Outcome of one executed search round. ``plateau`` means stop searching."""
+
+    plateau: bool
+    consecutive_rejections: int
+    latest_evaluation: "SearchRoundEvaluation | None"
+
+
 # ---------------------------------------------------------------------------
 # Search tool-call types
 # ---------------------------------------------------------------------------
@@ -1309,6 +1336,187 @@ class SearchAgentLoop(AgentLoopBase):
             num_turns,
         )
 
+    async def _handle_absent_actions(
+        self,
+        *,
+        working_messages: list[dict[str, Any]],
+        agent_ctx,
+        request_id: str,
+        sampling_params: dict[str, Any],
+        recorder: ControlFlowRecorder,
+        metrics: dict[str, float],
+        state: AgentState,
+        question: str,
+        latest_evaluation,
+        task_statuses: dict[str, bool],
+        active_tasks: dict[str, str],
+        num_turns: int,
+        consecutive_format_errors: int,
+        consecutive_rejections: int,
+        forced_answer_attempted: bool,
+        final_answer: str | None,
+    ) -> _AbsentActionsDirective:
+        """Re-prompt (or auto-search) after a turn parsed no recognised tag.
+
+        At the format-error dead-end, if the model has never produced a search,
+        auto-issue a search on the user's question so retrieval fires at least
+        once instead of giving up with no evidence. Earlier no-action turns
+        (e.g. <think>/decision steps) re-prompt via ``_handle_no_action``.
+        """
+        cfg = self.search_config
+        if (
+            cfg.auto_search_on_deadend
+            and state.search_rounds == 0
+            and question
+            and consecutive_format_errors + 1 >= cfg.max_consecutive_format_errors
+        ):
+            recorder.record(
+                turn=num_turns,
+                component="planner",
+                action="auto_search",
+                status="decided",
+                details={"query": question, "reason": "deadend_no_search"},
+            )
+            return _AbsentActionsDirective(
+                control=TurnControl.CONTINUE,
+                injected_actions=[(cfg.search_tag, question)],
+                exit_status=None,
+                consecutive_format_errors=0,
+                consecutive_rejections=consecutive_rejections,
+                forced_answer_attempted=forced_answer_attempted,
+                final_answer=final_answer,
+                num_turns=num_turns,
+            )
+        recorder.record(
+            turn=num_turns,
+            component="planner",
+            action="format_recovery",
+            status="decided",
+            details={"decision": "retry"},
+        )
+        d = await self._handle_no_action(
+            working_messages=working_messages,
+            agent_ctx=agent_ctx,
+            request_id=request_id,
+            sampling_params=sampling_params,
+            metrics=metrics,
+            latest_evaluation=latest_evaluation,
+            task_statuses=task_statuses,
+            active_tasks=active_tasks,
+            rounds_used=state.search_rounds,
+            consecutive_format_errors=consecutive_format_errors,
+            consecutive_rejections=consecutive_rejections,
+            forced_answer_attempted=forced_answer_attempted,
+            final_answer=final_answer,
+            num_turns=num_turns,
+        )
+        return _AbsentActionsDirective(
+            control=d.control,
+            injected_actions=None,
+            exit_status=d.exit_status,
+            consecutive_format_errors=d.consecutive_format_errors,
+            consecutive_rejections=d.consecutive_rejections,
+            forced_answer_attempted=d.forced_answer_attempted,
+            final_answer=d.final_answer,
+            num_turns=d.num_turns,
+        )
+
+    async def _run_search_stage(
+        self,
+        *,
+        search_tool_call: SearchToolCall,
+        state: AgentState,
+        recorder: ControlFlowRecorder,
+        num_turns: int,
+        agent_ctx,
+        search_cache: dict[str, list[SearchResult]],
+        active_tasks: dict[str, str],
+        task_statuses: dict[str, bool],
+        task_search_counts: dict[str, int],
+        metrics: dict[str, float],
+        response_text: str,
+        turn_observations: list[str],
+        working_messages: list[dict[str, Any]],
+        consecutive_rejections: int,
+        on_turn: "OnTurnCallback | None",
+    ) -> _SearchStageResult:
+        """Execute one parallel search round and apply the plateau check.
+
+        Appends observations to ``turn_observations`` (or the plateau notice to
+        ``working_messages``); dict state is mutated in place. Returns the reset
+        rejection counter, the round evaluation, and whether to stop searching.
+        """
+        cfg = self.search_config
+        consecutive_rejections = 0
+        for task_id in search_tool_call.task_ids:
+            if not task_id:
+                continue
+            if task_search_counts.get(task_id, 0):
+                metrics["research_followup_queries"] += 1.0
+            task_search_counts[task_id] = task_search_counts.get(task_id, 0) + 1
+        prev_evidence_for_round = state.evidence_score
+        round_result = await self._execute_search_round(
+            search_tool_call,
+            state=state,
+            recorder=recorder,
+            turn=num_turns,
+            agent_ctx=agent_ctx,
+            search_cache=search_cache,
+            active_tasks=active_tasks,
+            task_statuses=task_statuses,
+            metrics=metrics,
+            retriever=self._planner.round_retriever(
+                response_text, self._search_action_tags
+            ),
+            rerank=self._planner.round_rerank(response_text, self._search_action_tags),
+        )
+        latest_evaluation = round_result.evaluation
+        plateau_snapshot = LoopSnapshot(
+            rounds_used=state.search_rounds,
+            num_subquestions=len(active_tasks),
+            evidence_sufficient=self._has_sufficient_evidence(
+                latest_evaluation, task_statuses, active_tasks
+            ),
+            prev_evidence_score=prev_evidence_for_round,
+            curr_evidence_score=state.evidence_score,
+            consecutive_rejections=consecutive_rejections,
+            model_emitted_answer=False,
+        )
+        plateau_stop = self._loop_controller.should_continue_searching(plateau_snapshot)
+        if plateau_stop.reason is StopReason.PLATEAU:
+            recorder.record(
+                turn=num_turns,
+                component="loop_controller",
+                action="plateau_stopped",
+                status="decided",
+                details={"decision": "stop"},
+            )
+            metrics["plateau_early_stop"] = 1.0
+            working_messages.append(
+                {"role": "user", "content": cfg.search_limit_template}
+            )
+            return _SearchStageResult(True, consecutive_rejections, latest_evaluation)
+        recorder.record(
+            turn=num_turns,
+            component="loop_controller",
+            action="search_continued",
+            status="decided",
+            details={"decision": "continue"},
+        )
+        turn_observations.append(round_result.observation)
+        if on_turn is not None:
+            doc_count = sum(len(sc.results) for sc in round_result.search_contexts)
+            await on_turn(num_turns, "search_routing_tool", doc_count)
+        if active_tasks:
+            turn_observations.append(
+                cfg.subquestions_obs_template.format(
+                    content=self._build_subquestion_status_feedback(
+                        active_tasks, task_statuses, task_search_counts
+                    )
+                )
+            )
+        return _SearchStageResult(False, consecutive_rejections, latest_evaluation)
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
@@ -1324,6 +1532,45 @@ class SearchAgentLoop(AgentLoopBase):
             ),
             "",
         )
+
+    @staticmethod
+    def _classify_planned_action(
+        action_names: set[str], search_tags: set[str], answer_tag: str
+    ) -> str:
+        """Classify a parsed turn for the planner trace record."""
+        if action_names & search_tags:
+            return "search_planned"
+        if answer_tag in action_names:
+            return "answer_planned"
+        return "turn_parsed"
+
+    def _plan_only_observation(
+        self,
+        *,
+        declared_subquestions: dict[str, str],
+        actions: list[tuple[str, str]],
+        decision_tag: str,
+        latest_search_decision: str | None,
+        metrics: dict[str, float],
+    ) -> str:
+        """Observation for a turn that only planned/declared work — no search/fetch.
+
+        metrics is mutated in place, matching the other turn-stage helpers.
+        """
+        cfg = self.search_config
+        if declared_subquestions:
+            return cfg.subquestions_obs_template.format(
+                content="Registered subquestions:\n"
+                + "\n".join(
+                    f"- {tid}: {desc}" for tid, desc in declared_subquestions.items()
+                )
+            )
+        if any(tag == decision_tag for tag, _ in actions):
+            metrics["decision_prompts"] += 1
+            return cfg.decision_obs_template.format(
+                content=self._build_decision_feedback(latest_search_decision)
+            )
+        return cfg.plan_obs_template
 
     async def run(
         self,
@@ -1391,78 +1638,46 @@ class SearchAgentLoop(AgentLoopBase):
                 if actions:
                     action_trace_parts.append(response_text)
                     action_names = {tag for tag, _ in actions}
-                    if action_names & search_tags:
-                        planned_action = "search_planned"
-                    elif answer_tag in action_names:
-                        planned_action = "answer_planned"
-                    else:
-                        planned_action = "turn_parsed"
                     recorder.record(
                         turn=num_turns,
                         component="planner",
-                        action=planned_action,
+                        action=self._classify_planned_action(
+                            action_names, search_tags, answer_tag
+                        ),
                         status="decided",
                     )
 
-                # No recognised tag: re-prompt depending on where we are in the workflow.
+                # No recognised tag: re-prompt (or auto-search at the dead-end).
                 if not actions:
-                    # Deterministic control flow: at the format-error dead-end,
-                    # if the model has never produced a search, auto-issue a
-                    # search on the user's question so retrieval fires at least
-                    # once instead of giving up with no evidence. Earlier
-                    # no-action turns still re-prompt (e.g. <think>/decision
-                    # steps) via _handle_no_action below.
-                    if (
-                        cfg.auto_search_on_deadend
-                        and state.search_rounds == 0
-                        and question
-                        and consecutive_format_errors + 1
-                        >= cfg.max_consecutive_format_errors
-                    ):
-                        consecutive_format_errors = 0
-                        actions = [(cfg.search_tag, question)]
-                        recorder.record(
-                            turn=num_turns,
-                            component="planner",
-                            action="auto_search",
-                            status="decided",
-                            details={
-                                "query": question,
-                                "reason": "deadend_no_search",
-                            },
-                        )
+                    d = await self._handle_absent_actions(
+                        working_messages=working_messages,
+                        agent_ctx=agent_ctx,
+                        request_id=request_id,
+                        sampling_params=sampling_params,
+                        recorder=recorder,
+                        metrics=metrics,
+                        state=state,
+                        question=question,
+                        latest_evaluation=latest_evaluation,
+                        task_statuses=task_statuses,
+                        active_tasks=active_tasks,
+                        num_turns=num_turns,
+                        consecutive_format_errors=consecutive_format_errors,
+                        consecutive_rejections=consecutive_rejections,
+                        forced_answer_attempted=forced_answer_attempted,
+                        final_answer=final_answer,
+                    )
+                    consecutive_format_errors = d.consecutive_format_errors
+                    consecutive_rejections = d.consecutive_rejections
+                    forced_answer_attempted = d.forced_answer_attempted
+                    final_answer = d.final_answer
+                    num_turns = d.num_turns
+                    if d.injected_actions is not None:
+                        actions = d.injected_actions
+                    elif d.control is TurnControl.BREAK:
+                        exit_status = d.exit_status
+                        break
                     else:
-                        recorder.record(
-                            turn=num_turns,
-                            component="planner",
-                            action="format_recovery",
-                            status="decided",
-                            details={"decision": "retry"},
-                        )
-                        d = await self._handle_no_action(
-                            working_messages=working_messages,
-                            agent_ctx=agent_ctx,
-                            request_id=request_id,
-                            sampling_params=sampling_params,
-                            metrics=metrics,
-                            latest_evaluation=latest_evaluation,
-                            task_statuses=task_statuses,
-                            active_tasks=active_tasks,
-                            rounds_used=state.search_rounds,
-                            consecutive_format_errors=consecutive_format_errors,
-                            consecutive_rejections=consecutive_rejections,
-                            forced_answer_attempted=forced_answer_attempted,
-                            final_answer=final_answer,
-                            num_turns=num_turns,
-                        )
-                        consecutive_format_errors = d.consecutive_format_errors
-                        consecutive_rejections = d.consecutive_rejections
-                        forced_answer_attempted = d.forced_answer_attempted
-                        final_answer = d.final_answer
-                        num_turns = d.num_turns
-                        if d.control is TurnControl.BREAK:
-                            exit_status = d.exit_status
-                            break
                         continue
                 consecutive_format_errors = 0
 
@@ -1564,27 +1779,15 @@ class SearchAgentLoop(AgentLoopBase):
 
                 # Plan / subquestions only — no search or fetch.
                 if not search_tool_call.has_new_queries and not fetch_urls:
-                    if declared_subquestions:
-                        turn_observations.append(
-                            cfg.subquestions_obs_template.format(
-                                content="Registered subquestions:\n"
-                                + "\n".join(
-                                    f"- {tid}: {desc}"
-                                    for tid, desc in declared_subquestions.items()
-                                )
-                            )
+                    turn_observations.append(
+                        self._plan_only_observation(
+                            declared_subquestions=declared_subquestions,
+                            actions=actions,
+                            decision_tag=decision_tag,
+                            latest_search_decision=latest_search_decision,
+                            metrics=metrics,
                         )
-                    elif any(tag == decision_tag for tag, _ in actions):
-                        metrics["decision_prompts"] += 1
-                        turn_observations.append(
-                            cfg.decision_obs_template.format(
-                                content=self._build_decision_feedback(
-                                    latest_search_decision
-                                )
-                            )
-                        )
-                    else:
-                        turn_observations.append(cfg.plan_obs_template)
+                    )
                     working_messages.append(
                         {"role": "user", "content": "".join(turn_observations)}
                     )
@@ -1592,82 +1795,27 @@ class SearchAgentLoop(AgentLoopBase):
 
                 # Parallel search round (before fetch so evidence appears first).
                 if search_tool_call.has_new_queries:
-                    consecutive_rejections = 0
-                    for task_id in search_tool_call.task_ids:
-                        if not task_id:
-                            continue
-                        if task_search_counts.get(task_id, 0):
-                            metrics["research_followup_queries"] += 1.0
-                        task_search_counts[task_id] = (
-                            task_search_counts.get(task_id, 0) + 1
-                        )
-                    prev_evidence_for_round = state.evidence_score
-                    round_result = await self._execute_search_round(
-                        search_tool_call,
+                    stage = await self._run_search_stage(
+                        search_tool_call=search_tool_call,
                         state=state,
                         recorder=recorder,
-                        turn=num_turns,
+                        num_turns=num_turns,
                         agent_ctx=agent_ctx,
                         search_cache=search_cache,
                         active_tasks=active_tasks,
                         task_statuses=task_statuses,
+                        task_search_counts=task_search_counts,
                         metrics=metrics,
-                        retriever=self._planner.round_retriever(
-                            response_text, self._search_action_tags
-                        ),
-                        rerank=self._planner.round_rerank(
-                            response_text, self._search_action_tags
-                        ),
-                    )
-                    latest_evaluation = round_result.evaluation
-                    _plateau_snapshot = LoopSnapshot(
-                        rounds_used=state.search_rounds,
-                        num_subquestions=len(active_tasks),
-                        evidence_sufficient=self._has_sufficient_evidence(
-                            latest_evaluation, task_statuses, active_tasks
-                        ),
-                        prev_evidence_score=prev_evidence_for_round,
-                        curr_evidence_score=state.evidence_score,
+                        response_text=response_text,
+                        turn_observations=turn_observations,
+                        working_messages=working_messages,
                         consecutive_rejections=consecutive_rejections,
-                        model_emitted_answer=False,
+                        on_turn=on_turn,
                     )
-                    _plateau_stop = self._loop_controller.should_continue_searching(
-                        _plateau_snapshot
-                    )
-                    if _plateau_stop.reason is StopReason.PLATEAU:
-                        recorder.record(
-                            turn=num_turns,
-                            component="loop_controller",
-                            action="plateau_stopped",
-                            status="decided",
-                            details={"decision": "stop"},
-                        )
-                        metrics["plateau_early_stop"] = 1.0
-                        working_messages.append(
-                            {"role": "user", "content": cfg.search_limit_template}
-                        )
+                    consecutive_rejections = stage.consecutive_rejections
+                    latest_evaluation = stage.latest_evaluation
+                    if stage.plateau:
                         continue
-                    recorder.record(
-                        turn=num_turns,
-                        component="loop_controller",
-                        action="search_continued",
-                        status="decided",
-                        details={"decision": "continue"},
-                    )
-                    turn_observations.append(round_result.observation)
-                    if on_turn is not None:
-                        doc_count = sum(
-                            len(sc.results) for sc in round_result.search_contexts
-                        )
-                        await on_turn(num_turns, "search_routing_tool", doc_count)
-                    if active_tasks:
-                        turn_observations.append(
-                            cfg.subquestions_obs_template.format(
-                                content=self._build_subquestion_status_feedback(
-                                    active_tasks, task_statuses, task_search_counts
-                                )
-                            )
-                        )
 
                 # Page fetch (appended after search results in the same message).
                 if fetch_urls:
