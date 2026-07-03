@@ -448,7 +448,7 @@ def test_write_faiss_index_delegates_to_index_builder(monkeypatch, tmp_path):
 # Paragraph-aware chunking
 # ---------------------------------------------------------------------------
 
-from src.internal.document_index.index_builder import (  # noqa: E402
+from src.internal.document_index.chunking import (  # noqa: E402
     _split_paragraphs,
     _split_sentences_in_paragraph,
 )

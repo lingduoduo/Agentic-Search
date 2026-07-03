@@ -22,17 +22,19 @@ from typing import Protocol, TypeVar
 import numpy as np
 
 from src.internal.connectors.models import ConnectorFailure, Document
-from src.internal.document_index.index_builder import (
-    EmbeddingFn,
-    IndexingHeartbeatInterface,
+from src.internal.document_index._common import IndexingHeartbeatInterface
+from src.internal.document_index.chunking import (
     chunk_document,
     chunk_documents,
+    filter_indexable_documents,
+)
+from src.internal.document_index.embedding import (
+    EmbeddingFn,
     deterministic_embedding_fn,
     embed_chunks,
     embed_chunks_with_failure_handling,
-    filter_indexable_documents,
-    run_indexing_pipeline,
 )
+from src.internal.document_index.pipeline import run_indexing_pipeline
 from src.internal.document_index.models import (
     ChunkingConfig,
     EmbeddedChunk,

@@ -10,17 +10,15 @@ from typing import Any
 import numpy as np
 
 from src.internal.document_index.embedding_cache import EmbeddingCache, OpenAIEmbedder
-from src.internal.document_index.index_builder import (
+from src.internal.document_index._common import _require_faiss, _require_torch
+from src.internal.document_index.embedding import (
     _encode_batch,
     _normalize_embedding_rows,
-    _require_faiss,
-    _require_torch,
-    load_corpus,
     load_model,
     prepare_texts,
     resolve_pooling_method,
-    set_hnsw_ef_search,
 )
+from src.internal.document_index.faiss_io import load_corpus, set_hnsw_ef_search
 
 # Must be set before torch/faiss are imported to prevent an OpenMP conflict on macOS
 # when both libraries bundle their own libomp.
