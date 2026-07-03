@@ -104,22 +104,14 @@ class LLMSettings:
 
 @dataclass(frozen=True)
 class VectorDbSettings:
-    """Settings for the OpenSearch vector database backend."""
+    """Settings for the Weaviate vector database backend."""
 
     disable_vector_db: bool = False
-    enable_opensearch: bool = False
     multi_tenant: bool = False
-
-    # OpenSearch connection
-    opensearch_host: str = "localhost"
-    opensearch_port: int = 9200
-    opensearch_user: str | None = None
-    opensearch_password: str | None = None
 
     # Indexing behaviour
     max_chunks_per_doc_batch: int = 512
     enable_multipass_indexing: bool = False
-    verify_create_opensearch_index_on_init: bool = False
 
 
 @dataclass(frozen=True)
@@ -208,20 +200,12 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         ),
         vector_db=VectorDbSettings(
             disable_vector_db=get_env_bool(source, "DISABLE_VECTOR_DB", False),
-            enable_opensearch=get_env_bool(source, "ENABLE_OPENSEARCH_INDEXING", False),
             multi_tenant=get_env_bool(source, "MULTI_TENANT", False),
-            opensearch_host=get_env_str(source, "OPENSEARCH_HOST", "localhost"),
-            opensearch_port=get_env_int(source, "OPENSEARCH_PORT", 9200),
-            opensearch_user=get_env_str(source, "OPENSEARCH_USER", None),
-            opensearch_password=get_env_str(source, "OPENSEARCH_PASSWORD", None),
             max_chunks_per_doc_batch=get_env_int(
                 source, "MAX_CHUNKS_PER_DOC_BATCH", 512
             ),
             enable_multipass_indexing=get_env_bool(
                 source, "ENABLE_MULTIPASS_INDEXING", False
-            ),
-            verify_create_opensearch_index_on_init=get_env_bool(
-                source, "VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT", False
             ),
         ),
         license_enforcement_enabled=get_env_bool(

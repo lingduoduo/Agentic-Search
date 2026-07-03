@@ -103,7 +103,7 @@ For production, `npm run build` produces `web/dist`; the FastAPI app serves it a
 ```bash
 pytest                           # unit + regression (default)
 pytest tests/unit/test_agent_loop.py -v   # single test file
-pytest tests/integration/        # integration tests — requires live Postgres/OpenSearch/Redis stack
+pytest tests/integration/        # integration tests — requires live Postgres/Weaviate/Redis stack
 ```
 
 ### Linting

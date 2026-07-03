@@ -48,19 +48,6 @@ def _build_local_backend() -> RetrievalBackend:
     return LocalBackend(sparse_config, dense_config=dense_config)
 
 
-def _build_opensearch_backend() -> RetrievalBackend:
-    from .backends.opensearch import OpenSearchBackend
-
-    return OpenSearchBackend(
-        index_name=os.environ["OPENSEARCH_INDEX"],
-        content_field=os.environ.get("OPENSEARCH_CONTENT_FIELD", "content"),
-        vector_field=os.environ.get("OPENSEARCH_VECTOR_FIELD", "content_vector"),
-        doc_id_field=os.environ.get("OPENSEARCH_DOC_ID_FIELD", "document_id"),
-        title_field=os.environ.get("OPENSEARCH_TITLE_FIELD", "title"),
-        url_field=os.environ.get("OPENSEARCH_URL_FIELD", "source_links"),
-    )
-
-
 def _build_weaviate_backend() -> RetrievalBackend:
     from .backends.weaviate import WeaviateBackend
 
@@ -90,12 +77,10 @@ def _build_backend() -> RetrievalBackend:
     name = os.environ.get("RETRIEVAL_BACKEND", "local").lower()
     if name == "local":
         return _build_local_backend()
-    if name == "opensearch":
-        return _build_opensearch_backend()
     if name == "weaviate":
         return _build_weaviate_backend()
     raise ValueError(
-        f"Unknown RETRIEVAL_BACKEND: {name!r}. Supported values: local, opensearch, weaviate"
+        f"Unknown RETRIEVAL_BACKEND: {name!r}. Supported values: local, weaviate"
     )
 
 
