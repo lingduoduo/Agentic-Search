@@ -132,13 +132,13 @@ store.close()
 
 - [ ] **Step 2: Run the helper from the repository root**
 
-Run: `python /tmp/seed_monitoring_demo.py`
+Run: `env PYTHONPATH=. python /tmp/seed_monitoring_demo.py`
 
 Expected: output includes `enabled_connectors: 2`, `documents: 6`, and `attempts: 4` on an otherwise empty database. Larger totals are valid when pre-existing records exist.
 
 - [ ] **Step 3: Run the helper again to verify idempotence**
 
-Run: `python /tmp/seed_monitoring_demo.py`
+Run: `env PYTHONPATH=. python /tmp/seed_monitoring_demo.py`
 
 Expected: counts are unchanged from Step 2.
 
