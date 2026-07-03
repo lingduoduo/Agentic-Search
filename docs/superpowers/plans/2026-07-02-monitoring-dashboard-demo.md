@@ -4,7 +4,7 @@
 
 **Goal:** Populate the configured file-backed SQLite database, launch the existing dev-console stack, and show verified monitoring results in the browser.
 
-**Architecture:** A one-shot runtime script uses the repository's `AgenticSearchStore` APIs to add idempotent demo connectors, documents, and index attempts to `data/agentic_search.sqlite3`. The existing retrieval, FastAPI, and Vite processes run with matching debug/database configuration; API probes and Playwright verify the Console without modifying product code.
+**Architecture:** A repo-native CLI uses `AgenticSearchStore` APIs to add idempotent demo connectors, documents, and index attempts while generating a matching retrieval corpus. The existing retrieval, FastAPI, and Vite processes run with matching debug/database configuration; API probes and Playwright verify the Console without changing dashboard or application-startup behavior.
 
 **Tech Stack:** Python 3.12, SQLite, FastAPI/Uvicorn, React/Vite, `AgenticSearchStore`, Playwright CLI.
 
@@ -14,7 +14,7 @@
 - Do not create or modify a repository `.env` file.
 - Do not delete or replace existing SQLite rows.
 - Use stable `monitoring-demo-*` IDs so setup is repeatable.
-- Keep the runtime seed helper, logs, and screenshot outside tracked source files.
+- Commit the setup CLI and focused tests; keep generated data, logs, and screenshots untracked.
 - Do not expose environment secrets in output or screenshots.
 
 ---
@@ -22,7 +22,6 @@
 ### Task 1: Preflight the Runtime
 
 **Files:**
-- Create runtime-only: `/tmp/monitoring-demo-corpus.jsonl`
 - Read: `src/internal/servers/web/app.py`
 - Read: `src/internal/servers/retrieval/demo.py`
 - Read: `web/package.json`
@@ -49,99 +48,92 @@ Run: `git status --short`
 
 Expected: no output.
 
-### Task 2: Populate the Configured SQLite Database
+### Task 2: Implement the Monitoring Demo Setup CLI
 
 **Files:**
-- Runtime corpus: `/tmp/monitoring-demo-corpus.jsonl`
-- Create runtime-only: `/tmp/seed_monitoring_demo.py`
-- Create runtime data: `data/agentic_search.sqlite3`
+- Create: `examples/seed_monitoring_demo.py`
+- Create: `tests/unit/test_seed_monitoring_demo.py`
 - Read: `src/internal/db/store.py`
 - Read: `src/internal/db/models.py`
 
 **Interfaces:**
-- Consumes: `AgenticSearchStore(path)`, `ConnectorConfig`, `StoredDocument`, and `create_index_attempt(...)`.
-- Produces: two enabled connectors, one disabled connector, six documents, one pending attempt, one in-progress attempt, one successful attempt, and one failed attempt with stable IDs.
+- Consumes: `AgenticSearchStore(path)`, `ConnectorConfig`, `StoredDocument`, `AGENTIC_SEARCH_WEB_DB_PATH`, `--db-path`, and `--corpus-path`.
+- Produces: `seed_monitoring_demo(db_path: str | Path, corpus_path: str | Path) -> dict[str, object]`, a file-backed SQLite dataset, and a six-row JSONL corpus.
 
-- [ ] **Step 1: Create the runtime-only seed helper**
+- [ ] **Step 1: Write focused failing tests**
 
-Create `/tmp/seed_monitoring_demo.py` with:
+Create `tests/unit/test_seed_monitoring_demo.py` with tests that:
 
 ```python
-from pathlib import Path
+def test_seed_creates_expected_database_and_corpus(tmp_path):
+    summary = seed_monitoring_demo(tmp_path / "demo.sqlite3", tmp_path / "corpus.jsonl")
+    assert summary["enabled_connectors"] == 2
+    assert summary["documents"] == 6
+    assert summary["attempts"] == 4
+    assert len((tmp_path / "corpus.jsonl").read_text().splitlines()) == 6
 
-from src.internal.db import AgenticSearchStore
-from src.internal.db.models import ConnectorConfig, StoredDocument
 
-DB_PATH = Path("data/agentic_search.sqlite3")
-store = AgenticSearchStore(DB_PATH)
+def test_seed_is_idempotent_and_preserves_unrelated_rows(tmp_path):
+    db_path = tmp_path / "demo.sqlite3"
+    corpus_path = tmp_path / "corpus.jsonl"
+    store = AgenticSearchStore(db_path)
+    store.upsert_connector(ConnectorConfig(id="existing", name="Existing", source="test"))
+    store.close()
+    first = seed_monitoring_demo(db_path, corpus_path)
+    second = seed_monitoring_demo(db_path, corpus_path)
+    assert first == second
+    store = AgenticSearchStore(db_path)
+    assert store.get_connector("existing") is not None
+    assert len(store.list_index_attempts()) == 4
+    store.close()
 
-connectors = [
-    ConnectorConfig(id="monitoring-demo-docs", name="Product Docs", source="filesystem", enabled=True, metadata={"demo": True}),
-    ConnectorConfig(id="monitoring-demo-support", name="Support Knowledge", source="web", enabled=True, metadata={"demo": True}),
-    ConnectorConfig(id="monitoring-demo-archive", name="Archive", source="filesystem", enabled=False, metadata={"demo": True}),
-]
-for connector in connectors:
-    store.upsert_connector(connector)
 
-documents = [
-    ("architecture", "Agentic Search Architecture", "Product Docs", "The system separates retrieval, web orchestration, and the React dashboard."),
-    ("monitoring", "Monitoring Guide", "Product Docs", "The Console shows server health, worker metrics, query transforms, and retrieval comparisons."),
-    ("retrieval", "Retrieval Operations", "Product Docs", "Sparse retrieval uses TF-IDF in the local demo server and returns ranked source documents."),
-    ("indexing", "Indexing Runbook", "Support Knowledge", "Index attempts progress from not_started to in_progress and then success or failed."),
-    ("grounding", "Grounding Troubleshooting", "Support Knowledge", "Citations indicate retrieval grounding while answer text indicates synthesis success."),
-    ("workers", "Worker Capacity", "Support Knowledge", "Queue depth and active connector counts provide a live operational snapshot."),
-]
-for slug, title, connector_name, contents in documents:
-    connector_id = "monitoring-demo-docs" if connector_name == "Product Docs" else "monitoring-demo-support"
-    store.upsert_document(
-        StoredDocument(
-            id=f"monitoring-demo-{slug}",
-            title=title,
-            contents=contents,
-            url=f"https://demo.local/{slug}",
-            connector_id=connector_id,
-            metadata={"demo": True, "collection": connector_name},
-        )
-    )
-
-attempts = [
-    ("monitoring-demo-pending", "monitoring-demo-docs", "not_started", 0, 0, None),
-    ("monitoring-demo-running", "monitoring-demo-support", "in_progress", 3, 12, None),
-    ("monitoring-demo-success", "monitoring-demo-docs", "success", 6, 24, None),
-    ("monitoring-demo-failed", "monitoring-demo-archive", "failed", 1, 2, "Source temporarily unavailable"),
-]
-for attempt_id, connector_id, status, total_documents, total_chunks, error in attempts:
-    if store.get_index_attempt(attempt_id) is None:
-        store.create_index_attempt(
-            attempt_id=attempt_id,
-            connector_id=connector_id,
-            status=status,
-            total_documents=total_documents,
-            total_chunks=total_chunks,
-            error=error,
-            metadata={"demo": True},
-        )
-
-print({
-    "db_path": str(DB_PATH.resolve()),
-    "enabled_connectors": len(store.list_connectors(enabled=True)),
-    "documents": len(store.list_documents()),
-    "attempts": len(store.list_index_attempts()),
-})
-store.close()
+def test_main_rejects_in_memory_database(monkeypatch, capsys):
+    monkeypatch.delenv("AGENTIC_SEARCH_WEB_DB_PATH", raising=False)
+    assert main([]) == 2
+    assert "--db-path" in capsys.readouterr().err
 ```
 
-- [ ] **Step 2: Run the helper from the repository root**
+Also assert that every generated corpus row matches the corresponding seeded document's `id`, `title`, `contents`, and `url`.
 
-Run: `env PYTHONPATH=. python /tmp/seed_monitoring_demo.py`
+- [ ] **Step 2: Run the focused tests to verify they fail**
 
-Expected: output includes `enabled_connectors: 2`, `documents: 6`, and `attempts: 4` on an otherwise empty database. Larger totals are valid when pre-existing records exist.
+Run: `pytest tests/unit/test_seed_monitoring_demo.py -q`
 
-- [ ] **Step 3: Run the helper again to verify idempotence**
+Expected: FAIL because `examples.seed_monitoring_demo` does not exist.
 
-Run: `env PYTHONPATH=. python /tmp/seed_monitoring_demo.py`
+- [ ] **Step 3: Implement the minimal CLI**
 
-Expected: counts are unchanged from Step 2.
+Create `examples/seed_monitoring_demo.py` with:
+
+- immutable module-level connector, document, and attempt fixtures using stable `monitoring-demo-*` IDs;
+- `seed_monitoring_demo(...)`, which rejects `:memory:`, creates parent directories, uses store upserts, inserts missing attempts, writes JSONL through a sibling temporary file followed by `Path.replace`, closes the store in `finally`, and returns absolute paths plus live totals;
+- `main(argv: list[str] | None = None) -> int`, which parses the two path flags, resolves the database flag over `AGENTIC_SEARCH_WEB_DB_PATH`, prints the summary with `json.dumps`, and returns `2` with a concise stderr message for `:memory:`;
+- a standard `if __name__ == "__main__": raise SystemExit(main())` entry point.
+
+- [ ] **Step 4: Run focused tests and static checks**
+
+Run: `pytest tests/unit/test_seed_monitoring_demo.py -q`
+
+Expected: all focused tests pass.
+
+Run: `ruff check examples/seed_monitoring_demo.py tests/unit/test_seed_monitoring_demo.py && ruff format --check examples/seed_monitoring_demo.py tests/unit/test_seed_monitoring_demo.py`
+
+Expected: both commands exit `0`.
+
+- [ ] **Step 5: Exercise the real CLI twice**
+
+Run: `python -m examples.seed_monitoring_demo --db-path data/agentic_search.sqlite3 --corpus-path data/monitoring_demo_corpus.jsonl`
+
+Run the same command again.
+
+Expected: both JSON summaries have identical totals; the existing SQLite file is preserved and `data/monitoring_demo_corpus.jsonl` contains six rows.
+
+- [ ] **Step 6: Commit the implementation**
+
+Run: `git add examples/seed_monitoring_demo.py tests/unit/test_seed_monitoring_demo.py docs/superpowers/plans/2026-07-02-monitoring-dashboard-demo.md`
+
+Run: `git commit -m "feat: add monitoring demo setup CLI"`
 
 ### Task 3: Launch the Three-Process Stack
 
@@ -151,26 +143,20 @@ Expected: counts are unchanged from Step 2.
 - Runtime logs: `/tmp/agentic-search-vite.log`
 
 **Interfaces:**
-- Consumes: `/tmp/monitoring-demo-corpus.jsonl`, `data/agentic_search.sqlite3`, debug flags.
+- Consumes: `data/monitoring_demo_corpus.jsonl`, `data/agentic_search.sqlite3`, debug flags.
 - Produces: retrieval at `http://127.0.0.1:8001`, web API at `http://127.0.0.1:7860`, frontend at `http://127.0.0.1:5173`.
 
-- [ ] **Step 1: Create the runtime retrieval corpus**
-
-Write six JSONL rows to `/tmp/monitoring-demo-corpus.jsonl` using the same IDs, titles, contents, and URLs as the seeded demo documents.
-
-Expected: `wc -l /tmp/monitoring-demo-corpus.jsonl` reports `6`.
-
-- [ ] **Step 2: Start the demo retrieval server**
+- [ ] **Step 1: Start the demo retrieval server**
 
 Run from the repository root in a persistent terminal session:
 
 ```bash
-python -m src.internal.servers.retrieval.demo --corpus_path /tmp/monitoring-demo-corpus.jsonl --port 8001
+python -m src.internal.servers.retrieval.demo --corpus_path data/monitoring_demo_corpus.jsonl --port 8001
 ```
 
 Expected: `GET http://127.0.0.1:8001/health` returns HTTP `200`.
 
-- [ ] **Step 3: Start the web backend with SQLite and debug routing**
+- [ ] **Step 2: Start the web backend with SQLite and debug routing**
 
 Run from the repository root in a persistent terminal session:
 
@@ -180,7 +166,7 @@ env AGENTIC_SEARCH_WEB_DB_PATH=data/agentic_search.sqlite3 AGENTIC_SEARCH_DEBUG_
 
 Expected: `GET http://127.0.0.1:7860/health` returns HTTP `200` and no local model download is attempted.
 
-- [ ] **Step 4: Start Vite with the Console visible**
+- [ ] **Step 3: Start Vite with the Console visible**
 
 Run from `web/` in a persistent terminal session:
 
