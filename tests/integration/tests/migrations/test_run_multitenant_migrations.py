@@ -1,6 +1,6 @@
 """
 Black-box integration tests for the parallel alembic migration runner
-(backend/alembic/run_multitenant_migrations.py).
+(alembic/run_multitenant_migrations.py).
 
 The script is invoked as a subprocess — the same way it would be used in
 production.  Tests verify exit codes and stdout messages.

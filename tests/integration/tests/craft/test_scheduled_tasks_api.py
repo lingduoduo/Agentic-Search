@@ -338,7 +338,7 @@ def test_list_runs_paginates_by_started_at_cursor(admin_user: DATestUser) -> Non
 
 
 # NOTE: ``test_scheduled_run_session_excluded_from_sidebar`` was relocated
-# to ``backend/tests/external_dependency_unit/craft/test_session_lifecycle.py``
+# to ``tests/external_dependency_unit/craft/test_session_lifecycle.py``
 # (``TestSidebarOriginFilter.test_scheduled_origin_session_excluded_from_sidebar_listing``).
 #
 # The original test inserted ``BuildSession`` + ``BuildMessage`` rows

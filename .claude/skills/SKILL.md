@@ -49,24 +49,14 @@ python3 -m examples.run_agentic_search \
 ### Start a retrieval server
 
 ```bash
-# Dense retrieval (FAISS/E5)
-python3 -m src.retrieval.servers.retrieval \
-    --index_path indexes/my_index \
-    --model_name intfloat/e5-base-v2 \
-    --host 0.0.0.0 --port 8000
+# Demo — TF-IDF over a local corpus (no Java, no FAISS)
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
-# Sparse retrieval (BM25/Pyserini) — requires Java
-python3 -m src.retrieval.servers.retrieval \
-    --sparse \
-    --index_path indexes/my_bm25_index \
-    --host 0.0.0.0 --port 8001
+# Hybrid — RRF-fused dense E5 + sparse TF-IDF (add --no-dense for TF-IDF only)
+python3 -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl
 
-# Retrieval + cross-encoder reranking
-python3 -m src.retrieval.servers.retrieval_rerank \
-    --index_path indexes/my_index \
-    --model_name intfloat/e5-base-v2 \
-    --rerank_model cross-encoder/ms-marco-MiniLM-L-6-v2 \
-    --port 8002
+# Standalone cross-encoder reranker
+python3 -m src.internal.servers.retrieval.rerank
 ```
 
 ### Run a deterministic search trace (no model required)
@@ -102,7 +92,7 @@ python3 -m examples.run_grpo_training_pipeline
 ### SearchClient — async HTTP client
 
 ```python
-from src.retrieval.client import SearchClient, SearchClientConfig
+from src.context.retrieval.client import SearchClient, SearchClientConfig
 
 client = SearchClient(SearchClientConfig(url="http://localhost:8000/retrieve", topk=5))
 results = await client.retrieve_one("What is BM25?")
@@ -112,7 +102,7 @@ results = await client.retrieve_one("What is BM25?")
 ### HybridRetriever — in-process dense + sparse fusion
 
 ```python
-from src.retrieval.hybrid_retriever import HybridRetriever, HybridRetrieverConfig
+from src.internal.document_index.hybrid_retriever import HybridRetriever, HybridRetrieverConfig
 
 retriever = HybridRetriever(HybridRetrieverConfig(
     dense_index_path="indexes/dense",
@@ -151,8 +141,8 @@ export SERP_API_KEY=...      # SerpAPI (alternative)
 Start the web search server:
 
 ```bash
-python3 -m src.retrieval.servers.google   # Google Custom Search
-python3 -m src.retrieval.servers.serp     # SerpAPI
+python3 -m src.internal.servers.web_search.google   # Google Custom Search
+python3 -m src.internal.servers.web_search.serp     # SerpAPI
 ```
 
 ## When to Use Each Mode

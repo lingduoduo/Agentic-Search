@@ -1,16 +1,22 @@
 # Agentic Search
 
+## Features
+
 A retrieval-backed agent platform for multi-turn search, RAG, and RL training. Built around a FastAPI backend, interchangeable retrieval servers, and an async agent loop that supports dense/sparse hybrid retrieval, tool calling, and streaming chat.
 
 🔍 **Agentic RAG** — Multi-hop retrieval with query decomposition, HyDE, hybrid reranking, and citation-grounded synthesis via `AgenticRAGLoop`.
 
-🤖 **Custom Agents** — Compose agents from instructions, knowledge sources, tools, and memory; backed by `SearchAgentLoop` or `ToolAgentLoop`.
+🤖 **Custom Conversation Agents** — Compose agents from instructions, knowledge sources, tools, and memory; backed by `SearchAgentLoop` or `ToolAgentLoop`.
 
 🌍 **Web Search** — Live retrieval via Google Custom Search, SerpAPI, and playwright-cli browser automation — all behind the same `/retrieve` API.
 
-📚 **Document Indexing** — Chunk, embed, and index documents into FAISS or BM25; async background workers handle ingestion at scale.
-
 🔗 **Connectors** — Pull content from local files, Google Drive, Slack, Confluence, GitHub, Jira, SharePoint, Salesforce, Zendesk, and Notion.
+
+📚 **Internal Document Indexing** — Chunk, embed, and index documents into FAISS or BM25; async background workers handle ingestion at scale.
+
+⚡ **Retrieval Optimization** — Query rewriting, BM25 parameter tuning, index tuning, learned RRF fusion, and result caching that squeeze recall and latency out of the retrieval layer.
+
+🏆 **Reranking Optimization** — Cross-encoder reranking with async batching, caching, two-stage cascades, and ONNX acceleration — benchmarked for the latency/quality trade-off.
 
 🛠️ **Tool Use** — Register Python callables or OpenAPI 3.x schemas as tools; `ToolAgentLoop` handles dispatch and structured output.
 
@@ -18,11 +24,9 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 🧭 **Intent Routing** — Auto-classifies every query as `search`, `chat`, or `tool`; dispatches to the right agent loop with no configuration; RAG-Fusion multi-source aggregation in tool mode.
 
-🖥️ **React Frontend** — Streaming chat UI with live SSE progress log, Markdown rendering, `[D1]`-format citation anchor links, per-card source expand/collapse, tool call trace panel, and intent-adaptive layout.
-
 🧠 **RL Training** — GRPO/PPO training with composite shaped rewards; `SearchAgentGRPOTrainer` runs real agent-loop rollouts so all reward components fire during training.
 
-📐 **Bamboogle Evaluation** — Benchmark `SearchAgentLoop` on two-hop QA with exact-match, contains-match, and shaped reward metrics; Apple Silicon (`--device mps`) supported out of the box.
+📐 **Evaluation** — Benchmark `SearchAgentLoop` on two-hop QA with exact-match, contains-match, and shaped reward metrics; Apple Silicon (`--device mps`) supported out of the box.
 
 🔌 **MCP Server** — Expose search, retrieval, and RAG as Model Context Protocol tools so any MCP-compatible LLM client (Claude Desktop, etc.) can query your knowledge base directly.
 
@@ -36,21 +40,20 @@ A retrieval-backed agent platform for multi-turn search, RAG, and RL training. B
 
 | Feature | Key modules |
 |---------|-------------|
-| 🔍 Agentic RAG | `src/agents/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid_rerank.py` |
-| 🤖 Custom Agents | `src/agents/search.py`, `src/agents/components/loop_controller.py`, `src/agents/tool_calling.py`, `src/agents/base.py` |
+| 🔍 Agentic RAG | `src/agents/search/agentic_rag.py`, `src/context/query_enhancer.py`, `src/internal/servers/retrieval/hybrid.py` |
+| 🤖 Custom Conversation Agents | `src/agents/search/search.py`, `src/agents/components/loop_controller.py`, `src/agents/tool/tool_calling.py`, `src/agents/core/base.py` |
 | 🌍 Web Search | `src/internal/servers/web_search/google.py`, `src/internal/servers/web_search/serp.py`, `src/internal/servers/web_search/browser.py` |
-| 📚 Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | 🔗 Connectors | `src/internal/connectors/`, `src/internal/servers/connectors/`, `src/internal/servers/oauth/` |
-| 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool_calling.py` |
-| 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
-| 🧭 Intent Routing | `src/internal/servers/web/app.py` (`_run_auto_routed`), `src/context/` |
-| 🖥️ React Frontend | `web/src/App.tsx`, `web/src/components/`, `web/src/styles.css` |
-| 🧠 RL Training | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/search_agent_grpo_trainer.py` |
-| 📐 Bamboogle Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
-| 🔌 MCP Server | `src/internal/mcp_server/tools/`, `src/internal/mcp_server/resources/` |
-| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `src/internal/servers/reporting/`, `src/internal/servers/license/` |
+| 📚 Internal Document Indexing | `src/internal/document_index/`, `src/internal/servers/backgroundworker/` |
 | ⚡ Retrieval Optimization | `src/internal/retrieval/query_optimizer.py`, `src/internal/retrieval/bm25_tuner.py`, `src/internal/retrieval/index_optimizer.py`, `src/internal/retrieval/fusion_learner.py`, `src/internal/retrieval/result_cache.py` |
 | 🏆 Reranking Optimization | `src/internal/retrieval/async_reranker.py`, `src/internal/retrieval/cached_reranker.py`, `src/internal/retrieval/two_stage_reranker.py`, `src/internal/retrieval/onnx_reranker.py`, `src/internal/retrieval/reranker_benchmark.py` |
+| 🛠️ Tool Use | `src/tools/base.py`, `src/tools/api.py`, `src/tools/search.py`, `src/agents/tool/tool_calling.py` |
+| 💬 Chat Orchestration | `src/internal/chat/process_message.py`, `src/internal/chat/llm_loop.py`, `src/internal/chat/citation_processor.py`, `src/internal/chat/compression.py` |
+| 🧭 Intent Routing | `src/internal/servers/web/app.py` (`_run_auto_routed`), `src/context/` |
+| 🧠 RL Training | `src/training/reward.py`, `src/training/grpo.py`, `src/training/ppo/search_agent_grpo_trainer.py` |
+| 📐 Evaluation | `src/training/eval/bamboogle.py`, `examples/run_bamboogle_eval.py`, `bin/run_bamboogle_eval.sh` |
+| 🔌 MCP Server | `src/internal/mcp_server/tools/`, `src/internal/mcp_server/resources/` |
+| 📊 Admin & Observability | `src/internal/observability/`, `src/internal/servers/analytics/`, `src/internal/servers/reporting/`, `src/internal/servers/license/` |
 
 
 ## Contents
@@ -331,7 +334,7 @@ The intent itself comes from the backend's routing decision — see the `respons
 
 API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`, `submitFeedback`.
 
-**Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](#rl-training) — the human-feedback signal that fine-tunes the policy.
+**Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](#training) — the human-feedback signal that fine-tunes the policy.
 
 
 ## Intent Routing
@@ -357,7 +360,7 @@ The router is `route_query` (`src/internal/servers/web/intent_routing.py`), disp
 | `done` | Stream complete | `{type, session_id, citations, documents, intent, tool_calls}` |
 | `error` | Unhandled exception | `{type, detail}` |
 
-The `on_turn` callback (`OnTurnCallback` in `src/agents/base.py`) is the hook that feeds per-turn events into the SSE queue from inside the agent loop.
+The `on_turn` callback (`OnTurnCallback` in `src/agents/core/base.py`) is the hook that feeds per-turn events into the SSE queue from inside the agent loop.
 
 
 ## Examples
@@ -535,7 +538,7 @@ python3 -m examples.run_search_pipeline
 - `KEYWORD_EXPANSION_PROMPT` / `QUERY_TYPE_PROMPT` — broaden sparse queries and classify intent for retrieval tuning
 - Binary search/chat classification prompt with labelled examples and strict single-word output
 - Agentic RAG prompts — decompose (2–4 sub-questions) and HyDE (hypothetical ideal answer) for `QueryEnhancer`
-- `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop` (`src/agents/search.py`)
+- `build_search_agent_instruction` — assembles the ReAct-style system prompt for `SearchAgentLoop` (`src/agents/search/search.py`)
 
 **RL Training**
 - Composite reward shaping (`SearchRewardFunction`) — correctness, format compliance, citation support, unnecessary-fetch penalty, and fetch-usefulness reward components
@@ -671,11 +674,10 @@ Loop flow:
 
 | Module | Description |
 |--------|-------------|
-| `demo.py` | TF-IDF over corpus.jsonl — no Java required |
-| `retrieval_server.py` | BM25 or dense (E5/BGE via FAISS) |
-| `retrieval_rerank.py` | Retrieval + cross-encoder reranker |
+| `demo.py` | TF-IDF over corpus.jsonl — no Java, no FAISS |
+| `hybrid.py` | RRF-fused dense (E5) + sparse TF-IDF; Java-free, FAISS-free — recommended for `AgenticRAGLoop` |
+| `server.py` | Full `RetrievalService` (BM25 / dense / hybrid, env-configured via `RETRIEVAL_BACKEND`) with per-mode + admin endpoints |
 | `rerank.py` | Standalone cross-encoder reranker (no retrieval) |
-| `hybrid_rerank.py` | Dense + BM25 RRF fusion + rerank (recommended for `AgenticRAGLoop`) |
 
 **Web search servers** (`src/internal/servers/web_search/`):
 
@@ -688,14 +690,11 @@ Loop flow:
 **Start a retrieval server:**
 
 ```bash
-# Dense (E5)
-python3 -m src.internal.servers.retrieval.retrieval_server \
-  --model_path intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
-  --corpus_path data/corpus.jsonl --retrieval_method e5 --device cpu --topk 5
+# Demo — TF-IDF, no Java/FAISS
+python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 
-# Sparse BM25
-python3 -m src.internal.servers.retrieval.retrieval_server \
-  --index_path data/indexes/bm25 --corpus_path data/corpus.jsonl --retrieval_method bm25
+# Hybrid — RRF-fused dense E5 + sparse TF-IDF (add --no-dense for TF-IDF only)
+python3 -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl
 ```
 
 **Build indexes:**
@@ -707,16 +706,6 @@ python3 -m src.internal.document_index.index_builder \
 
 python3 -m src.internal.document_index.index_builder \
   --retrieval_method bm25 --corpus_path data/corpus.jsonl --save_dir data/indexes/
-```
-
-**Hybrid + rerank:**
-
-```bash
-python3 -m src.internal.servers.retrieval.hybrid_rerank \
-  --dense_model intfloat/e5-base-v2 --index_path data/indexes/e5_Flat.index \
-  --corpus_path data/corpus.jsonl \
-  --sparse_index_path data/indexes/bm25 --hybrid_alpha 0.5 \
-  --retrieval_topk 10 --rerank_topk 5
 ```
 
 **Web search servers:**

@@ -94,7 +94,7 @@ def test_create_session_returns_201_with_session_and_sandbox_shape(
         "(SessionManager.create_session__no_commit only checks "
         "SANDBOX_MAX_CONCURRENT_PER_ORG when MULTI_TENANT=true). "
         "Multi-tenant integration tests live under "
-        "backend/tests/integration/multitenant_tests/ and require the "
+        "tests/integration/multitenant_tests/ and require the "
         "schema_private alembic head; this HTTP-half file runs against the "
         "single-tenant deployment and cannot reach the 429 branch."
     )

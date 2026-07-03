@@ -29,7 +29,7 @@ The idea is that each test can use the manager class to create (.create()) a "te
    ```
 
 Running some single tests require the `mock_connector_server` container to be running. If the above doesn't work,
-navigate to `backend/tests/integration/mock_services` and run
+navigate to `tests/integration/mock_services` and run
 ```sh
 docker compose -f docker-compose.mock-it-services.yml -p mock-it-services-stack up -d
 ```

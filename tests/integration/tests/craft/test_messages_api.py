@@ -5,7 +5,7 @@ inspect the packet sequence the consumer actually sees. They run against a
 real deployment using :class:`BuildSessionManager`.
 
 The DB-bound (ext-dep) half lives in
-``backend/tests/external_dependency_unit/craft/test_streaming_persistence.py``
+``tests/external_dependency_unit/craft/test_streaming_persistence.py``
 where stub backends can inject arbitrary ACP events. Some behaviors — most
 notably the ACP timeout path and SSE keepalive emission — live inside the
 Kubernetes ACP client and are hard to reach through the local-backend HTTP

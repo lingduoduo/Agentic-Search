@@ -134,7 +134,7 @@ playwright-cli show --annotate        # user draws boxes + adds comments; you re
 ## Example: Scripted search and result extraction
 
 Drive a Google search and extract top results as JSON using playwright-cli subprocess calls
-(as used by `src/internal/servers/retrieval/browser.py`):
+(as used by `src/internal/servers/web_search/browser.py`):
 
 ```bash
 SESSION="search-$(openssl rand -hex 4)"
