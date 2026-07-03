@@ -22,7 +22,7 @@
 ### Task 1: Preflight the Runtime
 
 **Files:**
-- Read: `data/corpus.jsonl`
+- Create runtime-only: `/tmp/monitoring-demo-corpus.jsonl`
 - Read: `src/internal/servers/web/app.py`
 - Read: `src/internal/servers/retrieval/demo.py`
 - Read: `web/package.json`
@@ -31,9 +31,9 @@
 - Consumes: documented ports `8001`, `7860`, and `5173`.
 - Produces: a clean port/dependency baseline for the three-process stack.
 
-- [ ] **Step 1: Confirm the demo corpus and frontend dependencies exist**
+- [ ] **Step 1: Confirm frontend dependencies exist**
 
-Run: `test -f data/corpus.jsonl && test -d web/node_modules`
+Run: `test -d web/node_modules`
 
 Expected: exit status `0`.
 
@@ -52,6 +52,7 @@ Expected: no output.
 ### Task 2: Populate the Configured SQLite Database
 
 **Files:**
+- Runtime corpus: `/tmp/monitoring-demo-corpus.jsonl`
 - Create runtime-only: `/tmp/seed_monitoring_demo.py`
 - Create runtime data: `data/agentic_search.sqlite3`
 - Read: `src/internal/db/store.py`
@@ -150,20 +151,26 @@ Expected: counts are unchanged from Step 2.
 - Runtime logs: `/tmp/agentic-search-vite.log`
 
 **Interfaces:**
-- Consumes: `data/corpus.jsonl`, `data/agentic_search.sqlite3`, debug flags.
+- Consumes: `/tmp/monitoring-demo-corpus.jsonl`, `data/agentic_search.sqlite3`, debug flags.
 - Produces: retrieval at `http://127.0.0.1:8001`, web API at `http://127.0.0.1:7860`, frontend at `http://127.0.0.1:5173`.
 
-- [ ] **Step 1: Start the demo retrieval server**
+- [ ] **Step 1: Create the runtime retrieval corpus**
+
+Write six JSONL rows to `/tmp/monitoring-demo-corpus.jsonl` using the same IDs, titles, contents, and URLs as the seeded demo documents.
+
+Expected: `wc -l /tmp/monitoring-demo-corpus.jsonl` reports `6`.
+
+- [ ] **Step 2: Start the demo retrieval server**
 
 Run from the repository root in a persistent terminal session:
 
 ```bash
-python -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl --port 8001
+python -m src.internal.servers.retrieval.demo --corpus_path /tmp/monitoring-demo-corpus.jsonl --port 8001
 ```
 
 Expected: `GET http://127.0.0.1:8001/health` returns HTTP `200`.
 
-- [ ] **Step 2: Start the web backend with SQLite and debug routing**
+- [ ] **Step 3: Start the web backend with SQLite and debug routing**
 
 Run from the repository root in a persistent terminal session:
 
@@ -173,7 +180,7 @@ env AGENTIC_SEARCH_WEB_DB_PATH=data/agentic_search.sqlite3 AGENTIC_SEARCH_DEBUG_
 
 Expected: `GET http://127.0.0.1:7860/health` returns HTTP `200` and no local model download is attempted.
 
-- [ ] **Step 3: Start Vite with the Console visible**
+- [ ] **Step 4: Start Vite with the Console visible**
 
 Run from `web/` in a persistent terminal session:
 
