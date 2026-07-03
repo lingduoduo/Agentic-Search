@@ -4,7 +4,8 @@
 **Status:** Approved (design).
 **Scope:** The four copies of Reciprocal Rank Fusion in the retrieval layer.
 Extract one generic scorer; route the copies through it. Also delete the dead
-`index_optimizer.py`.
+retrieval modules (`index_optimizer.py`, `chunk_config.py`, `onnx_reranker.py`,
+`embedding_cache.py`).
 
 ## Problem
 
@@ -22,8 +23,14 @@ The RRF math is identical; only the glue differs. (The similarly-named
 `combine_retrieval_results` in `context/search/retrieval/search_runner.py` is a
 **max-score dedup, not RRF** — out of scope.)
 
-`index_optimizer.py` (102 LOC, `FaissIndexBuilder`/`HNSWTuner`) has **zero
-non-test references** — dead.
+Four retrieval modules have **zero non-test references** — dead scaffolding:
+
+| Module | LOC | Symbol | Why dead |
+|--------|-----|--------|----------|
+| `index_optimizer.py` | 102 | `FaissIndexBuilder`/`HNSWTuner` | nothing imports it |
+| `chunk_config.py` | 35 | `ChunkConfig` | nothing imports it |
+| `onnx_reranker.py` | 60 | `ONNXReranker` | not in the reranker factory chain (`TwoStage→Cached→Async→Reranker`); never instantiated |
+| `embedding_cache.py` | 119 | `CachedEmbedder`/`EmbeddingBatcher` | orphaned duplicate — the live embedding cache is `document_index/embedding_cache.py` (`EmbeddingCache`/`OpenAIEmbedder`) |
 
 ## Design
 
@@ -73,7 +80,10 @@ ordered keys:
 
 ### Dead-code removal
 
-Delete `src/internal/retrieval/index_optimizer.py` and its test.
+Delete the four dead modules and their tests: `index_optimizer.py`,
+`chunk_config.py`, `onnx_reranker.py`, `embedding_cache.py` (the latter is a
+duplicate of `document_index/embedding_cache.py`, which stays). Each is verified
+to have zero non-test references before removal.
 
 ## Behavior-preserving
 
@@ -94,4 +104,4 @@ Delete `src/internal/retrieval/index_optimizer.py` and its test.
   `src/internal/document_index/hybrid.py`,
   `src/internal/document_index/hybrid_retriever.py`,
   `src/internal/search/process_search_query.py`.
-- **Delete:** `src/internal/retrieval/index_optimizer.py` + its test.
+- **Delete:** `src/internal/retrieval/{index_optimizer,chunk_config,onnx_reranker,embedding_cache}.py` + their tests.

@@ -23,7 +23,7 @@
 - **Modify** `src/internal/document_index/hybrid.py` — `_rrf_merge` over `rrf_rank`.
 - **Modify** `src/internal/document_index/hybrid_retriever.py` — `combine_retrieval_results` over `rrf_rank`.
 - **Modify** `src/internal/search/process_search_query.py` — `weighted_reciprocal_rank_fusion` over `rrf_rank`.
-- **Delete** `src/internal/retrieval/index_optimizer.py` + its test.
+- **Delete** the dead retrieval modules + their tests: `index_optimizer.py`, `chunk_config.py`, `onnx_reranker.py`, `embedding_cache.py`.
 
 ---
 
@@ -42,6 +42,6 @@
 
 ### Task 3: Dead-code + full verification
 
-- [x] **Step 1:** Delete `src/internal/retrieval/index_optimizer.py` + its test; confirm zero references remain.
+- [x] **Step 1:** Delete the dead modules + tests (`index_optimizer`, `chunk_config`, `onnx_reranker`, `embedding_cache`); confirm zero non-test references for each first.
 - [x] **Step 2:** `ruff check` clean; the broad retrieval/fusion/hybrid/search unit suites green.
 - [x] **Step 3:** Grep: RRF `1/(k+rank)` formula appears only inside `rrf_rank`.
