@@ -11,7 +11,7 @@ To run locally (requires Go toolchain + all services running):
     cd ..
     AGENTIC_SEARCH_CLI_BINARY=/tmp/agentic-search-cli-test \
       python -m dotenv -f .vscode/.env run -- \
-      pytest backend/tests/integration/tests/cli/
+      pytest tests/integration/tests/cli/
 
 Test Suite:
 1.  test_validate_config_success - Authenticates with PAT, reports connected

@@ -51,5 +51,5 @@ def test_force_tool_use(
 
 if __name__ == "__main__":
     # Run with: python -m dotenv -f .vscode/.env run --
-    # python -m pytest backend/tests/integration/tests/tools/test_force_tool_use.py -v -s
+    # python -m pytest tests/integration/tests/tools/test_force_tool_use.py -v -s
     pytest.main([__file__, "-v", "-s"])
