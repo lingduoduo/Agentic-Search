@@ -936,9 +936,8 @@ explicit non-`auto` source → `search`; otherwise an LLM 3-way classifier
 strategy (`chat` / `search` / `tool`) dispatches the matching loop and **degrades**
 when its backend is absent (e.g. `search`→hybrid pipeline with no local model;
 `chat`→pipeline with no LLM). `extra["route"]` / `extra["route_degraded"]` record
-the decision. The three routing axes — strategy, web-vs-internal (`source_provider`),
-and internal backend (the server-side M10 router) — are described in
-[docs/routing-axes.md](docs/routing-axes.md).
+the decision. The three routing axes are strategy, web-vs-internal
+(`source_provider`), and internal backend (the server-side M10 router).
 
 **`source_provider`** (web vs internal corpus): `auto` (default — internal
 `retrieval` ∥ web `serpapi`, merged via MMR), `retrieval`, `serpapi`, `google`,
