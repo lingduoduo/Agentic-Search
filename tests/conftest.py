@@ -1,4 +1,17 @@
+import os
 from pathlib import Path
+
+# The web app's lifespan loads SEARCH_AGENT_MODEL onto the device on every
+# TestClient startup — turning a fast web test file into a multi-minute (or,
+# offline, hanging) run. No test needs the real model: they inject a mock
+# manager or exercise the no-model 400 path. Neutralize the vars for the whole
+# session so the default `pytest` run stays fast. Empty-but-set wins over .env
+# because create_web_app() calls load_dotenv(override=False), and get_env_str()
+# treats "" as unset. Mirrors examples/run_web_integration_tests.sh.
+os.environ["SEARCH_AGENT_MODEL"] = ""
+os.environ["SEARCH_AGENT_SERVER_URL"] = ""
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 
 _TOP_LEVEL_COLLECTION_IGNORE_DIRS = {
