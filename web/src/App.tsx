@@ -15,7 +15,6 @@ import { ToolCallTracePanel } from "./components/ToolCallTracePanel";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { ConnectorPanel } from "./components/ConnectorPanel";
-import { ControlFlowTracePanel } from "./components/ControlFlowTracePanel";
 import { DevConsole } from "./components/debug/DevConsole";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { ToolPanel } from "./components/ToolPanel";
@@ -383,7 +382,6 @@ export function App() {
                 }
               />
             ))}
-            <ControlFlowTracePanel events={controlFlowTrace} live={isLoading} />
             {intent === "tool" && <ToolCallTracePanel calls={toolCalls} />}
           </section>
 
