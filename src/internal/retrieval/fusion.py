@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Hashable, TypeVar
 
 from .backends.base import RetrievalResult
+
+_T = TypeVar("_T")
+_K = TypeVar("_K", bound=Hashable)
 
 
 @dataclass
@@ -25,6 +29,61 @@ def _source_prefix(doc_id: str) -> str:
     return doc_id[:sep] if sep > 0 else doc_id
 
 
+def rrf_rank(
+    result_sets: Sequence[Sequence[_T]],
+    key_fn: Callable[[_T], _K],
+    *,
+    weights: Sequence[float] | None = None,
+    rrf_k: int = _RRF_K,
+) -> list[tuple[_K, float]]:
+    """Reciprocal Rank Fusion scoring — the shared core for every RRF site.
+
+    ``score(key) = Σ_i wᵢ · 1/(rrf_k + rank)`` where ``rank`` is 1-based within
+    each set. Returns ``(key, score)`` pairs sorted by score descending; ties
+    preserve first-seen order (stable sort over insertion order). ``weights``
+    defaults to all-1.0 (standard RRF) and falls back to uniform when its length
+    does not match ``result_sets``. Scale-invariant — no score normalisation
+    needed. Pure scoring: callers map their own key and rebuild their own type.
+    """
+    if weights is None or len(weights) != len(result_sets):
+        weights = [1.0] * len(result_sets)
+
+    rrf_scores: dict[_K, float] = defaultdict(float)
+    for weight, result_set in zip(weights, result_sets):
+        for rank, item in enumerate(result_set, 1):
+            rrf_scores[key_fn(item)] += weight * (1.0 / (rrf_k + rank))
+
+    return sorted(rrf_scores.items(), key=lambda kv: kv[1], reverse=True)
+
+
+def _first_seen(
+    result_sets: Sequence[Sequence[_T]], key_fn: Callable[[_T], _K]
+) -> dict[_K, _T]:
+    """First item encountered per key, scanning sets in order."""
+    seen: dict[_K, _T] = {}
+    for result_set in result_sets:
+        for item in result_set:
+            seen.setdefault(key_fn(item), item)
+    return seen
+
+
+def _rebuild_results(
+    ranked: list[tuple[str, float]], source: dict[str, RetrievalResult]
+) -> list[RetrievalResult]:
+    """Rebuild RetrievalResults in fused order, carrying the fused score."""
+    return [
+        RetrievalResult(
+            doc_id=doc_id,
+            title=source[doc_id].title,
+            text=source[doc_id].text,
+            url=source[doc_id].url,
+            score=score,
+            metadata=source[doc_id].metadata,
+        )
+        for doc_id, score in ranked
+    ]
+
+
 def rrf_fuse(
     result_sets: list[list[RetrievalResult]],
     *,
@@ -35,30 +94,8 @@ def rrf_fuse(
     Score formula: score(doc) = Σ 1 / (k + rank)  for each set the doc appears in.
     Scale-invariant — no normalisation of raw BM25 or cosine scores required.
     """
-    rrf_scores: dict[str, float] = defaultdict(float)
-    first_seen: dict[str, RetrievalResult] = {}
-
-    for result_set in result_sets:
-        for rank, result in enumerate(result_set, 1):
-            rrf_scores[result.doc_id] += 1.0 / (rrf_k + rank)
-            if result.doc_id not in first_seen:
-                first_seen[result.doc_id] = result
-
-    return sorted(
-        [
-            RetrievalResult(
-                doc_id=doc_id,
-                title=first_seen[doc_id].title,
-                text=first_seen[doc_id].text,
-                url=first_seen[doc_id].url,
-                score=rrf_scores[doc_id],
-                metadata=first_seen[doc_id].metadata,
-            )
-            for doc_id in rrf_scores
-        ],
-        key=lambda r: r.score,
-        reverse=True,
-    )
+    ranked = rrf_rank(result_sets, lambda r: r.doc_id, rrf_k=rrf_k)
+    return _rebuild_results(ranked, _first_seen(result_sets, lambda r: r.doc_id))
 
 
 def weighted_rrf_fuse(
@@ -75,31 +112,13 @@ def weighted_rrf_fuse(
     if weights is None or len(result_sets) != 2:
         return rrf_fuse(result_sets, rrf_k=rrf_k)
 
-    w = [weights.w_sparse, weights.w_dense]
-    rrf_scores: dict[str, float] = defaultdict(float)
-    first_seen: dict[str, RetrievalResult] = {}
-
-    for i, result_set in enumerate(result_sets):
-        for rank, result in enumerate(result_set, 1):
-            rrf_scores[result.doc_id] += w[i] * (1.0 / (rrf_k + rank))
-            if result.doc_id not in first_seen:
-                first_seen[result.doc_id] = result
-
-    return sorted(
-        [
-            RetrievalResult(
-                doc_id=doc_id,
-                title=first_seen[doc_id].title,
-                text=first_seen[doc_id].text,
-                url=first_seen[doc_id].url,
-                score=rrf_scores[doc_id],
-                metadata=first_seen[doc_id].metadata,
-            )
-            for doc_id in rrf_scores
-        ],
-        key=lambda r: r.score,
-        reverse=True,
+    ranked = rrf_rank(
+        result_sets,
+        lambda r: r.doc_id,
+        weights=[weights.w_sparse, weights.w_dense],
+        rrf_k=rrf_k,
     )
+    return _rebuild_results(ranked, _first_seen(result_sets, lambda r: r.doc_id))
 
 
 def variant_weighted_rrf_fuse(
@@ -116,32 +135,8 @@ def variant_weighted_rrf_fuse(
     Note: distinct from weighted_rrf_fuse(), which is the 2-set sparse/dense
     variant that takes a FusionWeights dataclass and only supports exactly 2 sets.
     """
-    if len(weights) != len(result_sets):
-        weights = [1.0] * len(result_sets)
-
-    rrf_scores: dict[str, float] = defaultdict(float)
-    first_seen: dict[str, RetrievalResult] = {}
-    for w, result_set in zip(weights, result_sets):
-        for rank, result in enumerate(result_set, 1):
-            rrf_scores[result.doc_id] += w * (1.0 / (rrf_k + rank))
-            if result.doc_id not in first_seen:
-                first_seen[result.doc_id] = result
-
-    return sorted(
-        [
-            RetrievalResult(
-                doc_id=doc_id,
-                title=first_seen[doc_id].title,
-                text=first_seen[doc_id].text,
-                url=first_seen[doc_id].url,
-                score=rrf_scores[doc_id],
-                metadata=first_seen[doc_id].metadata,
-            )
-            for doc_id in rrf_scores
-        ],
-        key=lambda r: r.score,
-        reverse=True,
-    )
+    ranked = rrf_rank(result_sets, lambda r: r.doc_id, weights=weights, rrf_k=rrf_k)
+    return _rebuild_results(ranked, _first_seen(result_sets, lambda r: r.doc_id))
 
 
 def mmr_rerank(

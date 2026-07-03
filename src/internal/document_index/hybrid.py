@@ -34,6 +34,7 @@ from src.internal.document_index.models import (
     InferenceChunk,
     QueryType,
 )
+from src.internal.retrieval.fusion import rrf_rank
 
 logger = logging.getLogger(__name__)
 
@@ -205,24 +206,19 @@ def _rrf_merge(
     the canonical object when a chunk appears in both lists, because they
     carry richer metadata (highlights, doc_summary, etc.).
     """
-    rrf_scores: dict[tuple[str, int], float] = {}
-    # OpenSearch results preferred when the same chunk appears in both lists.
+
+    def _key(chunk: InferenceChunk) -> tuple[str, int]:
+        return (chunk.document_id, chunk.chunk_ind)
+
+    # OpenSearch (keyword) results preferred as the canonical object per key.
     chunk_map: dict[tuple[str, int], InferenceChunk] = {}
+    for chunk in keyword_chunks:
+        chunk_map[_key(chunk)] = chunk
+    for chunk in semantic_chunks:
+        chunk_map.setdefault(_key(chunk), chunk)  # don't overwrite OS result
 
-    for rank, chunk in enumerate(keyword_chunks, 1):
-        key = (chunk.document_id, chunk.chunk_ind)
-        rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank)
-        chunk_map[key] = chunk
-
-    for rank, chunk in enumerate(semantic_chunks, 1):
-        key = (chunk.document_id, chunk.chunk_ind)
-        rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank)
-        chunk_map.setdefault(key, chunk)  # don't overwrite OS result
-
-    sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)[:top_k]
-
-    result: list[InferenceChunk] = []
-    for key in sorted_keys:
-        chunk = chunk_map[key]
-        result.append(chunk.model_copy(update={"score": rrf_scores[key]}))
-    return result
+    ranked = rrf_rank([keyword_chunks, semantic_chunks], _key, rrf_k=k)
+    return [
+        chunk_map[key].model_copy(update={"score": score})
+        for key, score in ranked[:top_k]
+    ]
