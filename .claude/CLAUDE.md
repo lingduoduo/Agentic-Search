@@ -138,12 +138,16 @@ Modes: `single` (PlainGenerationLoop), `search` (SearchAgentLoop), `tool` (ToolA
 
 The system has three layers that run as separate processes:
 
-**1. Retrieval servers** (`src/internal/servers/`)
-Multiple interchangeable backends behind the same `/retrieve` API:
+**1. Retrieval servers**
+Multiple interchangeable backends behind the same `/retrieve` API.
+
+Retrieval (`src/internal/servers/retrieval/`):
 - `demo.py` — TF-IDF over a local corpus.jsonl, no Java required
-- `retrieval_server.py` — BM25 (pyserini/Java) or dense (e5/sentence-transformers) via FAISS
-- `retrieval_rerank.py` — retrieval + cross-encoder reranker
+- `hybrid.py` — RRF-fused dense (e5) + sparse TF-IDF; Java-free, FAISS-free
+- `server.py` — full `RetrievalService` (BM25 / dense via FAISS / hybrid, env-configured via `RETRIEVAL_BACKEND`) with per-mode + admin endpoints
 - `rerank.py` — standalone cross-encoder reranker
+
+Web search (`src/internal/servers/web_search/`):
 - `google.py` — Google Custom Search API proxy (requires `GOOGLE_API_KEY` + `GOOGLE_CSE_ID`)
 - `serp.py` — SerpAPI proxy (requires `SERP_API_KEY`)
 - `browser.py` — playwright-cli browser automation; no API key needed, slower (~5–10s/query)
@@ -160,12 +164,13 @@ The backend also mounts a large set of admin/enterprise routers (auth, SCIM, bil
 **3. Frontend** (`web/`)
 React 19 + Vite + TypeScript. No component library — custom components only. Proxies `/api/*` to the FastAPI server on port 7860 in dev mode.
 
-**Agent loops** (`src/agents/`)
-- `base.py` — `BaseAgentLoop` with shared state/tool dispatch
-- `plain.py` — `PlainGenerationLoop` (no retrieval)
-- `search.py` — `SearchAgentLoop` (retrieval-grounded, multi-turn)
-- `tool_calling.py` — `ToolAgentLoop` (generic function calling)
-- Agent loops are selected via the registry (`get_registered_agent_loop` + `resolve_agent_name` in `src/agents/base.py`); see `docs/agent-invocation-surface.md` for the full mode→loop map.
+**Agent loops** (`src/agents/`, grouped into `core/` `generation/` `search/` `tool/`)
+- `core/base.py` — `AgentLoopBase` with shared state/tool dispatch
+- `generation/plain.py` — `PlainGenerationLoop` (no retrieval)
+- `search/search.py` — `SearchAgentLoop` (retrieval-grounded, multi-turn)
+- `search/agentic_rag.py` — `AgenticRAGLoop` (iterative hybrid retrieval + sufficiency check)
+- `tool/tool_calling.py` — `ToolAgentLoop` (generic function calling)
+- Agent loops are selected via the registry (`get_registered_agent_loop` + `resolve_agent_name` in `src/agents/core/base.py`).
 
 **Context pipeline** (`src/context/`)
 `answer_with_retrieval` wires retrieval → context-building → prompting → LLM call. `preprocessing/` holds access filters applied before retrieval.
