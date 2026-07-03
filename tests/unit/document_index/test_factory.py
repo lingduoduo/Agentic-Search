@@ -53,11 +53,3 @@ def test_factory_no_db_session_param():
         sig = inspect.signature(func)
         assert "db_session" not in sig.parameters, f"{func_name} has db_session"
         assert "session" not in sig.parameters, f"{func_name} has session"
-
-
-def test_is_opensearch_enabled_reads_new_env_var(monkeypatch):
-    """Factory must respond to ENABLE_OPENSEARCH_INDEXING."""
-    import src.internal.document_index.factory as factory_mod
-
-    monkeypatch.setenv("ENABLE_OPENSEARCH_INDEXING", "true")
-    assert factory_mod._is_opensearch_enabled() is True

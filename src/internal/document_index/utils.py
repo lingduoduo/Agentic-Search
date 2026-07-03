@@ -133,24 +133,3 @@ def log_function_time(
         return wrapper  # type: ignore[return-value]
 
     return decorator
-
-
-# ---------------------------------------------------------------------------
-# Stub OpenSearch metrics functions
-# ---------------------------------------------------------------------------
-
-
-def observe_opensearch_search(
-    search_type: Any, client_duration_s: float, time_took: int | None
-) -> None:
-    """Stub — no-op Prometheus observation."""
-
-
-def record_opensearch_search_error(search_type: Any, exc: BaseException) -> None:
-    """Stub — no-op Prometheus error recording."""
-
-
-@contextlib.contextmanager
-def track_opensearch_search(search_type: Any):  # type: ignore[return]
-    """Stub context manager — no-op search tracking."""
-    yield

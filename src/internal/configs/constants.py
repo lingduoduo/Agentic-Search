@@ -339,8 +339,6 @@ class InvokeFrom(str, Enum):
 
 
 BLURB_SIZE = 250
-OPENSEARCH_MIGRATION_ENABLED_KEY = "opensearch_migration_enabled"
-OPENSEARCH_RETRIEVAL_ENABLED_KEY = "opensearch_retrieval_enabled"
 
 # Version patterns for Docker image tags
 STABLE_VERSION_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")

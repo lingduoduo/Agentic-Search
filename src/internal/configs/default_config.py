@@ -39,17 +39,11 @@ DEFAULT_CONFIG: dict = {
     "GEN_AI_API_BASE": "",
     "GEN_AI_MAX_INPUT_TOKENS": 8192,
     # -------------------------------------------------------------------------
-    # OpenSearch vector database
+    # Vector database
     # -------------------------------------------------------------------------
     "DISABLE_VECTOR_DB": "False",
-    "ENABLE_OPENSEARCH_INDEXING": "False",
-    "OPENSEARCH_HOST": "localhost",
-    "OPENSEARCH_PORT": 9200,
-    "OPENSEARCH_USER": "",
-    "OPENSEARCH_PASSWORD": "",
     "MAX_CHUNKS_PER_DOC_BATCH": 512,
     "ENABLE_MULTIPASS_INDEXING": "False",
-    "VERIFY_CREATE_OPENSEARCH_INDEX_ON_INIT_MT": "False",
     # -------------------------------------------------------------------------
     # Chat / agent loop
     # -------------------------------------------------------------------------

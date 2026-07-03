@@ -2,7 +2,7 @@
 
 Used as a safety net when DISABLE_VECTOR_DB is True. Any code path that
 accidentally reaches the vector DB layer will fail loudly instead of timing
-out against a nonexistent OpenSearch instance.
+out against a nonexistent vector database.
 """
 
 from collections.abc import Iterable

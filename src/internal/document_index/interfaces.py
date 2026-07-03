@@ -18,7 +18,8 @@ from src.internal.document_index.models import IndexFilters
 from src.internal.document_index.models import InferenceChunk
 from src.internal.document_index.models import QueryType
 from src.internal.configs.constants import PUBLIC_DOC_PAT
-from src.internal.document_index.opensearch.constants import DEFAULT_MAX_CHUNK_SIZE
+
+DEFAULT_MAX_CHUNK_SIZE = 512
 
 # NOTE: "Document" in the naming convention is used to refer to the entire
 # document as represented in this system. What is actually stored in the index is the

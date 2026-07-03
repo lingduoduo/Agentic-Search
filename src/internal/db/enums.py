@@ -250,22 +250,6 @@ class SwitchoverType(str, PyEnum):
     INSTANT = "instant"
 
 
-class OpenSearchDocumentMigrationStatus(str, PyEnum):
-    """Status for OpenSearch document migration."""
-
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    PERMANENTLY_FAILED = "permanently_failed"
-
-
-class OpenSearchTenantMigrationStatus(str, PyEnum):
-    """Status for tenant-level OpenSearch migration."""
-
-    PENDING = "pending"
-    COMPLETED = "completed"
-
-
 # Build Mode Enums
 class BuildSessionStatus(str, PyEnum):
     ACTIVE = "active"

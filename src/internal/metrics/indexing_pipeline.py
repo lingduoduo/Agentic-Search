@@ -64,7 +64,6 @@ class _CeleryQueues:
     USER_FILE_DELETE = "user_file_delete"
     MONITORING = "monitoring"
     SANDBOX = "sandbox"
-    OPENSEARCH_MIGRATION = "opensearch_migration"
 
 
 CeleryQueues = _CeleryQueues
@@ -100,7 +99,6 @@ _QUEUE_LABEL_MAP: dict[str, str] = {
     CeleryQueues.USER_FILE_DELETE: "user_file_delete",
     CeleryQueues.MONITORING: "monitoring",
     CeleryQueues.SANDBOX: "sandbox",
-    CeleryQueues.OPENSEARCH_MIGRATION: "opensearch_migration",
 }
 
 # Queues where prefetched (unacked) task counts are meaningful

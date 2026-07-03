@@ -111,8 +111,7 @@ def test_vector_db_settings_defaults():
 
     s = VectorDbSettings()
     assert s.disable_vector_db is False
-    assert s.enable_opensearch is False
-    assert "localhost" in s.opensearch_host
+    assert s.max_chunks_per_doc_batch == 512
 
 
 def test_vector_db_settings_custom():
