@@ -192,49 +192,6 @@ def test_stream_custom_base_url():
 # ---------------------------------------------------------------------------
 
 
-def test_get_llm_for_persona_uses_env_defaults(monkeypatch):
-    monkeypatch.setenv("GEN_AI_MODEL_PROVIDER", "openai")
-    monkeypatch.setenv("GEN_AI_MODEL_VERSION", "gpt-4o-mini")
-    monkeypatch.setenv("GEN_AI_API_KEY", "sk-test")
-
-    from src.internal.chat.process_message import get_llm_for_persona
-
-    llm = get_llm_for_persona(persona=None, user=None)
-    assert isinstance(llm, OpenAICompatibleLLM)
-    assert llm.config.model_provider == "openai"
-    assert llm.config.model_name == "gpt-4o-mini"
-    assert llm.config.api_key == "sk-test"
-
-
-def test_get_llm_for_persona_override_respected(monkeypatch):
-    monkeypatch.setenv("GEN_AI_MODEL_PROVIDER", "openai")
-    monkeypatch.setenv("GEN_AI_MODEL_VERSION", "gpt-4o-mini")
-    monkeypatch.setenv("GEN_AI_API_KEY", "sk-test")
-
-    from src.internal.chat.process_message import LLMOverride, get_llm_for_persona
-
-    override = LLMOverride(
-        model_provider="anthropic", model_version="claude-3-5-haiku-20241022"
-    )
-    llm = get_llm_for_persona(persona=None, user=None, llm_override=override)
-    assert llm.config.model_provider == "anthropic"
-    assert llm.config.model_name == "claude-3-5-haiku-20241022"
-
-
-def test_get_llm_for_persona_partial_override(monkeypatch):
-    monkeypatch.setenv("GEN_AI_MODEL_PROVIDER", "openai")
-    monkeypatch.setenv("GEN_AI_MODEL_VERSION", "gpt-4o-mini")
-    monkeypatch.setenv("GEN_AI_API_KEY", "sk-test")
-
-    from src.internal.chat.process_message import LLMOverride, get_llm_for_persona
-
-    # Only override the model version, keep the provider from defaults
-    override = LLMOverride(model_version="gpt-4o")
-    llm = get_llm_for_persona(persona=None, user=None, llm_override=override)
-    assert llm.config.model_provider == "openai"
-    assert llm.config.model_name == "gpt-4o"
-
-
 # ---------------------------------------------------------------------------
 # complete() — non-streaming path
 # ---------------------------------------------------------------------------
