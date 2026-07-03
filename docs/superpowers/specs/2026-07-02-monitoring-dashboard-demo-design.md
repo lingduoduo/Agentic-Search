@@ -1,29 +1,50 @@
 # Monitoring Dashboard Demo Design
 
 **Date:** 2026-07-02
-**Scope:** Set up and demonstrate the existing dev-console monitoring features. No product behavior or UI changes.
+**Scope:** Add a reusable setup CLI and demonstrate the existing dev-console monitoring features. No dashboard or application-startup behavior changes.
 
 ## Goal
 
-Run the existing dashboard against a file-backed SQLite database, populate realistic monitoring data without deleting existing records, and show verified results in the browser.
+Provide a repo-native command that prepares a file-backed SQLite database and matching retrieval corpus, then run the existing dashboard against that data and show verified results in the browser.
+
+## Setup CLI
+
+Add `examples/seed_monitoring_demo.py` as an importable module and command-line entry point.
+
+- `--db-path PATH` overrides the resolved `AGENTIC_SEARCH_WEB_DB_PATH`.
+- `--corpus-path PATH` defaults to `data/monitoring_demo_corpus.jsonl`.
+- If the resolved database path is `:memory:`, exit non-zero with a clear instruction to pass `--db-path` or configure `AGENTIC_SEARCH_WEB_DB_PATH`.
+- Create parent directories for file outputs when needed.
+- Print a JSON summary containing the absolute database and corpus paths plus enabled-connector, document, and index-attempt totals.
+- Keep the seed operation callable as a small function so tests do not need to invoke a subprocess.
+
+The CLI is an explicit developer action. Enabling debug panels must never seed data automatically.
 
 ## Runtime
 
-- Use `data/agentic_search.sqlite3` through `AGENTIC_SEARCH_WEB_DB_PATH`.
+- Use `data/agentic_search.sqlite3` through `AGENTIC_SEARCH_WEB_DB_PATH` or the CLI's `--db-path` override.
 - Enable the backend debug router with `AGENTIC_SEARCH_DEBUG_PANELS=1`.
 - Enable the frontend Console control with `VITE_DEBUG_PANELS=1`.
-- Run the demo retrieval server, web backend, and Vite frontend on their documented local ports.
+- Run the setup CLI, demo retrieval server, web backend, and Vite frontend on their documented local ports.
 - Pass configuration to launched processes rather than adding a repository `.env` file.
 
 ## Data Population
 
-Use `AgenticSearchStore` APIs against the configured database. Add stable, clearly named demo records for:
+The CLI uses `AgenticSearchStore` APIs against the configured database. It adds stable, clearly named demo records for:
 
 - enabled and disabled connectors;
 - documents associated with enabled connectors;
 - pending, in-progress, successful, and failed indexing attempts.
 
 Connector and document upserts use stable IDs. Index-attempt records are checked by stable IDs before insertion. Re-running setup therefore updates or preserves the demo dataset rather than multiplying it. Existing non-demo rows are untouched.
+
+The same command writes six JSONL corpus rows using the seeded document IDs, titles, contents, and URLs. The corpus is replaced atomically as generated demo output; the SQLite database is not replaced.
+
+## Code Boundaries
+
+- `examples/seed_monitoring_demo.py` owns demo fixtures, database seeding, corpus serialization, argument parsing, and the JSON summary.
+- `tests/unit/test_seed_monitoring_demo.py` owns unit coverage for exact empty-database counts, repeat idempotence, preservation of unrelated rows, generated corpus parity, and `:memory:` rejection.
+- Existing database models, store APIs, web startup, debug router, and frontend components remain unchanged.
 
 ## Dashboard Coverage
 
@@ -61,4 +82,5 @@ The worker cards are expected to reflect the populated database: pending attempt
 - Server health correctly reflects the running stack.
 - Retrieval Lab returns real demo-corpus results for supported modes and honest errors for unsupported modes.
 - A screenshot and concise result summary are delivered to the user.
-- Repository source code remains unchanged apart from this approved documentation; runtime database and logs stay uncommitted.
+- The setup CLI and its focused tests are committed; runtime database, generated corpus, logs, and screenshots stay uncommitted.
+- The focused seed tests pass, including idempotence and preservation checks.
