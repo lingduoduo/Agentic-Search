@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +12,7 @@ from src.internal.document_index.retrieval import (
     SparseRetriever,
     SparseRetrieverConfig,
 )
+from src.internal.retrieval.fusion import rrf_rank
 
 # Standard RRF constant — larger k reduces sensitivity to rank differences at the top.
 _RRF_K = 60
@@ -33,21 +33,17 @@ def combine_retrieval_results(
     rank-based RRF fusion instead of raw-score max to avoid scale differences between
     dense (cosine ~[-1,1]) and BM25 (unbounded positive) scores.
     """
-    rrf_scores: dict[str, float] = defaultdict(float)
+
+    def _key(result: dict[str, Any]) -> str:
+        return str(result["document"].get("id", ""))
+
     first_seen: dict[str, dict[str, Any]] = {}
-
     for result_set in result_sets:
-        for rank, result in enumerate(result_set, 1):
-            doc_id = str(result["document"].get("id", ""))
-            rrf_scores[doc_id] += 1.0 / (rrf_k + rank)
-            if doc_id not in first_seen:
-                first_seen[doc_id] = result
+        for result in result_set:
+            first_seen.setdefault(_key(result), result)
 
-    return sorted(
-        [{**first_seen[doc_id], "score": rrf_scores[doc_id]} for doc_id in rrf_scores],
-        key=lambda r: r["score"],
-        reverse=True,
-    )
+    ranked = rrf_rank(result_sets, _key, rrf_k=rrf_k)
+    return [{**first_seen[doc_id], "score": score} for doc_id, score in ranked]
 
 
 def _doc_source_prefix(doc_id: str) -> str:

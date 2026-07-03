@@ -12,6 +12,7 @@ from src.context.models import LLMResponse
 from src.context.models import SearchFilters
 from src.context.models import SearchRequest
 from src.context.retrieval.search_runner import run_search
+from src.internal.retrieval.fusion import rrf_rank
 from src.internal.prompts.query_expansion import QUERY_TYPE_PROMPT
 from src.internal.prompts.search_flow_classification import CHAT_CLASS
 from src.internal.prompts.search_flow_classification import SEARCH_CLASS
@@ -65,19 +66,20 @@ def weighted_reciprocal_rank_fusion(
     original score is kept for the winning entry. Results are returned in
     descending RRF score order.
     """
-    rrf_scores: dict[tuple[str | None, str], float] = {}
-    best: dict[tuple[str | None, str], SearchResult] = {}
 
-    for result_list, weight in zip(ranked_results, weights):
-        for rank, result in enumerate(result_list):
-            key = (result.url, result.contents[:100])
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + weight / (k + rank + 1)
+    def _key(result: SearchResult) -> tuple[str | None, str]:
+        return (result.url, result.contents[:100])
+
+    # Keep the highest-scoring original result per key.
+    best: dict[tuple[str | None, str], SearchResult] = {}
+    for result_list in ranked_results:
+        for result in result_list:
+            key = _key(result)
             if key not in best or result.score > best[key].score:
                 best[key] = result
 
-    return sorted(
-        best.values(), key=lambda r: rrf_scores[(r.url, r.contents[:100])], reverse=True
-    )
+    ranked = rrf_rank(ranked_results, _key, weights=weights, rrf_k=k)
+    return [best[key] for key, _ in ranked]
 
 
 async def run_expanded_search(
