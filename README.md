@@ -192,7 +192,7 @@ python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 The bundled `data/corpus.jsonl` is a 30-doc demo. For a larger, real corpus, convert a
 [BEIR](https://github.com/beir-cellar/beir) dataset into the same JSONL format (`pip install beir` first):
 ```bash
-python3 scripts/beir_to_corpus.py --dataset scifact        # → data/corpus_scifact.jsonl (~5K docs)
+python3 examples/beir_to_corpus.py --dataset scifact        # → data/corpus_scifact.jsonl (~5K docs)
 # other datasets: nfcorpus (~3.6K), arguana (~8.7K), scidocs (~25K), fiqa (~57K), trec-covid (~171K)
 ```
 Then point the demo server at it and sanity-check with a query:

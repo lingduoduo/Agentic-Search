@@ -8,9 +8,11 @@ The implementation was split into cohesive modules:
   - ``pipeline``   — ``run_indexing_pipeline`` orchestration
   - ``cli``        — the ``python -m`` index-builder command-line tool
 
-This module re-exports the public surface so existing imports such as
+This module re-exports the **public** surface so existing imports such as
 ``from src.internal.document_index.index_builder import chunk_documents`` and
 ``python -m src.internal.document_index.index_builder`` keep working unchanged.
+Internals (``_``-prefixed helpers) live in the modules above — import them from
+there rather than through this facade.
 """
 
 # This module intentionally re-exports names for backward compatibility.
@@ -18,30 +20,10 @@ This module re-exports the public surface so existing imports such as
 
 from __future__ import annotations
 
-from src.internal.document_index._common import (
-    IndexingHeartbeatInterface,
-    _raise_if_indexing_stopped,
-    _report_indexing_progress,
-    _require_faiss,
-    _require_torch,
-    _require_transformers,
-    _require_tqdm,
-)
+from src.internal.document_index._common import IndexingHeartbeatInterface
 from src.internal.document_index.chunking import (
     RETURN_SEPARATOR,
     SECTION_SEPARATOR,
-    _combine_index_chunks,
-    _extract_blurb,
-    _make_mini_chunk_texts,
-    _metadata_suffix_for_index,
-    _overlap_tail,
-    _split_paragraphs,
-    _split_sentences_in_paragraph,
-    _split_text,
-    _split_text_paragraphs,
-    _split_token_window,
-    _token_count,
-    _tokenize_for_chunking,
     chunk_document,
     chunk_documents,
     filter_indexable_documents,
@@ -56,14 +38,6 @@ from src.internal.document_index.cli import (
 from src.internal.document_index.embedding import (
     MODEL2POOLING,
     EmbeddingFn,
-    _apply_text_prefix,
-    _batched,
-    _coerce_embedding_matrix,
-    _embed_chunk_batch,
-    _embed_texts,
-    _encode_batch,
-    _get_title_embedding,
-    _normalize_embedding_rows,
     deterministic_embedding_fn,
     embed_chunks,
     embed_chunks_with_failure_handling,
@@ -73,7 +47,6 @@ from src.internal.document_index.embedding import (
     resolve_pooling_method,
 )
 from src.internal.document_index.faiss_io import (
-    _Corpus,
     dump_connector_to_jsonl,
     load_corpus,
     load_corpus_from_connector,
@@ -104,8 +77,6 @@ __all__ = [
     "IndexingPipelineConfig",
     "IndexingPipelineResult",
     "IndexWriterConfig",
-    "_split_paragraphs",
-    "_split_sentences_in_paragraph",
     "chunk_document",
     "chunk_documents",
     "deterministic_embedding_fn",

@@ -2,10 +2,10 @@
 
 import pytest
 
+from src.internal.document_index.faiss_io import _Corpus
 from src.internal.document_index.index_builder import (
     IndexBuilder,
     IndexBuilderConfig,
-    _Corpus,
     prepare_texts,
     resolve_pooling_method,
     set_hnsw_ef_construction,
