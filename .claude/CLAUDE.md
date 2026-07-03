@@ -170,7 +170,7 @@ React 19 + Vite + TypeScript. No component library — custom components only. P
 **Context pipeline** (`src/context/`)
 `answer_with_retrieval` wires retrieval → context-building → prompting → LLM call. `preprocessing/` holds access filters applied before retrieval.
 
-**Retrieval internals** (`src/retrieval/`)
+**Retrieval internals** (`src/internal/document_index/`, `src/internal/retrieval/`)
 Low-level chunking, embedding, FAISS index building, sparse BM25, and hybrid retrieval. Used both by the retrieval servers and the indexing pipeline.
 
 **Indexing pipeline** (`src/internal/servers/backgroundworker/`)
