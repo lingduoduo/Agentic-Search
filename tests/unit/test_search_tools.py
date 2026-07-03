@@ -282,7 +282,7 @@ def test_search_for_detail_fetches_pages_concurrently(monkeypatch):
 
 def test_html_to_text_prefers_article_element():
     """_html_to_text should extract <article> content before falling back to <p> tags."""
-    from src.tools.search import _html_to_text
+    from src.tools.html_text import _html_to_text
 
     html = """
     <html><body>
@@ -298,7 +298,7 @@ def test_html_to_text_prefers_article_element():
 
 
 def test_html_to_text_falls_back_to_p_tags_when_no_article():
-    from src.tools.search import _html_to_text
+    from src.tools.html_text import _html_to_text
 
     html = (
         "<html><body><div><p>Content here.</p><p>More content.</p></div></body></html>"
