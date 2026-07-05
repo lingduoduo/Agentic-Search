@@ -789,13 +789,56 @@ async def _run_search_direct_or_escalate(
     or the degraded pipeline, preserving today's behavior.
     """
     threshold = _search_direct_min_score()
-    documents = await _run_direct_search(
-        query,
-        source_provider="retrieval",
-        search_url=search_url,
-        rerank_url=rerank_url,
-        top_k=top_k,
-    )
+
+    async def _escalate(top_score: float, reason: str) -> tuple:
+        escalate_extra = {
+            "search_mode": "escalated",
+            "top_score": top_score,
+            "escalate_reason": reason,
+        }
+        has_local_model = manager is not None and tokenizer is not None
+        if has_local_model:
+            answer, citations, docs, intent, run_extra = await _run_search_agent(
+                query,
+                manager=manager,
+                tokenizer=tokenizer,
+                search_url=search_url,
+                top_k=top_k,
+                on_turn=on_turn,
+                on_trace=None,
+            )
+            run_extra.update(escalate_extra)
+            return answer, citations, docs, intent, run_extra
+
+        escalate_extra["route_degraded"] = "no_local_model"
+        return await _auto_search_pipeline(
+            query,
+            llm=llm,
+            search_url=search_url,
+            browser_search_url=browser_search_url,
+            rerank_url=rerank_url,
+            top_k=top_k,
+            filters=filters,
+            history=history,
+            source_provider=source_provider,
+            extra=escalate_extra,
+        )
+
+    # Explicit non-default source: honor it via the existing escalation path
+    # (no direct-first local retrieval short-circuit).
+    if source_provider not in ("auto", "retrieval"):
+        return await _escalate(0.0, "explicit_source")
+
+    try:
+        documents = await _run_direct_search(
+            query,
+            source_provider="retrieval",
+            search_url=search_url,
+            rerank_url=rerank_url,
+            top_k=top_k,
+        )
+    except Exception:
+        documents = []
     real = [d for d in documents if not d.metadata.get("error")]
     top_score = max((d.score or 0.0 for d in real), default=0.0)
     _capture.record_stage(
@@ -836,38 +879,7 @@ async def _run_search_direct_or_escalate(
         "sufficiency",
         {"mode": "escalated", "top_score": top_score, "threshold": threshold},
     )
-    escalate_extra = {
-        "search_mode": "escalated",
-        "top_score": top_score,
-        "escalate_reason": "weak_retrieval",
-    }
-    has_local_model = manager is not None and tokenizer is not None
-    if has_local_model:
-        answer, citations, docs, intent, run_extra = await _run_search_agent(
-            query,
-            manager=manager,
-            tokenizer=tokenizer,
-            search_url=search_url,
-            top_k=top_k,
-            on_turn=on_turn,
-            on_trace=None,
-        )
-        run_extra.update(escalate_extra)
-        return answer, citations, docs, intent, run_extra
-
-    escalate_extra["route_degraded"] = "no_local_model"
-    return await _auto_search_pipeline(
-        query,
-        llm=llm,
-        search_url=search_url,
-        browser_search_url=browser_search_url,
-        rerank_url=rerank_url,
-        top_k=top_k,
-        filters=filters,
-        history=history,
-        source_provider=source_provider,
-        extra=escalate_extra,
-    )
+    return await _escalate(top_score, "weak_retrieval")
 
 
 async def _run_auto_routed(
