@@ -87,6 +87,40 @@ _TOOL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- Deterministic pre-LLM route cues (start-anchored, high precision) ---
+_TOOL_ACTION_RE = re.compile(
+    r"^\s*(send|deploy|assign|notify|remind|invoke|subscribe|unsubscribe)\b",
+    re.IGNORECASE,
+)
+_TOOL_OBJECT_RE = re.compile(
+    r"^\s*(?:create|delete|remove|update|add|open|close|file|post|run|execute|"
+    r"book|email|schedule|cancel|trigger) "
+    r"(?:a |an |the )?"
+    r"(?:ticket|issue|pr|pull request|task|event|meeting|reminder|calendar|"
+    r"record|entry|api|job|workflow|deployment|message|email)\b",
+    re.IGNORECASE,
+)
+_SEARCH_LOOKUP_RE = re.compile(
+    r"^\s*(find|search for|look up|look for|retrieve|fetch|pull|list|locate|"
+    r"show me|get me)\b",
+    re.IGNORECASE,
+)
+_CHAT_START_RE = re.compile(
+    r"^\s*(what|why|how|explain|describe|summarize|compare|tell me about|"
+    r"difference between)\b",
+    re.IGNORECASE,
+)
+_GENERATIVE_START_RE = re.compile(
+    r"^\s*(write|draft|translate|rephrase|reword|brainstorm|compose|generate)\b",
+    re.IGNORECASE,
+)
+# A currency/fact cue turns a chat-form question into a likely search — the one
+# cross-cue conflict we detect, to defer such queries to the LLM classifier.
+_CURRENCY_RE = re.compile(
+    r"\b(latest|current|recent|news|price|stock|weather|today|now)\b",
+    re.IGNORECASE,
+)
+
 
 def _is_bare_lookup(query: str) -> bool:
     """True for a short, verb-less term/entity, e.g. "FAISS", "vector database".
@@ -129,6 +163,28 @@ def _rule_based_route(query: str) -> RouteStrategy:
         return RouteStrategy.SEARCH
     # No dominant signal → grounded chat.
     return RouteStrategy.CHAT
+
+
+def _regex_route(query: str) -> "RouteStrategy | None":
+    """High-precision deterministic 3-way route; None when not confident.
+
+    Cues are anchored to the START of the query so a command ('send an email')
+    is distinguished from a description ('how to send an email'). Returns None
+    (defer to the LLM classifier) on no match or a known currency cross-cue.
+    Precedence: tool > search > chat.
+    """
+    q = query.strip()
+    if not q:
+        return None
+    if _TOOL_ACTION_RE.search(q) or _TOOL_OBJECT_RE.search(q):
+        return RouteStrategy.TOOL
+    if _is_bare_lookup(q) or _SEARCH_LOOKUP_RE.search(q):
+        return RouteStrategy.SEARCH
+    if _CHAT_START_RE.search(q) or _GENERATIVE_START_RE.search(q) or q.endswith("?"):
+        if _CURRENCY_RE.search(q):
+            return None
+        return RouteStrategy.CHAT
+    return None
 
 
 _ROUTE_PROMPT = (
@@ -197,9 +253,9 @@ def route_query(
 
     Cascade:
       1. An explicit non-default source provider is a search command.
-      2. A bare term/entity lookup (e.g. "FAISS") is a grounded search — decided
-         deterministically so it never reaches the classifier, which tends to
-         over-route such lookups to chat/direct answers (ungrounded).
+      2. A confident `_regex_route` match (anchored tool/search/chat cues,
+         incl. bare lookup) is returned deterministically, skipping the
+         classifier.
       3. With an LLM, use the 3-way classifier (rule-based on error).
       4. Without an LLM, use the rule-based route.
 
@@ -210,8 +266,9 @@ def route_query(
     del has_local_model  # dispatch layer handles capability degradation
     if explicit_source:
         return RouteStrategy.SEARCH
-    if _is_bare_lookup(query):
-        return RouteStrategy.SEARCH
+    regex_choice = _regex_route(query)
+    if regex_choice is not None:
+        return regex_choice
     if llm is not None:
         try:
             return classify_route(query, llm)

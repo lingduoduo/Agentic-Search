@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src.context.models import ChatMessage
 from src.internal.servers.web.intent_routing import (
     RouteStrategy,
+    _regex_route,
     _rule_based_route,
     classify_route,
     route_query,
@@ -163,3 +166,102 @@ def test_classify_route_ignores_substring_false_positives():
     assert classify_route("q", _FakeLLM("chatbot style")) is RouteStrategy.CHAT
     # Exact labels still parse.
     assert classify_route("q", _FakeLLM("search")) is RouteStrategy.SEARCH
+
+
+# --- _regex_route (deterministic pre-LLM pass) ---
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # TOOL — unambiguous imperative at the start
+        ("send an email to Bob", RouteStrategy.TOOL),
+        ("schedule a meeting for Friday", RouteStrategy.TOOL),
+        # TOOL — ambiguous verb, but object-qualified
+        ("create a ticket for the outage", RouteStrategy.TOOL),
+        ("open an issue about the crash", RouteStrategy.TOOL),
+        # SEARCH — bare term / lookup imperative
+        ("FAISS", RouteStrategy.SEARCH),
+        ("find the Q3 revenue report", RouteStrategy.SEARCH),
+        ("look up the release notes", RouteStrategy.SEARCH),
+        # CHAT — question / explain / generative / trailing '?'
+        ("What is FAISS?", RouteStrategy.CHAT),
+        ("explain how to send an email", RouteStrategy.CHAT),
+        ("write a haiku about the sea", RouteStrategy.CHAT),
+        ("is this thing on?", RouteStrategy.CHAT),
+        # None — currency conflict on a chat-form question → defer to LLM
+        ("what is the latest price of NVDA", None),
+        # None — no confident signal → defer to LLM
+        ("the procurement approval flow", None),
+        ("", None),
+        # SEARCH — a lookup verb wins over both the trailing '?' and the
+        # currency cue (the currency short-circuit only applies to the CHAT
+        # branch, not SEARCH).
+        ("find the latest report?", RouteStrategy.SEARCH),
+    ],
+)
+def test_regex_route(query, expected):
+    assert _regex_route(query) is expected
+
+
+def test_regex_route_tool_verb_needs_object_when_ambiguous():
+    # A bare ambiguous verb must NOT misfire to TOOL without an object.
+    assert _regex_route("open source models") is RouteStrategy.SEARCH
+    assert _regex_route("post office hours") is RouteStrategy.SEARCH
+
+
+def test_regex_route_polysemous_verbs_are_not_bare_tool_actions():
+    # These verbs are common leading nouns/adjectives, not just imperatives,
+    # so they must NOT short-circuit to TOOL without an object qualifier.
+    assert (
+        _regex_route("book recommendations for machine learning")
+        is not RouteStrategy.TOOL
+    )
+    assert _regex_route("email templates for onboarding") is not RouteStrategy.TOOL
+    assert _regex_route("schedule of the world cup") is not RouteStrategy.TOOL
+    assert _regex_route("cancel culture explained") is not RouteStrategy.TOOL
+    assert _regex_route("trigger warnings in modern media") is not RouteStrategy.TOOL
+    # True positives must be preserved: unambiguous bare verb, and
+    # object-qualified polysemous verb.
+    assert _regex_route("send an email to Bob") is RouteStrategy.TOOL
+    assert _regex_route("schedule a meeting for Friday") is RouteStrategy.TOOL
+
+
+# --- route_query uses _regex_route before the LLM ---
+
+
+def test_route_query_confident_regex_skips_llm():
+    # A confident chat-form question routes deterministically; the LLM classifier
+    # is never consulted (previously this misrouted via the classifier).
+    llm = _FakeLLM("search")  # would say search if consulted
+    strategy = route_query(
+        "What is FAISS?", llm=llm, has_local_model=True, explicit_source=False
+    )
+    assert strategy is RouteStrategy.CHAT
+    assert llm.calls == []  # regex decided; classifier not consulted
+
+
+def test_route_query_ambiguous_falls_through_to_llm():
+    # No confident regex match → the LLM classifier decides.
+    llm = _FakeLLM("chat")
+    strategy = route_query(
+        "the procurement approval flow",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.CHAT
+    assert llm.calls  # classifier consulted
+
+
+def test_route_query_currency_conflict_defers_to_llm():
+    # A chat-form question with a currency cue is NOT decided by regex.
+    llm = _FakeLLM("search")
+    strategy = route_query(
+        "what is the latest price of NVDA",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.SEARCH
+    assert llm.calls  # deferred to the classifier
