@@ -9,9 +9,12 @@ the resulting dispatch / fallback behavior.
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
+import src.internal.servers.web.app as web_app
 from src.context.models import (
     AnswerGenerationResult,
     SearchContextBundle,
@@ -120,7 +123,7 @@ def test_rag_fails_falls_back_to_raw_docs(monkeypatch, tmp_path):
         AsyncMock(side_effect=RuntimeError("llm down")),
     )
     raw_doc = ContextDocument(
-        id="D1", title="Doc", content="content", url=None, score=0.9, metadata={}
+        id="D1", title="Doc", content="content", url=None, score=0.0, metadata={}
     )
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_direct_search",
@@ -283,3 +286,69 @@ def test_auto_provider_expands_to_internal_and_serpapi():
     from src.internal.servers.web.app import _source_providers_for
 
     assert _source_providers_for("auto") == ["retrieval", "serpapi"]
+
+
+# --- SEARCH: direct retrieval first, escalate to the agent loop if weak ---
+
+
+def _doc(score: float, i: int = 1) -> ContextDocument:
+    return ContextDocument(
+        id=f"D{i}", title=f"doc{i}", content="body", url=None, score=score, metadata={}
+    )
+
+
+def _call_direct_or_escalate(monkeypatch, direct_docs, agent_result=None):
+    async def _fake_direct(*a, **k):
+        return direct_docs
+
+    called = {"agent": False}
+
+    async def _fake_agent(*a, **k):
+        called["agent"] = True
+        return ("agent answer", ["[D1]"], [_doc(0.9)], "search", {})
+
+    monkeypatch.setattr(web_app, "_run_direct_search", _fake_direct)
+    monkeypatch.setattr(web_app, "_run_search_agent", _fake_agent)
+    result = asyncio.run(
+        web_app._run_search_direct_or_escalate(
+            "FAISS",
+            manager=object(),
+            tokenizer=object(),
+            llm=None,
+            search_url="http://x/retrieve",
+            browser_search_url=None,
+            rerank_url=None,
+            top_k=5,
+            filters=None,
+            history=[],
+            source_provider="retrieval",
+            on_turn=None,
+        )
+    )
+    return result, called
+
+
+def test_strong_retrieval_returns_direct_without_agent(monkeypatch):
+    # top score 0.42 >= default threshold 0.2 → direct, agent loop NOT called.
+    (answer, citations, documents, intent, extra), called = _call_direct_or_escalate(
+        monkeypatch, [_doc(0.42), _doc(0.1, 2)]
+    )
+    assert called["agent"] is False
+    assert extra["search_mode"] == "direct"
+    assert documents[0].score == 0.42
+    assert intent == "search"
+
+
+def test_weak_retrieval_escalates_to_agent(monkeypatch):
+    # top score 0.1 < 0.2 → escalate; agent loop IS called.
+    (answer, citations, documents, intent, extra), called = _call_direct_or_escalate(
+        monkeypatch, [_doc(0.1)]
+    )
+    assert called["agent"] is True
+    assert extra["search_mode"] == "escalated"
+
+
+def test_empty_retrieval_escalates(monkeypatch):
+    (_answer, _c, _d, _i, extra), called = _call_direct_or_escalate(monkeypatch, [])
+    assert called["agent"] is True
+    assert extra["search_mode"] == "escalated"

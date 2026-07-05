@@ -504,3 +504,23 @@ class TestMultiQueryWebSearchTool:
         tool = MultiQueryWebSearchTool(search_fn=_fake)
         asyncio.run(tool.execute("inst1", {"queries": "single query"}))
         assert seen == ["single query"]
+
+
+def test_search_page_preserves_score_from_result():
+    from src.context.search import SearchResult
+    from src.tools.search import SearchPage
+
+    result = SearchResult(contents="FAISS body", score=0.42, title="FAISS", url="u")
+    page = SearchPage.from_search_result(result)
+    assert page.score == 0.42
+
+
+def test_documents_from_search_pages_maps_score():
+    from src.internal.servers.web.app import _documents_from_search_pages
+    from src.tools.search import SearchPage
+
+    pages = [SearchPage(title="FAISS", summary="body", url="u", score=0.42)]
+    docs = _documents_from_search_pages(
+        pages, source_provider="retrieval", query="FAISS"
+    )
+    assert docs[0].score == 0.42
