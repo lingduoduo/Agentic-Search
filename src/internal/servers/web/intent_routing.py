@@ -253,9 +253,9 @@ def route_query(
 
     Cascade:
       1. An explicit non-default source provider is a search command.
-      2. A bare term/entity lookup (e.g. "FAISS") is a grounded search — decided
-         deterministically so it never reaches the classifier, which tends to
-         over-route such lookups to chat/direct answers (ungrounded).
+      2. A confident `_regex_route` match (anchored tool/search/chat cues,
+         incl. bare lookup) is returned deterministically, skipping the
+         classifier.
       3. With an LLM, use the 3-way classifier (rule-based on error).
       4. Without an LLM, use the rule-based route.
 
@@ -266,8 +266,9 @@ def route_query(
     del has_local_model  # dispatch layer handles capability degradation
     if explicit_source:
         return RouteStrategy.SEARCH
-    if _is_bare_lookup(query):
-        return RouteStrategy.SEARCH
+    regex_choice = _regex_route(query)
+    if regex_choice is not None:
+        return regex_choice
     if llm is not None:
         try:
             return classify_route(query, llm)

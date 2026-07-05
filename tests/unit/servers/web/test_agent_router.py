@@ -204,3 +204,43 @@ def test_regex_route_tool_verb_needs_object_when_ambiguous():
     # A bare ambiguous verb must NOT misfire to TOOL without an object.
     assert _regex_route("open source models") is not RouteStrategy.TOOL
     assert _regex_route("post office hours") is not RouteStrategy.TOOL
+
+
+# --- route_query uses _regex_route before the LLM ---
+
+
+def test_route_query_confident_regex_skips_llm():
+    # A confident chat-form question routes deterministically; the LLM classifier
+    # is never consulted (previously this misrouted via the classifier).
+    llm = _FakeLLM("search")  # would say search if consulted
+    strategy = route_query(
+        "What is FAISS?", llm=llm, has_local_model=True, explicit_source=False
+    )
+    assert strategy is RouteStrategy.CHAT
+    assert llm.calls == []  # regex decided; classifier not consulted
+
+
+def test_route_query_ambiguous_falls_through_to_llm():
+    # No confident regex match → the LLM classifier decides.
+    llm = _FakeLLM("chat")
+    strategy = route_query(
+        "the procurement approval flow",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.CHAT
+    assert llm.calls  # classifier consulted
+
+
+def test_route_query_currency_conflict_defers_to_llm():
+    # A chat-form question with a currency cue is NOT decided by regex.
+    llm = _FakeLLM("search")
+    strategy = route_query(
+        "what is the latest price of NVDA",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.SEARCH
+    assert llm.calls  # deferred to the classifier

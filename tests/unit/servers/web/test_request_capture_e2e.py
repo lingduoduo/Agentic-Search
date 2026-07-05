@@ -74,11 +74,12 @@ def web_client_debug_off(monkeypatch, tmp_path):
 
 
 def test_auto_routed_request_is_captured_when_flag_on(web_client_debug_on):
-    # A multi-word, non-bare-lookup query with no tool/search verbs reaches
-    # the real classify_route, whose fake "chat" completion routes to CHAT.
+    # A multi-word, non-bare-lookup query with no tool/search/chat-start cues
+    # (not decided by the deterministic _regex_route pass) reaches the real
+    # classify_route, whose fake "chat" completion routes to CHAT.
     response = web_client_debug_on.post(
         "/api/agent",
-        json={"query": "explain how vector databases store embeddings"},
+        json={"query": "vector databases and embedding storage internals"},
     )
     assert response.status_code == 200
 
