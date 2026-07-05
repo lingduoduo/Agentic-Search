@@ -198,6 +198,9 @@ class ToolAgentLoop(AgentLoopBase):
             result, _, _ = await tool.execute(instance_id, tool_call.parsed_arguments())
             elapsed = time.perf_counter() - start
             status = TaskStatus.COMPLETED
+            self._record_tool_stage(
+                tool_call.name, tool_call.parsed_arguments(), result
+            )
         except Exception as exc:
             elapsed = time.perf_counter() - start
             logger.exception("Error executing tool %r: %s", tool_call.name, exc)
