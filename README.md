@@ -1639,3 +1639,25 @@ Frontend tests (`web/src/components/__tests__/`):
 - Some web pages block scraping or return little usable text.
 - Google Custom Search and SerpAPI are subject to their own quota and billing rules.
 - If `prepare_search_qa_dataset` fails with a `pyarrow` extension error, run `pip install -r requirements.txt`.
+
+
+### Debug
+SerpAI
+```
+cd /Users/linghuang/Git/Agentic-Search
+KEY=$(grep -E '^SERP_API_KEY=' .env | cut -d= -f2- | tr -d '"'\'' ')
+
+curl -s "https://serpapi.com/search.json?engine=google&q=what+is+FAISS&api_key=$KEY" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print('ERROR:',d['error']) if 'error' in d else print(len(d.get('organic_results',[])),'results —',d.get('search_metadata',{}).get('status'))"
+```
+
+playwright-cli browser
+
+```
+cd /Users/linghuang/Git/Agentic-Search
+pip install playwright
+playwright install chromium
+curl -s --max-time 30 -X POST http://127.0.0.1:8002/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"what is FAISS","top_k":5}' | python3 -m json.tool
+```
