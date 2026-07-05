@@ -156,7 +156,10 @@ def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
     from src.context.models import ChatMessage
 
     prompt = _ROUTE_PROMPT.format(user_query=query)
-    response = llm.complete([ChatMessage(role="user", content=prompt)])
+    # Deterministic decoding so the same query always routes to the same
+    # strategy/source run-to-run; the server default (~1.0) would otherwise
+    # let a fixed query flip between chat/search/tool across requests.
+    response = llm.complete([ChatMessage(role="user", content=prompt)], temperature=0.0)
     content = (
         (response if isinstance(response, str) else response.content).strip().lower()
     )

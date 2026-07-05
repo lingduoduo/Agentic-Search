@@ -15,10 +15,22 @@ class _FakeLLM:
     def __init__(self, reply: str) -> None:
         self._reply = reply
         self.calls: list[list[ChatMessage]] = []
+        self.call_kwargs: list[dict] = []
 
-    def complete(self, messages: list[ChatMessage], **_) -> str:
+    def complete(self, messages: list[ChatMessage], **kwargs) -> str:
         self.calls.append(messages)
+        self.call_kwargs.append(kwargs)
         return self._reply
+
+
+def test_classify_route_uses_deterministic_decoding():
+    # The strategy classifier must decode deterministically (temperature 0), so
+    # the same query always routes to the same strategy/source run-to-run.
+    llm = _FakeLLM("chat")
+    classify_route("compare dense and sparse retrieval", llm)
+
+    assert llm.call_kwargs, "the classifier consulted the LLM"
+    assert llm.call_kwargs[0].get("temperature") == 0.0
 
 
 # --- route_query cascade ---
