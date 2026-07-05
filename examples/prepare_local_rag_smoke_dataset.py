@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from typing import Any
@@ -87,3 +88,61 @@ def build_smoke_records(
             )
         )
     return records
+
+
+def preview_records(records: list[dict[str, object]]) -> None:
+    print("Local RAG smoke-test preview")
+    for record in records:
+        prompt = record["prompt"][0]["content"]
+        context = prompt.split("Context:\n", 1)[-1]
+        preview = {
+            "question": prompt.split("Question:", 1)[-1]
+            .split("Context:", 1)[0]
+            .strip(),
+            "reward_target": record["reward_model"]["ground_truth"]["target"],
+            "context_excerpt": context[:300],
+            "extra_info": record["extra_info"],
+        }
+        print(json.dumps(preview, ensure_ascii=False))
+
+
+def write_parquet(records: list[dict[str, object]], output_path: str | Path) -> Path:
+    try:
+        import datasets
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to import Hugging Face datasets; install project requirements."
+        ) from exc
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    datasets.Dataset.from_list(records).to_parquet(path)
+    return path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build a small offline RAG parquet dataset from the demo corpus."
+    )
+    parser.add_argument("--corpus_path", default="data/corpus.jsonl")
+    parser.add_argument("--output_path", default="data/local_rag_smoke.parquet")
+    parser.add_argument("--topk", type=int, default=3)
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Print converted records and skip parquet writing.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    records = build_smoke_records(args.corpus_path, topk=args.topk)
+    if args.preview:
+        preview_records(records)
+        return
+    output_path = write_parquet(records, args.output_path)
+    print(f"Wrote {len(records)} local RAG smoke records to {output_path}")
+
+
+if __name__ == "__main__":
+    main()
