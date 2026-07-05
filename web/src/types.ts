@@ -256,6 +256,7 @@ export interface SSEDoneEvent {
   route_degraded?: string | null;
   tool_calls?: ToolCallTraceView[];
   control_flow_trace?: ControlFlowEventView[];
+  request_id?: string;
 }
 
 export interface SSEErrorEvent {
@@ -323,6 +324,32 @@ export interface WorkerMetrics {
   active_connectors: number;
   total_documents: number;
   timestamp: string;
+}
+
+export interface StageRecordView {
+  stage: "intent" | "search" | "tool" | "llm" | "final";
+  label: string;
+  timestamp: number;
+  duration_ms: number | null;
+  payload: Record<string, unknown>;
+}
+
+export interface RequestSummary {
+  request_id: string;
+  query: string;
+  created_at: number;
+  route: string | null;
+  stage_count: number;
+}
+
+export interface RequestSnapshot {
+  request_id: string;
+  query: string;
+  created_at: number;
+  route: string | null;
+  route_degraded: string | null;
+  total_ms: number | null;
+  stages: StageRecordView[];
 }
 
 export interface QueryTransformResult {

@@ -18,6 +18,8 @@ import type {
   OpenAPIRegisterRequest,
   OpenAPIRegisterResponse,
   QueryHistoryPage,
+  RequestSnapshot,
+  RequestSummary,
   SessionCreateRequest,
   SSEEvent,
   ToolInvokeRequest,
@@ -74,6 +76,16 @@ export function runQueryTransform(query: string): Promise<QueryTransformResult> 
     method: "POST",
     body: JSON.stringify({ query }),
   });
+}
+
+/** List recent captured request runs (dev console — Request Inspector). */
+export async function listDebugRequests(): Promise<{ requests: RequestSummary[] }> {
+  return requestJson<{ requests: RequestSummary[] }>("/api/debug/requests");
+}
+
+/** Fetch one request's full stage-by-stage snapshot (dev console — Request Inspector). */
+export async function getDebugRequest(id: string): Promise<RequestSnapshot> {
+  return requestJson<RequestSnapshot>(`/api/debug/request/${encodeURIComponent(id)}`);
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {

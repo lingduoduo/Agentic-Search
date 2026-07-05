@@ -78,6 +78,7 @@ export function App() {
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const [toolCalls, setToolCalls] = useState<ToolCallTraceView[]>([]);
   const [controlFlowTrace, setControlFlowTrace] = useState<ControlFlowEventView[]>([]);
+  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<ToolApprovalView[]>([]);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
@@ -177,6 +178,7 @@ export function App() {
           setCompletedSteps(liveSteps);
           setProgressSteps([]);
           setPendingApprovals([]);
+          setLastRequestId(event.request_id ?? null);
         } else if (event.type === "error") {
           throw new Error(event.detail);
         }
@@ -341,6 +343,7 @@ export function App() {
             answer={streamingAnswer || answer}
             citations={citations}
             controlFlowTrace={controlFlowTrace}
+            selectedRequestId={lastRequestId}
           />
         )}
 
