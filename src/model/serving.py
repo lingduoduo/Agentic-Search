@@ -12,6 +12,8 @@ import threading
 import time
 from typing import Any, Protocol, runtime_checkable
 
+from src.internal.servers.web import request_capture as _capture
+
 logger = logging.getLogger(__name__)
 
 
@@ -460,9 +462,27 @@ class LocalServerManager:
         sampling_params: dict[str, Any],
     ) -> list[int]:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
+        # Run the blocking HF generate() in a worker thread, then decode and
+        # emit back on the event loop thread — record_stage relies on a
+        # ContextVar that run_in_executor's thread pool does not propagate.
+        response_ids = await loop.run_in_executor(
             None, self._generate_sync, prompt_ids, sampling_params
         )
+        if _capture.active() is not None:
+            _capture.record_stage(
+                "llm",
+                "generate",
+                {
+                    "model": self.model_path,
+                    "prompt": self._tokenizer.decode(
+                        prompt_ids, skip_special_tokens=True
+                    ),
+                    "completion": self._tokenizer.decode(
+                        response_ids, skip_special_tokens=True
+                    ),
+                },
+            )
+        return response_ids
 
     def _generate_sync(
         self, prompt_ids: list[int], sampling_params: dict[str, Any]

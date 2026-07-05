@@ -151,6 +151,41 @@ class AgenticRAGLoop:
         self.llm = llm
         self._enhancer = QueryEnhancer(llm)
 
+    def _record_search_stage(
+        self,
+        query: str,
+        top_k: int,
+        round_index: int,
+        documents: list[ContextDocument],
+    ) -> None:
+        # Deferred import: src.internal.servers.web's package __init__ imports
+        # agent-loop modules (via app.py), so a top-level import here would be
+        # circular.
+        from src.internal.servers.web import request_capture as _capture
+
+        if _capture.active() is None:
+            return
+
+        _capture.record_stage(
+            "search",
+            "retrieve",
+            {
+                "query": query,
+                "top_k": top_k,
+                "round": round_index,
+                "documents": [
+                    {
+                        "id": d.id,
+                        "title": getattr(d, "title", ""),
+                        "text": getattr(d, "text", d.content),
+                        "score": getattr(d, "score", None),
+                        "source": getattr(d, "source", d.url),
+                    }
+                    for d in documents
+                ],
+            },
+        )
+
     async def run(
         self,
         question: str,
@@ -221,6 +256,9 @@ class AgenticRAGLoop:
                         key = _doc_key(doc)
                         if key not in accumulated:
                             accumulated[key] = doc
+                    self._record_search_stage(
+                        q, self.config.topk, rounds_used, ctx.documents
+                    )
                 except Exception as exc:
                     logger.warning("Retrieval failed for query %r: %s", q, exc)
             retr_ms = round((time.perf_counter() - t_retr) * 1000)

@@ -8,6 +8,8 @@ import re
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from src.internal.servers.web import request_capture as _capture
+
 if TYPE_CHECKING:
     from src.agents.core.base import AgentLoopOutput
     from src.context.models import LLMClient
@@ -163,17 +165,25 @@ def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
     content = (
         (response if isinstance(response, str) else response.content).strip().lower()
     )
+    strategy = RouteStrategy.CHAT
     if not content:
         logger.warning("Route classification empty; defaulting to chat.")
-        return RouteStrategy.CHAT
-    for value, strategy in _LABEL_BY_VALUE.items():
-        if re.search(rf"\b{value}\b", content):
-            return strategy
-    logger.warning(
-        "Route classification returned unexpected response %r; defaulting to chat.",
-        content,
+    else:
+        for value, mapped in _LABEL_BY_VALUE.items():
+            if re.search(rf"\b{value}\b", content):
+                strategy = mapped
+                break
+        else:
+            logger.warning(
+                "Route classification returned unexpected response %r; defaulting to chat.",
+                content,
+            )
+    _capture.record_stage(
+        "intent",
+        "classify_route",
+        {"prompt": prompt, "raw_label": content, "strategy": strategy.value},
     )
-    return RouteStrategy.CHAT
+    return strategy
 
 
 def route_query(

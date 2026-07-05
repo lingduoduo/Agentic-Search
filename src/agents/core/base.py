@@ -211,6 +211,16 @@ class AgentLoopBase:
         )
         return list(response_ids)[: self.response_length]
 
+    def _record_tool_stage(self, name: str, args: dict[str, Any], result: Any) -> None:
+        # Deferred import: src.internal.servers.web's package __init__ imports
+        # agent-loop modules (via app.py), so a top-level import here would be
+        # circular.
+        from src.internal.servers.web import request_capture as _capture
+
+        _capture.record_stage(
+            "tool", name, {"name": name, "args": args, "result": result}
+        )
+
     def build_response_mask(self, response_ids: list[int]) -> list[int]:
         return [1] * len(response_ids)
 

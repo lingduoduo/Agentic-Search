@@ -835,6 +835,41 @@ class SearchAgentLoop(AgentLoopBase):
             return False
         return all(task_statuses.get(tid, False) for tid in active_tasks)
 
+    def _record_search_stage(
+        self,
+        query: list[str],
+        top_k: int,
+        round_index: int,
+        documents: list[SearchResult],
+    ) -> None:
+        # Deferred import: src.internal.servers.web's package __init__ imports
+        # agent-loop modules (via app.py), so a top-level import here would be
+        # circular.
+        from src.internal.servers.web import request_capture as _capture
+
+        if _capture.active() is None:
+            return
+
+        _capture.record_stage(
+            "search",
+            "search_tool",
+            {
+                "query": query,
+                "top_k": top_k,
+                "round": round_index,
+                "documents": [
+                    {
+                        "id": getattr(d, "id", None),
+                        "title": getattr(d, "title", ""),
+                        "text": getattr(d, "text", d.contents),
+                        "score": getattr(d, "score", None),
+                        "source": getattr(d, "source", d.url),
+                    }
+                    for d in documents
+                ],
+            },
+        )
+
     # ------------------------------------------------------------------
     # Search tool-call execution
     # ------------------------------------------------------------------
@@ -922,6 +957,12 @@ class SearchAgentLoop(AgentLoopBase):
                 "document_count": sum(map(len, results_by_query)),
                 "search_round": state.search_rounds,
             },
+        )
+        self._record_search_stage(
+            queries,
+            cfg.topk,
+            state.search_rounds,
+            [result for row in results_by_query for result in row],
         )
         if retriever is Retriever.WEB:
             metrics["web_searches"] += 1.0
