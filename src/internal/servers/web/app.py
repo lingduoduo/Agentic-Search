@@ -6,6 +6,7 @@ import asyncio
 import httpx
 import json as _json
 import logging
+import uuid as _uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
@@ -54,6 +55,7 @@ from src.internal.hooks import HookSoftFailed
 from src.internal.hooks import execute_hook
 from src.internal.servers.admin_surface.api import create_admin_surface_router
 from src.internal.servers.analytics.api import create_analytics_router
+from src.internal.servers.web import request_capture as _capture
 from src.internal.servers.web.auth_check import PUBLIC_ENDPOINT_SPECS
 from src.internal.servers.web.auth_check import check_router_auth
 from src.internal.servers.billing.api import create_billing_router
@@ -972,6 +974,12 @@ def create_web_app(
     app.state.tool_approval_broker = ToolApprovalBroker(
         resolved.tool_approval_timeout_seconds
     )
+    import os as _os
+    from src.internal.servers.web.request_capture_store import RequestCaptureStore
+
+    app.state.request_captures = RequestCaptureStore(
+        max_size=int(_os.environ.get("AGENTIC_SEARCH_REQUEST_CAPTURE_MAX", "20"))
+    )
     add_api_server_tenant_id_middleware(app, resolved)
     add_license_enforcement_middleware(app, resolved)
     add_tier_gate_middleware(app, resolved)
@@ -1048,6 +1056,8 @@ def create_web_app(
     async def _run_agent_impl(
         request: AgentExperienceRequest,
         http_request: Request,
+        *,
+        request_id: str,
         on_turn: "OnTurnCallback | None" = None,
         on_trace: EventSink | None = None,
         on_approval=None,
@@ -1107,223 +1117,267 @@ def create_web_app(
         manager = getattr(http_request.app.state, "search_agent_manager", None)
         tokenizer = getattr(http_request.app.state, "search_agent_tokenizer", None)
 
-        try:
-            if normalized_mode is None:
-                # Auto-routing path
-                answer, citations, documents, intent, extra = await _run_auto_routed(
-                    query,
-                    llm=llm,
-                    manager=manager,
-                    tokenizer=tokenizer,
-                    search_url=search_url,
-                    browser_search_url=settings.browser_search_url,
-                    rerank_url=settings.rerank_url,
-                    top_k=top_k,
-                    filters=filters,
-                    history=history,
-                    resolved=resolved,
-                    source_provider=_normalize_source_provider(request.source_provider),
-                    on_turn=on_turn,
-                    on_approval=on_approval,
-                )
-                return _finalize_response(
-                    db,
-                    session_id,
-                    answer=answer,
-                    citations=citations,
-                    documents=documents,
-                    intent=intent,
-                    hook_metadata=hook_metadata,
-                    extra=extra,
-                    mode="auto",
-                )
-
-            # Explicit mode — pin the dispatch, then share the runners + tail.
-            mode = normalized_mode
-
-            if mode == "search_tool":
-                source_provider = _normalize_source_provider(request.source_provider)
-                documents = await _run_direct_search(
-                    query,
-                    source_provider=source_provider,
-                    search_url=search_url,
-                    browser_search_url=settings.browser_search_url,
-                    rerank_url=settings.rerank_url,
-                    top_k=top_k,
-                )
-                answer = _search_only_answer(
-                    "Direct search tool",
-                    queries=[query],
-                    documents=documents,
-                    source_provider=source_provider,
-                )
-                return _finalize_response(
-                    db,
-                    session_id,
-                    answer=answer,
-                    citations=[doc.citation for doc in documents],
-                    documents=documents,
-                    intent="search",
-                    hook_metadata=hook_metadata,
-                    extra={"source_provider": source_provider},
-                    mode=mode,
-                )
-
-            if mode == "hybrid_search":
-                source_provider = _normalize_source_provider(request.source_provider)
-                search_result = await _run_hybrid_search(
-                    query,
-                    llm=llm,
-                    search_url=search_url,
-                    browser_search_url=settings.browser_search_url,
-                    rerank_url=settings.rerank_url,
-                    top_k=top_k,
-                    filters=filters,
-                    source_provider=source_provider,
-                )
-                answer = _search_only_answer(
-                    "Hybrid search",
-                    queries=search_result.executed_queries,
-                    documents=search_result.documents,
-                    source_provider=source_provider,
-                )
-                return _finalize_response(
-                    db,
-                    session_id,
-                    answer=answer,
-                    citations=[doc.citation for doc in search_result.documents],
-                    documents=search_result.documents,
-                    intent="search",
-                    hook_metadata=hook_metadata,
-                    extra={
-                        "source_provider": source_provider,
-                        "executed_queries": search_result.executed_queries,
-                    },
-                    mode=mode,
-                )
-
-            if mode == "chat_loop":
-                answer, citations, documents, intent, extra = await _run_agentic_rag(
-                    query,
-                    llm=llm,
-                    search_url=search_url,
-                    top_k=top_k,
-                    history=history,
-                )
-                return _finalize_response(
-                    db,
-                    session_id,
-                    answer=answer,
-                    citations=citations,
-                    documents=documents,
-                    intent=intent,
-                    hook_metadata=hook_metadata,
-                    extra=extra,
-                    mode=mode,
-                )
-
-            if mode == "search_agent":
-                if manager is None or tokenizer is None:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            "search_agent mode is not configured. "
-                            "Set SEARCH_AGENT_MODEL in .env and restart the server."
-                        ),
-                    )
-                answer, citations, documents, intent, extra = await _run_search_agent(
-                    query,
-                    manager=manager,
-                    tokenizer=tokenizer,
-                    search_url=search_url,
-                    top_k=top_k,
-                    on_turn=on_turn,
-                    on_trace=on_trace,
-                )
-                return _finalize_response(
-                    db,
-                    session_id,
-                    answer=answer,
-                    citations=citations,
-                    documents=documents,
-                    intent=intent,
-                    hook_metadata=hook_metadata,
-                    extra=extra,
-                    mode=mode,
-                )
-
-            if mode == "tool_agent":
-                if manager is None or tokenizer is None:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            "tool_agent mode requires a local model. "
-                            "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
-                        ),
-                    )
-                answer, citations, documents, intent, extra = await _run_tool_agent(
-                    query,
-                    manager=manager,
-                    tokenizer=tokenizer,
-                    search_url=search_url,
-                    history=history,
-                    resolved=resolved,
-                    on_turn=on_turn,
-                    on_approval=on_approval,
-                    with_search_tool=True,
-                )
-                # Explicit mode falls back to the last assistant message on an
-                # empty final answer (the auto-route instead degrades to RAG).
-                answer = answer or extra.pop("_assistant_fallback", "")
-                return _finalize_response(
-                    db,
-                    session_id,
-                    answer=answer,
-                    citations=citations,
-                    documents=documents,
-                    intent=intent,
-                    hook_metadata=hook_metadata,
-                    extra=extra,
-                    mode=mode,
-                )
-
-            result = await answer_with_retrieval(
-                query,
-                llm=llm,
-                chat_history=history,
-                search_url=search_url,
-                top_k=top_k,
-                filters=filters,
-            )
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.exception("Agent dispatch error: %s", exc)
-            detail = (
-                str(exc)
-                if str(exc).strip()
-                else "Unexpected error during agent dispatch"
-            )
-            raise HTTPException(status_code=502, detail=detail) from exc
-
-        return _finalize_response(
-            db,
-            session_id,
-            answer=result.answer,
-            citations=result.citations,
-            documents=result.context.documents,
-            intent="chat",
-            hook_metadata=hook_metadata,
-            extra={},
-            mode=mode,
+        capture_on = (
+            getattr(http_request.app.state, "request_captures", None) is not None
         )
+        capture_token = (
+            _capture.start_capture(request_id, query)
+            if capture_on and settings.debug_panels
+            else None
+        )
+
+        try:
+            try:
+                if normalized_mode is None:
+                    # Auto-routing path
+                    (
+                        answer,
+                        citations,
+                        documents,
+                        intent,
+                        extra,
+                    ) = await _run_auto_routed(
+                        query,
+                        llm=llm,
+                        manager=manager,
+                        tokenizer=tokenizer,
+                        search_url=search_url,
+                        browser_search_url=settings.browser_search_url,
+                        rerank_url=settings.rerank_url,
+                        top_k=top_k,
+                        filters=filters,
+                        history=history,
+                        resolved=resolved,
+                        source_provider=_normalize_source_provider(
+                            request.source_provider
+                        ),
+                        on_turn=on_turn,
+                        on_approval=on_approval,
+                    )
+                    return _finalize_response(
+                        db,
+                        session_id,
+                        answer=answer,
+                        citations=citations,
+                        documents=documents,
+                        intent=intent,
+                        hook_metadata=hook_metadata,
+                        extra=extra,
+                        mode="auto",
+                    )
+
+                # Explicit mode — pin the dispatch, then share the runners + tail.
+                mode = normalized_mode
+
+                if mode == "search_tool":
+                    source_provider = _normalize_source_provider(
+                        request.source_provider
+                    )
+                    documents = await _run_direct_search(
+                        query,
+                        source_provider=source_provider,
+                        search_url=search_url,
+                        browser_search_url=settings.browser_search_url,
+                        rerank_url=settings.rerank_url,
+                        top_k=top_k,
+                    )
+                    answer = _search_only_answer(
+                        "Direct search tool",
+                        queries=[query],
+                        documents=documents,
+                        source_provider=source_provider,
+                    )
+                    return _finalize_response(
+                        db,
+                        session_id,
+                        answer=answer,
+                        citations=[doc.citation for doc in documents],
+                        documents=documents,
+                        intent="search",
+                        hook_metadata=hook_metadata,
+                        extra={"source_provider": source_provider},
+                        mode=mode,
+                    )
+
+                if mode == "hybrid_search":
+                    source_provider = _normalize_source_provider(
+                        request.source_provider
+                    )
+                    search_result = await _run_hybrid_search(
+                        query,
+                        llm=llm,
+                        search_url=search_url,
+                        browser_search_url=settings.browser_search_url,
+                        rerank_url=settings.rerank_url,
+                        top_k=top_k,
+                        filters=filters,
+                        source_provider=source_provider,
+                    )
+                    answer = _search_only_answer(
+                        "Hybrid search",
+                        queries=search_result.executed_queries,
+                        documents=search_result.documents,
+                        source_provider=source_provider,
+                    )
+                    return _finalize_response(
+                        db,
+                        session_id,
+                        answer=answer,
+                        citations=[doc.citation for doc in search_result.documents],
+                        documents=search_result.documents,
+                        intent="search",
+                        hook_metadata=hook_metadata,
+                        extra={
+                            "source_provider": source_provider,
+                            "executed_queries": search_result.executed_queries,
+                        },
+                        mode=mode,
+                    )
+
+                if mode == "chat_loop":
+                    (
+                        answer,
+                        citations,
+                        documents,
+                        intent,
+                        extra,
+                    ) = await _run_agentic_rag(
+                        query,
+                        llm=llm,
+                        search_url=search_url,
+                        top_k=top_k,
+                        history=history,
+                    )
+                    return _finalize_response(
+                        db,
+                        session_id,
+                        answer=answer,
+                        citations=citations,
+                        documents=documents,
+                        intent=intent,
+                        hook_metadata=hook_metadata,
+                        extra=extra,
+                        mode=mode,
+                    )
+
+                if mode == "search_agent":
+                    if manager is None or tokenizer is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "search_agent mode is not configured. "
+                                "Set SEARCH_AGENT_MODEL in .env and restart the server."
+                            ),
+                        )
+                    (
+                        answer,
+                        citations,
+                        documents,
+                        intent,
+                        extra,
+                    ) = await _run_search_agent(
+                        query,
+                        manager=manager,
+                        tokenizer=tokenizer,
+                        search_url=search_url,
+                        top_k=top_k,
+                        on_turn=on_turn,
+                        on_trace=on_trace,
+                    )
+                    return _finalize_response(
+                        db,
+                        session_id,
+                        answer=answer,
+                        citations=citations,
+                        documents=documents,
+                        intent=intent,
+                        hook_metadata=hook_metadata,
+                        extra=extra,
+                        mode=mode,
+                    )
+
+                if mode == "tool_agent":
+                    if manager is None or tokenizer is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "tool_agent mode requires a local model. "
+                                "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
+                            ),
+                        )
+                    answer, citations, documents, intent, extra = await _run_tool_agent(
+                        query,
+                        manager=manager,
+                        tokenizer=tokenizer,
+                        search_url=search_url,
+                        history=history,
+                        resolved=resolved,
+                        on_turn=on_turn,
+                        on_approval=on_approval,
+                        with_search_tool=True,
+                    )
+                    # Explicit mode falls back to the last assistant message on an
+                    # empty final answer (the auto-route instead degrades to RAG).
+                    answer = answer or extra.pop("_assistant_fallback", "")
+                    return _finalize_response(
+                        db,
+                        session_id,
+                        answer=answer,
+                        citations=citations,
+                        documents=documents,
+                        intent=intent,
+                        hook_metadata=hook_metadata,
+                        extra=extra,
+                        mode=mode,
+                    )
+
+                result = await answer_with_retrieval(
+                    query,
+                    llm=llm,
+                    chat_history=history,
+                    search_url=search_url,
+                    top_k=top_k,
+                    filters=filters,
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.exception("Agent dispatch error: %s", exc)
+                detail = (
+                    str(exc)
+                    if str(exc).strip()
+                    else "Unexpected error during agent dispatch"
+                )
+                raise HTTPException(status_code=502, detail=detail) from exc
+
+            return _finalize_response(
+                db,
+                session_id,
+                answer=result.answer,
+                citations=result.citations,
+                documents=result.context.documents,
+                intent="chat",
+                hook_metadata=hook_metadata,
+                extra={},
+                mode=mode,
+            )
+        finally:
+            cap = _capture.active()
+            if cap is not None:
+                cap.finish()
+                http_request.app.state.request_captures.put(cap.snapshot())
+            if capture_token is not None:
+                _capture.reset_capture(capture_token)
 
     @app.post("/api/agent")
     async def run_agent(
         request: AgentExperienceRequest,
         http_request: Request,
     ) -> AgentExperienceResponse:
-        return await _run_agent_impl(request, http_request, on_turn=None)
+        request_id = _uuid.uuid4().hex
+        return await _run_agent_impl(
+            request, http_request, request_id=request_id, on_turn=None
+        )
 
     @app.post(
         "/api/agent/approvals/{approval_id}",
@@ -1377,6 +1431,7 @@ def create_web_app(
         queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
         dropped_trace_events = 0
         auth_user = _optional_user_from_request(http_request)
+        request_id = _uuid.uuid4().hex
 
         async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
             text = (
@@ -1409,6 +1464,7 @@ def create_web_app(
                 _run_agent_impl(
                     request,
                     http_request,
+                    request_id=request_id,
                     on_turn=on_turn,
                     on_trace=on_trace,
                     on_approval=on_approval if auth_user is not None else None,
@@ -1428,6 +1484,7 @@ def create_web_app(
                 yield _sse(
                     {
                         "type": "done",
+                        "request_id": request_id,
                         "session_id": result.session_id,
                         "citations": result.citations,
                         "documents": [d.model_dump() for d in result.documents],
