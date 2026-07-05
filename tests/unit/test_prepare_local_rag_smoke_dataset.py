@@ -1,6 +1,4 @@
 import json
-from pathlib import Path
-
 import pytest
 
 from examples.prepare_local_rag_smoke_dataset import (
@@ -11,13 +9,42 @@ from examples.prepare_local_rag_smoke_dataset import (
 )
 
 
-REPO_CORPUS = Path(__file__).parents[2] / "data" / "corpus.jsonl"
+@pytest.fixture
+def smoke_corpus(tmp_path):
+    corpus = tmp_path / "corpus.jsonl"
+    documents = [
+        {
+            "id": "faiss",
+            "title": "Dense Retrieval with FAISS",
+            "contents": "FAISS enables efficient nearest-neighbor search over millions of high-dimensional vectors.",
+        },
+        {
+            "id": "bm25",
+            "title": "BM25 Sparse Retrieval",
+            "contents": "BM25 is a ranking function that uses term frequency and inverse document frequency.",
+        },
+        {
+            "id": "rag",
+            "title": "Retrieval-Augmented Generation",
+            "contents": "Retrieval-augmented generation combines a retriever and a generative language model.",
+        },
+        {
+            "id": "fastapi",
+            "title": "FastAPI",
+            "contents": "FastAPI is a Python web framework that provides automatic OpenAPI documentation.",
+        },
+    ]
+    corpus.write_text(
+        "".join(f"{json.dumps(document)}\n" for document in documents),
+        encoding="utf-8",
+    )
+    return corpus
 
 
-def test_build_smoke_records_retrieves_expected_context():
-    records = build_smoke_records(REPO_CORPUS, topk=1)
+def test_build_smoke_records_retrieves_expected_context(smoke_corpus):
+    records = build_smoke_records(smoke_corpus, topk=1)
 
-    assert records
+    assert len(records) == 4
     first = records[0]
     assert set(first) == {
         "data_source",
@@ -31,9 +58,9 @@ def test_build_smoke_records_retrieves_expected_context():
     assert first["extra_info"] == {"split": "smoke", "index": 0}
 
 
-def test_build_smoke_records_rejects_non_positive_topk():
+def test_build_smoke_records_rejects_non_positive_topk(smoke_corpus):
     with pytest.raises(ValueError, match="topk must be at least 1"):
-        build_smoke_records(REPO_CORPUS, topk=0)
+        build_smoke_records(smoke_corpus, topk=0)
 
 
 def test_build_smoke_records_rejects_missing_corpus(tmp_path):
@@ -49,9 +76,7 @@ def test_build_smoke_records_rejects_empty_corpus(tmp_path):
         build_smoke_records(corpus)
 
 
-def test_build_smoke_records_names_question_when_retrieval_is_empty(
-    tmp_path, monkeypatch
-):
+def test_build_smoke_records_names_question_when_retrieval_is_empty(tmp_path):
     corpus = tmp_path / "corpus.jsonl"
     corpus.write_text(
         '{"id":"1","title":"Unrelated","contents":"xyzzy plugh"}\n',
@@ -70,8 +95,8 @@ def test_build_smoke_records_surfaces_malformed_jsonl(tmp_path):
         build_smoke_records(corpus)
 
 
-def test_preview_records_prints_auditable_fields(capsys):
-    records = build_smoke_records(REPO_CORPUS, topk=1)
+def test_preview_records_prints_auditable_fields(smoke_corpus, capsys):
+    records = build_smoke_records(smoke_corpus, topk=1)
 
     preview_records(records[:1])
 
@@ -83,9 +108,9 @@ def test_preview_records_prints_auditable_fields(capsys):
     assert preview["extra_info"] == {"split": "smoke", "index": 0}
 
 
-def test_write_parquet_writes_loadable_compact_records(tmp_path):
+def test_write_parquet_writes_loadable_compact_records(smoke_corpus, tmp_path):
     datasets = pytest.importorskip("datasets")
-    records = build_smoke_records(REPO_CORPUS, topk=1)
+    records = build_smoke_records(smoke_corpus, topk=1)
     output = tmp_path / "nested" / "smoke.parquet"
 
     result = write_parquet(records, output)
