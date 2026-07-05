@@ -205,11 +205,13 @@ _ROUTE_PROMPT = (
 _LABEL_BY_VALUE = {s.value: s for s in RouteStrategy}
 
 
-def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
+def classify_route(query: str, llm: "LLMClient") -> "tuple[RouteStrategy, dict]":
     """LLM-backed 3-way route classification.
 
-    Single completion that returns one label; defaults to CHAT on an
-    empty or unexpected response (grounded is the safe fallback).
+    Returns ``(strategy, detail)`` where ``detail`` is
+    ``{"prompt": ..., "raw_label": ...}``. Defaults to CHAT on an empty or
+    unexpected response. The caller (``route_query``) records the intent capture
+    stage, so this no longer emits one itself.
     """
     from src.context.models import ChatMessage
 
@@ -234,12 +236,20 @@ def classify_route(query: str, llm: "LLMClient") -> RouteStrategy:
                 "Route classification returned unexpected response %r; defaulting to chat.",
                 content,
             )
+    return strategy, {"prompt": prompt, "raw_label": content}
+
+
+def _record_intent(mechanism: str, strategy: RouteStrategy, detail: dict) -> None:
+    """Record the single intent capture stage for the chosen route.
+
+    No-op when no capture is active. Labeled by ``mechanism`` so the Request
+    Inspector shows ``intent · regex`` vs ``intent · classifier``, etc.
+    """
     _capture.record_stage(
         "intent",
-        "classify_route",
-        {"prompt": prompt, "raw_label": content, "strategy": strategy.value},
+        mechanism,
+        {"mechanism": mechanism, "strategy": strategy.value, **detail},
     )
-    return strategy
 
 
 def route_query(
@@ -265,14 +275,22 @@ def route_query(
     """
     del has_local_model  # dispatch layer handles capability degradation
     if explicit_source:
+        _record_intent("explicit_source", RouteStrategy.SEARCH, {})
         return RouteStrategy.SEARCH
     regex_choice = _regex_route(query)
     if regex_choice is not None:
+        _record_intent("regex", regex_choice, {})
         return regex_choice
     if llm is not None:
         try:
-            return classify_route(query, llm)
+            strategy, detail = classify_route(query, llm)
+            _record_intent("classifier", strategy, detail)
+            return strategy
         except Exception as exc:  # noqa: BLE001 — fall back, never fail routing
             logger.warning("Route classifier failed, using rule-based: %s", exc)
-            return _rule_based_route(query)
-    return _rule_based_route(query)
+            strategy = _rule_based_route(query)
+            _record_intent("rule_based", strategy, {})
+            return strategy
+    strategy = _rule_based_route(query)
+    _record_intent("rule_based", strategy, {})
+    return strategy

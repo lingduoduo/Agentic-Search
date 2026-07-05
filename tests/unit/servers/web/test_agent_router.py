@@ -134,12 +134,12 @@ def test_classify_route_parses_each_label():
         ("search", RouteStrategy.SEARCH),
         ("tool", RouteStrategy.TOOL),
     ]:
-        assert classify_route("q", _FakeLLM(label)) is expected
+        assert classify_route("q", _FakeLLM(label))[0] is expected
 
 
 def test_classify_route_defaults_to_chat_on_garbage():
-    assert classify_route("q", _FakeLLM("nonsense reply")) is RouteStrategy.CHAT
-    assert classify_route("q", _FakeLLM("")) is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM("nonsense reply"))[0] is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM(""))[0] is RouteStrategy.CHAT
 
 
 def test_bare_lookup_excludes_greetings_and_generative():
@@ -162,10 +162,10 @@ def test_route_query_greeting_routes_to_chat_without_llm():
 
 def test_classify_route_ignores_substring_false_positives():
     # Word-boundary match: "research" must not count as the "search" label.
-    assert classify_route("q", _FakeLLM("researching options")) is RouteStrategy.CHAT
-    assert classify_route("q", _FakeLLM("chatbot style")) is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM("researching options"))[0] is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM("chatbot style"))[0] is RouteStrategy.CHAT
     # Exact labels still parse.
-    assert classify_route("q", _FakeLLM("search")) is RouteStrategy.SEARCH
+    assert classify_route("q", _FakeLLM("search"))[0] is RouteStrategy.SEARCH
 
 
 # --- _regex_route (deterministic pre-LLM pass) ---
