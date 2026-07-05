@@ -761,6 +761,115 @@ def _finalize_response(
     )
 
 
+def _search_direct_min_score() -> float:
+    import os as _os
+
+    return float(_os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_MIN_SCORE", "0.2"))
+
+
+async def _run_search_direct_or_escalate(
+    query: str,
+    *,
+    manager,
+    tokenizer,
+    llm,
+    search_url: str,
+    browser_search_url,
+    rerank_url,
+    top_k: int,
+    filters,
+    history: list,
+    source_provider: str,
+    on_turn=None,
+) -> tuple:
+    """Direct retrieval first; return docs when strong, else escalate.
+
+    Strong = docs non-empty AND top score >= threshold → return the ranked docs
+    with a non-LLM summary (no agent loop). Weak → SearchAgentLoop (local model)
+    or the degraded pipeline, preserving today's behavior.
+    """
+    threshold = _search_direct_min_score()
+    documents = await _run_direct_search(
+        query,
+        source_provider="retrieval",
+        search_url=search_url,
+        rerank_url=rerank_url,
+        top_k=top_k,
+    )
+    real = [d for d in documents if not d.metadata.get("error")]
+    top_score = max((d.score or 0.0 for d in real), default=0.0)
+    _capture.record_stage(
+        "search",
+        "direct_retrieval",
+        {
+            "query": query,
+            "top_k": top_k,
+            "top_score": top_score,
+            "documents": [
+                {"id": d.id, "title": d.title, "score": d.score} for d in real
+            ],
+        },
+    )
+
+    if real and top_score >= threshold:
+        _capture.record_stage(
+            "search",
+            "sufficiency",
+            {"mode": "direct", "top_score": top_score, "threshold": threshold},
+        )
+        answer = _search_only_answer(
+            "Direct retrieval",
+            queries=[query],
+            documents=real,
+            source_provider="retrieval",
+        )
+        return (
+            answer,
+            [d.citation for d in real],
+            real,
+            "search",
+            {"search_mode": "direct", "top_score": top_score},
+        )
+
+    _capture.record_stage(
+        "search",
+        "sufficiency",
+        {"mode": "escalated", "top_score": top_score, "threshold": threshold},
+    )
+    escalate_extra = {
+        "search_mode": "escalated",
+        "top_score": top_score,
+        "escalate_reason": "weak_retrieval",
+    }
+    has_local_model = manager is not None and tokenizer is not None
+    if has_local_model:
+        answer, citations, docs, intent, run_extra = await _run_search_agent(
+            query,
+            manager=manager,
+            tokenizer=tokenizer,
+            search_url=search_url,
+            top_k=top_k,
+            on_turn=on_turn,
+            on_trace=None,
+        )
+        run_extra.update(escalate_extra)
+        return answer, citations, docs, intent, run_extra
+
+    escalate_extra["route_degraded"] = "no_local_model"
+    return await _auto_search_pipeline(
+        query,
+        llm=llm,
+        search_url=search_url,
+        browser_search_url=browser_search_url,
+        rerank_url=rerank_url,
+        top_k=top_k,
+        filters=filters,
+        history=history,
+        source_provider=source_provider,
+        extra=escalate_extra,
+    )
+
+
 async def _run_auto_routed(
     query: str,
     *,
@@ -826,23 +935,18 @@ async def _run_auto_routed(
             extra["route_degraded"] = "no_local_model"
         strategy = RouteStrategy.CHAT
 
-    # ---- SEARCH: multi-turn SearchAgentLoop (degrade to hybrid pipeline) ----
+    # ---- SEARCH: direct retrieval first, escalate to the agent loop if weak ----
     if strategy is RouteStrategy.SEARCH:
-        if has_local_model:
-            answer, citations, documents, intent, run_extra = await _run_search_agent(
-                query,
-                manager=manager,
-                tokenizer=tokenizer,
-                search_url=search_url,
-                top_k=top_k,
-                on_turn=on_turn,
-                on_trace=None,
-            )
-            extra.update(run_extra)
-            return answer, citations, documents, intent, extra
-        extra.setdefault("route_degraded", "no_local_model")
-        return await _auto_search_pipeline(
+        (
+            answer,
+            citations,
+            documents,
+            intent,
+            run_extra,
+        ) = await _run_search_direct_or_escalate(
             query,
+            manager=manager,
+            tokenizer=tokenizer,
             llm=llm,
             search_url=search_url,
             browser_search_url=browser_search_url,
@@ -851,8 +955,10 @@ async def _run_auto_routed(
             filters=filters,
             history=history,
             source_provider=source_provider,
-            extra=extra,
+            on_turn=on_turn,
         )
+        extra.update(run_extra)
+        return answer, citations, documents, intent, extra
 
     # ---- CHAT: grounded synthesis via AgenticRAGLoop (degrade to pipeline) ----
     if strategy is RouteStrategy.CHAT:
