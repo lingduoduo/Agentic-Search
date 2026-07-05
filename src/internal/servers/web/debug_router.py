@@ -8,7 +8,7 @@ inspect sparse/dense/hybrid/graph results without cross-origin calls.
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
 from src.internal.retrieval.query_transform_factory import (
@@ -142,6 +142,29 @@ def create_debug_router(
             content=upstream.content,
             status_code=upstream.status_code,
             media_type="application/json",
+        )
+
+    @router.get("/requests")
+    def list_requests(request: Request) -> dict:
+        """Summaries of recent captured runs (newest first). Empty when capture off."""
+        store = getattr(request.app.state, "request_captures", None)
+        return {"requests": store.list() if store is not None else []}
+
+    @router.get("/request/{request_id}")
+    def get_request(request_id: str, request: Request) -> Response:
+        """Full raw stage snapshot for one run; 404 if evicted or capture off."""
+        import json as _json
+
+        store = getattr(request.app.state, "request_captures", None)
+        snap = store.get(request_id) if store is not None else None
+        if snap is None:
+            return Response(
+                content=f'{{"detail":"unknown request {request_id!r}"}}',
+                status_code=404,
+                media_type="application/json",
+            )
+        return Response(
+            content=_json.dumps(snap), status_code=200, media_type="application/json"
         )
 
     return router
