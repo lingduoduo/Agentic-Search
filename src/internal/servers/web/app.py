@@ -2036,7 +2036,7 @@ def _documents_from_search_pages(
                 or ("Search error" if page.error else f"Result {index}"),
                 content=page.error or page.summary or "No summary available.",
                 url=page.url or None,
-                score=0.0,
+                score=page.score,
                 metadata={
                     "entry_point": entry_point,
                     "source": _source_label(source_provider),

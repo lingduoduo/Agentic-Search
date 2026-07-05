@@ -63,6 +63,7 @@ class SearchPage:
     summary: str = ""
     url: str = ""
     error: str | None = None
+    score: float = 0.0
 
     @classmethod
     def from_search_result(cls, result: SearchResult) -> "SearchPage":
@@ -70,6 +71,7 @@ class SearchPage:
             title=result.title or "",
             summary=_compact_contents(result.contents),
             url=result.url or "",
+            score=result.score,
         )
 
 
