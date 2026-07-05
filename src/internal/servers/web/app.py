@@ -731,6 +731,18 @@ def _finalize_response(
     }
     if trace_views:
         metadata["control_flow_trace"] = [view.model_dump() for view in trace_views]
+    _capture.record_stage(
+        "final",
+        "answer",
+        {
+            "answer": answer,
+            "citations": citations,
+            "documents": [d.id for d in documents],
+            "intent": intent,
+            "route": extra.get("route"),
+            "route_degraded": extra.get("route_degraded"),
+        },
+    )
     db.add_chat_message(session_id, role="assistant", content=answer, metadata=metadata)
     messages = [
         ChatMessageView(role=m.role, content=m.content, metadata=m.metadata)
@@ -1154,6 +1166,10 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                     )
+                    _cap = _capture.active()
+                    if _cap is not None:
+                        _cap.route = extra.get("route")
+                        _cap.route_degraded = extra.get("route_degraded")
                     return _finalize_response(
                         db,
                         session_id,
