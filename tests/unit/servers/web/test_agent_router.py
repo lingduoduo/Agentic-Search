@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src.context.models import ChatMessage
 from src.internal.servers.web.intent_routing import (
     RouteStrategy,
+    _regex_route,
     _rule_based_route,
     classify_route,
     route_query,
@@ -163,3 +166,41 @@ def test_classify_route_ignores_substring_false_positives():
     assert classify_route("q", _FakeLLM("chatbot style")) is RouteStrategy.CHAT
     # Exact labels still parse.
     assert classify_route("q", _FakeLLM("search")) is RouteStrategy.SEARCH
+
+
+# --- _regex_route (deterministic pre-LLM pass) ---
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # TOOL — unambiguous imperative at the start
+        ("send an email to Bob", RouteStrategy.TOOL),
+        ("schedule a meeting for Friday", RouteStrategy.TOOL),
+        # TOOL — ambiguous verb, but object-qualified
+        ("create a ticket for the outage", RouteStrategy.TOOL),
+        ("open an issue about the crash", RouteStrategy.TOOL),
+        # SEARCH — bare term / lookup imperative
+        ("FAISS", RouteStrategy.SEARCH),
+        ("find the Q3 revenue report", RouteStrategy.SEARCH),
+        ("look up the release notes", RouteStrategy.SEARCH),
+        # CHAT — question / explain / generative / trailing '?'
+        ("What is FAISS?", RouteStrategy.CHAT),
+        ("explain how to send an email", RouteStrategy.CHAT),
+        ("write a haiku about the sea", RouteStrategy.CHAT),
+        ("is this thing on?", RouteStrategy.CHAT),
+        # None — currency conflict on a chat-form question → defer to LLM
+        ("what is the latest price of NVDA", None),
+        # None — no confident signal → defer to LLM
+        ("the procurement approval flow", None),
+        ("", None),
+    ],
+)
+def test_regex_route(query, expected):
+    assert _regex_route(query) is expected
+
+
+def test_regex_route_tool_verb_needs_object_when_ambiguous():
+    # A bare ambiguous verb must NOT misfire to TOOL without an object.
+    assert _regex_route("open source models") is not RouteStrategy.TOOL
+    assert _regex_route("post office hours") is not RouteStrategy.TOOL
