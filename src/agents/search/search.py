@@ -847,6 +847,9 @@ class SearchAgentLoop(AgentLoopBase):
         # circular.
         from src.internal.servers.web import request_capture as _capture
 
+        if _capture.active() is None:
+            return
+
         _capture.record_stage(
             "search",
             "search_tool",

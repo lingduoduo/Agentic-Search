@@ -468,17 +468,20 @@ class LocalServerManager:
         response_ids = await loop.run_in_executor(
             None, self._generate_sync, prompt_ids, sampling_params
         )
-        _capture.record_stage(
-            "llm",
-            "generate",
-            {
-                "model": self.model_path,
-                "prompt": self._tokenizer.decode(prompt_ids, skip_special_tokens=True),
-                "completion": self._tokenizer.decode(
-                    response_ids, skip_special_tokens=True
-                ),
-            },
-        )
+        if _capture.active() is not None:
+            _capture.record_stage(
+                "llm",
+                "generate",
+                {
+                    "model": self.model_path,
+                    "prompt": self._tokenizer.decode(
+                        prompt_ids, skip_special_tokens=True
+                    ),
+                    "completion": self._tokenizer.decode(
+                        response_ids, skip_special_tokens=True
+                    ),
+                },
+            )
         return response_ids
 
     def _generate_sync(

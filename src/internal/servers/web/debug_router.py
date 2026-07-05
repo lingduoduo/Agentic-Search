@@ -145,13 +145,13 @@ def create_debug_router(
         )
 
     @router.get("/requests")
-    def list_requests(request: Request) -> dict:
+    async def list_requests(request: Request) -> dict:
         """Summaries of recent captured runs (newest first). Empty when capture off."""
         store = getattr(request.app.state, "request_captures", None)
         return {"requests": store.list() if store is not None else []}
 
     @router.get("/request/{request_id}")
-    def get_request(request_id: str, request: Request) -> Response:
+    async def get_request(request_id: str, request: Request) -> Response:
         """Full raw stage snapshot for one run; 404 if evicted or capture off."""
         import json as _json
 
