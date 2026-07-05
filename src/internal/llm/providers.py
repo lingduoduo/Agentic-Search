@@ -235,6 +235,9 @@ class OpenAICompatibleLLM(LLM):
         max_tokens = kwargs.get("max_tokens")
         if max_tokens:
             body["max_tokens"] = max_tokens
+        temperature = kwargs.get("temperature")
+        if temperature is not None:
+            body["temperature"] = temperature
         timeout = kwargs.get("timeout_override") or 30
         resp = self._session.post(
             self._endpoint,
