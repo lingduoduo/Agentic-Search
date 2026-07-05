@@ -89,12 +89,12 @@ _TOOL_RE = re.compile(
 
 # --- Deterministic pre-LLM route cues (start-anchored, high precision) ---
 _TOOL_ACTION_RE = re.compile(
-    r"^\s*(send|email|schedule|book|cancel|deploy|assign|notify|remind|invoke|"
-    r"trigger|subscribe|unsubscribe)\b",
+    r"^\s*(send|deploy|assign|notify|remind|invoke|subscribe|unsubscribe)\b",
     re.IGNORECASE,
 )
 _TOOL_OBJECT_RE = re.compile(
-    r"^\s*(?:create|delete|remove|update|add|open|close|file|post|run|execute) "
+    r"^\s*(?:create|delete|remove|update|add|open|close|file|post|run|execute|"
+    r"book|email|schedule|cancel|trigger) "
     r"(?:a |an |the )?"
     r"(?:ticket|issue|pr|pull request|task|event|meeting|reminder|calendar|"
     r"record|entry|api|job|workflow|deployment|message|email)\b",

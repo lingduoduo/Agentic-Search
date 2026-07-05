@@ -194,6 +194,10 @@ def test_classify_route_ignores_substring_false_positives():
         # None — no confident signal → defer to LLM
         ("the procurement approval flow", None),
         ("", None),
+        # SEARCH — a lookup verb wins over both the trailing '?' and the
+        # currency cue (the currency short-circuit only applies to the CHAT
+        # branch, not SEARCH).
+        ("find the latest report?", RouteStrategy.SEARCH),
     ],
 )
 def test_regex_route(query, expected):
@@ -202,8 +206,25 @@ def test_regex_route(query, expected):
 
 def test_regex_route_tool_verb_needs_object_when_ambiguous():
     # A bare ambiguous verb must NOT misfire to TOOL without an object.
-    assert _regex_route("open source models") is not RouteStrategy.TOOL
-    assert _regex_route("post office hours") is not RouteStrategy.TOOL
+    assert _regex_route("open source models") is RouteStrategy.SEARCH
+    assert _regex_route("post office hours") is RouteStrategy.SEARCH
+
+
+def test_regex_route_polysemous_verbs_are_not_bare_tool_actions():
+    # These verbs are common leading nouns/adjectives, not just imperatives,
+    # so they must NOT short-circuit to TOOL without an object qualifier.
+    assert (
+        _regex_route("book recommendations for machine learning")
+        is not RouteStrategy.TOOL
+    )
+    assert _regex_route("email templates for onboarding") is not RouteStrategy.TOOL
+    assert _regex_route("schedule of the world cup") is not RouteStrategy.TOOL
+    assert _regex_route("cancel culture explained") is not RouteStrategy.TOOL
+    assert _regex_route("trigger warnings in modern media") is not RouteStrategy.TOOL
+    # True positives must be preserved: unambiguous bare verb, and
+    # object-qualified polysemous verb.
+    assert _regex_route("send an email to Bob") is RouteStrategy.TOOL
+    assert _regex_route("schedule a meeting for Friday") is RouteStrategy.TOOL
 
 
 # --- route_query uses _regex_route before the LLM ---
