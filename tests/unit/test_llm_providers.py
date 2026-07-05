@@ -231,3 +231,23 @@ def test_complete_passes_messages_to_api():
     body = mock_post.call_args[1]["json"]
     assert body["stream"] is False
     assert body["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_complete_forwards_temperature():
+    # A caller that pins temperature (e.g. the route classifier) must have it
+    # forwarded to the API so decoding is deterministic instead of relying on
+    # the server default (typically 1.0).
+    config = LLMConfig(
+        model_provider="openai", model_name="gpt-4o-mini", api_key="sk-test"
+    )
+    llm = OpenAICompatibleLLM(config)
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+    mock_resp.raise_for_status.return_value = None
+
+    with patch.object(llm._session, "post", return_value=mock_resp) as mock_post:
+        llm.complete([{"role": "user", "content": "hello"}], temperature=0.0)
+
+    body = mock_post.call_args[1]["json"]
+    assert body["temperature"] == 0.0
