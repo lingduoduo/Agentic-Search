@@ -226,6 +226,10 @@ class OpenAICompatibleLLM(LLM):
 
     def complete(self, messages: LanguageModelInput, **kwargs: Any) -> str:
         """Non-streaming completion — used for short utility calls."""
+        # Deferred import: src.internal.servers.web's package __init__ imports
+        # this module (via app.py), so a top-level import here would be circular.
+        from src.internal.servers.web import request_capture as _capture
+
         normalised = self._normalise_messages(messages)
         body: dict[str, Any] = {
             "model": self._config.model_name,
@@ -247,4 +251,15 @@ class OpenAICompatibleLLM(LLM):
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"] or ""
+        content = data["choices"][0]["message"]["content"] or ""
+        _capture.record_stage(
+            "llm",
+            "complete",
+            {
+                "model": self._config.model_name,
+                "messages": normalised,
+                "completion": content,
+                "usage": data.get("usage"),
+            },
+        )
+        return content
