@@ -422,7 +422,21 @@ python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRP
 **Dataset preparation**
 
 ```bash
-# Search-QA parquet
+# Offline local RAG smoke test (4 examples, existing 30-document demo corpus)
+python3 -m examples.prepare_local_rag_smoke_dataset --topk 1 --preview
+
+# Write compact RAG parquet after inspecting the preview
+python3 -m examples.prepare_local_rag_smoke_dataset \
+  --topk 1 --output_path data/local_rag_smoke.parquet
+```
+
+This command requires no retrieval server, network access, FlashRAG dataset, or
+retrieval caches.
+
+Optional large-dataset workflows:
+
+```bash
+# Optional: Search-QA parquet preparation
 python3 -m examples.prepare_search_qa_dataset \
   --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq --local_dir data/nq_search
 
@@ -431,7 +445,9 @@ python3 -m examples.prepare_search_qa_dataset \
   --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
   --splits test --max_examples 20 --preview --preview_rows 5
 
-# RAG parquet from cached retrieval results
+# Optional: full NQ RAG parquet preparation
+# Requires an external Wikipedia corpus plus retrieval-cache JSON files keyed
+# by NQ question. prepare_search_qa_dataset does not create these inputs.
 python3 -m examples.prepare_search_rag_dataset \
   --dataset_name RUC-NLPIR/FlashRAG_datasets --dataset_config nq \
   --corpus_path data/wiki-18.jsonl \
