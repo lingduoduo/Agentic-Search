@@ -84,6 +84,14 @@ existing pattern for `AGENTIC_SEARCH_REQUEST_CAPTURE_MAX`). Note the threshold i
 retrieval-backend-dependent (TF-IDF cosine vs dense vs RRF scales differ); `0.2`
 suits the demo TF-IDF (`FAISS` top ≈ 0.256).
 
+**Backend-specific note:** the default `0.2` is tuned for the demo TF-IDF backend
+(cosine scores). The `hybrid.py` RRF backend produces much smaller scores — max
+≈ `2/61 ≈ 0.033` with the default `rrf_k=60` — so every SEARCH query there falls
+below `0.2` and is always classified weak, silently disabling the direct-first
+optimization (it degrades to prior behavior, not a crash). Hybrid deployments
+must set `AGENTIC_SEARCH_SEARCH_DIRECT_MIN_SCORE` to roughly `0.015`, or the
+feature stays a no-op.
+
 ## Observability (Request Inspector)
 
 The direct path runs outside the agent loop, so it emits none of the loop's

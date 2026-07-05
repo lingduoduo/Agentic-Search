@@ -123,7 +123,7 @@ def test_rag_fails_falls_back_to_raw_docs(monkeypatch, tmp_path):
         AsyncMock(side_effect=RuntimeError("llm down")),
     )
     raw_doc = ContextDocument(
-        id="D1", title="Doc", content="content", url=None, score=0.9, metadata={}
+        id="D1", title="Doc", content="content", url=None, score=0.0, metadata={}
     )
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_direct_search",
