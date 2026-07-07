@@ -60,3 +60,24 @@ def test_feedback_multiple_signals_accumulate():
 
     summary = db.get_feedback_summary()
     assert summary["rated_queries"] == 3
+
+
+def test_feedback_router_accepts_optional_metadata():
+    db = AgenticSearchStore(":memory:")
+    client = _app(db)
+
+    resp = client.post(
+        "/api/feedback",
+        json={
+            "session_id": "s1",
+            "signal": "thumbs_down",
+            "note": "token=secret-value",
+            "source": "answer_panel",
+            "correlation_id": "turn-1",
+        },
+    )
+
+    assert resp.status_code == 200
+    row = db.list_retrieval_feedback()[0]
+    assert row["metadata"]["note"] == "token=[REDACTED]"
+    assert row["metadata"]["source"] == "answer_panel"

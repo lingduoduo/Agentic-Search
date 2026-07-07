@@ -21,8 +21,10 @@ from .models import (
     IndexAttemptRecord,
     IndexAttemptStatus,
     StoredDocument,
+    UserMemoryRecord,
     UserRecord,
 )
+from src.internal.feedback.runtime import deterministic_capture
 
 
 def _now() -> str:
@@ -315,11 +317,25 @@ class AgenticSearchStore:
                 ON chat_messages(session_id, created_at, id);
             CREATE INDEX IF NOT EXISTS idx_index_attempts_connector_updated
                 ON index_attempts(connector_id, updated_at DESC, id);
+            CREATE TABLE IF NOT EXISTS user_memories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                memory_text TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_memories_user_active
+                ON user_memories(user_id, is_active, created_at, id);
 
             CREATE TABLE IF NOT EXISTS retrieval_feedback (
                 id TEXT PRIMARY KEY,
                 session_id TEXT,
                 signal TEXT NOT NULL CHECK (signal IN ('thumbs_up', 'thumbs_down')),
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                parent_feedback_id TEXT,
+                correlation_id TEXT,
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_retrieval_feedback_created
@@ -346,6 +362,39 @@ class AgenticSearchStore:
             "CREATE INDEX IF NOT EXISTS idx_chat_sessions_flow ON chat_sessions(flow_type, created_at)",
         ]:
             self._conn.execute(idx_ddl)
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS user_memories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                memory_text TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_memories_user_active
+                ON user_memories(user_id, is_active, created_at, id);
+            """
+        )
+        for col, ddl in [
+            (
+                "metadata_json",
+                "ALTER TABLE retrieval_feedback ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'",
+            ),
+            (
+                "parent_feedback_id",
+                "ALTER TABLE retrieval_feedback ADD COLUMN parent_feedback_id TEXT",
+            ),
+            (
+                "correlation_id",
+                "ALTER TABLE retrieval_feedback ADD COLUMN correlation_id TEXT",
+            ),
+        ]:
+            try:
+                self._conn.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
         self._conn.commit()
 
     def upsert_connector(self, connector: ConnectorConfig) -> ConnectorConfig:
@@ -1455,6 +1504,16 @@ class AgenticSearchStore:
             updated_at=row["updated_at"],
         )
 
+    def _row_to_user_memory(self, row: sqlite3.Row) -> UserMemoryRecord:
+        return UserMemoryRecord(
+            id=row["id"],
+            user_id=row["user_id"],
+            memory_text=row["memory_text"],
+            metadata=_json_loads(row["metadata_json"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
     # ------------------------------------------------------------------
     # Query history helpers
     # ------------------------------------------------------------------
@@ -2313,16 +2372,156 @@ class AgenticSearchStore:
         return bool(row["is_active"]) if row else True
 
     # ------------------------------------------------------------------
+    # User memories
+    # ------------------------------------------------------------------
+
+    def add_user_memory(
+        self,
+        user_id: str,
+        memory_text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> UserMemoryRecord | None:
+        """Persist a sanitized memory for a user."""
+        if not memory_text.strip():
+            return None
+
+        captured, capture_meta = deterministic_capture(memory_text.strip())
+        now = _now()
+        record_id = _new_id("mem")
+        merged_meta = dict(metadata or {})
+        merged_meta.update(capture_meta)
+        self._conn.execute(
+            """
+            INSERT INTO user_memories
+                (id, user_id, memory_text, metadata_json, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            """,
+            (record_id, user_id, captured, _json_dumps(merged_meta), now, now),
+        )
+        self._conn.commit()
+        row = self._conn.execute(
+            "SELECT * FROM user_memories WHERE id = ?", (record_id,)
+        ).fetchone()
+        return self._row_to_user_memory(row)
+
+    def update_user_memory_at_index(
+        self,
+        user_id: str,
+        index: int,
+        new_text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> UserMemoryRecord | None:
+        """Replace one active memory by zero-based display index."""
+        if index < 0 or not new_text.strip():
+            return None
+
+        row = self._conn.execute(
+            """
+            SELECT * FROM user_memories
+            WHERE user_id = ? AND is_active = 1
+            ORDER BY created_at, id
+            LIMIT 1 OFFSET ?
+            """,
+            (user_id, index),
+        ).fetchone()
+        if row is None:
+            return None
+
+        captured, capture_meta = deterministic_capture(new_text.strip())
+        merged_meta = _json_loads(row["metadata_json"])
+        merged_meta.update(metadata or {})
+        merged_meta.update(capture_meta)
+        self._conn.execute(
+            """
+            UPDATE user_memories
+            SET memory_text = ?, metadata_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (captured, _json_dumps(merged_meta), _now(), row["id"]),
+        )
+        self._conn.commit()
+        updated = self._conn.execute(
+            "SELECT * FROM user_memories WHERE id = ?", (row["id"],)
+        ).fetchone()
+        return self._row_to_user_memory(updated)
+
+    def get_user_memories(self, user_id: str) -> list[str]:
+        """Return active memory text for a user in display order."""
+        rows = self._conn.execute(
+            """
+            SELECT memory_text FROM user_memories
+            WHERE user_id = ? AND is_active = 1
+            ORDER BY created_at, id
+            """,
+            (user_id,),
+        ).fetchall()
+        return [str(row["memory_text"]) for row in rows]
+
+    # ------------------------------------------------------------------
     # Retrieval feedback
     # ------------------------------------------------------------------
 
-    def save_retrieval_feedback(self, session_id: str | None, signal: str) -> None:
+    def save_retrieval_feedback(
+        self,
+        session_id: str | None,
+        signal: str,
+        *,
+        note: str | None = None,
+        source: str | None = None,
+        parent_feedback_id: str | None = None,
+        correlation_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
         """Persist a thumbs_up or thumbs_down signal for a search session."""
+        feedback_id = _new_id("fb")
+        metadata_json = dict(metadata or {})
+        if note is not None:
+            sanitized_note, note_meta = deterministic_capture(note)
+            metadata_json["note"] = sanitized_note
+            metadata_json["note_capture"] = note_meta
+        if source is not None:
+            metadata_json["source"] = source
         self._conn.execute(
-            "INSERT INTO retrieval_feedback (id, session_id, signal, created_at) VALUES (?, ?, ?, ?)",
-            (_new_id("fb"), session_id, signal, _now()),
+            """
+            INSERT INTO retrieval_feedback
+                (id, session_id, signal, metadata_json, parent_feedback_id, correlation_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                feedback_id,
+                session_id,
+                signal,
+                _json_dumps(metadata_json),
+                parent_feedback_id,
+                correlation_id,
+                _now(),
+            ),
         )
         self._conn.commit()
+        return feedback_id
+
+    def list_retrieval_feedback(self) -> list[dict[str, object]]:
+        """Return retrieval feedback rows for tests and local tooling."""
+        rows = self._conn.execute(
+            """
+            SELECT id, session_id, signal, metadata_json, parent_feedback_id,
+                   correlation_id, created_at
+            FROM retrieval_feedback
+            ORDER BY created_at, id
+            """
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "signal": row["signal"],
+                "metadata": _json_loads(row["metadata_json"]),
+                "parent_feedback_id": row["parent_feedback_id"],
+                "correlation_id": row["correlation_id"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def get_feedback_summary(self) -> dict[str, object]:
         """Return aggregate feedback metrics.

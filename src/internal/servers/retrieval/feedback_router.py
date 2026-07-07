@@ -13,6 +13,10 @@ from src.internal.db import AgenticSearchStore
 class FeedbackRequest(BaseModel):
     session_id: str
     signal: Literal["thumbs_up", "thumbs_down"]
+    note: str | None = None
+    source: str | None = None
+    parent_feedback_id: str | None = None
+    correlation_id: str | None = None
 
 
 class FeedbackResponse(BaseModel):
@@ -25,7 +29,14 @@ def create_feedback_router(db: AgenticSearchStore) -> APIRouter:
 
     @router.post("/api/feedback", response_model=FeedbackResponse)
     def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
-        db.save_retrieval_feedback(request.session_id, request.signal)
+        db.save_retrieval_feedback(
+            request.session_id,
+            request.signal,
+            note=request.note,
+            source=request.source,
+            parent_feedback_id=request.parent_feedback_id,
+            correlation_id=request.correlation_id,
+        )
         return FeedbackResponse(ok=True)
 
     return router

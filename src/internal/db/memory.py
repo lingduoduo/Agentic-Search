@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.internal.db.store import AgenticSearchStore
+
 
 @dataclass
 class UserMemoryContext:
@@ -24,16 +26,34 @@ class UserMemoryContext:
         return bool(self.memories)
 
 
-def add_memory(user_id: str, memory_text: str) -> int | None:
+_memory_store: AgenticSearchStore | None = None
+
+
+def _get_memory_store() -> AgenticSearchStore:
+    global _memory_store
+    if _memory_store is None:
+        _memory_store = AgenticSearchStore(":memory:")
+    return _memory_store
+
+
+def set_memory_store(store: AgenticSearchStore | None) -> None:
+    """Set the store used by module-level memory helpers."""
+    global _memory_store
+    _memory_store = store
+
+
+def add_memory(user_id: str, memory_text: str) -> str | None:
     """Persist a new memory for *user_id*. Returns the new memory ID or None."""
-    return None
+    record = _get_memory_store().add_user_memory(user_id, memory_text)
+    return record.id if record else None
 
 
-def update_memory_at_index(user_id: str, index: int, new_text: str) -> int | None:
+def update_memory_at_index(user_id: str, index: int, new_text: str) -> str | None:
     """Replace the memory at *index* for *user_id*. Returns the memory ID or None."""
-    return None
+    record = _get_memory_store().update_user_memory_at_index(user_id, index, new_text)
+    return record.id if record else None
 
 
 def get_memories(user_id: str) -> list[str]:
     """Return the stored memories for *user_id*."""
-    return []
+    return _get_memory_store().get_user_memories(user_id)

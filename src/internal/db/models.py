@@ -53,6 +53,18 @@ class UserRecord:
 
 
 @dataclass(slots=True)
+class UserMemoryRecord:
+    """A sanitized memory stored for one user."""
+
+    id: str
+    user_id: str
+    memory_text: str
+    metadata: JsonObject = field(default_factory=dict)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(slots=True)
 class GroupRecord:
     """Named group and its current user membership."""
 
