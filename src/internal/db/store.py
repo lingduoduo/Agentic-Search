@@ -955,11 +955,15 @@ class AgenticSearchStore:
         return [self._row_to_chat_message(row) for row in rows]
 
     def get_user_query_texts(self, limit: int | None = None) -> list[str]:
-        """Distinct non-empty user message texts, newest first (for distillation)."""
+        """Distinct non-empty user query texts, most recently asked first.
+
+        Ordered by each distinct query's most recent occurrence (for building a
+        distillation corpus). Ties broken by content for deterministic output.
+        """
         sql = (
             "SELECT content FROM chat_messages "
             "WHERE role = 'user' AND TRIM(content) != '' "
-            "GROUP BY content ORDER BY MIN(created_at) DESC, MIN(id) DESC"
+            "GROUP BY content ORDER BY MAX(created_at) DESC, content ASC"
         )
         params: tuple = ()
         if limit is not None:

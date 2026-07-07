@@ -22,8 +22,11 @@ def test_returns_distinct_user_queries_newest_first():
         ],
     )
     got = store.get_user_query_texts()
-    assert got == ["find the Q3 report", "what is FAISS"]  # distinct, newest first
-    assert store.get_user_query_texts(limit=1) == ["find the Q3 report"]
+    assert got == [
+        "what is FAISS",
+        "find the Q3 report",
+    ]  # distinct, most-recent-occurrence first
+    assert store.get_user_query_texts(limit=1) == ["what is FAISS"]
 
 
 def test_ignores_blank_and_non_user():
