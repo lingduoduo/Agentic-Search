@@ -139,7 +139,7 @@ def test_generate_intent_examples_from_corpus_and_vocabulary(tmp_path):
         vocabulary_path=vocabulary_path,
     )
 
-    assert len(examples) == 8
+    assert len(examples) == 12
     assert {example["label"] for example in examples} == set(INTENT_LABELS)
     assert all(example["source_doc_id"] == 7 for example in examples)
 
