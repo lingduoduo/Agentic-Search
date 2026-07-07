@@ -6,6 +6,7 @@ import asyncio
 import httpx
 import json as _json
 import logging
+import re
 import uuid as _uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -759,6 +760,40 @@ def _finalize_response(
         tool_calls=tool_calls,
         control_flow_trace=trace_views,
     )
+
+
+_GATE_WS = re.compile(r"\s+")
+
+
+def _norm(text: str) -> str:
+    """Lowercase, trim surrounding punctuation/space, collapse inner whitespace."""
+    text = (text or "").strip().lower().strip(".,!?;:\"'()[]{}").strip()
+    return _GATE_WS.sub(" ", text)
+
+
+def _levenshtein_lt2(a: str, b: str) -> bool:
+    """True iff the Levenshtein distance between a and b is 0 or 1 (bounded, O(n))."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(1 for x, y in zip(a, b) if x != y) <= 1
+    if la > lb:
+        a, b = b, a  # ensure a is the shorter string
+    i = j = 0
+    skipped = False
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        else:
+            if skipped:
+                return False
+            skipped = True
+            j += 1  # consume one extra char from the longer string
+    return True
 
 
 def _search_direct_min_score() -> float:
