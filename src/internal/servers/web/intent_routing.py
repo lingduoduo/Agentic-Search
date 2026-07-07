@@ -272,8 +272,10 @@ def route_query(
       2. A confident `_regex_route` match (anchored tool/search/chat cues,
          incl. bare lookup) is returned deterministically, skipping the
          classifier.
-      3. With an LLM, use the 3-way classifier (rule-based on error).
-      4. Without an LLM, use the rule-based route.
+      3. A trained intent model (`predict_route`) whose confidence clears
+         `intent_min_confidence()` is returned, replacing the LLM step.
+      4. With an LLM, use the 3-way classifier (rule-based on error).
+      5. Without an LLM, use the rule-based route.
 
     ``has_local_model`` is accepted so callers can reason about capability, but
     capability-aware *degradation* happens at dispatch time, not here — this
