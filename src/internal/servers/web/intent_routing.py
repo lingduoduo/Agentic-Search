@@ -79,6 +79,12 @@ class RouteStrategy(str, Enum):
     TOOL = "tool"  # OpenAPI / MCP function calling
 
 
+# Imported after RouteStrategy is defined: ml_intent imports RouteStrategy from
+# this module at its own top level, so importing ml_intent any earlier here
+# would hit a circular-import error (RouteStrategy not yet defined).
+from src.internal.servers.web.ml_intent import intent_min_confidence, predict_route  # noqa: E402
+
+
 # Imperative verbs that imply taking an action through a tool/MCP.
 _TOOL_RE = re.compile(
     r"\b(send|email|create|open (?:a|an) (?:ticket|issue|pr)|file (?:a|an) "
@@ -281,6 +287,12 @@ def route_query(
     if regex_choice is not None:
         _record_intent("regex", regex_choice, {})
         return regex_choice
+    model_choice = predict_route(query)
+    if model_choice is not None:
+        strategy, confidence = model_choice
+        if confidence >= intent_min_confidence():
+            _record_intent("model", strategy, {"confidence": confidence})
+            return strategy
     if llm is not None:
         try:
             strategy, detail = classify_route(query, llm)
