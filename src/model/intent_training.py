@@ -84,41 +84,20 @@ def build_examples_for_document(
     terms = build_domain_terms(document, vocabulary_tokens)
     t1 = _pick_term(terms, 0, "retrieval")
     t2 = _pick_term(terms, 1, "search")
-    t3 = _pick_term(terms, 2, "ranking")
 
     examples = [
-        {
-            "text": f"What is {title} and how is it used in retrieval systems?",
-            "label": "qa",
-        },
-        {
-            "text": f"How does {t1} affect {t2} performance in {title}?",
-            "label": "qa",
-        },
-        {
-            "text": f"Show me the section about {title}.",
-            "label": "navigate",
-        },
-        {
-            "text": f"Take me to the document that explains {t1} and {t2}.",
-            "label": "navigate",
-        },
-        {
-            "text": f"Recommend the best approach for {t1} and {t2} in a search pipeline.",
-            "label": "recommendation",
-        },
-        {
-            "text": f"Which should I use for {t1}: {title} or another option for {t3}?",
-            "label": "recommendation",
-        },
-        {
-            "text": f"I need to buy a tool or service for {t1}; what should I purchase for a {t2} stack?",
-            "label": "purchase",
-        },
-        {
-            "text": f"Which paid product should I choose for {title} if my budget is limited but I still need strong {t3}?",
-            "label": "purchase",
-        },
+        {"text": f"find {title}", "label": "search"},
+        {"text": f"look up {t1}", "label": "search"},
+        {"text": f"{title}", "label": "search"},
+        {"text": f"retrieve the {t2} documentation", "label": "search"},
+        {"text": f"what is {title} and how is it used?", "label": "chat"},
+        {"text": f"explain {t1} in {title}", "label": "chat"},
+        {"text": f"compare {t1} and {t2}", "label": "chat"},
+        {"text": f"summarize {title}", "label": "chat"},
+        {"text": f"send an email about {title}", "label": "tool"},
+        {"text": f"create a ticket for {t1}", "label": "tool"},
+        {"text": f"schedule a meeting about {title}", "label": "tool"},
+        {"text": f"open a pull request for {t2}", "label": "tool"},
     ]
 
     for example in examples:

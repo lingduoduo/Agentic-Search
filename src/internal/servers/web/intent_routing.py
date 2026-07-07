@@ -79,6 +79,12 @@ class RouteStrategy(str, Enum):
     TOOL = "tool"  # OpenAPI / MCP function calling
 
 
+# Imported after RouteStrategy is defined: ml_intent imports RouteStrategy from
+# this module at its own top level, so importing ml_intent any earlier here
+# would hit a circular-import error (RouteStrategy not yet defined).
+from src.internal.servers.web.ml_intent import intent_min_confidence, predict_route  # noqa: E402
+
+
 # Imperative verbs that imply taking an action through a tool/MCP.
 _TOOL_RE = re.compile(
     r"\b(send|email|create|open (?:a|an) (?:ticket|issue|pr)|file (?:a|an) "
@@ -266,8 +272,10 @@ def route_query(
       2. A confident `_regex_route` match (anchored tool/search/chat cues,
          incl. bare lookup) is returned deterministically, skipping the
          classifier.
-      3. With an LLM, use the 3-way classifier (rule-based on error).
-      4. Without an LLM, use the rule-based route.
+      3. A trained intent model (`predict_route`) whose confidence clears
+         `intent_min_confidence()` is returned, replacing the LLM step.
+      4. With an LLM, use the 3-way classifier (rule-based on error).
+      5. Without an LLM, use the rule-based route.
 
     ``has_local_model`` is accepted so callers can reason about capability, but
     capability-aware *degradation* happens at dispatch time, not here — this
@@ -281,6 +289,12 @@ def route_query(
     if regex_choice is not None:
         _record_intent("regex", regex_choice, {})
         return regex_choice
+    model_choice = predict_route(query)
+    if model_choice is not None:
+        strategy, confidence = model_choice
+        if confidence >= intent_min_confidence():
+            _record_intent("model", strategy, {"confidence": confidence})
+            return strategy
     if llm is not None:
         try:
             strategy, detail = classify_route(query, llm)

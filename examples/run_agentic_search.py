@@ -215,10 +215,9 @@ def _resolve_model_route(
         )
 
     route_by_intent = {
-        "qa": "fast",
-        "navigate": "fast",
-        "recommendation": "balanced",
-        "purchase": "reasoning",
+        "search": "fast",
+        "chat": "balanced",
+        "tool": "reasoning",
     }
     route = route_by_intent.get(intent_prediction.intent, "base")
     model_by_route = {
@@ -592,19 +591,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--fast_model",
         type=str,
         default=None,
-        help="Low-latency model for simple QA / navigation when --model_routing intent is enabled",
+        help="Low-latency model for search / lookup intents when --model_routing intent is enabled",
     )
     parser.add_argument(
         "--balanced_model",
         type=str,
         default=None,
-        help="Medium model for synthesis / recommendation when --model_routing intent is enabled",
+        help="Medium model for chat / synthesis intents when --model_routing intent is enabled",
     )
     parser.add_argument(
         "--reasoning_model",
         type=str,
         default=None,
-        help="Larger model for high-stakes or complex intents when --model_routing intent is enabled",
+        help="Larger model for tool / action intents when --model_routing intent is enabled",
     )
     parser.add_argument(
         "--model_routing_min_confidence",

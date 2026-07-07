@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-INTENT_LABELS: list[str] = ["purchase", "navigate", "qa", "recommendation"]
+INTENT_LABELS: list[str] = ["chat", "search", "tool"]
 
 
 @dataclass(frozen=True)
@@ -210,10 +210,9 @@ def resolve_search_settings(
 
     meta["intent_policy_applied"] = True
     policy: dict[str, tuple[int, int, bool, bool]] = {
-        "qa": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
-        "navigate": (max(topk, 5), max(max_search_limit, 2), True, False),
-        "purchase": (max(topk, 8), max(max_search_limit, 2), True, False),
-        "recommendation": (max(topk, 8), max(max_search_limit, 3), True, False),
+        "chat": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
+        "search": (max(topk, 8), max(max_search_limit, 3), True, False),
+        "tool": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
     }
     t, s, r, a = policy.get(
         prediction.intent,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import src.internal.servers.web.intent_routing as ir
 from src.context.models import ChatMessage
 from src.internal.servers.web.intent_routing import (
     RouteStrategy,
@@ -265,3 +266,70 @@ def test_route_query_currency_conflict_defers_to_llm():
     )
     assert strategy is RouteStrategy.SEARCH
     assert llm.calls  # deferred to the classifier
+
+
+class _SpyLLM:
+    def __init__(self):
+        self.called = False
+
+    def complete(self, *_a, **_k):
+        self.called = True
+        return "chat"
+
+
+def test_route_query_uses_model_when_confident(monkeypatch):
+    monkeypatch.setattr(ir, "predict_route", lambda q: (RouteStrategy.SEARCH, 0.9))
+    llm = _SpyLLM()
+    strategy = ir.route_query(
+        "the vendor contract renewal terms",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.SEARCH
+    assert llm.called is False  # model replaced the LLM step
+
+
+def test_route_query_defers_to_llm_when_model_low_confidence(monkeypatch):
+    monkeypatch.setattr(ir, "predict_route", lambda q: (RouteStrategy.SEARCH, 0.3))
+    llm = _SpyLLM()
+    strategy = ir.route_query(
+        "the vendor contract renewal terms",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert llm.called is True  # low confidence -> LLM fallback
+    assert strategy is RouteStrategy.CHAT  # spy LLM returns "chat"
+
+
+def test_route_query_no_model_is_unchanged(monkeypatch):
+    monkeypatch.setattr(ir, "predict_route", lambda q: None)
+    llm = _SpyLLM()
+    strategy = ir.route_query(
+        "the vendor contract renewal terms",
+        llm=llm,
+        has_local_model=True,
+        explicit_source=False,
+    )
+    assert llm.called is True  # no model -> today's behavior
+    assert strategy is RouteStrategy.CHAT
+
+
+def test_regex_still_wins_over_model(monkeypatch):
+    called = {"model": False}
+
+    def _spy(_q):
+        called["model"] = True
+        return (RouteStrategy.CHAT, 0.99)
+
+    monkeypatch.setattr(ir, "predict_route", _spy)
+    # "find X" matches the anchored search regex -> returns before predict_route.
+    strategy = ir.route_query(
+        "find the Q3 revenue report",
+        llm=None,
+        has_local_model=False,
+        explicit_source=False,
+    )
+    assert strategy is RouteStrategy.SEARCH
+    assert called["model"] is False

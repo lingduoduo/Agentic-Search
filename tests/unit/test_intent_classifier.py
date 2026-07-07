@@ -5,9 +5,7 @@ import pytest
 from src import (
     INTENT_LABELS,
     IntentPipeline,
-    IntentPrediction,
     IntentionClassificationPipeline,
-    resolve_search_settings,
     generate_intent_examples,
     train_intent_classifier,
     write_intent_examples,
@@ -41,70 +39,51 @@ def test_intention_pipeline_alias_matches_intent_pipeline():
     assert IntentionClassificationPipeline is IntentPipeline
 
 
-def test_resolve_search_settings_purchase_forces_search_bias():
-    topk, max_sl, req_ev, allow_int, meta = resolve_search_settings(
-        IntentPrediction(intent="purchase", confidence=0.95),
-        topk=3,
-        max_search_limit=1,
+def test_resolve_search_settings_search_is_retrieval_heavy():
+    from src.model.intent_classifier import IntentPrediction, resolve_search_settings
+
+    t, s, r, a, meta = resolve_search_settings(
+        IntentPrediction(intent="search", confidence=0.9),
+        topk=5,
+        max_search_limit=2,
         require_evidence=False,
         allow_internal_knowledge=True,
-        min_confidence=0.6,
     )
-
-    assert topk == 8
-    assert max_sl == 2
-    assert req_ev is True
-    assert allow_int is False
-    assert meta["predicted_intent"] == "purchase"
+    assert (t, s, r, a) == (8, 3, True, False)
     assert meta["intent_policy_applied"] is True
 
 
-def test_resolve_search_settings_low_confidence_keeps_defaults():
-    topk, max_sl, req_ev, allow_int, meta = resolve_search_settings(
-        IntentPrediction(intent="qa", confidence=0.2),
-        topk=5,
-        max_search_limit=4,
-        require_evidence=True,
-        allow_internal_knowledge=True,
-        min_confidence=0.6,
-    )
+def test_low_confidence_leaves_settings_unchanged():
+    from src.model.intent_classifier import IntentPrediction, resolve_search_settings
 
-    assert topk == 5
-    assert max_sl == 4
-    assert req_ev is True
-    assert allow_int is True
+    t, s, r, a, meta = resolve_search_settings(
+        IntentPrediction(intent="search", confidence=0.1),
+        topk=5,
+        max_search_limit=2,
+        require_evidence=False,
+        allow_internal_knowledge=True,
+    )
+    assert (t, s, r, a) == (5, 2, False, True)
     assert meta["intent_policy_applied"] is False
 
 
-def test_resolve_search_settings_qa_keeps_defaults():
-    topk, max_sl, req_ev, allow_int, meta = resolve_search_settings(
-        IntentPrediction(intent="qa", confidence=0.9),
+def test_resolve_search_settings_chat_passthrough():
+    from src.model.intent_classifier import IntentPrediction, resolve_search_settings
+
+    t, s, r, a, _meta = resolve_search_settings(
+        IntentPrediction(intent="chat", confidence=0.9),
         topk=5,
-        max_search_limit=4,
-        require_evidence=True,
-        allow_internal_knowledge=True,
-    )
-
-    assert topk == 5
-    assert max_sl == 4
-    assert meta["intent_policy_applied"] is True
-
-
-def test_resolve_search_settings_recommendation_boosts_results():
-    topk, max_sl, *_ = resolve_search_settings(
-        IntentPrediction(intent="recommendation", confidence=0.85),
-        topk=3,
-        max_search_limit=1,
+        max_search_limit=2,
         require_evidence=False,
         allow_internal_knowledge=True,
     )
-
-    assert topk == 8
-    assert max_sl == 3
+    assert (t, s, r, a) == (5, 2, False, True)
 
 
-def test_intent_labels_snapshot():
-    assert INTENT_LABELS == ["purchase", "navigate", "qa", "recommendation"]
+def test_intent_labels_are_route_strategy_values():
+    from src.model.intent_classifier import INTENT_LABELS
+
+    assert INTENT_LABELS == ["chat", "search", "tool"]
 
 
 def test_intent_pipeline_save_and_load_round_trip(tmp_path):
@@ -112,10 +91,10 @@ def test_intent_pipeline_save_and_load_round_trip(tmp_path):
     pytest.importorskip("torch")
 
     data = [
-        (["buy", "phone"], "purchase"),
-        (["buy", "laptop"], "purchase"),
-        (["what", "is", "faiss"], "qa"),
-        (["how", "does", "search", "work"], "qa"),
+        (["find", "documents"], "search"),
+        (["search", "results"], "search"),
+        (["what", "is", "faiss"], "chat"),
+        (["how", "does", "search", "work"], "chat"),
     ]
     pipeline = IntentPipeline()
     pipeline.train(data, epochs=3, min_freq=1)
@@ -160,14 +139,14 @@ def test_generate_intent_examples_from_corpus_and_vocabulary(tmp_path):
         vocabulary_path=vocabulary_path,
     )
 
-    assert len(examples) == 8
+    assert len(examples) == 12
     assert {example["label"] for example in examples} == set(INTENT_LABELS)
     assert all(example["source_doc_id"] == 7 for example in examples)
 
 
 def test_write_intent_examples_round_trip(tmp_path):
     output_path = tmp_path / "intent_examples.json"
-    examples = [{"text": "What is FAISS?", "label": "qa"}]
+    examples = [{"text": "What is FAISS?", "label": "chat"}]
 
     write_intent_examples(examples, output_path)
 
@@ -180,10 +159,10 @@ def test_train_intent_classifier_utility_saves_pipeline(tmp_path):
     examples_path = tmp_path / "intent_examples.json"
     write_intent_examples(
         [
-            {"text": "buy phone", "label": "purchase"},
-            {"text": "buy laptop", "label": "purchase"},
-            {"text": "what is faiss", "label": "qa"},
-            {"text": "how does search work", "label": "qa"},
+            {"text": "find documents", "label": "search"},
+            {"text": "search results", "label": "search"},
+            {"text": "what is faiss", "label": "chat"},
+            {"text": "how does search work", "label": "chat"},
         ],
         examples_path,
     )
@@ -201,5 +180,5 @@ def test_train_intent_classifier_utility_saves_pipeline(tmp_path):
 
     assert output_path.exists()
     assert result.num_examples == 4
-    assert result.label_counts == {"purchase": 2, "qa": 2}
+    assert result.label_counts == {"search": 2, "chat": 2}
     assert result.pipeline.is_trained is True
