@@ -20,7 +20,6 @@ def test_route_query_emits_regex_intent_stage():
         strategy = route_query(
             "What is FAISS?",
             llm=_FakeLLM(),
-            has_local_model=True,
             explicit_source=False,
         )
         stages = _intent_stages()
@@ -39,7 +38,6 @@ def test_route_query_emits_classifier_intent_stage_with_detail():
         route_query(
             "the procurement approval flow",
             llm=_FakeLLM(),
-            has_local_model=True,
             explicit_source=False,
         )
         stages = _intent_stages()
@@ -55,9 +53,7 @@ def test_route_query_emits_classifier_intent_stage_with_detail():
 def test_route_query_emits_explicit_source_intent_stage():
     token = rc.start_capture("r", "anything at all")
     try:
-        route_query(
-            "anything at all", llm=None, has_local_model=False, explicit_source=True
-        )
+        route_query("anything at all", llm=None, explicit_source=True)
         stages = _intent_stages()
         assert len(stages) == 1
         assert stages[0].payload["mechanism"] == "explicit_source"
@@ -72,7 +68,6 @@ def test_route_query_emits_rule_based_intent_stage_without_llm():
         route_query(
             "the procurement approval flow",
             llm=None,
-            has_local_model=False,
             explicit_source=False,
         )
         stages = _intent_stages()
@@ -84,4 +79,4 @@ def test_route_query_emits_rule_based_intent_stage_without_llm():
 
 def test_route_query_no_capture_does_not_raise():
     # With no active capture the emit is a silent no-op.
-    route_query("q", llm=_FakeLLM(), has_local_model=True, explicit_source=False)
+    route_query("q", llm=_FakeLLM(), explicit_source=False)
