@@ -954,6 +954,20 @@ class AgenticSearchStore:
         ).fetchall()
         return [self._row_to_chat_message(row) for row in rows]
 
+    def get_user_query_texts(self, limit: int | None = None) -> list[str]:
+        """Distinct non-empty user message texts, newest first (for distillation)."""
+        sql = (
+            "SELECT content FROM chat_messages "
+            "WHERE role = 'user' AND TRIM(content) != '' "
+            "GROUP BY content ORDER BY MIN(created_at) DESC, MIN(id) DESC"
+        )
+        params: tuple = ()
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = (limit,)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [str(row["content"]) for row in rows]
+
     def create_index_attempt(
         self,
         *,
