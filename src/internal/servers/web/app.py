@@ -909,11 +909,13 @@ async def _run_search_direct_or_escalate(
     source_provider: str,
     on_turn=None,
 ) -> tuple:
-    """Direct retrieval first; return docs when strong, else escalate.
+    """Direct retrieval first; return docs when the query matches, else escalate.
 
-    Strong = docs non-empty AND top score >= threshold → return the ranked docs
-    with a non-LLM summary (no agent loop). Weak → SearchAgentLoop (local model)
-    or the degraded pipeline, preserving today's behavior.
+    A tiered match gate (`_direct_gate_decision`) compares the query to the
+    rank-1 result: exact title match, or a typo (Levenshtein<2) confirmed by
+    cosine, or semantic cosine > threshold → return the ranked docs with a
+    non-LLM summary (no agent loop). Otherwise escalate to the SearchAgentLoop
+    (local model) or the degraded pipeline, preserving today's behavior.
     """
 
     async def _escalate(top_score: float, reason: str) -> tuple:
@@ -966,7 +968,8 @@ async def _run_search_direct_or_escalate(
     except Exception:
         documents = []
     real = [d for d in documents if not d.metadata.get("error")]
-    is_strong, tier, top_score, cosine = _direct_gate_decision(
+    is_strong, tier, top_score, cosine = await asyncio.to_thread(
+        _direct_gate_decision,
         query,
         real,
         cos_min=_search_direct_cos_min(),
@@ -1225,6 +1228,10 @@ def create_web_app(
                 logger.exception(
                     "search_agent: failed to load model — mode will return 400"
                 )
+        try:
+            _gate_embedder()  # warm the direct-gate e5 model (no-op when SEMANTIC=0)
+        except Exception:
+            logger.exception("direct-gate: embedder warmup failed")
         try:
             yield
         finally:

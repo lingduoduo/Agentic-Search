@@ -129,5 +129,5 @@ def test_make_cosine_fn_encode_failure_returns_none():
 
 def test_gate_embedder_disabled_by_env_returns_none(monkeypatch):
     monkeypatch.setenv("AGENTIC_SEARCH_SEARCH_DIRECT_SEMANTIC", "0")
-    web_app._GATE_EMBEDDER = None  # reset singleton cache
+    monkeypatch.setattr(web_app, "_GATE_EMBEDDER", None)  # reset singleton cache
     assert _gate_embedder() is None
