@@ -8,7 +8,7 @@ import json as _json
 import logging
 import re
 import uuid as _uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from itertools import islice
@@ -794,6 +794,43 @@ def _levenshtein_lt2(a: str, b: str) -> bool:
             skipped = True
             j += 1  # consume one extra char from the longer string
     return True
+
+
+def _direct_gate_decision(
+    query: str,
+    docs: list[ContextDocument],
+    *,
+    cos_min: float,
+    cosine_fn: Callable[[str, str], float | None],
+) -> tuple[bool, str, float, float | None]:
+    """Tiered strong/weak gate over the rank-1 retrieval result.
+
+    exact title match → direct; typo (Levenshtein<2) confirmed by cosine → direct;
+    semantic cosine > cos_min → direct; otherwise escalate. Backend-independent.
+    """
+    top_score = max((d.score or 0.0 for d in docs), default=0.0)
+    if not docs:
+        return False, "weak", top_score, None
+
+    top = docs[0]
+    q = _norm(query)
+    t = _norm(top.title)
+
+    if q and q == t:
+        return True, "exact", top_score, None
+
+    passage = f"{top.title} {top.content}".strip()
+
+    if q and t and _levenshtein_lt2(q, t):
+        cosine = cosine_fn(query, passage)
+        if cosine is not None and cosine > cos_min:
+            return True, "fuzzy", top_score, cosine
+        return False, "weak", top_score, cosine
+
+    cosine = cosine_fn(query, passage)
+    if cosine is not None and cosine > cos_min:
+        return True, "semantic", top_score, cosine
+    return False, "weak", top_score, cosine
 
 
 def _search_direct_min_score() -> float:
