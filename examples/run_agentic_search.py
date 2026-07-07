@@ -215,10 +215,9 @@ def _resolve_model_route(
         )
 
     route_by_intent = {
-        "qa": "fast",
-        "navigate": "fast",
-        "recommendation": "balanced",
-        "purchase": "reasoning",
+        "search": "fast",
+        "chat": "balanced",
+        "tool": "reasoning",
     }
     route = route_by_intent.get(intent_prediction.intent, "base")
     model_by_route = {

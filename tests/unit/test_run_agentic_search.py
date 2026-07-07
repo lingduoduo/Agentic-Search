@@ -182,7 +182,7 @@ def test_resolve_model_route_uses_base_model_when_disabled():
 
     decision = _resolve_model_route(
         args,
-        IntentPrediction(intent="qa", confidence=0.99),
+        IntentPrediction(intent="search", confidence=0.99),
     )
 
     assert decision.model == "base-model"
@@ -201,18 +201,20 @@ def test_resolve_model_route_maps_intents_to_model_tiers():
     )
 
     assert (
-        _resolve_model_route(args, IntentPrediction(intent="qa", confidence=0.8)).model
+        _resolve_model_route(
+            args, IntentPrediction(intent="search", confidence=0.8)
+        ).model
         == "fast-model"
     )
     assert (
         _resolve_model_route(
-            args, IntentPrediction(intent="recommendation", confidence=0.8)
+            args, IntentPrediction(intent="chat", confidence=0.8)
         ).model
         == "balanced-model"
     )
     assert (
         _resolve_model_route(
-            args, IntentPrediction(intent="purchase", confidence=0.8)
+            args, IntentPrediction(intent="tool", confidence=0.8)
         ).model
         == "reasoning-model"
     )
@@ -230,7 +232,7 @@ def test_resolve_model_route_keeps_base_model_for_low_confidence():
 
     decision = _resolve_model_route(
         args,
-        IntentPrediction(intent="qa", confidence=0.2),
+        IntentPrediction(intent="search", confidence=0.2),
     )
 
     assert decision.model == "base-model"
