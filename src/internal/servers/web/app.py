@@ -957,7 +957,6 @@ async def _run_auto_routed(
     strategy = route_query(
         query,
         llm=llm,
-        has_local_model=has_local_model,
         explicit_source=explicit_source,
     )
     extra["route"] = strategy.value

@@ -262,7 +262,6 @@ def route_query(
     query: str,
     *,
     llm: "LLMClient | None",
-    has_local_model: bool,
     explicit_source: bool,
 ) -> RouteStrategy:
     """Decide the agent strategy for an auto-routed (mode=None) request.
@@ -277,11 +276,9 @@ def route_query(
       4. With an LLM, use the 3-way classifier (rule-based on error).
       5. Without an LLM, use the rule-based route.
 
-    ``has_local_model`` is accepted so callers can reason about capability, but
-    capability-aware *degradation* happens at dispatch time, not here — this
+    Capability-aware *degradation* happens at dispatch time, not here — this
     function returns the ideal strategy for the query.
     """
-    del has_local_model  # dispatch layer handles capability degradation
     if explicit_source:
         _record_intent("explicit_source", RouteStrategy.SEARCH, {})
         return RouteStrategy.SEARCH

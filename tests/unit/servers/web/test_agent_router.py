@@ -45,7 +45,6 @@ def test_explicit_source_routes_to_search_agent():
     strategy = route_query(
         "anything at all",
         llm=_FakeLLM("chat"),
-        has_local_model=True,
         explicit_source=True,
     )
     assert strategy is RouteStrategy.SEARCH
@@ -56,7 +55,6 @@ def test_route_query_without_llm_uses_rule_based():
     strategy = route_query(
         "find the latest pricing sheet",
         llm=None,
-        has_local_model=False,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.SEARCH
@@ -67,7 +65,6 @@ def test_route_query_uses_llm_classifier_when_available():
     strategy = route_query(
         "create a Jira ticket for the outage",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.TOOL
@@ -79,9 +76,7 @@ def test_route_query_bare_lookup_is_search_and_skips_classifier():
     # so it must NOT reach the (over-eager) LLM classifier that would otherwise
     # send it to chat. Deterministic regardless of the LLM reply.
     llm = _FakeLLM("chat")
-    strategy = route_query(
-        "FAISS", llm=llm, has_local_model=True, explicit_source=False
-    )
+    strategy = route_query("FAISS", llm=llm, explicit_source=False)
     assert strategy is RouteStrategy.SEARCH
     assert llm.calls == []  # classifier was never consulted
 
@@ -92,7 +87,6 @@ def test_route_query_descriptive_phrase_still_uses_classifier():
     strategy = route_query(
         "the procurement approval flow",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.CHAT
@@ -155,9 +149,7 @@ def test_bare_lookup_excludes_greetings_and_generative():
 
 def test_route_query_greeting_routes_to_chat_without_llm():
     # No LLM → rule-based; a bare greeting must NOT short-circuit to SEARCH.
-    strategy = route_query(
-        "hello", llm=None, has_local_model=False, explicit_source=False
-    )
+    strategy = route_query("hello", llm=None, explicit_source=False)
     assert strategy is RouteStrategy.CHAT
 
 
@@ -235,9 +227,7 @@ def test_route_query_confident_regex_skips_llm():
     # A confident chat-form question routes deterministically; the LLM classifier
     # is never consulted (previously this misrouted via the classifier).
     llm = _FakeLLM("search")  # would say search if consulted
-    strategy = route_query(
-        "What is FAISS?", llm=llm, has_local_model=True, explicit_source=False
-    )
+    strategy = route_query("What is FAISS?", llm=llm, explicit_source=False)
     assert strategy is RouteStrategy.CHAT
     assert llm.calls == []  # regex decided; classifier not consulted
 
@@ -248,7 +238,6 @@ def test_route_query_ambiguous_falls_through_to_llm():
     strategy = route_query(
         "the procurement approval flow",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.CHAT
@@ -261,7 +250,6 @@ def test_route_query_currency_conflict_defers_to_llm():
     strategy = route_query(
         "what is the latest price of NVDA",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.SEARCH
