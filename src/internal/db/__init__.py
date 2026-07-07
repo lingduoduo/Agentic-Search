@@ -8,6 +8,7 @@ from .models import (
     GroupRecord,
     IndexAttemptRecord,
     StoredDocument,
+    UserMemoryRecord,
     UserRecord,
 )
 from .store import AgenticSearchStore
@@ -21,5 +22,6 @@ __all__ = [
     "GroupRecord",
     "IndexAttemptRecord",
     "StoredDocument",
+    "UserMemoryRecord",
     "UserRecord",
 ]

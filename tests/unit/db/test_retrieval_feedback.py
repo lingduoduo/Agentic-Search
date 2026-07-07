@@ -52,4 +52,21 @@ def test_session_id_can_be_none():
     assert summary["rated_queries"] == 1
 
 
+def test_feedback_metadata_is_redacted_and_queryable():
+    db = _store()
+    feedback_id = db.save_retrieval_feedback(
+        "s1",
+        "thumbs_down",
+        note="failed with Bearer abc.def",
+        source="answer_panel",
+        correlation_id="turn-1",
+    )
+    rows = db.list_retrieval_feedback()
+    assert rows[0]["id"] == feedback_id
+    assert rows[0]["metadata"]["note"] == "failed with Bearer [REDACTED]"
+    assert rows[0]["metadata"]["source"] == "answer_panel"
+    assert rows[0]["correlation_id"] == "turn-1"
+    assert db.get_feedback_summary()["rated_queries"] == 1
+
+
 import pytest  # noqa: E402 (needed after test functions that reference it)
