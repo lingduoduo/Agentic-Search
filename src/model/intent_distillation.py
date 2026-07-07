@@ -123,3 +123,110 @@ def load_queries_from_file(path) -> list[str]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def _build_teacher_llm(args):
+    if not args.vllm_url:
+        return None
+    from src.internal.llm.interfaces import LLMConfig
+    from src.internal.llm.providers import OpenAICompatibleLLM
+
+    return OpenAICompatibleLLM(
+        LLMConfig(
+            model_provider=args.model_provider,
+            model_name=args.model,
+            api_key=args.api_key,
+            api_base=args.vllm_url,
+        )
+    )
+
+
+def _collect_queries(args) -> list[str]:
+    queries: list[str] = []
+    if args.queries_file:
+        queries.extend(load_queries_from_file(args.queries_file))
+    if args.from_db:
+        from src.internal.db.store import AgenticSearchStore
+
+        store = AgenticSearchStore(args.from_db)
+        queries.extend(store.get_user_query_texts())
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for q in queries:
+        if q not in seen:
+            seen.add(q)
+            deduped.append(q)
+    return deduped
+
+
+def main(argv: "list[str] | None" = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Distill the intent router into a trained classifier."
+    )
+    parser.add_argument(
+        "--queries-file",
+        type=str,
+        default=None,
+        help="File of queries (.txt one-per-line or .json list).",
+    )
+    parser.add_argument(
+        "--from-db",
+        type=str,
+        default=None,
+        help="SQLite store path to pull distinct logged user queries from.",
+    )
+    parser.add_argument("--output", type=str, required=True, help="Output .pt path.")
+    parser.add_argument(
+        "--examples-out",
+        type=str,
+        default=None,
+        help="Where to write the labeled examples JSON (defaults beside --output).",
+    )
+    parser.add_argument(
+        "--vllm-url",
+        type=str,
+        default=None,
+        help="OpenAI-compatible base URL for the LLM teacher (ambiguous tail). Omit for offline regex+rule-based.",
+    )
+    parser.add_argument(
+        "--model", type=str, default=None, help="Teacher model name (with --vllm-url)."
+    )
+    parser.add_argument(
+        "--model-provider", dest="model_provider", type=str, default="openai"
+    )
+    parser.add_argument("--api-key", type=str, default=None)
+    parser.add_argument("--epochs", type=int, default=15)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    args = parser.parse_args(argv)
+
+    queries = _collect_queries(args)
+    if not queries:
+        parser.error("no queries collected; provide --queries-file and/or --from-db")
+
+    output = Path(args.output)
+    examples_out = (
+        Path(args.examples_out)
+        if args.examples_out
+        else output.with_suffix(".examples.json")
+    )
+    llm = _build_teacher_llm(args)
+
+    result = distill_and_train(
+        queries,
+        output_path=output,
+        examples_path=examples_out,
+        llm=llm,
+        epochs=args.epochs,
+        lr=args.lr,
+    )
+    print(f"queries={len(queries)} num_examples={result.num_examples}")
+    print(f"label_counts={result.label_counts}")
+    print(f"teacher_counts={result.teacher_counts}")
+    print(f"saved -> {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
