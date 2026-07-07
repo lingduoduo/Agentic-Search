@@ -7,7 +7,7 @@ import httpx
 import json as _json
 import logging
 import uuid as _uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from itertools import islice
@@ -27,6 +27,12 @@ from src.internal.configs import AppSettings
 from src.internal.configs import load_app_settings
 from src.internal.llm.interfaces import LLMConfig
 from src.internal.llm.providers import OpenAICompatibleLLM
+from src.internal.utils.embedding_gate import (
+    gate_embedder,
+    make_cosine_fn,
+    search_direct_cos_min,
+)
+from src.internal.utils.text_processing import levenshtein_lt2, normalize_for_match
 from src.internal.search.process_search_query import run_expanded_search
 from src.internal.servers.secondary_llm_flows import expand_keywords
 from src.internal.servers.secondary_llm_flows.query_expansion import (
@@ -761,10 +767,41 @@ def _finalize_response(
     )
 
 
-def _search_direct_min_score() -> float:
-    import os as _os
+def _direct_gate_decision(
+    query: str,
+    docs: list[ContextDocument],
+    *,
+    cos_min: float,
+    cosine_fn: Callable[[str, str], float | None],
+) -> tuple[bool, str, float, float | None]:
+    """Tiered strong/weak gate over the rank-1 retrieval result.
 
-    return float(_os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_MIN_SCORE", "0.2"))
+    exact title match → direct; typo (Levenshtein<2) confirmed by cosine → direct;
+    semantic cosine > cos_min → direct; otherwise escalate. Backend-independent.
+    """
+    top_score = max((d.score or 0.0 for d in docs), default=0.0)
+    if not docs:
+        return False, "weak", top_score, None
+
+    top = docs[0]
+    q = normalize_for_match(query)
+    t = normalize_for_match(top.title)
+
+    if q and q == t:
+        return True, "exact", top_score, None
+
+    passage = f"{top.title} {top.content}".strip()
+
+    if q and t and levenshtein_lt2(q, t):
+        cosine = cosine_fn(query, passage)
+        if cosine is not None and cosine > cos_min:
+            return True, "fuzzy", top_score, cosine
+        return False, "weak", top_score, cosine
+
+    cosine = cosine_fn(query, passage)
+    if cosine is not None and cosine > cos_min:
+        return True, "semantic", top_score, cosine
+    return False, "weak", top_score, cosine
 
 
 async def _run_search_direct_or_escalate(
@@ -782,13 +819,14 @@ async def _run_search_direct_or_escalate(
     source_provider: str,
     on_turn=None,
 ) -> tuple:
-    """Direct retrieval first; return docs when strong, else escalate.
+    """Direct retrieval first; return docs when the query matches, else escalate.
 
-    Strong = docs non-empty AND top score >= threshold → return the ranked docs
-    with a non-LLM summary (no agent loop). Weak → SearchAgentLoop (local model)
-    or the degraded pipeline, preserving today's behavior.
+    A tiered match gate (`_direct_gate_decision`) compares the query to the
+    rank-1 result: exact title match, or a typo (Levenshtein<2) confirmed by
+    cosine, or semantic cosine > threshold → return the ranked docs with a
+    non-LLM summary (no agent loop). Otherwise escalate to the SearchAgentLoop
+    (local model) or the degraded pipeline, preserving today's behavior.
     """
-    threshold = _search_direct_min_score()
 
     async def _escalate(top_score: float, reason: str) -> tuple:
         escalate_extra = {
@@ -840,7 +878,13 @@ async def _run_search_direct_or_escalate(
     except Exception:
         documents = []
     real = [d for d in documents if not d.metadata.get("error")]
-    top_score = max((d.score or 0.0 for d in real), default=0.0)
+    is_strong, tier, top_score, cosine = await asyncio.to_thread(
+        _direct_gate_decision,
+        query,
+        real,
+        cos_min=search_direct_cos_min(),
+        cosine_fn=make_cosine_fn(gate_embedder()),
+    )
     _capture.record_stage(
         "search",
         "direct_retrieval",
@@ -854,11 +898,11 @@ async def _run_search_direct_or_escalate(
         },
     )
 
-    if real and top_score >= threshold:
+    if is_strong:
         _capture.record_stage(
             "search",
             "sufficiency",
-            {"mode": "direct", "top_score": top_score, "threshold": threshold},
+            {"mode": "direct", "tier": tier, "cosine": cosine, "top_score": top_score},
         )
         answer = _search_only_answer(
             "Direct retrieval",
@@ -871,13 +915,13 @@ async def _run_search_direct_or_escalate(
             [d.citation for d in real],
             real,
             "search",
-            {"search_mode": "direct", "top_score": top_score},
+            {"search_mode": "direct", "tier": tier, "top_score": top_score},
         )
 
     _capture.record_stage(
         "search",
         "sufficiency",
-        {"mode": "escalated", "top_score": top_score, "threshold": threshold},
+        {"mode": "escalated", "tier": tier, "cosine": cosine, "top_score": top_score},
     )
     return await _escalate(top_score, "weak_retrieval")
 
@@ -1094,6 +1138,10 @@ def create_web_app(
                 logger.exception(
                     "search_agent: failed to load model — mode will return 400"
                 )
+        try:
+            gate_embedder()  # warm the direct-gate e5 model (no-op when SEMANTIC=0)
+        except Exception:
+            logger.exception("direct-gate: embedder warmup failed")
         try:
             yield
         finally:

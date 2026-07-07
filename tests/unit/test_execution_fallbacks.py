@@ -291,9 +291,14 @@ def test_auto_provider_expands_to_internal_and_serpapi():
 # --- SEARCH: direct retrieval first, escalate to the agent loop if weak ---
 
 
-def _doc(score: float, i: int = 1) -> ContextDocument:
+def _doc(score: float, i: int = 1, title: str | None = None) -> ContextDocument:
     return ContextDocument(
-        id=f"D{i}", title=f"doc{i}", content="body", url=None, score=score, metadata={}
+        id=f"D{i}",
+        title=title or f"doc{i}",
+        content="body",
+        url=None,
+        score=score,
+        metadata={},
     )
 
 
@@ -329,12 +334,13 @@ def _call_direct_or_escalate(monkeypatch, direct_docs, agent_result=None):
 
 
 def test_strong_retrieval_returns_direct_without_agent(monkeypatch):
-    # top score 0.42 >= default threshold 0.2 → direct, agent loop NOT called.
+    # Exact title match ("FAISS" == title) → direct, agent loop NOT called.
     (answer, citations, documents, intent, extra), called = _call_direct_or_escalate(
-        monkeypatch, [_doc(0.42), _doc(0.1, 2)]
+        monkeypatch, [_doc(0.42, title="FAISS"), _doc(0.1, 2)]
     )
     assert called["agent"] is False
     assert extra["search_mode"] == "direct"
+    assert extra["tier"] == "exact"
     assert documents[0].score == 0.42
     assert intent == "search"
 
