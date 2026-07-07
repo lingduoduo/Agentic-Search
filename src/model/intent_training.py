@@ -89,35 +89,35 @@ def build_examples_for_document(
     examples = [
         {
             "text": f"What is {title} and how is it used in retrieval systems?",
-            "label": "qa",
+            "label": "chat",
         },
         {
             "text": f"How does {t1} affect {t2} performance in {title}?",
-            "label": "qa",
+            "label": "chat",
         },
         {
             "text": f"Show me the section about {title}.",
-            "label": "navigate",
+            "label": "search",
         },
         {
             "text": f"Take me to the document that explains {t1} and {t2}.",
-            "label": "navigate",
+            "label": "search",
         },
         {
             "text": f"Recommend the best approach for {t1} and {t2} in a search pipeline.",
-            "label": "recommendation",
+            "label": "search",
         },
         {
             "text": f"Which should I use for {t1}: {title} or another option for {t3}?",
-            "label": "recommendation",
+            "label": "search",
         },
         {
             "text": f"I need to buy a tool or service for {t1}; what should I purchase for a {t2} stack?",
-            "label": "purchase",
+            "label": "tool",
         },
         {
             "text": f"Which paid product should I choose for {title} if my budget is limited but I still need strong {t3}?",
-            "label": "purchase",
+            "label": "tool",
         },
     ]
 
