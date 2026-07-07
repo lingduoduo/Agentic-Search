@@ -93,3 +93,41 @@ def test_load_queries_from_file_txt_and_json(tmp_path):
     assert load_queries_from_file(js) == ["a", "b", "c"]
     with pytest.raises(FileNotFoundError):
         load_queries_from_file(tmp_path / "missing.txt")
+
+
+def test_distilled_model_routes_probe_queries_to_chat(tmp_path):
+    """The router labels the topic-word-biased probe queries as chat; a model
+    distilled on that signal learns to route them to chat (in-sample)."""
+    import torch
+
+    probes = [
+        "compare dense and sparse retrieval",
+        "retrieval augmented generation overview",
+    ]
+    # Teacher labels these chat; include contrastive search/tool so the model
+    # must separate classes rather than collapsing to one label.
+    corpus = probes + [
+        "find the ranking model",
+        "look up hnsw benchmarks",
+        "search for bm25 scoring",
+        "retrieve the deployment config",
+        "find dense retrieval docs",
+        "create a ticket for the billing bug",
+        "send an email about the incident",
+        "schedule a review of the release notes",
+        "open a pull request for reranking",
+        "what is faiss",
+        "explain the ranking model",
+        "summarize the release notes",
+    ]
+    torch.manual_seed(0)  # in-sample memorization is deterministic under a fixed seed
+    pt = tmp_path / "distilled.pt"
+    ex = tmp_path / "ex.json"
+    distill_and_train(corpus, output_path=pt, examples_path=ex, epochs=200, min_freq=1)
+    # Teacher must have labeled both probes chat (guards the premise).
+    labels = {e["text"]: e["label"] for e in json.loads(ex.read_text())}
+    assert labels[probes[0]] == "chat"
+    assert labels[probes[1]] == "chat"
+    reloaded = IntentPipeline.load(str(pt))
+    for q in probes:
+        assert reloaded.predict_text(q).intent == "chat", q

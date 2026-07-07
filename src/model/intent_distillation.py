@@ -201,6 +201,9 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--lr", type=float, default=1e-3)
     args = parser.parse_args(argv)
 
+    if args.vllm_url and not args.model:
+        parser.error("--model is required when --vllm-url is given")
+
     queries = _collect_queries(args)
     if not queries:
         parser.error("no queries collected; provide --queries-file and/or --from-db")
