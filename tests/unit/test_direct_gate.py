@@ -2,19 +2,18 @@ import numpy as np
 
 import src.internal.utils.embedding_gate as embedding_gate
 from src.context.models import ContextDocument
-from src.internal.servers.web.app import (
-    _direct_gate_decision,
-    _make_cosine_fn,
-    _norm,
-    _search_direct_cos_min,
+from src.internal.servers.web.app import _direct_gate_decision
+from src.internal.utils.embedding_gate import (
+    gate_embedder,
+    make_cosine_fn,
+    search_direct_cos_min,
 )
-from src.internal.utils.embedding_gate import gate_embedder
-from src.internal.utils.text_processing import levenshtein_lt2
+from src.internal.utils.text_processing import levenshtein_lt2, normalize_for_match
 
 
 def test_norm_lowercases_strips_and_collapses():
-    assert _norm("  FAISS? ") == "faiss"
-    assert _norm("Dense   Retrieval") == "dense retrieval"
+    assert normalize_for_match("  FAISS? ") == "faiss"
+    assert normalize_for_match("Dense   Retrieval") == "dense retrieval"
 
 
 def test_levenshtein_lt2_true_for_zero_and_one_edit():
@@ -101,30 +100,30 @@ def test_empty_docs_escalate():
 
 def test_cos_min_default_and_override(monkeypatch):
     monkeypatch.delenv("AGENTIC_SEARCH_SEARCH_DIRECT_COS_MIN", raising=False)
-    assert _search_direct_cos_min() == 0.8
+    assert search_direct_cos_min() == 0.8
     monkeypatch.setenv("AGENTIC_SEARCH_SEARCH_DIRECT_COS_MIN", "0.7")
-    assert _search_direct_cos_min() == 0.7
+    assert search_direct_cos_min() == 0.7
 
 
 def test_make_cosine_fn_none_embedder_returns_none():
-    assert _make_cosine_fn(None)("a", "b") is None
+    assert make_cosine_fn(None)("a", "b") is None
 
 
 def test_make_cosine_fn_identical_vectors_cosine_one():
     emb = lambda texts: np.array([[1.0, 0.0], [1.0, 0.0]], dtype=np.float32)  # noqa: E731
-    assert abs(_make_cosine_fn(emb)("x", "y") - 1.0) < 1e-6
+    assert abs(make_cosine_fn(emb)("x", "y") - 1.0) < 1e-6
 
 
 def test_make_cosine_fn_orthogonal_vectors_cosine_zero():
     emb = lambda texts: np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)  # noqa: E731
-    assert abs(_make_cosine_fn(emb)("x", "y")) < 1e-6
+    assert abs(make_cosine_fn(emb)("x", "y")) < 1e-6
 
 
 def test_make_cosine_fn_encode_failure_returns_none():
     def emb(texts):
         raise RuntimeError("boom")
 
-    assert _make_cosine_fn(emb)("x", "y") is None
+    assert make_cosine_fn(emb)("x", "y") is None
 
 
 def test_gate_embedder_disabled_by_env_returns_none(monkeypatch):

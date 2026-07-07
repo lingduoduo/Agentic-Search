@@ -11,7 +11,35 @@ from __future__ import annotations
 import logging
 import os
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
+
+
+def search_direct_cos_min() -> float:
+    return float(os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_COS_MIN", "0.8"))
+
+
+def make_cosine_fn(embedder):
+    """Return (query, passage) -> cosine|None using e5 prefixes; None if no model."""
+    if embedder is None:
+        return lambda _query, _passage: None
+
+    def _cosine(query: str, passage: str):
+        try:
+            vecs = embedder([f"query: {query}", f"passage: {passage}"])
+        except Exception:
+            return None
+        qv = np.asarray(vecs[0], dtype=np.float32)
+        pv = np.asarray(vecs[1], dtype=np.float32)
+        qn = float(np.linalg.norm(qv))
+        pn = float(np.linalg.norm(pv))
+        if qn == 0.0 or pn == 0.0:
+            return None
+        return float(np.dot(qv, pv) / (qn * pn))
+
+    return _cosine
+
 
 _GATE_EMBEDDER: object | None = None  # None=unset, False=failed, callable=loaded
 

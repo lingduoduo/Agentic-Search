@@ -1,5 +1,13 @@
 import re
 
+_MATCH_WS = re.compile(r"\s+")
+
+
+def normalize_for_match(text: str) -> str:
+    """Lowercase, trim surrounding punctuation/space, collapse inner whitespace."""
+    text = (text or "").strip().lower().strip(".,!?;:\"'()[]{}").strip()
+    return _MATCH_WS.sub(" ", text)
+
 
 def clean_text(text: str) -> str:
     """Remove null bytes and collapse excessive whitespace."""

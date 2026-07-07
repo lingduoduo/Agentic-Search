@@ -6,8 +6,6 @@ import asyncio
 import httpx
 import json as _json
 import logging
-import numpy as np
-import re
 import uuid as _uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -29,8 +27,12 @@ from src.internal.configs import AppSettings
 from src.internal.configs import load_app_settings
 from src.internal.llm.interfaces import LLMConfig
 from src.internal.llm.providers import OpenAICompatibleLLM
-from src.internal.utils.embedding_gate import gate_embedder
-from src.internal.utils.text_processing import levenshtein_lt2
+from src.internal.utils.embedding_gate import (
+    gate_embedder,
+    make_cosine_fn,
+    search_direct_cos_min,
+)
+from src.internal.utils.text_processing import levenshtein_lt2, normalize_for_match
 from src.internal.search.process_search_query import run_expanded_search
 from src.internal.servers.secondary_llm_flows import expand_keywords
 from src.internal.servers.secondary_llm_flows.query_expansion import (
@@ -765,15 +767,6 @@ def _finalize_response(
     )
 
 
-_GATE_WS = re.compile(r"\s+")
-
-
-def _norm(text: str) -> str:
-    """Lowercase, trim surrounding punctuation/space, collapse inner whitespace."""
-    text = (text or "").strip().lower().strip(".,!?;:\"'()[]{}").strip()
-    return _GATE_WS.sub(" ", text)
-
-
 def _direct_gate_decision(
     query: str,
     docs: list[ContextDocument],
@@ -791,8 +784,8 @@ def _direct_gate_decision(
         return False, "weak", top_score, None
 
     top = docs[0]
-    q = _norm(query)
-    t = _norm(top.title)
+    q = normalize_for_match(query)
+    t = normalize_for_match(top.title)
 
     if q and q == t:
         return True, "exact", top_score, None
@@ -809,33 +802,6 @@ def _direct_gate_decision(
     if cosine is not None and cosine > cos_min:
         return True, "semantic", top_score, cosine
     return False, "weak", top_score, cosine
-
-
-def _search_direct_cos_min() -> float:
-    import os as _os
-
-    return float(_os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_COS_MIN", "0.8"))
-
-
-def _make_cosine_fn(embedder):
-    """Return (query, passage) -> cosine|None using e5 prefixes; None if no model."""
-    if embedder is None:
-        return lambda _query, _passage: None
-
-    def _cosine(query: str, passage: str):
-        try:
-            vecs = embedder([f"query: {query}", f"passage: {passage}"])
-        except Exception:
-            return None
-        qv = np.asarray(vecs[0], dtype=np.float32)
-        pv = np.asarray(vecs[1], dtype=np.float32)
-        qn = float(np.linalg.norm(qv))
-        pn = float(np.linalg.norm(pv))
-        if qn == 0.0 or pn == 0.0:
-            return None
-        return float(np.dot(qv, pv) / (qn * pn))
-
-    return _cosine
 
 
 async def _run_search_direct_or_escalate(
@@ -916,8 +882,8 @@ async def _run_search_direct_or_escalate(
         _direct_gate_decision,
         query,
         real,
-        cos_min=_search_direct_cos_min(),
-        cosine_fn=_make_cosine_fn(gate_embedder()),
+        cos_min=search_direct_cos_min(),
+        cosine_fn=make_cosine_fn(gate_embedder()),
     )
     _capture.record_stage(
         "search",
