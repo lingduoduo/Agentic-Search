@@ -1,15 +1,15 @@
 import numpy as np
 
-import src.internal.servers.web.app as web_app
+import src.internal.utils.embedding_gate as embedding_gate
 from src.context.models import ContextDocument
 from src.internal.servers.web.app import (
     _direct_gate_decision,
-    _gate_embedder,
-    _levenshtein_lt2,
     _make_cosine_fn,
     _norm,
     _search_direct_cos_min,
 )
+from src.internal.utils.embedding_gate import gate_embedder
+from src.internal.utils.text_processing import levenshtein_lt2
 
 
 def test_norm_lowercases_strips_and_collapses():
@@ -18,17 +18,17 @@ def test_norm_lowercases_strips_and_collapses():
 
 
 def test_levenshtein_lt2_true_for_zero_and_one_edit():
-    assert _levenshtein_lt2("faiss", "faiss") is True  # distance 0
-    assert _levenshtein_lt2("faiss", "faisz") is True  # 1 substitution
-    assert _levenshtein_lt2("faiss", "faisss") is True  # 1 insertion
-    assert _levenshtein_lt2("faisss", "faiss") is True  # 1 deletion
+    assert levenshtein_lt2("faiss", "faiss") is True  # distance 0
+    assert levenshtein_lt2("faiss", "faisz") is True  # 1 substitution
+    assert levenshtein_lt2("faiss", "faisss") is True  # 1 insertion
+    assert levenshtein_lt2("faisss", "faiss") is True  # 1 deletion
 
 
 def test_levenshtein_lt2_false_for_two_or_more_edits():
-    assert _levenshtein_lt2("cat", "dog") is False
-    assert _levenshtein_lt2("faiss", "hnsw") is False
-    assert _levenshtein_lt2("faiss", "fabss") is True  # exactly 1 sub → still True
-    assert _levenshtein_lt2("faiss", "fabsz") is False  # 2 subs
+    assert levenshtein_lt2("cat", "dog") is False
+    assert levenshtein_lt2("faiss", "hnsw") is False
+    assert levenshtein_lt2("faiss", "fabss") is True  # exactly 1 sub → still True
+    assert levenshtein_lt2("faiss", "fabsz") is False  # 2 subs
 
 
 def _d(title, *, score=0.5, content="body", i=1):
@@ -129,5 +129,5 @@ def test_make_cosine_fn_encode_failure_returns_none():
 
 def test_gate_embedder_disabled_by_env_returns_none(monkeypatch):
     monkeypatch.setenv("AGENTIC_SEARCH_SEARCH_DIRECT_SEMANTIC", "0")
-    monkeypatch.setattr(web_app, "_GATE_EMBEDDER", None)  # reset singleton cache
-    assert _gate_embedder() is None
+    monkeypatch.setattr(embedding_gate, "_GATE_EMBEDDER", None)  # reset singleton cache
+    assert gate_embedder() is None

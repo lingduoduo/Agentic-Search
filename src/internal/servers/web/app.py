@@ -29,6 +29,8 @@ from src.internal.configs import AppSettings
 from src.internal.configs import load_app_settings
 from src.internal.llm.interfaces import LLMConfig
 from src.internal.llm.providers import OpenAICompatibleLLM
+from src.internal.utils.embedding_gate import gate_embedder
+from src.internal.utils.text_processing import levenshtein_lt2
 from src.internal.search.process_search_query import run_expanded_search
 from src.internal.servers.secondary_llm_flows import expand_keywords
 from src.internal.servers.secondary_llm_flows.query_expansion import (
@@ -772,31 +774,6 @@ def _norm(text: str) -> str:
     return _GATE_WS.sub(" ", text)
 
 
-def _levenshtein_lt2(a: str, b: str) -> bool:
-    """True iff the Levenshtein distance between a and b is 0 or 1 (bounded, O(n))."""
-    if a == b:
-        return True
-    la, lb = len(a), len(b)
-    if abs(la - lb) > 1:
-        return False
-    if la == lb:
-        return sum(1 for x, y in zip(a, b) if x != y) <= 1
-    if la > lb:
-        a, b = b, a  # ensure a is the shorter string
-    i = j = 0
-    skipped = False
-    while i < len(a) and j < len(b):
-        if a[i] == b[j]:
-            i += 1
-            j += 1
-        else:
-            if skipped:
-                return False
-            skipped = True
-            j += 1  # consume one extra char from the longer string
-    return True
-
-
 def _direct_gate_decision(
     query: str,
     docs: list[ContextDocument],
@@ -822,7 +799,7 @@ def _direct_gate_decision(
 
     passage = f"{top.title} {top.content}".strip()
 
-    if q and t and _levenshtein_lt2(q, t):
+    if q and t and levenshtein_lt2(q, t):
         cosine = cosine_fn(query, passage)
         if cosine is not None and cosine > cos_min:
             return True, "fuzzy", top_score, cosine
@@ -834,43 +811,10 @@ def _direct_gate_decision(
     return False, "weak", top_score, cosine
 
 
-_GATE_EMBEDDER: object | None = None  # None=unset, False=failed, callable=loaded
-
-
 def _search_direct_cos_min() -> float:
     import os as _os
 
     return float(_os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_COS_MIN", "0.8"))
-
-
-def _gate_embedder():
-    """Lazy singleton e5 embedder for the semantic tier; None when unavailable."""
-    global _GATE_EMBEDDER
-    import os as _os
-
-    if _os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_SEMANTIC", "1") == "0":
-        return None
-    if _GATE_EMBEDDER is not None:
-        return _GATE_EMBEDDER or None
-    try:
-        from sentence_transformers import SentenceTransformer
-
-        name = _os.environ.get(
-            "AGENTIC_SEARCH_SEARCH_DIRECT_MODEL", "intfloat/e5-base-v2"
-        )
-        model = SentenceTransformer(name)
-
-        def _fn(texts):
-            return model.encode(texts, normalize_embeddings=True)
-
-        _GATE_EMBEDDER = _fn
-    except Exception:
-        logger.exception(
-            "direct-gate: embedding model unavailable — semantic tier disabled"
-        )
-        _GATE_EMBEDDER = False
-        return None
-    return _GATE_EMBEDDER
 
 
 def _make_cosine_fn(embedder):
@@ -973,7 +917,7 @@ async def _run_search_direct_or_escalate(
         query,
         real,
         cos_min=_search_direct_cos_min(),
-        cosine_fn=_make_cosine_fn(_gate_embedder()),
+        cosine_fn=_make_cosine_fn(gate_embedder()),
     )
     _capture.record_stage(
         "search",
@@ -1229,7 +1173,7 @@ def create_web_app(
                     "search_agent: failed to load model — mode will return 400"
                 )
         try:
-            _gate_embedder()  # warm the direct-gate e5 model (no-op when SEMANTIC=0)
+            gate_embedder()  # warm the direct-gate e5 model (no-op when SEMANTIC=0)
         except Exception:
             logger.exception("direct-gate: embedder warmup failed")
         try:
