@@ -10,6 +10,7 @@ from pathlib import Path
 # treats "" as unset. Mirrors examples/run_web_integration_tests.sh.
 os.environ["SEARCH_AGENT_MODEL"] = ""
 os.environ["SEARCH_AGENT_SERVER_URL"] = ""
+os.environ["AGENTIC_SEARCH_SEARCH_DIRECT_SEMANTIC"] = "0"
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 

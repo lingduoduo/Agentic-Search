@@ -894,12 +894,6 @@ def _make_cosine_fn(embedder):
     return _cosine
 
 
-def _search_direct_min_score() -> float:
-    import os as _os
-
-    return float(_os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_MIN_SCORE", "0.2"))
-
-
 async def _run_search_direct_or_escalate(
     query: str,
     *,
@@ -921,7 +915,6 @@ async def _run_search_direct_or_escalate(
     with a non-LLM summary (no agent loop). Weak → SearchAgentLoop (local model)
     or the degraded pipeline, preserving today's behavior.
     """
-    threshold = _search_direct_min_score()
 
     async def _escalate(top_score: float, reason: str) -> tuple:
         escalate_extra = {
@@ -973,7 +966,12 @@ async def _run_search_direct_or_escalate(
     except Exception:
         documents = []
     real = [d for d in documents if not d.metadata.get("error")]
-    top_score = max((d.score or 0.0 for d in real), default=0.0)
+    is_strong, tier, top_score, cosine = _direct_gate_decision(
+        query,
+        real,
+        cos_min=_search_direct_cos_min(),
+        cosine_fn=_make_cosine_fn(_gate_embedder()),
+    )
     _capture.record_stage(
         "search",
         "direct_retrieval",
@@ -987,11 +985,11 @@ async def _run_search_direct_or_escalate(
         },
     )
 
-    if real and top_score >= threshold:
+    if is_strong:
         _capture.record_stage(
             "search",
             "sufficiency",
-            {"mode": "direct", "top_score": top_score, "threshold": threshold},
+            {"mode": "direct", "tier": tier, "cosine": cosine, "top_score": top_score},
         )
         answer = _search_only_answer(
             "Direct retrieval",
@@ -1004,13 +1002,13 @@ async def _run_search_direct_or_escalate(
             [d.citation for d in real],
             real,
             "search",
-            {"search_mode": "direct", "top_score": top_score},
+            {"search_mode": "direct", "tier": tier, "top_score": top_score},
         )
 
     _capture.record_stage(
         "search",
         "sufficiency",
-        {"mode": "escalated", "top_score": top_score, "threshold": threshold},
+        {"mode": "escalated", "tier": tier, "cosine": cosine, "top_score": top_score},
     )
     return await _escalate(top_score, "weak_retrieval")
 
