@@ -271,7 +271,6 @@ def test_route_query_uses_model_when_confident(monkeypatch):
     strategy = ir.route_query(
         "the vendor contract renewal terms",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.SEARCH
@@ -284,7 +283,6 @@ def test_route_query_defers_to_llm_when_model_low_confidence(monkeypatch):
     strategy = ir.route_query(
         "the vendor contract renewal terms",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert llm.called is True  # low confidence -> LLM fallback
@@ -297,7 +295,6 @@ def test_route_query_no_model_is_unchanged(monkeypatch):
     strategy = ir.route_query(
         "the vendor contract renewal terms",
         llm=llm,
-        has_local_model=True,
         explicit_source=False,
     )
     assert llm.called is True  # no model -> today's behavior
@@ -316,7 +313,6 @@ def test_regex_still_wins_over_model(monkeypatch):
     strategy = ir.route_query(
         "find the Q3 revenue report",
         llm=None,
-        has_local_model=False,
         explicit_source=False,
     )
     assert strategy is RouteStrategy.SEARCH
