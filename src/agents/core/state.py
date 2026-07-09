@@ -229,8 +229,6 @@ class AgentState:
     search_rounds: int = 0
     citations: list[Citation] = field(default_factory=list)
     route: RouteDecision | None = None
-    short_term_memory: list[dict[str, str]] = field(default_factory=list)
-    long_term_memory: dict[str, Any] = field(default_factory=dict)
     retrieved_user_docs: list[RetrievedDocument] = field(default_factory=list)
     retrieved_policy_docs: list[RetrievedDocument] = field(default_factory=list)
     plan: Plan | None = None
