@@ -24,12 +24,149 @@ from src.training.ppo.core_algos import (
 )
 from src.training.reward import (
     CompositeRewardConfig,
+    REWARD_DIMENSIONS,
     SearchRewardConfig,
     SearchRewardFunction,
+    _NON_DIMENSION_KEYS,
     format_compliance_reward,
+    group_reward_components,
     simple_sparse_correctness_reward,
     token_f1_score,
 )
+
+
+def _dim_output(answer: str, metrics: dict | None = None):
+    from src.agents.core.base import AgentLoopOutput
+
+    return AgentLoopOutput(
+        prompt_ids=[1],
+        response_ids=[2, 3],
+        response_mask=[1, 1],
+        num_turns=2,
+        final_answer=answer,
+        metrics=metrics or {},
+    )
+
+
+def test_group_reward_components_sums_each_bucket():
+    flat = {
+        "correctness": 1.0,
+        "citation_support": 0.3,
+        "unsupported_claim_penalty": -0.1,
+        "fetch_usefulness_reward": 0.1,
+        "format_reward": 0.05,
+        "search_quality": 0.15,
+        "subquestion_coverage": 0.2,
+        "evidence_gain": 0.1,
+        "early_stop_bonus": 0.0,
+        "answer_when_evidence_insufficient_penalty": -0.2,
+        "forced_final_answer_penalty": -0.05,
+        "search_budget_exhausted_without_answer_penalty": -0.2,
+        "per_search_penalty": -0.02,
+        "unnecessary_search_penalty": -0.05,
+        "duplicate_query_penalty": -0.1,
+        "budget_penalty": -0.1,
+        "unnecessary_fetch_penalty": -0.1,
+        "retriever_cost": -0.05,
+        "rerank_cost": -0.02,
+    }
+    dims = group_reward_components(flat)
+    assert set(dims) == {
+        "correctness",
+        "citation_support",
+        "retrieval_quality",
+        "search_efficiency",
+    }
+    assert dims["correctness"] == pytest.approx(1.0)
+    assert dims["citation_support"] == pytest.approx(0.3 - 0.1 + 0.1 + 0.05)
+    assert dims["retrieval_quality"] == pytest.approx(
+        0.15 + 0.2 + 0.1 + 0.0 - 0.2 - 0.05 - 0.2
+    )
+    assert dims["search_efficiency"] == pytest.approx(
+        -0.02 - 0.05 - 0.1 - 0.1 - 0.1 - 0.05 - 0.02
+    )
+
+
+def test_group_reward_components_tolerates_missing_keys():
+    dims = group_reward_components({"correctness": 0.7})
+    assert dims["correctness"] == pytest.approx(0.7)
+    assert dims["citation_support"] == pytest.approx(0.0)
+    assert dims["retrieval_quality"] == pytest.approx(0.0)
+    assert dims["search_efficiency"] == pytest.approx(0.0)
+
+
+def test_reward_components_includes_dimension_keys_and_partition_invariant():
+    output = _dim_output(
+        "Paris [R1Q1D1]",
+        metrics={
+            "rounds_used": 2.0,
+            "search_rounds": 2.0,
+            "repeated_search_queries": 1.0,
+            "subquestion_coverage_ratio": 1.0,
+            "final_evidence_sufficient": 1.0,
+            "search_quality_score": 1.0,
+            "answer_allowed": 1.0,
+        },
+    )
+    fn = SearchRewardFunction(SearchRewardConfig.second_pass())
+    comps = fn.reward_components(output, "Paris", lambda p, g: 1.0)
+
+    for key in (
+        "dim_correctness",
+        "dim_citation_support",
+        "dim_retrieval_quality",
+        "dim_search_efficiency",
+    ):
+        assert key in comps
+
+    dim_sum = (
+        comps["dim_correctness"]
+        + comps["dim_citation_support"]
+        + comps["dim_retrieval_quality"]
+        + comps["dim_search_efficiency"]
+    )
+    assert dim_sum == pytest.approx(comps["terminal_reward"] + comps["shaping_total"])
+
+    members = {k for ks in REWARD_DIMENSIONS.values() for k in ks}
+    dim_keys = {
+        "dim_correctness",
+        "dim_citation_support",
+        "dim_retrieval_quality",
+        "dim_search_efficiency",
+    }
+    for key in comps:
+        if key in _NON_DIMENSION_KEYS or key in dim_keys:
+            continue
+        assert key in members, f"reward_components key {key!r} has no dimension"
+
+
+def test_reward_dimensions_matches_dim_keys_and_scale_invariant():
+    output = _dim_output(
+        "Paris [R1Q1D1]",
+        metrics={
+            "rounds_used": 2.0,
+            "search_rounds": 2.0,
+            "repeated_search_queries": 1.0,
+            "subquestion_coverage_ratio": 1.0,
+            "final_evidence_sufficient": 1.0,
+            "search_quality_score": 1.0,
+            "answer_allowed": 1.0,
+        },
+    )
+    from dataclasses import replace
+
+    cfg = replace(SearchRewardConfig.second_pass(), reward_scale=2.0)
+    fn = SearchRewardFunction(cfg)
+    comps = fn.reward_components(output, "Paris", lambda p, g: 1.0)
+    dims = fn.reward_dimensions(output, "Paris", lambda p, g: 1.0)
+    assert dims == {
+        "correctness": comps["dim_correctness"],
+        "citation_support": comps["dim_citation_support"],
+        "retrieval_quality": comps["dim_retrieval_quality"],
+        "search_efficiency": comps["dim_search_efficiency"],
+    }
+    # Pre-scale dimensions sum to total / reward_scale.
+    assert sum(dims.values()) == pytest.approx(comps["total"] / 2.0)
 
 
 # ---------------------------------------------------------------------------

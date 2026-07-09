@@ -17,6 +17,55 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 _CITATION_RE = re.compile(r"\[(?:D\d+|R\d+Q\d+D\d+)\]")
 _ANSWER_TAG_RE = re.compile(r"<answer>.*?</answer>", re.DOTALL | re.IGNORECASE)
 
+# Four conceptual reward dimensions grouping the fine-grained reward_components
+# terms. Each member is a key produced by SearchRewardFunction.reward_components.
+REWARD_DIMENSIONS: dict[str, tuple[str, ...]] = {
+    "correctness": ("correctness",),
+    "citation_support": (
+        "citation_support",
+        "unsupported_claim_penalty",
+        "fetch_usefulness_reward",
+        "format_reward",
+    ),
+    "retrieval_quality": (
+        "search_quality",
+        "subquestion_coverage",
+        "evidence_gain",
+        "early_stop_bonus",
+        "answer_when_evidence_insufficient_penalty",
+        "forced_final_answer_penalty",
+        "search_budget_exhausted_without_answer_penalty",
+    ),
+    "search_efficiency": (
+        "per_search_penalty",
+        "unnecessary_search_penalty",
+        "duplicate_query_penalty",
+        "budget_penalty",
+        "unnecessary_fetch_penalty",
+        "retriever_cost",
+        "rerank_cost",
+    ),
+}
+
+# reward_components keys that are metadata or rollups, not dimension members.
+_NON_DIMENSION_KEYS: frozenset[str] = frozenset(
+    {"reward_mode", "terminal_reward", "shaping_total", "total", "human_feedback"}
+)
+
+
+def group_reward_components(components: dict[str, float]) -> dict[str, float]:
+    """Roll the flat reward_components breakdown up into the 4 reward dimensions.
+
+    Sums each dimension's member terms (missing keys count as 0.0), returning a
+    dict with exactly the four keys in :data:`REWARD_DIMENSIONS`. The result is
+    the pre-scale decomposition: ``sum(result.values())`` equals
+    ``terminal_reward + shaping_total`` for a full components dict.
+    """
+    return {
+        dimension: sum(float(components.get(key, 0.0)) for key in members)
+        for dimension, members in REWARD_DIMENSIONS.items()
+    }
+
 
 def normalize_answer_text(text: str) -> str:
     """Normalize an answer string for simple sparse-reward matching."""
@@ -612,6 +661,21 @@ class SearchRewardFunction:
         correctness = judge_fn(answer, ground_truth) if answer else 0.0
         return self._reward_components_from_correctness(output, correctness)
 
+    def reward_dimensions(
+        self,
+        output: AgentLoopOutput,
+        ground_truth: str,
+        judge_fn: Callable[[str, str], float],
+    ) -> dict[str, float]:
+        """Return the four grouped reward dimensions for one rollout.
+
+        A convenience rollup over :meth:`reward_components`: ``correctness``,
+        ``citation_support``, ``retrieval_quality``, ``search_efficiency``
+        (pre-scale; they sum to ``terminal_reward + shaping_total``).
+        """
+        components = self.reward_components(output, ground_truth, judge_fn)
+        return group_reward_components(components)
+
     def _reward_components_from_correctness(
         self,
         output: AgentLoopOutput,
@@ -767,6 +831,12 @@ class SearchRewardFunction:
         }
         if human_feedback is not None:
             components["human_feedback"] = human_feedback
+        components.update(
+            {
+                f"dim_{name}": value
+                for name, value in group_reward_components(components).items()
+            }
+        )
         return components
 
     # ------------------------------------------------------------------
