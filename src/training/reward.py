@@ -17,6 +17,55 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 _CITATION_RE = re.compile(r"\[(?:D\d+|R\d+Q\d+D\d+)\]")
 _ANSWER_TAG_RE = re.compile(r"<answer>.*?</answer>", re.DOTALL | re.IGNORECASE)
 
+# Four conceptual reward dimensions grouping the fine-grained reward_components
+# terms. Each member is a key produced by SearchRewardFunction.reward_components.
+REWARD_DIMENSIONS: dict[str, tuple[str, ...]] = {
+    "correctness": ("correctness",),
+    "citation_support": (
+        "citation_support",
+        "unsupported_claim_penalty",
+        "fetch_usefulness_reward",
+        "format_reward",
+    ),
+    "retrieval_quality": (
+        "search_quality",
+        "subquestion_coverage",
+        "evidence_gain",
+        "early_stop_bonus",
+        "answer_when_evidence_insufficient_penalty",
+        "forced_final_answer_penalty",
+        "search_budget_exhausted_without_answer_penalty",
+    ),
+    "search_efficiency": (
+        "per_search_penalty",
+        "unnecessary_search_penalty",
+        "duplicate_query_penalty",
+        "budget_penalty",
+        "unnecessary_fetch_penalty",
+        "retriever_cost",
+        "rerank_cost",
+    ),
+}
+
+# reward_components keys that are metadata or rollups, not dimension members.
+_NON_DIMENSION_KEYS: frozenset[str] = frozenset(
+    {"reward_mode", "terminal_reward", "shaping_total", "total", "human_feedback"}
+)
+
+
+def group_reward_components(components: dict[str, float]) -> dict[str, float]:
+    """Roll the flat reward_components breakdown up into the 4 reward dimensions.
+
+    Sums each dimension's member terms (missing keys count as 0.0), returning a
+    dict with exactly the four keys in :data:`REWARD_DIMENSIONS`. The result is
+    the pre-scale decomposition: ``sum(result.values())`` equals
+    ``terminal_reward + shaping_total`` for a full components dict.
+    """
+    return {
+        dimension: sum(float(components.get(key, 0.0)) for key in members)
+        for dimension, members in REWARD_DIMENSIONS.items()
+    }
+
 
 def normalize_answer_text(text: str) -> str:
     """Normalize an answer string for simple sparse-reward matching."""
@@ -612,6 +661,26 @@ class SearchRewardFunction:
         correctness = judge_fn(answer, ground_truth) if answer else 0.0
         return self._reward_components_from_correctness(output, correctness)
 
+    def reward_dimensions(
+        self,
+        output: AgentLoopOutput,
+        ground_truth: str,
+        judge_fn: Callable[[str, str], float],
+    ) -> dict[str, float]:
+        """Return the four grouped reward dimensions for one rollout.
+
+        A convenience rollup over :meth:`reward_components`: ``correctness``,
+        ``citation_support``, ``retrieval_quality``, ``search_efficiency``
+        (pre-scale; they sum to ``terminal_reward + shaping_total``).
+
+        Note: this calls :meth:`reward_components`, which invokes ``judge_fn``.
+        If you already have a components dict (or want to avoid a second,
+        possibly expensive, judge call), use
+        :func:`group_reward_components` on it directly instead.
+        """
+        components = self.reward_components(output, ground_truth, judge_fn)
+        return group_reward_components(components)
+
     def _reward_components_from_correctness(
         self,
         output: AgentLoopOutput,
@@ -630,144 +699,136 @@ class SearchRewardFunction:
         metrics = output.metrics
         ctx: AgentContext | None = output.context
 
-        # 2. Citation support: fraction of retrieved docs cited in the answer.
-        citation_support = self._citation_support(answer, ctx)
+        # Compute each dimension's per-term components once. The four helpers
+        # partition the shaping terms exactly as REWARD_DIMENSIONS declares, so
+        # shaping_total is derived from the grouped subtotals below rather than
+        # re-listing every term.
+        components: dict[str, float] = {}
+        components.update(self._correctness_component(correctness))
+        components.update(self._citation_components(answer, ctx, metrics))
+        components.update(self._retrieval_components(metrics))
+        components.update(self._efficiency_components(metrics))
 
-        # 3. Subquestion coverage: fraction of tasks with sufficient evidence.
-        coverage = metrics.get("subquestion_coverage_ratio", 1.0)
-
-        # 4. Search quality: combines the evaluator's final sufficiency verdict
-        # with the average fraction of strong queries across search rounds.
-        search_quality = self._search_quality(metrics)
-
-        # 5. Unnecessary-search penalty: each round beyond the first costs a little.
-        rounds_used = int(metrics.get("rounds_used", 0))
-        per_search_pen = cfg.per_search_penalty * rounds_used
-        unnecessary_pen = cfg.unnecessary_search_penalty * max(0, rounds_used - 1)
-
-        # 6. Duplicate-query penalty.
-        dup_pen = cfg.duplicate_query_penalty * metrics.get(
-            "repeated_search_queries", 0.0
+        dims = group_reward_components(components)
+        terminal_reward = dims["correctness"]
+        shaping_total = (
+            dims["citation_support"]
+            + dims["retrieval_quality"]
+            + dims["search_efficiency"]
         )
-
-        # 7. Budget penalty: fired once when rounds consumed exceed the threshold.
-        budget_fraction = rounds_used / max(cfg.max_search_rounds, 1)
-        budget_pen = (
-            cfg.budget_penalty
-            if budget_fraction >= cfg.budget_penalty_threshold
-            else 0.0
-        )
-
-        # 8. Explicit penalties for fetch waste, premature answering, and budget
-        # exhaustion without an answer.
-        unnecessary_fetch_pen = cfg.unnecessary_fetch_penalty * metrics.get(
-            "unnecessary_fetch_count", 0.0
-        )
-        insufficient_answer_pen = (
-            cfg.answer_when_evidence_insufficient_penalty
-            * metrics.get("answer_when_evidence_insufficient", 0.0)
-        )
-        forced_answer_pen = cfg.forced_final_answer_penalty * metrics.get(
-            "forced_final_answer", 0.0
-        )
-        exhausted_without_answer_pen = (
-            cfg.search_budget_exhausted_without_answer_penalty
-            * metrics.get("search_budget_exhausted_without_answer", 0.0)
-        )
-
-        # 9. Unsupported-claim penalty: fires when the agent searched and got
-        # results but the answer cites none of them — the model is fabricating.
-        unsupported_claim_pen = self._unsupported_claim_penalty(answer, ctx, metrics)
-
-        # 10. Fetch usefulness reward: fetched pages help only when the answer cites
-        # search results whose URLs were later fetched for deeper inspection.
-        fetch_reward = self._fetch_usefulness_reward(answer, ctx)
-
-        # 11. Format compliance: reward for inline citation labels in the answer.
-        format_reward = (
-            cfg.format_reward_weight * format_compliance_reward(answer)
-            if cfg.format_reward_weight != 0.0 and answer
-            else 0.0
-        )
-
-        # 12. Retriever cost: per-round cost differentiated by backend so the
-        # policy learns when web search is worth its higher price vs the VDB.
-        retriever_cost = cfg.retriever_cost_web * metrics.get(
-            "web_searches", 0.0
-        ) + cfg.retriever_cost_vdb * metrics.get("vdb_searches", 0.0)
-
-        # 13. Rerank cost: flat charge per rerank action invoked.
-        rerank_cost = cfg.rerank_cost * metrics.get("rerank_calls", 0.0)
-
-        # 14. Evidence gain: reward improvement in evidence_score across rounds.
-        evidence_gain = cfg.evidence_gain_weight * metrics.get(
-            "evidence_gain_total", 0.0
-        )
-
-        # 15. Early-stop bonus: reward rounds the loop flagged as an evidence
-        # plateau (opt-in metric; 0 unless evidence_plateau_min_gain is set).
-        early_stop = cfg.early_stop_bonus * metrics.get("early_stops", 0.0)
+        total = self._aggregate_total_reward(terminal_reward, shaping_total)
 
         human_feedback = (
             cfg.human_feedback_weight * human_signal
             if human_signal is not None and cfg.human_feedback_weight != 0.0
             else None
         )
-
-        terminal_reward = cfg.correctness_weight * correctness
-        shaping_total = (
-            cfg.citation_support_weight * citation_support
-            + cfg.subquestion_coverage_weight * coverage
-            + cfg.search_quality_weight * search_quality
-            + per_search_pen
-            + unnecessary_pen
-            + dup_pen
-            + budget_pen
-            + unnecessary_fetch_pen
-            + unsupported_claim_pen
-            + insufficient_answer_pen
-            + forced_answer_pen
-            + exhausted_without_answer_pen
-            + fetch_reward
-            + format_reward
-            + retriever_cost
-            + rerank_cost
-            + evidence_gain
-            + early_stop
-        )
-        total = self._aggregate_total_reward(terminal_reward, shaping_total)
         if human_feedback is not None:
             total += human_feedback
-        components = {
-            "reward_mode": cfg.reward_mode,
-            "correctness": terminal_reward,
-            "citation_support": cfg.citation_support_weight * citation_support,
-            "subquestion_coverage": cfg.subquestion_coverage_weight * coverage,
-            "search_quality": cfg.search_quality_weight * search_quality,
-            "per_search_penalty": per_search_pen,
-            "unnecessary_search_penalty": unnecessary_pen,
-            "duplicate_query_penalty": dup_pen,
-            "budget_penalty": budget_pen,
-            "unnecessary_fetch_penalty": unnecessary_fetch_pen,
-            "unsupported_claim_penalty": unsupported_claim_pen,
-            "answer_when_evidence_insufficient_penalty": insufficient_answer_pen,
-            "forced_final_answer_penalty": forced_answer_pen,
-            "search_budget_exhausted_without_answer_penalty": (
-                exhausted_without_answer_pen
-            ),
-            "fetch_usefulness_reward": fetch_reward,
-            "format_reward": format_reward,
-            "retriever_cost": retriever_cost,
-            "rerank_cost": rerank_cost,
-            "evidence_gain": evidence_gain,
-            "early_stop_bonus": early_stop,
-            "terminal_reward": terminal_reward,
-            "shaping_total": shaping_total,
-            "total": total,
-        }
+
+        components["reward_mode"] = cfg.reward_mode
+        components["terminal_reward"] = terminal_reward
+        components["shaping_total"] = shaping_total
+        components["total"] = total
         if human_feedback is not None:
             components["human_feedback"] = human_feedback
+        components.update({f"dim_{name}": value for name, value in dims.items()})
         return components
+
+    # ------------------------------------------------------------------
+    # Per-dimension component helpers (partition the reward_components terms
+    # exactly as REWARD_DIMENSIONS declares).
+    # ------------------------------------------------------------------
+
+    def _correctness_component(self, correctness: float) -> dict[str, float]:
+        """Correctness dimension: the terminal judge-scored reward."""
+        return {"correctness": self.config.correctness_weight * correctness}
+
+    def _citation_components(
+        self,
+        answer: str,
+        ctx: AgentContext | None,
+        metrics: dict[str, float],
+    ) -> dict[str, float]:
+        """Citation-support dimension: grounding of claims in retrieved evidence."""
+        cfg = self.config
+        return {
+            # Fraction of retrieved docs cited in the answer.
+            "citation_support": cfg.citation_support_weight
+            * self._citation_support(answer, ctx),
+            # Fires when the agent searched, got results, and cited none.
+            "unsupported_claim_penalty": self._unsupported_claim_penalty(
+                answer, ctx, metrics
+            ),
+            # Fetched pages help only when their URLs end up cited.
+            "fetch_usefulness_reward": self._fetch_usefulness_reward(answer, ctx),
+            # Reward for inline citation labels in the answer.
+            "format_reward": (
+                cfg.format_reward_weight * format_compliance_reward(answer)
+                if cfg.format_reward_weight != 0.0 and answer
+                else 0.0
+            ),
+        }
+
+    def _retrieval_components(self, metrics: dict[str, float]) -> dict[str, float]:
+        """Retrieval-quality dimension: sufficiency of the gathered evidence."""
+        cfg = self.config
+        return {
+            # Evaluator sufficiency verdict blended with per-round query quality.
+            "search_quality": cfg.search_quality_weight * self._search_quality(metrics),
+            # Fraction of subquestions with sufficient evidence.
+            "subquestion_coverage": cfg.subquestion_coverage_weight
+            * metrics.get("subquestion_coverage_ratio", 1.0),
+            # Reward improvement in evidence_score across rounds.
+            "evidence_gain": cfg.evidence_gain_weight
+            * metrics.get("evidence_gain_total", 0.0),
+            # Reward rounds flagged as an evidence plateau (opt-in metric).
+            "early_stop_bonus": cfg.early_stop_bonus * metrics.get("early_stops", 0.0),
+            # Penalty for answering despite insufficient evidence.
+            "answer_when_evidence_insufficient_penalty": (
+                cfg.answer_when_evidence_insufficient_penalty
+                * metrics.get("answer_when_evidence_insufficient", 0.0)
+            ),
+            # Milder penalty for a forced best-effort answer at a dead-end/cap.
+            "forced_final_answer_penalty": cfg.forced_final_answer_penalty
+            * metrics.get("forced_final_answer", 0.0),
+            # Penalty for exhausting the budget without producing an answer.
+            "search_budget_exhausted_without_answer_penalty": (
+                cfg.search_budget_exhausted_without_answer_penalty
+                * metrics.get("search_budget_exhausted_without_answer", 0.0)
+            ),
+        }
+
+    def _efficiency_components(self, metrics: dict[str, float]) -> dict[str, float]:
+        """Search-efficiency dimension: cost of the search/fetch/rerank actions."""
+        cfg = self.config
+        rounds_used = int(metrics.get("rounds_used", 0))
+        budget_fraction = rounds_used / max(cfg.max_search_rounds, 1)
+        budget_pen = (
+            cfg.budget_penalty
+            if budget_fraction >= cfg.budget_penalty_threshold
+            else 0.0
+        )
+        return {
+            # Each search round costs a little.
+            "per_search_penalty": cfg.per_search_penalty * rounds_used,
+            # Each round beyond the first costs more.
+            "unnecessary_search_penalty": cfg.unnecessary_search_penalty
+            * max(0, rounds_used - 1),
+            # Penalty per repeated query across turns.
+            "duplicate_query_penalty": cfg.duplicate_query_penalty
+            * metrics.get("repeated_search_queries", 0.0),
+            # Fired once when rounds consumed exceed the threshold.
+            "budget_penalty": budget_pen,
+            # Penalty per fetched page that does not contribute cited evidence.
+            "unnecessary_fetch_penalty": cfg.unnecessary_fetch_penalty
+            * metrics.get("unnecessary_fetch_count", 0.0),
+            # Per-round cost differentiated by backend (web priced above vdb).
+            "retriever_cost": cfg.retriever_cost_web * metrics.get("web_searches", 0.0)
+            + cfg.retriever_cost_vdb * metrics.get("vdb_searches", 0.0),
+            # Flat charge per rerank action invoked.
+            "rerank_cost": cfg.rerank_cost * metrics.get("rerank_calls", 0.0),
+        }
 
     # ------------------------------------------------------------------
     # GRPO advantage computation
