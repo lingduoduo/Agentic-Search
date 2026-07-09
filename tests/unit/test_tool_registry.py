@@ -7,10 +7,9 @@ import pytest
 from src.tools import FunctionTool, ToolEffect
 from src.tools.registry import (
     ToolRegistry,
-    _check_json_type,
     _params_from_signature,
-    _validate_arguments,
 )
+from src.tools.validation import check_json_type, validate_arguments
 
 
 def test_function_tool_defaults_to_unspecified_effect() -> None:
@@ -105,7 +104,7 @@ def test_params_optional_unwrapped():
     ],
 )
 def test_check_json_type(value, json_type, expected):
-    assert _check_json_type(value, json_type) is expected
+    assert check_json_type(value, json_type) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -118,19 +117,19 @@ def test_validate_missing_required():
         "required": ["a", "b"],
         "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
     }
-    errors = _validate_arguments(params, {"a": "hello"})
+    errors = validate_arguments(params, {"a": "hello"})
     assert any("b" in e for e in errors)
 
 
 def test_validate_type_mismatch():
     params = {"required": ["a"], "properties": {"a": {"type": "integer"}}}
-    errors = _validate_arguments(params, {"a": "not-an-int"})
+    errors = validate_arguments(params, {"a": "not-an-int"})
     assert errors
 
 
 def test_validate_passes_valid():
     params = {"required": ["a"], "properties": {"a": {"type": "integer"}}}
-    errors = _validate_arguments(params, {"a": 42})
+    errors = validate_arguments(params, {"a": 42})
     assert errors == []
 
 
