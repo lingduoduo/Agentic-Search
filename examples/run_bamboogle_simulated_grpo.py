@@ -122,7 +122,10 @@ def _run(args: argparse.Namespace) -> None:
         prompts, steps=args.steps, batch_size=args.batch_prompts
     )
     reward_history: list[float] = []
-    print("step | mean_reward | rolling | mean_adv | mean_kl | clip_frac | loss")
+    print(
+        f"{'step':>4} | {'mean_reward':>11} | {'rolling':>7} | "
+        f"{'mean_adv':>8} | {'mean_kl':>7} | {'clip_frac':>9} | loss"
+    )
     for step, batch in enumerate(batches, 1):
         metrics = trainer.step(batch, ground_truths=[""] * len(batch))
         reward_history.append(metrics["mean_reward"])

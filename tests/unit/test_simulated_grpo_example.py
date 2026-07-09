@@ -5,12 +5,18 @@ These test only the pure helpers and must not load a model or import torch.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from examples.run_bamboogle_simulated_grpo import (
     cycle_prompt_batches,
     make_judge_fn,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class _StubJudge:
@@ -62,12 +68,38 @@ def test_cycle_prompt_batches_rejects_bad_args(prompts, steps, batch):
         cycle_prompt_batches(prompts, steps=steps, batch_size=batch)
 
 
-def test_help_runs_without_torch(monkeypatch):
-    """`--help` must exit cleanly and not require heavy imports at module top."""
-    import runpy
-    import sys
+def test_help_flag_prints_usage_and_exits_zero():
+    """`--help` must exit cleanly and print the expected usage text."""
+    result = subprocess.run(
+        [sys.executable, "-m", "examples.run_bamboogle_simulated_grpo", "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "usage:" in result.stdout
+    assert "--model" in result.stdout
 
-    monkeypatch.setattr(sys, "argv", ["run_bamboogle_simulated_grpo", "--help"])
-    with pytest.raises(SystemExit) as exc:
-        runpy.run_module("examples.run_bamboogle_simulated_grpo", run_name="__main__")
-    assert exc.value.code == 0
+
+def test_help_does_not_import_torch():
+    """Importing the module must not pull in torch (heavy imports stay lazy in `_run`).
+
+    Run in a fresh interpreter (not in-process) because other tests in this
+    file import the real judge, which transitively imports torch and would
+    make an in-process check meaningless.
+    """
+    probe = (
+        "import sys, importlib; "
+        "importlib.import_module('examples.run_bamboogle_simulated_grpo'); "
+        "assert 'torch' not in sys.modules, "
+        "sorted(m for m in sys.modules if 'torch' in m)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "torch leaked into module import time (stderr below):\n" + result.stderr
+    )
