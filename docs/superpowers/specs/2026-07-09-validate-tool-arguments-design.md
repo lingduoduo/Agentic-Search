@@ -66,6 +66,12 @@ before `create()`/`execute()`:
 Empty schema (`parameters == {}`) → `validate_arguments` returns `[]` → executes
 normally (schemaless tools unaffected), matching `registry.invoke`.
 
+Schema source: validation fires for tools that declare a `parameters` JSON schema.
+Production `ToolAgentLoop` tools come from `tool_registry.list_tools()`, whose
+schemas are inferred from type hints (`_params_from_signature`) at registration —
+so they carry schemas and are validated. (`FunctionTool.from_fn` does not auto-infer;
+a tool built with no explicit `parameters` is treated as schemaless, unchanged.)
+
 ## Why it matters (two wins)
 
 1. **Safety (independent of #395):** a `SIDE_EFFECTING` tool is no longer executed

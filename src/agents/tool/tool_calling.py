@@ -55,6 +55,7 @@ from src.agents.core.base import (
 from src.agents.core.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
 from src.tools.base import Tool, ToolEffect
 from src.tools.parsers import FunctionCall, ToolParser
+from src.tools.validation import validate_arguments
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
@@ -192,15 +193,19 @@ class ToolAgentLoop(AgentLoopBase):
         error_code: str | None = None
         error_message: str | None = None
         elapsed = 0.0
+        args = tool_call.parsed_arguments()
         try:
             tool = self.tools[tool_call.name]
-            instance_id = await tool.create()
-            result, _, _ = await tool.execute(instance_id, tool_call.parsed_arguments())
-            elapsed = time.perf_counter() - start
-            status = TaskStatus.COMPLETED
-            self._record_tool_stage(
-                tool_call.name, tool_call.parsed_arguments(), result
-            )
+            errors = validate_arguments(tool.schema.parameters, args)
+            if errors:
+                error_code = "invalid_arguments"
+                error_message = "; ".join(errors)
+            else:
+                instance_id = await tool.create()
+                result, _, _ = await tool.execute(instance_id, args)
+                elapsed = time.perf_counter() - start
+                status = TaskStatus.COMPLETED
+                self._record_tool_stage(tool_call.name, args, result)
         except Exception as exc:
             elapsed = time.perf_counter() - start
             logger.exception("Error executing tool %r: %s", tool_call.name, exc)
@@ -213,7 +218,7 @@ class ToolAgentLoop(AgentLoopBase):
             tool_name=tool_call.name,
             status=status,
             result=result,
-            arguments=tool_call.parsed_arguments(),
+            arguments=args,
             performance=PerformanceMetrics(
                 execution_time=elapsed,
                 success_rate=1.0 if status is TaskStatus.COMPLETED else 0.0,
