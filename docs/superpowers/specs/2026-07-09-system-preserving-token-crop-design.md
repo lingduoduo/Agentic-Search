@@ -41,10 +41,11 @@ def _crop_prompt_ids(full_ids: list[int], system_ids: list[int], budget: int) ->
 ```
 
 `_build_prompt_ids_sync`:
-1. Compute `system_ids` = tokens of the leading system message, or `[]` if
-   `messages` is empty or `messages[0]["role"] != "system"`. Rendered via
-   `apply_chat_template([system_msg], add_generation_prompt=False, tokenize=False)`
-   → `encode` on the chat-template path, or the raw `content` on the fallback path.
+1. Compute `system_ids` = `encode` of the leading system message's raw `content`,
+   or `[]` if `messages` is empty or `messages[0]["role"] != "system"`. (Raw
+   content, not a lone chat-template render: simpler, avoids template-specific
+   behavior when a system message is rendered alone, and still preserves the
+   instruction text under an over-budget crop.)
 2. Render `full_ids` as today (`add_generation_prompt=True`).
 3. Return `_crop_prompt_ids(full_ids, system_ids, self.prompt_length)`.
 

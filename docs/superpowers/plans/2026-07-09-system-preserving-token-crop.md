@@ -115,18 +115,17 @@ Add a method to `AgentLoopBase` (near `_build_prompt_ids_sync`):
 
 ```python
     def _encode_system_prefix(self, messages: list[dict[str, Any]]) -> list[int]:
-        """Token ids of the leading system message, or [] if there is none."""
+        """Token ids of the leading system message's content, or [] if none.
+
+        Uses the raw content (not a lone chat-template render): simpler, avoids
+        template-specific behavior when a system message is rendered alone, and
+        still preserves the instruction text when cropped over budget.
+        """
         if not messages or messages[0].get("role") != "system":
             return []
-        system_msg = messages[0]
-        chat_template = getattr(self.tokenizer, "chat_template", "__missing__")
-        if hasattr(self.tokenizer, "apply_chat_template") and chat_template is not None:
-            text = self.tokenizer.apply_chat_template(
-                [system_msg], add_generation_prompt=False, tokenize=False
-            )
-        else:
-            text = system_msg.get("content", "")
-        return list(self.tokenizer.encode(text))
+        if not hasattr(self.tokenizer, "encode"):
+            return []
+        return list(self.tokenizer.encode(messages[0].get("content", "")))
 ```
 
 - [ ] **Step 4: Wire both truncation paths**
