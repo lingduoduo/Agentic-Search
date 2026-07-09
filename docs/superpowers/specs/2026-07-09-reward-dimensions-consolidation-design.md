@@ -16,7 +16,10 @@ belongs to which concern.
 
 Goal: expose a 4-bucket view over the existing terms, **without** removing or
 renaming anything. Backward-compatible: all weights, presets, keys, `total`
-computation, and existing tests keep working.
+computation, and existing tests keep working. Then use that map to **simplify**
+the reward code itself — a behavior-preserving refactor that removes the
+duplicated term enumeration and organizes the computation around the four
+dimensions.
 
 ## Non-goals
 
@@ -83,6 +86,34 @@ computation, and existing tests keep working.
    ground_truth, judge_fn) -> dict[str, float]` returning just the 4 subtotals
    (calls `reward_components` then `group_reward_components`, or reads the `dim_*`
    keys). For callers that want only the rollup.
+
+## Simplification refactor (behavior-preserving, enabled by the map)
+
+Before this work, `_reward_components_from_correctness` was a ~162-line method
+that enumerated the 18 shaping terms **three times**: once to compute each term,
+again in the `shaping_total = (...)` sum, and a third time in the `components = {...}`
+dict literal. Adding a term meant editing all three (plus `REWARD_DIMENSIONS`).
+
+With the dimension map in place, the method is refactored into **four
+dimension-aligned helper methods** that each return their `{key: value}` sub-dict:
+
+- `_correctness_component(correctness)`
+- `_citation_components(answer, ctx, metrics)`
+- `_retrieval_components(metrics)`
+- `_efficiency_components(metrics)`
+
+`_reward_components_from_correctness` now merges the four sub-dicts, derives
+`terminal_reward` and `shaping_total` from `group_reward_components` (summing the
+three shaping dimensions rather than re-listing 18 terms), and appends the
+metadata / `dim_*` keys. The main method drops from ~162 to ~53 lines and each
+term is written **once**, in the helper for its dimension.
+
+This is strictly behavior-preserving: every component value and `total` is
+byte-identical (the four helpers reproduce the exact same weighted expressions).
+It is guarded by the existing per-term value assertions plus the partition
+invariant. The four helpers partition the shaping terms **exactly** as
+`REWARD_DIMENSIONS` declares, so the partition-completeness test also guards the
+refactor from drift.
 
 ## Invariant
 

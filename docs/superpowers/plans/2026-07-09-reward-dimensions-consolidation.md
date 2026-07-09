@@ -322,6 +322,64 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
+### Task 3: Behavior-preserving refactor into 4 dimension helpers
+
+**Files:**
+- Modify: `src/training/reward.py` — split `_reward_components_from_correctness`.
+- Test: existing `tests/unit/test_reward_shapes.py` + consumer suites (no new tests; the value assertions + partition invariant guard the refactor).
+
+**Interfaces:**
+- Consumes: `REWARD_DIMENSIONS`, `group_reward_components` (Task 1); the existing
+  private helpers `_citation_support`, `_search_quality`,
+  `_unsupported_claim_penalty`, `_fetch_usefulness_reward`, `_aggregate_total_reward`.
+- Produces: `_correctness_component`, `_citation_components`,
+  `_retrieval_components`, `_efficiency_components` methods; a slimmed
+  `_reward_components_from_correctness`. No change to public API or any value.
+
+- [ ] **Step 1: Baseline the current behavior**
+
+Run: `python3 -m pytest tests/unit/test_reward_shapes.py tests/unit/test_reward.py tests/unit/test_reward_human_signal.py tests/unit/test_grpo.py tests/unit/test_bamboogle_eval.py tests/unit/test_search_agent_grpo_trainer.py tests/unit/test_simulated_judge.py tests/unit/test_readme_examples.py -q`
+Expected: PASS (all green before the refactor — this is the regression baseline).
+
+- [ ] **Step 2: Extract the four dimension helpers**
+
+Add four methods to `SearchRewardFunction`, each returning `{component_key: weighted_value}`
+for its dimension, moving the exact expressions out of the monolith:
+- `_correctness_component(self, correctness) -> {"correctness": cfg.correctness_weight * correctness}`
+- `_citation_components(self, answer, ctx, metrics)` → `citation_support`, `unsupported_claim_penalty`, `fetch_usefulness_reward`, `format_reward`
+- `_retrieval_components(self, metrics)` → `search_quality`, `subquestion_coverage`, `evidence_gain`, `early_stop_bonus`, `answer_when_evidence_insufficient_penalty`, `forced_final_answer_penalty`, `search_budget_exhausted_without_answer_penalty`
+- `_efficiency_components(self, metrics)` → `per_search_penalty`, `unnecessary_search_penalty`, `duplicate_query_penalty`, `budget_penalty`, `unnecessary_fetch_penalty`, `retriever_cost`, `rerank_cost`
+
+Each expression is copied verbatim from the original inline computation so values are byte-identical.
+
+- [ ] **Step 3: Slim `_reward_components_from_correctness`**
+
+Rewrite the body to: merge the four helper sub-dicts into `components`, compute
+`dims = group_reward_components(components)`, set `terminal_reward = dims["correctness"]`
+and `shaping_total = dims["citation_support"] + dims["retrieval_quality"] +
+dims["search_efficiency"]`, compute `total` via `_aggregate_total_reward`, add
+`human_feedback` if present, then append `reward_mode`, `terminal_reward`,
+`shaping_total`, `total`, and the `dim_*` keys. Delete the old 18-term
+`shaping_total` sum and the explicit `components = {...}` literal.
+
+- [ ] **Step 4: Verify behavior is unchanged**
+
+Run the same command as Step 1.
+Expected: PASS — identical results (every per-term value, `total`, and the
+partition invariant unchanged). A single differing value means the refactor
+altered arithmetic; fix the offending helper expression.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/training/reward.py
+git commit -m "refactor(reward): split reward_components into 4 dimension helpers
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-Review
 
 **1. Spec coverage:**
