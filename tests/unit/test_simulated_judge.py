@@ -108,3 +108,56 @@ def test_sim_judge_drives_nondegenerate_grpo_advantages():
     assert any(abs(a) > 1e-6 for a in advantages)
     # The empty answer must not be the best-advantaged rollout.
     assert scored[1].advantage < max(advantages)
+
+
+def _scored(idx: int, answer: str, reward: float, advantage: float):
+    from src.training.grpo import ScoredGRPORollout
+
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        final_answer=answer,
+    )
+    return ScoredGRPORollout(
+        group_id="g",
+        rollout_index=idx,
+        sampling_params={},
+        output=output,
+        reward=reward,
+        reward_component="total",
+        reward_components={"correctness": reward},
+        advantage=advantage,
+    )
+
+
+def test_build_synthetic_record_schema():
+    from examples.run_bamboogle_synthetic_grpo import build_synthetic_record
+
+    judge = SimulatedPreferenceJudge()
+    scored = [
+        _scored(0, "James Madison", 0.9, 0.4),
+        _scored(1, "", 0.0, -0.4),
+    ]
+    record = build_synthetic_record(
+        prompt="Who was president when Citibank was founded?",
+        gold=["james madison"],
+        judge=judge,
+        scored=scored,
+    )
+    assert record["prompt"] == "Who was president when Citibank was founded?"
+    assert record["gold"] == ["james madison"]
+    assert len(record["rollouts"]) == 2
+    first = record["rollouts"][0]
+    assert set(first) == {
+        "answer",
+        "judge_score",
+        "reward",
+        "advantage",
+        "exact_match",
+        "contains_match",
+    }
+    assert first["contains_match"] == 1.0  # "James Madison" contains gold
+    assert first["judge_score"] == judge.score("James Madison")
+    assert record["rollouts"][1]["contains_match"] == 0.0  # empty answer
