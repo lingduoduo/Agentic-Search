@@ -44,7 +44,7 @@ Rejected alternatives:
 - **`--train` flag on the synthetic-data demo**: overloads a script whose job is
   data generation + agreement reporting, and inherits the slow search rollouts.
 
-## Component: `examples/run_bamboogle_simulated_grpo.py`
+## Component: `examples/run_bamboogle_grpo_train.py`
 
 Single new script. Uses only existing machinery.
 
@@ -74,7 +74,7 @@ Flow:
 ### Lazy imports
 
 Import `torch` / `transformers` / trainer modules *inside* functions, not at module
-top level, so `python3 -m examples.run_bamboogle_simulated_grpo --help` stays light
+top level, so `python3 -m examples.run_bamboogle_grpo_train --help` stays light
 (matches commit `0328b12`).
 
 ## CLI & defaults

@@ -4,7 +4,7 @@
 
 **Goal:** Ship a runnable example script that optimizes a policy with GRPO against the reference-free `SimulatedPreferenceJudge`, closing the sample → generate → judge → update loop.
 
-**Architecture:** A single new example, `examples/run_bamboogle_simulated_grpo.py`, drives the existing `LLMGRPOTrainer` (plain prompt→response, no retrieval). It loads Bamboogle prompts, adapts the pointwise judge into the `judge_fn` seam, and runs N real gradient steps, printing per-step diagnostics. Two pure helpers (`make_judge_fn`, `cycle_prompt_batches`) are unit-tested without loading a model; heavy imports (`torch`/`transformers`/trainer) are lazy so `--help` stays light.
+**Architecture:** A single new example, `examples/run_bamboogle_grpo_train.py`, drives the existing `LLMGRPOTrainer` (plain prompt→response, no retrieval). It loads Bamboogle prompts, adapts the pointwise judge into the `judge_fn` seam, and runs N real gradient steps, printing per-step diagnostics. Two pure helpers (`make_judge_fn`, `cycle_prompt_batches`) are unit-tested without loading a model; heavy imports (`torch`/`transformers`/trainer) are lazy so `--help` stays light.
 
 **Tech Stack:** Python 3, PyTorch, HuggingFace Transformers, existing `src/training/ppo/llm_grpo_trainer.py`, `src/training/judge.py`, `src/training/eval/bamboogle.py`.
 
@@ -21,16 +21,16 @@
 
 ## File Structure
 
-- Create: `examples/run_bamboogle_simulated_grpo.py` — the demo script + two pure helpers.
-- Create: `tests/unit/test_simulated_grpo_example.py` — unit tests for the two helpers + a `--help` smoke test.
+- Create: `examples/run_bamboogle_grpo_train.py` — the demo script + two pure helpers.
+- Create: `tests/unit/test_run_bamboogle_grpo_train.py` — unit tests for the two helpers + a `--help` smoke test.
 
 ---
 
 ### Task 1: Pure helpers (`make_judge_fn`, `cycle_prompt_batches`)
 
 **Files:**
-- Create: `examples/run_bamboogle_simulated_grpo.py`
-- Test: `tests/unit/test_simulated_grpo_example.py`
+- Create: `examples/run_bamboogle_grpo_train.py`
+- Test: `tests/unit/test_run_bamboogle_grpo_train.py`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -40,7 +40,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/unit/test_simulated_grpo_example.py`:
+Create `tests/unit/test_run_bamboogle_grpo_train.py`:
 
 ```python
 """Unit tests for the simulated-judge GRPO demo helpers.
@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import pytest
 
-from examples.run_bamboogle_simulated_grpo import (
+from examples.run_bamboogle_grpo_train import (
     cycle_prompt_batches,
     make_judge_fn,
 )
@@ -109,12 +109,12 @@ def test_cycle_prompt_batches_rejects_bad_args(prompts, steps, batch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/unit/test_simulated_grpo_example.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'examples.run_bamboogle_simulated_grpo'` (file does not exist yet).
+Run: `pytest tests/unit/test_run_bamboogle_grpo_train.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'examples.run_bamboogle_grpo_train'` (file does not exist yet).
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `examples/run_bamboogle_simulated_grpo.py` with the module docstring and the two helpers only (no argparse/main yet). Keep all heavy imports out of module scope.
+Create `examples/run_bamboogle_grpo_train.py` with the module docstring and the two helpers only (no argparse/main yet). Keep all heavy imports out of module scope.
 
 ```python
 """Optimize a policy with GRPO against the reference-free SimulatedPreferenceJudge.
@@ -133,7 +133,7 @@ illustrates the GRPO mechanism against a simulated reward, not a production
 reward. Ground-truth answers are not used.
 
 Quick start (local CPU, self-contained, slow):
-    python3 -m examples.run_bamboogle_simulated_grpo \\
+    python3 -m examples.run_bamboogle_grpo_train \\
         --model Qwen/Qwen2.5-0.5B-Instruct --device cpu \\
         --allow_remote_model_downloads --steps 10
 """
@@ -186,13 +186,13 @@ def cycle_prompt_batches(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest tests/unit/test_simulated_grpo_example.py -v`
+Run: `pytest tests/unit/test_run_bamboogle_grpo_train.py -v`
 Expected: PASS (all 8 test cases).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add examples/run_bamboogle_simulated_grpo.py tests/unit/test_simulated_grpo_example.py
+git add examples/run_bamboogle_grpo_train.py tests/unit/test_run_bamboogle_grpo_train.py
 git commit -m "feat(grpo): simulated-judge GRPO demo helpers + tests
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -203,8 +203,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 2: Demo script CLI + training loop
 
 **Files:**
-- Modify: `examples/run_bamboogle_simulated_grpo.py` (add `_build_arg_parser`, `_run`, `main`)
-- Test: `tests/unit/test_simulated_grpo_example.py` (add a `--help` smoke test)
+- Modify: `examples/run_bamboogle_grpo_train.py` (add `_build_arg_parser`, `_run`, `main`)
+- Test: `tests/unit/test_run_bamboogle_grpo_train.py` (add a `--help` smoke test)
 
 **Interfaces:**
 - Consumes: `make_judge_fn`, `cycle_prompt_batches` from Task 1.
@@ -217,7 +217,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/unit/test_simulated_grpo_example.py`:
+Append to `tests/unit/test_run_bamboogle_grpo_train.py`:
 
 ```python
 def test_help_runs_without_torch(monkeypatch):
@@ -226,23 +226,23 @@ def test_help_runs_without_torch(monkeypatch):
     import sys
 
     monkeypatch.setattr(
-        sys, "argv", ["run_bamboogle_simulated_grpo", "--help"]
+        sys, "argv", ["run_bamboogle_grpo_train", "--help"]
     )
     with pytest.raises(SystemExit) as exc:
         runpy.run_module(
-            "examples.run_bamboogle_simulated_grpo", run_name="__main__"
+            "examples.run_bamboogle_grpo_train", run_name="__main__"
         )
     assert exc.value.code == 0
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/unit/test_simulated_grpo_example.py::test_help_runs_without_torch -v`
+Run: `pytest tests/unit/test_run_bamboogle_grpo_train.py::test_help_runs_without_torch -v`
 Expected: FAIL — no `main`/`__main__` block yet, so `--help` is not handled (argparse `SystemExit(0)` never raised).
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add to `examples/run_bamboogle_simulated_grpo.py` below the helpers. Heavy imports go **inside** `_run`.
+Add to `examples/run_bamboogle_grpo_train.py` below the helpers. Heavy imports go **inside** `_run`.
 
 ```python
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -321,18 +321,18 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest tests/unit/test_simulated_grpo_example.py::test_help_runs_without_torch -v`
+Run: `pytest tests/unit/test_run_bamboogle_grpo_train.py::test_help_runs_without_torch -v`
 Expected: PASS (`SystemExit(0)` from argparse `--help`).
 
 - [ ] **Step 5: Run the full helper test file**
 
-Run: `pytest tests/unit/test_simulated_grpo_example.py -v`
+Run: `pytest tests/unit/test_run_bamboogle_grpo_train.py -v`
 Expected: PASS (all tests from Task 1 + the `--help` smoke test).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add examples/run_bamboogle_simulated_grpo.py tests/unit/test_simulated_grpo_example.py
+git add examples/run_bamboogle_grpo_train.py tests/unit/test_run_bamboogle_grpo_train.py
 git commit -m "feat(grpo): CLI + training loop for simulated-judge GRPO demo
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -346,14 +346,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Confirm `--help` is light**
 
-Run: `python3 -m examples.run_bamboogle_simulated_grpo --help`
+Run: `python3 -m examples.run_bamboogle_grpo_train --help`
 Expected: usage text prints; exits 0.
 
 - [ ] **Step 2: Run a short real training run**
 
 Run:
 ```bash
-python3 -m examples.run_bamboogle_simulated_grpo \
+python3 -m examples.run_bamboogle_grpo_train \
   --model Qwen/Qwen2.5-0.5B-Instruct --device cpu \
   --allow_remote_model_downloads --steps 2 --num_rollouts 2 \
   --batch_prompts 1 --limit 4 --max_new_tokens 32
@@ -372,7 +372,7 @@ If a quick check is desired, add a throwaway snippet (do NOT commit) that snapsh
 ## Self-Review
 
 **1. Spec coverage:**
-- Script `run_bamboogle_simulated_grpo.py` (Approach A, plain-generation GRPO) → Task 1 + Task 2. ✓
+- Script `run_bamboogle_grpo_train.py` (Approach A, plain-generation GRPO) → Task 1 + Task 2. ✓
 - `make_judge_fn` / `cycle_prompt_batches` helpers → Task 1. ✓
 - Lazy imports so `--help` stays light → Task 2 (imports inside `_run`) + `test_help_runs_without_torch`. ✓
 - CLI flags & defaults table → Task 2 `_build_arg_parser` (all 11 flags present with spec defaults). ✓

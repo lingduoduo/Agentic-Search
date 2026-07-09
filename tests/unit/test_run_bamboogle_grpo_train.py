@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from examples.run_bamboogle_simulated_grpo import (
+from examples.run_bamboogle_grpo_train import (
     cycle_prompt_batches,
     make_judge_fn,
 )
@@ -71,7 +71,7 @@ def test_cycle_prompt_batches_rejects_bad_args(prompts, steps, batch):
 def test_help_flag_prints_usage_and_exits_zero():
     """`--help` must exit cleanly and print the expected usage text."""
     result = subprocess.run(
-        [sys.executable, "-m", "examples.run_bamboogle_simulated_grpo", "--help"],
+        [sys.executable, "-m", "examples.run_bamboogle_grpo_train", "--help"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -90,7 +90,7 @@ def test_help_does_not_import_torch():
     """
     probe = (
         "import sys, importlib; "
-        "importlib.import_module('examples.run_bamboogle_simulated_grpo'); "
+        "importlib.import_module('examples.run_bamboogle_grpo_train'); "
         "assert 'torch' not in sys.modules, "
         "sorted(m for m in sys.modules if 'torch' in m)"
     )

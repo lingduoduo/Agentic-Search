@@ -14,7 +14,7 @@ illustrates the GRPO mechanism against a simulated reward, not a production
 reward. Ground-truth answers are not used.
 
 Quick start (local CPU, self-contained, slow):
-    python3 -m examples.run_bamboogle_simulated_grpo \\
+    python3 -m examples.run_bamboogle_grpo_train \\
         --model Qwen/Qwen2.5-0.5B-Instruct --device cpu \\
         --allow_remote_model_downloads --steps 10
 """
