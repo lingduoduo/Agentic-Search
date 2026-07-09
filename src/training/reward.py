@@ -672,6 +672,11 @@ class SearchRewardFunction:
         A convenience rollup over :meth:`reward_components`: ``correctness``,
         ``citation_support``, ``retrieval_quality``, ``search_efficiency``
         (pre-scale; they sum to ``terminal_reward + shaping_total``).
+
+        Note: this calls :meth:`reward_components`, which invokes ``judge_fn``.
+        If you already have a components dict (or want to avoid a second,
+        possibly expensive, judge call), use
+        :func:`group_reward_components` on it directly instead.
         """
         components = self.reward_components(output, ground_truth, judge_fn)
         return group_reward_components(components)
