@@ -1761,6 +1761,24 @@ def _trim_history(history: list, max_messages: int = MAX_HISTORY_MESSAGES) -> li
     return history[-max_messages:]
 
 
+# Search mode stacks long <information> observations on top of history each turn,
+# so cap threaded history tighter than MAX_HISTORY_MESSAGES.
+SEARCH_AGENT_HISTORY_MESSAGES = 6
+
+
+def _build_search_agent_messages(query: str, history: list) -> list[dict[str, str]]:
+    """Build the SearchAgentLoop message buffer: capped prior turns + the query.
+
+    History is capped to the last ``SEARCH_AGENT_HISTORY_MESSAGES`` messages and
+    mapped to ``{"role", "content"}`` dicts; the current user query is appended
+    last. ``SearchAgentLoop._with_system_prompt`` prepends the system prompt.
+    """
+    capped = _trim_history(history, max_messages=SEARCH_AGENT_HISTORY_MESSAGES)
+    messages = [{"role": m.role, "content": m.content} for m in capped]
+    messages.append({"role": "user", "content": query})
+    return messages
+
+
 def _normalize_agent_mode(mode: str) -> str:
     requested = mode.strip().lower()
     normalized = _MODE_ALIASES.get(requested, requested)
