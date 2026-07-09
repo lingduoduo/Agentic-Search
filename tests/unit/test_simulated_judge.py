@@ -1,4 +1,6 @@
-from src.training.judge import SimulatedPreferenceJudge
+import pytest
+
+from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement
 
 
 def test_empty_answer_scores_zero():
@@ -42,3 +44,28 @@ def test_as_batch_judge_fn_length_and_ignores_ground_truth():
     scores_with_gt = fn(answers, ["madison", "madison"])
     assert len(scores_no_gt) == 2
     assert scores_no_gt == scores_with_gt  # ground truth has no effect
+
+
+def test_agreement_gap_positive_when_correct_scores_higher():
+    pairs = [(0.9, True), (0.8, True), (0.2, False), (0.1, False)]
+    report = judge_gold_agreement(pairs)
+    assert report["mean_score_correct"] == pytest.approx(0.85)
+    assert report["mean_score_incorrect"] == pytest.approx(0.15)
+    assert report["gap"] > 0
+    assert report["n_correct"] == 2.0
+    assert report["n_incorrect"] == 2.0
+
+
+def test_agreement_handles_all_correct():
+    pairs = [(0.7, True), (0.9, True)]
+    report = judge_gold_agreement(pairs)
+    assert report["mean_score_correct"] == 0.8
+    assert report["mean_score_incorrect"] == 0.0
+    assert report["gap"] == 0.8
+
+
+def test_agreement_handles_empty_input():
+    report = judge_gold_agreement([])
+    assert report["gap"] == 0.0
+    assert report["n_correct"] == 0.0
+    assert report["n_incorrect"] == 0.0

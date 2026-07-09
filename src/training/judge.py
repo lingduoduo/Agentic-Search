@@ -69,3 +69,25 @@ class SimulatedPreferenceJudge:
             return [self.score(a) for a in answers]
 
         return _judge
+
+
+def judge_gold_agreement(pairs: list[tuple[float, bool]]) -> dict[str, float]:
+    """Summarise how well judge scores separate correct from incorrect answers.
+
+    ``pairs`` is a list of ``(judge_score, is_correct)``.  A positive ``gap``
+    means the judge scores correct answers higher on average — evidence the
+    (simulated) judge tracks correctness rather than being nonsense.  On hard
+    factual questions a reference-free judge may show a small or zero gap; that
+    is an informative result, not a failure.
+    """
+    correct = [s for s, ok in pairs if ok]
+    incorrect = [s for s, ok in pairs if not ok]
+    mean_correct = sum(correct) / len(correct) if correct else 0.0
+    mean_incorrect = sum(incorrect) / len(incorrect) if incorrect else 0.0
+    return {
+        "mean_score_correct": mean_correct,
+        "mean_score_incorrect": mean_incorrect,
+        "gap": mean_correct - mean_incorrect,
+        "n_correct": float(len(correct)),
+        "n_incorrect": float(len(incorrect)),
+    }
