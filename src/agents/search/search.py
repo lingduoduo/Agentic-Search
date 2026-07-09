@@ -166,6 +166,13 @@ def _result_fingerprint(result: SearchResult) -> str:
     return "content:" + _normalize_result_fingerprint(result.contents[:512])
 
 
+def _truncate_page_content(text: str, limit: int) -> str:
+    """Head-keep a fetched page's content to `limit` chars (<= 0 disables)."""
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[:limit] + "…(truncated)"
+
+
 def build_search_agent_instruction(max_search_limit: int, max_url_fetch: int) -> str:
     return (
         "You are a search-capable reasoning assistant. Follow this XML workflow:\n\n"
@@ -257,6 +264,10 @@ class SearchAgentLoopConfig(AgentLoopConfig):
         "\n\n<search_evaluation>\n{content}\n</search_evaluation>\n\n"
     )
     full_page_obs_template: str = "\n\n<full_page>\n{content}\n</full_page>\n\n"
+    # Max characters of a single fetched page's content inlined into the
+    # <full_page> observation. <= 0 disables the cap. Guards the token budget
+    # (full pages are otherwise inlined verbatim).
+    max_full_page_chars: int = 4096
     subquestions_obs_template: str = (
         "\n\n<subquestions_feedback>\n{content}\n</subquestions_feedback>\n\n"
     )
@@ -674,7 +685,11 @@ class SearchAgentLoop(AgentLoopBase):
             sections.append(f"Page {i}(Title: {title})")
             if page.url:
                 sections.append(f"URL: {page.url}")
-            sections.append(page.contents)
+            sections.append(
+                _truncate_page_content(
+                    page.contents, self.search_config.max_full_page_chars
+                )
+            )
         return "\n".join(sections)
 
     def _build_search_observation(
