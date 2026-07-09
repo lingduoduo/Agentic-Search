@@ -83,7 +83,8 @@ src/
 │   ├── ppo/                     # PPO core, LLMGRPOTrainer, SearchAgentGRPOTrainer
 │   ├── data.py                  # Training dataset builders
 │   ├── grpo.py                  # GRPO advantage helpers
-│   ├── reward.py                # SearchRewardFunction
+│   ├── reward.py                # SearchRewardFunction + 4 reward dimensions
+│   ├── judge.py                 # SimulatedPreferenceJudge (RLAIF stand-in)
 │   └── sft.py                   # SFT data pipeline
 └── internal/
     ├── access/                  # Access control & ACL helpers
@@ -416,7 +417,13 @@ bin/run_bamboogle_eval.sh --limit 125
 **PPO/GRPO reward**
 
 ```bash
-python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRPO (no GPU)
+python3 -m examples.run_grpo_training_pipeline         # end-to-end reward + GRPO smoke test (no GPU, no model)
+
+# Simulated-judge GRPO — actually updates a policy: bamboogle prompts → generate →
+# SimulatedPreferenceJudge → GRPO step. No retrieval server; runs on CPU/MPS.
+python3 -m examples.run_bamboogle_grpo_train \
+  --model Qwen/Qwen2.5-0.5B-Instruct --device cpu \
+  --allow_remote_model_downloads --steps 10
 ```
 
 **Dataset preparation**
@@ -558,10 +565,12 @@ python3 -m examples.run_search_pipeline
 
 **RL Training**
 - Composite reward shaping (`SearchRewardFunction`) — correctness, format compliance, citation support, unnecessary-fetch penalty, and fetch-usefulness reward components
+- Four reward dimensions (`REWARD_DIMENSIONS` + `group_reward_components` / `reward_dimensions()`) roll the fine-grained components up into **correctness · citation support · retrieval quality · search efficiency** subtotals (also emitted as `dim_*` keys in `reward_components`); purely additive — no weight, preset, or `total` changed (`src/training/reward.py`)
 - Group-relative advantage helpers for PPO, GRPO, and REINFORCE-style experiments
 - PPO core: clipped policy loss, value loss, entropy, KL penalty, adaptive and fixed KL controllers
 - `LLMGRPOTrainer` — online GRPO for any HuggingFace causal-LM; rolls out G completions per prompt, scores with `judge_fn` + `SearchRewardFunction`, and updates with PPO-clip + KL penalty (`src/training/ppo/llm_grpo_trainer.py`)
 - `SearchAgentGRPOTrainer` — extends `LLMGRPOTrainer` with real `SearchAgentLoop` rollouts to unlock the full shaped-reward signal (citations, search quality, fetch usefulness) (`src/training/ppo/search_agent_grpo_trainer.py`)
+- **Simulated-preference judge (RLAIF)** — `SimulatedPreferenceJudge` (`src/training/judge.py`) is a deterministic, reference-free stand-in for an LLM-as-judge; it drops into the plain `judge_fn` seam (`lambda pred, _gt: judge.score(pred)`), so `examples/run_bamboogle_grpo_train.py` closes a full sample → generate → judge → GRPO-update loop against it with plain generation (no retrieval server). Swap in a real LLM judge behind the same `as_batch_judge_fn()` interface to go live
 - **Feedback-driven GRPO** — `load_feedback_examples(db_path, min_ratings=10)` (`src/training/data.py`) reads thumbs-up/down sessions from `AgenticSearchStore` (the `retrieval_feedback` table fed by `POST /api/feedback`) into `PromptTrainingExample`s with `metadata["human_signal"] = +1.0 / -1.0`. `SearchRewardFunction` adds a `human_feedback` reward component weighted by `SearchRewardConfig.human_feedback_weight` (default `0.0` → zero regression on existing presets); `SearchAgentGRPOTrainer` threads `human_signal` from batch metadata into the score. Closes the loop: user feedback → reward signal → policy update
 - **SFT warm-start** (`src/training/sft.py`) — `SFTTrainer` / `SFTConfig` (`epochs=3`, `lr=2e-5`) supervised-fine-tune a base model on agent traces before GRPO, so RL starts from a competent policy rather than cold-exploring. `load_sft_examples(db_path, jsonl_path=None, min_ratings=1)` (`src/training/data.py`) merges **thumbs-up** sessions from `AgenticSearchStore` with optional JSONL pairs (`{"question", "response"}`) into `list[SFTExample]` (built via `build_search_sft_example`). Loss is cross-entropy on **assistant tokens only** — system / user / tool-result tokens are masked to `-100` so the model imitates only the agent's own actions. Two-phase via `examples/run_sft_grpo.py`: Phase 1 SFT → intermediate checkpoint (`data/checkpoints/sft_warmstart/`) → Phase 2 GRPO loads it with `SearchAgentGRPOTrainer.from_pretrained(...)`; `--sft_epochs 0` skips straight to GRPO with no code-path change
 - Training data builders for search-QA and RAG parquet datasets (`src/training/data.py`)
@@ -1259,6 +1268,7 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
 | Reward function | `src/training/reward.py` |
+| Simulated preference judge | `src/training/judge.py` |
 | GRPO helpers | `src/training/grpo.py` |
 | Online GRPO for HF LMs | `src/training/ppo/llm_grpo_trainer.py` |
 | Agent-loop GRPO (full reward) | `src/training/ppo/search_agent_grpo_trainer.py` |
@@ -1266,6 +1276,7 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Generation and policy loss | `src/model/generation.py` |
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
+| Simulated-judge GRPO (policy update) | `python3 -m examples.run_bamboogle_grpo_train` |
 
 **Fine-tune from user feedback** — train directly on thumbs-up/down sessions collected via `POST /api/feedback` (no GPU required for the smoke path; `--device mps` on Apple Silicon):
 ```bash
@@ -1301,7 +1312,9 @@ python3 -m examples.run_sft_grpo \
 | Format compliance | `format_reward_weight` | Structural compliance in the final answer |
 | Human feedback | `human_feedback_weight` | `human_signal` (±1.0) from thumbs-up/down sessions; `0.0` by default (off) |
 
-Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` (see `SearchRewardConfig` in `src/training/reward.py`).
+Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` | `retriever_aware` (see `SearchRewardConfig` in `src/training/reward.py`).
+
+**Four reward dimensions** — `reward_components()` also groups every term into four subtotals via `REWARD_DIMENSIONS`, emitted as `dim_correctness`, `dim_citation_support`, `dim_retrieval_quality`, `dim_search_efficiency` (and available directly via `reward_dimensions()` or the pure `group_reward_components(components)`). Pre-scale, so `sum(dims) == terminal_reward + shaping_total == total / reward_scale`. The rollup is purely additive — no weight, preset, or `total` formula changed.
 
 **GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo.py`.
 
