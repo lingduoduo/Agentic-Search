@@ -21,6 +21,7 @@ Quick start (local CPU, self-contained, slow):
 
 from __future__ import annotations
 
+import argparse
 from typing import Any, Callable
 
 
@@ -62,3 +63,81 @@ def cycle_prompt_batches(
         cursor = (cursor + batch_size) % n
         batches.append(batch)
     return batches
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Optimize a policy with GRPO against SimulatedPreferenceJudge.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--model", required=True, help="HuggingFace model id or path")
+    parser.add_argument("--steps", type=int, default=10, help="GRPO update steps")
+    parser.add_argument(
+        "--num_rollouts", type=int, default=4, help="completions per prompt"
+    )
+    parser.add_argument("--batch_prompts", type=int, default=2, help="prompts per step")
+    parser.add_argument(
+        "--limit", type=int, default=8, help="Bamboogle prompts to load"
+    )
+    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--device", default="cpu", help="cpu / mps / cuda")
+    parser.add_argument("--allow_remote_model_downloads", action="store_true")
+    parser.add_argument("--seed", type=int, default=0)
+    return parser
+
+
+def _run(args: argparse.Namespace) -> None:
+    import torch
+
+    from src.training.eval.bamboogle import load_bamboogle
+    from src.training.judge import SimulatedPreferenceJudge
+    from src.training.ppo.llm_grpo_trainer import LLMGRPOConfig, LLMGRPOTrainer
+
+    torch.manual_seed(args.seed)
+
+    examples = load_bamboogle(limit=args.limit)
+    prompts = [ex["question"] for ex in examples]
+    if not prompts:
+        raise SystemExit("No Bamboogle prompts loaded; check --limit / network.")
+
+    judge = SimulatedPreferenceJudge()
+    judge_fn = make_judge_fn(judge)
+
+    trainer = LLMGRPOTrainer.from_pretrained(
+        args.model,
+        judge_fn=judge_fn,
+        lr=args.lr,
+        config=LLMGRPOConfig(
+            num_rollouts=args.num_rollouts,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+        ),
+        device=args.device,
+        local_files_only=not args.allow_remote_model_downloads,
+    )
+
+    batches = cycle_prompt_batches(
+        prompts, steps=args.steps, batch_size=args.batch_prompts
+    )
+    reward_history: list[float] = []
+    print("step | mean_reward | rolling | mean_adv | mean_kl | clip_frac | loss")
+    for step, batch in enumerate(batches, 1):
+        metrics = trainer.step(batch, ground_truths=[""] * len(batch))
+        reward_history.append(metrics["mean_reward"])
+        rolling = sum(reward_history) / len(reward_history)
+        print(
+            f"{step:4d} | {metrics['mean_reward']:11.4f} | {rolling:7.4f} | "
+            f"{metrics['mean_advantage']:8.4f} | {metrics['mean_kl']:7.4f} | "
+            f"{metrics['clip_fraction']:9.4f} | {metrics['loss']:.4f}"
+        )
+
+
+def main() -> None:
+    args = _build_arg_parser().parse_args()
+    _run(args)
+
+
+if __name__ == "__main__":
+    main()

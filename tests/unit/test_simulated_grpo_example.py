@@ -60,3 +60,14 @@ def test_cycle_prompt_batches_single_prompt():
 def test_cycle_prompt_batches_rejects_bad_args(prompts, steps, batch):
     with pytest.raises(ValueError):
         cycle_prompt_batches(prompts, steps=steps, batch_size=batch)
+
+
+def test_help_runs_without_torch(monkeypatch):
+    """`--help` must exit cleanly and not require heavy imports at module top."""
+    import runpy
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["run_bamboogle_simulated_grpo", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("examples.run_bamboogle_simulated_grpo", run_name="__main__")
+    assert exc.value.code == 0
