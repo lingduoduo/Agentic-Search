@@ -23,6 +23,25 @@ _DEFAULT_ACTION_RE: re.Pattern[str] = re.compile(
 
 _DEFAULT_TERMINAL_ACTIONS: frozenset[str] = frozenset({"answer"})
 
+
+def _crop_prompt_ids(
+    full_ids: list[int], system_ids: list[int], budget: int
+) -> list[int]:
+    """Truncate `full_ids` to `budget` tokens, preserving the system prefix.
+
+    Under budget → returned unchanged. Over budget → keep `system_ids` at the
+    front and fill the remaining budget with the tail of `full_ids` (the most
+    recent tokens, ending with the generation cue).
+    """
+    if budget <= 0 or len(full_ids) <= budget:
+        return full_ids
+    if not system_ids:
+        return full_ids[-budget:]
+    if len(system_ids) >= budget:
+        return system_ids[-budget:]
+    return system_ids + full_ids[-(budget - len(system_ids)) :]
+
+
 # Signature: (turn_number, tool_name_or_None, doc_count) -> awaitable
 OnTurnCallback = Callable[[int, "str | None", int], Awaitable[None]]
 
@@ -174,7 +193,22 @@ class AgentLoopBase:
             None, lambda: self._build_prompt_ids_sync(messages)
         )
 
+    def _encode_system_prefix(self, messages: list[dict[str, Any]]) -> list[int]:
+        """Token ids of the leading system message's content, or [] if none.
+
+        Uses the raw content (not a lone chat-template render): it is simpler,
+        avoids template-specific behavior when a system message is rendered
+        alone, and still preserves the instruction text when the prompt is
+        cropped over budget.
+        """
+        if not messages or messages[0].get("role") != "system":
+            return []
+        if not hasattr(self.tokenizer, "encode"):
+            return []
+        return list(self.tokenizer.encode(messages[0].get("content", "")))
+
     def _build_prompt_ids_sync(self, messages: list[dict[str, Any]]) -> list[int]:
+        system_ids = self._encode_system_prefix(messages)
         chat_template = getattr(self.tokenizer, "chat_template", "__missing__")
         if hasattr(self.tokenizer, "apply_chat_template") and chat_template is not None:
             prompt_text = self.tokenizer.apply_chat_template(
@@ -182,12 +216,13 @@ class AgentLoopBase:
                 add_generation_prompt=True,
                 tokenize=False,
             )
-            prompt_ids = self.tokenizer.encode(prompt_text)
-            return list(prompt_ids)[-self.prompt_length :]
+            prompt_ids = list(self.tokenizer.encode(prompt_text))
+            return _crop_prompt_ids(prompt_ids, system_ids, self.prompt_length)
 
         joined = "\n".join(message.get("content", "") for message in messages)
         if hasattr(self.tokenizer, "encode"):
-            return list(self.tokenizer.encode(joined))[-self.prompt_length :]
+            prompt_ids = list(self.tokenizer.encode(joined))
+            return _crop_prompt_ids(prompt_ids, system_ids, self.prompt_length)
         raise TypeError(
             "tokenizer must implement apply_chat_template(...) or encode(...)."
         )
