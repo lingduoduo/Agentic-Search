@@ -2,7 +2,7 @@
 
 Date: 2026-07-09
 Status: Approved (brainstorming)
-Branch/PR: feat/simulated-grpo-demo (PR #388, added as related GRPO follow-on)
+Branch/PR: feat/reward-dimensions (split from PR #388 to keep each PR single-purpose)
 Related: [Simulated-Judge GRPO Demo](2026-07-09-simulated-grpo-demo-design.md)
 
 ## Problem
