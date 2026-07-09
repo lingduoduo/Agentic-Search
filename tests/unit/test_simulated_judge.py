@@ -1,5 +1,7 @@
 import pytest
 
+from src.agents.core.base import AgentLoopOutput
+from src.training.grpo import GRPORolloutSample, score_prompt_group
 from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement
 
 
@@ -69,3 +71,40 @@ def test_agreement_handles_empty_input():
     assert report["gap"] == 0.0
     assert report["n_correct"] == 0.0
     assert report["n_incorrect"] == 0.0
+
+
+def _fake_sample(group_id: str, idx: int, answer: str) -> GRPORolloutSample:
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        final_answer=answer,
+    )
+    return GRPORolloutSample(
+        group_id=group_id,
+        rollout_index=idx,
+        sampling_params={},
+        output=output,
+    )
+
+
+def test_sim_judge_drives_nondegenerate_grpo_advantages():
+    judge = SimulatedPreferenceJudge()
+    samples = [
+        _fake_sample("g", 0, "James Madison was the president at that time"),
+        _fake_sample("g", 1, ""),
+        _fake_sample("g", 2, "paris paris paris paris paris paris"),
+    ]
+    scored = score_prompt_group(
+        samples,
+        ground_truth="james madison",
+        judge_fn=lambda pred, gold: 0.0,
+        batch_judge_fn=judge.as_batch_judge_fn(),
+    )
+    advantages = [s.advantage for s in scored]
+    assert len(advantages) == 3
+    # Not all advantages collapse to zero — the judge produced a real spread.
+    assert any(abs(a) > 1e-6 for a in advantages)
+    # The empty answer must not be the best-advantaged rollout.
+    assert scored[1].advantage < max(advantages)
