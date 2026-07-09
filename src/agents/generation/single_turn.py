@@ -29,7 +29,7 @@ from src.agents.core.base import (
     register,
     simple_timer,
 )
-from src.context.search import AgentContext
+from src.context.search import AgentContext, citation_prefix
 from src.context.retrieval.client import SearchClient, SearchClientConfig
 
 logger = logging.getLogger(__name__)
@@ -206,7 +206,9 @@ class SingleTurnAgentLoop(AgentLoopBase):
         cfg = self.single_turn_config
         if not agent_ctx.turns:
             return prompt_messages
-        evidence = agent_ctx.turns[0].to_information_block(citation_prefix="R1Q1D")
+        evidence = agent_ctx.turns[0].to_information_block(
+            citation_prefix=citation_prefix(1, 1)
+        )
         obs = cfg.obs_template.format(content=evidence).strip()
         return prompt_messages + [
             {"role": "user", "content": f"{cfg.evidence_intro}{obs}"}
@@ -221,7 +223,9 @@ class SingleTurnAgentLoop(AgentLoopBase):
         """Tool-augmented: append the search action + observation as chat turns."""
         cfg = self.single_turn_config
         evidence = (
-            agent_ctx.turns[0].to_information_block(citation_prefix="R1Q1D")
+            agent_ctx.turns[0].to_information_block(
+                citation_prefix=citation_prefix(1, 1)
+            )
             if agent_ctx.turns
             else ""
         )

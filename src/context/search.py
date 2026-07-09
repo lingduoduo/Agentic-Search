@@ -9,9 +9,19 @@ from typing import Any
 _CITATION_RE = re.compile(r"\[R(\d+)Q(\d+)D(\d+)\]")
 
 
+def citation_prefix(round_idx: int, query_idx: int) -> str:
+    """Citation-label prefix for a (round, query): ``R{round}Q{query}D``."""
+    return f"R{round_idx}Q{query_idx}D"
+
+
+def citation_key(round_idx: int, query_idx: int, doc_idx: int) -> str:
+    """Full citation key ``R{round}Q{query}D{doc}`` (the string inside ``[...]``)."""
+    return f"{citation_prefix(round_idx, query_idx)}{doc_idx}"
+
+
 def _citation_keys(answer_text: str) -> set[str]:
     return {
-        f"R{int(m.group(1))}Q{int(m.group(2))}D{int(m.group(3))}"
+        citation_key(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         for m in _CITATION_RE.finditer(answer_text)
     }
 
@@ -179,7 +189,7 @@ class AgentContext:
         for round_idx, round_ctxs in enumerate(self.rounds, 1):
             for query_idx, ctx in enumerate(round_ctxs, 1):
                 for doc_idx in range(1, len(ctx.results) + 1):
-                    key = f"R{round_idx}Q{query_idx}D{doc_idx}"
+                    key = citation_key(round_idx, query_idx, doc_idx)
                     if key in referenced:
                         valid.add(key)
         return frozenset(valid)
@@ -193,7 +203,7 @@ class AgentContext:
         for round_idx, round_ctxs in enumerate(self.rounds, 1):
             for query_idx, ctx in enumerate(round_ctxs, 1):
                 for doc_idx, result in enumerate(ctx.results, 1):
-                    if f"R{round_idx}Q{query_idx}D{doc_idx}" in referenced:
+                    if citation_key(round_idx, query_idx, doc_idx) in referenced:
                         results.append(result)
         return results
 
@@ -206,7 +216,7 @@ class AgentContext:
         for round_idx, round_ctxs in enumerate(self.rounds, 1):
             for query_idx, ctx in enumerate(round_ctxs, 1):
                 if any(
-                    f"R{round_idx}Q{query_idx}D{doc_idx}" in referenced
+                    citation_key(round_idx, query_idx, doc_idx) in referenced
                     for doc_idx in range(1, len(ctx.results) + 1)
                 ):
                     contexts.append(ctx)

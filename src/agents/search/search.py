@@ -21,7 +21,12 @@ from src.agents.core.base import (
     register,
     simple_timer,
 )
-from src.context.search import AgentContext, SearchContext, SearchResult
+from src.context.search import (
+    AgentContext,
+    SearchContext,
+    SearchResult,
+    citation_prefix,
+)
 from src.training.evaluation import (
     SearchEvaluationConfig,
     SearchResultEvaluator,
@@ -654,7 +659,9 @@ class SearchAgentLoop(AgentLoopBase):
         for i, ctx in enumerate(search_contexts, 1):
             sections.append(f"Query {i}: {ctx.query}")
             sections.append(
-                ctx.to_information_block(citation_prefix=f"R{round_index}Q{i}D")
+                ctx.to_information_block(
+                    citation_prefix=citation_prefix(round_index, i)
+                )
             )
         return "\n".join(sections)
 
