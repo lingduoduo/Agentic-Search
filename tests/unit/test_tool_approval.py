@@ -244,12 +244,17 @@ async def test_batch_preflight_resolves_before_any_tool_executes_and_skips_conti
 
 
 @pytest.mark.asyncio
-async def test_failed_tool_retains_stop_behavior():
+async def test_failed_tool_feeds_error_back_and_continues():
     @FunctionTool.from_fn(effect=ToolEffect.READ_ONLY)
     def broken():
         raise ValueError("nope")
 
-    loop, manager = _loop([broken], ['{"name":"broken","arguments":{}}', "unused"])
+    loop, manager = _loop([broken], ['{"name":"broken","arguments":{}}', "recovered"])
     output = await loop.run([{"role": "user", "content": "go"}], {})
+    # Failure is recorded...
     assert _trace(output)[0]["status"] == str(TaskStatus.FAILED)
-    assert len(manager.prompts) == 1
+    # ...fed back into the next prompt...
+    assert "nope" in manager.prompts[-1]
+    # ...the loop continued (prompted again) and produced the recovery answer.
+    assert len(manager.prompts) == 2
+    assert output.final_answer == "recovered"

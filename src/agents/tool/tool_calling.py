@@ -290,6 +290,23 @@ class ToolAgentLoop(AgentLoopBase):
             error_message="Tool execution skipped because approval was not granted.",
         )
 
+    @staticmethod
+    def _tool_message_content(result: ToolExecutionResult) -> str:
+        """Serialize a tool result into the content of a role:"tool" message.
+
+        FAILED results are fed back to the model (with the error) so it can
+        self-correct, rather than aborting the run. COMPLETED and SKIPPED
+        formats are unchanged.
+        """
+        if result.status is TaskStatus.COMPLETED:
+            return str(result.result)
+        if result.status is TaskStatus.SKIPPED:
+            return json.dumps({"status": "skipped", "error_code": result.error_code})
+        payload = {"status": "failed", "error_code": result.error_code}
+        if result.error_message:
+            payload["error_message"] = result.error_message
+        return json.dumps(payload)
+
     async def run(
         self,
         messages: list[dict[str, Any]],
@@ -381,21 +398,11 @@ class ToolAgentLoop(AgentLoopBase):
                 for r in tool_execution_results:
                     await on_turn(assistant_turns, r.tool_name, 0)
 
-            if any(r.status is TaskStatus.FAILED for r in tool_execution_results):
-                break
-
             tool_responses = [
                 {
                     "role": "tool",
                     "content": self._truncate_tool_response(
-                        str(result.result)
-                        if result.status is TaskStatus.COMPLETED
-                        else json.dumps(
-                            {
-                                "status": "skipped",
-                                "error_code": result.error_code,
-                            }
-                        )
+                        self._tool_message_content(result)
                     ),
                 }
                 for result in tool_execution_results
