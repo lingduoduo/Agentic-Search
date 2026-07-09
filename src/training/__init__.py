@@ -15,6 +15,7 @@ try:
     from .reward import token_f1_score as token_f1_score
     from .sft import SFTExample as SFTExample
     from .sft import build_search_sft_example as build_search_sft_example
+    from .judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
     from .data import PromptBatch as PromptBatch
     from .data import PromptTrainingExample as PromptTrainingExample
     from .data import build_search_rag_record as build_search_rag_record
