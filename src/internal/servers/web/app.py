@@ -568,6 +568,7 @@ async def _run_search_agent(
     tokenizer,
     search_url: str,
     top_k: int,
+    history: list | None = None,
     on_turn=None,
     on_trace=None,
 ) -> tuple:
@@ -584,7 +585,7 @@ async def _run_search_agent(
         ),
     )
     output = await loop.run(
-        [{"role": "user", "content": query}],
+        _build_search_agent_messages(query, history or []),
         sampling_params={"temperature": 0.0, "max_tokens": 256},
         on_turn=on_turn,
         on_trace=on_trace,
@@ -842,6 +843,7 @@ async def _run_search_direct_or_escalate(
                 tokenizer=tokenizer,
                 search_url=search_url,
                 top_k=top_k,
+                history=history,
                 on_turn=on_turn,
                 on_trace=None,
             )
@@ -1462,6 +1464,7 @@ def create_web_app(
                         tokenizer=tokenizer,
                         search_url=search_url,
                         top_k=top_k,
+                        history=history,
                         on_turn=on_turn,
                         on_trace=on_trace,
                     )
