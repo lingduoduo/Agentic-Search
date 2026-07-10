@@ -54,6 +54,16 @@ class Tool(ABC):
         return ToolEffect.UNSPECIFIED
 
     @property
+    def citeable(self) -> bool:
+        """True if this tool produces citable documents."""
+        return False
+
+    @property
+    def stopping(self) -> bool:
+        """True if the loop should stop after this tool runs."""
+        return False
+
+    @property
     @abstractmethod
     def name(self) -> str: ...
 
@@ -100,11 +110,15 @@ class FunctionTool(Tool):
         description: str = "",
         parameters: dict[str, Any] | None = None,
         effect: ToolEffect = ToolEffect.UNSPECIFIED,
+        citeable: bool = False,
+        stopping: bool = False,
     ) -> None:
         super().__init__()
         self._fn = fn
         self._name = name or fn.__name__
         self._effect = effect
+        self._citeable = citeable
+        self._stopping = stopping
         self._schema = ToolSchema(
             name=self._name,
             description=description or (fn.__doc__ or "").strip(),
@@ -123,6 +137,14 @@ class FunctionTool(Tool):
     def effect(self) -> ToolEffect:
         return self._effect
 
+    @property
+    def citeable(self) -> bool:
+        return self._citeable
+
+    @property
+    def stopping(self) -> bool:
+        return self._stopping
+
     async def execute(
         self, instance_id: str, arguments: dict[str, Any]
     ) -> tuple[str, Any, Any]:
@@ -140,6 +162,8 @@ class FunctionTool(Tool):
         parameters: dict[str, Any] | None = None,
         name: str | None = None,
         effect: ToolEffect = ToolEffect.UNSPECIFIED,
+        citeable: bool = False,
+        stopping: bool = False,
     ) -> Callable:
         """Decorator factory that wraps a function as a FunctionTool."""
 
@@ -150,6 +174,8 @@ class FunctionTool(Tool):
                 description=description,
                 parameters=parameters,
                 effect=effect,
+                citeable=citeable,
+                stopping=stopping,
             )
 
         return decorator

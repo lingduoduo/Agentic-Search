@@ -467,6 +467,10 @@ class MultiQueryWebSearchTool(Tool):
     def schema(self) -> ToolSchema:
         return self._schema
 
+    @property
+    def citeable(self) -> bool:
+        return True
+
     async def execute(
         self, instance_id: str, arguments: dict[str, Any]
     ) -> tuple[str, Any, Any]:
@@ -529,6 +533,7 @@ def build_search_tool(
             "required": ["query"],
         },
         effect=ToolEffect.READ_ONLY,
+        citeable=True,
     )
 
 

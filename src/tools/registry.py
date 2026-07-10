@@ -134,6 +134,8 @@ class ToolRegistry:
         description: str = "",
         parameters: dict[str, Any] | None = None,
         effect: ToolEffect = ToolEffect.UNSPECIFIED,
+        citeable: bool = False,
+        stopping: bool = False,
     ) -> Any:
         """Decorator that registers a Python function as a tool.
 
@@ -157,6 +159,8 @@ class ToolRegistry:
                 description=resolved_desc,
                 parameters=resolved_params,
                 effect=effect,
+                citeable=citeable,
+                stopping=stopping,
             )
             self.register(t, source="function")
             return (
