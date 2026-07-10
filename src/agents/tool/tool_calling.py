@@ -55,7 +55,7 @@ from src.agents.core.base import (
 from src.agents.core.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
 from src.tools.base import Tool, ToolEffect
 from src.tools.parsers import FunctionCall, ToolParser
-from src.tools.validation import validate_arguments
+from src.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
@@ -133,8 +133,13 @@ class ToolAgentLoop(AgentLoopBase):
         )
         self.tool_config = cfg
         _tools = list(tools or [])
-        self.tools: dict[str, Tool] = {t.name: t for t in _tools}
-        self.tool_schemas: list[dict[str, Any]] = [t.schema.to_dict() for t in _tools]
+        # Per-loop registry: the single tool lookup + execution path (invoke).
+        self._registry = ToolRegistry()
+        for _t in _tools:
+            self._registry.register(_t)
+        self.tool_schemas: list[dict[str, Any]] = [
+            t.schema.to_dict() for t in self._registry.list_tools()
+        ]
         self.tool_parser: ToolParser = ToolParser.get_tool_parser(
             cfg.tool_parser_format, tokenizer
         )
@@ -185,35 +190,37 @@ class ToolAgentLoop(AgentLoopBase):
         return text[:half] + "...(truncated)..." + text[-half:]
 
     async def _call_tool(self, tool_call: FunctionCall) -> ToolExecutionResult:
-        """Execute one tool call and return a structured execution result."""
-        tool = instance_id = None
+        """Execute one tool call via the per-loop registry; return a structured result.
+
+        ``ToolRegistry.invoke`` is the single execution path — it looks up the
+        tool, validates arguments against the schema, and runs the
+        create/execute/release lifecycle. This adapts its ``(response, raw,
+        errors)`` tuple into the loop's ``ToolExecutionResult``.
+        """
         start = time.perf_counter()
+        args = tool_call.parsed_arguments()
         status = TaskStatus.FAILED
         result: Any = None
         error_code: str | None = None
         error_message: str | None = None
-        elapsed = 0.0
-        args = tool_call.parsed_arguments()
         try:
-            tool = self.tools[tool_call.name]
-            errors = validate_arguments(tool.schema.parameters, args)
+            response, _raw, errors = await self._registry.invoke(tool_call.name, args)
             if errors:
-                error_code = "invalid_arguments"
+                error_code = (
+                    "tool_not_found"
+                    if self._registry.get(tool_call.name) is None
+                    else "invalid_arguments"
+                )
                 error_message = "; ".join(errors)
             else:
-                instance_id = await tool.create()
-                result, _, _ = await tool.execute(instance_id, args)
-                elapsed = time.perf_counter() - start
+                result = response
                 status = TaskStatus.COMPLETED
                 self._record_tool_stage(tool_call.name, args, result)
         except Exception as exc:
-            elapsed = time.perf_counter() - start
             logger.exception("Error executing tool %r: %s", tool_call.name, exc)
             error_code = type(exc).__name__
             error_message = str(exc)
-        finally:
-            if tool is not None and instance_id is not None:
-                await tool.release(instance_id)
+        elapsed = time.perf_counter() - start
         return ToolExecutionResult(
             tool_name=tool_call.name,
             status=status,
@@ -233,7 +240,7 @@ class ToolAgentLoop(AgentLoopBase):
         on_approval: ToolApprovalCallback | None,
         metrics: dict[str, float],
     ) -> ApprovalDecision:
-        tool = self.tools.get(tool_call.name)
+        tool = self._registry.get(tool_call.name)
         if tool is not None and tool.effect is ToolEffect.READ_ONLY:
             return ApprovalDecision.APPROVE
 
