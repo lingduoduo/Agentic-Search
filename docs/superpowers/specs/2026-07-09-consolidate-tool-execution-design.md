@@ -2,8 +2,8 @@
 
 Date: 2026-07-09
 Status: Approved (brainstorming)
-Branch/PR: feat/validate-tool-arguments (extends PR #397)
-Related: [[project_chat_orchestration]] (tool sub-item), builds on the #397 validation work
+Branch/PR: refactor/tool-execution-per-loop-registry (follow-up to the merged #397)
+Related: [[project_chat_orchestration]] (tool sub-item), builds on the merged #397 validation work
 
 ## Problem
 
