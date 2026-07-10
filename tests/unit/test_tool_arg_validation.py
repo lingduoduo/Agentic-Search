@@ -56,3 +56,25 @@ async def test_wrong_type_argument_not_executed():
     result = _trace(output)[0]
     assert result["error_code"] == "invalid_arguments"
     assert executions == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_reports_not_found():
+    from src.agents import ApprovalDecision
+
+    @FunctionTool.from_fn(effect=ToolEffect.READ_ONLY, parameters=_INT_SCHEMA)
+    def needs_int(value: int):
+        return value
+
+    async def approve(_request):
+        return ApprovalDecision.APPROVE
+
+    # Model calls a tool not registered in the loop; force it past approval so it
+    # reaches _call_tool, where the registry reports it as not found.
+    loop, _ = _loop([needs_int], ['{"name":"ghost","arguments":{}}', "done"])
+    output = await loop.run(
+        [{"role": "user", "content": "go"}], {}, on_approval=approve
+    )
+    result = _trace(output)[0]
+    assert result["status"] == str(TaskStatus.FAILED)
+    assert result["error_code"] == "tool_not_found"
