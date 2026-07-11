@@ -15,6 +15,7 @@ This implementation uses the repo's own types:
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter
@@ -44,6 +45,30 @@ logger = logging.getLogger(__name__)
 _MAX_QUERY_FOR_FLOW_CLASSIFICATION = 200
 
 
+def _build_flow_classifier_llm():
+    """Build the env-configured LLM for search-flow classification, or None.
+
+    Returns ``None`` when no LLM is configured so the endpoint can safely default
+    to chat instead of guessing. (The prior implementation hardcoded a stub that
+    always returned ``"search"``, making the endpoint constant.)
+    """
+    api_key = os.environ.get("GEN_AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    from src.internal.llm.interfaces import LLMConfig
+    from src.internal.llm.providers import OpenAICompatibleLLM
+
+    return OpenAICompatibleLLM(
+        LLMConfig(
+            model_provider=os.environ.get("GEN_AI_MODEL_PROVIDER", "openai"),
+            model_name=os.environ.get("GEN_AI_MODEL_VERSION", "gpt-4o-mini"),
+            api_key=api_key,
+            api_base=os.environ.get("GEN_AI_API_BASE"),
+            max_input_tokens=int(os.environ.get("GEN_AI_MAX_INPUT_TOKENS", "8192")),
+        )
+    )
+
+
 def create_search_router(
     store: AgenticSearchStore,
     *,
@@ -70,16 +95,13 @@ def create_search_router(
         if len(query) > _MAX_QUERY_FOR_FLOW_CLASSIFICATION:
             return SearchFlowClassificationResponse(is_search_flow=False)
 
-        try:
-            # classify_is_search_flow requires an LLM; return False (chat) if
-            # no LLM is configured (llm=None passed as None → uses default NoOp).
-            # Here we call it directly — callers can inject an LLM-enabled
-            # version by wiring a real LLMClient via the factory.
-            class _NoOpLLM:
-                def complete(self, messages, **_):
-                    return "search"
+        llm = _build_flow_classifier_llm()
+        if llm is None:
+            # No LLM configured → cannot classify by content; default to chat.
+            return SearchFlowClassificationResponse(is_search_flow=False)
 
-            is_search = classify_is_search_flow(query, _NoOpLLM())
+        try:
+            is_search = classify_is_search_flow(query, llm)
         except Exception:
             logger.exception(
                 "Search flow classification failed; defaulting to chat flow"
