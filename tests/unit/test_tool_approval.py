@@ -244,6 +244,33 @@ async def test_batch_preflight_resolves_before_any_tool_executes_and_skips_conti
 
 
 @pytest.mark.asyncio
+async def test_final_answer_recorded_on_assistant_turn_cap():
+    """A cap firing on the first generated turn must still surface final_answer."""
+    loop, _ = _loop([], ["the answer"], max_assistant_turns=1)
+    output = await loop.run([{"role": "user", "content": "go"}], {})
+
+    assert output.final_answer == "the answer"
+    assert output.trajectory_messages[-1] == {
+        "role": "assistant",
+        "content": "the answer",
+    }
+
+
+@pytest.mark.asyncio
+async def test_final_answer_recorded_on_response_length_cap():
+    """A response-length cap on the first turn must still surface final_answer."""
+    tokenizer = _Tokenizer()
+    manager = _Manager(tokenizer, ["hello"])
+    # "hello" encodes to 5 tokens; response_length=5 lets the full answer through
+    # and then trips the length cap on the same turn.
+    loop = ToolAgentLoop(tokenizer, manager, [], ToolAgentLoopConfig(response_length=5))
+    output = await loop.run([{"role": "user", "content": "go"}], {})
+
+    assert output.final_answer == "hello"
+    assert output.trajectory_messages[-1]["content"] == "hello"
+
+
+@pytest.mark.asyncio
 async def test_failed_tool_feeds_error_back_and_continues():
     @FunctionTool.from_fn(effect=ToolEffect.READ_ONLY)
     def broken():

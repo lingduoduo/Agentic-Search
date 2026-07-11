@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import MagicMock
 
 
+from src.internal.chat import queue_manager as qm
 from src.internal.chat.queue_manager import AgentQueueManager, AgentThought, QueueEvent
 from src.internal.configs.constants import InvokeFrom
 
@@ -129,6 +130,33 @@ def test_set_stop_flag_ignores_wrong_owner():
     )
 
     redis.setex.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Self-detected stop / timeout are delivered to the consumer
+# ---------------------------------------------------------------------------
+
+
+def test_listen_yields_stop_event_when_stopped(monkeypatch):
+    """A stop detected inside listen() must be yielded, not just enqueued."""
+    mgr = _manager()
+    task_id = uuid.uuid4()
+    monkeypatch.setattr(mgr, "_is_stopped", lambda _tid: True)
+
+    events = list(mgr.listen(task_id))
+
+    assert events[-1].event == QueueEvent.STOP
+
+
+def test_listen_yields_timeout_event_when_timed_out(monkeypatch):
+    """A timeout detected inside listen() must be yielded, not just enqueued."""
+    mgr = _manager()
+    task_id = uuid.uuid4()
+    monkeypatch.setattr(qm, "_LISTEN_TIMEOUT_SECONDS", 0)
+
+    events = list(mgr.listen(task_id))
+
+    assert events[-1].event == QueueEvent.TIMEOUT
 
 
 # ---------------------------------------------------------------------------

@@ -301,7 +301,7 @@ class AgenticRAGLoop:
                 )
                 if sufficient:
                     break
-                follow_ups = self._generate_followup(question, merged)
+                follow_ups = await self._generate_followup(question, merged)
                 novel_follow_ups = _dedupe_novel(follow_ups, seen_queries)
                 if not novel_follow_ups:
                     break
@@ -355,7 +355,7 @@ class AgenticRAGLoop:
             logger.warning("Sufficiency check failed or timed out: %s", exc)
             return True  # fail-open → stop looping on error/timeout
 
-    def _generate_followup(
+    async def _generate_followup(
         self, question: str, context: SearchContextBundle
     ) -> list[str]:
         if self.llm is None:
@@ -365,10 +365,14 @@ class AgenticRAGLoop:
             context=context.to_context_text()[:1000],
         )
         try:
-            raw = _llm_text(
-                self.llm.complete([ChatMessage(role="user", content=prompt)])
-            ).strip()
-            return _parse_gap_queries(raw)
-        except Exception as exc:
-            logger.warning("Gap analysis failed: %s", exc)
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.llm.complete,
+                    [ChatMessage(role="user", content=prompt)],
+                ),
+                timeout=self.config.sufficiency_timeout_s,
+            )
+            return _parse_gap_queries(_llm_text(response).strip())
+        except Exception as exc:  # includes asyncio.TimeoutError
+            logger.warning("Gap analysis failed or timed out: %s", exc)
             return []

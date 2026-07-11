@@ -141,11 +141,13 @@ class AgentQueueManager:
                 last_ping_bucket = ping_bucket
 
             if elapsed >= _LISTEN_TIMEOUT_SECONDS:
-                self.publish(task_id, self._event(task_id, QueueEvent.TIMEOUT))
+                # Yield directly: publish() enqueues onto this same queue, which
+                # we never re-read because we break immediately after.
+                yield self._event(task_id, QueueEvent.TIMEOUT)
                 break
 
             if self._is_stopped(task_id):
-                self.publish(task_id, self._event(task_id, QueueEvent.STOP))
+                yield self._event(task_id, QueueEvent.STOP)
                 break
 
     def stop_listen(self, task_id: UUID) -> None:
