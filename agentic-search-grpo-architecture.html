@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Agentic Search — Full Architecture</title>
+<title>Agentic Search — Architecture</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -33,12 +33,12 @@
   <div class="pulse-dot"></div>
   <div>
     <h1>Agentic Search</h1>
-    <div class="subtitle">Retrieval-Backed Agent Platform · FastAPI :7860 · Retrieval :8000 · Vite :5173 · Python 3.10+ · MIT License · lingduoduo/Agentic-Search-GRPO</div>
+    <div class="subtitle">Retrieval-Backed Agent Platform · FastAPI :7860 · Retrieval :8000 · Vite :5173 · Python 3.10+ · SQLite · MIT License · lingduoduo/Agentic-Search-GRPO</div>
   </div>
 </div>
 
 <div class="diagram-card">
-<svg viewBox="0 0 1360 1080" xmlns="http://www.w3.org/2000/svg" width="1360" height="1080">
+<svg viewBox="0 0 1300 980" xmlns="http://www.w3.org/2000/svg" width="1300" height="980">
 <defs>
   <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0L0 0 0 40" fill="none" stroke="#1e293b" stroke-width=".5"/></pattern>
   <marker id="a"     markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,9 3,0 6" fill="#475569"/></marker>
@@ -50,279 +50,268 @@
   <marker id="arose" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,9 3,0 6" fill="#fb7185"/></marker>
 </defs>
 
-<rect width="1360" height="1080" fill="#020617"/>
-<rect width="1360" height="1080" fill="url(#grid)"/>
+<rect width="1300" height="980" fill="#020617"/>
+<rect width="1300" height="980" fill="url(#grid)"/>
 
 <!-- ═══ ZONE OUTLINES ═══ -->
-<rect x="28" y="28" width="1304" height="88" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="44" y="20" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">Entry Points · Vite :5173  web/  · CLI examples/ · tests/ unit+integration · pyproject.toml · .claude/</text>
+<!-- Entry row -->
+<rect x="28" y="28" width="1244" height="86" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="20" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">Entry Points  ·  Vite :5173  web/  ·  CLI examples/  ·  tests/unit  tests/integration</text>
 
-<rect x="28" y="138" width="696" height="392" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="44" y="130" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9">FastAPI Backend · src/backend/servers/web/app.py · self-contained router factories · SQLite only (no Postgres/Redis/Celery)</text>
+<!-- FastAPI backend -->
+<rect x="28" y="136" width="616" height="382" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="128" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9">FastAPI Backend  :7860  ·  src/backend/servers/web/app.py  ·  self-contained router factories</text>
 
-<rect x="744" y="138" width="588" height="200" rx="10" fill="none" stroke="#34d399" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="760" y="130" fill="#34d399" font-family="'JetBrains Mono',monospace" font-size="9">Retrieval Server :8000 · src/backend/servers/retrieval/ · src/retrieval/ · src/internal/retrieval/</text>
+<!-- Retrieval server -->
+<rect x="664" y="136" width="608" height="200" rx="10" fill="none" stroke="#34d399" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="680" y="128" fill="#34d399" font-family="'JetBrains Mono',monospace" font-size="9">Retrieval Server  :8000  ·  src/backend/servers/retrieval/  ·  src/retrieval/</text>
 
-<rect x="744" y="358" width="588" height="172" rx="10" fill="none" stroke="#fbbf24" stroke-width="1.6" stroke-dasharray="7,4"/>
-<text x="760" y="350" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">Query Transform Pipeline · src/context/query_transform.py · src/internal/retrieval/ (backend-only, no HTTP endpoint)</text>
+<!-- Agent loops -->
+<rect x="28" y="538" width="616" height="176" rx="10" fill="none" stroke="#a78bfa" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="530" fill="#a78bfa" font-family="'JetBrains Mono',monospace" font-size="9">Agent Loops  ·  src/agents/  ·  src/tools/  ·  src/context/</text>
 
-<rect x="28" y="552" width="696" height="170" rx="10" fill="none" stroke="#a78bfa" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="44" y="544" fill="#a78bfa" font-family="'JetBrains Mono',monospace" font-size="9">Agent Loops · src/agents/ · src/tools/ · src/context/ · ReAct XML protocol</text>
+<!-- RL training -->
+<rect x="664" y="356" width="608" height="180" rx="10" fill="none" stroke="#fb923c" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="680" y="348" fill="#fb923c" font-family="'JetBrains Mono',monospace" font-size="9">RL Training  ·  src/training/  ·  src/model/</text>
 
-<rect x="744" y="552" width="588" height="170" rx="10" fill="none" stroke="#fb923c" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="760" y="544" fill="#fb923c" font-family="'JetBrains Mono',monospace" font-size="9">RL Training · src/training/ · src/model/ · models/ · generated/ · data/ · feedback-driven GRPO + SFT warm-start</text>
+<!-- Connectors + workers -->
+<rect x="28" y="734" width="616" height="132" rx="10" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="44" y="726" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="9">Connectors + Background Workers  ·  src/backend/connectors/  ·  servers/backgroundworker/</text>
 
-<rect x="28" y="744" width="696" height="132" rx="10" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="44" y="736" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="9">Connectors + Background Workers · src/backend/connectors/ · servers/backgroundworker/</text>
-
-<rect x="744" y="744" width="588" height="132" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.6" stroke-dasharray="7,4"/>
-<text x="760" y="736" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">Vite Frontend UX · web/src/ · SSE streaming · Source cards · Feedback loop</text>
-
-<rect x="28" y="898" width="1304" height="104" rx="10" fill="none" stroke="#475569" stroke-width="1.4" stroke-dasharray="7,4"/>
-<text x="44" y="890" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9">Persistence · Observability · Feature Flags · src/backend/db/ · observability/ · feature_flags/ · MCP Server (src/mcp_server/) · .claude/</text>
+<!-- Persistence -->
+<rect x="664" y="556" width="608" height="310" rx="10" fill="none" stroke="#475569" stroke-width="1.4" stroke-dasharray="7,4"/>
+<text x="680" y="548" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9">Persistence · Cache · Observability · Auth  ·  src/backend/db/  observability/  feature_flags/  auth/</text>
 
 <!-- ═══ ARROWS ═══ -->
-<line x1="360" y1="116" x2="360" y2="138" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#acyan)"/>
-<line x1="980" y1="116" x2="980" y2="138" stroke="#34d399" stroke-width="1.4" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
-<line x1="724" y1="290" x2="744" y2="270" stroke="#34d399" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#agrn)"/>
-<line x1="724" y1="350" x2="744" y2="420" stroke="#fbbf24" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#aamb)"/>
-<line x1="360" y1="530" x2="360" y2="552" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#avio)"/>
-<line x1="724" y1="640" x2="744" y2="640" stroke="#fb923c" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#aorg)"/>
-<line x1="360" y1="722" x2="360" y2="744" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#aamb)"/>
-<line x1="1038" y1="722" x2="1038" y2="744" stroke="#22d3ee" stroke-width="1.2" marker-end="url(#acyan)"/>
-<line x1="360" y1="876" x2="360" y2="898" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
-<line x1="1038" y1="876" x2="1038" y2="898" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
-<!-- feedback → GRPO loop -->
-<path d="M 1295 872 Q 1330 850 1330 640 Q 1330 560 1295 555" fill="none" stroke="#fb923c" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#aorg)"/>
-<text x="1335" y="720" fill="#fb923c" font-family="'JetBrains Mono',monospace" font-size="8" transform="rotate(90,1335,720)">feedback → GRPO</text>
-<!-- QT pipeline feeds RetrievalService -->
-<line x1="980" y1="530" x2="980" y2="552" stroke="#a78bfa" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#avio)"/>
+<line x1="320" y1="114" x2="320" y2="136" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#acyan)"/>
+<line x1="880" y1="114" x2="880" y2="136" stroke="#34d399" stroke-width="1.4" stroke-dasharray="5,3" marker-end="url(#agrn)"/>
+<line x1="644" y1="260" x2="664" y2="240" stroke="#34d399" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#agrn)"/>
+<line x1="320" y1="518" x2="320" y2="538" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#avio)"/>
+<line x1="644" y1="430" x2="664" y2="460" stroke="#fb923c" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#aorg)"/>
+<line x1="320" y1="714" x2="320" y2="734" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#aamb)"/>
+<line x1="320" y1="866" x2="640" y2="740" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
+<line x1="880" y1="536" x2="880" y2="556" stroke="#475569" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a)"/>
+<line x1="200" y1="518" x2="200" y2="356" stroke="#475569" stroke-width="1.1" marker-end="url(#a)"/>
 
 <!-- ═══ ENTRY ROW ═══ -->
-<rect x="38" y="40" width="168" height="62" rx="6" fill="#0f172a"/>
-<rect x="38" y="40" width="168" height="62" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="122" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Vite Frontend</text>
-<text x="122" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">web/  npm run dev  :5173</text>
-<text x="122" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">proxies /api/* → :7860</text>
+<rect x="38" y="42" width="160" height="58" rx="6" fill="#0f172a"/>
+<rect x="38" y="42" width="160" height="58" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="118" y="63" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Vite Frontend</text>
+<text x="118" y="78" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">web/  npm run dev  :5173</text>
+<text x="118" y="90" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">proxies /api/* → :7860</text>
 
-<rect x="220" y="40" width="236" height="62" rx="6" fill="#0f172a"/>
-<rect x="220" y="40" width="236" height="62" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="338" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">CLI  (examples/)</text>
-<text x="338" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_agentic_search: single|search|tool</text>
-<text x="338" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_grpo · run_sft_grpo · run_feedback_grpo</text>
+<rect x="212" y="42" width="260" height="58" rx="6" fill="#0f172a"/>
+<rect x="212" y="42" width="260" height="58" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="342" y="63" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">CLI  (examples/)</text>
+<text x="342" y="78" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_agentic_search: single|search|tool  --local --device cpu</text>
+<text x="342" y="90" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_search_trace_workflow [--sft]  run_grpo_training_pipeline</text>
 
-<rect x="470" y="40" width="280" height="62" rx="6" fill="#0f172a"/>
-<rect x="470" y="40" width="280" height="62" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="610" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Datasets · Intent · Tests</text>
-<text x="610" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">prepare_search_qa/rag · run_intent_training</text>
-<text x="610" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">tests/unit/  tests/integration/  bin/generate_training_data.sh</text>
+<rect x="486" y="42" width="280" height="58" rx="6" fill="#0f172a"/>
+<rect x="486" y="42" width="280" height="58" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="626" y="63" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Datasets · Intent · Config</text>
+<text x="626" y="78" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">prepare_search_qa_dataset  prepare_search_rag_dataset</text>
+<text x="626" y="90" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_intent_training generate|train  ·  GEN_AI_*  AGENTIC_SEARCH_*</text>
 
-<rect x="764" y="40" width="260" height="62" rx="6" fill="#0f172a"/>
-<rect x="764" y="40" width="260" height="62" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="894" y="57" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW</text>
-<text x="894" y="68" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">MCP Server</text>
-<text x="894" y="82" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/mcp_server/ · stdio transport</text>
-<text x="894" y="94" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">retrieve · search-index · list-documents tools</text>
+<rect x="780" y="42" width="248" height="58" rx="6" fill="#0f172a"/>
+<rect x="780" y="42" width="248" height="58" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="904" y="63" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Tests</text>
+<text x="904" y="78" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">tests/unit/: billing · hooks · license · middleware</text>
+<text x="904" y="90" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">reward · GRPO · llm_agent_gen · tier · expiry (18 stages)</text>
 
-<rect x="1038" y="40" width="282" height="62" rx="6" fill="#0f172a"/>
-<rect x="1038" y="40" width="282" height="62" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="1179" y="62" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Config &amp; Dev</text>
-<text x="1179" y="77" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">.claude/  pyproject.toml  pre-commit</text>
-<text x="1179" y="89" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GEN_AI_MODEL_PROVIDER · GEN_AI_API_KEY · .gitguardian</text>
+<rect x="1042" y="42" width="222" height="58" rx="6" fill="#0f172a"/>
+<rect x="1042" y="42" width="222" height="58" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="1153" y="63" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700" text-anchor="middle">Config &amp; Dev</text>
+<text x="1153" y="78" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">.claude/  pyproject.toml  pre-commit</text>
+<text x="1153" y="90" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AGENTIC_SEARCH_AUTH_SECRET  WEB_DOMAIN  .gitguardian</text>
 
 <!-- ═══ FASTAPI BACKEND ═══ -->
-<rect x="38" y="150" width="676" height="160" rx="6" fill="#0f172a"/>
-<rect x="38" y="150" width="676" height="160" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="376" y="170" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Chat Pipeline · src/backend/chat/</text>
-<text x="376" y="187" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">process_message → run_llm_loop → run_llm_step → LlmStepResult · streaming multi-turn</text>
-<text x="376" y="201" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">DynamicCitationProcessor: REMOVE/KEEP/HYPERLINK · compress_chat_history (token-budget, branch-aware)</text>
-<text x="376" y="214" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Emitter: tokens/tool-calls/citations → HTTP stream · AgentQueueManager → on_turn → SSE progress event</text>
-<text x="376" y="227" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">build_system_prompt: persona+tools+knowledge+memory · build_search_agent_instruction (ReAct)</text>
-<text x="376" y="240" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">LLM: OpenAICompatibleLLM · VLLMServerManager · LocalServerManager (Qwen/Llama/Mistral CPU|GPU)</text>
-<text x="376" y="253" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">classify_is_search_flow (binary LLM router) · IntentPipeline: purchase/navigate/qa/rec → tier</text>
-<text x="376" y="266" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent · POST /api/agent/stream (SSE: progress→answer→done→error{type,detail})</text>
-<text x="376" y="279" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/feedback · GET /api/sessions · GET /health · GET /settings (no auth)</text>
-<text x="376" y="292" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GEN_AI_MODEL_PROVIDER · GEN_AI_MODEL_VERSION · GEN_AI_API_KEY · GEN_AI_API_BASE</text>
-<text x="376" y="305" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">KEYWORD_EXPANSION_PROMPT · QUERY_TYPE_PROMPT · prompts/chat_prompts.py · AGENTIC_SEARCH_RETRIEVAL_URL</text>
+<!-- Chat Pipeline -->
+<rect x="38" y="150" width="594" height="158" rx="6" fill="#0f172a"/>
+<rect x="38" y="150" width="594" height="158" rx="6" fill="rgba(8,51,68,.45)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="335" y="170" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Chat Pipeline  (src/backend/chat/)</text>
+<text x="335" y="186" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">process_message → run_llm_loop → run_llm_step → LlmStepResult  ·  streaming multi-turn</text>
+<text x="335" y="200" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">DynamicCitationProcessor: REMOVE / KEEP / HYPERLINK  ·  streams tokens, extracts citation markers inline</text>
+<text x="335" y="213" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">compress_chat_history: summarises older turns at token budget; branch-aware  ·  Emitter: routes packets to HTTP stream</text>
+<text x="335" y="226" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">build_system_prompt: persona + tools + knowledge + memory  ·  save_chat_turn: persists session via AgenticSearchStore</text>
+<text x="335" y="239" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">LLM backends (src/backend/llm/): OpenAICompatibleLLM · VLLMServerManager · LocalServerManager (Qwen/Llama/Mistral)</text>
+<text x="335" y="252" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">classify_is_search_flow (binary LLM router; defaults to chat)  ·  IntentPipeline: purchase/navigate/qa/rec → tier</text>
+<text x="335" y="265" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GEN_AI_MODEL_PROVIDER · GEN_AI_MODEL_VERSION · GEN_AI_API_KEY · GEN_AI_API_BASE</text>
+<text x="335" y="278" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">KEYWORD_EXPANSION_PROMPT · QUERY_TYPE_PROMPT · chat_prompts.py · build_search_agent_instruction (ReAct)</text>
+<text x="335" y="291" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /api/agent  ·  GET /api/sessions  ·  GET /health  ·  GET /settings (no auth)  ·  AGENTIC_SEARCH_RETRIEVAL_URL</text>
+<text x="335" y="300" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/backend/prompts/: citation reminders · system defaults · file/image/tool templates · decompose (2–4 sub-questions) · HyDE</text>
 
-<rect x="38" y="324" width="676" height="118" rx="6" fill="#0f172a"/>
-<rect x="38" y="324" width="676" height="118" rx="6" fill="rgba(8,51,68,.4)" stroke="#22d3ee" stroke-width="1.6"/>
-<text x="376" y="344" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">API Surface · Auth · Access · src/backend/servers/ auth/ access/</text>
-<text x="376" y="360" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">query_and_chat/ · analytics/ (CSV export) · billing/ (Stripe) · reporting/ (ZIP) · hooks/ (SSRF-safe)</text>
-<text x="376" y="374" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">middleware/: license gate · tier gate · tenant tracking · scim/: SCIM 2.0 · oauth/: OAuth 2.0 flow</text>
-<text x="376" y="387" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">tenants/: multi-tenant · documents/: connector-credential pairs · admin/token-rate-limits · admin/web-search</text>
-<text x="376" y="400" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">JWT · generate_user_jwt_token · RSA license sig · ExpiryWarningStage (18 stages) · AGENTIC_SEARCH_AUTH_SECRET</text>
-<text x="376" y="413" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">feature_flags/: Env→PostHog chain · is_feature_enabled · Permission-Aware Retrieval ACL prefiltering</text>
-<text x="376" y="426" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GET /license · /license/seats · SCIM /v2/Users · /v2/Groups · AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED</text>
-<text x="376" y="439" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AGENTIC_SEARCH_SUPER_USERS · AGENTIC_SEARCH_WEB_DB_PATH=:memory: · AGENTIC_SEARCH_DATA_DIR</text>
+<!-- API Surface / Auth -->
+<rect x="38" y="322" width="594" height="106" rx="6" fill="#0f172a"/>
+<rect x="38" y="322" width="594" height="106" rx="6" fill="rgba(8,51,68,.4)" stroke="#22d3ee" stroke-width="1.6"/>
+<text x="335" y="342" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">API Surface · Auth · Access  (src/backend/servers/  auth/  access/)</text>
+<text x="335" y="358" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">query_and_chat/: search + chat  ·  analytics/ (CSV export)  ·  billing/ (Stripe proxy)  ·  reporting/ (ZIP)</text>
+<text x="335" y="372" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">middleware/: license gate · tier gate · tenant tracking  ·  scim/: SCIM 2.0 Users &amp; Groups  ·  oauth/: OAuth 2.0 flow</text>
+<text x="335" y="385" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">hooks/: SSRF-safe outbound webhooks  ·  tenants/: multi-tenant  ·  documents/: connector-credential pairs</text>
+<text x="335" y="398" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">JWT · generate_user_jwt_token  ·  RSA license sig  ·  ExpiryWarningStage (18 stages)  ·  AGENTIC_SEARCH_AUTH_SECRET</text>
+<text x="335" y="411" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">feature_flags/: EnvProvider → PostHogProvider chain  ·  StaticProvider (tests)  ·  Permission-Aware Retrieval ACL</text>
+<text x="335" y="421" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GET /license · /license/seats  ·  SCIM /v2/Users · /v2/Groups  ·  admin/token-rate-limits  admin/web-search/search-providers</text>
 
 <!-- ═══ RETRIEVAL SERVER ═══ -->
-<rect x="754" y="150" width="568" height="196" rx="6" fill="#0f172a"/>
-<rect x="754" y="150" width="568" height="196" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
-<text x="1038" y="170" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Dense · Sparse · Hybrid · Web Search · Neural Reranking</text>
-<text x="1038" y="187" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">demo.py (TF-IDF) · retrieval.py (BM25/E5/BGE FAISS) · retrieval_rerank.py · hybrid_rerank.py (recommended)</text>
-<text x="1038" y="201" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">google.py (CSE) · serp.py (SerpAPI) · browser.py (playwright ~5–10s) · Brave · SearXNG · Firecrawl/Exa</text>
-<text x="1038" y="215" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">POST /retrieve · POST /search · GET /health · --hybrid_alpha 0.5 · --device cpu|cuda · BM25 needs Java/Pyserini</text>
-<text x="1038" y="228" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">index_builder.py: FAISS Flat + BM25 from corpus.jsonl · indexing_pipeline.py async background · admin/web-search</text>
-<text x="1038" y="241" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Reranker.from_env(): BAAI/bge-reranker-v2-m3 · cross-encoder/ms-marco · Cohere v3/v4 · appends +reranked</text>
-<text x="1038" y="254" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AsyncReranker (ThreadPoolExecutor · RERANKER_TIMEOUT_MS) · CachedReranker (Redis sha256 · stats hits/misses)</text>
-<text x="1038" y="267" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">TwoStageReranker (fast pre-filter N → heavy M · RERANKER_TWO_STAGE=true) · ONNXReranker (RERANKER_USE_ONNX)</text>
-<text x="1038" y="280" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">PassageTruncator (RERANKER_MAX_TOKENS) · RerankerBenchmark: offline NDCG@k grid · Vespa document_index/</text>
-<text x="1038" y="293" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">RERANKER_PROVIDER · RERANKER_CACHE_REDIS_URL · GOOGLE_API_KEY · SERP_API_KEY · GOOGLE_CSE_ID</text>
-<text x="1038" y="306" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">conda install faiss-cpu (Apple Silicon) · indexes/ · data/corpus.jsonl · data/wiki-18.jsonl</text>
-<text x="1038" y="335" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">↓ QueryTransformPipeline runs inside RetrievalService.from_env()</text>
-
-<!-- ═══ QUERY TRANSFORM PIPELINE ═══ -->
-<rect x="754" y="368" width="568" height="150" rx="6" fill="#0f172a"/>
-<rect x="754" y="368" width="568" height="150" rx="6" fill="rgba(120,53,15,.3)" stroke="#fbbf24" stroke-width="1.8"/>
-<text x="770" y="383" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW · src/context/query_transform.py  +  src/internal/retrieval/</text>
-<text x="1038" y="395" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">QueryEnhancer + QueryTransformPipeline</text>
-<text x="1038" y="411" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">QueryEnhancer (src/context/query_enhancer.py): decompose() · hyde() · step_back() · enhance() → QueryBundle</text>
-<text x="1038" y="425" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Every method fallback-safe (returns original query / None without LLM) · expand_keywords: BM25 leg synonym expansion</text>
-<text x="1038" y="438" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">QueryTransformPipeline: composes all transforms → TransformedQueryBundle · bundle.retrieval_variants() dedup + keep orig last</text>
-<text x="1038" y="451" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">RetrievalService.search(pipeline=...): parallel variant retrieval → rrf_fuse · appends +rag_fusion to retrieval_mode</text>
-<text x="1038" y="464" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AsyncQTPipeline (ThreadPoolExecutor · QT_TRANSFORM_TIMEOUT_MS graceful degrade · QT_ASYNC=true)</text>
-<text x="1038" y="477" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">CachedQTPipeline: Redis sha256(query|config_sig) · filter-free bundle cache · QT_CACHE_REDIS_URL</text>
-<text x="1038" y="490" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">MultiQueryGenerator: N paraphrases (QT_MULTI_QUERY · QT_MULTI_QUERY_N) · QueryRouter (QT_ROUTER)</text>
-<text x="1038" y="503" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">All QT_* env vars default false (zero overhead when disabled) · Test: retrieval_mode suffix → +rag_fusion</text>
+<rect x="674" y="150" width="588" height="192" rx="6" fill="#0f172a"/>
+<rect x="674" y="150" width="588" height="192" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.6"/>
+<text x="968" y="170" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Dense · Sparse · Hybrid · Web Search</text>
+<text x="968" y="186" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">demo.py (TF-IDF, no Java)  ·  retrieval.py (BM25 or E5/BGE via FAISS)  ·  retrieval_rerank.py (+ cross-encoder)</text>
+<text x="968" y="200" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">hybrid_rerank.py: Dense + BM25 RRF fusion + rerank (recommended for AgenticRAGLoop)  ·  POST /retrieve  GET /health</text>
+<text x="968" y="214" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">google.py: Google Custom Search  ·  GOOGLE_API_KEY + GOOGLE_CSE_ID + --topk + --snippet_only</text>
+<text x="968" y="227" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">serp.py: SerpAPI proxy  ·  SERP_API_KEY  ·  browser.py: playwright-cli (~5–10s/query, no API key)</text>
+<text x="968" y="240" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">index_builder.py: FAISS Flat + BM25 from corpus.jsonl  ·  --faiss_type Flat  --retrieval_method e5|bm25</text>
+<text x="968" y="253" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">indexing_pipeline.py: async fetch→parse→chunk→enrich→embed→index  ·  mini-chunks · vector-write retries · prefilter</text>
+<text x="968" y="266" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">QueryEnhancer.decompose() (2–4 sub-queries) · .hyde() (hypothetical ideal answer)  ·  degrades without LLM</text>
+<text x="968" y="279" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">--device cpu|cuda  ·  --hybrid_alpha 0.5  ·  --retrieval_topk 10  --rerank_topk 5  ·  BM25 needs Java/Pyserini/Lucene</text>
+<text x="968" y="292" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">data/corpus.jsonl  data/wiki-18.jsonl  indexes/  ·  conda install faiss-cpu (Apple Silicon)  ·  Vespa document_index/</text>
+<text x="968" y="305" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AGENTIC_SEARCH_RETRIEVAL_URL=http://localhost:8000/retrieve  ·  admin/web-search/search-providers quota &amp; billing</text>
+<text x="968" y="333" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">curl -X POST /retrieve -d '{"query":"...", "top_k":5}'</text>
 
 <!-- ═══ AGENT LOOPS ═══ -->
-<rect x="38" y="564" width="676" height="152" rx="6" fill="#0f172a"/>
-<rect x="38" y="564" width="676" height="152" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
-<text x="376" y="584" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Agent Loops · Tools · Context</text>
-<text x="376" y="600" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">AgenticRAGLoop (agentic_rag.py): decompose→HyDE→hybrid+rerank→sufficiency→follow-up→synthesis+citations (max_rounds=3)</text>
-<text x="376" y="614" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SearchAgentLoop: ReAct XML &lt;think&gt;&lt;search&gt;&lt;information&gt;&lt;fetch&gt;&lt;answer&gt; · mask &lt;information&gt; from policy/SFT loss</text>
-<text x="376" y="627" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">DeepResearch (src/agents/deep_research/): multi-step iterative report · PlainGenerationLoop: local smoke test</text>
-<text x="376" y="640" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ToolAgentLoop: FunctionTool · ApiToolRegistry (OpenAPI 3.x) · Hermes/Llama-3/JSON parsers</text>
-<text x="376" y="653" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Custom agents (custom.py): persona + memory + tools + action workflows · run_search_pipeline: access filters</text>
-<text x="376" y="666" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/context/query_enhancer.py · src/context/preprocessing/: access-filter doc prep · src/tools/search.py api.py</text>
-<text x="376" y="679" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">on_turn → OnTurnCallback → SSE progress event per turn · POST /api/agent mode=agentic_rag|search|tool</text>
-<text x="376" y="692" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_search_trace_workflow --sft: build SFT record · build_search_tool: search dispatcher to retrieval/Google/SerpAPI</text>
-<text x="376" y="705" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">QUERY_TYPE_PROMPT · KEYWORD_EXPANSION_PROMPT · build_search_agent_instruction (ReAct system prompt)</text>
+<rect x="38" y="552" width="594" height="160" rx="6" fill="#0f172a"/>
+<rect x="38" y="552" width="594" height="160" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.6"/>
+<text x="335" y="572" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Agent Loops · Tools · Context</text>
+<text x="335" y="588" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">AgenticRAGLoop (agentic_rag.py): decompose→HyDE→hybrid+rerank→sufficiency→follow-up→synthesis+citations (max_rounds=3 topk=5)</text>
+<text x="335" y="602" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">1. decompose sub-queries + HyDE  2. hybrid+rerank retrieval  3. sufficiency check  4. follow-up gen  5. grounded synthesis</text>
+<text x="335" y="615" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SearchAgentLoop: multi-turn ReAct XML — &lt;think&gt;&lt;search&gt;&lt;information&gt;&lt;fetch&gt;&lt;answer&gt;  ·  mask &lt;information&gt; from policy/SFT loss</text>
+<text x="335" y="628" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ToolAgentLoop: FunctionTool · ApiToolRegistry (OpenAPI 3.x runtime)  ·  Hermes/Llama-3/JSON parsers</text>
+<text x="335" y="641" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">DeepResearch (src/agents/deep_research/): multi-step iterative report · evidence gathering · synthesis</text>
+<text x="335" y="654" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Custom agents (custom.py): tailored instructions · memory · tools · action workflows</text>
+<text x="335" y="667" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/context/query_enhancer.py  ·  src/context/preprocessing/: access-filter doc prep  ·  src/tools/search.py  tools/api.py</text>
+<text x="335" y="680" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_search_pipeline (access filters)  ·  run_search_trace_workflow [--sft]  ·  POST /api/agent mode=agentic_rag|search|tool</text>
+<text x="335" y="693" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">PlainGenerationLoop (smoke tests)  ·  build_search_tool: dispatcher → retrieval / Google / SerpAPI  ·  QUERY_TYPE_PROMPT</text>
+<text x="335" y="704" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AgenticRAGLoop.run() async  ·  result.answer (grounded + cited)  ·  result.rounds_used</text>
 
 <!-- ═══ RL TRAINING ═══ -->
-<rect x="754" y="564" width="568" height="152" rx="6" fill="#0f172a"/>
-<rect x="754" y="564" width="568" height="152" rx="6" fill="rgba(251,146,60,.25)" stroke="#fb923c" stroke-width="1.6"/>
-<text x="1038" y="584" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">RL Training · src/training/ · src/model/ · models/ generated/ data/</text>
-<text x="1038" y="600" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">SearchRewardFunction: format(0.2) + search_use(0.3) + answer_length(0.1) + exact_match(0.4)</text>
-<text x="1038" y="614" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">+ fetch_usefulness_reward · unnecessary_fetch_penalty · human_feedback_weight (±1.0 thumbs, default 0.0)</text>
-<text x="1038" y="627" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GRPO: score_prompt_group → compute_grpo_outcome_advantage · G rollouts/prompt · grpo.py</text>
-<text x="1038" y="640" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">PPO: ppo_policy_loss_core + value_loss + entropy + AdaptiveKLController · clip_eps=0.2 · ppo/core_algos.py</text>
-<text x="1038" y="653" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">LLMGRPOTrainer · SearchAgentGRPOTrainer (real SearchAgentLoop rollouts · full shaped-reward signal)</text>
-<text x="1038" y="666" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Feedback GRPO: load_feedback_examples(db_path, min_ratings=10) → retrieval_feedback → PromptTrainingExamples</text>
-<text x="1038" y="679" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SFT warm-start: SFTTrainer (epochs=3, lr=2e-5, assistant-token-only CE) → sft_warmstart/ → GRPO.from_pretrained()</text>
-<text x="1038" y="692" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">run_feedback_grpo --min_ratings 10 --human_feedback_weight 0.5 · run_sft_grpo --sft_epochs 3</text>
-<text x="1038" y="705" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">XML: &lt;think&gt;&lt;search&gt;&lt;information&gt;&lt;answer&gt; · mask &lt;information&gt; from policy/SFT loss · intent_classifier.pt</text>
+<rect x="674" y="370" width="588" height="170" rx="6" fill="#0f172a"/>
+<rect x="674" y="370" width="588" height="170" rx="6" fill="rgba(251,146,60,.25)" stroke="#fb923c" stroke-width="1.6"/>
+<text x="968" y="390" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">RL Training  (src/training/  src/model/)</text>
+<text x="968" y="406" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">SearchRewardFunction: format(0.2) + search_use(0.3) + answer_length(0.1) + exact_match(0.4)</text>
+<text x="968" y="420" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">format: well-formed XML trace with required action tags  ·  search_use: ≥1 search action issued</text>
+<text x="968" y="433" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">answer_length: within acceptable token bounds  ·  exact_match: token-overlap vs reference answers</text>
+<text x="968" y="446" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GRPO (grpo.py): score_prompt_group → compute_grpo_outcome_advantage · G rollouts/prompt · group-relative advantages</text>
+<text x="968" y="459" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">PPO (training/ppo/): compute_ppo_policy_loss_core + compute_value_loss + AdaptiveKLController · clip_eps=0.2</text>
+<text x="968" y="472" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/model/generation.py: policy loss · tensor helpers  ·  REINFORCE-style helpers  ·  entropy · KL penalty</text>
+<text x="968" y="485" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">data.py: prepare_search_qa (FlashRAG NQ/TriviaQA parquet) + prepare_search_rag (cached retrieval results --topk 3)</text>
+<text x="968" y="498" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">models/intent_classifier.pt  ·  generated/ SFT records + parquet  ·  run_grpo_training_pipeline (no GPU required)</text>
+<text x="968" y="511" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">XML: &lt;think&gt;&lt;search&gt;&lt;information&gt;&lt;answer&gt;  ·  mask &lt;information&gt; from policy/SFT action loss  ·  IntentPipeline classifier</text>
+<text x="968" y="528" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">data/: corpus.jsonl  vocabulary_corpus.json  intent_examples.json  nq_search/  nq_rag/  wiki-18.jsonl</text>
 
 <!-- ═══ CONNECTORS + WORKERS ═══ -->
-<rect x="38" y="756" width="676" height="112" rx="6" fill="#0f172a"/>
-<rect x="38" y="756" width="676" height="112" rx="6" fill="rgba(120,53,15,.3)" stroke="#fbbf24" stroke-width="1.6"/>
-<text x="376" y="775" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Connectors + Background Workers</text>
-<text x="376" y="791" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">LocalFile · LocalFilePoll · Search · InMemory · OAuthConnector (GoogleDrive · Slack · GitHub · Jira · Confluence)</text>
-<text x="376" y="805" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SharePoint · Salesforce · Zendesk · Notion · Poll / Checkpoint / Slim variants (time-window + permission-metadata)</text>
-<text x="376" y="818" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">backgroundworker/: beat · docfetching · light · heavy · monitoring · fetch→parse→chunk→enrich→embed→index</text>
-<text x="376" y="831" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ChunkBatchStore: disk buffer · mini-chunks · vector-write retries · servers/documents/ · servers/oauth/</text>
-<text x="376" y="844" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">MonitoringWorker: RSS · queue depth → AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL · WEB_DOMAIN · OAUTH_*_CLIENT_ID</text>
-<text x="376" y="857" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Vespa document_index/ integration · src/backend/access/: ACL helpers · src/context/preprocessing/: doc prefiltering</text>
+<rect x="38" y="748" width="594" height="108" rx="6" fill="#0f172a"/>
+<rect x="38" y="748" width="594" height="108" rx="6" fill="rgba(120,53,15,.3)" stroke="#fbbf24" stroke-width="1.6"/>
+<text x="335" y="768" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Connectors + Background Workers</text>
+<text x="335" y="784" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">LocalFileConnector · LocalFilePollConnector (paths, dirs, globs)  ·  SearchConnector (retrieval/Google/SerpAPI as docs)</text>
+<text x="335" y="797" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">InMemoryConnector (testing)  ·  OAuthConnector: Google Drive · Slack · Confluence · GitHub · Jira · SharePoint · Salesforce · Zendesk · Notion</text>
+<text x="335" y="810" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">PollConnector · CheckpointedConnector · SlimConnector — incremental sync with time-window + checkpoint + permission-metadata</text>
+<text x="335" y="823" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">backgroundworker/: beat · docfetching · light · heavy · monitoring  ·  async fetch→parse→chunk→enrich→embed→index</text>
+<text x="335" y="836" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ChunkBatchStore: disk buffer decoupling embedding from index insert  ·  mini-chunks · vector-write retries · prefiltering</text>
+<text x="335" y="849" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">servers/documents/: connector-credential mgmt  ·  servers/oauth/: OAuth 2.0 flow  ·  OAUTH_*_CLIENT_ID env vars</text>
 
-<!-- ═══ VITE FRONTEND UX ═══ -->
-<rect x="754" y="756" width="568" height="112" rx="6" fill="#0f172a"/>
-<rect x="754" y="756" width="568" height="112" rx="6" fill="rgba(8,51,68,.5)" stroke="#22d3ee" stroke-width="1.8"/>
-<text x="760" y="771" fill="#22d3ee" font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">NEW · web/src/</text>
-<text x="1038" y="778" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Vite Frontend UX · SSE · Source Cards · Feedback</text>
-<text x="1038" y="794" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">streamAgent (web/src/api.ts): SSE → progress (⟳/✓ Turn N) → answer tokens → done → error{type,detail}</text>
-<text x="1038" y="808" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ProgressLog (AnswerPanel.tsx): live reasoning log per turn · collapses to "✓ N turns" + "show reasoning ▸" toggle</text>
-<text x="1038" y="821" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">SourceCard (SourceGrid.tsx): controlled expanded/copied · SourceDocumentView {id,citation,title,content,url,score}</text>
-<text x="1038" y="834" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">scoreColor() green≥0.7/amber≥0.4 · SOURCE_COLORS provider pills · id="source-{citation}" anchor links</text>
-<text x="1038" y="847" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">submitFeedback → POST /api/feedback → retrieval_feedback (SQLite) → load_feedback_examples → GRPO fine-tuning</text>
-<text x="1038" y="860" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">QueryHistoryPanel: filter by feedback_type (like/dislike) · New button: handleNewSession aborts in-flight request</text>
+<!-- ═══ PERSISTENCE / OBSERVABILITY ═══ -->
+<!-- SQLite -->
+<rect x="674" y="570" width="286" height="98" rx="6" fill="#0f172a"/>
+<rect x="674" y="570" width="286" height="98" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
+<text x="817" y="590" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SQLite  (AgenticSearchStore)</text>
+<text x="817" y="606" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">src/backend/db/store.py  ·  no Postgres/Redis/Celery locally</text>
+<text x="817" y="620" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">connectors · docs · permissions · sessions · indexing</text>
+<text x="817" y="633" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">usage reports · rate limits · SCIM tokens · std answers</text>
+<text x="817" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">GET /search/search-history  GET /admin/query-history/export</text>
+<text x="817" y="659" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AGENTIC_SEARCH_WEB_DB_PATH=:memory: (default) or file</text>
 
-<!-- ═══ PERSISTENCE ROW ═══ -->
-<rect x="38" y="910" width="380" height="78" rx="6" fill="#0f172a"/>
-<rect x="38" y="910" width="380" height="78" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
-<text x="228" y="929" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">SQLite  (AgenticSearchStore)</text>
-<text x="228" y="945" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">connectors · docs · permissions · sessions · indexing attempts</text>
-<text x="228" y="958" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">usage reports · rate limits · SCIM tokens · standard answers</text>
-<text x="228" y="971" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">retrieval_feedback table (thumbs) · InMemoryCache · InMemoryChatFile · ChunkBatchStore</text>
-<text x="228" y="982" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AGENTIC_SEARCH_WEB_DB_PATH=:memory: (default) or file path</text>
+<!-- Cache + file store -->
+<rect x="974" y="570" width="288" height="98" rx="6" fill="#0f172a"/>
+<rect x="974" y="570" width="288" height="98" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
+<text x="1118" y="590" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Cache · Files · Indexes</text>
+<text x="1118" y="606" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">InMemoryCache: in-flight session state (stop/cancel)</text>
+<text x="1118" y="620" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">InMemoryChatFile: images/PDFs/text (one chat turn)</text>
+<text x="1118" y="633" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ChunkBatchStore: disk buffer for large indexing jobs</text>
+<text x="1118" y="646" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">indexes/: e5_Flat.index  bm25/  data/corpus.jsonl</text>
+<text x="1118" y="659" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">web/dist: npm run build → served by FastAPI</text>
 
-<rect x="434" y="910" width="350" height="78" rx="6" fill="#0f172a"/>
-<rect x="434" y="910" width="350" height="78" rx="6" fill="rgba(30,41,59,.7)" stroke="#64748b" stroke-width="1.6"/>
-<text x="609" y="929" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Files &amp; Indexes</text>
-<text x="609" y="945" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">indexes/: e5_Flat.index  bm25/ · data/corpus.jsonl  wiki-18.jsonl</text>
-<text x="609" y="958" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">models/intent_classifier.pt · generated/ SFT+parquet</text>
-<text x="609" y="971" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">data/checkpoints/: sft_warmstart/  feedback_grpo/  sft_grpo/</text>
-<text x="609" y="982" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">web/dist: npm run build → served by FastAPI automatically</text>
+<!-- Auth + access -->
+<rect x="674" y="682" width="286" height="100" rx="6" fill="#0f172a"/>
+<rect x="674" y="682" width="286" height="100" rx="6" fill="rgba(30,41,59,.6)" stroke="#64748b" stroke-width="1.6"/>
+<text x="817" y="702" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Auth · Access · Feature Flags</text>
+<text x="817" y="718" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">JWT · generate_user_jwt_token  ·  RSA license sig</text>
+<text x="817" y="731" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">ExpiryWarningStage (18 parametrized stages)</text>
+<text x="817" y="744" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">EnvFeatureFlagProvider → PostHogFeatureFlagProvider</text>
+<text x="817" y="757" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">StaticProvider (tests) · AGENTIC_SEARCH_SUPER_USERS</text>
+<text x="817" y="770" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">Permission-Aware Retrieval: ACL helpers · doc prefiltering</text>
+<text x="817" y="780" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED</text>
 
-<rect x="800" y="910" width="512" height="78" rx="6" fill="#0f172a"/>
-<rect x="800" y="910" width="512" height="78" rx="6" fill="rgba(136,19,55,.2)" stroke="#fb7185" stroke-width="1.6"/>
-<text x="1056" y="929" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Observability · Feature Flags · MCP Server</text>
-<text x="1056" y="945" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">build_admin_surface_summary: connectors/indexing/users/auth/models/tools/analytics + health score</text>
-<text x="1056" y="958" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">MonitoringWorker: RSS · queue depth → cloud · PostHog telemetry · Env→PostHog feature flag chain</text>
-<text x="1056" y="971" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/mcp_server/: stdio · retrieve/search-index/list-documents MCP tools · .claude/ Claude Code config</text>
-<text x="1056" y="982" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/backend/utils/: license/encryption/telemetry · settings/AppSettings · src/backend/configs/</text>
+<!-- Observability -->
+<rect x="974" y="682" width="288" height="100" rx="6" fill="#0f172a"/>
+<rect x="974" y="682" width="288" height="100" rx="6" fill="rgba(136,19,55,.2)" stroke="#fb7185" stroke-width="1.6"/>
+<text x="1118" y="702" fill="#f8fafc" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="700" text-anchor="middle">Observability &amp; Admin</text>
+<text x="1118" y="718" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="9" text-anchor="middle">build_admin_surface_summary: health snapshot</text>
+<text x="1118" y="731" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">connectors/indexing/users/auth/models/tools/analytics</text>
+<text x="1118" y="744" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">MonitoringWorker: RSS · queue depth → cloud data-plane</text>
+<text x="1118" y="757" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">PostHog: event_telemetry · identify_user (no-ops if unset)</text>
+<text x="1118" y="770" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">src/backend/utils/: license/encryption/telemetry</text>
+<text x="1118" y="780" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="8" text-anchor="middle">settings/: AppSettings  ·  src/backend/configs/</text>
 
-<!-- LEGEND -->
-<rect x="28" y="1030" width="1160" height="36" rx="6" fill="rgba(15,23,42,.7)" stroke="#1e293b" stroke-width="1"/>
-<text x="46" y="1045" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">LEGEND</text>
-<rect x="112" y="1036" width="11" height="11" rx="2" fill="rgba(8,51,68,.45)"   stroke="#22d3ee" stroke-width="1.3"/>
-<text x="127" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI / Frontend</text>
-<rect x="240" y="1036" width="11" height="11" rx="2" fill="rgba(6,78,59,.4)"    stroke="#34d399" stroke-width="1.3"/>
-<text x="255" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Retrieval</text>
-<rect x="318" y="1036" width="11" height="11" rx="2" fill="rgba(120,53,15,.3)"  stroke="#fbbf24" stroke-width="1.6"/>
-<text x="333" y="1046" fill="#fbbf24" font-family="'JetBrains Mono',monospace" font-size="8" font-weight="600">Query Transform (NEW)</text>
-<rect x="484" y="1036" width="11" height="11" rx="2" fill="rgba(76,29,149,.4)"  stroke="#a78bfa" stroke-width="1.3"/>
-<text x="499" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Agent Loops</text>
-<rect x="582" y="1036" width="11" height="11" rx="2" fill="rgba(251,146,60,.25)" stroke="#fb923c" stroke-width="1.3"/>
-<text x="597" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">RL Training</text>
-<rect x="672" y="1036" width="11" height="11" rx="2" fill="rgba(136,19,55,.2)"  stroke="#fb7185" stroke-width="1.3"/>
-<text x="687" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Observability / MCP</text>
-<rect x="790" y="1036" width="11" height="11" rx="2" fill="rgba(30,41,59,.7)"   stroke="#64748b" stroke-width="1.3"/>
-<text x="805" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Persistence</text>
-<line x1="888" y1="1042" x2="908" y2="1042" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
-<text x="912" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Sync</text>
-<line x1="950" y1="1042" x2="970" y2="1042" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="4,2" marker-end="url(#a)"/>
-<text x="974" y="1046" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Async</text>
-<text x="112" y="1060" fill="#475569" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI :7860 · Retrieval :8000 · Vite :5173 · Python 3.10+ · FAISS · BM25/Pyserini · SQLite (:memory:) · GRPO/PPO/SFT · MCP · MIT License</text>
+<!-- ═══ LEGEND ═══ -->
+<rect x="28" y="898" width="1100" height="44" rx="6" fill="rgba(15,23,42,.7)" stroke="#1e293b" stroke-width="1"/>
+<text x="46" y="913" fill="#64748b" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600">LEGEND</text>
+<rect x="112" y="904" width="11" height="11" rx="2" fill="rgba(8,51,68,.45)"   stroke="#22d3ee" stroke-width="1.3"/>
+<text x="127" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI / Entry</text>
+<rect x="222" y="904" width="11" height="11" rx="2" fill="rgba(6,78,59,.4)"   stroke="#34d399" stroke-width="1.3"/>
+<text x="237" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Retrieval</text>
+<rect x="302" y="904" width="11" height="11" rx="2" fill="rgba(76,29,149,.4)"  stroke="#a78bfa" stroke-width="1.3"/>
+<text x="317" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Agent Loops</text>
+<rect x="404" y="904" width="11" height="11" rx="2" fill="rgba(251,146,60,.25)" stroke="#fb923c" stroke-width="1.3"/>
+<text x="419" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">RL Training</text>
+<rect x="496" y="904" width="11" height="11" rx="2" fill="rgba(120,53,15,.3)"  stroke="#fbbf24" stroke-width="1.3"/>
+<text x="511" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Connectors</text>
+<rect x="594" y="904" width="11" height="11" rx="2" fill="rgba(136,19,55,.2)"  stroke="#fb7185" stroke-width="1.3"/>
+<text x="609" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Observability</text>
+<rect x="698" y="904" width="11" height="11" rx="2" fill="rgba(30,41,59,.7)"   stroke="#64748b" stroke-width="1.3"/>
+<text x="713" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Persistence / Auth</text>
+<line x1="810" y1="910" x2="830" y2="910" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="834" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Sync</text>
+<line x1="872" y1="910" x2="892" y2="910" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="4,2" marker-end="url(#a)"/>
+<text x="896" y="914" fill="#94a3b8" font-family="'JetBrains Mono',monospace" font-size="8">Async</text>
+<text x="112" y="934" fill="#475569" font-family="'JetBrains Mono',monospace" font-size="8">FastAPI :7860  ·  Retrieval :8000  ·  Vite :5173  ·  Python 3.10+  ·  FAISS  ·  BM25/Pyserini  ·  SQLite (:memory: default)  ·  GRPO/PPO  ·  MIT License</text>
 </svg>
 </div>
 
 <div class="cards">
   <div class="card">
-    <div class="card-header"><div class="card-dot dot-amber"></div><h3>Query Transform Pipeline (NEW)</h3></div>
+    <div class="card-header"><div class="card-dot dot-cyan"></div><h3>FastAPI Backend — Chat + API Surface</h3></div>
     <ul>
-      <li>• <strong>QueryEnhancer</strong>: decompose() (2–4 sub-queries) · hyde() · step_back() · enhance() → QueryBundle; fallback-safe without LLM</li>
-      <li>• <strong>expand_keywords</strong>: BM25 leg synonym/keyword expansion via LLM (QT_KEYWORDS branch)</li>
-      <li>• <strong>TransformedQueryBundle</strong>.retrieval_variants(): deduplicates variants, keeps original query last</li>
-      <li>• RetrievalService fetches all variants in parallel → rrf_fuse; appends +rag_fusion to retrieval_mode</li>
-      <li>• Wrappers: AsyncQTPipeline (ThreadPoolExecutor · timeout degrade) · CachedQTPipeline (Redis sha256) · MultiQueryGenerator (N paraphrases · QT_MULTI_QUERY) · QueryRouter (QT_ROUTER)</li>
-      <li>• Backend-only: runs inside RetrievalService.from_env(), applies to both /search and /api/agent</li>
+      <li>• process_message → run_llm_loop → run_llm_step → LlmStepResult; streaming multi-turn chat</li>
+      <li>• DynamicCitationProcessor (REMOVE/KEEP/HYPERLINK); compress_chat_history (token-budget, branch-aware); Emitter</li>
+      <li>• build_system_prompt: persona + tools + knowledge + memory; build_search_agent_instruction (ReAct)</li>
+      <li>• LLM backends: OpenAICompatibleLLM · VLLMServerManager · LocalServerManager (Qwen/Llama/Mistral CPU|GPU)</li>
+      <li>• classify_is_search_flow (binary LLM router) · IntentPipeline: purchase/navigate/qa/rec → fast/balanced/reasoning tier</li>
+      <li>• Full API: /api/agent · /api/sessions · /health · /settings · /analytics · /billing · /reporting · /hooks · /admin/* · /license · /scim/v2/*</li>
     </ul>
   </div>
   <div class="card">
-    <div class="card-header"><div class="card-dot dot-cyan"></div><h3>Vite UX: SSE Streaming + Source Cards (NEW)</h3></div>
+    <div class="card-header"><div class="card-dot dot-green"></div><h3>Retrieval Server — All 7 Modes</h3></div>
     <ul>
-      <li>• <strong>SSE event schema</strong>: progress{type,turn,text} → answer{type,text} → done{session_id,citations,documents,intent} → error{type,detail}</li>
-      <li>• <strong>ProgressLog</strong> (AnswerPanel.tsx): live reasoning log — ⟳ Turn N active → ✓ Turn N done · collapses to "✓ N turns" + "show reasoning ▸"</li>
-      <li>• on_turn callback (OnTurnCallback) fires per agent turn → SSE progress event to UI</li>
-      <li>• <strong>SourceCard</strong> (SourceGrid.tsx): controlled expanded/copied state · SourceDocumentView {id,citation,title,content,url,score,metadata}</li>
-      <li>• scoreColor() green ≥ 0.7 / amber ≥ 0.4 / orange > 0 · SOURCE_COLORS provider pills (Browser/SerpAPI/Local) · id="source-{citation}" anchor links</li>
-      <li>• New button: handleNewSession aborts in-flight SSE + clears state · error{type,detail} fixes prior {type,message}</li>
+      <li>• demo.py (TF-IDF, no Java) · retrieval.py (BM25 or E5/BGE FAISS) · retrieval_rerank.py (+ cross-encoder)</li>
+      <li>• hybrid_rerank.py: Dense + BM25 RRF + rerank — recommended for AgenticRAGLoop; --hybrid_alpha 0.5</li>
+      <li>• google.py (Google CSE) · serp.py (SerpAPI) · browser.py (playwright-cli ~5–10s, no API key)</li>
+      <li>• QueryEnhancer: decompose() (2–4 sub-queries) + hyde(); degrades gracefully without LLM</li>
+      <li>• index_builder.py: FAISS Flat + BM25 from corpus.jsonl; indexing_pipeline.py async background</li>
+      <li>• BM25 requires Java (Pyserini/Lucene); FAISS via conda on Apple Silicon; --device cpu|cuda</li>
     </ul>
   </div>
   <div class="card">
-    <div class="card-header"><div class="card-dot dot-orange"></div><h3>Feedback-Driven GRPO + SFT Warm-Start (NEW)</h3></div>
+    <div class="card-header"><div class="card-dot dot-orange"></div><h3>RL Training — Reward + GRPO + PPO</h3></div>
     <ul>
-      <li>• <strong>submitFeedback</strong>: per-message like/dislike → POST /api/feedback → retrieval_feedback table (SQLite)</li>
-      <li>• <strong>load_feedback_examples</strong>(db_path, min_ratings=10): reads thumbs sessions → human_signal ±1.0</li>
-      <li>• human_feedback_weight in SearchRewardConfig (default 0.0 = off); SearchAgentGRPOTrainer threads human_signal into batch</li>
-      <li>• <strong>SFT warm-start</strong>: Phase 1 SFTTrainer (assistant-token CE, -100 mask) → sft_warmstart/ → Phase 2 GRPO.from_pretrained()</li>
-      <li>• run_feedback_grpo --min_ratings 10 --human_feedback_weight 0.5 · run_sft_grpo --sft_epochs 3</li>
-      <li>• Neural Reranking stack: Reranker · AsyncReranker · CachedReranker · TwoStageReranker · ONNXReranker · RerankerBenchmark</li>
+      <li>• SearchRewardFunction: format(0.2) + search_use(0.3) + answer_length(0.1) + exact_match(0.4)</li>
+      <li>• GRPO: score_prompt_group → compute_grpo_outcome_advantage; G rollouts per prompt group-relative advantages</li>
+      <li>• PPO: compute_ppo_policy_loss_core + compute_value_loss + AdaptiveKLController; clip_eps=0.2</li>
+      <li>• src/model/generation.py: policy loss + tensor helpers; IntentPipeline classifier; REINFORCE helpers</li>
+      <li>• data.py: prepare_search_qa (FlashRAG NQ/TriviaQA parquet) + prepare_search_rag (cached retrieval --topk 3)</li>
+      <li>• XML protocol: &lt;think&gt;&lt;search&gt;&lt;information&gt;&lt;answer&gt;; mask &lt;information&gt; from policy/SFT loss; run without GPU</li>
     </ul>
   </div>
 </div>
 
-<div class="footer">Agentic Search · Python 3.10+ · FastAPI · FAISS · BM25/Pyserini · GRPO/PPO/SFT · SQLite · MCP Server · MIT License · lingduoduo/Agentic-Search-GRPO</div>
+<div class="footer">Agentic Search · Python 3.10+ · FastAPI · FAISS · BM25/Pyserini · GRPO/PPO · SQLite (:memory: default) · MIT License · lingduoduo/Agentic-Search-GRPO</div>
 </body>
 </html>
