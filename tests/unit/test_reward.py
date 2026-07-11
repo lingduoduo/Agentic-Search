@@ -53,7 +53,7 @@ class FakeSearchClient:
         self._responses = responses
         self.closed = False
 
-    async def retrieve(self, queries, topk=None):
+    async def retrieve(self, queries, topk=None, filters=None):
         return [self._responses.get(q, []) for q in queries]
 
     async def fetch_urls(self, urls):
