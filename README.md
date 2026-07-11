@@ -517,9 +517,12 @@ python3 -m examples.run_search_pipeline
 
 **Agent Loops**
 - **Agentic RAG** (`AgenticRAGLoop`) — multi-hop query decomposition, HyDE, iterative retrieval with evidence sufficiency gating, and grounded synthesis with citations
-- Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, and `<answer>` actions
+- Multi-turn `SearchAgentLoop` traces with `<think>`, `<search>`, `<information>`, and `<answer>` actions; `<fetch>` full-page content is capped at `max_full_page_chars` (default `4096`, `≤ 0` disables) so one large page can't blow the response-token budget
 - `ToolAgentLoop` — generic tool-calling loop usable from both search and chat flows; emits `action_trace` (newline-delimited JSON of every `ToolExecutionResult`) for downstream parsing and display
+  - **Argument validation** — tool calls are validated against the tool's JSON schema (`src/tools/validation.py`) *before* execution, so a malformed call fails cleanly with `error_code="invalid_arguments"` and a side-effecting tool never runs on bad args; schemaless tools are unaffected
+  - **Error feedback, not abort** — a failed tool call is fed back to the model as a `role:"tool"` message (`{"status":"failed","error_code":…,"error_message":…}`) so it can self-correct, instead of aborting the trajectory; bounded by the existing per-turn caps
 - `OnTurnCallback` — async hook called after each agent turn with `(turn, tool_name, doc_count)`; wired through `SearchAgentLoop`, `ToolAgentLoop`, and `PlainGenerationLoop`; used by the web backend to forward live progress events over SSE
+- **System-preserving prompt crop** — the shared `AgentLoopBase` prompt builder keeps the system prompt when a long conversation exceeds `prompt_length`, cropping the middle instead of dropping the instructions off the front
 - `BaseAgent` (`src/agents/graph_base.py`) — Pydantic-based agent base class; lightweight alternative to LangGraph for custom agent workflows with `invoke()`-compatible interface
 
 **LLM Backends**
@@ -532,6 +535,7 @@ python3 -m examples.run_search_pipeline
 - Hermes, Llama-3, and JSON tool-call parsers
 - `ApiToolRegistry` — load and execute tools from any OpenAPI 3.x schema at runtime
 - `FunctionTool` — wrap any Python callable with auto-generated JSON schema
+- **Tool category flags** — `Tool.citeable` / `Tool.stopping` (default `False`; settable on `FunctionTool` and the `@tool_registry.tool(...)` decorator) let a tool self-describe whether it produces citable docs (`search`, `web_search`) or stops the loop; metadata only — not exposed in `ToolSchema.to_dict()`
 - `build_search_tool` — ready-made tool dispatching to retrieval, Google, or SerpAPI
 - `ToolCallView` (`src/internal/servers/web/app.py`) — response model for each tool call: `tool_name`, `status`, `arguments` (dict), `result_summary` (first 200 chars or "N items"), `latency_ms`, `error`; returned as `AgentExperienceResponse.tool_calls` for `intent == "tool"` requests
 
@@ -945,6 +949,12 @@ Both `POST /api/agent` and `/api/agent/stream` run the same dispatcher
 omitted (the default, and what the bundled UI always sends) the request goes
 through the 3-way auto-router.** Every path returns the same shape
 `(answer, citations, documents, intent, …)` with `intent ∈ {search, chat, tool}`.
+
+All three multi-turn paths are **conversation-aware** — `search_agent`,
+`tool_agent`, and `chat_loop` thread prior session turns into the loop. Search
+mode prepends the last `SEARCH_AGENT_HISTORY_MESSAGES` (default 6) persisted Q&A
+turns, capped tighter than the other paths because it stacks long
+`<information>` observations on top of history.
 
 | `mode` | Path / loop | `intent` | Requires |
 |---|---|---|---|
