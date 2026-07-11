@@ -477,3 +477,146 @@ def test_from_env_builds_two_stage_reranker(monkeypatch):
         svc = RetrievalService.from_env()
 
     assert isinstance(svc._reranker, TwoStageReranker)
+
+
+# --- Bug R1: reranker timeout must degrade, not crash the request ---
+
+
+def test_search_degrades_when_reranker_times_out(caplog):
+    """A RerankerTimeoutError must not fail the request; keep pre-rerank order."""
+    from src.internal.retrieval.async_reranker import RerankerTimeoutError
+
+    pre_rerank = [_make_result("d1"), _make_result("d2")]
+    backend = _sparse_only_backend(pre_rerank)
+
+    class _TimingOutReranker:
+        def rerank(self, query, results, top_k):
+            raise RerankerTimeoutError("too slow")
+
+    service = RetrievalService(backend, reranker=_TimingOutReranker())
+
+    with caplog.at_level(logging.WARNING):
+        results, mode = service.search("q", top_k=2)
+
+    # Pre-rerank ordering is preserved and mode must NOT claim +reranked.
+    assert [r.doc_id for r in results] == ["d1", "d2"]
+    assert "+reranked" not in mode
+
+
+def test_search_degrades_when_reranker_raises_generic(caplog):
+    """Any reranker exception (not just timeout) degrades gracefully."""
+    pre_rerank = [_make_result("d1"), _make_result("d2")]
+    backend = _sparse_only_backend(pre_rerank)
+
+    class _BrokenReranker:
+        def rerank(self, query, results, top_k):
+            raise RuntimeError("boom")
+
+    service = RetrievalService(backend, reranker=_BrokenReranker())
+
+    with caplog.at_level(logging.WARNING):
+        results, mode = service.search("q", top_k=2)
+
+    assert [r.doc_id for r in results] == ["d1", "d2"]
+    assert "+reranked" not in mode
+
+
+# --- Bug R2: QT_REWRITE must open the pipeline gate ---
+
+
+def test_from_env_qt_rewrite_alone_builds_pipeline(monkeypatch):
+    """Enabling only QT_REWRITE must build a non-None pipeline (gate honored)."""
+    for flag in (
+        "QT_DECOMPOSE",
+        "QT_HYDE",
+        "QT_STEP_BACK",
+        "QT_KEYWORDS",
+        "QT_CONSTRUCT_FILTERS",
+        "QT_MULTI_QUERY",
+        "QT_ROUTER",
+    ):
+        monkeypatch.delenv(flag, raising=False)
+    monkeypatch.setenv("QT_REWRITE", "1")
+
+    sentinel_pipeline = object()
+
+    with (
+        patch(
+            "src.internal.retrieval.service._build_backend", return_value=MagicMock()
+        ),
+        patch("src.internal.retrieval.service._build_llm", return_value=MagicMock()),
+        patch(
+            "src.internal.retrieval.query_transform_factory."
+            "build_query_transform_pipeline_from_env",
+            return_value=sentinel_pipeline,
+        ),
+    ):
+        svc = RetrievalService.from_env()
+
+    assert svc._pipeline is sentinel_pipeline
+
+
+# --- Bug R3: weighted-RRF must not misassign 1.0 when the original is dropped ---
+
+
+def test_weighted_fusion_falls_back_when_original_variant_fails():
+    """If the LAST (original) variant fails, weighted fusion must NOT run with a
+    1.0 weight landing on a surviving paraphrase — fall back to unweighted fuse."""
+
+    def flaky_sparse(query, *, top_k, filters):
+        if query == "orig":  # the original query (variants[-1]) fails
+            raise RuntimeError("original leg down")
+        return [_make_result(f"r_{query}")]
+
+    backend = MagicMock()
+    backend.search_sparse.side_effect = flaky_sparse
+    backend.search_dense.side_effect = NotImplementedError
+
+    pipeline = _pipeline_mock(["p1", "p2", "orig"])
+    service = RetrievalService(backend, pipeline=pipeline)
+
+    import os
+
+    with patch.dict(os.environ, {"QT_FUSION_WEIGHTED": "1"}):
+        with patch(
+            "src.internal.retrieval.service.variant_weighted_rrf_fuse"
+        ) as weighted:
+            results, mode = service.search("q", top_k=2)
+
+    # Original didn't survive → weighted fuse must not be used (no faked 1.0).
+    weighted.assert_not_called()
+    assert "+rag_fusion" in mode
+    assert len(results) >= 1
+
+
+def test_weighted_fusion_weights_original_by_identity():
+    """When the original survives but an EARLIER variant is dropped, the 1.0
+    weight must track the original result set by identity, not by position."""
+
+    def flaky_sparse(query, *, top_k, filters):
+        if query == "p1":  # an earlier paraphrase fails and is dropped
+            raise RuntimeError("p1 leg down")
+        return [_make_result(f"r_{query}")]
+
+    backend = MagicMock()
+    backend.search_sparse.side_effect = flaky_sparse
+    backend.search_dense.side_effect = NotImplementedError
+
+    pipeline = _pipeline_mock(["p1", "p2", "orig"])
+    service = RetrievalService(backend, pipeline=pipeline)
+
+    import os
+
+    with patch.dict(os.environ, {"QT_FUSION_WEIGHTED": "1"}):
+        with patch(
+            "src.internal.retrieval.service.variant_weighted_rrf_fuse",
+            side_effect=lambda sets, weights: sets[0],
+        ) as weighted:
+            service.search("q", top_k=2)
+
+    weighted.assert_called_once()
+    passed_sets, passed_weights = weighted.call_args[0]
+    # Surviving sets are [p2, orig]; the 1.0 weight must land on the orig set.
+    assert passed_weights.count(1.0) == 1
+    orig_index = passed_weights.index(1.0)
+    assert passed_sets[orig_index][0].doc_id == "r_orig"
