@@ -45,6 +45,10 @@ class AuthSettings:
     jwt_public_key_url: str | None = None
     super_users: tuple[str, ...] = ()
     super_api_key: str | None = None
+    # Dev-only: when True, admin endpoints treat every request as a dev admin
+    # (no token needed) so the local admin dashboard works without minting a
+    # cookie. Default off. NEVER enable in production.
+    dev_admin_bypass: bool = False
 
 
 @dataclass(frozen=True)
@@ -180,6 +184,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
             ),
             super_users=tuple(get_env_json_list(source, "AGENTIC_SEARCH_SUPER_USERS")),
             super_api_key=get_env_str(source, "AGENTIC_SEARCH_SUPER_API_KEY", None),
+            dev_admin_bypass=get_env_bool(source, "AGENTIC_SEARCH_DEV_ADMIN", False),
         ),
         permissions=load_permission_sync_settings(source),
         llm=LLMSettings(

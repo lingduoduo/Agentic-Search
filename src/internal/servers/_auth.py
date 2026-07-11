@@ -16,6 +16,16 @@ def make_require_admin(app_settings: AppSettings):
     """
 
     def _require_admin(request: Request) -> AuthenticatedUser:
+        if app_settings.auth.dev_admin_bypass:
+            # Dev-only shortcut: no token needed so the local admin dashboard
+            # works out of the box. Gated by AGENTIC_SEARCH_DEV_ADMIN (default
+            # off); a startup warning fires when it is on.
+            return AuthenticatedUser(
+                id="dev-admin",
+                email="dev-admin@localhost",
+                is_anonymous=False,
+                metadata={"role": "admin"},
+            )
         user = user_from_headers(request.headers)
         if user is None or user.is_anonymous:
             raise HTTPException(status_code=401, detail="Authentication required.")
