@@ -35,6 +35,12 @@ async function submitQuery(query = "explain FAISS") {
   await userEvent.click(screen.getByRole("button", { name: /search/i }));
 }
 
+// The answer now renders in both the answer panel and the session timeline,
+// so scope answer-presence checks to the answer column to stay unambiguous.
+function answerPanelText(): string {
+  return document.querySelector(".answer-column")?.textContent ?? "";
+}
+
 function fakeStream(intent: string, documents = baseResponse.documents) {
   async function* gen() {
     yield { type: "answer" as const, text: baseResponse.answer };
@@ -122,10 +128,61 @@ describe("App adaptive layout", () => {
     mockStreamAgent.mockReturnValue(noIntentStream());
     render(<App />);
     await submitQuery("explain FAISS");
-    await waitFor(() => expect(screen.getByText(baseResponse.answer)).toBeInTheDocument());
+    await waitFor(() => expect(answerPanelText()).toContain(baseResponse.answer));
     const layout = document.querySelector(".results-layout");
     expect(layout?.className).not.toMatch(/intent-(search|chat|tool)/);
     expect(document.querySelector(".intent-badge")).toBeNull();
+  });
+});
+
+describe("App answer-state reset", () => {
+  it("clears the prior answer and citation links from the answer panel when a follow-up query errors", async () => {
+    async function* groundedStream() {
+      yield { type: "answer" as const, text: "See [D1] for details." };
+      yield {
+        type: "done" as const,
+        session_id: baseResponse.session_id,
+        citations: baseResponse.citations,
+        documents: baseResponse.documents,
+        intent: "chat" as const,
+      };
+    }
+    mockStreamAgent
+      .mockReturnValueOnce(groundedStream())
+      .mockReturnValueOnce(errorStream("second failed"));
+
+    render(<App />);
+    await submitQuery("first query");
+    await waitFor(() =>
+      expect(document.querySelector(".answer-column .citation-link")).not.toBeNull(),
+    );
+
+    await submitQuery("second query");
+    await waitFor(() =>
+      expect(screen.getByText(/second failed/i)).toBeInTheDocument(),
+    );
+
+    const answerColumn = document.querySelector(".answer-column");
+    expect(answerColumn?.querySelector(".citation-link")).toBeNull();
+    expect(answerColumn?.textContent).not.toContain("See");
+  });
+});
+
+describe("App session timeline", () => {
+  it("appends the user query then the assistant answer after a streamed turn", async () => {
+    mockStreamAgent.mockReturnValue(fakeStream("chat"));
+    render(<App />);
+    await submitQuery("what is FAISS");
+    await waitFor(() =>
+      expect(answerPanelText()).toContain(baseResponse.answer),
+    );
+
+    const rows = document.querySelectorAll(".session-panel .chat-row");
+    expect(rows.length).toBe(2);
+    expect(rows[0].classList.contains("chat-row--user")).toBe(true);
+    expect(rows[0].textContent).toContain("what is FAISS");
+    expect(rows[1].classList.contains("chat-row--assistant")).toBe(true);
+    expect(rows[1].textContent).toContain(baseResponse.answer);
   });
 });
 
@@ -135,7 +192,7 @@ describe("App grounding status", () => {
     render(<App />);
     await submitQuery("explain FAISS");
     await waitFor(() =>
-      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+      expect(answerPanelText()).toContain(baseResponse.answer),
     );
     expect(document.querySelector(".status-pill")?.textContent).toBe("Grounded");
   });
@@ -155,7 +212,7 @@ describe("App grounding status", () => {
     render(<App />);
     await submitQuery("FAISS");
     await waitFor(() =>
-      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+      expect(answerPanelText()).toContain(baseResponse.answer),
     );
     expect(document.querySelector(".status-pill")?.textContent).toBe("Answered");
   });
@@ -177,7 +234,7 @@ describe("App grounding status", () => {
     render(<App />);
     await submitQuery("FAISS");
     await waitFor(() =>
-      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+      expect(answerPanelText()).toContain(baseResponse.answer),
     );
     const pill = document.querySelector(".route-pill");
     expect(pill?.textContent).toContain("search_agent");
@@ -190,7 +247,7 @@ describe("App grounding status", () => {
     render(<App />);
     await submitQuery("explain FAISS");
     await waitFor(() =>
-      expect(screen.getByText(baseResponse.answer)).toBeInTheDocument(),
+      expect(answerPanelText()).toContain(baseResponse.answer),
     );
     expect(document.querySelector(".route-pill")).toBeNull();
   });
@@ -262,7 +319,7 @@ describe("App tool approvals", () => {
         name: decision === "approve" ? /approve/i : /deny/i,
       }));
 
-      await waitFor(() => expect(screen.getByText(baseResponse.answer)).toBeInTheDocument());
+      await waitFor(() => expect(answerPanelText()).toContain(baseResponse.answer));
       expect(mockSubmitToolApproval).toHaveBeenCalledTimes(1);
       expect(mockSubmitToolApproval).toHaveBeenCalledWith(
         approval.id,

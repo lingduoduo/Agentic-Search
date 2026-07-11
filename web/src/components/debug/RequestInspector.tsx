@@ -28,7 +28,9 @@ export function RequestInspector({ selectedRequestId }: Props) {
   }, [refresh, selectedRequestId]);
 
   useEffect(() => {
-    const id = selectedRequestId ?? selected;
+    // Auto-follow the latest request until the user clicks a run in the list;
+    // a manual `selected` then takes priority over the streamed latest id.
+    const id = selected ?? selectedRequestId;
     if (!id) return;
     let cancelled = false;
     getDebugRequest(id)
