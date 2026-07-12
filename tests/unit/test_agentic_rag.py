@@ -387,6 +387,35 @@ async def test_sufficiency_check_times_out_fail_open():
 
 
 @pytest.mark.asyncio
+async def test_generate_followup_times_out_fail_open():
+    import time as _time
+
+    def _slow_complete(messages, **kwargs):
+        _time.sleep(1.0)  # exceeds the tiny timeout
+        return "GAPS:\ng\nQUERIES:\nsome query"
+
+    llm = MagicMock()
+    llm.complete.side_effect = _slow_complete
+    config = AgenticRAGConfig(sufficiency_timeout_s=0.05)
+    loop = AgenticRAGLoop(config, llm=llm)
+    bundle = _make_bundle(["d1"])
+
+    result = await loop._generate_followup("q?", bundle)
+    assert result == []  # fail-open on timeout, and returns promptly
+
+
+@pytest.mark.asyncio
+async def test_generate_followup_parses_queries_on_success():
+    llm = _llm_responses("GAPS:\nmissing bit\nQUERIES:\nfollow-up one\nfollow-up two")
+    config = AgenticRAGConfig(sufficiency_timeout_s=5.0)
+    loop = AgenticRAGLoop(config, llm=llm)
+    bundle = _make_bundle(["d1"])
+
+    result = await loop._generate_followup("q?", bundle)
+    assert result == ["follow-up one", "follow-up two"]
+
+
+@pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")

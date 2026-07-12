@@ -361,6 +361,16 @@ class ToolAgentLoop(AgentLoopBase):
             response_mask.extend([1] * len(response_ids))
             assistant_turns += 1
 
+            # ── parse tool calls ──────────────────────────────────────────
+            # Record the assistant answer BEFORE the stopping checks so a
+            # turn/length cap firing this turn still surfaces the model's
+            # generated response in final_answer / trajectory_messages.
+            assistant_content, tool_calls = await self.tool_parser.extract_tool_calls(
+                response_ids
+            )
+            working_messages.append({"role": "assistant", "content": assistant_content})
+            final_answer = assistant_content
+
             # ── stopping conditions ───────────────────────────────────────
             if len(response_mask) >= self.response_length:
                 break
@@ -375,12 +385,6 @@ class ToolAgentLoop(AgentLoopBase):
             ):
                 break
 
-            # ── parse tool calls ──────────────────────────────────────────
-            assistant_content, tool_calls = await self.tool_parser.extract_tool_calls(
-                response_ids
-            )
-            working_messages.append({"role": "assistant", "content": assistant_content})
-            final_answer = assistant_content
             if not tool_calls:
                 break
 
