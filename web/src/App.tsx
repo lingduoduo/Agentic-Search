@@ -129,13 +129,25 @@ export function App() {
     setIntent(undefined);
     setRoute(undefined);
     setRouteDegraded(undefined);
+    // Clear the previous turn's answer so a failed/next query never renders a
+    // stale answer or citation anchors pointing at now-removed source cards.
+    setAnswer("");
     setStreamingAnswer("");
+    setCitations([]);
+    setDocuments([]);
+    setToolCalls([]);
     setProgressSteps([]);
     setCompletedSteps([]);
     setControlFlowTrace([]);
     setPendingApprovals([]);
     try {
       const activeSessionId = await ensureSession(controller.signal);
+      // Append the user turn to the local timeline. Done after ensureSession so
+      // the new-session reset inside it can't wipe the message we just added.
+      setMessages((current) => [
+        ...current,
+        { role: "user", content: normalizedQuery },
+      ]);
       const agentRequest: AgentExperienceRequest = {
         query: normalizedQuery,
         session_id: activeSessionId,
@@ -175,6 +187,10 @@ export function App() {
           setRoute(event.route ?? undefined);
           setRouteDegraded(event.route_degraded ?? undefined);
           setAnswer(accumulatedAnswer);
+          setMessages((current) => [
+            ...current,
+            { role: "assistant", content: accumulatedAnswer },
+          ]);
           setCompletedSteps(liveSteps);
           setProgressSteps([]);
           setPendingApprovals([]);
@@ -188,6 +204,8 @@ export function App() {
       setPendingApprovals([]);
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Search failed");
+      setAnswer("");
+      setCitations([]);
       setDocuments([]);
     } finally {
       if (requestRef.current === controller) {
