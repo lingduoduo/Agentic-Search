@@ -1060,6 +1060,12 @@ def create_web_app(
     """
     load_dotenv()
     resolved = app_settings or load_app_settings()
+    if resolved.auth.dev_admin_bypass:
+        logger.warning(
+            "ADMIN AUTH BYPASSED via AGENTIC_SEARCH_DEV_ADMIN — every admin "
+            "endpoint accepts unauthenticated requests. Dev only; never set "
+            "this in production."
+        )
     settings = settings or SearchExperienceSettings.from_app_settings(resolved)
     owns_store = store is None
     db = store or AgenticSearchStore(settings.db_path)
