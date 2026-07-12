@@ -254,7 +254,7 @@ Or use `bin/run_web_stack.sh` which reads `SEARCH_AGENT_MODEL` from `.env` and s
 
 ## Frontend
 
-The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and proxies `/api/*` through Vite in development.
+The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and, in development, Vite proxies the backend routes it calls — `/api/*`, `/admin/*`, `/analytics/*`, `/chat/*` — through to port 7860.
 
 ```bash
 cd web && npm install && npm run dev   # dev server at http://127.0.0.1:5173
@@ -262,6 +262,38 @@ cd web && npm run build                # production bundle → web/dist/ (served
 cd web && npm run typecheck            # TypeScript check
 cd web && npm run test -- --run        # Vitest unit tests
 ```
+
+> **Open the Vite dev server at `http://127.0.0.1:5173`, not `:7860`.** Port 7860
+> serves the last `npm run build` bundle from `web/dist` (stale until you rebuild);
+> `:5173` is the live source with hot-reload. If a UI change "doesn't show up",
+> you're probably looking at `:7860` — rebuild, or use `:5173`.
+
+### Admin Dashboard (local dev)
+
+The web UI includes admin panels — **Connectors, Tools, History, Admin overview,
+Analytics** (top-bar buttons + the observability panels). They call the
+`/admin/*` and `/analytics/*` routers, which are **admin-authenticated**. Two
+things make them work locally:
+
+1. **Proxy** — the Vite dev server already forwards `/admin` and `/analytics` to
+   the backend (above), so requests reach FastAPI on `:7860`.
+2. **Auth** — the panels are gated by `make_require_admin`. For local dev, set
+   `AGENTIC_SEARCH_DEV_ADMIN=1` (default off) so every admin endpoint accepts the
+   request as a dev admin — **no token or cookie needed**:
+
+```bash
+AGENTIC_SEARCH_DEV_ADMIN=1 PYTHONPATH=src:. \
+  uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+The startup log prints `ADMIN AUTH BYPASSED …` when it's active. **Dev only —
+never set this in production.** Without the flag the endpoints return `401` and
+you'd need an admin JWT in the `fastapiusersauth` cookie instead.
+
+Clicking a top-bar button toggles its panel below the observability panels
+(scroll down to see it). Empty panels — e.g. **Connectors** showing "No connectors
+configured", **Tools** empty — are expected when nothing is configured locally,
+not an error.
 
 ### Dev Console (observability)
 
