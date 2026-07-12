@@ -128,14 +128,54 @@ def test_reset_clears_window():
 # ---------------------------------------------------------------------------
 
 
-def test_search_flow_classification_short_query_returns_result(tmp_path):
+class _StubLLM:
+    """Deterministic LLM stub for search-flow classification tests."""
+
+    def __init__(self, reply: str) -> None:
+        self._reply = reply
+
+    def complete(self, messages, **_):
+        return self._reply
+
+
+def test_search_flow_classification_uses_llm_content(tmp_path, monkeypatch):
+    """A configured LLM drives the result from the query content, not a constant."""
+    import src.internal.servers.query_and_chat.search_backend as sb
+
+    client, store = _admin_client(tmp_path)
+
+    monkeypatch.setattr(sb, "_build_flow_classifier_llm", lambda: _StubLLM("search"))
+    assert (
+        client.post(
+            "/search/search-flow-classification",
+            json={"user_query": "procurement runbook"},
+        ).json()["is_search_flow"]
+        is True
+    )
+
+    monkeypatch.setattr(sb, "_build_flow_classifier_llm", lambda: _StubLLM("chat"))
+    assert (
+        client.post(
+            "/search/search-flow-classification",
+            json={"user_query": "write me a poem about spring"},
+        ).json()["is_search_flow"]
+        is False
+    )
+    store.close()
+
+
+def test_search_flow_classification_no_llm_defaults_to_chat(tmp_path, monkeypatch):
+    """With no LLM configured, the endpoint defaults to chat instead of guessing."""
+    import src.internal.servers.query_and_chat.search_backend as sb
+
+    monkeypatch.setattr(sb, "_build_flow_classifier_llm", lambda: None)
     client, store = _admin_client(tmp_path)
     response = client.post(
         "/search/search-flow-classification",
         json={"user_query": "procurement runbook"},
     )
     assert response.status_code == 200
-    assert "is_search_flow" in response.json()
+    assert response.json()["is_search_flow"] is False
     store.close()
 
 

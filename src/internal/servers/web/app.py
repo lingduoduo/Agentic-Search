@@ -829,6 +829,30 @@ async def _run_search_direct_or_escalate(
     (local model) or the degraded pipeline, preserving today's behavior.
     """
 
+    # Access-control safety: the direct-retrieval short-circuit
+    # (`_run_direct_search`) and the SearchAgentLoop escalation
+    # (`_run_search_agent`) do not thread per-user access filters into
+    # retrieval — `search_tool` and the loop take no `filters`. When filters are
+    # present (authenticated / multi-tenant), those paths would retrieve across
+    # every user's documents. Route such queries through the filter-aware
+    # retrieval pipeline instead, which passes `filters` down to retrieval.
+    if filters:
+        return await _auto_search_pipeline(
+            query,
+            llm=llm,
+            search_url=search_url,
+            browser_search_url=browser_search_url,
+            rerank_url=rerank_url,
+            top_k=top_k,
+            filters=filters,
+            history=history,
+            source_provider=source_provider,
+            extra={
+                "search_mode": "filtered_pipeline",
+                "route_reason": "access_filters_present",
+            },
+        )
+
     async def _escalate(top_score: float, reason: str) -> tuple:
         escalate_extra = {
             "search_mode": "escalated",
