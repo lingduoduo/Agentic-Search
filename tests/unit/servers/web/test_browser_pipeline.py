@@ -45,7 +45,7 @@ async def test_run_browser_search_returns_context_documents(monkeypatch):
         _page("GitHub FAISS", "https://github.com/facebookresearch/faiss"),
     ]
 
-    async def fake_search(query, *, provider, search_url, page_size):
+    async def fake_search(query, *, provider, search_url, page_size, **_):
         assert provider == "retrieval"
         assert search_url == "http://browser.test:8002"
         return pages
@@ -71,7 +71,7 @@ async def test_run_browser_search_returns_context_documents(monkeypatch):
 async def test_run_browser_search_ids_start_after_existing_count(monkeypatch):
     """Document IDs offset by existing_count so they don't collide with primary docs."""
 
-    async def fake_search(query, *, provider, search_url, page_size):
+    async def fake_search(query, *, provider, search_url, page_size, **_):
         return [_page("T", "https://t.test")]
 
     monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search)
@@ -90,7 +90,7 @@ async def test_run_browser_search_ids_start_after_existing_count(monkeypatch):
 async def test_run_browser_search_returns_empty_on_exception(monkeypatch):
     """_run_browser_search returns [] and does not raise when search_tool fails."""
 
-    async def failing_search(query, *, provider, search_url, page_size):
+    async def failing_search(query, *, provider, search_url, page_size, **_):
         raise ConnectionRefusedError("browser server not running")
 
     monkeypatch.setattr("src.internal.servers.web.app.search_tool", failing_search)
@@ -133,7 +133,7 @@ async def test_browser_docs_skip_fetch_pages_concurrently(monkeypatch):
     """When source_provider='browser', fetch_pages_concurrently is never called."""
     fetch_called: list[bool] = []
 
-    async def fake_search(query, *, provider, search_url, page_size):
+    async def fake_search(query, *, provider, search_url, page_size, **_):
         return [_page("T", "https://t.test")]
 
     async def fake_fetch(pages, *, max_chars, timeout_seconds=10):
@@ -170,7 +170,7 @@ async def test_direct_search_merges_browser_sidecar_before_mmr(monkeypatch):
         "Browser result", "https://browser-result.test", "browser content"
     )
 
-    async def fake_search(query, *, provider, search_url, page_size):
+    async def fake_search(query, *, provider, search_url, page_size, **_):
         if search_url == "http://browser.test:8002":
             return [browser_page]
         return [primary_page]
@@ -197,7 +197,7 @@ async def test_direct_search_deduplicates_browser_and_primary_overlap(monkeypatc
     shared_url = "https://shared.test"
     shared_page = _page("Shared doc", shared_url, "shared content here")
 
-    async def fake_search(query, *, provider, search_url, page_size):
+    async def fake_search(query, *, provider, search_url, page_size, **_):
         return [shared_page]
 
     monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search)
@@ -240,7 +240,7 @@ async def test_browser_docs_have_mmr_rank_after_full_pipeline(monkeypatch):
         "Browser result", "https://browser-result.test", "browser content"
     )
 
-    async def fake_search(query, *, provider, search_url, page_size):
+    async def fake_search(query, *, provider, search_url, page_size, **_):
         if search_url == "http://browser.test:8002":
             return [browser_page]
         return []

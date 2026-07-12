@@ -235,7 +235,7 @@ def test_direct_search_enriches_web_provider_content(monkeypatch):
         ),
     ]
 
-    async def _fake_search_tool(query, *, provider, search_url, page_size):
+    async def _fake_search_tool(query, *, provider, search_url, page_size, **_):
         return serpapi_pages
 
     async def _fake_fetch_pages(pages, *, max_chars, timeout_seconds=10):
@@ -266,7 +266,7 @@ def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
 
     fetch_called = []
 
-    async def _fake_search_tool(query, *, provider, search_url, page_size):
+    async def _fake_search_tool(query, *, provider, search_url, page_size, **_):
         return [SearchPage(title="R", summary="corpus content", url="https://r.test")]
 
     async def _fake_fetch_pages(pages, **kwargs):
@@ -468,6 +468,7 @@ def test_run_agent_search_tool_mode_returns_documents(monkeypatch, tmp_path):
         top_k,
         browser_search_url=None,
         rerank_url=None,
+        filters=None,
     ):
         return docs
 
@@ -927,7 +928,7 @@ def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
 
     browser_calls: list[str] = []
 
-    async def _fake_search_tool(query, *, provider, search_url, page_size):
+    async def _fake_search_tool(query, *, provider, search_url, page_size, **_):
         return [
             SearchPage(title=f"{provider} R", summary="c", url=f"http://{provider}/1")
         ]

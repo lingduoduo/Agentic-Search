@@ -581,7 +581,7 @@ class FakeSearchClient:
         self.fetch_responses = {}
         self.closed = False
 
-    async def retrieve(self, queries, topk=None):
+    async def retrieve(self, queries, topk=None, filters=None):
         del topk
         self.calls.append(list(queries))
         return self.responses[tuple(queries)]

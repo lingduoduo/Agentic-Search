@@ -43,7 +43,7 @@ class FakeSearchClient:
     def __init__(self, responses):
         self.responses = responses
 
-    async def retrieve(self, queries, topk=None):
+    async def retrieve(self, queries, topk=None, filters=None):
         del topk
         return self.responses[tuple(queries)]
 

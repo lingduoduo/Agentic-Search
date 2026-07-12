@@ -242,6 +242,9 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     # Optional second retriever the policy can target via <search retriever="web">.
     # When None, web requests degrade to the vector-DB (search_url) backend.
     web_search_url: str | None = None
+    # Per-user access filters forwarded to the vector-DB retriever (not the web
+    # retriever, which has no ACL metadata). None → unfiltered, as before.
+    filters: dict | None = None
     topk: int = 5
     search_timeout_seconds: int = 10
     search_max_retries: int = 3
@@ -566,8 +569,11 @@ class SearchAgentLoop(AgentLoopBase):
     async def _retrieve_many(
         self, queries: list[str], retriever: Retriever = Retriever.VECTOR_DB
     ) -> list[list[SearchResult]]:
+        # Access filters apply to the internal corpus only; the web retriever
+        # has no per-user ACL metadata.
+        filters = self.search_config.filters if retriever is not Retriever.WEB else None
         try:
-            return await self._client_for(retriever).retrieve(queries)
+            return await self._client_for(retriever).retrieve(queries, filters=filters)
         except Exception as exc:
             logger.warning("Search failed for queries %r: %s", queries, exc)
             return [[] for _ in queries]

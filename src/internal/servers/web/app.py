@@ -569,6 +569,7 @@ async def _run_search_agent(
     search_url: str,
     top_k: int,
     history: list | None = None,
+    filters: dict | None = None,
     on_turn=None,
     on_trace=None,
 ) -> tuple:
@@ -581,7 +582,7 @@ async def _run_search_agent(
         tokenizer=tokenizer,
         server_manager=manager,
         search_config=SearchAgentLoopConfig(
-            search_url=search_url, topk=top_k, max_turns=3
+            search_url=search_url, topk=top_k, max_turns=3, filters=filters
         ),
     )
     output = await loop.run(
@@ -868,6 +869,7 @@ async def _run_search_direct_or_escalate(
                 search_url=search_url,
                 top_k=top_k,
                 history=history,
+                filters=filters,
                 on_turn=on_turn,
                 on_trace=None,
             )
@@ -900,6 +902,7 @@ async def _run_search_direct_or_escalate(
             search_url=search_url,
             rerank_url=rerank_url,
             top_k=top_k,
+            filters=filters,
         )
     except Exception:
         documents = []
@@ -1393,6 +1396,7 @@ def create_web_app(
                         browser_search_url=settings.browser_search_url,
                         rerank_url=settings.rerank_url,
                         top_k=top_k,
+                        filters=filters,
                     )
                     answer = _search_only_answer(
                         "Direct search tool",
@@ -1495,6 +1499,7 @@ def create_web_app(
                         search_url=search_url,
                         top_k=top_k,
                         history=history,
+                        filters=filters,
                         on_turn=on_turn,
                         on_trace=on_trace,
                     )
@@ -1892,6 +1897,7 @@ async def _run_direct_search(
     browser_search_url: str | None = None,
     rerank_url: str | None = None,
     top_k: int,
+    filters: dict | None = None,
 ) -> list[ContextDocument]:
     # Over-fetch so MMR has candidates beyond top_k to diversify from.
     fetch_k = top_k * 2
@@ -1912,6 +1918,10 @@ async def _run_direct_search(
             provider=provider,
             search_url=search_url,
             page_size=fetch_k,
+            # Access filters apply to the internal corpus only (search_tool
+            # forwards them for the 'retrieval' provider and ignores them for
+            # web providers).
+            filters=filters,
         )
         if _is_web_provider(provider):
             pages = await fetch_pages_concurrently(pages, max_chars=2000)

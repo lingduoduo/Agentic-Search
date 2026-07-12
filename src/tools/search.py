@@ -214,6 +214,7 @@ async def retrieval_search(
     timeout_seconds: int = 10,
     max_retries: int = 3,
     fetch_url: str | None = None,
+    filters: dict | None = None,
 ) -> list[SearchPage]:
     """Search the repo's /retrieve server and return normalized pages."""
 
@@ -229,7 +230,9 @@ async def retrieval_search(
     try:
         return [
             SearchPage.from_search_result(result)
-            for result in await client.retrieve_one(query, topk=page_size)
+            for result in await client.retrieve_one(
+                query, topk=page_size, filters=filters
+            )
         ]
     except Exception as exc:
         return [SearchPage(error=_redact_secret_params(str(exc)))]
@@ -247,8 +250,13 @@ async def search_tool(
     timeout_seconds: int = 15,
     max_retries: int = 3,
     fetch_url: str | None = None,
+    filters: dict | None = None,
 ) -> list[SearchPage]:
-    """Route one query to a configured provider."""
+    """Route one query to a configured provider.
+
+    ``filters`` (per-user access filters) apply only to the internal
+    ``retrieval`` provider; web providers have no ACL metadata and ignore them.
+    """
 
     if provider == "retrieval":
         return await retrieval_search(
@@ -258,6 +266,7 @@ async def search_tool(
             timeout_seconds=timeout_seconds,
             max_retries=max_retries,
             fetch_url=fetch_url,
+            filters=filters,
         )
     if provider == "google":
         return await google_custom_search(

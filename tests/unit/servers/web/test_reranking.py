@@ -35,7 +35,7 @@ def test_browser_search_url_causes_browser_provider_call(tmp_path, monkeypatch):
     """When browser_search_url is set, search_tool is called with that URL."""
     call_log: list[tuple[str, str]] = []
 
-    async def fake_search(query, *, provider, search_url, page_size=5):
+    async def fake_search(query, *, provider, search_url, page_size=5, **_):
         call_log.append((provider, search_url))
         return [_make_page("T", "https://t.test", provider)]
 
@@ -155,7 +155,7 @@ def test_rerank_url_causes_rerank_documents_call(tmp_path, monkeypatch):
     """When rerank_url is set, _rerank_documents is called with that URL."""
     rerank_calls: list[str] = []
 
-    async def fake_search(query, *, provider, search_url, page_size=5):
+    async def fake_search(query, *, provider, search_url, page_size=5, **_):
         return [_make_page("T", "https://t.test", provider)]
 
     async def fake_answer(question, *, context, llm_client=None):
