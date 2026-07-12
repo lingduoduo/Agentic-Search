@@ -113,6 +113,7 @@ class RetrievalService:
             "QT_CONSTRUCT_FILTERS",
             "QT_MULTI_QUERY",
             "QT_ROUTER",
+            "QT_REWRITE",
         )
         if any(
             os.environ.get(v, "").lower() in ("1", "true", "yes") for v in _qt_flags
@@ -262,18 +263,30 @@ class RetrievalService:
             threshold = float(os.environ.get("QT_SEMANTIC_DEDUP_THRESHOLD", "0.95"))
             variants = dedup_variants(variants, embed_fn, threshold=threshold)
 
+        # retrieval_variants() places the original query LAST; track it by
+        # identity so weighted fusion keeps its heaviest weight even if some
+        # earlier variants are dropped on failure.
+        last_idx = len(variants) - 1
         max_workers = min(len(variants), 4)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
-                executor.submit(self._search_one, v, over_fetch, active_filters)
-                for v in variants
+                (
+                    i == last_idx,
+                    executor.submit(self._search_one, v, over_fetch, active_filters),
+                )
+                for i, v in enumerate(variants)
             ]
         result_sets_with_modes = []
-        for f in futures:
+        original_result_set: list[RetrievalResult] | None = None
+        for is_original, f in futures:
             try:
-                result_sets_with_modes.append(f.result())
+                result = f.result()
             except Exception as exc:
                 logger.warning("Variant retrieval failed, skipping: %s", exc)
+                continue
+            result_sets_with_modes.append(result)
+            if is_original:
+                original_result_set = result[0]
         if not result_sets_with_modes:
             result_sets_with_modes = [
                 self._search_one(query, over_fetch, active_filters)
@@ -286,9 +299,15 @@ class RetrievalService:
         reranker_fetch = math.ceil(top_k * reranker_multiplier)
 
         if len(all_result_sets) > 1:
-            if os.environ.get("QT_FUSION_WEIGHTED", "").lower() in ("1", "true", "yes"):
-                # original is the last variant → heaviest weight
-                weights = [0.3] * (len(all_result_sets) - 1) + [1.0]
+            if (
+                os.environ.get("QT_FUSION_WEIGHTED", "").lower() in ("1", "true", "yes")
+                and original_result_set is not None
+            ):
+                # Give the original query the heaviest weight by identity, not
+                # by position — earlier variants may have been dropped on failure.
+                weights = [
+                    1.0 if rs is original_result_set else 0.3 for rs in all_result_sets
+                ]
                 fused = variant_weighted_rrf_fuse(all_result_sets, weights)
             else:
                 fused = rrf_fuse(all_result_sets)
@@ -303,8 +322,19 @@ class RetrievalService:
             mode = base_mode
 
         if self._reranker:
-            fused = self._reranker.rerank(query, fused, top_k)
-            mode = f"{mode}+reranked"
+            from src.internal.retrieval.async_reranker import RerankerTimeoutError
+
+            try:
+                fused = self._reranker.rerank(query, fused, top_k)
+                mode = f"{mode}+reranked"
+            except RerankerTimeoutError as exc:
+                # Async reranker timed out — degrade to the pre-rerank ordering
+                # instead of failing the whole request.
+                logger.warning("Reranker timed out, keeping fused order: %s", exc)
+            except Exception as exc:
+                # Any other reranker failure also degrades gracefully; do not
+                # claim '+reranked' when the rerank fell back.
+                logger.warning("Reranker failed, keeping fused order: %s", exc)
 
         if self._result_cache:
             self._result_cache.set(query, filters, top_k, fused)
