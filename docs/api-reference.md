@@ -129,55 +129,36 @@ through the 3-way auto-router.** Every path returns the same shape
 `(answer, citations, documents, intent, …)` with `intent ∈ {search, chat, tool}`.
 
 All three multi-turn paths are **conversation-aware** — `search_agent`,
-`tool_agent`, and `chat_loop` thread prior session turns into the loop. Search
-mode prepends the last `SEARCH_AGENT_HISTORY_MESSAGES` (default 6) persisted Q&A
-turns, capped tighter than the other paths because it stacks long
-`<information>` observations on top of history.
+`tool_agent`, and `chat_loop` thread bounded prior session turns into the loop.
+Search mode uses the tighter `SEARCH_AGENT_HISTORY_MESSAGES` limit because it
+also carries long retrieval observations.
 
 | `mode` | Path / loop | `intent` | Requires |
 |---|---|---|---|
-| _(omitted)_ | auto-router → chat/search/tool strategy below | varies | — |
+| _(omitted)_ | auto-router → chat/search/tool strategy; search is direct-first | varies | configured services |
 | `search_agent` | `SearchAgentLoop` (multi-turn search) | `search` | local model (else `400`) |
 | `tool_agent` | `ToolAgentLoop` (OpenAPI/MCP tools) | `tool`/`search`/`chat` | local model (else `400`) |
 | `chat_loop` | `AgenticRAGLoop` (decompose + HyDE) | `chat` | LLM client |
 | `hybrid_search` | internal + web fan-out, MMR-merged | `search` | — |
 | `search_tool` | raw retrieval, no synthesis | `search` | — |
 
-**Auto-router** (`route_query`, `src/internal/servers/web/intent_routing.py`):
-explicit non-`auto` source → `search`; otherwise an LLM 3-way classifier
-(`classify_route`) when an LLM is present, else a rule-based route. The chosen
-strategy (`chat` / `search` / `tool`) dispatches the matching loop and **degrades**
-when its backend is absent (e.g. `search`→hybrid pipeline with no local model;
-`chat`→pipeline with no LLM). `extra["route"]` / `extra["route_degraded"]` record
-the decision. The three routing axes are strategy, web-vs-internal
-(`source_provider`), and internal backend (the server-side M10 router).
+**Auto-router:** a non-`auto` source forces `search`; otherwise deterministic
+regex cues, an optional learned intent model, an optional LLM classifier, and a
+rule-based fallback choose `chat`, `search`, or `tool`. Bare terms such as `RAG`
+and `GRPO` are deterministic searches.
 
-**`source_provider`** (web vs internal corpus): `auto` (default — internal
-`retrieval` ∥ web `serpapi`, merged via MMR), `retrieval`, `serpapi`, `google`,
-`browser`, `all`. The bundled UI sends `source_provider` and `search_url` only in
-dev builds; in production it sends neither, so the backend uses `auto`.
+For an unfiltered auto-routed search, `source_provider=auto` means **internal
+retrieval → sufficiency gate → SerpAPI → configured browser-search service**.
+The first provider with sufficient evidence wins. If none returns evidence, the
+response keeps `intent="search"`, has empty citations/documents, and reports
+`No results found for: <query>` or that every source is unreachable. It does not
+substitute a local-model answer. Authenticated/access-filtered requests use the
+filter-aware pipeline instead of this unfiltered shortcut.
 
-### Web reachability of auto-routed queries (known gap)
-
-Whether an auto-routed UI query actually reaches the **web** is config-dependent
-and currently narrower than the `source_provider=auto` default suggests:
-
-- **With a local model configured** (`SEARCH_AGENT_MODEL`): the auto path runs
-  either `SearchAgentLoop` (search) or `AgenticRAGLoop` (chat) — **both are
-  internal-corpus only**. `AgenticRAGLoop` retrieves only from `retrieval_url`;
-  `SearchAgentLoop`'s web retriever (`web_search_url`) is never wired in the web
-  backend, so `<search retriever="web">` silently degrades to the internal corpus.
-- **The web is reached only via the retrieval-first pipeline**
-  (`_auto_search_pipeline` → `_run_hybrid_search`, `source_provider=auto`), which
-  the auto path uses only as a **degradation** — `search` with no local model, or
-  `chat` with no LLM — or via explicit `mode=hybrid_search`.
-- Even then, the web leg needs `SERP_API_KEY`/`SERPAPI_API_KEY` (SerpAPI) or a
-  configured `browser_search_url`; without them it returns error docs and the
-  result is effectively internal-only.
-
-Net: in the common single-machine setup (local model set, no SerpAPI key), every
-UI query stays on the internal corpus. Routing the multi-turn loop to the web via
-the existing `source_provider` infrastructure is a possible future change.
+`hook_metadata` carries `mode`, `route`, optional `route_degraded`, and search
+details such as `search_mode`, `external_provider`, `tier`, and `top_score`.
+The complete field-level contract, explicit-source behavior, and worked examples
+are in [API request routing](request-routing.md).
 
 ## Chat and session API
 

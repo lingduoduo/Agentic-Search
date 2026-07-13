@@ -204,8 +204,10 @@ class AgentExperienceRequest(BaseModel):
     source_provider: str = Field(
         default="auto",
         description=(
-            "'auto' (default — fan out to internal RAG + SerpAPI, merged), "
-            "'retrieval', 'serpapi', 'browser', or 'all'. An explicit value other "
+            "'auto' (default — internal retrieval first, then SerpAPI and the "
+            "configured browser fallback when evidence is weak or empty), "
+            "'retrieval', 'serpapi', 'google', 'browser', or 'all'. An explicit "
+            "value other "
             "than 'auto' forces a search against that single provider (dev only)."
         ),
     )
