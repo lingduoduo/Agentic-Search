@@ -581,7 +581,9 @@ def test_agent_endpoint_returns_intent_field(monkeypatch, tmp_path):
     )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     client = TestClient(app)
-    response = client.post("/api/agent", json={"query": "explain FAISS"})
+    response = client.post(
+        "/api/agent", json={"query": "explain FAISS", "mode": "chat_once"}
+    )
     assert response.status_code == 200
     data = response.json()
     assert "intent" in data
@@ -620,27 +622,15 @@ def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
     assert data["answer"] == "Grounded answer [D1]"
 
 
-def test_auto_route_search_degrades_to_hybrid_without_local_model(
+def test_auto_route_search_uses_direct_provider_order_without_local_model(
     monkeypatch, tmp_path
 ):
-    """SEARCH route with no local model → hybrid_search pipeline, intent='search'."""
-    called = {}
+    """SEARCH route with no local model tries internal then SerpAPI directly."""
+    called = []
 
-    async def fake_hybrid(
-        query,
-        *,
-        llm,
-        search_url,
-        browser_search_url,
-        rerank_url,
-        top_k,
-        filters,
-        source_provider,
-    ):
-        called["hybrid"] = True
-        from src.internal.servers.web.app import _HybridSearchResult
-
-        return _HybridSearchResult(executed_queries=[query], documents=[])
+    async def fake_direct(query, *, source_provider, **kwargs):
+        called.append(source_provider)
+        return []
 
     from src.internal.servers.web.intent_routing import RouteStrategy
 
@@ -648,12 +638,12 @@ def test_auto_route_search_degrades_to_hybrid_without_local_model(
         "src.internal.servers.web.app.route_query",
         lambda *a, **k: RouteStrategy.SEARCH,
     )
-    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    monkeypatch.setattr("src.internal.servers.web.app._run_direct_search", fake_direct)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     client = TestClient(app)
     response = client.post("/api/agent", json={"query": "find the onboarding doc"})
     assert response.status_code == 200
-    assert called.get("hybrid") is True
+    assert called == ["retrieval", "serpapi"]
     data = response.json()
     assert data["intent"] == "search"
 
