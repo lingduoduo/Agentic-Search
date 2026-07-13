@@ -1,0 +1,133 @@
+# Configuration
+
+[← Back to README](../README.md)
+
+This guide collects provider, search-agent, application, retrieval, reranking, query-transformation, and routing configuration in one reference.
+
+Copy `.env.example` to `.env`; it is loaded automatically through `python-dotenv`.
+
+## Model and web-search providers
+
+```bash
+# LLM provider (required for agent loops)
+GEN_AI_MODEL_PROVIDER=openai       # openai | anthropic | ollama | litellm
+GEN_AI_MODEL_VERSION=gpt-4o-mini
+GEN_AI_API_KEY=...
+GEN_AI_API_BASE=...                # optional override (e.g. http://localhost:11434/v1)
+
+# Web search (pick one or more)
+GOOGLE_API_KEY=...
+GOOGLE_CSE_ID=...
+SERP_API_KEY=...
+
+# Optional
+JAVA_HOME=/path/to/java            # for BM25 / pyserini
+```
+
+## Local search-agent policy model
+
+Set `SEARCH_AGENT_MODEL` before starting the web API to enable the UI's “Search Agent (Local Model)” mode:
+
+```bash
+# 8 GB RAM
+SEARCH_AGENT_MODEL=Qwen/Qwen2.5-0.5B-Instruct PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+
+# 16 GB RAM (better quality)
+SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
+```
+
+`bin/run_web_stack.sh` reads `SEARCH_AGENT_MODEL` from `.env` and starts all three processes in one command (~30–60 seconds for the first response on MPS).
+
+`SEARCH_AGENT_MODEL` is the policy model that must emit multi-turn `<search>` / `<answer>` tags. Small models (≤3B, such as `Qwen2.5-0.5B`) often cannot, which can produce an empty answer with zero sources even when routing and retrieval are correct. A capable 7B+ policy model generally needs at least 16 GB; otherwise use the OpenAI-backed `chat_loop` or deterministic `hybrid_search` path. Leaving `SEARCH_AGENT_MODEL` unset lets auto-routed queries degrade to the OpenAI hybrid pipeline.
+
+## Application and authentication
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `AGENTIC_SEARCH_AUTH_SECRET` | `agentic-search-dev-secret` | JWT signing secret |
+| `AGENTIC_SEARCH_SUPER_USERS` | `[]` | JSON list of admin user IDs or emails |
+| `AGENTIC_SEARCH_WEB_DB_PATH` | `:memory:` | SQLite path (`:memory:` for ephemeral) |
+| `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8001/retrieve` | Retrieval server URL |
+| `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL` | — | Cloud data plane for billing proxy |
+| `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
+| `AGENTIC_SEARCH_DATA_DIR` | `~/.local/share/agentic_search` | License file directory |
+| `WEB_DOMAIN` | `http://localhost:8080` | External URL for OAuth redirects |
+| `GEN_AI_MODEL_PROVIDER` | `openai` | LLM provider (openai, anthropic, ollama, etc.) |
+| `GEN_AI_MODEL_VERSION` | `gpt-4o-mini` | Model name / version |
+| `GEN_AI_API_KEY` | — | Provider API key |
+| `GEN_AI_API_BASE` | — | Override base URL (e.g. `http://localhost:11434/v1`) |
+| `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
+| `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
+| `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
+
+## Neural reranking
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `RERANKER_PROVIDER` | — | `local` or `cohere`; omit to disable neural reranking in `RetrievalService` |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model for local reranking |
+| `RERANKER_BATCH_SIZE` | `32` | Batch size for local cross-encoder |
+| `RERANKER_DEVICE` | `cpu` | Device for local reranker (`cpu`, `mps`, `cuda`) |
+| `RERANKER_TOP_K` | same as search `top_k` | Cap returned results after reranking |
+| `COHERE_API_KEY` | — | Cohere API key (required when `RERANKER_PROVIDER=cohere`) |
+| `RERANKER_ASYNC` | `false` | Wrap reranker in `AsyncReranker` (thread-pool offload) |
+| `RERANKER_TIMEOUT_MS` | `500` | Per-query scorer timeout for `AsyncReranker` |
+| `RERANKER_MAX_WORKERS` | `4` | Thread pool size for `AsyncReranker` |
+| `RERANKER_CACHE_REDIS_URL` | — | Enable `CachedReranker`; set to a Redis URL |
+| `RERANKER_CACHE_TTL_SECONDS` | `300` | TTL for cached reranker scores |
+| `RERANKER_MAX_TOKENS` | `512` | `PassageTruncator` token limit before scoring (0 = disabled) |
+| `RERANKER_USE_ONNX` | `false` | Load reranker via ONNX runtime (`ONNXReranker`) |
+| `RERANKER_TWO_STAGE` | `false` | Enable `TwoStageReranker` (fast pre-filter → heavy scorer) |
+| `RERANKER_PRE_FILTER_TOP_N` | `50` | Candidates passed to the heavy scorer in two-stage mode |
+| `RERANKER_FAST_MODEL` | inherits `RERANKER_MODEL` | Fast-stage model name in two-stage mode |
+| `RERANKER_OVER_FETCH_MULTIPLIER` | `2.0` | Retrieval over-fetch ratio when a reranker is active |
+
+## Retrieval and optimization
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `QUERY_EXPANSION_ENABLED` | `false` | Enable acronym + WordNet synonym expansion in BM25 leg |
+| `SPELL_CORRECTION_ENABLED` | `false` | Enable `symspellpy` spell correction in BM25 leg |
+| `EXPANSION_MAX_TERMS` | `3` | Max added terms per query to prevent BM25 query bloat |
+| `BM25_VARIANT` | — | Set to `bm25plus` to enable BM25+ lower-bound floor (`δ=1.0`) |
+| `FAISS_INDEX_TYPE` | `hnsw` | `ivfpq` for IVF-PQ quantized index; `hnsw` for original |
+| `EF_SEARCH` | — | HNSW `ef_search` override (higher = more recall, slower) |
+| `ADAPTIVE_MMR` | `false` | Select MMR `λ` by query length (short → 0.8, long → 0.3) |
+| `FUSION_WEIGHTS_PATH` | `data/eval/fusion_weights.json` | Learned per-source RRF weights; falls back to uniform if absent |
+| `RESULT_CACHE_REDIS_URL` | — | Enable `ResultCache`; set to a Redis URL |
+| `RESULT_CACHE_TTL` | `300` | TTL in seconds for cached full search responses |
+| `LATENCY_SLO_MS` | `120` | CI SLO gate: P99 above this exits non-zero in `eval_runner` |
+
+## Query transformation
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `QT_DECOMPOSE` | `false` | Enable query decomposition in `QueryTransformPipeline` |
+| `QT_HYDE` | `false` | Enable HyDE (hypothetical document embedding) |
+| `QT_STEP_BACK` | `false` | Enable step-back query rephrasing |
+| `QT_KEYWORDS` | `false` | Enable keyword expansion for BM25 variants |
+| `QT_CONSTRUCT_FILTERS` | `false` | Enable NL → metadata filter extraction |
+| `QT_REWRITE` | `false` | Enable canonical query rewrite (`QueryEnhancer.rewrite`); 7th router label |
+| `QT_MAX_VARIANTS` | `5` | Max parallel retrieval variants when any `QT_*` is enabled |
+| `QT_ASYNC` | `false` | Run the leaf's transform LLM calls in parallel (`AsyncQueryTransformPipeline`) |
+| `QT_TRANSFORM_TIMEOUT_MS` | `400` | Per-transform timeout; on exceed that field degrades to its default |
+| `QT_MAX_WORKERS` | `5` | Thread-pool size for `AsyncQueryTransformPipeline` |
+| `QT_CACHE_REDIS_URL` | — | Enable `CachedQueryTransformPipeline`; set to a Redis URL |
+| `QT_CACHE_TTL_SECONDS` | `600` | TTL for cached transform bundles |
+| `QT_MULTI_QUERY` | `false` | Enable `MultiQueryGenerator` (N paraphrased query variants) |
+| `QT_MULTI_QUERY_N` | `3` | Number of paraphrases generated per query |
+| `QT_FUSION_WEIGHTED` | `false` | Use `variant_weighted_rrf_fuse` (original query weighted highest) |
+| `QT_SEMANTIC_DEDUP` | `false` | Drop near-duplicate variants before retrieval (needs a backend `embed()`) |
+| `QT_SEMANTIC_DEDUP_THRESHOLD` | `0.95` | Cosine cutoff for variant dedup |
+| `QT_ROUTER` | `false` | Per-query routing of transforms (`QueryRouter` + heuristic fallback) |
+| `QT_ROUTER_MODEL_PATH` | — | Serialized scikit-learn router artifact; heuristic used when unset/missing |
+| `QT_CONSTRUCT_OPERATORS` | `false` | Extract numeric range/comparison filters (`rating_gte`/`rating_lte`) |
+
+## Routing and query construction
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `ROUTING_ENABLED` | `false` | Enable the per-query routing layer in `RetrievalService` (domain/source/retriever + query construction); zero overhead when unset |
+| `ROUTING_LOGICAL` | `false` | Add the LLM structured-classification router strategy (falls back to heuristic) |
+| `ROUTING_SEMANTIC` | `false` | Add the embedding-similarity router strategy (falls back to heuristic) |
+| `ROUTING_REGISTRY_PATH` | — | JSON route registry (`{name, description, sources, retriever}`); built-in default used when unset |
