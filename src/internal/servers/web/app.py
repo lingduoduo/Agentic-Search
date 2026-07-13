@@ -570,6 +570,7 @@ async def _run_search_agent(
     top_k: int,
     history: list | None = None,
     filters: dict | None = None,
+    allow_internal_knowledge_answer: bool = True,
     on_turn=None,
     on_trace=None,
 ) -> tuple:
@@ -582,7 +583,11 @@ async def _run_search_agent(
         tokenizer=tokenizer,
         server_manager=manager,
         search_config=SearchAgentLoopConfig(
-            search_url=search_url, topk=top_k, max_turns=3, filters=filters
+            search_url=search_url,
+            topk=top_k,
+            max_turns=3,
+            filters=filters,
+            allow_internal_knowledge_answer=allow_internal_knowledge_answer,
         ),
     )
     output = await loop.run(
@@ -870,6 +875,7 @@ async def _run_search_direct_or_escalate(
                 top_k=top_k,
                 history=history,
                 filters=filters,
+                allow_internal_knowledge_answer=False,
                 on_turn=on_turn,
                 on_trace=None,
             )

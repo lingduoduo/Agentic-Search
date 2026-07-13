@@ -306,10 +306,13 @@ def _call_direct_or_escalate(monkeypatch, direct_docs, agent_result=None):
     async def _fake_direct(*a, **k):
         return direct_docs
 
-    called = {"agent": False}
+    called = {"agent": False, "allow_internal_knowledge_answer": None}
 
     async def _fake_agent(*a, **k):
         called["agent"] = True
+        called["allow_internal_knowledge_answer"] = k.get(
+            "allow_internal_knowledge_answer"
+        )
         return ("agent answer", ["[D1]"], [_doc(0.9)], "search", {})
 
     monkeypatch.setattr(web_app, "_run_direct_search", _fake_direct)
@@ -358,3 +361,9 @@ def test_empty_retrieval_escalates(monkeypatch):
     (_answer, _c, _d, _i, extra), called = _call_direct_or_escalate(monkeypatch, [])
     assert called["agent"] is True
     assert extra["search_mode"] == "escalated"
+
+
+def test_auto_routed_weak_retrieval_requires_agent_search(monkeypatch):
+    (_answer, _c, _d, _i, _extra), called = _call_direct_or_escalate(monkeypatch, [])
+
+    assert called["allow_internal_knowledge_answer"] is False
