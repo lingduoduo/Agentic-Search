@@ -126,7 +126,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - **BM25/pyserini cannot find Java:** install Java and set `JAVA_HOME` to the active JDK. The demo TF-IDF retrieval server does not require Java.
 - **A local policy model returns an empty answer or zero sources:** small models often fail to emit the required `<search>` and `<answer>` tags. Use a more capable policy model, leave `SEARCH_AGENT_MODEL` unset for the provider-backed fallback, or use `chat_loop`/`hybrid_search`; see [Architecture](docs/architecture.md) and [Configuration](docs/configuration.md).
 - **Dense retrieval is slow or fails on your hardware:** CPU is the default; dense embedding and reranking services can use CUDA on a supported NVIDIA host or MPS on Apple Silicon. For in-process Hugging Face policy-model inference, CPU is the safest default because some model, PyTorch, and Transformers combinations can segfault on MPS. Only opt in with `--allow_unsafe_mps` after accepting that risk; see [Training and evaluation](docs/training-and-evaluation.md) for device-specific commands.
-- **Dataset preparation reports a `pyarrow` extension error:** rerun `pip install -r requirements.txt` to restore the pinned dependency set.
+- **Dataset preparation reports a `pyarrow` extension error:** rerun `pip install -r requirements.txt` to restore the compatible dependency set.
 - **Requests fail or agent loops cannot answer:** confirm retrieval on port 8001, the API on port 7860, and Vite on port 5173 are running. Agent loops also need a valid provider key; web-search modes need the corresponding search-provider keys.
 
 ## Documentation

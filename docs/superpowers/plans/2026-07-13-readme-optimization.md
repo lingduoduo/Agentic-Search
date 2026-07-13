@@ -365,12 +365,59 @@ for file in README.md docs/architecture.md docs/retrieval.md docs/api-reference.
 
 Expected: exit status 0 with no output.
 
-- [ ] **Step 2: Verify local Markdown links resolve**
+- [ ] **Step 2: Verify local Markdown links and heading fragments resolve**
 
-Run this read-only Python check:
+Run this read-only Python check. It validates both relative paths and GitHub-style
+heading fragments, including the `-1`, `-2`, ... suffixes assigned to duplicate
+headings:
 
 ```bash
-python3 -c 'import pathlib,re,sys; files=[pathlib.Path("README.md"),*pathlib.Path("docs").glob("*.md")]; bad=[]; pattern=re.compile(r"\[[^]]+\]\(([^)]+)\)"); [(bad.append((str(f),t)) if not (f.parent / t.split("#",1)[0]).resolve().exists() else None) for f in files for t in pattern.findall(f.read_text()) if t and not t.startswith(("http://","https://","mailto:","#")) and t.split("#",1)[0]]; print(*[f"{f}: {t}" for f,t in bad],sep="\n"); sys.exit(bool(bad))'
+python3 - <<'PY'
+import collections
+import pathlib
+import re
+import sys
+from urllib.parse import unquote
+
+files = [pathlib.Path("README.md"), *pathlib.Path("docs").glob("*.md")]
+link_re = re.compile(r"\[[^]]+\]\(([^)]+)\)")
+heading_re = re.compile(r"^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$")
+
+def anchors(path):
+    counts = collections.Counter()
+    result = set()
+    fenced = False
+    for line in path.read_text().splitlines():
+        if re.match(r"^ {0,3}(```|~~~)", line):
+            fenced = not fenced
+            continue
+        match = None if fenced else heading_re.match(line)
+        if not match:
+            continue
+        text = re.sub(r"<[^>]+>", "", match.group(1)).lower()
+        slug = re.sub(r"[^\w\- ]", "", text, flags=re.UNICODE)
+        slug = re.sub(r"\s", "-", slug)
+        number = counts[slug]
+        counts[slug] += 1
+        result.add(slug if number == 0 else f"{slug}-{number}")
+    return result
+
+bad = []
+for source in files:
+    for target in link_re.findall(source.read_text()):
+        if not target or target.startswith(("http://", "https://", "mailto:")):
+            continue
+        path_text, separator, fragment = target.partition("#")
+        destination = source if not path_text else source.parent / unquote(path_text)
+        if not destination.exists():
+            bad.append((source, target, "missing path"))
+        elif separator and unquote(fragment) not in anchors(destination):
+            bad.append((source, target, "missing fragment"))
+
+for source, target, reason in bad:
+    print(f"{source}: {target} ({reason})")
+sys.exit(bool(bad))
+PY
 ```
 
 Expected: exit status 0 with no output.

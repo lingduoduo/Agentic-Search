@@ -82,7 +82,7 @@ The FastAPI app is assembled in `src/internal/servers/web/app.py`. Every feature
 
 ## Agent framework and control flow
 
-The agent layer (`src/agents/`) behind every loop the [Web Backend API](../README.md#web-backend-api) and [CLI](../README.md#examples) drive.
+The agent layer (`src/agents/`) behind every loop the [Web backend API](api-reference.md#web-backend-api) and [runnable agent examples](training-and-evaluation.md#agent-cli) drive.
 
 ### Agent taxonomy — two families
 
@@ -147,7 +147,7 @@ curl -sN -X POST http://localhost:7860/api/agent/stream \
   # data: {"type": "answer", "text": "..."}
   # data: {"type": "done", "intent": "search", "citations": ["[D1]"], "documents": [...]}
 ```
-See [Web Backend API](../README.md#web-backend-api) for the full request/response schema.
+See the [Web backend API](api-reference.md#web-backend-api) for the full request/response schema.
 
 ## Intent routing
 

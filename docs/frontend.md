@@ -76,7 +76,7 @@ Click **Console** in the top bar to open it. **Retrieval Lab** runs a query agai
 - color-codes the relevance score via `scoreColor()` (green ≥ 0.7, amber ≥ 0.4, orange > 0, grey for 0).
 - tags the source provider with a colored pill via `SOURCE_COLORS` (Browser Retrieval, SerpAPI, Local Retrieval, All Active Sources; grey fallback).
 
-Source cards are frontend-only (no dedicated backend endpoint): they are populated from the `documents` array of the `POST /api/agent` response (see [Web Backend API](../README.md#web-backend-api)); the retrieval server returns the same fields as `results[]` from `POST /search`. Inspect that backing data with:
+Source cards are frontend-only (no dedicated backend endpoint): they are populated from the `documents` array of the `POST /api/agent` response (see the [Web backend API](api-reference.md#web-backend-api)); the retrieval server returns the same fields as `results[]` from `POST /search`. Inspect that backing data with:
 ```bash
 curl -s -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
@@ -96,7 +96,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 | `tool` | `intent-tool` | `.tool-trace-panel` full-width hero; `.sources-panel` and `.session-panel` side-by-side below |
 | narrow (≤720 px) | — | All intents fall back to a single-column grid stack |
 
-The intent itself comes from the backend's routing decision — see the `response.intent` contract under [Web Backend API](../README.md#web-backend-api). No new endpoints back this feature; the layout is a pure function of that one field.
+The intent itself comes from the backend's routing decision — see the `response.intent` contract under the [Web backend API](api-reference.md#web-backend-api). No new endpoints back this feature; the layout is a pure function of that one field.
 
 **Intent badge** (`AnswerPanel.tsx`) — a pill under the answer summarising what ran, derived from `response.intent` + counts: `Searched · 5 sources`, `Answered · 3 citations`, or `Used tools`. Hidden when the answer is empty or the intent is undefined.
 
@@ -119,4 +119,4 @@ The intent itself comes from the backend's routing decision — see the `respons
 
 API client functions live in `web/src/api.ts`: `runAgent` / `streamAgent` (SSE), `createSession` / `getSession`, `getAdminSummary`, `getAnalyticsByLLM` / `getAnalyticsByPersona` / `getAnalyticsByFlow`, `getQueryHistory`, `getAuditSummary`, `submitFeedback`.
 
-**Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](../README.md#training) — the human-feedback signal that fine-tunes the policy.
+**Feedback loop (UI → fine-tuning)** — `submitFeedback(chatMessageId, isPositive, feedbackText?)` posts per-message like/dislike to `POST /chat/create-chat-message-feedback`, and session thumbs go to `POST /api/feedback`; `QueryHistoryPanel` can filter sessions by `feedback_type` (`like` / `dislike`). These ratings are exactly what `load_feedback_examples` reads back into [feedback-driven GRPO](training-and-evaluation.md#fine-tune-from-user-feedback) — the human-feedback signal that fine-tunes the policy.
