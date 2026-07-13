@@ -901,6 +901,7 @@ async def _run_search_direct_or_escalate(
     if source_provider not in ("auto", "retrieval"):
         return await _escalate(0.0, "explicit_source")
 
+    internal_unreachable = False
     try:
         documents = await _run_direct_search(
             query,
@@ -911,8 +912,11 @@ async def _run_search_direct_or_escalate(
             filters=filters,
         )
     except Exception:
+        internal_unreachable = True
         documents = []
     real = [d for d in documents if not d.metadata.get("error")]
+    if documents and not real:
+        internal_unreachable = True
     is_strong, tier, top_score, cosine = await asyncio.to_thread(
         _direct_gate_decision,
         query,
@@ -958,6 +962,83 @@ async def _run_search_direct_or_escalate(
         "sufficiency",
         {"mode": "escalated", "tier": tier, "cosine": cosine, "top_score": top_score},
     )
+
+    if source_provider == "auto":
+        external_providers = ["serpapi"]
+        if browser_search_url:
+            external_providers.append("browser")
+        providers_attempted = 1
+        unreachable_providers = 1 if internal_unreachable else 0
+
+        for provider in external_providers:
+            providers_attempted += 1
+            try:
+                external_documents = await _run_direct_search(
+                    query,
+                    source_provider=provider,
+                    search_url=search_url,
+                    browser_search_url=(
+                        browser_search_url if provider == "browser" else None
+                    ),
+                    rerank_url=rerank_url,
+                    top_k=top_k,
+                    filters=None,
+                )
+            except Exception as exc:
+                logger.warning("%s fallback failed for %r: %s", provider, query, exc)
+                unreachable_providers += 1
+                external_documents = []
+
+            external_real = [
+                doc for doc in external_documents if not doc.metadata.get("error")
+            ]
+            if external_documents and not external_real:
+                unreachable_providers += 1
+            if external_real:
+                _capture.record_stage(
+                    "search",
+                    "external_fallback",
+                    {"provider": provider, "documents": len(external_real)},
+                )
+                answer = _search_only_answer(
+                    "External search",
+                    queries=[query],
+                    documents=external_real,
+                    source_provider=provider,
+                )
+                return (
+                    answer,
+                    [doc.citation for doc in external_real],
+                    external_real,
+                    "search",
+                    {
+                        "search_mode": "external_fallback",
+                        "external_provider": provider,
+                        "top_score": top_score,
+                    },
+                )
+
+        _capture.record_stage(
+            "search",
+            "external_fallback",
+            {"provider": "none", "documents": 0},
+        )
+        all_unreachable = unreachable_providers == providers_attempted
+        return (
+            (
+                "No sources are reachable right now. Please try again shortly."
+                if all_unreachable
+                else f"No results found for: {query}"
+            ),
+            [],
+            [],
+            "search",
+            {
+                "search_mode": "external_empty",
+                "top_score": top_score,
+            },
+        )
+
     return await _escalate(top_score, "weak_retrieval")
 
 
