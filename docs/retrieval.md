@@ -6,7 +6,6 @@ This guide covers retrieval services, ranking modes, reranking, and query optimi
 
 ## Retrieval setup
 
-
 `src.internal.document_index` is the single indexing entry point — filtering, chunking, embedding, retry-isolated writes, and failure reporting. Query-time retrievers and the retrieval HTTP client live in `src.context`. Reranker utilities live in `src.internal.servers.retrieval`.
 
 **Retrieval servers** (`src/internal/servers/retrieval/`):
@@ -67,9 +66,7 @@ curl -i -sS -X POST http://127.0.0.1:8001/retrieve \
 
 For complete request and response payloads, see the [HTTP API reference](api-reference.md).
 
-
 ## Neural reranking
-
 
 `RetrievalService` optionally reranks hybrid-fused results via a layered wrapper chain. Set `RERANKER_PROVIDER` to enable; all wrappers are opt-in via env vars and compose on top of the unchanged `Reranker` leaf.
 
@@ -137,9 +134,7 @@ python -m src.internal.retrieval.reranker_benchmark \
 # Prints ranked table sorted by NDCG@10
 ```
 
-
 ## Retrieval optimization
-
 
 All optimization components are opt-in; unset env vars = unchanged M1–M4 behavior.
 
@@ -205,9 +200,7 @@ index = builder.build_ivfpq(embeddings, nlist=4096, m=96, nbits=8, nprobe=64)
 # Save alongside existing index; load via FAISS_INDEX_TYPE=ivfpq
 ```
 
-
 ## Query transformation optimization
-
 
 A layered-wrapper optimization stack over `QueryTransformPipeline`, parallel to Neural Reranking. Every layer is opt-in; with all `QT_*` unset, `RetrievalService` runs the single-query path unchanged (`build_query_transform_pipeline_from_env` returns `None`).
 
@@ -301,9 +294,7 @@ rows = run_query_transform_benchmark(dataset, retrieve, [
 # → [{"config_signature": "...", "recall": 0.91, "ndcg": 0.78, "mean_latency_ms": 142.0}, ...]
 ```
 
-
 ## Routing and query construction
-
 
 The RAG **Routing → Query Construction** stage (`src/internal/routing/`). It decides **where** a query should go (domain → source → retriever) and **how** to express it for the chosen backend. Distinct from [Intent Routing](architecture.md#intent-routing) (web-level `search`/`chat`/`tool`) and from `QueryRouter` (which picks *transforms*): this layer picks the *retriever/construction target* per query.
 

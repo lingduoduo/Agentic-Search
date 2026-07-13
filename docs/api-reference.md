@@ -6,7 +6,6 @@ This guide documents the local retrieval, web, chat/session, and health endpoint
 
 ## Retrieval server API
 
-
 The retrieval server (`src/internal/servers/retrieval/server.py`, examples use `:8001`) exposes the retrieval core over HTTP. The demo server (`demo.py`, TF-IDF) only serves `POST /retrieve`; the full server below adds per-mode and admin endpoints.
 
 **Health:**
@@ -72,9 +71,7 @@ curl -s -X PATCH http://localhost:8001/api/admin/retrieval/config \
   -d '{"rrf_k": 80, "mmr_lambda": 0.4, "nprobe": 96, "result_cache_ttl": 600}'
 ```
 
-
 ## Web backend API
-
 
 The FastAPI web backend (`src/internal/servers/web/app.py`, `:7860`) drives the UI and agent loops.
 
@@ -182,9 +179,7 @@ Net: in the common single-machine setup (local model set, no SerpAPI key), every
 UI query stays on the internal corpus. Routing the multi-turn loop to the web via
 the existing `source_provider` infrastructure is a possible future change.
 
-
 ## Chat and session API
-
 
 Chat session management and search-flow routing live on the web backend (`:7860`) under the `/chat`, `/search`, and `/query` routers (`src/internal/servers/query_and_chat/`). The streamed send-message flow itself is `POST /api/agent` / `/api/agent/stream` above; these endpoints manage the sessions and feedback around it.
 
@@ -234,9 +229,7 @@ curl -s http://localhost:7860/search/search-history
 
 `GET /query/standard-answer` exists but is an Enterprise-gated stub — it returns `501` ("Standard Answers is an Enterprise feature … not available in this deployment") in the open-source build.
 
-
 ## API health checks
-
 
 Web backend: `http://localhost:7860` · Retrieval server: `http://localhost:8001`
 
