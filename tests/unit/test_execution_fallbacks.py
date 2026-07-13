@@ -64,31 +64,26 @@ def test_search_agent_without_model_runs_hybrid_pipeline(monkeypatch, tmp_path):
 # --- Search fallbacks inside _auto_search_pipeline ---
 
 
-def test_hybrid_search_fails_falls_back_to_rag_without_context(monkeypatch, tmp_path):
-    """hybrid raises → answer_with_retrieval called with top_k=0, intent='chat'."""
+def test_auto_search_does_not_fall_back_to_rag_without_evidence(monkeypatch, tmp_path):
+    """Empty providers terminate as SEARCH without calling the LLM/RAG path."""
     _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_hybrid_search",
         AsyncMock(side_effect=ConnectionError("retrieval down")),
     )
-    rag_call_kwargs: dict = {}
-
-    async def fake_rag(q, *, llm, chat_history, search_url, top_k, filters):
-        rag_call_kwargs["top_k"] = top_k
-        return _make_answer_result("rag fallback")
-
-    monkeypatch.setattr("src.internal.servers.web.app.answer_with_retrieval", fake_rag)
+    rag = AsyncMock(return_value=_make_answer_result("rag fallback"))
+    monkeypatch.setattr("src.internal.servers.web.app.answer_with_retrieval", rag)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
         response = client.post("/api/agent", json={"query": "find onboarding doc"})
     assert response.status_code == 200
     data = response.json()
-    assert data["intent"] == "chat"
-    assert rag_call_kwargs.get("top_k") == 0
+    assert data["intent"] == "search"
+    rag.assert_not_awaited()
 
 
-def test_hybrid_search_and_rag_both_fail_returns_502(monkeypatch, tmp_path):
-    """hybrid raises, RAG raises, raw search raises → 502."""
+def test_all_search_providers_unreachable_returns_grounded_200(monkeypatch, tmp_path):
+    """Provider failures return an unreachable SEARCH response without LLM fallback."""
     _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr(
         "src.internal.servers.web.app._run_hybrid_search",
@@ -107,8 +102,8 @@ def test_hybrid_search_and_rag_both_fail_returns_502(monkeypatch, tmp_path):
     )
     with TestClient(app) as client:
         response = client.post("/api/agent", json={"query": "find doc"})
-    assert response.status_code == 502
-    assert "retrieval also unavailable" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    assert "No sources are reachable" in response.json()["answer"]
 
 
 def test_rag_fails_falls_back_to_raw_docs(monkeypatch, tmp_path):
@@ -150,6 +145,10 @@ def test_search_unreachable_returns_clear_message(monkeypatch, tmp_path):
 
     _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_direct_search",
+        AsyncMock(side_effect=ConnectionError("provider down")),
+    )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
         response = client.post("/api/agent", json={"query": "find stuff"})
@@ -169,6 +168,10 @@ def test_search_empty_uses_no_results_message(monkeypatch, tmp_path):
 
     _force_route(monkeypatch, RouteStrategy.SEARCH)
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_direct_search",
+        AsyncMock(return_value=[]),
+    )
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
     with TestClient(app) as client:
         response = client.post("/api/agent", json={"query": "find stuff"})
@@ -302,31 +305,52 @@ def _doc(score: float, i: int = 1, title: str | None = None) -> ContextDocument:
     )
 
 
-def _call_direct_or_escalate(monkeypatch, direct_docs, agent_result=None):
-    async def _fake_direct(*a, **k):
-        return direct_docs
+def _call_direct_or_escalate(
+    monkeypatch,
+    direct_docs,
+    agent_result=None,
+    *,
+    source_provider="retrieval",
+    provider_docs=None,
+    browser_search_url=None,
+    query="FAISS",
+):
+    provider_docs = provider_docs or {}
+    provider_calls = []
 
-    called = {"agent": False}
+    async def _fake_direct(*a, **k):
+        provider = k["source_provider"]
+        provider_calls.append(provider)
+        return provider_docs.get(provider, direct_docs)
+
+    called = {
+        "agent": False,
+        "allow_internal_knowledge_answer": None,
+        "providers": provider_calls,
+    }
 
     async def _fake_agent(*a, **k):
         called["agent"] = True
+        called["allow_internal_knowledge_answer"] = k.get(
+            "allow_internal_knowledge_answer"
+        )
         return ("agent answer", ["[D1]"], [_doc(0.9)], "search", {})
 
     monkeypatch.setattr(web_app, "_run_direct_search", _fake_direct)
     monkeypatch.setattr(web_app, "_run_search_agent", _fake_agent)
     result = asyncio.run(
         web_app._run_search_direct_or_escalate(
-            "FAISS",
+            query,
             manager=object(),
             tokenizer=object(),
             llm=None,
             search_url="http://x/retrieve",
-            browser_search_url=None,
+            browser_search_url=browser_search_url,
             rerank_url=None,
             top_k=5,
             filters=None,
             history=[],
-            source_provider="retrieval",
+            source_provider=source_provider,
             on_turn=None,
         )
     )
@@ -358,3 +382,56 @@ def test_empty_retrieval_escalates(monkeypatch):
     (_answer, _c, _d, _i, extra), called = _call_direct_or_escalate(monkeypatch, [])
     assert called["agent"] is True
     assert extra["search_mode"] == "escalated"
+
+
+def test_auto_routed_weak_internal_retrieval_uses_serpapi_before_agent(monkeypatch):
+    (_answer, _c, documents, _i, extra), called = _call_direct_or_escalate(
+        monkeypatch,
+        [],
+        source_provider="auto",
+        provider_docs={"retrieval": [], "serpapi": [_doc(0.8)]},
+        browser_search_url="http://browser/retrieve",
+    )
+
+    assert called["providers"] == ["retrieval", "serpapi"]
+    assert called["agent"] is False
+    assert documents
+    assert extra["search_mode"] == "external_fallback"
+
+
+def test_auto_routed_empty_serpapi_uses_browser_before_agent(monkeypatch):
+    (_answer, _c, documents, _i, extra), called = _call_direct_or_escalate(
+        monkeypatch,
+        [],
+        source_provider="auto",
+        provider_docs={
+            "retrieval": [],
+            "serpapi": [],
+            "browser": [_doc(0.7)],
+        },
+        browser_search_url="http://browser/retrieve",
+    )
+
+    assert called["providers"] == ["retrieval", "serpapi", "browser"]
+    assert called["agent"] is False
+    assert documents
+    assert extra["search_mode"] == "external_fallback"
+
+
+def test_auto_routed_all_providers_empty_returns_no_evidence_without_agent(monkeypatch):
+    (answer, citations, documents, intent, extra), called = _call_direct_or_escalate(
+        monkeypatch,
+        [],
+        source_provider="auto",
+        provider_docs={"retrieval": [], "serpapi": [], "browser": []},
+        browser_search_url="http://browser/retrieve",
+        query="GRPO",
+    )
+
+    assert called["providers"] == ["retrieval", "serpapi", "browser"]
+    assert called["agent"] is False
+    assert answer == "No results found for: GRPO"
+    assert citations == []
+    assert documents == []
+    assert intent == "search"
+    assert extra["search_mode"] == "external_empty"
