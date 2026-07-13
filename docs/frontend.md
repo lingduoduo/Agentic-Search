@@ -98,6 +98,8 @@ curl -s -X POST http://localhost:7860/api/agent \
 
 The intent itself comes from the backend's routing decision — see the `response.intent` contract under the [Web backend API](api-reference.md#web-backend-api). No new endpoints back this feature; the layout is a pure function of that one field.
 
+`intent` describes what surfaced, while the `done` payload and request inspector expose why and how it ran. Auto requests may include `route`, `route_degraded`, `search_mode`, and `external_provider` metadata. For example, a bare `GRPO` query can display search results from SerpAPI or browser retrieval after the internal sufficiency gate fails; if no provider returns evidence, the sources panel remains empty and the answer reports no results. See [API request routing](request-routing.md).
+
 **Intent badge** (`AnswerPanel.tsx`) — a pill under the answer summarising what ran, derived from `response.intent` + counts: `Searched · 5 sources`, `Answered · 3 citations`, or `Used tools`. Hidden when the answer is empty or the intent is undefined.
 
 **Example-query chips** (`SearchComposer.tsx`) — three chips under the search box, one per routing intent, that populate and run a representative query in a single click so the intent router can be exercised without knowing what triggers each path: 🔍 `find the onboarding checklist` (search), 💬 `explain how FAISS indexing works` (chat), 🛠 `summarize the latest sales figures and chart them` (tool). The chips are hidden while a request is in flight.

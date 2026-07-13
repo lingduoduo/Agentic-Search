@@ -91,3 +91,16 @@ curl -s --max-time 30 -X POST http://127.0.0.1:8002/retrieve \
   -H 'Content-Type: application/json' \
   -d '{"query":"what is FAISS","top_k":5}' | python3 -m json.tool
 ```
+
+### Request routing and provider fallback
+
+Run the focused backend suites when changing intent classification, explicit modes, provider precedence, access filters, or routing metadata:
+
+```bash
+pytest -q \
+  tests/unit/test_execution_fallbacks.py \
+  tests/unit/servers/web/test_agent_router.py \
+  tests/unit/servers/web/test_web_experience_app.py
+```
+
+The fallback tests assert that unfiltered auto-search tries internal retrieval, then SerpAPI, then the configured browser service, and never substitutes a local-model answer when all providers are empty. Access-filter tests separately protect the filter-aware path. The expected contract is documented in [API request routing](request-routing.md).

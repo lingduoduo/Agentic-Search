@@ -38,7 +38,24 @@ SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct PYTHONPATH=src:. uvicorn src.inter
 
 `bin/run_web_stack.sh` reads `SEARCH_AGENT_MODEL` from `.env` and starts all three processes in one command (~30–60 seconds for the first response on MPS).
 
-`SEARCH_AGENT_MODEL` is the policy model that must emit multi-turn `<search>` / `<answer>` tags. Small models (≤3B, such as `Qwen2.5-0.5B`) often cannot, which can produce an empty answer with zero sources even when routing and retrieval are correct. A capable 7B+ policy model generally needs at least 16 GB; otherwise use the OpenAI-backed `chat_loop` or deterministic `hybrid_search` path. Leaving `SEARCH_AGENT_MODEL` unset lets auto-routed queries degrade to the OpenAI hybrid pipeline.
+`SEARCH_AGENT_MODEL` is the policy model used by explicit `search_agent` and `tool_agent` modes. It must emit multi-turn `<search>` / `<answer>` tags. Small models (≤3B, such as `Qwen2.5-0.5B`) often cannot, which can produce an empty answer with zero sources even when routing and retrieval are correct. A capable 7B+ policy model generally needs at least 16 GB; otherwise use the provider-backed `chat_loop` or deterministic `hybrid_search` path. The default auto-routed search path does not need this model: it tries internal retrieval, SerpAPI, and browser search before returning a no-evidence response.
+
+## Web request routing
+
+Routing configuration spans separate capabilities:
+
+| Setting | Role in `/api/agent` routing |
+|---|---|
+| `AGENTIC_SEARCH_RETRIEVAL_URL` | First source for auto-routed search and internal grounding for chat paths |
+| `SERP_API_KEY` / `SERPAPI_API_KEY` | Enables the SerpAPI fallback after weak or empty internal evidence |
+| `SearchExperienceSettings.browser_search_url` | Enables the HTTP browser-search fallback after SerpAPI; run `src.internal.servers.web_search.browser` separately and wire its `/retrieve` URL into app construction |
+| `SEARCH_AGENT_MODEL` / `SEARCH_AGENT_SERVER_URL` | Enables explicit local/remote policy-agent modes; not required for default auto-search |
+| `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, provider key | Enables grounded chat synthesis and the classifier for ambiguous routes |
+| `INTENT_MIN_CONFIDENCE` | Minimum learned intent-model confidence before skipping the LLM/rule fallback |
+| `SEARCH_DIRECT_COS_MIN` | Semantic threshold for accepting internal evidence without external fallback |
+| `AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL` | Allows a request body to override the server-owned retrieval URL; development only |
+
+`source_provider=auto` applies the sequential provider order only to unfiltered auto-routed search. Authenticated requests carry ACL filters and use the filter-aware pipeline. Explicit modes and explicit providers retain their own execution contracts. See [API request routing](request-routing.md).
 
 ## Application and authentication
 

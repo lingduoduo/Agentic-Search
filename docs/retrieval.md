@@ -66,6 +66,20 @@ curl -i -sS -X POST http://127.0.0.1:8001/retrieve \
 
 For complete request and response payloads, see the [HTTP API reference](api-reference.md).
 
+## Retrieval in auto-routed API requests
+
+The web API has an evidence-first search path above the retrieval services. For an unfiltered `/api/agent` request that routes to `search` with `source_provider=auto`, the backend:
+
+1. queries internal retrieval;
+2. accepts an exact-title, fuzzy-plus-semantic, or semantic match that clears the direct sufficiency gate;
+3. otherwise tries SerpAPI with the original query;
+4. otherwise calls the configured browser-search HTTP service;
+5. returns a deterministic no-results or sources-unreachable response when no evidence exists.
+
+This sequence is different from explicit `mode=hybrid_search`, whose helper can query internal retrieval in parallel with a cascading web leg and then merge/rerank results. It is also different from the internal retrieval router described below.
+
+Authenticated requests carry document-access filters and use the filter-aware pipeline rather than the unfiltered direct-first shortcut. Internal retrieval receives the ACL filters; external web providers do not receive internal document ACL objects. See [API request routing](request-routing.md) for exact modes, metadata, and fallbacks.
+
 ## Neural reranking
 
 `RetrievalService` optionally reranks hybrid-fused results via a layered wrapper chain. Set `RERANKER_PROVIDER` to enable; all wrappers are opt-in via env vars and compose on top of the unchanged `Reranker` leaf.

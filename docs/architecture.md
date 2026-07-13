@@ -155,11 +155,32 @@ The backend auto-classifies every query and dispatches to the right agent withou
 
 | Intent | Agent loop | Trigger |
 |--------|-----------|---------|
-| `search` | `SearchAgentLoop` | Query needs external retrieval (web or indexed docs), or a bare entity lookup (e.g. `FAISS`) |
+| `search` | Direct-first search pipeline (`SearchAgentLoop` only in explicit/escalated paths) | Query needs external retrieval or a bare entity lookup (e.g. `FAISS`) |
 | `chat` | `AgenticRAGLoop` | Descriptive/conversational questions and generative asks — grounded synthesis |
 | `tool` | `ToolAgentLoop` | Explicit tool use (`search_routing_tool`, custom tools) |
 
-The router is `route_query` (`src/internal/servers/web/intent_routing.py`), dispatched by `_run_auto_routed` in `src/internal/servers/web/app.py`. It runs an LLM-backed 3-way classifier (`classify_route`) and falls back to a rule-based route (default `chat`) on ambiguous input.
+The router is `route_query` (`src/internal/servers/web/intent_routing.py`), dispatched by `_run_auto_routed` in `src/internal/servers/web/app.py`. Its precedence is explicit source, deterministic regex cues, confident learned intent model, deterministic LLM classifier, then rule-based fallback. Bare terms route to `search`; ambiguous input defaults to grounded `chat`.
+
+### End-to-end request flow
+
+```text
+/api/agent or /api/agent/stream
+  → query hook + session/history + access filters
+  → explicit mode, or route_query(chat | search | tool)
+      → chat: AgenticRAGLoop, or filter-aware pipeline without an LLM
+      → tool: ToolAgentLoop, then grounded chat if tools/model are unavailable
+      → search:
+          filters? → filter-aware pipeline
+          otherwise → internal retrieval → sufficiency gate
+                       → SerpAPI → browser-search service
+                       → deterministic no-evidence response
+  → shared response finalization + persistence + hooks
+  → JSON response or SSE answer/done events
+```
+
+The local policy model is not the fallback for missing evidence on the default unfiltered auto-search path. Strong internal evidence returns directly; weak or empty internal evidence tries external search first. This avoids conflating a model's internal knowledge with retrieved evidence.
+
+There are three independent routing layers: the web request strategy (`chat` / `search` / `tool`), the web source provider (`auto` / `retrieval` / web providers), and the internal retrieval backend router (sparse/dense/hybrid/etc.). See [API request routing](request-routing.md) for the detailed contract and [Retrieval](retrieval.md#routing-and-query-construction) for backend routing.
 
 **RAG-Fusion in tool mode** — `search_routing_tool` aggregates results from all configured retrieval sources (local index, Google, SerpAPI) in a single call, deduplicates by URL, and returns a ranked list with `[D1]`/`[D2]` citation labels.
 

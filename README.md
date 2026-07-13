@@ -63,6 +63,10 @@ GEN_AI_API_KEY=...
 
 Provider, web-search, retrieval, reranking, routing, and application settings are documented in [Configuration](docs/configuration.md).
 
+## Request routing
+
+With `mode` omitted, `/api/agent` classifies each request as `chat`, `search`, or `tool`. An unfiltered auto-routed search tries internal retrieval first; weak or empty evidence falls through to SerpAPI and then the configured browser-search service. If no source returns evidence, the API reports that directly instead of asking a local model to answer from memory. See [API request routing](docs/request-routing.md) for modes, provider precedence, access-filter behavior, metadata, and examples.
+
 ## Run locally
 
 Start each service in a separate terminal from the repository root.
@@ -124,7 +128,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 
 - **Frontend changes look stale:** open <http://127.0.0.1:5173> for live Vite updates. Port 7860 serves the last production bundle built into `web/dist`.
 - **BM25/pyserini cannot find Java:** install Java and set `JAVA_HOME` to the active JDK. The demo TF-IDF retrieval server does not require Java.
-- **A local policy model returns an empty answer or zero sources:** small models often fail to emit the required `<search>` and `<answer>` tags. Use a more capable policy model, leave `SEARCH_AGENT_MODEL` unset for the provider-backed fallback, or use `chat_loop`/`hybrid_search`; see [Architecture](docs/architecture.md) and [Configuration](docs/configuration.md).
+- **An explicit local policy-agent mode returns an empty answer or zero sources:** small models often fail to emit the required `<search>` and `<answer>` tags. Use a more capable policy model or choose `chat_loop`/`hybrid_search`. The default auto-routed search path is evidence-first and does not depend on a local policy model; see [API request routing](docs/request-routing.md) and [Configuration](docs/configuration.md).
 - **Dense retrieval is slow or fails on your hardware:** CPU is the default; dense embedding and reranking services can use CUDA on a supported NVIDIA host or MPS on Apple Silicon. For in-process Hugging Face policy-model inference, CPU is the safest default because some model, PyTorch, and Transformers combinations can segfault on MPS. Only opt in with `--allow_unsafe_mps` after accepting that risk; see [Training and evaluation](docs/training-and-evaluation.md) for device-specific commands.
 - **Dataset preparation reports a `pyarrow` extension error:** rerun `pip install -r requirements.txt` to restore the compatible dependency set.
 - **Requests fail or agent loops cannot answer:** confirm retrieval on port 8001, the API on port 7860, and Vite on port 5173 are running. Agent loops also need a valid provider key; web-search modes need the corresponding search-provider keys.
@@ -132,6 +136,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 ## Documentation
 
 - [Architecture](docs/architecture.md) — repository layout, agent families, routing, and request flows
+- [API request routing](docs/request-routing.md) — modes, intent classification, provider order, fallbacks, and response metadata
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
 - [Training and evaluation](docs/training-and-evaluation.md) — examples, datasets, SFT, GRPO/PPO, and benchmarks
