@@ -26,7 +26,6 @@ from fastapi.responses import StreamingResponse
 from src.context.models import SearchFilters
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.internal.auth import AuthenticatedUser
-from src.internal.auth import user_from_headers
 from src.internal.db import AgenticSearchStore
 from src.internal.search.process_search_query import SearchQueryResult
 from src.internal.search.process_search_query import run_expanded_search
@@ -41,6 +40,7 @@ from src.internal.servers.query_and_chat.models import SendSearchQueryRequest
 from src.internal.servers.query_and_chat.streaming_models import SearchDocsPacket
 from src.internal.servers.query_and_chat.streaming_models import SearchErrorPacket
 from src.internal.servers.query_and_chat.streaming_models import SearchQueriesPacket
+from src.internal.servers.users.api import resolve_request_user
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +50,15 @@ _MAX_QUERY_FOR_FLOW_CLASSIFICATION = 200
 def _authenticated_search_filters(
     request: Request,
     requested: SearchFilters | None,
+    store: AgenticSearchStore,
 ) -> SearchFilters:
-    user = user_from_headers(request.headers)
+    user = resolve_request_user(request)
     if user is None or user.is_anonymous:
         raise HTTPException(status_code=401, detail="Authentication required.")
     acl = build_user_only_filters(
         user.id,
         email=user.email,
-        group_ids=user.group_ids,
+        group_ids=store.list_group_ids_for_user(user.id),
     )
     return SearchFilters(
         source_types=requested.source_types if requested else None,
@@ -102,7 +103,7 @@ def create_search_router(
     router = APIRouter(prefix="/search", tags=["search"])
 
     def _get_user(request: Request) -> AuthenticatedUser | None:
-        return user_from_headers(request.headers)
+        return resolve_request_user(request)
 
     @router.post("/search-flow-classification")
     def search_flow_classification(
@@ -143,7 +144,7 @@ def create_search_router(
         Returns JSON if ``stream=False``, or a newline-delimited JSON stream
         (SSE-compatible) if ``stream=True``.
         """
-        filters = _authenticated_search_filters(http_request, body.filters)
+        filters = _authenticated_search_filters(http_request, body.filters, store)
 
         async def _run() -> SearchQueryResult:
             return await run_expanded_search(

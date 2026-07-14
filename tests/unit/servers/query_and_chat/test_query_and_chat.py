@@ -209,6 +209,7 @@ def test_send_search_message_non_streaming(tmp_path, monkeypatch):
     client, store = _admin_client(tmp_path)
     response = client.post(
         "/search/send-search-message",
+        headers=_bearer(_USER_ID),
         json={"search_query": "what is ML?", "stream": False},
     )
     assert response.status_code == 200
@@ -235,6 +236,7 @@ def test_send_search_message_streaming(tmp_path, monkeypatch):
     client, store = _admin_client(tmp_path)
     response = client.post(
         "/search/send-search-message",
+        headers=_bearer(_USER_ID),
         json={"search_query": "ML overview", "stream": True},
     )
     assert response.status_code == 200
