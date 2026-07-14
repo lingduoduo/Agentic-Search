@@ -31,6 +31,10 @@ def _parse_documents(payload: object) -> list[AuthenticatedDocument]:
     if not isinstance(payload, dict):
         raise AuthenticatedRetrievalError("Search service returned an invalid response")
 
+    backend_error = payload.get("error")
+    if backend_error:
+        raise AuthenticatedRetrievalError("Search request failed")
+
     raw_documents = payload.get("search_docs")
     if not isinstance(raw_documents, list):
         raise AuthenticatedRetrievalError("Search service returned an invalid response")
@@ -46,7 +50,7 @@ def _parse_documents(payload: object) -> list[AuthenticatedDocument]:
             score = raw_document["score"]
             metadata = raw_document["metadata"]
             if (
-                not isinstance(title, str)
+                (title is not None and not isinstance(title, str))
                 or (url is not None and not isinstance(url, str))
                 or not isinstance(content, str)
                 or not isinstance(score, (int, float))
@@ -56,7 +60,7 @@ def _parse_documents(payload: object) -> list[AuthenticatedDocument]:
                 raise TypeError
             documents.append(
                 AuthenticatedDocument(
-                    title=title,
+                    title=title or "",
                     url=url,
                     content=content,
                     score=float(score),

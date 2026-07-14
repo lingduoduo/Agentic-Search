@@ -126,6 +126,64 @@ async def test_parses_successful_response() -> None:
 
 
 @pytest.mark.asyncio
+async def test_translates_backend_error_in_success_response_without_leaking_it() -> (
+    None
+):
+    payload = {
+        "all_executed_queries": ["q"],
+        "search_docs": [],
+        "error": "database password secret-db-password",
+    }
+    client = Mock(post=AsyncMock(return_value=_response(payload=payload)))
+    with (
+        patch(
+            "src.internal.mcp_server.retrieval_client.require_access_token",
+            return_value=_token(),
+        ),
+        patch(
+            "src.internal.mcp_server.retrieval_client.get_http_client",
+            return_value=client,
+        ),
+        pytest.raises(
+            AuthenticatedRetrievalError, match="Search request failed"
+        ) as exc,
+    ):
+        await authenticated_retrieve("q", top_k=1)
+
+    assert "secret-db-password" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_normalizes_null_title_to_empty_string() -> None:
+    payload = {
+        "all_executed_queries": ["q"],
+        "search_docs": [
+            {
+                "title": None,
+                "url": "https://example.com",
+                "content": "body",
+                "score": 0.5,
+                "metadata": {},
+            }
+        ],
+    }
+    client = Mock(post=AsyncMock(return_value=_response(payload=payload)))
+    with (
+        patch(
+            "src.internal.mcp_server.retrieval_client.require_access_token",
+            return_value=_token(),
+        ),
+        patch(
+            "src.internal.mcp_server.retrieval_client.get_http_client",
+            return_value=client,
+        ),
+    ):
+        result = await authenticated_retrieve("q", top_k=1)
+
+    assert result[0].title == ""
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "message"),
     [(401, "Authentication failed"), (403, "Access to search results was denied")],
