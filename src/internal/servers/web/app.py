@@ -319,6 +319,27 @@ class _HybridSearchResult:
     executed_queries: list[str]
     documents: list[ContextDocument]
     status: str = "ok"  # "ok" | "empty" | "unreachable"
+    ranking: dict | None = None
+
+
+class _RankedDocumentList(list[ContextDocument]):
+    """List-compatible ranked documents carrying the ranking stage facts."""
+
+    def __init__(self, documents: list[ContextDocument], ranking: dict) -> None:
+        super().__init__(documents)
+        self.ranking = ranking
+
+
+def _ranking_metadata(
+    documents: list[ContextDocument], *, fallback_operations: list[str]
+) -> dict:
+    ranking = getattr(documents, "ranking", None)
+    if ranking is not None:
+        return dict(ranking)
+    return {
+        "operations": fallback_operations,
+        "candidate_count": len(documents),
+    }
 
 
 def _register_routers(
@@ -975,6 +996,8 @@ async def _run_search_direct_or_escalate(
     )
 
     if is_strong:
+        ranking = _ranking_metadata(documents, fallback_operations=["direct_ranking"])
+        ranking["operations"] = [*ranking["operations"], "sufficiency_gate"]
         _capture.record_stage(
             "search",
             "sufficiency",
@@ -997,10 +1020,7 @@ async def _run_search_direct_or_escalate(
                 "top_score": top_score,
                 "source_provider": "retrieval",
                 "retrieval_query": query,
-                "ranking": {
-                    "operations": ["direct_ranking", "sufficiency_gate"],
-                    "candidate_count": len(real),
-                },
+                "ranking": ranking,
                 "inference": {"mode": "deterministic", "model": None},
             },
         )
@@ -1065,10 +1085,10 @@ async def _run_search_direct_or_escalate(
                         "source_provider": provider,
                         "retrieval_query": query,
                         "top_score": top_score,
-                        "ranking": {
-                            "operations": ["direct_ranking", "sufficiency_gate"],
-                            "candidate_count": len(external_real),
-                        },
+                        "ranking": _ranking_metadata(
+                            external_documents,
+                            fallback_operations=["direct_ranking"],
+                        ),
                         "inference": {"mode": "deterministic", "model": None},
                     },
                 )
@@ -1560,13 +1580,9 @@ def create_web_app(
                         extra={
                             "source_provider": source_provider,
                             "retrieval_query": query,
-                            "ranking": {
-                                "operations": [
-                                    "direct_ranking",
-                                    "sufficiency_gate",
-                                ],
-                                "candidate_count": len(documents),
-                            },
+                            "ranking": _ranking_metadata(
+                                documents, fallback_operations=["direct_ranking"]
+                            ),
                             "inference": {"mode": "deterministic", "model": None},
                         },
                         mode=mode,
@@ -1605,7 +1621,8 @@ def create_web_app(
                             "source_provider": source_provider,
                             "retrieval_query": query,
                             "executed_queries": search_result.executed_queries,
-                            "ranking": {
+                            "ranking": search_result.ranking
+                            or {
                                 "operations": ["hybrid_ranking"],
                                 "candidate_count": len(search_result.documents),
                             },
@@ -2182,7 +2199,7 @@ async def _rank_documents(
         else None
     )
     ranked = await DefaultRankingStage(reranker=reranker).rank(query, candidates, top_k)
-    return ranked.evidence
+    return _RankedDocumentList(ranked.evidence, ranked.metadata)
 
 
 def _provider_error_doc(provider: str, message: str) -> ContextDocument:
@@ -2215,13 +2232,18 @@ async def _finalize_hybrid(
     if not real:
         status = "unreachable" if errored else "empty"
         return _HybridSearchResult(
-            executed_queries=executed_queries, documents=[], status=status
+            executed_queries=executed_queries,
+            documents=[],
+            status=status,
+            ranking={"operations": [], "candidate_count": 0},
         )
     diversified = await _rank_documents(real, query, rerank_url, top_k)
+    ranking = _ranking_metadata(diversified, fallback_operations=["hybrid_ranking"])
     return _HybridSearchResult(
         executed_queries=executed_queries,
         documents=_reindex_documents(diversified),
         status="ok" if diversified else "empty",
+        ranking=ranking,
     )
 
 
@@ -2253,6 +2275,7 @@ async def _run_hybrid_search(
             max_documents=top_k * 2,
         )
         diversified = await _rank_documents(context.documents, query, None, top_k)
+        ranking = _ranking_metadata(diversified, fallback_operations=["hybrid_ranking"])
         return _HybridSearchResult(
             executed_queries=search_result.executed_queries,
             documents=[
@@ -2265,6 +2288,7 @@ async def _run_hybrid_search(
                 for doc in diversified
             ],
             status="ok" if diversified else "empty",
+            ranking=ranking,
         )
 
     if source_provider == "browser":
@@ -2278,10 +2302,14 @@ async def _run_hybrid_search(
                 existing_count=0,
             )
         diversified_b = await _rank_documents(browser_docs, query, rerank_url, top_k)
+        ranking = _ranking_metadata(
+            diversified_b, fallback_operations=["hybrid_ranking"]
+        )
         return _HybridSearchResult(
             executed_queries=[query],
             documents=_reindex_documents(diversified_b),
             status="ok" if diversified_b else "empty",
+            ranking=ranking,
         )
 
     executed_queries = _expanded_queries(query, llm)

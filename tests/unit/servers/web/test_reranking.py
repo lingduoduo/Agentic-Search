@@ -135,6 +135,71 @@ async def test_rerank_documents_updates_scores_and_reorders(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_rank_documents_preserves_external_rerank_metadata(monkeypatch):
+    import httpx
+
+    from src.context.models import ContextDocument
+    from src.internal.servers.web.app import _rank_documents
+
+    async def fake_post(self, url, *, json=None, timeout=None):
+        body = {
+            "result": [
+                [
+                    {"document": {"contents": "B\nb", "_idx": "1"}, "score": 0.9},
+                    {"document": {"contents": "A\na", "_idx": "0"}, "score": 0.4},
+                ]
+            ]
+        }
+        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+    ranked = await _rank_documents(
+        [
+            ContextDocument(id="D1", title="A", content="a", score=0.5),
+            ContextDocument(id="D2", title="B", content="b", score=0.3),
+        ],
+        "query",
+        "http://rerank.test/rerank",
+        2,
+    )
+
+    assert [doc.title for doc in ranked] == ["B", "A"]
+    assert ranked.ranking["operations"] == [
+        "deduplicate",
+        "external_rerank",
+        "mmr",
+    ]
+    assert ranked.ranking["rerank_status"] == "applied"
+
+
+@pytest.mark.asyncio
+async def test_rank_documents_preserves_rerank_timeout_and_input_order(monkeypatch):
+    import httpx
+
+    from src.context.models import ContextDocument
+    from src.internal.servers.web.app import _rank_documents
+
+    async def timeout_post(self, url, *, json=None, timeout=None):
+        raise httpx.ReadTimeout("slow")
+
+    monkeypatch.setattr("httpx.AsyncClient.post", timeout_post)
+    ranked = await _rank_documents(
+        [
+            ContextDocument(id="D1", title="A", content="a", score=0.5),
+            ContextDocument(id="D2", title="B", content="b", score=0.3),
+        ],
+        "query",
+        "http://rerank.test/rerank",
+        2,
+    )
+
+    assert [doc.title for doc in ranked] == ["A", "B"]
+    assert ranked.ranking["operations"] == ["deduplicate", "truncate"]
+    assert ranked.ranking["rerank_status"] == "timeout"
+    assert ranked.ranking["degraded"] is True
+
+
+@pytest.mark.asyncio
 async def test_rerank_documents_drops_items_with_missing_idx(monkeypatch):
     """_rerank_documents silently drops items where _idx is absent or invalid."""
     import httpx

@@ -579,7 +579,6 @@ def test_run_agent_search_tool_mode_returns_documents(monkeypatch, tmp_path):
     }
     assert stages["ranking"]["operations"] == [
         "direct_ranking",
-        "sufficiency_gate",
     ]
     assert stages["inference"] == {"mode": "deterministic", "model": None}
 
@@ -591,7 +590,14 @@ def test_hybrid_mode_persists_truthful_direct_stage_metadata(monkeypatch, tmp_pa
 
     async def fake_hybrid(*args, **kwargs):
         return _HybridSearchResult(
-            executed_queries=["q", "q expanded"], documents=docs, status="ok"
+            executed_queries=["q", "q expanded"],
+            documents=docs,
+            status="ok",
+            ranking={
+                "operations": ["deduplicate", "external_rerank", "mmr"],
+                "candidate_count": 2,
+                "rerank_status": "applied",
+            },
         )
 
     monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
@@ -609,9 +615,14 @@ def test_hybrid_mode_persists_truthful_direct_stage_metadata(monkeypatch, tmp_pa
     assert stages["retrieval"] == {
         "query": "q",
         "provider": "auto",
-        "candidate_count": 1,
+        "candidate_count": 2,
     }
-    assert stages["ranking"]["operations"] == ["hybrid_ranking"]
+    assert stages["ranking"]["operations"] == [
+        "deduplicate",
+        "external_rerank",
+        "mmr",
+    ]
+    assert stages["ranking"]["reranker"] == "external"
     assert stages["inference"] == {"mode": "deterministic", "model": None}
 
 
