@@ -34,7 +34,7 @@ Three separate decisions are involved:
 
 Changing one axis does not directly change the others. For example, `source_provider=auto` forces the request strategy to `search`, but the internal retrieval service still selects its own configured retrieval backend.
 
-After routing selects a search path, the shared internal composition is:
+Filter-aware and degraded search branches use the shared internal `SearchPipeline` composition:
 
 ```text
 bounded session history
@@ -46,6 +46,8 @@ bounded session history
 ```
 
 The original query remains the answer question; only retrieval uses the resolved follow-up query. Internal access filters are preserved. If optional reranking fails, the pre-rerank candidate order is retained. If retrieval yields no evidence, model inference is skipped and a deterministic status is returned.
+
+Strong unfiltered auto-search does not necessarily enter that composition or rewrite its retrieval query. Its existing direct-first path queries internal retrieval with the original request, applies direct ranking plus the sufficiency gate, and then tries SerpAPI and the browser-search service when internal evidence is weak or empty. The provider order below describes that distinct path.
 
 ## Request fields
 

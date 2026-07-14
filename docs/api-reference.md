@@ -4,7 +4,7 @@
 
 This guide documents the local retrieval, web, chat/session, and health endpoints.
 
-The retrieve → rank/rerank → grounded-inference composition is an internal implementation of the endpoints documented here. It adds no public endpoint and changes no request or response schema. Asynchronous ingestion/indexing continues to populate the corpus before requests arrive; it is not performed by `/api/agent`.
+The retrieve → rank/rerank → grounded-inference composition is an internal implementation used by the filter-aware and degraded branches of the endpoints documented here. Strong unfiltered auto-search keeps its direct-first ranking, sufficiency gate, and provider fallback. These internals add no public endpoint and change no request or response schema. Asynchronous ingestion/indexing continues to populate the corpus before requests arrive; it is not performed by `/api/agent`.
 
 ## Retrieval server API
 
