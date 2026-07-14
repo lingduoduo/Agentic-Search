@@ -225,6 +225,30 @@ def test_stream_done_event_contains_documents(monkeypatch, tmp_path):
     assert done_event["documents"][0]["title"] == "T"
 
 
+def test_stream_and_json_return_identical_final_answer_data(monkeypatch, tmp_path):
+    async def fake_answer(question, **kw):
+        return _answer_result(question)
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    client = TestClient(app)
+    payload = {"query": "same result", "mode": "chat_once"}
+
+    json_data = client.post("/api/agent", json=payload).json()
+    events = _parse_sse(client.post("/api/agent/stream", json=payload).text)
+    answer = next(event for event in events if event["type"] == "answer")
+    done = next(event for event in events if event["type"] == "done")
+
+    assert answer["text"] == json_data["answer"]
+    assert done["citations"] == json_data["citations"]
+    assert done["documents"] == json_data["documents"]
+    assert done["intent"] == json_data["intent"]
+    assert done["tool_calls"] == json_data["tool_calls"]
+    assert done["control_flow_trace"] == json_data["control_flow_trace"]
+
+
 def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
     from src.agents.core.base import AgentLoopOutput
     from src.agents.tool import ApprovalDecision, ToolAgentLoop, ToolApprovalRequest

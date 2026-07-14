@@ -734,6 +734,7 @@ def _finalize_response(
     db,
     session_id: str,
     *,
+    query: str,
     answer: str,
     citations: list,
     documents: list,
@@ -756,16 +757,24 @@ def _finalize_response(
     trace_views = (
         [_control_flow_event_view(event) for event in raw_trace] if raw_trace else []
     )
+    pipeline_stages = _capture.pipeline_stage_summary(
+        query,
+        citations=citations,
+        documents=documents,
+        metadata=extra,
+    )
     metadata = {
         "citations": citations,
         "document_ids": [d.id for d in documents],
         "hooks": hook_metadata,
         "mode": mode,
         "intent": intent,
+        "pipeline_stages": pipeline_stages,
         **extra,
     }
     if trace_views:
         metadata["control_flow_trace"] = [view.model_dump() for view in trace_views]
+    _capture.record_pipeline_stages(pipeline_stages)
     _capture.record_stage(
         "final",
         "answer",
@@ -1482,6 +1491,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1516,6 +1526,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=[doc.citation for doc in documents],
                         documents=documents,
@@ -1548,6 +1559,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=[doc.citation for doc in search_result.documents],
                         documents=search_result.documents,
@@ -1577,6 +1589,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1615,6 +1628,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1650,6 +1664,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1681,6 +1696,7 @@ def create_web_app(
             return _finalize_response(
                 db,
                 session_id,
+                query=query,
                 answer=result.answer,
                 citations=result.citations,
                 documents=result.context.documents,
