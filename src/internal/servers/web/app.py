@@ -2093,7 +2093,17 @@ async def _rank_documents(
             for document in documents
         ],
     )
-    reranker = RerankHTTPRankingStage(rerank_url) if rerank_url else None
+    reranker = (
+        RerankHTTPRankingStage(
+            rerank_url,
+            document_contents=lambda candidate: (
+                f"{candidate.title}\n{candidate.contents}"
+            ),
+            send_top_k=False,
+        )
+        if rerank_url
+        else None
+    )
     ranked = await DefaultRankingStage(reranker=reranker).rank(query, candidates, top_k)
     return ranked.evidence
 

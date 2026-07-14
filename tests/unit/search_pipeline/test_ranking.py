@@ -95,8 +95,9 @@ async def test_rank_applies_mmr_and_truncates_to_top_k():
 )
 async def test_rank_preserves_pre_rerank_order_when_reranker_degrades(failure):
     candidates = _candidates(
-        ("first", "https://first.test", 0.9),
-        ("second", "https://second.test", 0.8),
+        ("first", "https://first.test", 0.1),
+        ("second", "https://second.test", 0.9),
+        ("third", "https://third.test", 0.5),
     )
 
     class FailingReranker:

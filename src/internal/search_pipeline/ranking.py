@@ -67,8 +67,12 @@ class DefaultRankingStage:
                 rerank_status = "error"
                 degraded = True
 
-        diversified = mmr_rerank(documents, topk=top_k)
-        operations.append("mmr")
+        if degraded:
+            diversified = documents[:top_k]
+            operations.append("truncate")
+        else:
+            diversified = mmr_rerank(documents, topk=top_k)
+            operations.append("mmr")
         evidence = [
             ContextDocument(
                 id=f"D{index}",

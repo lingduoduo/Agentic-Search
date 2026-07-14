@@ -124,9 +124,20 @@ class FusionRankingStage:
 class RerankHTTPRankingStage:
     """Translate candidates to the unchanged standalone ``/rerank`` payload."""
 
-    def __init__(self, rerank_url: str, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        rerank_url: str,
+        *,
+        timeout: float = 10.0,
+        document_contents: Callable[[SearchResult], str] | None = None,
+        send_top_k: bool = True,
+    ) -> None:
         self._url = f"{rerank_url.rstrip('/')}/rerank"
         self._timeout = timeout
+        self._document_contents = document_contents or (
+            lambda candidate: candidate.contents
+        )
+        self._send_top_k = send_top_k
 
     async def rank(
         self, query: str, candidates: CandidateSet, top_k: int
@@ -134,23 +145,21 @@ class RerankHTTPRankingStage:
         payloads = [
             {
                 "document": {
-                    "contents": candidate.contents,
+                    "contents": self._document_contents(candidate),
                     "_idx": str(index),
                 }
             }
             for index, candidate in enumerate(candidates.candidates)
         ]
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self._url,
-                json={
-                    "queries": [query],
-                    "documents": [payloads],
-                    "rerank_topk": top_k,
-                    "return_scores": True,
-                },
-                timeout=self._timeout,
-            )
+            body = {
+                "queries": [query],
+                "documents": [payloads],
+                "return_scores": True,
+            }
+            if self._send_top_k:
+                body["rerank_topk"] = top_k
+            response = await client.post(self._url, json=body, timeout=self._timeout)
             response.raise_for_status()
         ranked = response.json()["result"][0]
         evidence = []

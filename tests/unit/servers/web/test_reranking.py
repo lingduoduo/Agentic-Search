@@ -95,7 +95,10 @@ async def test_rerank_documents_updates_scores_and_reorders(monkeypatch):
     from src.internal.servers.web.app import _rerank_documents
     from src.context.models import ContextDocument
 
+    captured = {}
+
     async def fake_post(self, url, *, json=None, timeout=None):
+        captured.update(json)
         # Simulate reranker reversing the order: D2 (idx=1) scores higher
         body = {
             "result": [
@@ -119,6 +122,16 @@ async def test_rerank_documents_updates_scores_and_reorders(monkeypatch):
     assert result[0].score == pytest.approx(0.9)
     assert result[1].title == "A"
     assert result[1].score == pytest.approx(0.4)
+    assert captured == {
+        "queries": ["query"],
+        "documents": [
+            [
+                {"document": {"contents": "A\na", "_idx": "0"}},
+                {"document": {"contents": "B\nb", "_idx": "1"}},
+            ]
+        ],
+        "return_scores": True,
+    }
 
 
 @pytest.mark.asyncio
