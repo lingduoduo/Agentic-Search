@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -260,6 +261,198 @@ async def test_retrieve_documents_authentication_error_has_no_raw_fallback():
         "documents": [],
         "query": "private",
     }
+
+
+# ---------------------------------------------------------------------------
+# tools/chat — ask_agentic_search
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ask_agentic_search_synthesizes_only_from_authorized_documents():
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    authenticated_retrieve = AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS)
+
+    def synthesize(request: object, *, llm: object) -> Mock:
+        return Mock(
+            answer="Dense and sparse retrieval are supported [D1] [D2].",
+            citations=["D1", "D2"],
+            context=request.context,
+        )
+
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            authenticated_retrieve,
+            create=True,
+        ),
+        patch(
+            "src.internal.mcp_server.tools.chat.generate_answer",
+            side_effect=synthesize,
+            create=True,
+        ) as generate,
+        patch(
+            "src.internal.mcp_server.tools.chat.answer_with_retrieval",
+            new=AsyncMock(),
+            create=True,
+        ) as raw_answer,
+    ):
+        result = await ask_agentic_search("Which retrieval methods?", top_k=2)
+
+    authenticated_retrieve.assert_awaited_once_with("Which retrieval methods?", top_k=2)
+    raw_answer.assert_not_awaited()
+    request = generate.call_args.args[0]
+    assert [document.title for document in request.context.documents] == [
+        "Dense Retrieval",
+        "Sparse BM25",
+    ]
+    assert [document.content for document in request.context.documents] == [
+        "FAISS-based dense retrieval.",
+        "BM25 scoring for keyword search.",
+    ]
+    assert result == {
+        "answer": "Dense and sparse retrieval are supported [D1] [D2].",
+        "citations": ["D1", "D2"],
+        "sources": [
+            {
+                "title": "Dense Retrieval",
+                "url": "http://ex.com/1",
+                "content": "FAISS-based dense retrieval.",
+            },
+            {
+                "title": "Sparse BM25",
+                "url": "http://ex.com/2",
+                "content": "BM25 scoring for keyword search.",
+            },
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_ask_agentic_search_empty_evidence_skips_llm():
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    llm = Mock()
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            new=AsyncMock(return_value=[]),
+            create=True,
+        ),
+        patch("src.internal.mcp_server.tools.chat._build_llm", return_value=llm),
+        patch(
+            "src.internal.mcp_server.tools.chat.answer_with_retrieval",
+            new=AsyncMock(),
+            create=True,
+        ) as raw_answer,
+    ):
+        result = await ask_agentic_search("unknown")
+
+    llm.complete.assert_not_called()
+    raw_answer.assert_not_awaited()
+    assert result == {
+        "answer": "I could not find retrieved context to answer: unknown",
+        "citations": [],
+        "sources": [],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message", ["Authentication failed", "Access to search results was denied"]
+)
+async def test_ask_agentic_search_auth_errors_have_no_raw_fallback(message: str):
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    llm = Mock()
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            new=AsyncMock(side_effect=AuthenticatedRetrievalError(message)),
+            create=True,
+        ),
+        patch("src.internal.mcp_server.tools.chat._build_llm", return_value=llm),
+        patch(
+            "src.internal.mcp_server.tools.chat.answer_with_retrieval",
+            new=AsyncMock(),
+            create=True,
+        ) as raw_answer,
+    ):
+        result = await ask_agentic_search("private")
+
+    llm.complete.assert_not_called()
+    raw_answer.assert_not_awaited()
+    assert result == {
+        "error": message,
+        "answer": "",
+        "citations": [],
+        "sources": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_ask_agentic_search_uses_llm_only_after_authenticated_evidence():
+    from src.context import LLMResponse
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    llm = Mock()
+    llm.complete.return_value = LLMResponse("FAISS provides dense retrieval [D1].")
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            new=AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS[:1]),
+            create=True,
+        ),
+        patch("src.internal.mcp_server.tools.chat._build_llm", return_value=llm),
+        patch(
+            "src.internal.mcp_server.tools.chat.answer_with_retrieval",
+            new=AsyncMock(),
+            create=True,
+        ) as raw_answer,
+    ):
+        result = await ask_agentic_search("What provides dense retrieval?")
+
+    raw_answer.assert_not_awaited()
+    llm.complete.assert_called_once()
+    prompt_text = "\n".join(
+        message.content for message in llm.complete.call_args.args[0]
+    )
+    assert "FAISS-based dense retrieval." in prompt_text
+    assert "BM25 scoring" not in prompt_text
+    assert result["answer"] == "FAISS provides dense retrieval [D1]."
+    assert result["citations"] == ["D1"]
+
+
+@pytest.mark.asyncio
+async def test_ask_agentic_search_uses_extractive_authenticated_evidence():
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            new=AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS[:1]),
+            create=True,
+        ),
+        patch("src.internal.mcp_server.tools.chat._build_llm", return_value=None),
+        patch(
+            "src.internal.mcp_server.tools.chat.answer_with_retrieval",
+            new=AsyncMock(),
+            create=True,
+        ) as raw_answer,
+    ):
+        result = await ask_agentic_search("What provides dense retrieval?")
+
+    raw_answer.assert_not_awaited()
+    assert result["answer"] == "FAISS-based dense retrieval. [D1]"
+    assert result["citations"] == ["D1"]
+    assert result["sources"] == [
+        {
+            "title": "Dense Retrieval",
+            "url": "http://ex.com/1",
+            "content": "FAISS-based dense retrieval.",
+        }
+    ]
 
 
 # ---------------------------------------------------------------------------
