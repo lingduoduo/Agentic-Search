@@ -21,7 +21,15 @@ The server also launches with the `Run All Services` task from the default `laun
 
 ## Authentication and transport
 
-Provide a Personal Access Token or API key in the `Authorization` header as a Bearer token. The MCP server quickly validates and passes through the token on every request.
+Provide a Personal Access Token or API key in the `Authorization` header as a Bearer token. FastMCP verifies the credential, and indexed-document tools forward that request token only to the authenticated web search endpoint. The web backend—not the MCP caller—derives the user's and groups' access-control filters. A caller may narrow retrieval further with document sets, but cannot broaden the server-derived ACL.
+
+```text
+MCP bearer token → FastMCP verification → authenticated web search endpoint
+→ server-derived user/group ACL + optional document-set narrowing
+→ internal retrieval → MCP result or grounded synthesis
+```
+
+Authentication, authorization, transport, and backend failures fail closed. They return an error or empty result and never trigger an unfiltered raw-retrieval fallback.
 
 - **Transport:** HTTP POST (MCP over HTTP)
 - **Port:** 8090 (shares the API server's domain)
@@ -55,14 +63,16 @@ For a remote deployment, replace the URL with `https://[YOUR_DOMAIN]:8090/`. Oth
 
 | Tool | What it does |
 |------|-------------|
-| `search_indexed_documents` | Search the private knowledge base with optional source filter |
+| `search_indexed_documents` | Search the private knowledge base with optional document-set narrowing |
 | `search_web` | Web search via Google Custom Search or SerpAPI |
 | `open_urls` | Fetch full page text from a list of URLs |
-| `ask_agentic_search` | Full `SearchAgentLoop` answer with citations |
-| `retrieve_documents` | Raw retrieval — returns full document content and relevance scores |
-| `expand_query` | Query decomposition and HyDE expansion |
+| `ask_agentic_search` | Synthesizes an answer from authenticated evidence; validates citation labels and answer/evidence overlap |
+| `retrieve_documents` | Returns authenticated document content and relevance scores without answer synthesis |
+| `expand_query` | LLM-backed keyword expansion for improved recall |
 
 MCP tool selection is independent of the web UI's `/api/agent` auto-router. An MCP client explicitly invokes an exposed tool according to its own model and client policy; it does not pass through the web backend's internal → SerpAPI → browser fallback sequence. For the web API contract, see [API request routing](request-routing.md).
+
+Grounding verification checks citation labels and lexical overlap with retrieved evidence. It reduces unsupported output but is not a hard guarantee that an answer contains no hallucinations.
 
 Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored to MCP by calling `sync_tool_to_mcp(name)` after registration (`src/internal/mcp_server/tools/dynamic.py`).
 

@@ -11,18 +11,17 @@ import logging
 import os
 from typing import Any
 
-from src.context import answer_with_retrieval
+from src.context import AnswerGenerationRequest
+from src.context import build_context_bundle
+from src.context import generate_answer
+from src.context.search import SearchResult
 from src.internal.llm.interfaces import LLMConfig
 from src.internal.llm.providers import OpenAICompatibleLLM
 
 from ..api import mcp_server
+from ..retrieval_client import authenticated_retrieve
 
 logger = logging.getLogger(__name__)
-
-
-def _retrieval_url() -> str:
-    port = os.getenv("AGENTIC_SEARCH_RETRIEVAL_PORT", "8000")
-    return f"http://localhost:{port}/retrieve"
 
 
 def _build_llm() -> OpenAICompatibleLLM | None:
@@ -53,7 +52,8 @@ async def ask_agentic_search(
     direct answer rather than raw search results.
 
     If no LLM API key is configured, an extractive fallback answer is returned
-    using only the retrieved document text — no hallucination risk.
+    from retrieved document text. This reduces synthesis risk but is not a guarantee
+    that the source evidence itself is correct or complete.
 
     Returns::
         {
@@ -70,16 +70,39 @@ async def ask_agentic_search(
     """
     logger.info("MCP Server: ask_agentic_search: question=%r top_k=%d", question, top_k)
 
-    llm = _build_llm()
-    if llm is None:
-        logger.info("MCP Server: no LLM configured — using extractive fallback")
-
     try:
-        result = await answer_with_retrieval(
+        documents = await authenticated_retrieve(question, top_k=top_k)
+        context = build_context_bundle(
             question,
+            [
+                SearchResult(
+                    contents=document.content,
+                    score=document.score,
+                    title=document.title,
+                    url=document.url,
+                    metadata=document.metadata,
+                )
+                for document in documents
+                if document.content.strip()
+            ],
+        )
+        if not context.documents:
+            return {
+                "answer": f"I could not find retrieved context to answer: {question}",
+                "citations": [],
+                "sources": [],
+            }
+
+        llm = _build_llm()
+        if llm is None:
+            logger.info("MCP Server: no LLM configured — using extractive fallback")
+        result = generate_answer(
+            AnswerGenerationRequest(
+                question=question,
+                context=context,
+                verify_grounding=True,
+            ),
             llm=llm,
-            search_url=_retrieval_url(),
-            top_k=top_k,
         )
     except Exception as exc:
         logger.error("MCP Server: ask_agentic_search failed: %s", exc, exc_info=True)

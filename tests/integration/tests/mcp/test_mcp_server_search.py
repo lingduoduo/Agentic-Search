@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+import requests
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import CallToolResult
@@ -30,6 +31,8 @@ from tests.integration.common_utils.test_models import DATestUser
 
 # Constants
 MCP_SEARCH_TOOL = "search_indexed_documents"
+MCP_RETRIEVE_TOOL = "retrieve_documents"
+MCP_CHAT_TOOL = "ask_agentic_search"
 INDEXED_SOURCES_RESOURCE_URI = "resource://indexed_sources"
 DOCUMENT_SETS_RESOURCE_URI = "resource://document_sets"
 STREAMABLE_HTTP_URL = f"{MCP_SERVER_URL.rstrip('/')}/?transportType=streamable-http"
@@ -69,21 +72,34 @@ def _extract_tool_payload(result: CallToolResult) -> dict[str, Any]:
     return json.loads(text_blocks[-1])
 
 
+def _call_tool(
+    headers: dict[str, str],
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> CallToolResult:
+    """Call a tool through MCP's streamable HTTP transport."""
+
+    async def _action(session: ClientSession) -> CallToolResult:
+        await session.initialize()
+        return await session.call_tool(tool_name, arguments)
+
+    return _run_with_mcp_session(headers, _action)
+
+
 def _call_search_tool(
     headers: dict[str, str],
     query: str,
     document_set_names: list[str] | None = None,
 ) -> CallToolResult:
-    """Call the search_indexed_documents tool via MCP."""
+    arguments: dict[str, Any] = {"query": query}
+    if document_set_names is not None:
+        arguments["document_set_names"] = document_set_names
+    return _call_tool(headers, MCP_SEARCH_TOOL, arguments)
 
-    async def _action(session: ClientSession) -> CallToolResult:
-        await session.initialize()
-        arguments: dict[str, Any] = {"query": query}
-        if document_set_names is not None:
-            arguments["document_set_names"] = document_set_names
-        return await session.call_tool(MCP_SEARCH_TOOL, arguments)
 
-    return _run_with_mcp_session(headers, _action)
+def _payload_contains(payload: dict[str, Any], restricted_content: str) -> bool:
+    """Return whether restricted text occurs anywhere in a tool payload."""
+    return restricted_content in json.dumps(payload)
 
 
 def _auth_headers(user: DATestUser, name: str) -> dict[str, str]:
@@ -132,13 +148,14 @@ def test_mcp_document_search_flow(
     tool_names = {tool.name for tool in tools_result.tools}
     assert MCP_SEARCH_TOOL in tool_names
 
-    # Verify search results
-    assert isinstance(payload["results"], list)  # noqa: F821,F841
-    assert len(payload["results"]) > 0  # noqa: F821,F841
-    assert any(doc_text in (doc.get("content") or "") for doc in payload["results"])  # noqa: F821,F841
+    # Verify search results returned through streamable HTTP.
+    payload = _extract_tool_payload(search_result)
+    assert isinstance(payload["results"], list)
+    assert len(payload["results"]) > 0
+    assert any(doc_text in (doc.get("content") or "") for doc in payload["results"])
 
     # Verify document structure
-    for doc in payload["results"]:  # noqa: F821,F841
+    for doc in payload["results"]:
         assert isinstance(doc, dict)
         # Verify expected fields exist (may be None)
         assert "content" in doc
@@ -188,22 +205,100 @@ def test_mcp_search_respects_acl_filters(
         public_cc_pair, "MCP unrelated public document", api_key
     )
 
-    privileged_headers = _auth_headers(privileged_user, "mcp-acl-allowed")  # noqa: F821,F841
-    restricted_headers = _auth_headers(user_without_access, "mcp-acl-blocked")  # noqa: F821,F841
+    privileged_headers = _auth_headers(privileged_user, "mcp-acl-allowed")
+    restricted_headers = _auth_headers(user_without_access, "mcp-acl-blocked")
 
-    # Privileged user should find the document
-    allowed_payload = _extract_tool_payload(allowed_result)  # noqa: F821,F841
-    assert len(allowed_payload["results"]) >= 1
+    # Privileged user should receive the restricted evidence through every
+    # indexed-document surface. The generated answer text may vary, so chat
+    # access is proven through its stable sources payload.
+    allowed_search = _extract_tool_payload(
+        _call_search_tool(privileged_headers, restricted_doc_content)
+    )
+    allowed_retrieval = _extract_tool_payload(
+        _call_tool(
+            privileged_headers,
+            MCP_RETRIEVE_TOOL,
+            {"query": restricted_doc_content},
+        )
+    )
+    allowed_answer = _extract_tool_payload(
+        _call_tool(
+            privileged_headers,
+            MCP_CHAT_TOOL,
+            {"question": restricted_doc_content},
+        )
+    )
+    assert "error" not in allowed_search, allowed_search
+    assert "error" not in allowed_retrieval, allowed_retrieval
+    assert "error" not in allowed_answer, allowed_answer
+    assert isinstance(allowed_search["results"], list)
+    assert isinstance(allowed_retrieval["documents"], list)
+    assert isinstance(allowed_answer["sources"], list)
     assert any(
         restricted_doc_content in (doc.get("content") or "")
-        for doc in allowed_payload["results"]
+        for doc in allowed_search["results"]
+    )
+    assert any(
+        restricted_doc_content in (doc.get("content") or "")
+        for doc in allowed_retrieval["documents"]
+    )
+    assert any(
+        restricted_doc_content in (doc.get("content") or "")
+        for doc in allowed_answer["sources"]
     )
 
-    # User without access should not find the document. Guard against the
-    # no-sources early-exit by also asserting search actually ran (no error).
-    blocked_payload = _extract_tool_payload(blocked_result)  # noqa: F821,F841
-    assert "error" not in blocked_payload, blocked_payload
-    assert blocked_payload["results"] == []
+    # User without access should get successful, stable result shapes without
+    # the restricted evidence. The public source prevents a no-sources early exit.
+    blocked_search = _extract_tool_payload(
+        _call_search_tool(restricted_headers, restricted_doc_content)
+    )
+    blocked_retrieval = _extract_tool_payload(
+        _call_tool(
+            restricted_headers,
+            MCP_RETRIEVE_TOOL,
+            {"query": restricted_doc_content},
+        )
+    )
+    blocked_answer = _extract_tool_payload(
+        _call_tool(
+            restricted_headers,
+            MCP_CHAT_TOOL,
+            {"question": restricted_doc_content},
+        )
+    )
+    assert "error" not in blocked_search, blocked_search
+    assert "error" not in blocked_retrieval, blocked_retrieval
+    assert "error" not in blocked_answer, blocked_answer
+    assert isinstance(blocked_search["results"], list)
+    assert isinstance(blocked_retrieval["documents"], list)
+    assert isinstance(blocked_answer["sources"], list)
+    assert not _payload_contains(blocked_search, restricted_doc_content)
+    assert not _payload_contains(blocked_retrieval, restricted_doc_content)
+    assert not _payload_contains(blocked_answer, restricted_doc_content)
+
+
+def test_invalid_token_cannot_call_indexed_document_tool(reset: None) -> None:  # noqa: ARG001
+    """Invalid credentials are rejected before indexed-document tool dispatch."""
+    response = requests.post(
+        STREAMABLE_HTTP_URL,
+        headers={
+            "Authorization": "Bearer invalid-token",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-03-26",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": MCP_SEARCH_TOOL,
+                "arguments": {"query": "restricted content"},
+            },
+            "id": 1,
+        },
+        timeout=10,
+    )
+    assert response.status_code == 401
 
 
 def test_mcp_search_filters_by_document_set(
