@@ -59,6 +59,9 @@ from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
 from src.internal.hooks import execute_hook
 from src.internal.search_pipeline.models import CandidateSet
+from src.internal.search_pipeline.models import GeneratedAnswer
+from src.internal.search_pipeline.models import RankedEvidence
+from src.internal.search_pipeline.pipeline import SearchPipeline
 from src.internal.search_pipeline.ranking import DefaultRankingStage
 from src.internal.search_pipeline.stages import RerankHTTPRankingStage
 from src.internal.servers.admin_surface.api import create_admin_surface_router
@@ -444,6 +447,91 @@ def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
     return tool_calls, documents
 
 
+class _WebHybridRetrievalStage:
+    """Adapt the established hybrid/provider policy to normalized candidates."""
+
+    def __init__(
+        self,
+        *,
+        llm,
+        search_url,
+        browser_search_url,
+        rerank_url,
+        source_provider,
+    ) -> None:
+        self._llm = llm
+        self._search_url = search_url
+        self._browser_search_url = browser_search_url
+        self._rerank_url = rerank_url
+        self._source_provider = source_provider
+
+    async def retrieve(self, query, history, filters, top_k) -> CandidateSet:
+        result = await _run_hybrid_search(
+            query,
+            llm=self._llm,
+            search_url=self._search_url,
+            browser_search_url=self._browser_search_url,
+            rerank_url=self._rerank_url,
+            top_k=top_k,
+            filters=filters,
+            source_provider=self._source_provider,
+        )
+        candidates = [
+            SearchResult(
+                contents=document.content,
+                score=document.score,
+                title=document.title,
+                url=document.url,
+                metadata=document.metadata,
+            )
+            for document in result.documents
+        ]
+        return CandidateSet(
+            query=query,
+            candidates=candidates,
+            provider=self._source_provider,
+            filters=filters,
+            metadata={
+                "status": result.status,
+                "executed_queries": result.executed_queries,
+            },
+        )
+
+
+class _WebEvidenceStage:
+    """Preserve the already-ranked hybrid result while normalizing its IDs."""
+
+    async def rank(self, query, candidates, top_k) -> RankedEvidence:
+        documents = DefaultRankingStage.documents(candidates)[:top_k]
+        return RankedEvidence(
+            query=query,
+            evidence=documents,
+            metadata={
+                "operations": ["hybrid_ranking"],
+                "executed_queries": candidates.metadata.get("executed_queries", []),
+            },
+        )
+
+
+class _WebSearchAnswerStage:
+    """Keep the existing deterministic search answer behind inference protocol."""
+
+    def __init__(self, source_provider: str) -> None:
+        self._source_provider = source_provider
+
+    async def generate(self, query, history, evidence) -> GeneratedAnswer:
+        answer = _search_only_answer(
+            "Search",
+            queries=evidence.metadata.get("executed_queries", [query]),
+            documents=evidence.evidence,
+            source_provider=self._source_provider,
+        )
+        return GeneratedAnswer(
+            answer=answer,
+            citations=[document.citation for document in evidence.evidence],
+        )
+
+
 async def _auto_search_pipeline(
     query: str,
     *,
@@ -457,91 +545,21 @@ async def _auto_search_pipeline(
     source_provider: str,
     extra: dict,
 ) -> tuple:
-    """Retrieval-first pipeline used directly and as the degraded fallback.
-
-    Tries hybrid search; on failure synthesizes via RAG; on RAG failure returns
-    raw search. Preserves the original auto-route fallback chain.
-    """
-    try:
-        search_result = await _run_hybrid_search(
-            query,
+    """Run the shared stage composer as the grounded degraded fallback."""
+    pipeline = SearchPipeline(
+        _WebHybridRetrievalStage(
             llm=llm,
             search_url=search_url,
             browser_search_url=browser_search_url,
             rerank_url=rerank_url,
-            top_k=top_k,
-            filters=filters,
             source_provider=source_provider,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Hybrid search failed, falling back to RAG without context: %s", exc
-        )
-        extra["search_fallback"] = "retrieval_unavailable"
-    else:
-        if search_result.status == "unreachable":
-            query_lines = "\n".join(f"- {q}" for q in search_result.executed_queries)
-            answer = (
-                "No sources are reachable right now. Please try again shortly.\n\n"
-                f"Executed queries:\n{query_lines}"
-            )
-        else:
-            answer = _search_only_answer(
-                "Search",
-                queries=search_result.executed_queries,
-                documents=search_result.documents,
-                source_provider=source_provider,
-            )
-        return (
-            answer,
-            [d.citation for d in search_result.documents],
-            search_result.documents,
-            "search",
-            extra,
-        )
-
-    # Chat synthesis fallback (also the search-failure fallback).
-    try:
-        result = await answer_with_retrieval(
-            query,
-            llm=llm,
-            chat_history=history,
-            search_url=search_url,
-            top_k=0 if extra.get("search_fallback") else top_k,
-            filters=filters,
-        )
-        return result.answer, result.citations, result.context.documents, "chat", extra
-    except Exception as exc:
-        if llm is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No LLM configured. Set OPENAI_API_KEY or equivalent in .env.",
-            ) from exc
-        logger.warning("RAG answer_with_retrieval failed, trying raw search: %s", exc)
-        extra["rag_fallback"] = "synthesis_failed"
-        try:
-            raw_docs = await _run_direct_search(
-                query,
-                source_provider="retrieval",
-                search_url=search_url,
-                browser_search_url=None,
-                rerank_url=None,
-                top_k=top_k,
-            )
-            if raw_docs:
-                answer = _search_only_answer(
-                    "Search (synthesis failed)",
-                    queries=[query],
-                    documents=raw_docs,
-                    source_provider="retrieval",
-                )
-                return answer, [d.citation for d in raw_docs], raw_docs, "search", extra
-        except Exception as exc2:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Answer generation failed and retrieval also unavailable: {exc2}",
-            ) from exc2
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        ),
+        _WebEvidenceStage(),
+        _WebSearchAnswerStage(source_provider),
+    )
+    result = await pipeline.run(query, history, filters, top_k, source_provider)
+    result[4].update(extra)
+    return result
 
 
 # ---------------------------------------------------------------------------

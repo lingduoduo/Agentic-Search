@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 import httpx
@@ -13,7 +13,9 @@ from src.context import ChatMessage, ContextDocument
 from src.context.retrieval.client import SearchClient
 from src.context.search import SearchResult
 from src.internal.search.process_search_query import weighted_reciprocal_rank_fusion
-from src.model.serving import ServerManager
+
+if TYPE_CHECKING:
+    from src.model.serving import ServerManager
 
 from .models import CandidateSet, GeneratedAnswer, RankedEvidence
 
