@@ -164,19 +164,29 @@ The router is `route_query` (`src/internal/servers/web/intent_routing.py`), disp
 ### End-to-end request flow
 
 ```text
+async connectors / ingestion jobs
+  → chunk + embed/index documents
+  → searchable retrieval indexes
+
 /api/agent or /api/agent/stream
   → query hook + session/history + access filters
   → explicit mode, or route_query(chat | search | tool)
       → chat: AgenticRAGLoop, or filter-aware pipeline without an LLM
       → tool: ToolAgentLoop, then grounded chat if tools/model are unavailable
       → search:
-          filters? → filter-aware pipeline
+          filters? → filter-aware pipeline:
+                     follow-up-aware retrieval query
+                     → candidate retrieval with ACL filters
+                     → deduplicate + optional rerank + MMR
+                     → grounded inference only with evidence
           otherwise → internal retrieval → sufficiency gate
                        → SerpAPI → browser-search service
                        → deterministic no-evidence response
   → shared response finalization + persistence + hooks
   → JSON response or SSE answer/done events
 ```
+
+The normalized `SearchPipeline` stages are internal boundaries, not services that require new deployment units. They adapt the existing retrieval clients, ranking helpers, and inference boundary while preserving `/api/agent`, `/api/agent/stream`, `/retrieve`, `/search`, and `/rerank`. No public API or schema was introduced. Optional reranker failure keeps the best pre-rerank order; retrieval or evidence failure never turns into an ungrounded model answer.
 
 The local policy model is not the fallback for missing evidence on the default unfiltered auto-search path. Strong internal evidence returns directly; weak or empty internal evidence tries external search first. This avoids conflating a model's internal knowledge with retrieved evidence.
 

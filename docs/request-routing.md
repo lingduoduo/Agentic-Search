@@ -4,6 +4,8 @@
 
 This guide is the source of truth for how the web API turns an agent request into a chat, search, or tool execution. It covers `POST /api/agent` and `POST /api/agent/stream`; both endpoints share the same dispatcher in `src/internal/servers/web/app.py`.
 
+The pipeline described here is query-time orchestration over indexes produced by asynchronous ingestion jobs. It reuses the existing `/api/agent`, `/api/agent/stream`, `/retrieve`, `/search`, and `/rerank` contracts; no public endpoint or schema was added.
+
 ## Routing at a glance
 
 ```text
@@ -31,6 +33,21 @@ Three separate decisions are involved:
 3. **Retrieval-backend routing** inside `RetrievalService` chooses sparse, dense, hybrid, graph, and query-transformation behavior.
 
 Changing one axis does not directly change the others. For example, `source_provider=auto` forces the request strategy to `search`, but the internal retrieval service still selects its own configured retrieval backend.
+
+Filter-aware and degraded search branches use the shared internal `SearchPipeline` composition:
+
+```text
+bounded session history
+  → resolve follow-up retrieval query
+  → retrieve normalized candidates from the selected existing provider
+  → deduplicate → optional reranker → MMR/truncation
+  → grounded inference when ranked evidence exists
+  → persist answer + citations + documents + stage metadata
+```
+
+The original query remains the answer question; only retrieval uses the resolved follow-up query. Internal access filters are preserved. If optional reranking fails, the pre-rerank candidate order is retained. If retrieval yields no evidence, model inference is skipped and a deterministic status is returned.
+
+Strong unfiltered auto-search does not necessarily enter that composition or rewrite its retrieval query. Its existing direct-first path queries internal retrieval with the original request, applies direct ranking plus the sufficiency gate, and then tries SerpAPI and the browser-search service when internal evidence is weak or empty. The provider order below describes that distinct path.
 
 ## Request fields
 
@@ -171,6 +188,8 @@ Common routing metadata in `hook_metadata`:
 | `search_mode` | `direct`, `external_fallback`, `external_empty`, `filtered_pipeline`, `escalated` | Search execution branch. |
 | `external_provider` | `serpapi`, `browser` | External provider that supplied evidence. |
 | `tier` | `exact`, `fuzzy`, `semantic` | Internal sufficiency tier. |
+
+Persisted assistant-message metadata also contains a normalized `pipeline_stages` summary. It records the retrieval query/provider/candidate count, ranking operations/evidence count/reranker degradation, inference mode/model, and final citation/document IDs. These diagnostics do not add fields to `AgentExperienceResponse`; the same summary is available to request capture/inspection, and JSON and SSE use the same finalization path.
 
 ## Streaming events
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
@@ -364,6 +365,11 @@ def test_strong_retrieval_returns_direct_without_agent(monkeypatch):
     )
     assert called["agent"] is False
     assert extra["search_mode"] == "direct"
+    assert extra["source_provider"] == "retrieval"
+    assert extra["retrieval_query"] == "FAISS"
+    assert extra["ranking"]["operations"] == ["direct_ranking", "sufficiency_gate"]
+    assert extra["ranking"]["candidate_count"] == 2
+    assert extra["inference"] == {"mode": "deterministic", "model": None}
     assert extra["tier"] == "exact"
     assert documents[0].score == 0.42
     assert intent == "search"
@@ -397,6 +403,13 @@ def test_auto_routed_weak_internal_retrieval_uses_serpapi_before_agent(monkeypat
     assert called["agent"] is False
     assert documents
     assert extra["search_mode"] == "external_fallback"
+    assert extra["source_provider"] == "serpapi"
+    assert extra["retrieval_query"] == "FAISS"
+    assert extra["ranking"] == {
+        "operations": ["direct_ranking"],
+        "candidate_count": 1,
+    }
+    assert extra["inference"] == {"mode": "deterministic", "model": None}
 
 
 def test_auto_routed_empty_serpapi_uses_browser_before_agent(monkeypatch):
@@ -416,6 +429,50 @@ def test_auto_routed_empty_serpapi_uses_browser_before_agent(monkeypatch):
     assert called["agent"] is False
     assert documents
     assert extra["search_mode"] == "external_fallback"
+    assert extra["source_provider"] == "browser"
+    assert extra["ranking"]["candidate_count"] == 1
+    assert extra["inference"] == {"mode": "deterministic", "model": None}
+
+
+@pytest.mark.parametrize(
+    ("ranking", "expected_operations", "expected_status"),
+    [
+        (
+            {
+                "operations": ["deduplicate", "external_rerank", "mmr"],
+                "candidate_count": 2,
+                "rerank_status": "applied",
+                "degraded": False,
+            },
+            ["deduplicate", "external_rerank", "mmr"],
+            "applied",
+        ),
+        (
+            {
+                "operations": ["deduplicate", "truncate"],
+                "candidate_count": 2,
+                "rerank_status": "timeout",
+                "degraded": True,
+            },
+            ["deduplicate", "truncate"],
+            "timeout",
+        ),
+    ],
+)
+def test_external_fallback_retains_actual_ranking_metadata(
+    monkeypatch, ranking, expected_operations, expected_status
+):
+    ranked_docs = web_app._RankedDocumentList([_doc(0.8), _doc(0.7, 2)], ranking)
+    (_answer, _c, _documents, _i, extra), _called = _call_direct_or_escalate(
+        monkeypatch,
+        [],
+        source_provider="auto",
+        provider_docs={"retrieval": [], "serpapi": ranked_docs},
+    )
+
+    assert extra["ranking"]["operations"] == expected_operations
+    assert extra["ranking"]["rerank_status"] == expected_status
+    assert extra["ranking"]["candidate_count"] == 2
 
 
 def test_auto_routed_all_providers_empty_returns_no_evidence_without_agent(monkeypatch):

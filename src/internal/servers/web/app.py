@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import httpx
 import json as _json
 import logging
 import uuid as _uuid
@@ -49,16 +48,22 @@ from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
 from src.context import build_context_bundle
-from src.context.utils import mmr_rerank
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.models import SearchFilters
+from src.context.search import SearchResult
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.internal.db import AgenticSearchStore
 from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
 from src.internal.hooks import execute_hook
+from src.internal.search_pipeline.models import CandidateSet
+from src.internal.search_pipeline.models import GeneratedAnswer
+from src.internal.search_pipeline.models import RankedEvidence
+from src.internal.search_pipeline.pipeline import SearchPipeline
+from src.internal.search_pipeline.ranking import DefaultRankingStage
+from src.internal.search_pipeline.stages import RerankHTTPRankingStage
 from src.internal.servers.admin_surface.api import create_admin_surface_router
 from src.internal.servers.analytics.api import create_analytics_router
 from src.internal.servers.web import request_capture as _capture
@@ -314,6 +319,27 @@ class _HybridSearchResult:
     executed_queries: list[str]
     documents: list[ContextDocument]
     status: str = "ok"  # "ok" | "empty" | "unreachable"
+    ranking: dict | None = None
+
+
+class _RankedDocumentList(list[ContextDocument]):
+    """List-compatible ranked documents carrying the ranking stage facts."""
+
+    def __init__(self, documents: list[ContextDocument], ranking: dict) -> None:
+        super().__init__(documents)
+        self.ranking = ranking
+
+
+def _ranking_metadata(
+    documents: list[ContextDocument], *, fallback_operations: list[str]
+) -> dict:
+    ranking = getattr(documents, "ranking", None)
+    if ranking is not None:
+        return dict(ranking)
+    return {
+        "operations": fallback_operations,
+        "candidate_count": len(documents),
+    }
 
 
 def _register_routers(
@@ -442,6 +468,91 @@ def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
     return tool_calls, documents
 
 
+class _WebHybridRetrievalStage:
+    """Adapt the established hybrid/provider policy to normalized candidates."""
+
+    def __init__(
+        self,
+        *,
+        llm,
+        search_url,
+        browser_search_url,
+        rerank_url,
+        source_provider,
+    ) -> None:
+        self._llm = llm
+        self._search_url = search_url
+        self._browser_search_url = browser_search_url
+        self._rerank_url = rerank_url
+        self._source_provider = source_provider
+
+    async def retrieve(self, query, history, filters, top_k) -> CandidateSet:
+        result = await _run_hybrid_search(
+            query,
+            llm=self._llm,
+            search_url=self._search_url,
+            browser_search_url=self._browser_search_url,
+            rerank_url=self._rerank_url,
+            top_k=top_k,
+            filters=filters,
+            source_provider=self._source_provider,
+        )
+        candidates = [
+            SearchResult(
+                contents=document.content,
+                score=document.score,
+                title=document.title,
+                url=document.url,
+                metadata=document.metadata,
+            )
+            for document in result.documents
+        ]
+        return CandidateSet(
+            query=query,
+            candidates=candidates,
+            provider=self._source_provider,
+            filters=filters,
+            metadata={
+                "status": result.status,
+                "executed_queries": result.executed_queries,
+            },
+        )
+
+
+class _WebEvidenceStage:
+    """Preserve the already-ranked hybrid result while normalizing its IDs."""
+
+    async def rank(self, query, candidates, top_k) -> RankedEvidence:
+        documents = DefaultRankingStage.documents(candidates)[:top_k]
+        return RankedEvidence(
+            query=query,
+            evidence=documents,
+            metadata={
+                "operations": ["hybrid_ranking"],
+                "executed_queries": candidates.metadata.get("executed_queries", []),
+            },
+        )
+
+
+class _WebSearchAnswerStage:
+    """Keep the existing deterministic search answer behind inference protocol."""
+
+    def __init__(self, source_provider: str) -> None:
+        self._source_provider = source_provider
+
+    async def generate(self, query, history, evidence) -> GeneratedAnswer:
+        answer = _search_only_answer(
+            "Search",
+            queries=evidence.metadata.get("executed_queries", [query]),
+            documents=evidence.evidence,
+            source_provider=self._source_provider,
+        )
+        return GeneratedAnswer(
+            answer=answer,
+            citations=[document.citation for document in evidence.evidence],
+        )
+
+
 async def _auto_search_pipeline(
     query: str,
     *,
@@ -455,91 +566,21 @@ async def _auto_search_pipeline(
     source_provider: str,
     extra: dict,
 ) -> tuple:
-    """Retrieval-first pipeline used directly and as the degraded fallback.
-
-    Tries hybrid search; on failure synthesizes via RAG; on RAG failure returns
-    raw search. Preserves the original auto-route fallback chain.
-    """
-    try:
-        search_result = await _run_hybrid_search(
-            query,
+    """Run the shared stage composer as the grounded degraded fallback."""
+    pipeline = SearchPipeline(
+        _WebHybridRetrievalStage(
             llm=llm,
             search_url=search_url,
             browser_search_url=browser_search_url,
             rerank_url=rerank_url,
-            top_k=top_k,
-            filters=filters,
             source_provider=source_provider,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Hybrid search failed, falling back to RAG without context: %s", exc
-        )
-        extra["search_fallback"] = "retrieval_unavailable"
-    else:
-        if search_result.status == "unreachable":
-            query_lines = "\n".join(f"- {q}" for q in search_result.executed_queries)
-            answer = (
-                "No sources are reachable right now. Please try again shortly.\n\n"
-                f"Executed queries:\n{query_lines}"
-            )
-        else:
-            answer = _search_only_answer(
-                "Search",
-                queries=search_result.executed_queries,
-                documents=search_result.documents,
-                source_provider=source_provider,
-            )
-        return (
-            answer,
-            [d.citation for d in search_result.documents],
-            search_result.documents,
-            "search",
-            extra,
-        )
-
-    # Chat synthesis fallback (also the search-failure fallback).
-    try:
-        result = await answer_with_retrieval(
-            query,
-            llm=llm,
-            chat_history=history,
-            search_url=search_url,
-            top_k=0 if extra.get("search_fallback") else top_k,
-            filters=filters,
-        )
-        return result.answer, result.citations, result.context.documents, "chat", extra
-    except Exception as exc:
-        if llm is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No LLM configured. Set OPENAI_API_KEY or equivalent in .env.",
-            ) from exc
-        logger.warning("RAG answer_with_retrieval failed, trying raw search: %s", exc)
-        extra["rag_fallback"] = "synthesis_failed"
-        try:
-            raw_docs = await _run_direct_search(
-                query,
-                source_provider="retrieval",
-                search_url=search_url,
-                browser_search_url=None,
-                rerank_url=None,
-                top_k=top_k,
-            )
-            if raw_docs:
-                answer = _search_only_answer(
-                    "Search (synthesis failed)",
-                    queries=[query],
-                    documents=raw_docs,
-                    source_provider="retrieval",
-                )
-                return answer, [d.citation for d in raw_docs], raw_docs, "search", extra
-        except Exception as exc2:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Answer generation failed and retrieval also unavailable: {exc2}",
-            ) from exc2
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        ),
+        _WebEvidenceStage(),
+        _WebSearchAnswerStage(source_provider),
+    )
+    result = await pipeline.run(query, history, filters, top_k, source_provider)
+    result[4].update(extra)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -618,11 +659,17 @@ async def _run_agentic_rag(
     llm,
     search_url: str,
     top_k: int,
+    filters=None,
     history: list,
 ) -> tuple:
     """Run the AgenticRAGLoop (decompose + HyDE). Assumes an LLM is configured."""
     rag_loop = AgenticRAGLoop(
-        AgenticRAGConfig(max_rounds=3, topk=top_k, retrieval_url=search_url),
+        AgenticRAGConfig(
+            max_rounds=3,
+            topk=top_k,
+            retrieval_url=search_url,
+            filters=filters,
+        ),
         llm=llm,
     )
     from uuid import uuid4
@@ -714,6 +761,7 @@ def _finalize_response(
     db,
     session_id: str,
     *,
+    query: str,
     answer: str,
     citations: list,
     documents: list,
@@ -736,16 +784,24 @@ def _finalize_response(
     trace_views = (
         [_control_flow_event_view(event) for event in raw_trace] if raw_trace else []
     )
+    pipeline_stages = _capture.pipeline_stage_summary(
+        query,
+        citations=citations,
+        documents=documents,
+        metadata=extra,
+    )
     metadata = {
         "citations": citations,
         "document_ids": [d.id for d in documents],
         "hooks": hook_metadata,
         "mode": mode,
         "intent": intent,
+        "pipeline_stages": pipeline_stages,
         **extra,
     }
     if trace_views:
         metadata["control_flow_trace"] = [view.model_dump() for view in trace_views]
+    _capture.record_pipeline_stages(pipeline_stages)
     _capture.record_stage(
         "final",
         "answer",
@@ -940,6 +996,8 @@ async def _run_search_direct_or_escalate(
     )
 
     if is_strong:
+        ranking = _ranking_metadata(documents, fallback_operations=["direct_ranking"])
+        ranking["operations"] = [*ranking["operations"], "sufficiency_gate"]
         _capture.record_stage(
             "search",
             "sufficiency",
@@ -956,7 +1014,15 @@ async def _run_search_direct_or_escalate(
             [d.citation for d in real],
             real,
             "search",
-            {"search_mode": "direct", "tier": tier, "top_score": top_score},
+            {
+                "search_mode": "direct",
+                "tier": tier,
+                "top_score": top_score,
+                "source_provider": "retrieval",
+                "retrieval_query": query,
+                "ranking": ranking,
+                "inference": {"mode": "deterministic", "model": None},
+            },
         )
 
     _capture.record_stage(
@@ -1016,7 +1082,14 @@ async def _run_search_direct_or_escalate(
                     {
                         "search_mode": "external_fallback",
                         "external_provider": provider,
+                        "source_provider": provider,
+                        "retrieval_query": query,
                         "top_score": top_score,
+                        "ranking": _ranking_metadata(
+                            external_documents,
+                            fallback_operations=["direct_ranking"],
+                        ),
+                        "inference": {"mode": "deterministic", "model": None},
                     },
                 )
 
@@ -1141,6 +1214,7 @@ async def _run_auto_routed(
                 llm=llm,
                 search_url=search_url,
                 top_k=top_k,
+                filters=filters,
                 history=history,
             )
             extra.update(run_extra)
@@ -1462,6 +1536,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1496,12 +1571,20 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=[doc.citation for doc in documents],
                         documents=documents,
                         intent="search",
                         hook_metadata=hook_metadata,
-                        extra={"source_provider": source_provider},
+                        extra={
+                            "source_provider": source_provider,
+                            "retrieval_query": query,
+                            "ranking": _ranking_metadata(
+                                documents, fallback_operations=["direct_ranking"]
+                            ),
+                            "inference": {"mode": "deterministic", "model": None},
+                        },
                         mode=mode,
                     )
 
@@ -1528,6 +1611,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=[doc.citation for doc in search_result.documents],
                         documents=search_result.documents,
@@ -1535,7 +1619,14 @@ def create_web_app(
                         hook_metadata=hook_metadata,
                         extra={
                             "source_provider": source_provider,
+                            "retrieval_query": query,
                             "executed_queries": search_result.executed_queries,
+                            "ranking": search_result.ranking
+                            or {
+                                "operations": ["hybrid_ranking"],
+                                "candidate_count": len(search_result.documents),
+                            },
+                            "inference": {"mode": "deterministic", "model": None},
                         },
                         mode=mode,
                     )
@@ -1552,11 +1643,13 @@ def create_web_app(
                         llm=llm,
                         search_url=search_url,
                         top_k=top_k,
+                        filters=filters,
                         history=history,
                     )
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1595,6 +1688,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1630,6 +1724,7 @@ def create_web_app(
                     return _finalize_response(
                         db,
                         session_id,
+                        query=query,
                         answer=answer,
                         citations=citations,
                         documents=documents,
@@ -1661,6 +1756,7 @@ def create_web_app(
             return _finalize_response(
                 db,
                 session_id,
+                query=query,
                 answer=result.answer,
                 citations=result.citations,
                 documents=result.context.documents,
@@ -2032,11 +2128,7 @@ async def _run_direct_search(
             existing_count=len(documents),
         )
         documents.extend(browser_docs)
-    deduped = _dedupe_documents(documents)
-    if rerank_url:
-        deduped = await _rerank_documents(deduped, query, rerank_url)
-    diversified = mmr_rerank(deduped, topk=top_k)
-    return _reindex_documents(diversified)
+    return await _rank_documents(documents, query, rerank_url, top_k)
 
 
 async def _run_browser_search(
@@ -2070,54 +2162,44 @@ async def _rerank_documents(
     query: str,
     rerank_url: str,
 ) -> list[ContextDocument]:
-    """Send docs to the cross-encoder rerank server; update scores and return ranked."""
-    if not docs:
-        return docs
-    doc_payloads = [
-        {"document": {"contents": f"{d.title}\n{d.content}", "_idx": str(i)}}
-        for i, d in enumerate(docs)
-    ]
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{rerank_url.rstrip('/')}/rerank",
-                json={
-                    "queries": [query],
-                    "documents": [doc_payloads],
-                    "return_scores": True,
-                },
-                timeout=10.0,
+    """Compatibility wrapper around the shared ranking policy."""
+    return await _rank_documents(docs, query, rerank_url, len(docs))
+
+
+async def _rank_documents(
+    documents: list[ContextDocument],
+    query: str,
+    rerank_url: str | None,
+    top_k: int,
+) -> list[ContextDocument]:
+    """Adapt web documents to the shared default ranking policy."""
+    candidates = CandidateSet(
+        query=query,
+        provider="web",
+        candidates=[
+            SearchResult(
+                contents=document.content,
+                title=document.title,
+                url=document.url,
+                score=document.score,
+                metadata=document.metadata,
             )
-            resp.raise_for_status()
-        ranked = resp.json()["result"][0]
-        reranked: list[ContextDocument] = []
-        for item in ranked:
-            idx = int(item["document"].get("_idx", -1))
-            score = float(item.get("score", 0.0))
-            if 0 <= idx < len(docs):
-                orig = docs[idx]
-                reranked.append(
-                    ContextDocument(
-                        id=orig.id,
-                        title=orig.title,
-                        content=orig.content,
-                        url=orig.url,
-                        score=score,
-                        metadata=orig.metadata,
-                    )
-                )
-            else:
-                logger.debug(
-                    "Reranker response item missing valid _idx: %r",
-                    item.get("document", {}).get("_idx"),
-                )
-        # If the reranker truncates results (applies its own topk), the truncated
-        # list is returned — MMR then diversifies within that smaller candidate pool.
-        if reranked:
-            return reranked
-    except Exception as exc:
-        logger.warning("Rerank request failed, using original order: %s", exc)
-    return docs
+            for document in documents
+        ],
+    )
+    reranker = (
+        RerankHTTPRankingStage(
+            rerank_url,
+            document_contents=lambda candidate: (
+                f"{candidate.title}\n{candidate.contents}"
+            ),
+            send_top_k=False,
+        )
+        if rerank_url
+        else None
+    )
+    ranked = await DefaultRankingStage(reranker=reranker).rank(query, candidates, top_k)
+    return _RankedDocumentList(ranked.evidence, ranked.metadata)
 
 
 def _provider_error_doc(provider: str, message: str) -> ContextDocument:
@@ -2150,16 +2232,18 @@ async def _finalize_hybrid(
     if not real:
         status = "unreachable" if errored else "empty"
         return _HybridSearchResult(
-            executed_queries=executed_queries, documents=[], status=status
+            executed_queries=executed_queries,
+            documents=[],
+            status=status,
+            ranking={"operations": [], "candidate_count": 0},
         )
-    deduped = _dedupe_documents(real)
-    if rerank_url:
-        deduped = await _rerank_documents(deduped, query, rerank_url)
-    diversified = mmr_rerank(deduped, topk=top_k)
+    diversified = await _rank_documents(real, query, rerank_url, top_k)
+    ranking = _ranking_metadata(diversified, fallback_operations=["hybrid_ranking"])
     return _HybridSearchResult(
         executed_queries=executed_queries,
         documents=_reindex_documents(diversified),
         status="ok" if diversified else "empty",
+        ranking=ranking,
     )
 
 
@@ -2190,7 +2274,8 @@ async def _run_hybrid_search(
             search_result.results,
             max_documents=top_k * 2,
         )
-        diversified = mmr_rerank(context.documents, topk=top_k)
+        diversified = await _rank_documents(context.documents, query, None, top_k)
+        ranking = _ranking_metadata(diversified, fallback_operations=["hybrid_ranking"])
         return _HybridSearchResult(
             executed_queries=search_result.executed_queries,
             documents=[
@@ -2203,6 +2288,7 @@ async def _run_hybrid_search(
                 for doc in diversified
             ],
             status="ok" if diversified else "empty",
+            ranking=ranking,
         )
 
     if source_provider == "browser":
@@ -2215,14 +2301,15 @@ async def _run_hybrid_search(
                 top_k=top_k * 2,
                 existing_count=0,
             )
-        deduped_b = _dedupe_documents(browser_docs)
-        if rerank_url:
-            deduped_b = await _rerank_documents(deduped_b, query, rerank_url)
-        diversified_b = mmr_rerank(deduped_b, topk=top_k)
+        diversified_b = await _rank_documents(browser_docs, query, rerank_url, top_k)
+        ranking = _ranking_metadata(
+            diversified_b, fallback_operations=["hybrid_ranking"]
+        )
         return _HybridSearchResult(
             executed_queries=[query],
             documents=_reindex_documents(diversified_b),
             status="ok" if diversified_b else "empty",
+            ranking=ranking,
         )
 
     executed_queries = _expanded_queries(query, llm)
@@ -2248,6 +2335,7 @@ async def _run_hybrid_search(
                         page_size=top_k,
                         timeout_seconds=5,
                         max_retries=1,
+                        **({"filters": filters} if provider == "retrieval" else {}),
                     )
                     for expanded_query in executed_queries
                 ]

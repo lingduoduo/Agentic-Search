@@ -19,6 +19,7 @@ from src.context.models import (
     ContextDocument,
     LLMClient,
     SearchContextBundle,
+    SearchFilters,
 )
 from src.context.pipeline import generate_answer, retrieve_context
 from src.context.query_enhancer import QueryEnhancer
@@ -125,6 +126,7 @@ class AgenticRAGConfig:
     retrieval_url: str = "http://localhost:8001/retrieve"
     max_followups_per_round: int = 5
     sufficiency_timeout_s: float = 5.0
+    filters: SearchFilters | None = None
 
 
 @dataclass
@@ -251,6 +253,7 @@ class AgenticRAGLoop:
                         q,
                         search_url=self.config.retrieval_url,
                         top_k=self.config.topk,
+                        filters=self.config.filters,
                     )
                     for doc in ctx.documents:
                         key = _doc_key(doc)

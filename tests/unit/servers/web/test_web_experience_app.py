@@ -7,6 +7,7 @@ from src.context.models import ChatMessage
 from src.context.models import ContextDocument
 from src.context.models import PromptBundle
 from src.context.models import SearchContextBundle
+from src.context.models import SearchFilters
 from src.internal.db import AgenticSearchStore
 from src.internal.hooks import HookConfig
 from src.internal.hooks import HookPoint
@@ -116,6 +117,84 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         "How do I deploy?",
         "[D1] Start retrieval first, then open the web app.",
     ]
+    store.close()
+
+
+def test_agent_endpoint_persists_pipeline_stage_summary(monkeypatch, tmp_path):
+    async def fake_run_auto_routed(query, **kwargs):
+        result = _answer_result(query)
+        return (
+            result.answer,
+            result.citations,
+            result.context.documents,
+            "search",
+            {
+                "source_provider": "retrieval",
+                "retrieval_query": "Deployment context\nHow do I deploy?",
+                "ranking": {
+                    "operations": ["weighted_rrf", "truncate"],
+                    "candidate_count": 4,
+                    "rerank_status": "timeout",
+                    "degraded": True,
+                },
+                "inference": {"mode": "grounded", "model": "local-test"},
+            },
+        )
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_auto_routed", fake_run_auto_routed
+    )
+    store = AgenticSearchStore(tmp_path / "stages.sqlite3")
+    app = create_web_app(SearchExperienceSettings(), store=store)
+    response = TestClient(app).post("/api/agent", json={"query": "How do I deploy?"})
+
+    assert response.status_code == 200
+    assistant = store.list_chat_messages(response.json()["session_id"])[-1]
+    stages = assistant.metadata["pipeline_stages"]
+    assert stages == {
+        "retrieval": {
+            "query": "Deployment context\nHow do I deploy?",
+            "provider": "retrieval",
+            "candidate_count": 4,
+        },
+        "ranking": {
+            "operations": ["weighted_rrf", "truncate"],
+            "evidence_count": 1,
+            "reranker": "external",
+            "degradation_reason": "timeout",
+        },
+        "inference": {"mode": "grounded", "model": "local-test"},
+        "answer": {"citations": ["D1"], "document_ids": ["D1"]},
+    }
+    store.close()
+
+
+def test_agent_endpoint_persists_inference_fallback_stage(monkeypatch, tmp_path):
+    async def fake_run_auto_routed(query, **kwargs):
+        result = _answer_result(query)
+        return (
+            result.answer,
+            result.citations,
+            result.context.documents,
+            "search",
+            {"inference_fallback": "synthesis_failed"},
+        )
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_auto_routed", fake_run_auto_routed
+    )
+    store = AgenticSearchStore(tmp_path / "fallback.sqlite3")
+    app = create_web_app(SearchExperienceSettings(), store=store)
+    response = TestClient(app).post("/api/agent", json={"query": "fallback"})
+
+    assistant = store.list_chat_messages(response.json()["session_id"])[-1]
+    stages = assistant.metadata["pipeline_stages"]
+    assert stages["inference"] == {
+        "mode": "deterministic_fallback",
+        "model": None,
+    }
+    assert stages["retrieval"]["provider"] is None
+    assert stages["retrieval"]["candidate_count"] is None
     store.close()
 
 
@@ -481,13 +560,70 @@ def test_run_agent_search_tool_mode_returns_documents(monkeypatch, tmp_path):
 
     response = client.post(
         "/api/agent",
-        json={"query": "What is FAISS?", "mode": "search_tool"},
+        json={
+            "query": "What is FAISS?",
+            "mode": "search_tool",
+            "source_provider": "retrieval",
+        },
     )
 
     assert response.status_code == 200
     data = response.json()
     assert len(data["documents"]) == 1
     assert data["documents"][0]["title"] == "FAISS Guide"
+    stages = data["messages"][-1]["metadata"]["pipeline_stages"]
+    assert stages["retrieval"] == {
+        "query": "What is FAISS?",
+        "provider": "retrieval",
+        "candidate_count": 1,
+    }
+    assert stages["ranking"]["operations"] == [
+        "direct_ranking",
+    ]
+    assert stages["inference"] == {"mode": "deterministic", "model": None}
+
+
+def test_hybrid_mode_persists_truthful_direct_stage_metadata(monkeypatch, tmp_path):
+    from src.internal.servers.web.app import _HybridSearchResult
+
+    docs = _answer_result("q").context.documents
+
+    async def fake_hybrid(*args, **kwargs):
+        return _HybridSearchResult(
+            executed_queries=["q", "q expanded"],
+            documents=docs,
+            status="ok",
+            ranking={
+                "operations": ["deduplicate", "external_rerank", "mmr"],
+                "candidate_count": 2,
+                "rerank_status": "applied",
+            },
+        )
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "hybrid.sqlite3"))
+    data = (
+        TestClient(app)
+        .post(
+            "/api/agent",
+            json={"query": "q", "mode": "hybrid_search", "source_provider": "auto"},
+        )
+        .json()
+    )
+
+    stages = data["messages"][-1]["metadata"]["pipeline_stages"]
+    assert stages["retrieval"] == {
+        "query": "q",
+        "provider": "auto",
+        "candidate_count": 2,
+    }
+    assert stages["ranking"]["operations"] == [
+        "deduplicate",
+        "external_rerank",
+        "mmr",
+    ]
+    assert stages["ranking"]["reranker"] == "external"
+    assert stages["inference"] == {"mode": "deterministic", "model": None}
 
 
 def test_run_agent_chat_once_mode_returns_answer(monkeypatch, tmp_path):
@@ -909,6 +1045,50 @@ def test_hybrid_fanout_one_provider_raises_does_not_kill_other(monkeypatch, tmp_
     assert [d.title for d in result.documents] == ["Real"]
 
 
+def test_hybrid_auto_applies_filters_only_to_internal_retrieval(monkeypatch):
+    import asyncio
+
+    from src.internal.servers.web.app import _run_hybrid_search
+    from src.tools import SearchPage
+
+    provider_filters = {}
+    browser_calls = []
+
+    async def fake_search_tool(query, *, provider, search_url, page_size, **kwargs):
+        provider_filters[provider] = kwargs.get("filters", "not-passed")
+        if provider == "retrieval":
+            return [SearchPage(title="Private", summary="allowed", url="http://r/1")]
+        return []
+
+    async def fake_browser(query, *, browser_search_url, top_k, existing_count):
+        browser_calls.append(query)
+        return []
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_browser_search", fake_browser
+    )
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._expanded_queries", lambda q, llm: [q]
+    )
+    filters = {"access": {"user_id": "u1"}}
+
+    asyncio.run(
+        _run_hybrid_search(
+            "q",
+            llm=None,
+            search_url="http://x/retrieve",
+            browser_search_url="http://browser/retrieve",
+            top_k=3,
+            filters=filters,
+            source_provider="auto",
+        )
+    )
+
+    assert provider_filters == {"retrieval": filters, "serpapi": "not-passed"}
+    assert browser_calls == ["q"]
+
+
 def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
     """source_provider='auto' must NOT pull the slow browser sidecar, while
     'all'/'retrieval' still do (regression for the browser-out-of-auto invariant)."""
@@ -987,6 +1167,30 @@ async def test_run_agentic_rag_populates_control_flow_trace():
     components = [e.component for e in trace]
     assert "query_enhancer" in components
     assert "answer_generator" in components
+
+
+async def test_agentic_rag_retrieval_propagates_access_filters(monkeypatch):
+    from src.agents.search.agentic_rag import AgenticRAGConfig, AgenticRAGLoop
+
+    filters = SearchFilters(access_acl=["user:alice"])
+    observed = []
+
+    async def fake_retrieve(question, **kwargs):
+        observed.append(kwargs.get("filters"))
+        return SearchContextBundle(query=question, documents=[])
+
+    monkeypatch.setattr("src.agents.search.agentic_rag.retrieve_context", fake_retrieve)
+    llm = __import__("unittest.mock").mock.MagicMock()
+    llm.complete.side_effect = ["sub-q", "hyde", "broader", "yes", "answer"]
+    loop = AgenticRAGLoop(
+        AgenticRAGConfig(max_rounds=1, filters=filters),
+        llm=llm,
+    )
+
+    await loop.run("question")
+
+    assert observed
+    assert all(item is filters for item in observed)
 
 
 def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):

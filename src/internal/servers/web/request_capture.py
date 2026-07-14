@@ -100,6 +100,62 @@ def record_stage(
         cap.add(stage, label, payload, duration_ms)
 
 
+def pipeline_stage_summary(
+    query: str,
+    *,
+    citations: list,
+    documents: list,
+    metadata: dict,
+) -> dict:
+    """Normalize pipeline metadata for persistence and debug capture."""
+    ranking = dict(metadata.get("ranking") or {})
+    inference = dict(metadata.get("inference") or {})
+    operations = list(ranking.get("operations") or [])
+    reranker = ranking.get("reranker")
+    if reranker is None and "external_rerank" in operations:
+        reranker = ranking.get("rerank_url") or "external"
+    rerank_status = ranking.get("rerank_status")
+    if reranker is None and rerank_status not in (None, "disabled"):
+        reranker = ranking.get("rerank_url") or "external"
+    degradation_reason = ranking.get("degradation_reason") or metadata.get(
+        "rerank_degraded"
+    )
+    if degradation_reason is None and ranking.get("degraded"):
+        degradation_reason = rerank_status or "reranking_degraded"
+    inference_mode = inference.get("mode")
+    if metadata.get("inference_fallback") == "synthesis_failed":
+        inference_mode = "deterministic_fallback"
+    return {
+        "retrieval": {
+            "query": metadata.get("retrieval_query", query),
+            "provider": metadata.get("source_provider"),
+            "candidate_count": metadata.get(
+                "candidate_count", ranking.get("candidate_count")
+            ),
+        },
+        "ranking": {
+            "operations": operations,
+            "evidence_count": len(documents),
+            "reranker": reranker,
+            "degradation_reason": degradation_reason,
+        },
+        "inference": {
+            "mode": inference_mode or "unknown",
+            "model": inference.get("model"),
+        },
+        "answer": {
+            "citations": list(citations),
+            "document_ids": [document.id for document in documents],
+        },
+    }
+
+
+def record_pipeline_stages(summary: dict) -> None:
+    """Mirror a normalized persisted summary into the ambient debug capture."""
+    for stage in ("retrieval", "ranking", "inference"):
+        record_stage(stage, stage, summary[stage])
+
+
 @contextlib.contextmanager
 def capture_stage(stage: str, label: str):
     """Time a block and record a stage from the payload dict the caller mutates.
