@@ -122,12 +122,15 @@ def pipeline_stage_summary(
     )
     if degradation_reason is None and ranking.get("degraded"):
         degradation_reason = rerank_status or "reranking_degraded"
+    inference_mode = inference.get("mode")
+    if metadata.get("inference_fallback") == "synthesis_failed":
+        inference_mode = "deterministic_fallback"
     return {
         "retrieval": {
             "query": metadata.get("retrieval_query", query),
             "provider": metadata.get("source_provider"),
             "candidate_count": metadata.get(
-                "candidate_count", ranking.get("candidate_count", len(documents))
+                "candidate_count", ranking.get("candidate_count")
             ),
         },
         "ranking": {
@@ -137,7 +140,7 @@ def pipeline_stage_summary(
             "degradation_reason": degradation_reason,
         },
         "inference": {
-            "mode": inference.get("mode", "grounded" if documents else "none"),
+            "mode": inference_mode or "unknown",
             "model": inference.get("model"),
         },
         "answer": {

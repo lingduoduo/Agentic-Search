@@ -78,6 +78,9 @@ def test_pipeline_builds_session_context_and_returns_existing_tuple():
     assert retrieval.calls[0][0] == "Tell me about FAISS\nWhat about its GPU support?"
     assert retrieval.calls[0][2] == {"owner": "u1"}
     assert extra["source_provider"] == "retrieval"
+    assert extra["retrieval_query"] == (
+        "Tell me about FAISS\nWhat about its GPU support?"
+    )
 
 
 def test_pipeline_does_not_infer_without_evidence():

@@ -129,6 +129,7 @@ def test_agent_endpoint_persists_pipeline_stage_summary(monkeypatch, tmp_path):
             "search",
             {
                 "source_provider": "retrieval",
+                "retrieval_query": "Deployment context\nHow do I deploy?",
                 "ranking": {
                     "operations": ["weighted_rrf", "truncate"],
                     "candidate_count": 4,
@@ -151,7 +152,7 @@ def test_agent_endpoint_persists_pipeline_stage_summary(monkeypatch, tmp_path):
     stages = assistant.metadata["pipeline_stages"]
     assert stages == {
         "retrieval": {
-            "query": "How do I deploy?",
+            "query": "Deployment context\nHow do I deploy?",
             "provider": "retrieval",
             "candidate_count": 4,
         },
@@ -164,6 +165,35 @@ def test_agent_endpoint_persists_pipeline_stage_summary(monkeypatch, tmp_path):
         "inference": {"mode": "grounded", "model": "local-test"},
         "answer": {"citations": ["D1"], "document_ids": ["D1"]},
     }
+    store.close()
+
+
+def test_agent_endpoint_persists_inference_fallback_stage(monkeypatch, tmp_path):
+    async def fake_run_auto_routed(query, **kwargs):
+        result = _answer_result(query)
+        return (
+            result.answer,
+            result.citations,
+            result.context.documents,
+            "search",
+            {"inference_fallback": "synthesis_failed"},
+        )
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_auto_routed", fake_run_auto_routed
+    )
+    store = AgenticSearchStore(tmp_path / "fallback.sqlite3")
+    app = create_web_app(SearchExperienceSettings(), store=store)
+    response = TestClient(app).post("/api/agent", json={"query": "fallback"})
+
+    assistant = store.list_chat_messages(response.json()["session_id"])[-1]
+    stages = assistant.metadata["pipeline_stages"]
+    assert stages["inference"] == {
+        "mode": "deterministic_fallback",
+        "model": None,
+    }
+    assert stages["retrieval"]["provider"] is None
+    assert stages["retrieval"]["candidate_count"] is None
     store.close()
 
 

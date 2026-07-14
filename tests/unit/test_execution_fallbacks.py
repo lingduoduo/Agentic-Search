@@ -364,6 +364,11 @@ def test_strong_retrieval_returns_direct_without_agent(monkeypatch):
     )
     assert called["agent"] is False
     assert extra["search_mode"] == "direct"
+    assert extra["source_provider"] == "retrieval"
+    assert extra["retrieval_query"] == "FAISS"
+    assert extra["ranking"]["operations"] == ["direct_ranking", "sufficiency_gate"]
+    assert extra["ranking"]["candidate_count"] == 2
+    assert extra["inference"] == {"mode": "deterministic", "model": None}
     assert extra["tier"] == "exact"
     assert documents[0].score == 0.42
     assert intent == "search"

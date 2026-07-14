@@ -985,7 +985,18 @@ async def _run_search_direct_or_escalate(
             [d.citation for d in real],
             real,
             "search",
-            {"search_mode": "direct", "tier": tier, "top_score": top_score},
+            {
+                "search_mode": "direct",
+                "tier": tier,
+                "top_score": top_score,
+                "source_provider": "retrieval",
+                "retrieval_query": query,
+                "ranking": {
+                    "operations": ["direct_ranking", "sufficiency_gate"],
+                    "candidate_count": len(real),
+                },
+                "inference": {"mode": "deterministic", "model": None},
+            },
         )
 
     _capture.record_stage(

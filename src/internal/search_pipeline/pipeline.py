@@ -48,7 +48,10 @@ class SearchPipeline:
         source_provider: str,
     ) -> tuple:
         context = build_retrieval_context(query, history)
-        extra: dict[str, Any] = {"source_provider": source_provider}
+        extra: dict[str, Any] = {
+            "source_provider": source_provider,
+            "retrieval_query": context.retrieval_query,
+        }
         try:
             candidates = await self._retrieval.retrieve(
                 context.retrieval_query,
