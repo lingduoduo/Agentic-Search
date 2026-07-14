@@ -208,25 +208,50 @@ def test_mcp_search_respects_acl_filters(
     privileged_headers = _auth_headers(privileged_user, "mcp-acl-allowed")
     restricted_headers = _auth_headers(user_without_access, "mcp-acl-blocked")
 
-    # Privileged user should find the document
-    allowed_payload = _extract_tool_payload(
+    # Privileged user should receive the restricted evidence through every
+    # indexed-document surface. The generated answer text may vary, so chat
+    # access is proven through its stable sources payload.
+    allowed_search = _extract_tool_payload(
         _call_search_tool(privileged_headers, restricted_doc_content)
     )
-    assert len(allowed_payload["results"]) >= 1
+    allowed_retrieval = _extract_tool_payload(
+        _call_tool(
+            privileged_headers,
+            MCP_RETRIEVE_TOOL,
+            {"query": restricted_doc_content},
+        )
+    )
+    allowed_answer = _extract_tool_payload(
+        _call_tool(
+            privileged_headers,
+            MCP_CHAT_TOOL,
+            {"question": restricted_doc_content},
+        )
+    )
+    assert "error" not in allowed_search, allowed_search
+    assert "error" not in allowed_retrieval, allowed_retrieval
+    assert "error" not in allowed_answer, allowed_answer
+    assert isinstance(allowed_search["results"], list)
+    assert isinstance(allowed_retrieval["documents"], list)
+    assert isinstance(allowed_answer["sources"], list)
     assert any(
         restricted_doc_content in (doc.get("content") or "")
-        for doc in allowed_payload["results"]
+        for doc in allowed_search["results"]
+    )
+    assert any(
+        restricted_doc_content in (doc.get("content") or "")
+        for doc in allowed_retrieval["documents"]
+    )
+    assert any(
+        restricted_doc_content in (doc.get("content") or "")
+        for doc in allowed_answer["sources"]
     )
 
-    # User without access should not find the document. Guard against the
-    # no-sources early-exit by also asserting search actually ran (no error).
-    blocked_payload = _extract_tool_payload(
+    # User without access should get successful, stable result shapes without
+    # the restricted evidence. The public source prevents a no-sources early exit.
+    blocked_search = _extract_tool_payload(
         _call_search_tool(restricted_headers, restricted_doc_content)
     )
-    assert "error" not in blocked_payload, blocked_payload
-    assert blocked_payload["results"] == []
-
-    # Every indexed-document surface must preserve the same server-derived ACL.
     blocked_retrieval = _extract_tool_payload(
         _call_tool(
             restricted_headers,
@@ -241,7 +266,13 @@ def test_mcp_search_respects_acl_filters(
             {"question": restricted_doc_content},
         )
     )
-    assert not _payload_contains(blocked_payload, restricted_doc_content)
+    assert "error" not in blocked_search, blocked_search
+    assert "error" not in blocked_retrieval, blocked_retrieval
+    assert "error" not in blocked_answer, blocked_answer
+    assert isinstance(blocked_search["results"], list)
+    assert isinstance(blocked_retrieval["documents"], list)
+    assert isinstance(blocked_answer["sources"], list)
+    assert not _payload_contains(blocked_search, restricted_doc_content)
     assert not _payload_contains(blocked_retrieval, restricted_doc_content)
     assert not _payload_contains(blocked_answer, restricted_doc_content)
 

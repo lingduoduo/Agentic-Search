@@ -52,7 +52,8 @@ async def ask_agentic_search(
     direct answer rather than raw search results.
 
     If no LLM API key is configured, an extractive fallback answer is returned
-    using only the retrieved document text — no hallucination risk.
+    from retrieved document text. This reduces synthesis risk but is not a guarantee
+    that the source evidence itself is correct or complete.
 
     Returns::
         {

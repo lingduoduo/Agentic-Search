@@ -63,12 +63,12 @@ For a remote deployment, replace the URL with `https://[YOUR_DOMAIN]:8090/`. Oth
 
 | Tool | What it does |
 |------|-------------|
-| `search_indexed_documents` | Search the private knowledge base with optional source filter |
+| `search_indexed_documents` | Search the private knowledge base with optional document-set narrowing |
 | `search_web` | Web search via Google Custom Search or SerpAPI |
 | `open_urls` | Fetch full page text from a list of URLs |
 | `ask_agentic_search` | Synthesizes an answer from authenticated evidence; validates citation labels and answer/evidence overlap |
 | `retrieve_documents` | Returns authenticated document content and relevance scores without answer synthesis |
-| `expand_query` | Query decomposition and HyDE expansion |
+| `expand_query` | LLM-backed keyword expansion for improved recall |
 
 MCP tool selection is independent of the web UI's `/api/agent` auto-router. An MCP client explicitly invokes an exposed tool according to its own model and client policy; it does not pass through the web backend's internal → SerpAPI → browser fallback sequence. For the web API contract, see [API request routing](request-routing.md).
 

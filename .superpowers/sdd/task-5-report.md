@@ -40,3 +40,18 @@
 - Pre-existing modifications to `.superpowers/sdd/task-3-report.md` and
   `.superpowers/sdd/task-4-report.md` were left untouched and are not part of the
   Task 5 commit.
+
+## Review follow-up
+
+- Expanded the cross-user integration regression so the privileged user calls all
+  three private-document tools and restricted evidence appears in each stable
+  success shape: `results`, `documents`, and `sources`.
+- The blocked user also calls all three tools; each response must have no `error`,
+  expose its expected list shape, and contain no restricted evidence.
+- Chat access is asserted through `sources`, not generated answer text, because the
+  answer may legitimately vary by LLM or extractive fallback.
+- Strengthened the AST architecture guard: every private-document tool module must
+  import `authenticated_retrieve`, raw retrieval symbols are prohibited, and imports
+  from raw internal retrieval package prefixes are prohibited.
+- Corrected public documentation for currently applied document-set narrowing and
+  keyword expansion, and removed the chat docstring's absolute hallucination claim.

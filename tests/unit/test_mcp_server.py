@@ -28,26 +28,36 @@ def test_indexed_document_tools_do_not_import_raw_retrieval(module_name: str) ->
         / f"{module_name}.py"
     )
     tree = ast.parse(module_path.read_text())
-    forbidden_modules = {
-        "src.context.pipeline",
+    required_symbol = "authenticated_retrieve"
+    forbidden_module_prefixes = (
         "src.context.retrieval",
-        "src.tools.search",
-    }
+        "src.internal.document_index.retrieval",
+        "src.internal.retrieval",
+        "src.internal.servers.retrieval",
+    )
     forbidden_symbols = {
         "answer_with_retrieval",
         "retrieval_search",
         "retrieve_context",
+        "run_search",
+        "search_chunks",
     }
+    imported_symbols: set[str] = set()
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             imported = {alias.name for alias in node.names}
+            imported_symbols.update(imported)
             assert not (imported & forbidden_symbols)
-            assert node.module not in forbidden_modules or not (
-                imported & forbidden_symbols
-            )
+            assert not (node.module or "").startswith(forbidden_module_prefixes)
         elif isinstance(node, ast.Import):
-            assert not ({alias.name for alias in node.names} & forbidden_modules)
+            imported_modules = {alias.name for alias in node.names}
+            assert not any(
+                imported_module.startswith(forbidden_module_prefixes)
+                for imported_module in imported_modules
+            )
+
+    assert required_symbol in imported_symbols
 
 
 # ---------------------------------------------------------------------------
