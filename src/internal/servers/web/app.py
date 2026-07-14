@@ -638,11 +638,17 @@ async def _run_agentic_rag(
     llm,
     search_url: str,
     top_k: int,
+    filters=None,
     history: list,
 ) -> tuple:
     """Run the AgenticRAGLoop (decompose + HyDE). Assumes an LLM is configured."""
     rag_loop = AgenticRAGLoop(
-        AgenticRAGConfig(max_rounds=3, topk=top_k, retrieval_url=search_url),
+        AgenticRAGConfig(
+            max_rounds=3,
+            topk=top_k,
+            retrieval_url=search_url,
+            filters=filters,
+        ),
         llm=llm,
     )
     from uuid import uuid4
@@ -1056,7 +1062,14 @@ async def _run_search_direct_or_escalate(
                     {
                         "search_mode": "external_fallback",
                         "external_provider": provider,
+                        "source_provider": provider,
+                        "retrieval_query": query,
                         "top_score": top_score,
+                        "ranking": {
+                            "operations": ["direct_ranking", "sufficiency_gate"],
+                            "candidate_count": len(external_real),
+                        },
+                        "inference": {"mode": "deterministic", "model": None},
                     },
                 )
 
@@ -1181,6 +1194,7 @@ async def _run_auto_routed(
                 llm=llm,
                 search_url=search_url,
                 top_k=top_k,
+                filters=filters,
                 history=history,
             )
             extra.update(run_extra)
@@ -1543,7 +1557,18 @@ def create_web_app(
                         documents=documents,
                         intent="search",
                         hook_metadata=hook_metadata,
-                        extra={"source_provider": source_provider},
+                        extra={
+                            "source_provider": source_provider,
+                            "retrieval_query": query,
+                            "ranking": {
+                                "operations": [
+                                    "direct_ranking",
+                                    "sufficiency_gate",
+                                ],
+                                "candidate_count": len(documents),
+                            },
+                            "inference": {"mode": "deterministic", "model": None},
+                        },
                         mode=mode,
                     )
 
@@ -1578,7 +1603,13 @@ def create_web_app(
                         hook_metadata=hook_metadata,
                         extra={
                             "source_provider": source_provider,
+                            "retrieval_query": query,
                             "executed_queries": search_result.executed_queries,
+                            "ranking": {
+                                "operations": ["hybrid_ranking"],
+                                "candidate_count": len(search_result.documents),
+                            },
+                            "inference": {"mode": "deterministic", "model": None},
                         },
                         mode=mode,
                     )
@@ -1595,6 +1626,7 @@ def create_web_app(
                         llm=llm,
                         search_url=search_url,
                         top_k=top_k,
+                        filters=filters,
                         history=history,
                     )
                     return _finalize_response(

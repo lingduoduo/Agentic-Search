@@ -402,6 +402,13 @@ def test_auto_routed_weak_internal_retrieval_uses_serpapi_before_agent(monkeypat
     assert called["agent"] is False
     assert documents
     assert extra["search_mode"] == "external_fallback"
+    assert extra["source_provider"] == "serpapi"
+    assert extra["retrieval_query"] == "FAISS"
+    assert extra["ranking"] == {
+        "operations": ["direct_ranking", "sufficiency_gate"],
+        "candidate_count": 1,
+    }
+    assert extra["inference"] == {"mode": "deterministic", "model": None}
 
 
 def test_auto_routed_empty_serpapi_uses_browser_before_agent(monkeypatch):
@@ -421,6 +428,9 @@ def test_auto_routed_empty_serpapi_uses_browser_before_agent(monkeypatch):
     assert called["agent"] is False
     assert documents
     assert extra["search_mode"] == "external_fallback"
+    assert extra["source_provider"] == "browser"
+    assert extra["ranking"]["candidate_count"] == 1
+    assert extra["inference"] == {"mode": "deterministic", "model": None}
 
 
 def test_auto_routed_all_providers_empty_returns_no_evidence_without_agent(monkeypatch):

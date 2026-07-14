@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.search import AgenticRAGResult
 from src.agents.core.base import AgentLoopOutput
-from src.context.models import SearchContextBundle
+from src.context.models import SearchContextBundle, SearchFilters
 from src.context.search import SearchResult
 from src.internal.servers.web import app as web_app
 
@@ -83,6 +83,33 @@ async def test_run_agentic_rag_returns_canonical_tuple(monkeypatch):
     # F3: _run_agentic_rag now returns the chat-loop control-flow trace in extra.
     # The monkeypatched run() ignores the recorder, so the trace is empty here.
     assert extra == {"rounds_used": 2, "control_flow_trace": []}
+
+
+@pytest.mark.asyncio
+async def test_run_agentic_rag_threads_access_filters_into_loop(monkeypatch):
+    filters = SearchFilters(access_acl=["user:alice"])
+    observed = {}
+
+    async def fake_run(self, question, **kwargs):
+        observed["filters"] = self.config.filters
+        return AgenticRAGResult(
+            answer="synth",
+            citations=[],
+            rounds_used=1,
+            context=SearchContextBundle(query=question, documents=[]),
+        )
+
+    monkeypatch.setattr("src.agents.search.agentic_rag.AgenticRAGLoop.run", fake_run)
+    await web_app._run_agentic_rag(
+        "q",
+        llm=MagicMock(),
+        search_url="http://x/retrieve",
+        top_k=5,
+        filters=filters,
+        history=[],
+    )
+
+    assert observed["filters"] is filters
 
 
 @pytest.mark.asyncio
