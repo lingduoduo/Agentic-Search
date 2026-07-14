@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from unittest.mock import Mock
 
@@ -12,6 +14,40 @@ import pytest
 from src.tools.search import SearchPage
 from src.internal.mcp_server.retrieval_client import AuthenticatedDocument
 from src.internal.mcp_server.retrieval_client import AuthenticatedRetrievalError
+
+
+@pytest.mark.parametrize("module_name", ["search", "research", "chat"])
+def test_indexed_document_tools_do_not_import_raw_retrieval(module_name: str) -> None:
+    """Indexed-document MCP tools must cross the authenticated client boundary."""
+    module_path = (
+        Path(__file__).parents[2]
+        / "src"
+        / "internal"
+        / "mcp_server"
+        / "tools"
+        / f"{module_name}.py"
+    )
+    tree = ast.parse(module_path.read_text())
+    forbidden_modules = {
+        "src.context.pipeline",
+        "src.context.retrieval",
+        "src.tools.search",
+    }
+    forbidden_symbols = {
+        "answer_with_retrieval",
+        "retrieval_search",
+        "retrieve_context",
+    }
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imported = {alias.name for alias in node.names}
+            assert not (imported & forbidden_symbols)
+            assert node.module not in forbidden_modules or not (
+                imported & forbidden_symbols
+            )
+        elif isinstance(node, ast.Import):
+            assert not ({alias.name for alias in node.names} & forbidden_modules)
 
 
 # ---------------------------------------------------------------------------
