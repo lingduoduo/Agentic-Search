@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.internal.auth import generate_user_jwt_token
-from src.internal.auth import AuthenticatedUser
 from src.internal.db import AgenticSearchStore
 from src.internal.db.models import GroupRecord
 from src.internal.db.models import UserRecord
@@ -134,44 +133,6 @@ def test_search_requires_authentication(tmp_path, monkeypatch):
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Authentication required."}
-    store.close()
-
-
-def test_search_uses_same_request_identity_resolver_as_me_for_opaque_token(
-    tmp_path, monkeypatch
-):
-    captured = {}
-
-    async def fake_run_expanded_search(query, **kwargs):
-        captured["filters"] = kwargs["filters"]
-        return SearchQueryResult(
-            original_query=query,
-            executed_queries=[query],
-            results=[],
-        )
-
-    monkeypatch.setattr(
-        "src.internal.servers.query_and_chat.search_backend.run_expanded_search",
-        fake_run_expanded_search,
-    )
-    monkeypatch.setattr(
-        "src.internal.servers.query_and_chat.search_backend.resolve_request_user",
-        lambda request: AuthenticatedUser(
-            id="pat-user", email="pat@example.com", is_anonymous=False
-        )
-        if request.headers.get("authorization") == "Bearer opaque-pat"
-        else None,
-    )
-    client, store = _client(tmp_path)
-
-    response = client.post(
-        "/search/send-search-message",
-        headers={"Authorization": "Bearer opaque-pat"},
-        json={"search_query": "private roadmap", "stream": False},
-    )
-
-    assert response.status_code == 200
-    assert "user:pat-user" in captured["filters"].access_acl
     store.close()
 
 

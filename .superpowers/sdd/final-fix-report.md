@@ -44,3 +44,26 @@
   returned by the same resolver used by `/me`.
 - Pre-existing edits to `.superpowers/sdd/task-3-report.md` and
   `.superpowers/sdd/task-4-report.md` were intentionally left out of this fix.
+
+## Second review follow-up: opaque credential exchange
+
+The first fix correctly unified the endpoint resolver but did not make an opaque
+PAT locally resolvable: the MCP verifier retained the original credential after
+`/me` accepted it, while the downstream endpoint's local resolver accepts signed
+JWTs/cookies. The original consumer test hid that mismatch by monkeypatching the
+resolver.
+
+The verifier now treats `/me` as the authoritative credential-validation and
+identity boundary, validates its response, and exchanges any accepted credential
+for a five-minute locally signed downstream JWT. The derived token contains user
+identity and role but no group claims; search still loads current memberships from
+the store on every request. The original PAT is used only for the `/me` request and
+is neither retained in the FastMCP access token nor embedded in the derived JWT.
+
+Strict TDD evidence:
+
+- RED: `tests/unit/test_mcp_auth.py` had 8 failures. The original opaque token was
+  retained and all malformed `/me` identities were accepted.
+- GREEN: all 8 verifier tests pass. The production `resolve_request_user` resolves
+  the derived JWT without consumer monkeypatching; malformed/invalid JSON fails
+  closed.

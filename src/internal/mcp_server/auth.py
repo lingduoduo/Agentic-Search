@@ -1,15 +1,20 @@
 """Authentication helpers for the Agentic Search MCP server."""
 
 import logging
+import time
 from typing import Optional
 
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.auth import TokenVerifier
 
+from src.internal.auth import generate_user_jwt_token
+
 from .utils import build_web_base_url
 from .utils import get_http_client
 
 logger = logging.getLogger(__name__)
+
+_DOWNSTREAM_TOKEN_TTL_SECONDS = 300
 
 
 class AgenticSearchTokenVerifier(TokenVerifier):
@@ -36,11 +41,40 @@ class AgenticSearchTokenVerifier(TokenVerifier):
             )
             return None
 
+        try:
+            identity = response.json()
+        except (TypeError, ValueError):
+            logger.warning("Web backend returned invalid MCP identity JSON")
+            return None
+
+        if not isinstance(identity, dict):
+            logger.warning("Web backend returned a malformed MCP identity")
+            return None
+        user_id = identity.get("id")
+        email = identity.get("email")
+        role = identity.get("role")
+        if not isinstance(user_id, str) or not user_id.strip():
+            logger.warning("Web backend MCP identity is missing a valid user id")
+            return None
+        if email is not None and not isinstance(email, str):
+            logger.warning("Web backend MCP identity has an invalid email")
+            return None
+        if role is not None and not isinstance(role, str):
+            logger.warning("Web backend MCP identity has an invalid role")
+            return None
+
+        downstream_token = generate_user_jwt_token(
+            user_id=user_id.strip(),
+            email=email,
+            expires_in_seconds=_DOWNSTREAM_TOKEN_TTL_SECONDS,
+            extra={"role": role} if role else None,
+        )
+
         return AccessToken(
-            token=token,
+            token=downstream_token,
             client_id="mcp",
             scopes=["mcp:use"],
-            expires_at=None,
+            expires_at=int(time.time()) + _DOWNSTREAM_TOKEN_TTL_SECONDS,
             resource=None,
-            claims={},
+            claims={"sub": user_id.strip(), "email": email, "role": role},
         )
