@@ -82,6 +82,7 @@ async def ask_agentic_search(
                     metadata=document.metadata,
                 )
                 for document in documents
+                if document.content.strip()
             ],
         )
         if not context.documents:
@@ -95,7 +96,11 @@ async def ask_agentic_search(
         if llm is None:
             logger.info("MCP Server: no LLM configured — using extractive fallback")
         result = generate_answer(
-            AnswerGenerationRequest(question=question, context=context),
+            AnswerGenerationRequest(
+                question=question,
+                context=context,
+                verify_grounding=True,
+            ),
             llm=llm,
         )
     except Exception as exc:
