@@ -2248,6 +2248,7 @@ async def _run_hybrid_search(
                         page_size=top_k,
                         timeout_seconds=5,
                         max_retries=1,
+                        **({"filters": filters} if provider == "retrieval" else {}),
                     )
                     for expanded_query in executed_queries
                 ]

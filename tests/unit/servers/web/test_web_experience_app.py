@@ -909,6 +909,50 @@ def test_hybrid_fanout_one_provider_raises_does_not_kill_other(monkeypatch, tmp_
     assert [d.title for d in result.documents] == ["Real"]
 
 
+def test_hybrid_auto_applies_filters_only_to_internal_retrieval(monkeypatch):
+    import asyncio
+
+    from src.internal.servers.web.app import _run_hybrid_search
+    from src.tools import SearchPage
+
+    provider_filters = {}
+    browser_calls = []
+
+    async def fake_search_tool(query, *, provider, search_url, page_size, **kwargs):
+        provider_filters[provider] = kwargs.get("filters", "not-passed")
+        if provider == "retrieval":
+            return [SearchPage(title="Private", summary="allowed", url="http://r/1")]
+        return []
+
+    async def fake_browser(query, *, browser_search_url, top_k, existing_count):
+        browser_calls.append(query)
+        return []
+
+    monkeypatch.setattr("src.internal.servers.web.app.search_tool", fake_search_tool)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_browser_search", fake_browser
+    )
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._expanded_queries", lambda q, llm: [q]
+    )
+    filters = {"access": {"user_id": "u1"}}
+
+    asyncio.run(
+        _run_hybrid_search(
+            "q",
+            llm=None,
+            search_url="http://x/retrieve",
+            browser_search_url="http://browser/retrieve",
+            top_k=3,
+            filters=filters,
+            source_provider="auto",
+        )
+    )
+
+    assert provider_filters == {"retrieval": filters, "serpapi": "not-passed"}
+    assert browser_calls == ["q"]
+
+
 def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
     """source_provider='auto' must NOT pull the slow browser sidecar, while
     'all'/'retrieval' still do (regression for the browser-out-of-auto invariant)."""

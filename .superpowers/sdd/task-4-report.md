@@ -22,3 +22,9 @@
 ## Concerns
 
 - None known. Public routes and response models are unchanged; stage metadata is carried only in the existing `extra` mapping.
+
+## ACL follow-up
+
+- Added a regression for filtered `source_provider="auto"` fanout covering internal retrieval, SerpAPI, and browser fallback.
+- Internal retrieval now receives the access filter object; SerpAPI and browser are called without internal ACL metadata.
+- Red evidence: the focused test observed `"not-passed"` for the retrieval leg instead of the expected user filter.
