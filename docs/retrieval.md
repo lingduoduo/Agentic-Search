@@ -8,6 +8,8 @@ This guide covers retrieval services, ranking modes, reranking, and query optimi
 
 `src.internal.document_index` is the single indexing entry point — filtering, chunking, embedding, retry-isolated writes, and failure reporting. Query-time retrievers and the retrieval HTTP client live in `src.context`. Reranker utilities live in `src.internal.servers.retrieval`.
 
+Index construction is upstream and asynchronous: connectors and ingestion jobs prepare documents, then the document-index pipeline writes the searchable sparse/dense indexes. Query requests consume those existing indexes; they do not re-ingest or retrain on documents.
+
 **Retrieval servers** (`src/internal/servers/retrieval/`):
 
 | Module | Description |
@@ -79,6 +81,16 @@ The web API has an evidence-first search path above the retrieval services. For 
 This sequence is different from explicit `mode=hybrid_search`, whose helper can query internal retrieval in parallel with a cascading web leg and then merge/rerank results. It is also different from the internal retrieval router described below.
 
 Authenticated requests carry document-access filters and use the filter-aware pipeline rather than the unfiltered direct-first shortcut. Internal retrieval receives the ACL filters; external web providers do not receive internal document ACL objects. See [API request routing](request-routing.md) for exact modes, metadata, and fallbacks.
+
+The filter-aware path uses the same internal stage sequence throughout the web backend:
+
+1. bounded session history resolves continuation-style queries into a retrieval query while retaining the original user question;
+2. the selected existing provider returns a normalized candidate set and receives ACL filters when it is internal retrieval;
+3. one ranking stage deduplicates candidates, optionally invokes the existing reranker, and applies MMR/truncation;
+4. inference synthesizes from ranked evidence, or the pipeline returns deterministic status/results when evidence or synthesis is unavailable;
+5. shared response finalization persists citations, documents, and stage metadata.
+
+These stages are internal adapters. Existing `/retrieve`, `/search`, and `/rerank` endpoints remain available with their current payloads, and no new retrieval API was added. Backend RRF inside `RetrievalService` remains distinct from web-layer candidate ranking: RRF fuses backend result lists; the web ranking stage normalizes, deduplicates, optionally reranks, and diversifies the resulting evidence.
 
 ## Neural reranking
 

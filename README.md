@@ -67,6 +67,8 @@ Provider, web-search, retrieval, reranking, routing, and application settings ar
 
 With `mode` omitted, `/api/agent` classifies each request as `chat`, `search`, or `tool`. An unfiltered auto-routed search tries internal retrieval first; weak or empty evidence falls through to SerpAPI and then the configured browser-search service. If no source returns evidence, the API reports that directly instead of asking a local model to answer from memory. See [API request routing](docs/request-routing.md) for modes, provider precedence, access-filter behavior, metadata, and examples.
 
+Searchable documents are prepared before query time by the existing asynchronous ingestion and indexing jobs. At query time, the existing `/api/agent` and `/api/agent/stream` endpoints load bounded session history, build a follow-up-aware retrieval query, retrieve candidates, apply one centralized ranking/reranking policy, and synthesize only when evidence exists. The finalized answer, citations, documents, and stage metadata are persisted through the same response path for JSON and SSE. This internal simplification introduces no new public API and does not change the request or response schemas.
+
 ## Run locally
 
 Start each service in a separate terminal from the repository root.

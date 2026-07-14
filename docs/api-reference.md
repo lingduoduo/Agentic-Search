@@ -4,6 +4,8 @@
 
 This guide documents the local retrieval, web, chat/session, and health endpoints.
 
+The retrieve → rank/rerank → grounded-inference composition is an internal implementation of the endpoints documented here. It adds no public endpoint and changes no request or response schema. Asynchronous ingestion/indexing continues to populate the corpus before requests arrive; it is not performed by `/api/agent`.
+
 ## Retrieval server API
 
 The retrieval server (`src/internal/servers/retrieval/server.py`, examples use `:8001`) exposes the retrieval core over HTTP. The demo server (`demo.py`, TF-IDF) only serves `POST /retrieve`; the full server below adds per-mode and admin endpoints.
@@ -132,6 +134,8 @@ All three multi-turn paths are **conversation-aware** — `search_agent`,
 `tool_agent`, and `chat_loop` thread bounded prior session turns into the loop.
 Search mode uses the tighter `SEARCH_AGENT_HISTORY_MESSAGES` limit because it
 also carries long retrieval observations.
+
+For the shared search pipeline, prior session messages are bounded and used to resolve follow-up retrieval queries while the original user query remains the inference question. Candidate retrieval then preserves access filters, ranking deduplicates and optionally reranks/diversifies the candidates, and inference runs only with ranked evidence. Empty evidence produces a deterministic no-results response; a retrieval outage produces a deterministic unavailable-sources response. Finalization persists the answer, citations, documents, and normalized `pipeline_stages` metadata for both JSON and SSE delivery.
 
 | `mode` | Path / loop | `intent` | Requires |
 |---|---|---|---|
