@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.tools.search import SearchPage
+from src.internal.mcp_server.retrieval_client import AuthenticatedDocument
+from src.internal.mcp_server.retrieval_client import AuthenticatedRetrievalError
 
 
 # ---------------------------------------------------------------------------
@@ -93,16 +95,41 @@ _FAKE_PAGES = [
     ),
 ]
 
+_AUTHENTICATED_DOCUMENTS = [
+    AuthenticatedDocument(
+        title="Dense Retrieval",
+        content="FAISS-based dense retrieval.",
+        url="http://ex.com/1",
+        score=0.9,
+        metadata={},
+    ),
+    AuthenticatedDocument(
+        title="Sparse BM25",
+        content="BM25 scoring for keyword search.",
+        url="http://ex.com/2",
+        score=0.8,
+        metadata={},
+    ),
+]
+
 
 @pytest.mark.asyncio
 async def test_search_indexed_documents_returns_results():
     from src.internal.mcp_server.tools.search import search_indexed_documents
 
+    authenticated_retrieve = AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS)
     with patch(
-        "src.internal.mcp_server.tools.search.retrieval_search",
-        new=AsyncMock(return_value=_FAKE_PAGES),
+        "src.internal.mcp_server.tools.search.authenticated_retrieve",
+        authenticated_retrieve,
+        create=True,
     ):
-        result = await search_indexed_documents(query="dense retrieval")
+        result = await search_indexed_documents(
+            query="dense retrieval", document_set_names=[]
+        )
+
+    authenticated_retrieve.assert_awaited_once_with(
+        "dense retrieval", top_k=5, document_set_names=None
+    )
 
     assert "results" in result
     assert len(result["results"]) == 2
@@ -116,13 +143,13 @@ async def test_search_indexed_documents_empty():
     from src.internal.mcp_server.tools.search import search_indexed_documents
 
     with patch(
-        "src.internal.mcp_server.tools.search.retrieval_search",
+        "src.internal.mcp_server.tools.search.authenticated_retrieve",
         new=AsyncMock(return_value=[]),
+        create=True,
     ):
         result = await search_indexed_documents(query="nothing")
 
-    assert "error" in result
-    assert result["results"] == []
+    assert result == {"results": []}
 
 
 @pytest.mark.asyncio
@@ -130,13 +157,109 @@ async def test_search_indexed_documents_error():
     from src.internal.mcp_server.tools.search import search_indexed_documents
 
     with patch(
-        "src.internal.mcp_server.tools.search.retrieval_search",
-        new=AsyncMock(side_effect=ConnectionError("retrieval server down")),
+        "src.internal.mcp_server.tools.search.authenticated_retrieve",
+        new=AsyncMock(side_effect=AuthenticatedRetrievalError("Authentication failed")),
+        create=True,
     ):
         result = await search_indexed_documents(query="test")
 
     assert "error" in result
-    assert "retrieval server down" in result["error"]
+    assert "Authentication failed" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_search_indexed_documents_authorization_error_has_no_raw_fallback():
+    from src.internal.mcp_server.tools.search import search_indexed_documents
+
+    with (
+        patch(
+            "src.internal.mcp_server.tools.search.authenticated_retrieve",
+            new=AsyncMock(
+                side_effect=AuthenticatedRetrievalError(
+                    "Access to search results was denied"
+                )
+            ),
+            create=True,
+        ),
+        patch("src.tools.search.retrieval_search", new=AsyncMock()) as raw_retrieve,
+    ):
+        result = await search_indexed_documents(query="private")
+
+    raw_retrieve.assert_not_awaited()
+    assert result == {
+        "error": "Document search failed: Access to search results was denied",
+        "results": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# tools/research — retrieve_documents
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retrieve_documents_forwards_query_and_top_k():
+    from src.internal.mcp_server.tools.research import retrieve_documents
+
+    authenticated_retrieve = AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS[:1])
+    with patch(
+        "src.internal.mcp_server.tools.research.authenticated_retrieve",
+        authenticated_retrieve,
+        create=True,
+    ):
+        result = await retrieve_documents("dense retrieval", top_k=8)
+
+    authenticated_retrieve.assert_awaited_once_with("dense retrieval", top_k=8)
+    assert result == {
+        "documents": [
+            {
+                "id": "D1",
+                "title": "Dense Retrieval",
+                "url": "http://ex.com/1",
+                "content": "FAISS-based dense retrieval.",
+                "score": 0.9,
+            }
+        ],
+        "query": "dense retrieval",
+    }
+
+
+@pytest.mark.asyncio
+async def test_retrieve_documents_empty_is_success():
+    from src.internal.mcp_server.tools.research import retrieve_documents
+
+    with patch(
+        "src.internal.mcp_server.tools.research.authenticated_retrieve",
+        new=AsyncMock(return_value=[]),
+        create=True,
+    ):
+        result = await retrieve_documents("nothing")
+
+    assert result == {"documents": [], "query": "nothing"}
+
+
+@pytest.mark.asyncio
+async def test_retrieve_documents_authentication_error_has_no_raw_fallback():
+    from src.internal.mcp_server.tools.research import retrieve_documents
+
+    with (
+        patch(
+            "src.internal.mcp_server.tools.research.authenticated_retrieve",
+            new=AsyncMock(
+                side_effect=AuthenticatedRetrievalError("Authentication failed")
+            ),
+            create=True,
+        ),
+        patch("src.context.pipeline.retrieve_context", new=AsyncMock()) as raw_retrieve,
+    ):
+        result = await retrieve_documents("private")
+
+    raw_retrieve.assert_not_awaited()
+    assert result == {
+        "error": "Authentication failed",
+        "documents": [],
+        "query": "private",
+    }
 
 
 # ---------------------------------------------------------------------------

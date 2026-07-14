@@ -9,18 +9,14 @@ from typing import Any
 
 from src.tools.search import fetch_url
 from src.tools.search import google_custom_search
-from src.tools.search import retrieval_search
 from src.tools.search import serper_dev_search
 from src.tools.search import serpapi_search
 
 from ..api import mcp_server
+from ..retrieval_client import AuthenticatedRetrievalError
+from ..retrieval_client import authenticated_retrieve
 
 logger = logging.getLogger(__name__)
-
-
-def _retrieval_url() -> str:
-    port = os.getenv("AGENTIC_SEARCH_RETRIEVAL_PORT", "8000")
-    return f"http://localhost:{port}/retrieve"
 
 
 def _error_payload(error: str) -> dict[str, Any]:
@@ -40,9 +36,9 @@ async def search_indexed_documents(
     Use this tool for information specific to your organization, team, or documents
     that have been indexed in the retrieval server.
 
-    `source_types` and `document_set_names` are accepted for API compatibility but
-    are not used for filtering — the retrieval server returns all indexed documents.
-    `time_cutoff` and `skip_query_expansion` are similarly accepted but not applied.
+    `document_set_names` narrows results to documents the caller is authorized to
+    access in those sets. `source_types`, `time_cutoff`, and `skip_query_expansion`
+    are accepted for API compatibility but are not currently applied.
 
     Returns ``{"results": [{title, url, content}, ...]}``.
 
@@ -54,18 +50,18 @@ async def search_indexed_documents(
     logger.info("MCP Server: document search: query='%s'", query)
 
     try:
-        pages = await retrieval_search(query, search_url=_retrieval_url(), page_size=5)
-    except Exception as err:
+        documents = await authenticated_retrieve(
+            query,
+            top_k=5,
+            document_set_names=document_set_names or None,
+        )
+    except AuthenticatedRetrievalError as err:
         logger.error("MCP Server: Document search error: %s", err, exc_info=True)
         return _error_payload(f"Document search failed: {str(err)}")
 
-    if not pages:
-        return _error_payload(
-            "No results found. Ensure the retrieval server is running and documents are indexed."
-        )
-
     results = [
-        {"title": p.title, "url": p.url or "", "content": p.summary} for p in pages
+        {"title": doc.title, "url": doc.url or "", "content": doc.content}
+        for doc in documents
     ]
     logger.info("MCP Server: document search returned %s results", len(results))
     return {"results": results}
