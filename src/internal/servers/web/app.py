@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import httpx
 import json as _json
 import logging
 import uuid as _uuid
@@ -49,16 +48,19 @@ from src.context import ChatMessage
 from src.context import LLMClient
 from src.context import answer_with_retrieval
 from src.context import build_context_bundle
-from src.context.utils import mmr_rerank
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.models import SearchFilters
+from src.context.search import SearchResult
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.internal.db import AgenticSearchStore
 from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
 from src.internal.hooks import execute_hook
+from src.internal.search_pipeline.models import CandidateSet
+from src.internal.search_pipeline.ranking import DefaultRankingStage
+from src.internal.search_pipeline.stages import RerankHTTPRankingStage
 from src.internal.servers.admin_surface.api import create_admin_surface_router
 from src.internal.servers.analytics.api import create_analytics_router
 from src.internal.servers.web import request_capture as _capture
@@ -2032,11 +2034,7 @@ async def _run_direct_search(
             existing_count=len(documents),
         )
         documents.extend(browser_docs)
-    deduped = _dedupe_documents(documents)
-    if rerank_url:
-        deduped = await _rerank_documents(deduped, query, rerank_url)
-    diversified = mmr_rerank(deduped, topk=top_k)
-    return _reindex_documents(diversified)
+    return await _rank_documents(documents, query, rerank_url, top_k)
 
 
 async def _run_browser_search(
@@ -2070,54 +2068,34 @@ async def _rerank_documents(
     query: str,
     rerank_url: str,
 ) -> list[ContextDocument]:
-    """Send docs to the cross-encoder rerank server; update scores and return ranked."""
-    if not docs:
-        return docs
-    doc_payloads = [
-        {"document": {"contents": f"{d.title}\n{d.content}", "_idx": str(i)}}
-        for i, d in enumerate(docs)
-    ]
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{rerank_url.rstrip('/')}/rerank",
-                json={
-                    "queries": [query],
-                    "documents": [doc_payloads],
-                    "return_scores": True,
-                },
-                timeout=10.0,
+    """Compatibility wrapper around the shared ranking policy."""
+    return await _rank_documents(docs, query, rerank_url, len(docs))
+
+
+async def _rank_documents(
+    documents: list[ContextDocument],
+    query: str,
+    rerank_url: str | None,
+    top_k: int,
+) -> list[ContextDocument]:
+    """Adapt web documents to the shared default ranking policy."""
+    candidates = CandidateSet(
+        query=query,
+        provider="web",
+        candidates=[
+            SearchResult(
+                contents=document.content,
+                title=document.title,
+                url=document.url,
+                score=document.score,
+                metadata=document.metadata,
             )
-            resp.raise_for_status()
-        ranked = resp.json()["result"][0]
-        reranked: list[ContextDocument] = []
-        for item in ranked:
-            idx = int(item["document"].get("_idx", -1))
-            score = float(item.get("score", 0.0))
-            if 0 <= idx < len(docs):
-                orig = docs[idx]
-                reranked.append(
-                    ContextDocument(
-                        id=orig.id,
-                        title=orig.title,
-                        content=orig.content,
-                        url=orig.url,
-                        score=score,
-                        metadata=orig.metadata,
-                    )
-                )
-            else:
-                logger.debug(
-                    "Reranker response item missing valid _idx: %r",
-                    item.get("document", {}).get("_idx"),
-                )
-        # If the reranker truncates results (applies its own topk), the truncated
-        # list is returned — MMR then diversifies within that smaller candidate pool.
-        if reranked:
-            return reranked
-    except Exception as exc:
-        logger.warning("Rerank request failed, using original order: %s", exc)
-    return docs
+            for document in documents
+        ],
+    )
+    reranker = RerankHTTPRankingStage(rerank_url) if rerank_url else None
+    ranked = await DefaultRankingStage(reranker=reranker).rank(query, candidates, top_k)
+    return ranked.evidence
 
 
 def _provider_error_doc(provider: str, message: str) -> ContextDocument:
@@ -2152,10 +2130,7 @@ async def _finalize_hybrid(
         return _HybridSearchResult(
             executed_queries=executed_queries, documents=[], status=status
         )
-    deduped = _dedupe_documents(real)
-    if rerank_url:
-        deduped = await _rerank_documents(deduped, query, rerank_url)
-    diversified = mmr_rerank(deduped, topk=top_k)
+    diversified = await _rank_documents(real, query, rerank_url, top_k)
     return _HybridSearchResult(
         executed_queries=executed_queries,
         documents=_reindex_documents(diversified),
@@ -2190,7 +2165,7 @@ async def _run_hybrid_search(
             search_result.results,
             max_documents=top_k * 2,
         )
-        diversified = mmr_rerank(context.documents, topk=top_k)
+        diversified = await _rank_documents(context.documents, query, None, top_k)
         return _HybridSearchResult(
             executed_queries=search_result.executed_queries,
             documents=[
@@ -2215,10 +2190,7 @@ async def _run_hybrid_search(
                 top_k=top_k * 2,
                 existing_count=0,
             )
-        deduped_b = _dedupe_documents(browser_docs)
-        if rerank_url:
-            deduped_b = await _rerank_documents(deduped_b, query, rerank_url)
-        diversified_b = mmr_rerank(deduped_b, topk=top_k)
+        diversified_b = await _rank_documents(browser_docs, query, rerank_url, top_k)
         return _HybridSearchResult(
             executed_queries=[query],
             documents=_reindex_documents(diversified_b),

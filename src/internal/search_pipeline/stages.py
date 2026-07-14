@@ -155,7 +155,12 @@ class RerankHTTPRankingStage:
         ranked = response.json()["result"][0]
         evidence = []
         for position, item in enumerate(ranked, 1):
-            index = int(item["document"]["_idx"])
+            try:
+                index = int(item.get("document", {}).get("_idx", -1))
+            except (TypeError, ValueError):
+                continue
+            if not 0 <= index < len(candidates.candidates):
+                continue
             original = candidates.candidates[index]
             scored = SearchResult(
                 contents=original.contents,

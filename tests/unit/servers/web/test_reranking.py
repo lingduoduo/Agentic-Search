@@ -84,7 +84,8 @@ async def test_rerank_documents_returns_original_on_http_error(monkeypatch):
         ContextDocument(id="D2", title="B", content="b", score=0.3),
     ]
     result = await _rerank_documents(docs, "query", "http://rerank.test:6980")
-    assert result == docs  # original order preserved on failure
+    assert [doc.title for doc in result] == ["A", "B"]
+    assert [doc.score for doc in result] == [0.5, 0.3]
 
 
 @pytest.mark.asyncio
@@ -151,8 +152,8 @@ async def test_rerank_documents_drops_items_with_missing_idx(monkeypatch):
     assert result[0].score == pytest.approx(0.5)
 
 
-def test_rerank_url_causes_rerank_documents_call(tmp_path, monkeypatch):
-    """When rerank_url is set, _rerank_documents is called with that URL."""
+def test_rerank_url_is_forwarded_to_shared_ranking_stage(tmp_path, monkeypatch):
+    """The web path delegates its configured reranker to shared ranking."""
     rerank_calls: list[str] = []
 
     async def fake_search(query, *, provider, search_url, page_size=5, **_):
@@ -161,7 +162,7 @@ def test_rerank_url_causes_rerank_documents_call(tmp_path, monkeypatch):
     async def fake_answer(question, *, context, llm_client=None):
         return _fake_answer(question)
 
-    async def fake_rerank(docs, query, rerank_url):
+    async def fake_rank(docs, query, rerank_url, top_k):
         rerank_calls.append(rerank_url)
         return docs
 
@@ -169,7 +170,7 @@ def test_rerank_url_causes_rerank_documents_call(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "src.internal.servers.web.app.answer_with_retrieval", fake_answer
     )
-    monkeypatch.setattr("src.internal.servers.web.app._rerank_documents", fake_rerank)
+    monkeypatch.setattr("src.internal.servers.web.app._rank_documents", fake_rank)
 
     app = create_web_app(
         SearchExperienceSettings(
