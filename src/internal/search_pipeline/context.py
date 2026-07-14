@@ -11,15 +11,21 @@ from src.context import ChatMessage
 
 _FOLLOW_UP_PREFIX = re.compile(
     r"^(?:and\b|also\b|but\b|what about\b|how about\b|tell me more\b|"
-    r"go on\b|continue\b|why(?:\s|\?|$))",
+    r"go on\b|continue\b)",
     re.IGNORECASE,
 )
-_REFERENCE_PRONOUN = re.compile(
-    r"\b(?:it|its|they|them|their|this|that|these|those|he|him|his|she|her)\b",
+_REFERENCE_FOLLOW_UP = re.compile(
+    r"^(?:(?:where|when|what|who|how)\s+"
+    r"(?:is|are|was|were|do|does|did|can|could|will|would|has|have|had)\s+"
+    r"(?:it|they|them|this|that|these|those|he|him|she|her)\b|"
+    r"(?:is|are|was|were|do|does|did|can|could|will|would|has|have|had)\s+"
+    r"(?:it|they|this|that|these|those|he|she)\b|"
+    r"why\s+(?:is|was|does|did)\s+(?:it|that|this)\b)",
     re.IGNORECASE,
 )
 _ASSISTANT_INTERNAL_MARKUP = re.compile(
-    r"<\s*/?\s*(?:tool(?:_call|_result)?|evidence|search_results?)\b",
+    r"<\s*/?\s*(?:tool(?:_call|_result)?|evidence|search_results?|search|searches|"
+    r"fetch|information|search_decision)\b",
     re.IGNORECASE,
 )
 
@@ -36,7 +42,7 @@ class RetrievalContext:
 def _is_follow_up(query: str) -> bool:
     normalized = query.strip()
     return bool(
-        _FOLLOW_UP_PREFIX.search(normalized) or _REFERENCE_PRONOUN.search(normalized)
+        _FOLLOW_UP_PREFIX.search(normalized) or _REFERENCE_FOLLOW_UP.search(normalized)
     )
 
 
