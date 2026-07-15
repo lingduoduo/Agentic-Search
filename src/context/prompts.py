@@ -6,6 +6,7 @@ from .enums import AgentBehavior
 from .enums import AnswerStyle
 from .models import AgentBehaviorConfig
 from .models import ChatMessage
+from .models import EvidenceSource
 from .models import PromptBundle
 from .models import SearchContextBundle
 
@@ -79,3 +80,65 @@ def build_chat_prompt(
     prompt = build_answer_prompt(question, context, config)
     messages = [prompt.messages[0], *(history or []), prompt.messages[1]]
     return PromptBundle(system=prompt.system, user=prompt.user, messages=messages)
+
+
+def build_structured_answer_prompt(
+    question: str,
+    context: SearchContextBundle,
+    config: AgentBehaviorConfig | None = None,
+    *,
+    evidence: list[EvidenceSource] | None = None,
+) -> PromptBundle:
+    """Build the strict internal AnswerDraft prompt used by the safety guard."""
+    config = config or AgentBehaviorConfig()
+    system = (
+        "You are a retrieval-grounded research assistant.\n"
+        f"{build_agent_behavior_prompt(config)}\n\n"
+        "Return only one JSON object with exactly these keys: claims, "
+        "missing_information, abstain. Each claim must contain exactly text and "
+        "evidence_ids. evidence_ids must be a non-empty array of IDs present in "
+        "the supplied evidence. Do not emit markdown or extra keys. Every factual "
+        "claim must be supported by every evidence ID it cites. If evidence is "
+        "missing or you are uncertain, record the gap in missing_information or "
+        "set abstain to true; never guess."
+    )
+    evidence_text = (
+        _format_evidence(evidence)
+        if evidence is not None
+        else context.to_context_text()
+    )
+    user = f"Question:\n{question}\n\nEvidence:\n{evidence_text}\n\nReturn the AnswerDraft JSON."
+    messages = [
+        ChatMessage(role="system", content=system),
+        ChatMessage(role="user", content=user),
+    ]
+    return PromptBundle(system=system, user=user, messages=messages)
+
+
+def build_corrective_answer_prompt(
+    question: str,
+    context: SearchContextBundle,
+    *,
+    original_draft: str,
+    verifier_feedback: str,
+    config: AgentBehaviorConfig | None = None,
+    evidence: list[EvidenceSource] | None = None,
+) -> PromptBundle:
+    """Build one bounded correction request without changing the evidence."""
+    prompt = build_structured_answer_prompt(
+        question, context, config, evidence=evidence
+    )
+    user = (
+        f"{prompt.user}\n\nOriginal structured draft:\n{original_draft}\n\n"
+        f"Verifier feedback:\n{verifier_feedback}\n\n"
+        "Correct the JSON. Remove unsupported material rather than inventing new "
+        "evidence. You may explicitly abstain or report uncertainty."
+    )
+    messages = [prompt.messages[0], ChatMessage(role="user", content=user)]
+    return PromptBundle(system=prompt.system, user=user, messages=messages)
+
+
+def _format_evidence(evidence: list[EvidenceSource]) -> str:
+    if not evidence:
+        return "No available evidence."
+    return "\n\n".join(f"[{item.id}] {item.title}\n{item.text}" for item in evidence)

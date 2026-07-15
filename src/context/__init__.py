@@ -15,6 +15,7 @@ from .models import ContextSection
 from .models import ClaimVerdict
 from .models import EvidenceSource
 from .models import EvidenceSnippet
+from .models import GroundedGenerationConfig
 from .models import LLMClient
 from .models import LLMResponse
 from .models import PromptBundle
@@ -31,7 +32,9 @@ from .pipeline import synthesize_answer_from_context
 from .prompts import build_agent_behavior_prompt
 from .prompts import build_answer_prompt
 from .prompts import build_chat_prompt
+from .prompts import build_corrective_answer_prompt
 from .prompts import build_retrieval_prompt
+from .prompts import build_structured_answer_prompt
 from .safety import CANONICAL_ABSTENTION
 from .safety import evidence_from_context
 from .safety import parse_answer_draft
@@ -62,6 +65,7 @@ __all__ = [
     "ClaimVerdict",
     "EvidenceSource",
     "EvidenceSnippet",
+    "GroundedGenerationConfig",
     "LLMClient",
     "LLMResponse",
     "PromptBundle",
@@ -82,8 +86,10 @@ __all__ = [
     "build_agent_behavior_prompt",
     "build_answer_prompt",
     "build_chat_prompt",
+    "build_corrective_answer_prompt",
     "build_context_bundle",
     "build_retrieval_prompt",
+    "build_structured_answer_prompt",
     "collect_tool_evidence",
     "documents_from_search_results",
     "extract_citations",

@@ -272,12 +272,24 @@ class AgentBehaviorConfig:
 
 
 @dataclass(frozen=True)
+class GroundedGenerationConfig:
+    enabled: bool = True
+    max_retries: int = 1
+    overlap_threshold: float = 0.15
+
+
+@dataclass(frozen=True)
 class AnswerGenerationRequest:
     question: str
     context: SearchContextBundle
     chat_history: list[ChatMessage] = field(default_factory=list)
     behavior: AgentBehaviorConfig = field(default_factory=AgentBehaviorConfig)
     verify_grounding: bool = False
+    evidence: list[EvidenceSource] | None = None
+    grounded_generation: GroundedGenerationConfig = field(
+        default_factory=GroundedGenerationConfig
+    )
+    evidence_sufficiency: float | None = None
 
 
 @dataclass(frozen=True)
@@ -287,6 +299,10 @@ class AnswerGenerationResult:
     context: SearchContextBundle
     prompt: PromptBundle
     grounding_report: GroundingReport | None = None
+    confidence: float | None = None
+    verification_status: VerificationStatus | None = None
+    abstained: bool = False
+    tool_evidence: list[EvidenceSource] = field(default_factory=list)
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

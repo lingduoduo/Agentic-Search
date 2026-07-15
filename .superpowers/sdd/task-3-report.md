@@ -1,49 +1,72 @@
-# Task 3 report
+# Task 3 Report: Guarded Generation
 
-## Implementation
+## Status
 
-- Added `DefaultRankingStage` to centralize stable deduplication, optional reranking,
-  reranker timeout/error degradation, MMR truncation, document reindexing, and
-  explicit ranking metadata.
-- Routed direct, hybrid-finalization, retrieval, and browser web ranking paths
-  through the shared stage.
-- Reused `RerankHTTPRankingStage`, preserving the standalone `/rerank` request
-  adapter and leaving `RetrievalService` weighted-RRF ownership unchanged.
-- Kept `_rerank_documents` as a compatibility wrapper with no ranking policy of
-  its own.
-- Made malformed reranker indices skippable, matching the former web behavior.
+Implemented guarded-by-default answer generation with strict structured drafts,
+one bounded corrective retry, deterministic verification metadata, unsupported
+claim filtering, and canonical abstention. Legacy free-text behavior remains
+available only through `GroundedGenerationConfig(enabled=False)`.
 
-## TDD evidence
+## RED evidence
 
-- Red: `pytest tests/unit/search_pipeline/test_ranking.py -q` failed during
-  collection because `src.internal.search_pipeline.ranking` did not exist.
-- Intermediate red: the reranker-order test demonstrated that MMR consumes
-  reranker scores, and compatibility tests exposed metadata and malformed-index
-  behavior at the centralized boundary.
-- Green: focused and adjacent ranking/web tests passed (32 tests).
+- `pytest -q tests/unit/test_grounded_generation.py -x`
+  - Collected 10 tests.
+  - Failed `test_guarded_generation_renders_valid_supported_draft` because the
+    structured JSON was returned verbatim instead of being parsed and rendered.
+- A subsequent focused RED for the no-evidence branch:
+  `pytest -q tests/unit/test_grounded_generation.py -x`
+  - Failed `test_guarded_generation_abstains_without_calling_llm_when_evidence_is_empty`
+    because the LLM was called and exhausted its response sequence.
 
-## Verification
+## GREEN evidence
 
-- `pytest tests/unit/search_pipeline/test_ranking.py tests/unit/servers/web/test_reranking.py -q`
-- `ruff check src/internal/search_pipeline/ranking.py src/internal/search_pipeline/stages.py src/internal/servers/web/app.py tests/unit/search_pipeline/test_ranking.py tests/unit/servers/web/test_reranking.py`
+- `pytest -q tests/unit/test_grounded_generation.py`
+  - `11 passed in 0.74s` after the no-evidence correction.
+- `pytest -q tests/unit/test_context_pipeline.py tests/unit/test_grounding.py tests/unit/test_rag_safety.py tests/unit/test_grounded_generation.py`
+  - `66 passed in 0.82s`.
+- `ruff check src/context/models.py src/context/prompts.py src/context/pipeline.py src/context/__init__.py tests/unit/test_grounded_generation.py tests/unit/test_context_pipeline.py`
+  - `All checks passed!`
 - `git diff --check`
+  - Exit 0, no whitespace errors.
+
+## Files
+
+- `src/context/models.py`: added `GroundedGenerationConfig`, optional request
+  evidence/safety/sufficiency inputs, and backward-compatible result metadata.
+- `src/context/prompts.py`: added strict structured-draft and corrective prompts.
+- `src/context/pipeline.py`: added guarded parsing, verification, one retry,
+  filtering/abstention, metadata, and conservative extractive fallback.
+- `src/context/__init__.py`: exported the new public config and prompt builders.
+- `tests/unit/test_grounded_generation.py`: sequence-based guard coverage.
+- `tests/unit/test_context_pipeline.py`: made the legacy free-text compatibility
+  expectation explicitly disable the guard.
+
+## Full regression run
+
+`pytest -q tests/unit` produced `2474 passed, 13 failed`. Twelve failures are
+downstream agentic/MCP tests whose finite fake-LLM sequences still provide
+legacy free text to the now guarded-by-default `generate_answer`; updating those
+adapters/tests belongs to Task 4 pipeline integration. The remaining failure is
+an unrelated sandbox denial writing a Hugging Face cache lock under the user
+home directory.
+
+## Self-review
+
+- Retry count is hard-capped to one corrective call even if callers construct a
+  config with a larger `max_retries`; total LLM calls never exceed two.
+- Explicit model abstention and empty evidence do not trigger unnecessary retries.
+- Parse failures receive concise parser feedback; support failures receive exact
+  unsupported claim text and verifier reason.
+- Final rendering uses the existing `render_verified_answer`, so unsupported
+  claims cannot leak after the retry.
+- Existing grounding-report verification still runs after guarded rendering and
+  its focused regression tests pass.
+- No registry/selector or MCP/web adapter integration was added.
 
 ## Concerns
 
-- None known. The compatibility wrapper now returns centralized ranking metadata
-  (`source_provider` and `mmr_rank`) while preserving document order and scores on
-  reranker degradation.
-
-## Review fixes
-
-- Added non-monotonic-score timeout/error regressions. On degradation the stage
-  now preserves deduplicated input order exactly and only truncates to `top_k`;
-  it does not invoke score-based MMR.
-- Added a web rerank payload assertion and restored the prior request body:
-  document contents are `<title>\n<content>`, `return_scores` remains enabled,
-  and `rerank_topk` is omitted. The standalone adapter defaults remain unchanged.
-- Red evidence: the focused suite failed three tests before implementation (both
-  degradation variants reordered by score, and the web payload used plain content
-  plus `rerank_topk`).
-- Green evidence: focused suite passed 10 tests; focused plus adjacent ranking,
-  browser, and hybrid suites passed 32 tests. Ruff and `git diff --check` passed.
+- Task 4 must update agentic/MCP generation callers and their free-text fake LLM
+  fixtures to emit the structured draft contract (or explicitly choose legacy
+  mode where compatibility is genuinely intended).
+- Full-suite Hugging Face cache verification requires a writable external cache
+  location; it is unrelated to these changes.

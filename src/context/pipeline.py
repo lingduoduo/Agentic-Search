@@ -8,12 +8,18 @@ from .models import ChatMessage
 from .models import ContextDocument
 from .models import ContextSection
 from .models import EvidenceSnippet
+from .models import EvidenceSource
 from .models import LLMClient
 from .models import LLMResponse
+from .models import PromptBundle
 from .models import SearchContextBundle
 from .models import SearchFilters
 from .models import SearchRequest
+from .models import VerificationStatus
+from .models import VerificationResult
+from .prompts import build_corrective_answer_prompt
 from .prompts import build_chat_prompt
+from .prompts import build_structured_answer_prompt
 from .retrieval.search_runner import build_search_context
 from .utils import extract_citations
 
@@ -36,17 +42,57 @@ def generate_answer(
     *,
     llm: LLMClient | None = None,
 ) -> AnswerGenerationResult:
-    prompt = build_chat_prompt(
+    legacy_prompt = build_chat_prompt(
         request.question,
         request.context,
         history=request.chat_history,
         config=request.behavior,
     )
+    config = request.grounded_generation
+    evidence = request.evidence
+    if evidence is None:
+        from .safety import evidence_from_context
+
+        evidence = evidence_from_context(request.context)
+    tool_evidence = [item for item in evidence if item.provenance == "tool"]
+    confidence: float | None = None
+    verification_status: VerificationStatus | None = None
+    abstained = False
+
     if llm is None:
         answer = synthesize_answer_from_context(request.question, request.context)
-    else:
-        raw = llm.complete(prompt.messages)
+        abstained = answer == _canonical_abstention()
+        confidence = 0.0 if abstained else 1.0
+        verification_status = (
+            VerificationStatus.ABSTAINED if abstained else VerificationStatus.VERIFIED
+        )
+        prompt = legacy_prompt
+    elif not config.enabled:
+        raw = llm.complete(legacy_prompt.messages)
         answer = raw.text if isinstance(raw, LLMResponse) else str(raw)
+        prompt = legacy_prompt
+    elif not evidence:
+        answer = _canonical_abstention()
+        confidence = 0.0
+        verification_status = VerificationStatus.ABSTAINED
+        abstained = True
+        prompt = build_structured_answer_prompt(
+            request.question,
+            request.context,
+            request.behavior,
+            evidence=evidence,
+        )
+    else:
+        prompt = build_structured_answer_prompt(
+            request.question,
+            request.context,
+            request.behavior,
+            evidence=evidence,
+        )
+        answer, confidence, verification_status = _generate_guarded_answer(
+            request, llm, prompt, evidence
+        )
+        abstained = verification_status is VerificationStatus.ABSTAINED
 
     grounding_report = None
     if request.verify_grounding:
@@ -62,7 +108,71 @@ def generate_answer(
         context=request.context,
         prompt=prompt,
         grounding_report=grounding_report,
+        confidence=confidence,
+        verification_status=verification_status,
+        abstained=abstained,
+        tool_evidence=tool_evidence,
     )
+
+
+def _generate_guarded_answer(
+    request: AnswerGenerationRequest,
+    llm: LLMClient,
+    prompt: PromptBundle,
+    evidence: list[EvidenceSource],
+) -> tuple[str, float, VerificationStatus]:
+    from .safety import parse_answer_draft, render_verified_answer, verify_answer_draft
+
+    max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
+    raw_text = ""
+    feedback = ""
+    result = None
+    for attempt in range(max_attempts):
+        active_prompt = prompt
+        if attempt:
+            active_prompt = build_corrective_answer_prompt(
+                request.question,
+                request.context,
+                original_draft=raw_text,
+                verifier_feedback=feedback,
+                config=request.behavior,
+                evidence=evidence,
+            )
+        raw = llm.complete(active_prompt.messages)
+        raw_text = raw.text if isinstance(raw, LLMResponse) else str(raw)
+        try:
+            draft = parse_answer_draft(raw_text, evidence)
+        except ValueError as exc:
+            feedback = str(exc)
+            continue
+        result = verify_answer_draft(
+            draft,
+            evidence,
+            overlap_threshold=request.grounded_generation.overlap_threshold,
+            evidence_sufficiency=request.evidence_sufficiency,
+            retry_occurred=bool(attempt),
+        )
+        if draft.abstain or not result.unsupported_claims:
+            break
+        feedback = _verifier_feedback(result)
+
+    if result is None:
+        return _canonical_abstention(), 0.0, VerificationStatus.ABSTAINED
+    return render_verified_answer(result), result.confidence, result.status
+
+
+def _verifier_feedback(result: VerificationResult) -> str:
+    return "\n".join(
+        f"Unsupported claim: {verdict.claim.text} ({verdict.reason})"
+        for verdict in result.verdicts
+        if not verdict.supported
+    )
+
+
+def _canonical_abstention() -> str:
+    from .safety import CANONICAL_ABSTENTION
+
+    return CANONICAL_ABSTENTION
 
 
 async def answer_with_retrieval(
@@ -114,9 +224,7 @@ def synthesize_answer_from_context(question: str, context: SearchContextBundle) 
 
     snippets = rank_evidence_snippets(question, context, max_snippets=3)
     if not snippets:
-        doc = context.documents[0]
-        lead = _first_sentence(_contextualized_content(doc, context.sections))
-        return f"{lead} {doc.citation}"
+        return _canonical_abstention()
 
     parts = [f"{snippet.text} {snippet.citation}" for snippet in snippets]
     return " ".join(parts)
