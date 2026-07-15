@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +13,10 @@ from src.context.structured_output import (
     StructuredOutputCapability,
     StructuredOutputRequest,
 )
+from src.internal.llm.constants import LlmProviderNames
 from src.internal.llm.interfaces import LLMConfig
+from src.internal.llm.multi_llm import LitellmLLM
+from src.internal.llm.models import UserMessage
 from src.internal.llm.providers import OpenAICompatibleLLM
 from src.internal.servers.web import request_capture as rc
 
@@ -37,6 +42,19 @@ def configured_llm(
             api_key="test-key",
             custom_config=custom_config,
         )
+    )
+
+
+def configured_litellm(
+    provider: str, custom_config: dict[str, str] | None = None
+) -> LitellmLLM:
+    return LitellmLLM(
+        api_key="test-key",
+        model_provider=provider,
+        model_name="test-model",
+        max_input_tokens=1024,
+        custom_config=custom_config,
+        extra_body=None,
     )
 
 
@@ -192,6 +210,78 @@ def test_schema_error_is_not_classified_without_structured_request():
         with pytest.raises(requests.HTTPError) as caught:
             llm.complete(MESSAGES)
     assert caught.value is error
+
+
+def test_prompt_only_schema_400_propagates_unchanged(schema_request):
+    llm = configured_llm("openai_compatible")
+    error = http_error(400, "unknown parameter: response_format")
+    response = MagicMock()
+    response.raise_for_status.side_effect = error
+    with patch.object(llm._session, "post", return_value=response):
+        with pytest.raises(requests.HTTPError) as caught:
+            llm.complete(MESSAGES, structured_output=schema_request)
+    assert caught.value is error
+
+
+def test_incidental_schema_error_substrings_propagate_unchanged(schema_request):
+    llm = configured_llm()
+    error = http_error(
+        400, "unknown account option; documentation mentions response_format"
+    )
+    response = MagicMock()
+    response.raise_for_status.side_effect = error
+    with patch.object(llm._session, "post", return_value=response):
+        with pytest.raises(requests.HTTPError) as caught:
+            llm.complete(MESSAGES, structured_output=schema_request)
+    assert caught.value is error
+
+
+@pytest.mark.parametrize(
+    ("provider", "custom_config", "expected_forwarded"),
+    [
+        (LlmProviderNames.OPENAI_COMPATIBLE, None, False),
+        (LlmProviderNames.OPENAI, None, True),
+        (
+            LlmProviderNames.OPENAI_COMPATIBLE,
+            {"supports_json_schema": "true"},
+            True,
+        ),
+    ],
+)
+def test_litellm_wrapper_forwarding_respects_capability(
+    schema_request, provider, custom_config, expected_forwarded, monkeypatch
+):
+    llm = configured_litellm(provider, custom_config)
+    completion = MagicMock(return_value=MagicMock())
+    fake_litellm = ModuleType("litellm")
+    fake_litellm.completion = completion
+    fake_litellm.model_cost = {}
+    fake_litellm.supports_reasoning = MagicMock(return_value=False)
+    fake_exceptions = ModuleType("litellm.exceptions")
+    fake_exceptions.RateLimitError = type("RateLimitError", (Exception,), {})
+    fake_exceptions.Timeout = type("Timeout", (Exception,), {})
+    fake_litellm.exceptions = fake_exceptions
+    monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+    monkeypatch.setitem(sys.modules, "litellm.exceptions", fake_exceptions)
+    fake_singleton = ModuleType("src.internal.llm.litellm_singleton")
+    fake_singleton.litellm = fake_litellm
+    monkeypatch.setitem(
+        sys.modules, "src.internal.llm.litellm_singleton", fake_singleton
+    )
+
+    llm._completion(
+        UserMessage(content="secret prompt"),
+        tools=None,
+        tool_choice=None,
+        stream=False,
+        parallel_tool_calls=False,
+        structured_response_format=schema_request,
+    )
+
+    if expected_forwarded:
+        assert completion.call_args.kwargs["response_format"]["type"] == "json_schema"
+    else:
+        assert "response_format" not in completion.call_args.kwargs
 
 
 def test_structured_capture_contains_only_safe_metadata(schema_request):

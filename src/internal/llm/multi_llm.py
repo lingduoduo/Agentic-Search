@@ -610,14 +610,18 @@ class LitellmLLM(LLM):
             optional_kwargs["parallel_tool_calls"] = parallel_tool_calls
 
         if isinstance(structured_response_format, StructuredOutputRequest):
-            optional_kwargs["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": structured_response_format.name,
-                    "strict": structured_response_format.strict,
-                    "schema": structured_response_format.schema,
-                },
-            }
+            if (
+                self.structured_output_capability
+                is StructuredOutputCapability.JSON_SCHEMA
+            ):
+                optional_kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_response_format.name,
+                        "strict": structured_response_format.strict,
+                        "schema": structured_response_format.schema,
+                    },
+                }
         elif structured_response_format:
             optional_kwargs["response_format"] = structured_response_format
 

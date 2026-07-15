@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from collections.abc import Iterator
 from time import time
@@ -294,16 +295,21 @@ class OpenAICompatibleLLM(LLM):
         except requests.HTTPError as exc:
             response = exc.response
             provider_error = response.text.lower() if response is not None else ""
-            schema_field_named = (
-                "response_format" in provider_error or "json_schema" in provider_error
+            schema_parameter_unsupported = bool(
+                re.search(
+                    r"(?:unknown|unsupported)\s+"
+                    r"(?:(?:parameter|field)\s*)?[:=]?\s*[\"'`]?"
+                    r"(?:response_format|json_schema)\b"
+                    r"|\b(?:response_format|json_schema)\b"
+                    r"(?:\s+\w+){0,3}\s+(?:unknown|unsupported)\b",
+                    provider_error,
+                )
             )
-            unsupported = "unsupported" in provider_error or "unknown" in provider_error
             if (
-                structured_output is not None
+                schema_applied
                 and response is not None
                 and response.status_code == 400
-                and schema_field_named
-                and unsupported
+                and schema_parameter_unsupported
             ):
                 raise SchemaUnsupportedError(
                     "Provider does not support JSON Schema response formatting"
