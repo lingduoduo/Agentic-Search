@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Protocol
 
 from src.context.search import SearchResult
@@ -184,6 +185,57 @@ class GroundingReport:
         if not self.verdicts:
             return 1.0
         return sum(1 for v in self.verdicts if v.is_grounded) / len(self.verdicts)
+
+
+@dataclass(frozen=True)
+class EvidenceSource:
+    """Normalized retrieval or tool evidence available to answer generation."""
+
+    id: str
+    text: str
+    title: str
+    url: str | None = None
+    provenance: str = "retrieval"
+    tool_name: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AnswerClaim:
+    text: str
+    evidence_ids: list[str]
+
+
+@dataclass(frozen=True)
+class AnswerDraft:
+    claims: list[AnswerClaim]
+    missing_information: list[str] = field(default_factory=list)
+    abstain: bool = False
+
+
+@dataclass(frozen=True)
+class ClaimVerdict:
+    claim: AnswerClaim
+    supported: bool
+    overlap_scores: dict[str, float] = field(default_factory=dict)
+    reason: str | None = None
+
+
+class VerificationStatus(str, Enum):
+    VERIFIED = "verified"
+    PARTIAL = "partial"
+    ABSTAINED = "abstained"
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    verdicts: list[ClaimVerdict]
+    supported_claims: list[AnswerClaim]
+    unsupported_claims: list[AnswerClaim]
+    unknown_evidence_ids: list[str]
+    confidence: float
+    retry_occurred: bool = False
+    status: VerificationStatus = VerificationStatus.ABSTAINED
 
 
 @dataclass(frozen=True)
