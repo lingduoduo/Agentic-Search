@@ -110,6 +110,47 @@ MCP fixtures to the guarded structured-draft contract.
 
 - None.
 
+## Review fix: fail-closed tool discovery
+
+### RED evidence
+
+- `pytest -q tests/unit/test_rag_tool_evidence.py
+  tests/unit/test_rag_pipeline_integration.py -x`
+  - Collected 21 tests.
+  - Failed `test_discovery_failures_degrade_to_no_tool_evidence[descriptors0]`
+    because `registry.list_tools()` raised before the optional-tool failure
+    boundary.
+
+### GREEN evidence
+
+- `pytest -q tests/unit/test_rag_tool_evidence.py
+  tests/unit/test_rag_pipeline_integration.py` -> `21 passed in 0.87s`.
+- Final gateway/pipeline/context/MCP/agentic/tracing regression command ->
+  `135 passed in 4.29s`.
+- Ruff check and final Ruff format check over the modified Python files -> clean.
+- `git diff --check` -> exit 0.
+
+### Changes and review
+
+- Registry discovery, descriptor shape validation, duplicate counting, and eligible
+  descriptor construction now share the optional-tool fail-closed boundary.
+- Discovery exceptions, non-list results, non-`ToolDescriptor` entries, empty or
+  non-string names, and invalid safety values return no tool evidence before the
+  selector is called or any tool can execute.
+- Pipeline coverage proves that a supported retrieval-only guarded answer still
+  succeeds when tool discovery raises.
+
+### Operational note for Task 5
+
+- Timing out a synchronous selector returns control to the RAG pipeline, but the
+  worker may continue running in the executor because Python cannot safely cancel
+  an already-running thread. Task 5 operational documentation must call out this
+  executor-lifetime behavior; no unsafe thread-cancellation redesign was attempted.
+
+### Concerns
+
+- None beyond the documented executor-lifetime behavior assigned to Task 5.
+
 ## Summary
 
 - Added `SearchPipeline`, which builds bounded follow-up context and composes retrieval, ranking, and grounded inference behind the existing five-value result tuple.

@@ -74,16 +74,27 @@ async def collect_tool_evidence(
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
 
-    descriptors = registry.list_tools()
-    registered_names = {descriptor.name for descriptor in descriptors}
-    name_counts = Counter(descriptor.name for descriptor in descriptors)
-    eligible = [
-        descriptor
-        for descriptor in descriptors
-        if descriptor.safety is ToolSafety.READ_ONLY
-        and name_counts[descriptor.name] == 1
-    ]
-    eligible_names = {descriptor.name for descriptor in eligible}
+    try:
+        descriptors = registry.list_tools()
+        if not isinstance(descriptors, list) or not all(
+            isinstance(descriptor, ToolDescriptor)
+            and isinstance(descriptor.name, str)
+            and bool(descriptor.name)
+            and isinstance(descriptor.safety, ToolSafety)
+            for descriptor in descriptors
+        ):
+            return []
+        registered_names = {descriptor.name for descriptor in descriptors}
+        name_counts = Counter(descriptor.name for descriptor in descriptors)
+        eligible = [
+            descriptor
+            for descriptor in descriptors
+            if descriptor.safety is ToolSafety.READ_ONLY
+            and name_counts[descriptor.name] == 1
+        ]
+        eligible_names = {descriptor.name for descriptor in eligible}
+    except Exception:
+        return []
     try:
         selected = await asyncio.wait_for(
             asyncio.to_thread(selector.select, query, eligible),

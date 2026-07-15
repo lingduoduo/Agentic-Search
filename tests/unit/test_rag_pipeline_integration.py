@@ -51,6 +51,14 @@ class StructuredLLM:
         )
 
 
+class RetrievalOnlyLLM:
+    def complete(self, messages, **kwargs):
+        return LLMResponse(
+            '{"claims":[{"text":"FAISS is available","evidence_ids":["D1"]}],'
+            '"missing_information":[],"abstain":false}'
+        )
+
+
 def _context():
     return build_context_bundle(
         "FAISS status",
@@ -114,6 +122,27 @@ async def test_pipeline_rejects_unsafe_selection_and_falls_back_on_tool_failure(
     assert [request.tool_name for request in registry.calls] == ["broken"]
     assert result.tool_evidence == []
     assert result.answer == "FAISS search is currently available. [D1]"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_uses_retrieval_when_tool_discovery_raises(monkeypatch):
+    class BrokenDiscoveryRegistry:
+        def list_tools(self):
+            raise RuntimeError("discovery secret")
+
+    selector = Selector([ToolRequest("health")])
+    monkeypatch.setattr(
+        "src.context.pipeline.retrieve_context", lambda *a, **k: _async(_context())
+    )
+
+    result = await answer_with_retrieval(
+        "FAISS status",
+        llm=RetrievalOnlyLLM(),
+        tool_registry=BrokenDiscoveryRegistry(),
+        tool_selector=selector,
+    )
+
+    assert result.answer == "FAISS is available [D1]"
 
 
 @pytest.mark.asyncio

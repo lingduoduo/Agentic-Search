@@ -42,6 +42,26 @@ class Selector:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "descriptors", [RuntimeError("discovery failed"), None, [object()]]
+)
+async def test_discovery_failures_degrade_to_no_tool_evidence(descriptors):
+    class DiscoveryRegistry:
+        def list_tools(self):
+            if isinstance(descriptors, Exception):
+                raise descriptors
+            return descriptors
+
+        async def invoke(self, request):
+            raise AssertionError("malformed discovery must never invoke a tool")
+
+    selector = Selector([ToolRequest("read")])
+
+    assert await collect_tool_evidence("query", DiscoveryRegistry(), selector) == []
+    assert selector.visible_tools is None
+
+
+@pytest.mark.asyncio
 async def test_read_only_tools_supply_stable_normalized_evidence():
     registry = Registry(
         [ToolDescriptor("weather", "Current weather", ToolSafety.READ_ONLY)],
