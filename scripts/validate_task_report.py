@@ -109,6 +109,16 @@ def validate_report(
     ]
     diagnostics: list[Diagnostic] = []
 
+    for section in level_two:
+        if section.title not in REQUIRED_SECTIONS:
+            diagnostics.append(
+                Diagnostic(
+                    section.line,
+                    section.title,
+                    f"unexpected level-two section: {section.title}",
+                )
+            )
+
     for title in REQUIRED_SECTIONS:
         matches = by_title[title]
         for duplicate in matches[1:]:
@@ -136,12 +146,11 @@ def validate_report(
     evidence_blocks = _evidence_blocks(report, by_title["Test evidence"])
     for title in REQUIRED_SECTIONS:
         for section in by_title[title]:
-            substantive = bool(section.body.strip())
+            body = section.body.strip()
+            substantive = bool(body) and (title == "Concerns" or body != "None")
             if title == "Test evidence":
                 substantive = substantive or bool(evidence_blocks)
-            if not substantive and not (
-                title == "Concerns" and section.body.strip() == "None"
-            ):
+            if not substantive:
                 diagnostics.append(
                     Diagnostic(
                         section.line, title, "section has no substantive content"
@@ -303,6 +312,18 @@ def _validate_evidence_blocks(
                     block.line,
                     block.title,
                     "evidence Result: must contain nonempty prose",
+                )
+            )
+        if (
+            len(command_labels) == 1
+            and len(result_labels) == 1
+            and command_labels[0].start() > result_labels[0].start()
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    block.line,
+                    block.title,
+                    "evidence Command: must appear before Result:",
                 )
             )
 

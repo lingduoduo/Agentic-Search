@@ -155,12 +155,32 @@ def test_duplicate_and_swapped_sections_are_reported() -> None:
     assert "required sections are out of order" in messages(swapped)
 
 
+def test_unknown_level_two_section_is_rejected() -> None:
+    text = canonical_report().replace(
+        "## Concerns", "## Notes\n\nAdditional notes.\n\n## Concerns"
+    )
+    assert "unexpected level-two section: Notes" in messages(text)
+
+
 def test_empty_bodies_and_concerns_none_rules() -> None:
     empty = canonical_report().replace(
         "Implemented the requested validator behavior.\n\n## Files changed",
         "\n## Files changed",
     )
     assert "section has no substantive content" in messages(empty)
+    assert messages(canonical_report()) == []
+
+
+@pytest.mark.parametrize("section", ["Implementation", "Files changed", "Self-review"])
+def test_none_is_not_substantive_outside_concerns(section: str) -> None:
+    text = canonical_report()
+    parsed = parse_report(text)
+    target = next(item for item in parsed.sections if item.title == section)
+    text = text.replace(target.body, "None", 1)
+    assert "section has no substantive content" in messages(text)
+
+
+def test_none_remains_valid_for_concerns() -> None:
     assert messages(canonical_report()) == []
 
 
@@ -219,6 +239,14 @@ def test_missing_evidence_labels_are_reported(old: str, expected: str) -> None:
 def test_duplicate_evidence_labels_are_reported() -> None:
     text = canonical_report().replace("Result:", "Result:\n\nResult:", 1)
     assert "evidence block must contain exactly one Result: label" in messages(text)
+
+
+def test_result_must_follow_command() -> None:
+    text = canonical_report().replace(
+        "Command:\n\n```text\npytest -q tests/unit/test_validate_task_report.py\n```\n\nResult:\n\nThe focused suite passed with 20 tests.",
+        "Result:\n\nThe focused suite passed with 20 tests.\n\nCommand:\n\n```text\npytest -q tests/unit/test_validate_task_report.py\n```",
+    )
+    assert "evidence Command: must appear before Result:" in messages(text)
 
 
 def test_empty_command_fence_and_empty_result_are_reported() -> None:
