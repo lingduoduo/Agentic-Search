@@ -70,3 +70,38 @@ home directory.
   mode where compatibility is genuinely intended).
 - Full-suite Hugging Face cache verification requires a writable external cache
   location; it is unrelated to these changes.
+
+## Review fix: guarded chat history
+
+The guarded structured and corrective prompt paths now preserve
+`AnswerGenerationRequest.chat_history` between the strict system instruction and
+the current user request, matching `build_chat_prompt` ordering. The legacy path
+was not changed.
+
+### RED evidence
+
+- `pytest -q tests/unit/test_grounded_generation.py -k 'preserves_history'`
+  - `2 failed, 11 deselected in 1.10s`.
+  - Both failures showed actual roles `['system', 'user']` instead of expected
+    `['system', 'user', 'assistant', 'user']` for the initial and corrective calls.
+
+### GREEN evidence
+
+- `pytest -q tests/unit/test_grounded_generation.py -k 'preserves_history'`
+  - `2 passed, 11 deselected in 0.95s`.
+- `pytest -q tests/unit/test_context_pipeline.py tests/unit/test_grounding.py tests/unit/test_rag_safety.py tests/unit/test_grounded_generation.py`
+  - `68 passed in 0.88s`.
+- `ruff check src/context/prompts.py src/context/pipeline.py tests/unit/test_grounded_generation.py`
+  - `All checks passed!`
+- `git diff --check`
+  - Exit 0, no whitespace errors.
+
+### Review
+
+- Both initial and corrective prompts retain the strict structured-output system
+  message at index zero.
+- History is inserted unchanged and in original order before the current user
+  request.
+- The corrective draft and verifier feedback remain part of the final current
+  user message.
+- No legacy-path behavior changed.

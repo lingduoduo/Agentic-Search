@@ -80,6 +80,7 @@ def generate_answer(
             request.question,
             request.context,
             request.behavior,
+            history=request.chat_history,
             evidence=evidence,
         )
     else:
@@ -87,6 +88,7 @@ def generate_answer(
             request.question,
             request.context,
             request.behavior,
+            history=request.chat_history,
             evidence=evidence,
         )
         answer, confidence, verification_status = _generate_guarded_answer(
@@ -136,6 +138,7 @@ def _generate_guarded_answer(
                 original_draft=raw_text,
                 verifier_feedback=feedback,
                 config=request.behavior,
+                history=request.chat_history,
                 evidence=evidence,
             )
         raw = llm.complete(active_prompt.messages)

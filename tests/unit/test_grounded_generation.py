@@ -8,6 +8,7 @@ import src.context as context_api
 from src.context import (
     CANONICAL_ABSTENTION,
     AnswerGenerationRequest,
+    ChatMessage,
     LLMResponse,
     VerificationStatus,
     build_context_bundle,
@@ -82,6 +83,68 @@ def test_guarded_generation_retries_once_with_verifier_feedback():
     retry_text = "\n".join(message.content for message in llm.calls[1])
     assert "Tomorrow's forecast predicts rain" in retry_text
     assert "insufficient lexical support" in retry_text
+
+
+def test_guarded_initial_prompt_preserves_history_before_current_request():
+    history = [
+        ChatMessage(role="user", content="Earlier user question"),
+        ChatMessage(role="assistant", content="Earlier assistant answer"),
+    ]
+    llm = SequenceLLM(_draft(("FAISS enables vector similarity search.", ["D1"])))
+
+    generate_answer(
+        AnswerGenerationRequest(
+            question="What is FAISS?", context=_bundle(), chat_history=history
+        ),
+        llm=llm,
+    )
+
+    messages = llm.calls[0]
+    assert [message.role for message in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert [message.content for message in messages[1:3]] == [
+        "Earlier user question",
+        "Earlier assistant answer",
+    ]
+    assert messages[-1].content.startswith("Question:\nWhat is FAISS?")
+    assert "evidence_ids" in messages[0].content
+
+
+def test_guarded_corrective_prompt_preserves_history_before_current_request():
+    history = [
+        ChatMessage(role="user", content="Earlier user question"),
+        ChatMessage(role="assistant", content="Earlier assistant answer"),
+    ]
+    llm = SequenceLLM(
+        _draft(("Tomorrow's forecast predicts rain.", ["D1"])),
+        _draft(("FAISS enables vector similarity search.", ["D1"])),
+    )
+
+    generate_answer(
+        AnswerGenerationRequest(
+            question="What is FAISS?", context=_bundle(), chat_history=history
+        ),
+        llm=llm,
+    )
+
+    messages = llm.calls[1]
+    assert [message.role for message in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert [message.content for message in messages[1:3]] == [
+        "Earlier user question",
+        "Earlier assistant answer",
+    ]
+    assert messages[-1].content.startswith("Question:\nWhat is FAISS?")
+    assert "Verifier feedback:" in messages[-1].content
+    assert "evidence_ids" in messages[0].content
 
 
 def test_guarded_generation_removes_unsupported_claims_after_retry():

@@ -87,6 +87,7 @@ def build_structured_answer_prompt(
     context: SearchContextBundle,
     config: AgentBehaviorConfig | None = None,
     *,
+    history: list[ChatMessage] | None = None,
     evidence: list[EvidenceSource] | None = None,
 ) -> PromptBundle:
     """Build the strict internal AnswerDraft prompt used by the safety guard."""
@@ -110,6 +111,7 @@ def build_structured_answer_prompt(
     user = f"Question:\n{question}\n\nEvidence:\n{evidence_text}\n\nReturn the AnswerDraft JSON."
     messages = [
         ChatMessage(role="system", content=system),
+        *(history or []),
         ChatMessage(role="user", content=user),
     ]
     return PromptBundle(system=system, user=user, messages=messages)
@@ -122,11 +124,12 @@ def build_corrective_answer_prompt(
     original_draft: str,
     verifier_feedback: str,
     config: AgentBehaviorConfig | None = None,
+    history: list[ChatMessage] | None = None,
     evidence: list[EvidenceSource] | None = None,
 ) -> PromptBundle:
     """Build one bounded correction request without changing the evidence."""
     prompt = build_structured_answer_prompt(
-        question, context, config, evidence=evidence
+        question, context, config, history=history, evidence=evidence
     )
     user = (
         f"{prompt.user}\n\nOriginal structured draft:\n{original_draft}\n\n"
@@ -134,7 +137,7 @@ def build_corrective_answer_prompt(
         "Correct the JSON. Remove unsupported material rather than inventing new "
         "evidence. You may explicitly abstain or report uncertainty."
     )
-    messages = [prompt.messages[0], ChatMessage(role="user", content=user)]
+    messages = [*prompt.messages[:-1], ChatMessage(role="user", content=user)]
     return PromptBundle(system=prompt.system, user=user, messages=messages)
 
 
