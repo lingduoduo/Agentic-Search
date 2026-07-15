@@ -20,17 +20,17 @@ CANONICAL_ABSTENTION = "I don't know based on the available evidence."
 
 
 def evidence_from_context(context: SearchContextBundle) -> list[EvidenceSource]:
-    """Normalize retrieved context documents without changing their stable IDs."""
+    """Normalize retrieved documents with stable IDs based on input order."""
     return [
         EvidenceSource(
-            id=document.id,
+            id=f"D{index}",
             text=document.content,
             title=document.title,
             url=document.url,
             provenance="retrieval",
             metadata=document.metadata,
         )
-        for document in context.documents
+        for index, document in enumerate(context.documents, 1)
     ]
 
 
@@ -91,6 +91,24 @@ def verify_answer_draft(
     retry_occurred: bool = False,
 ) -> VerificationResult:
     """Verify every claim and compute deterministic confidence."""
+    if draft.abstain:
+        return VerificationResult(
+            verdicts=[
+                ClaimVerdict(
+                    claim=claim,
+                    supported=False,
+                    reason="draft explicitly abstained",
+                )
+                for claim in draft.claims
+            ],
+            supported_claims=[],
+            unsupported_claims=list(draft.claims),
+            unknown_evidence_ids=[],
+            confidence=0.0,
+            retry_occurred=retry_occurred,
+            status=VerificationStatus.ABSTAINED,
+        )
+
     evidence_by_id = {item.id: item for item in evidence}
     verdicts: list[ClaimVerdict] = []
     unknown_ids: set[str] = set()

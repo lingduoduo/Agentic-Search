@@ -70,6 +70,18 @@ def test_evidence_from_context_normalizes_documents_with_stable_ids():
     ]
 
 
+def test_evidence_from_context_assigns_stable_ids_for_non_d_source_ids():
+    context = SearchContextBundle(
+        query="test",
+        documents=[
+            ContextDocument(id="source-42", title="First", content="First text"),
+            ContextDocument(id="abc", title="Second", content="Second text"),
+        ],
+    )
+
+    assert [item.id for item in evidence_from_context(context)] == ["D1", "D2"]
+
+
 def test_parse_answer_draft_accepts_only_the_exact_schema():
     payload = json.dumps(
         {
@@ -169,6 +181,25 @@ def test_render_verified_answer_uses_canonical_abstention_without_support():
     assert result.confidence == 0.0
     assert render_verified_answer(result) == CANONICAL_ABSTENTION
     assert CANONICAL_ABSTENTION == "I don't know based on the available evidence."
+
+
+def test_explicit_abstention_suppresses_supported_claims():
+    draft = AnswerDraft(
+        claims=[
+            AnswerClaim(
+                text="FAISS is a vector similarity search library.",
+                evidence_ids=["D1"],
+            )
+        ],
+        abstain=True,
+    )
+
+    result = verify_answer_draft(draft, _evidence())
+
+    assert result.status is VerificationStatus.ABSTAINED
+    assert result.supported_claims == []
+    assert result.confidence == 0.0
+    assert render_verified_answer(result) == CANONICAL_ABSTENTION
 
 
 def test_confidence_is_deterministic_from_support_coverage_and_sufficiency():
