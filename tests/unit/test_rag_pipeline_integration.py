@@ -187,6 +187,11 @@ async def test_pipeline_trace_contains_only_safe_summary_metadata(monkeypatch):
     assert "confidence" in summary
     assert "abstained" in summary
     assert "retry_count" in summary
+    assert summary["structured_output_applied"] is False
+    assert summary["structured_output_downgraded"] is False
+    assert summary["structured_output_category"] is None
+    assert "schema" not in rendered.lower()
+    assert "refusal" not in rendered.lower()
 
 
 async def _async(value):

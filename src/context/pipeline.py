@@ -26,6 +26,10 @@ from .retrieval.search_runner import build_search_context
 from .tool_evidence import ToolRegistry
 from .tool_evidence import ToolSelector
 from .utils import extract_citations
+from .structured_output import SchemaUnsupportedError
+from .structured_output import StructuredOutputCapability
+from .structured_output import StructuredOutputRequest
+from .structured_output import answer_draft_json_schema
 
 
 async def retrieve_context(
@@ -63,6 +67,9 @@ def generate_answer(
     verification_status: VerificationStatus | None = None
     abstained = False
     retry_count = 0
+    structured_output_applied = False
+    structured_output_downgraded = False
+    structured_output_category = None
 
     if llm is None:
         answer, verification = _generate_extractive_answer(
@@ -99,9 +106,15 @@ def generate_answer(
             history=request.chat_history,
             evidence=evidence,
         )
-        answer, confidence, verification_status, retry_count = _generate_guarded_answer(
-            request, llm, prompt, evidence
-        )
+        (
+            answer,
+            confidence,
+            verification_status,
+            retry_count,
+            structured_output_applied,
+            structured_output_downgraded,
+            structured_output_category,
+        ) = _generate_guarded_answer(request, llm, prompt, evidence)
         abstained = verification_status is VerificationStatus.ABSTAINED
 
     grounding_report = None
@@ -123,6 +136,9 @@ def generate_answer(
         abstained=abstained,
         tool_evidence=tool_evidence,
         retry_count=retry_count,
+        structured_output_applied=structured_output_applied,
+        structured_output_downgraded=structured_output_downgraded,
+        structured_output_category=structured_output_category,
     )
 
 
@@ -131,13 +147,24 @@ def _generate_guarded_answer(
     llm: LLMClient,
     prompt: PromptBundle,
     evidence: list[EvidenceSource],
-) -> tuple[str, float, VerificationStatus, int]:
+) -> tuple[str, float, VerificationStatus, int, bool, bool, str | None]:
     from .safety import parse_answer_draft, render_verified_answer, verify_answer_draft
 
     max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
     raw_text = ""
     feedback = ""
     result = None
+    capability = getattr(
+        llm, "structured_output_capability", StructuredOutputCapability.PROMPT_ONLY
+    )
+    schema_request: StructuredOutputRequest | None = None
+    if capability is StructuredOutputCapability.JSON_SCHEMA:
+        schema_request = StructuredOutputRequest(
+            name="answer_draft", schema=answer_draft_json_schema()
+        )
+    downgraded = False
+    applied = False
+    category = None
     for attempt in range(max_attempts):
         active_prompt = prompt
         if attempt:
@@ -150,7 +177,33 @@ def _generate_guarded_answer(
                 history=request.chat_history,
                 evidence=evidence,
             )
-        raw = llm.complete(active_prompt.messages)
+        try:
+            raw = llm.complete(
+                active_prompt.messages,
+                **({"structured_output": schema_request} if schema_request else {}),
+            )
+        except SchemaUnsupportedError:
+            if schema_request is None:
+                raise
+            downgraded = True
+            schema_request = None
+            raw = llm.complete(active_prompt.messages)
+        if isinstance(raw, LLMResponse):
+            applied = applied or raw.structured.applied
+            if raw.structured.refused:
+                return (
+                    _canonical_abstention(),
+                    0.0,
+                    VerificationStatus.ABSTAINED,
+                    attempt,
+                    applied,
+                    downgraded,
+                    "refused",
+                )
+            if raw.structured.incomplete_reason is not None:
+                category = "incomplete"
+                feedback = "Provider returned incomplete structured output."
+                continue
         raw_text = raw.text if isinstance(raw, LLMResponse) else str(raw)
         try:
             draft = parse_answer_draft(raw_text, evidence)
@@ -174,12 +227,18 @@ def _generate_guarded_answer(
             0.0,
             VerificationStatus.ABSTAINED,
             max_attempts - 1,
+            applied,
+            downgraded,
+            category,
         )
     return (
         render_verified_answer(result),
         result.confidence,
         result.status,
         int(result.retry_occurred),
+        applied,
+        downgraded,
+        category,
     )
 
 
@@ -272,6 +331,9 @@ async def answer_with_retrieval(
             verification_status=verification_status,
             confidence=result.confidence,
             abstained=result.abstained,
+            structured_output_applied=result.structured_output_applied,
+            structured_output_downgraded=result.structured_output_downgraded,
+            structured_output_category=result.structured_output_category,
         ):
             pass
     return result

@@ -252,3 +252,56 @@ async def test_answer_with_retrieval_omits_query_text_from_span():
 
     assert "query" not in recorded_attrs
     assert recorded_attrs.get("top_k") == 7
+
+
+@pytest.mark.asyncio
+async def test_rag_summary_exposes_only_aggregate_structured_output_metadata():
+    from src.context.pipeline import answer_with_retrieval
+
+    summaries: list[dict[str, object]] = []
+
+    class RecordingTracer:
+        from contextlib import contextmanager
+
+        @contextmanager
+        def span(self, name: str, **attrs: object):
+            if name == "rag.summary":
+                summaries.append(attrs)
+            yield
+
+    result = MagicMock(
+        verification_status=None,
+        retry_count=1,
+        confidence=0.0,
+        abstained=True,
+        structured_output_applied=False,
+        structured_output_downgraded=True,
+        structured_output_category="refused",
+    )
+    context = MagicMock(documents=[])
+    with (
+        patch("src.context.pipeline.retrieve_context", AsyncMock(return_value=context)),
+        patch("src.context.pipeline.generate_answer", return_value=result),
+        patch(
+            "src.internal.observability.tracer.get_tracer",
+            return_value=RecordingTracer(),
+        ),
+    ):
+        await answer_with_retrieval("secret prompt")
+
+    assert summaries == [
+        {
+            "evidence_count": 0,
+            "evidence_types": "",
+            "tool_names": "",
+            "tool_statuses": "",
+            "retry_count": 1,
+            "verification_status": "unverified",
+            "confidence": 0.0,
+            "abstained": True,
+            "structured_output_applied": False,
+            "structured_output_downgraded": True,
+            "structured_output_category": "refused",
+        }
+    ]
+    assert "secret prompt" not in repr(summaries)

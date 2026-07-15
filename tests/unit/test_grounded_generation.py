@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import requests
 
 import src.context as context_api
 from src.context import (
@@ -13,6 +14,9 @@ from src.context import (
     ChatMessage,
     EvidenceSource,
     LLMResponse,
+    SchemaUnsupportedError,
+    StructuredCompletionMetadata,
+    StructuredOutputCapability,
     VerificationStatus,
     build_context_bundle,
     generate_answer,
@@ -21,13 +25,28 @@ from src.context.search import SearchResult
 
 
 class SequenceLLM:
-    def __init__(self, *responses: str) -> None:
+    def __init__(
+        self, *responses: object, capability=StructuredOutputCapability.PROMPT_ONLY
+    ) -> None:
         self.responses = list(responses)
-        self.calls: list[list[object]] = []
+        self.calls: list[object] = []
+        self.structured_output_capability = capability
 
     def complete(self, messages, **kwargs):
-        self.calls.append(messages)
-        return LLMResponse(self.responses.pop(0))
+        self.calls.append(
+            type(
+                "Call",
+                (),
+                {
+                    "messages": messages,
+                    "structured_output": kwargs.get("structured_output"),
+                },
+            )()
+        )
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response if isinstance(response, LLMResponse) else LLMResponse(response)
 
 
 def _bundle():
@@ -83,7 +102,7 @@ def test_guarded_generation_retries_once_with_verifier_feedback():
 
     assert result.answer == "FAISS enables vector similarity search. [D1]"
     assert len(llm.calls) == 2
-    retry_text = "\n".join(message.content for message in llm.calls[1])
+    retry_text = "\n".join(message.content for message in llm.calls[1].messages)
     assert "Tomorrow's forecast predicts rain" in retry_text
     assert "insufficient lexical support" in retry_text
 
@@ -102,7 +121,7 @@ def test_guarded_initial_prompt_preserves_history_before_current_request():
         llm=llm,
     )
 
-    messages = llm.calls[0]
+    messages = llm.calls[0].messages
     assert [message.role for message in messages] == [
         "system",
         "user",
@@ -134,7 +153,7 @@ def test_guarded_corrective_prompt_preserves_history_before_current_request():
         llm=llm,
     )
 
-    messages = llm.calls[1]
+    messages = llm.calls[1].messages
     assert [message.role for message in messages] == [
         "system",
         "user",
@@ -204,6 +223,109 @@ def test_guarded_generation_abstains_without_calling_llm_when_evidence_is_empty(
     assert result.answer == CANONICAL_ABSTENTION
     assert result.abstained is True
     assert llm.calls == []
+
+
+def test_schema_unsupported_downgrades_without_consuming_semantic_retry():
+    llm = SequenceLLM(
+        SchemaUnsupportedError("unsupported"),
+        "not json",
+        _draft(("FAISS enables vector similarity search.", ["D1"])),
+        capability=StructuredOutputCapability.JSON_SCHEMA,
+    )
+    result = generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=_bundle()), llm=llm
+    )
+    assert [call.structured_output is not None for call in llm.calls] == [
+        True,
+        False,
+        False,
+    ]
+    assert result.retry_count == 1
+    assert result.structured_output_downgraded is True
+
+
+def test_native_schema_success_and_prompt_only_compatibility():
+    draft = _draft(("FAISS enables vector similarity search.", ["D1"]))
+    native = SequenceLLM(
+        LLMResponse(
+            draft, structured=StructuredCompletionMetadata(requested=True, applied=True)
+        ),
+        capability=StructuredOutputCapability.JSON_SCHEMA,
+    )
+    prompt_only = SequenceLLM(draft)
+    native_result = generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
+        llm=native,
+    )
+    generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
+        llm=prompt_only,
+    )
+    assert native.calls[0].structured_output.name == "answer_draft"
+    assert prompt_only.calls[0].structured_output is None
+    assert native_result.structured_output_applied is True
+
+
+def test_refusal_abstains_without_exposing_text():
+    llm = SequenceLLM(
+        LLMResponse(
+            "sensitive refusal",
+            structured=StructuredCompletionMetadata(
+                requested=True, applied=True, refused=True
+            ),
+        ),
+        capability=StructuredOutputCapability.JSON_SCHEMA,
+    )
+    result = generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=_bundle()), llm=llm
+    )
+    assert result.answer == CANONICAL_ABSTENTION
+    assert result.abstained is True
+    assert result.structured_output_category == "refused"
+
+
+def test_incomplete_may_consume_semantic_retry():
+    llm = SequenceLLM(
+        LLMResponse(
+            "partial",
+            structured=StructuredCompletionMetadata(
+                requested=True, applied=True, incomplete_reason="length"
+            ),
+        ),
+        _draft(("FAISS enables vector similarity search.", ["D1"])),
+        capability=StructuredOutputCapability.JSON_SCHEMA,
+    )
+    result = generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=_bundle()), llm=llm
+    )
+    assert result.retry_count == 1
+    assert result.answer.startswith("FAISS")
+    assert result.structured_output_category == "incomplete"
+
+
+def test_ordinary_provider_error_propagates_without_downgrade():
+    llm = SequenceLLM(
+        requests.Timeout("timeout"), capability=StructuredOutputCapability.JSON_SCHEMA
+    )
+    with pytest.raises(requests.Timeout):
+        generate_answer(
+            AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
+            llm=llm,
+        )
+    assert len(llm.calls) == 1
+
+
+def test_legacy_disabled_mode_never_requests_schema():
+    llm = SequenceLLM("legacy", capability=StructuredOutputCapability.JSON_SCHEMA)
+    generate_answer(
+        AnswerGenerationRequest(
+            question="What is FAISS?",
+            context=_bundle(),
+            grounded_generation=context_api.GroundedGenerationConfig(enabled=False),
+        ),
+        llm=llm,
+    )
+    assert llm.calls[0].structured_output is None
 
 
 def test_guarded_generation_never_exceeds_two_llm_calls():

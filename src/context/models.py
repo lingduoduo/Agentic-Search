@@ -308,6 +308,9 @@ class AnswerGenerationResult:
     abstained: bool = False
     tool_evidence: list[EvidenceSource] = field(default_factory=list)
     retry_count: int = 0
+    structured_output_applied: bool = False
+    structured_output_downgraded: bool = False
+    structured_output_category: str | None = None
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

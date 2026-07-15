@@ -34,6 +34,9 @@ def _result_metadata(result: Any | None = None) -> dict[str, Any]:
             "abstained": True,
             "retry_count": 0,
             "tool_sources": [],
+            "structured_output_applied": False,
+            "structured_output_downgraded": False,
+            "structured_output_category": None,
         }
     status = getattr(result, "verification_status", None)
     tool_evidence = getattr(result, "tool_evidence", [])
@@ -42,6 +45,9 @@ def _result_metadata(result: Any | None = None) -> dict[str, Any]:
     retry_count = getattr(result, "retry_count", 0)
     if not isinstance(retry_count, int):
         retry_count = 0
+    applied = getattr(result, "structured_output_applied", False)
+    downgraded = getattr(result, "structured_output_downgraded", False)
+    category = getattr(result, "structured_output_category", None)
     return {
         "confidence": getattr(result, "confidence", None),
         "verification_status": getattr(status, "value", status),
@@ -50,6 +56,11 @@ def _result_metadata(result: Any | None = None) -> dict[str, Any]:
         "tool_sources": [
             {"name": item.tool_name} for item in tool_evidence if item.tool_name
         ],
+        "structured_output_applied": applied if isinstance(applied, bool) else False,
+        "structured_output_downgraded": downgraded
+        if isinstance(downgraded, bool)
+        else False,
+        "structured_output_category": category if isinstance(category, str) else None,
     }
 
 
