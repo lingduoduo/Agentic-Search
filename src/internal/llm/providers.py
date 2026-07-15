@@ -17,6 +17,14 @@ from typing import Any
 import requests
 from requests.adapters import HTTPAdapter
 
+from src.context.models import LLMResponse
+from src.context.structured_output import (
+    SchemaUnsupportedError,
+    StructuredCompletionMetadata,
+    StructuredOutputCapability,
+    StructuredOutputRequest,
+)
+
 from .interfaces import LLM, LLMConfig, LLMUserIdentity, ToolChoiceOptions
 from .model_response import (
     ChatCompletionDeltaToolCall,
@@ -125,6 +133,19 @@ class OpenAICompatibleLLM(LLM):
     def config(self) -> LLMConfig:
         return self._config
 
+    @property
+    def structured_output_capability(self) -> StructuredOutputCapability:
+        if self._config.model_provider == "openai":
+            return StructuredOutputCapability.JSON_SCHEMA
+        configured = (self._config.custom_config or {}).get("supports_json_schema")
+        if (
+            self._config.model_provider in {"openai_compatible", "openai-compatible"}
+            and configured is not None
+            and configured.lower() == "true"
+        ):
+            return StructuredOutputCapability.JSON_SCHEMA
+        return StructuredOutputCapability.PROMPT_ONLY
+
     def stream(
         self,
         prompt: LanguageModelInput,
@@ -224,7 +245,9 @@ class OpenAICompatibleLLM(LLM):
             return [{"role": prompt.role, "content": prompt.content}]
         return [{"role": "user", "content": str(prompt)}]
 
-    def complete(self, messages: LanguageModelInput, **kwargs: Any) -> str:
+    def complete(
+        self, messages: LanguageModelInput, **kwargs: Any
+    ) -> LLMResponse | str:
         """Non-streaming completion — used for short utility calls."""
         # Deferred import: src.internal.servers.web's package __init__ imports
         # this module (via app.py), so a top-level import here would be circular.
@@ -242,24 +265,90 @@ class OpenAICompatibleLLM(LLM):
         temperature = kwargs.get("temperature")
         if temperature is not None:
             body["temperature"] = temperature
-        timeout = kwargs.get("timeout_override") or 30
-        resp = self._session.post(
-            self._endpoint,
-            headers=self._headers,
-            json=body,
-            timeout=timeout,
+        structured_output: StructuredOutputRequest | None = kwargs.get(
+            "structured_output"
         )
-        resp.raise_for_status()
+        schema_applied = bool(
+            structured_output
+            and self.structured_output_capability
+            is StructuredOutputCapability.JSON_SCHEMA
+        )
+        if structured_output and schema_applied:
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": structured_output.name,
+                    "strict": structured_output.strict,
+                    "schema": structured_output.schema,
+                },
+            }
+        timeout = kwargs.get("timeout_override") or 30
+        try:
+            resp = self._session.post(
+                self._endpoint,
+                headers=self._headers,
+                json=body,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            response = exc.response
+            provider_error = response.text.lower() if response is not None else ""
+            schema_field_named = (
+                "response_format" in provider_error or "json_schema" in provider_error
+            )
+            unsupported = "unsupported" in provider_error or "unknown" in provider_error
+            if (
+                structured_output is not None
+                and response is not None
+                and response.status_code == 400
+                and schema_field_named
+                and unsupported
+            ):
+                raise SchemaUnsupportedError(
+                    "Provider does not support JSON Schema response formatting"
+                ) from None
+            raise
         data = resp.json()
-        content = data["choices"][0]["message"]["content"] or ""
-        _capture.record_stage(
-            "llm",
-            "complete",
-            {
+        choice = data["choices"][0]
+        message = choice["message"]
+        content = message.get("content") or ""
+        refusal = message.get("refusal")
+        finish_reason = choice.get("finish_reason")
+        metadata = StructuredCompletionMetadata(
+            requested=structured_output is not None,
+            applied=schema_applied,
+            refused=bool(refusal),
+            incomplete_reason="length" if finish_reason == "length" else None,
+        )
+        capture_payload: dict[str, Any]
+        if structured_output is not None:
+            capture_payload = {
+                "model": self._config.model_name,
+                "structured": {
+                    "requested": metadata.requested,
+                    "applied": metadata.applied,
+                    "downgraded": metadata.downgraded,
+                    "refused": metadata.refused,
+                    "incomplete_reason": metadata.incomplete_reason,
+                },
+            }
+        else:
+            capture_payload = {
                 "model": self._config.model_name,
                 "messages": normalised,
                 "completion": content,
                 "usage": data.get("usage"),
-            },
+            }
+        _capture.record_stage(
+            "llm",
+            "complete",
+            capture_payload,
         )
+        if structured_output is not None:
+            return LLMResponse(
+                text=content,
+                raw={"refusal": refusal, "finish_reason": finish_reason},
+                structured=metadata,
+            )
         return content
