@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import itertools
 import json
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
@@ -50,7 +51,7 @@ class ToolRegistry(Protocol):
 class ToolSelector(Protocol):
     def select(
         self, query: str, tools: list[ToolDescriptor]
-    ) -> list[ToolRequest] | Awaitable[list[ToolRequest]]:
+    ) -> Iterable[ToolRequest] | Awaitable[Iterable[ToolRequest]]:
         """Select requests using only the supplied eligible tools."""
 
 
@@ -83,13 +84,31 @@ async def collect_tool_evidence(
         and name_counts[descriptor.name] == 1
     ]
     eligible_names = {descriptor.name for descriptor in eligible}
-    selected = selector.select(query, eligible)
-    if inspect.isawaitable(selected):
-        selected = await selected
+    try:
+        selected = await asyncio.wait_for(
+            asyncio.to_thread(selector.select, query, eligible),
+            timeout=timeout_seconds,
+        )
+        if inspect.isawaitable(selected):
+            selected = await asyncio.wait_for(selected, timeout=timeout_seconds)
+    except Exception:
+        return []
 
     evidence: list[EvidenceSource] = []
     attempted = 0
-    for request in selected:
+    selection_scan_limit = max_calls * 4
+    try:
+        selected_requests = await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: list(itertools.islice(selected, selection_scan_limit))
+            ),
+            timeout=timeout_seconds,
+        )
+    except Exception:
+        return []
+    for request in selected_requests:
+        if not isinstance(request, ToolRequest):
+            continue
         if request.tool_name not in eligible_names:
             if status_callback is not None and request.tool_name in registered_names:
                 status_callback(request.tool_name, "rejected")

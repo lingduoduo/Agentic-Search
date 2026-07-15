@@ -151,6 +151,83 @@ async def test_errors_and_timeouts_degrade_to_available_evidence():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_selector_exceptions_degrade_to_no_tool_evidence(asynchronous):
+    registry = Registry(
+        [ToolDescriptor("read", safety=ToolSafety.READ_ONLY)], {"read": "unused"}
+    )
+
+    class BrokenSelector:
+        if asynchronous:
+
+            async def select(self, query, tools):
+                raise RuntimeError("selector secret")
+
+        else:
+
+            def select(self, query, tools):
+                raise RuntimeError("selector secret")
+
+    assert await collect_tool_evidence("query", registry, BrokenSelector()) == []
+    assert registry.calls == []
+
+
+@pytest.mark.asyncio
+async def test_hanging_selector_times_out_to_no_tool_evidence():
+    registry = Registry(
+        [ToolDescriptor("read", safety=ToolSafety.READ_ONLY)], {"read": "unused"}
+    )
+
+    class HangingSelector:
+        async def select(self, query, tools):
+            await asyncio.sleep(1)
+            return [ToolRequest("read")]
+
+    evidence = await collect_tool_evidence(
+        "query", registry, HangingSelector(), timeout_seconds=0.001
+    )
+
+    assert evidence == []
+    assert registry.calls == []
+
+
+@pytest.mark.asyncio
+async def test_selection_iteration_is_bounded_before_invocation():
+    registry = Registry(
+        [ToolDescriptor("read", safety=ToolSafety.READ_ONLY)], {"read": "unused"}
+    )
+    traversed = 0
+
+    def overlong_selection():
+        nonlocal traversed
+        while True:
+            traversed += 1
+            yield ToolRequest("unknown")
+
+    selector = Selector(overlong_selection())
+
+    assert await collect_tool_evidence("query", registry, selector, max_calls=2) == []
+    assert traversed <= 8
+    assert registry.calls == []
+
+
+@pytest.mark.asyncio
+async def test_selection_iteration_failure_degrades_to_no_tool_evidence():
+    registry = Registry(
+        [ToolDescriptor("read", safety=ToolSafety.READ_ONLY)], {"read": "unused"}
+    )
+
+    def broken_selection():
+        yield ToolRequest("unknown")
+        raise RuntimeError("iteration secret")
+
+    selector = Selector(broken_selection())
+
+    assert await collect_tool_evidence("query", registry, selector) == []
+    assert registry.calls == []
+
+
+@pytest.mark.asyncio
 async def test_tool_arguments_are_not_copied_into_evidence_metadata():
     registry = Registry(
         [ToolDescriptor("lookup", safety=ToolSafety.READ_ONLY)], {"lookup": "safe"}

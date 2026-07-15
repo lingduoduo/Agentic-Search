@@ -70,6 +70,46 @@ MCP fixtures to the guarded structured-draft contract.
 - None. The six full-suite warnings are pre-existing dependency/deprecation and
   empty-gradient warnings; there were no test failures.
 
+## Review fixes: bounded selector and canonical MCP abstention
+
+### RED evidence
+
+- `pytest -q tests/unit/test_rag_tool_evidence.py tests/unit/test_mcp_server.py -x`
+  - Collected 46 tests.
+  - Failed `test_selector_exceptions_degrade_to_no_tool_evidence[False]` because
+    the synchronous selector exception escaped `collect_tool_evidence`.
+- `pytest -q tests/unit/test_rag_tool_evidence.py -k iteration_failure`
+  - Failed because an exception raised while traversing the selector's iterable
+    escaped instead of degrading to retrieval-only answering.
+
+### GREEN evidence
+
+- `pytest -q tests/unit/test_rag_tool_evidence.py tests/unit/test_mcp_server.py
+  tests/unit/test_agentic_rag.py` -> `64 passed in 4.39s`.
+- Final context/integration/MCP/agentic regression command -> `131 passed`.
+- Ruff check and format check over all review-modified Python files -> clean.
+- `git diff --check` -> exit 0.
+
+### Changes and review
+
+- Synchronous selector calls, returned awaitables, and bounded selection
+  consumption each have an explicit timeout using `timeout_seconds`; sync/async
+  exceptions, timeouts, and iteration failures all return no tool evidence.
+- Selection traversal is capped at `max_tool_calls * 4` before request handling,
+  so rejected or unknown selections cannot cause unbounded consumption.
+- Empty and exception MCP paths use the canonical abstention exactly, with
+  confidence `0.0`, verification status `abstained`, `abstained=True`, retry count
+  `0`, empty citations/sources/tool summaries, and a generic stable error on the
+  exception path. Raw exception text is not returned.
+- MCP success metadata now also carries the guarded retry count. Existing response
+  keys and retrieval/tool behavior are preserved.
+- Agentic guarded-contract coverage now asserts the rendered verified answer and
+  citation, rather than only checking for a non-empty answer.
+
+### Concerns
+
+- None.
+
 ## Summary
 
 - Added `SearchPipeline`, which builds bounded follow-up context and composes retrieval, ranking, and grounded inference behind the existing five-value result tuple.

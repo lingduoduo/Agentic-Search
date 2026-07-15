@@ -380,6 +380,7 @@ async def test_ask_agentic_search_synthesizes_only_from_authorized_documents():
         "confidence": 0.8,
         "verification_status": "verified",
         "abstained": False,
+        "retry_count": 0,
         "tool_sources": [],
     }
 
@@ -407,12 +408,13 @@ async def test_ask_agentic_search_empty_evidence_skips_llm():
     llm.complete.assert_not_called()
     raw_answer.assert_not_awaited()
     assert result == {
-        "answer": "I could not find retrieved context to answer: unknown",
+        "answer": "I don't know based on the available evidence.",
         "citations": [],
         "sources": [],
-        "confidence": None,
-        "verification_status": None,
-        "abstained": False,
+        "confidence": 0.0,
+        "verification_status": "abstained",
+        "abstained": True,
+        "retry_count": 0,
         "tool_sources": [],
     }
 
@@ -439,12 +441,13 @@ async def test_ask_agentic_search_whitespace_evidence_skips_llm_construction():
 
     build_llm.assert_not_called()
     assert result == {
-        "answer": "I could not find retrieved context to answer: unknown",
+        "answer": "I don't know based on the available evidence.",
         "citations": [],
         "sources": [],
-        "confidence": None,
-        "verification_status": None,
-        "abstained": False,
+        "confidence": 0.0,
+        "verification_status": "abstained",
+        "abstained": True,
+        "retry_count": 0,
         "tool_sources": [],
     }
 
@@ -475,15 +478,17 @@ async def test_ask_agentic_search_auth_errors_have_no_raw_fallback(message: str)
     llm.complete.assert_not_called()
     raw_answer.assert_not_awaited()
     assert result == {
-        "error": message,
-        "answer": "",
+        "error": "Unable to answer from available evidence.",
+        "answer": "I don't know based on the available evidence.",
         "citations": [],
         "sources": [],
-        "confidence": None,
-        "verification_status": None,
-        "abstained": False,
+        "confidence": 0.0,
+        "verification_status": "abstained",
+        "abstained": True,
+        "retry_count": 0,
         "tool_sources": [],
     }
+    assert message not in repr(result)
 
 
 @pytest.mark.asyncio
@@ -613,6 +618,7 @@ async def test_ask_agentic_search_adds_guard_metadata_without_removing_existing_
     assert result["confidence"] == 0.9
     assert result["verification_status"] == "verified"
     assert result["abstained"] is False
+    assert result["retry_count"] == 0
     assert result["tool_sources"] == [{"name": "health"}]
 
 

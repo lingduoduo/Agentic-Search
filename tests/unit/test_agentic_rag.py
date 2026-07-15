@@ -56,7 +56,8 @@ async def test_run_returns_result_on_single_round():
 
     assert isinstance(result, AgenticRAGResult)
     assert result.rounds_used == 1
-    assert result.answer
+    assert result.answer == "Content about d1 [D1]"
+    assert result.citations == ["D1"]
     assert result.context.documents
 
 
