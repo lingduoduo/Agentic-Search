@@ -75,5 +75,16 @@ focused and full-suite verification.
 
 ## Commit, push, and PR
 
-To be filled with the final commit SHA, push result, and draft PR #414 update
-after the final verification gate.
+- Commit `cacb26b` (`docs: document grounded RAG safety`) created after the final
+  verification gate.
+- `git push -u origin context-packing-artifacts` succeeded (`63edef9..cacb26b`).
+  GitHub reported that the configured repository moved to
+  `lingduoduo/Agentic-Search-GRPO`, but accepted and redirected the push.
+- `gh pr edit 414 --body-file /tmp/pr-414-body.md` succeeded. The body now records
+  implemented safety behavior, exact validation evidence, and the selector/cache
+  operational limitations.
+- The task described PR #414 as an existing draft, but GitHub reports it is
+  already `MERGED`, `isDraft=false`, with PR head `63edef9`. Consequently
+  `gh pr ready 414 --undo` was rejected with: `Pull request ... is closed. Only
+  draft pull requests can be marked as "ready for review"`. No readiness or merge
+  action was performed by Task 5; a merged PR cannot be restored to draft.
