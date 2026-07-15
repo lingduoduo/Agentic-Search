@@ -50,6 +50,7 @@ class Section:
 @dataclass(frozen=True)
 class SourceDoc:
     path: Path
+    relative_path: Path
     kind: Literal["spec", "plan"]
     date: str
     topic: str
@@ -121,7 +122,9 @@ def _parse_markdown(text: str) -> tuple[str, str, tuple[Section, ...]]:
     return title, "\n".join(introduction).strip(), tuple(sections)
 
 
-def normalize_source(path: Path, kind: str) -> SourceDoc:
+def normalize_source(
+    path: Path, kind: str, relative_path: Path | None = None
+) -> SourceDoc:
     if kind not in {"spec", "plan"}:
         raise ValueError(f"unsupported source kind: {kind}")
     match = DATE_PREFIX.match(path.stem)
@@ -133,6 +136,7 @@ def normalize_source(path: Path, kind: str) -> SourceDoc:
     title, introduction, sections = _parse_markdown(path.read_text(encoding="utf-8"))
     return SourceDoc(
         path=path,
+        relative_path=relative_path or Path(path.name),
         kind=kind,  # type: ignore[arg-type]
         date=date,
         topic=topic,
@@ -143,14 +147,31 @@ def normalize_source(path: Path, kind: str) -> SourceDoc:
 
 
 def discover_sources(source_root: Path) -> tuple[list[SourceDoc], list[SourceDoc]]:
-    specs = [
-        normalize_source(path, "spec")
-        for path in sorted((source_root / "specs").glob("*.md"))
-    ]
-    plans = [
-        normalize_source(path, "plan")
-        for path in sorted((source_root / "plans").glob("*.md"))
-    ]
+    def discover_kind(kind: Literal["spec", "plan"]) -> list[SourceDoc]:
+        directory = f"{kind}s"
+        paths = [
+            *sorted((source_root / directory).glob("*.md")),
+            *sorted((source_root / "archive" / directory).glob("*.md")),
+        ]
+        by_name: dict[str, Path] = {}
+        for path in paths:
+            existing = by_name.get(path.name)
+            if existing is not None:
+                raise ValueError(
+                    f"duplicate {kind} source filename {path.name}: "
+                    f"{existing} and {path}"
+                )
+            by_name[path.name] = path
+        return sorted(
+            (
+                normalize_source(path, kind, path.relative_to(source_root))
+                for path in paths
+            ),
+            key=lambda source: source.relative_path.as_posix(),
+        )
+
+    specs = discover_kind("spec")
+    plans = discover_kind("plan")
     return specs, plans
 
 
@@ -250,7 +271,7 @@ def _selected_sections(source: SourceDoc) -> tuple[Section, ...]:
 
 
 def _source_link(source: SourceDoc) -> str:
-    return f"../{source.kind}s/{source.path.name}"
+    return f"../{source.relative_path.as_posix()}"
 
 
 def render_pack(bundle: TopicBundle) -> str:

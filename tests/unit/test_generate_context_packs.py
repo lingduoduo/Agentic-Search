@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.generate_context_packs import (
+    discover_sources,
     generate,
     normalize_source,
     pair_sources,
@@ -13,6 +14,38 @@ from scripts.generate_context_packs import (
 def write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def test_discover_sources_combines_active_and_archive(tmp_path: Path) -> None:
+    root = tmp_path / "superpowers"
+    write(root / "specs/2026-07-01-active-design.md", "# Active\n")
+    write(root / "archive/plans/2026-06-01-old.md", "# Old\n")
+
+    generate(root, root / "context-packs")
+
+    index = (root / "context-packs/INDEX.md").read_text(encoding="utf-8")
+    assert index.count("../specs/2026-07-01-active-design.md") == 1
+    assert index.count("../archive/plans/2026-06-01-old.md") == 1
+
+
+def test_discover_sources_rejects_duplicate_filenames(tmp_path: Path) -> None:
+    root = tmp_path / "superpowers"
+    name = "2026-07-01-routing-design.md"
+    active = root / "specs" / name
+    archived = root / "archive/specs" / name
+    write(active, "# Active Routing\n")
+    write(archived, "# Archived Routing\n")
+
+    try:
+        discover_sources(root)
+    except ValueError as error:
+        message = str(error)
+    else:
+        raise AssertionError("duplicate source filename was accepted")
+
+    assert name in message
+    assert str(active) in message
+    assert str(archived) in message
 
 
 def test_generate_pairs_sources_and_indexes_each_once(tmp_path: Path) -> None:
