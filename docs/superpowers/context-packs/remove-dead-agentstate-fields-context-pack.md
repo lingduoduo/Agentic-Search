@@ -21,34 +21,7 @@ overstated; only these two fields are genuinely dead. Explicitly **out of scope*
 - `LoopSnapshot.model_emitted_answer` — written-but-unread "reserved for Phase 2"
   scaffolding; left in place per the scope decision.
 
-### Testing
-
-A tiny guard test (no construction needed):
-
-```python
-def test_dead_memory_fields_removed():
-    from src.agents.core.state import AgentState
-    fields = AgentState.__dataclass_fields__
-    assert "short_term_memory" not in fields
-    assert "long_term_memory" not in fields
-```
-
-Plus the existing suite (`test_agent_loop`, any state tests) as the behavior guard.
-
-### Risks
-
-- None of note — pure deletion of unreferenced fields.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Branch off `main` (never commit to `main`); branch `chore/remove-dead-agentstate-fields`.
-- Pure deletion — no behavior change; keep the `Any` import (used elsewhere).
-- Out of scope: `BUDGET_EXHAUSTED`, `early_stops`, `model_emitted_answer` (not dead).
-- Match repo ruff formatting.
-
----
 
 ### Task 1: Delete the fields + add the guard test
 

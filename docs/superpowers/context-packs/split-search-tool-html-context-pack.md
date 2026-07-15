@@ -18,22 +18,7 @@
   are a separate clarity issue, not touched here.
 - `src/internal/tools/` (`ChatTool`) is a distinct tool system — untouched.
 
-### Testing
-
-- Behavior-preserving: `tests/unit/test_search_tools.py` passes with the two
-  import lines repointed; the HTML-parser tests exercise the moved code
-  unchanged.
-- `ruff check` clean (no unused imports left in `search.py`).
-- `python -c "import src"` and the search-tool import surface resolve.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving.** Verbatim move; function names + the one caller (`fetch_url`) unchanged.
-- **Scope:** the HTML block only. Redaction stays (coupled to search providers). No framework/OpenAPI/ChatTool changes.
-
----
 
 ### Task 1: Create html_text.py and rewire search.py
 

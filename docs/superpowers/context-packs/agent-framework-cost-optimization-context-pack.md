@@ -9,23 +9,6 @@
 
 ## Specification Context
 
-### Testing Strategy
-
-Primary verification:
-
-```bash
-pytest tests/unit/test_agent_loop.py -k "rerank or repeated" -v
-pytest tests/unit/test_components.py -v
-```
-
-Regression verification:
-
-```bash
-pytest tests/unit/test_reward.py -k "rerank or retriever_aware" -v
-```
-
-No integration stack is required for this pass.
-
 ### Out of Scope
 
 - Learned stop classifier.
@@ -35,17 +18,6 @@ No integration stack is required for this pass.
 - New retriever or reranker dependencies.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Optimize latency/cost first, with only small architecture hardening where it directly supports cost-saving behavior.
-- Do not add a model head, dependency, retriever, or reranker.
-- Do not change evidence sufficiency gating, answer rejection behavior, citation formatting, or Answer Generator behavior.
-- Keep reranking opt-in via the existing per-search `rerank="true"` flag.
-- Preserve existing reward cost semantics: `rerank_calls` counts search rounds where reranking actually ran.
-- Keep skipped rerank metrics observational by default.
-
----
 
 ### Task 1: Rerank Request Metrics And Cost Gating
 

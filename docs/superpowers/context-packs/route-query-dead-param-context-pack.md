@@ -14,21 +14,7 @@
 Remove the unused parameter from `route_query` and its call argument. Pure
 cleanup — **no behavior change**.
 
-### Testing
-
-- `test_agent_router.py`, `test_stage_emits_intent.py`, and
-  `test_execution_fallbacks.py` pass unchanged in behavior; `app` imports; ruff
-  clean.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- No behavior change: routing decisions must be identical before/after.
-- Keep the local `has_local_model` variable in `_run_auto_routed` (used by dispatch branches); only the `route_query` param + arguments are removed.
-- `ruff check --fix && ruff format` the touched files before commit.
-
----
 
 ### Task 1: Remove the parameter and update call sites
 

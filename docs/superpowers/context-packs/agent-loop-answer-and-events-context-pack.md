@@ -9,22 +9,9 @@
 
 ## Specification Context
 
-### Non-goals / invariants
+### Overview
 
-- No behavior change to the happy path (tool calls present, no caps hit).
-- Token-level truncation from `response_length` is unchanged; A1 only guarantees
-  the (possibly truncated) answer is recorded rather than lost.
-- No new config fields.
-
-### Tests
-
-- A1: caps (`max_assistant_turns=1`, `response_length`) fire on the first turn →
-  `final_answer` equals the generated content and `trajectory_messages` ends with
-  the assistant message.
-- A2: `_is_stopped` monkeypatched True → consumer receives a STOP event before the
-  generator ends; `_LISTEN_TIMEOUT_SECONDS` monkeypatched to 0 → TIMEOUT event.
-- A3: a `complete` that sleeps past a tiny `sufficiency_timeout_s` → returns `[]`
-  without hanging; a normal response → parsed to queries.
+Date: 2026-07-11
 
 ## Implementation Plan Context
 

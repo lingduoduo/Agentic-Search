@@ -25,9 +25,14 @@ When `pipeline` is `None` (default), `RetrievalService.search()` behaves exactly
 
 ---
 
-### 7. Testing Strategy
+### `test_query_transform.py`
 
-All tests are unit tests — no model downloads, no HTTP calls.
+- Pipeline with all flags off → `TransformedQueryBundle` with only `original`, all lists empty
+- `retrieval_variants()` deduplicates case-insensitively and respects `max_variants`
+- `retrieval_variants()` always includes `original` even when all transformers return empty
+- Each `QT_*` flag independently enables its transformer (monkeypatch `QueryEnhancer`)
+- `from_env()` returns `None` when no `QT_*` vars set
+- `from_env()` returns pipeline when at least one `QT_*` var is `true`
 
 ## Implementation Plan Context
 

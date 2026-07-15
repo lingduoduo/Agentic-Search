@@ -9,47 +9,14 @@
 
 ## Specification Context
 
-### This PR (scoped, additive)
+### Overview
 
-Teach the canonical `Tool` those two facts, and have the real tools declare them.
-**Nothing consumes the flags yet** — this is the safe foundation. (The natural
-consumer, `admin_surface.py` deriving the sets from the registry, is deferred:
-today the built-in tools are NOT registered in the global `tool_registry`, so a
-registry-derived count would be wrong. That migration is a separate, larger step.)
-
-### Non-goals
-
-- No change to `admin_surface.py` / `tool_call_args_streaming.py` (deferred).
-- No removal of `built_in_tools.py` name-sets yet (still the source of truth for
-  admin until the migration).
-- Flags are **not** added to `ToolSchema.to_dict()` — they are tool metadata, not
-  part of the JSON function-definition the model sees (like `effect`).
-
-### Testing (no model)
-
-- `FunctionTool(..., citeable=True, stopping=True)` → the properties reflect it;
-  a default `FunctionTool` → both `False`.
-- `@tool_registry.tool(citeable=True)` registers a tool whose `.citeable is True`.
-- `build_search_tool(...).citeable is True`; a `MultiQueryWebSearchTool().citeable
-  is True`.
-- `ToolSchema.to_dict()` has no `citeable`/`stopping` keys.
-
-### Risks
-
-- Minimal — purely additive metadata with `False` defaults. The only "value" is
-  that the canonical `search`/`web_search` tools now self-describe their category,
-  ready for the later admin migration.
+Date: 2026-07-09
+Status: Approved (brainstorming)
+Branch/PR: feat/tool-category-flags
+Related: [[project_chat_orchestration]]; first step of reconciling `src/internal/tools/` (stub layer) onto the canonical `src/tools/` registry
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Branch off `main` (never commit to `main`); branch `feat/tool-category-flags`.
-- Purely additive: default `False`; no behavior change; `ToolSchema.to_dict()` unchanged (flags are tool metadata, not JSON schema).
-- Do NOT touch `admin_surface.py` / `tool_call_args_streaming.py` / `built_in_tools.py` (deferred migration).
-- Match repo ruff formatting.
-
----
 
 ### Task 1: Category flags on `Tool` / `FunctionTool` / `@tool` + real tools + tests
 

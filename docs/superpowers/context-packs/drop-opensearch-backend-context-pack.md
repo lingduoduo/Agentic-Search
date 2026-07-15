@@ -19,20 +19,7 @@
 - Grep proof: zero remaining `OpenSearch*`/`opensearch` code references outside
   deliberately-kept comments.
 
-### Non-goals
-
-- No change to Weaviate, the local path, `HybridCapable`/`hybrid_retrieval`, or
-  any non-OpenSearch subsystem.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Weaviate (default), Disabled, and local FAISS/BM25 remain functional.
-- Keep `HybridCapable` ABC + `hybrid_retrieval` (Weaviate's own hybrid).
-- `import src` + document-index/retrieval/config unit suites green.
-
----
 
 ### Task 1: Break the constant dependency, then delete impls
 

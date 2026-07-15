@@ -23,17 +23,6 @@ Provide a repo-native command that prepares a file-backed SQLite database and ma
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- Do not modify product behavior or UI code.
-- Do not create or modify a repository `.env` file.
-- Do not delete or replace existing SQLite rows.
-- Use stable `monitoring-demo-*` IDs so setup is repeatable.
-- Commit the setup CLI and focused tests; keep generated data, logs, and screenshots untracked.
-- Do not expose environment secrets in output or screenshots.
-
----
-
 ### Task 1: Preflight the Runtime
 
 **Files:**

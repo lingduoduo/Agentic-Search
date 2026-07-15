@@ -8,17 +8,6 @@
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- Capture is active ONLY when `settings.debug_panels` is true (env `AGENTIC_SEARCH_DEBUG_PANELS`). When false, `active()` returns `None` and no snapshot is stored.
-- Do NOT modify the sanitized `ControlFlowRecorder` / `_control_flow_event_view` path or its tests.
-- Ring buffer default size `N=20`, overridable via env `AGENTIC_SEARCH_REQUEST_CAPTURE_MAX`.
-- No persistence — snapshots are in-memory, cleared on restart.
-- New debug endpoints live under the existing `/api/debug` router (already gated by `debug_panels`).
-- Follow existing style; run `ruff check . --fix && ruff format .` before each commit. Frontend: `cd web && npm run typecheck`.
-
-…
-
 ### Task 1: `request_capture` module (contextvar + data model)
 
 **Files:**

@@ -27,27 +27,7 @@ intents), deletes an ungrounded parametric path, and drops one orphaned helper.
 - `IntentPipeline` (`src/model/intent_classifier.py`) — a separate ML model that
   tunes retrieval settings; unrelated to the entry-point router.
 
-### Tests
-
-- `test_intent_routing.py`: drop the `_rule_based_is_search` tests; update
-  route-classification tests so former `direct_llm` cases (`write`, `translate`,
-  greetings) now assert `RouteStrategy.CHAT`.
-- `test_sse_streaming.py`: the `route == "direct_llm"` assertion becomes the new
-  vocabulary (`chat` for that query, or an updated fixture query).
-- New: a generative query (e.g. "write a haiku") routes to `CHAT` and
-  `_run_auto_routed` returns a non-crashing answer even when retrieval yields
-  zero relevant documents (guards the accepted-tradeoff behavior).
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Do **not** touch the explicit registry mode names `search_agent` / `tool_agent` / `plain_generation` — those are agent-loop aliases in `src/agents/base.py`, unrelated to the `RouteStrategy` enum values being renamed.
-- Do **not** modify `_infer_intent_from_output` — it maps the first tool call to a surfaced intent for the explicit tool-agent finalize path and is out of scope.
-- Keep `classify_route` (LLM classifier) and the capability-aware degradation logic — only the label vocabulary changes.
-- `route` (chosen strategy) and `intent` (what actually ran after degradation) share a vocabulary but remain distinct fields; they can legitimately differ.
-
-…
 
 ### Task 1: Delete the dead `_rule_based_is_search` helper
 

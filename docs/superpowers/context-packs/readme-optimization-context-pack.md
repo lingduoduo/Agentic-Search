@@ -19,15 +19,6 @@ This change reorganizes and edits documentation only. It does not alter applicat
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- Optimize the top-level README for a developer encountering the repository for the first time and trying to start the local stack.
-- Preserve useful commands, warnings, and behavior descriptions from the existing README.
-- Use relative Markdown links that work in repository browsers and local editors.
-- Keep essential setup values and first-run troubleshooting in the top-level README.
-- Do not alter application behavior, dependencies, APIs, commands, configuration semantics, or generated architecture assets.
-- Correct an existing instruction only when repository files provide clear evidence for the correction.
-
 ### Task 1: Migrate architecture and frontend guidance
 
 **Files:**

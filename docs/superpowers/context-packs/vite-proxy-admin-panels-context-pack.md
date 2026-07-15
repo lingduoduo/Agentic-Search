@@ -9,10 +9,11 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No auth bypass / dev-login (separate, larger design).
-- No change to the backend routers or `api.ts`.
+Date: 2026-07-11
+Status: Approved
+Branch/PR: fix/vite-proxy-admin-panels
 
 ## Implementation Plan Context
 

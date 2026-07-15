@@ -9,30 +9,15 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No change to the Dev Console, `RequestTracePanel`, or the SSE protocol.
-- No change to `ControlFlowEventView` / `controlFlowTrace` state (still consumed
-  by the Dev Console).
-- `ToolCallTracePanel`, `SessionTimeline`, `IntentBadge`, and the route pill are
-  untouched (considered non-redundant this pass).
-
-### Testing
-
-- `cd web && npm run typecheck` — clean (no dangling imports/types).
-- `cd web && npm test` — green after removing the two test files' worth of
-  ControlFlowTracePanel/App-chat-trace assertions; all other component tests
-  unchanged.
+**Date:** 2026-07-03
+**Status:** Approved (design).
+**Scope:** Frontend only (`web/`). Remove the redundant fine-grained
+control-flow trace from the user-facing chat answer column; the detailed view
+already lives in the Dev Console.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Frontend only.** No backend / SSE protocol change. `ControlFlowEventView` and `controlFlowTrace` state stay (Dev Console consumes them).
-- **No user-visible data loss.** Full control-flow detail remains in the Dev Console via `RequestTracePanel`.
-- **Green gates:** `npm run typecheck` and `npm test` pass.
-
----
 
 ### Task 1: Remove the panel from App and delete the component
 

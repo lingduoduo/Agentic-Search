@@ -9,20 +9,16 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No change to the max-dedup `combine_retrieval_results` in `search_runner.py`.
-- No change to MMR (`mmr_rerank`), query transform, caching, or the agent loop.
-- No new fusion behavior — pure de-duplication of existing logic.
+**Date:** 2026-07-03
+**Status:** Approved (design).
+**Scope:** The four copies of Reciprocal Rank Fusion in the retrieval layer.
+Extract one generic scorer; route the copies through it. Also delete the dead
+retrieval modules (`index_optimizer.py`, `chunk_config.py`, `onnx_reranker.py`,
+`embedding_cache.py`).
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving.** Same formula/keys/tie-breaks; public signatures unchanged; no existing test modified beyond deleting the dead module's test.
-- **In scope:** the 4 RRF sites + `index_optimizer.py`. Out: the max-dedup `combine_retrieval_results`, MMR, query transform, caching, agent loop.
-
----
 
 ### Task 1: Generic core + fusion.py adapters
 

@@ -21,30 +21,7 @@
 - This supersedes #397's *inline* validation in `_call_tool` (invoke validates);
   the extracted `src/tools/validation.py` stays (invoke uses it).
 
-### Testing
-
-- Update `test_tool_arg_validation.py` if needed (should stay green — validation
-  now via `invoke`, same `error_code="invalid_arguments"` and not-executed).
-- Add: unknown tool → `error_code="tool_not_found"`, not executed.
-- `test_tool_approval.py`, `test_tool_registry.py`, `test_on_turn_callback.py`
-  green (approval + execution unchanged for schemaless tools).
-
-### Risks
-
-- New registry coupling in the agent loop (accepted).
-- `invoke` returns validation errors instead of raising on unknown tool — a minor
-  error-code shift, covered by a test.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Continue on branch `feat/validate-tool-arguments` (extends PR #397); never commit to `main`.
-- Single execution path: no direct `tool.create()/execute()/release()` in the loop.
-- Preserve validation behavior (invalid args → FAILED `invalid_arguments`, not executed) and the approval flow.
-- Match repo ruff formatting.
-
----
 
 ### Task 1: Per-loop registry + reroute `_call_tool` + tests
 

@@ -23,16 +23,6 @@ Create focused, navigable context packs for every design specification and imple
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- Preserve all source specifications and plans unchanged.
-- Summaries must contain only information supported by source documents.
-- Do not infer implementation status from the current codebase.
-- Generated links must be relative Markdown links.
-- Source discovery and output ordering must be deterministic.
-
----
-
 ### Task 1: Deterministic Context-Pack Generator
 
 **Files:**

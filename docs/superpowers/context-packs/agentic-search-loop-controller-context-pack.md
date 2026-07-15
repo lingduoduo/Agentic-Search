@@ -31,32 +31,7 @@ controller is pure-over-snapshot (no I/O, no model calls), holding only `cfg`.
 machine wants one state home. A stateful controller would create a second one.
 Pure decisions also unit-test with zero setup.
 
-### Testing strategy
-
-**1. `LoopController` unit tests (new — `tests/unit/test_loop_controller.py`).**
-Pure decisions, zero model/tokenizer setup. Written **first (TDD)**.
-- `should_continue_searching`: CONTINUE while evidence climbing · STOP(PLATEAU)
-  only when `gain<0.05 AND sufficient` · no plateau-stop when insufficient ·
-  STOP(BUDGET_EXHAUSTED) at `effective_limit`.
-- `effective_search_limit`: 1 subq → base · n subq → clamp formula · cap respected.
-- `final_answer_decision`: ACCEPT when sufficient · REJECT(+feedback) while
-  `rejections < cap` · FORCE at cap · FORCE on dead-end-with-evidence.
-
-**2. Loop integration tests (extend `test_agent_loop.py`).** Existing fake
-model/server harness.
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Add metrics, never mutate existing key semantics.** New keys only; existing keys in `_initial_metrics` (`src/agents/search.py:344`) keep their meaning.
-- **`forced_final_answer` is mutually exclusive with `answer_when_evidence_insufficient`** — a forced salvage sets the former and must NOT set the latter.
-- **Reward `_zeroed` preset stays byte-stable** — any new penalty defaults to a non-zero serving value but is set to `0.0` in the `_zeroed` preset.
-- **Plateau early-stop is conservative:** `evidence_plateau_min_gain = 0.05`, gated on `plateau_requires_sufficient = True` (only stops when evidence already sufficient).
-
-…
 
 ### Task 1: Config knobs + metric keys
 
@@ -153,6 +128,27 @@ Expected: PASS (all controller tests)
 - [ ] **Step 5: Commit**
 
 ---
+
+### Task 8: Route the answer-gate through `final_answer_decision`
+
+**Files:**
+- Modify: `src/agents/search.py` (`run()` answer-gate block `:1052-1094`)
+- Test: `tests/unit/test_agent_loop.py`
+
+**Interfaces:**
+- Consumes: `final_answer_decision`.
+- Produces: gate decisions (ACCEPT/REJECT/FORCE) come from the controller; behavior matches today's reject-then-force, now via FORCE.
+
+- [ ] **Step 1: Write the failing test**
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/unit/test_agent_loop.py::test_answer_gate_forces_after_max_rejections -v`
+Expected: FAIL — `forced_final_answer` is `0.0` (old path force-passes without flagging).
+
+- [ ] **Step 3: Implement**
+
+…
 
 ## Context Boundary
 

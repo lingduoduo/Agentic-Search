@@ -29,15 +29,6 @@ Any provider other than the default `retrieval` is treated as an explicit search
 (including `all`). The default `retrieval` keeps auto-routing so "explain X"-style queries
 still go to chat — preserving the intent-routing feature for the common case.
 
-### Testing
-
-- Backend: explicit `source_provider="serpapi"` + a chat-looking query → `intent="search"`
-  and `_run_hybrid_search` called with `source_provider="serpapi"`; classifier not called.
-- Backend: default source still routes "explain FAISS" → `intent="chat"`.
-- Backend: client `search_url` is ignored; server settings URL is used (SSRF).
-- Frontend: URL field hidden by default, shown with `showUrlField`; request omits
-  `search_url` in non-dev mode.
-
 ## Implementation Plan Context
 
 ### Risk / rollback

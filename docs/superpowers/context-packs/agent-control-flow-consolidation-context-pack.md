@@ -40,27 +40,20 @@ Remove the duplicate `SearchAgentState`, route work through the existing compone
 
 …
 
-### State tests
+### Verification commands
 
-- Existing orchestration construction and serialization remain valid.
-- The six search fields have independent default containers.
-- Search rounds increment once per executed round.
-- Previous queries remain ordered and deduplicated.
-- Evidence score is clamped to `[0, 1]`.
-- Reranking and citation replacement do not affect search-round count.
+```bash
+pytest tests/unit/test_agent_state.py tests/unit/test_state_models.py -v
+pytest tests/unit/test_components.py -v
+pytest tests/unit/test_agent_loop.py -v
+pytest tests/unit/test_reward.py -v
+ruff check src/agents tests/unit/test_agent_state.py tests/unit/test_components.py
+ruff format --check src/agents tests/unit/test_agent_state.py tests/unit/test_components.py
+```
+
+Run the full default `pytest` suite before completion.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Do not introduce another state class, compatibility wrapper, or alias.
-- Preserve `SearchAgentLoop.run(...)`, `AgentLoopOutput`, the XML protocol, mixed-action behavior, metrics, retries, caching, result ordering, answer gating, and forced answers.
-- `search_rounds` counts completed search rounds; parallel queries in one round increment it once.
-- Keep existing `AgentState` orchestration fields and construction compatible.
-- Add no dependency, endpoint, configuration setting, or model action.
-- Keep the workflow fully automated; do not add human approval, pause/resume state, or user-response handling.
-
-…
 
 ### Task 1: Add canonical search fields to the existing `AgentState`
 
@@ -116,24 +109,6 @@ Use one helper so every test supplies the pre-existing required orchestration fi
 - [ ] **Step 2: Run the parity test and confirm failure**
 
 Run: `pytest tests/unit/test_components.py::test_planner_parses_complete_mixed_turn -v`
-
-…
-
-### Task 4: Thread one `AgentState` through the live loop
-
-**Files:**
-- Modify: `src/agents/search.py`
-- Modify: `tests/unit/test_agent_loop.py`
-- Modify: `tests/unit/test_components.py`
-
-**Interfaces:**
-- Consumes: Task 1 `AgentState`; Task 2 component APIs; Task 3 Planner parsing
-- Produces: unchanged `SearchAgentLoop.run(...) -> AgentLoopOutput`
-- Produces: `Planner.partition_search_requests(query_specs, state, effective_limit) -> tuple[allowed, repeated, overflow]`
-
-- [ ] **Step 1: Add a state-wiring regression trajectory**
-
-Use the existing fake tokenizer/server fixtures. Drive two model turns: first a parallel search with rerank requested, then a cited answer. Inject fake retrieval, reranking, and evaluation dependencies. Assert:
 
 …
 

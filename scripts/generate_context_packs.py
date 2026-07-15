@@ -82,14 +82,17 @@ def _parse_markdown(text: str) -> tuple[str, str, tuple[Section, ...]]:
     sections: list[Section] = []
     current_heading: str | None = None
     current_body: list[str] = []
-    fence: str | None = None
+    fence: tuple[str, int] | None = None
 
     for line in text.splitlines():
         stripped = line.lstrip()
         fence_match = re.match(r"(```+|~~~+)", stripped)
         if fence_match:
-            marker = fence_match.group(1)[0]
-            fence = None if fence == marker else marker
+            marker = fence_match.group(1)
+            if fence is None:
+                fence = (marker[0], len(marker))
+            elif marker[0] == fence[0] and len(marker) >= fence[1]:
+                fence = None
             current_body.append(line)
             continue
         match = None if fence else HEADING.match(line)
@@ -194,7 +197,10 @@ def pair_sources(specs: list[SourceDoc], plans: list[SourceDoc]) -> list[TopicBu
 def _section_category(heading: str) -> str | None:
     normalized = heading.lower()
     for category, tokens in CATEGORY_TOKENS.items():
-        if any(token in normalized for token in tokens):
+        if any(
+            re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", normalized)
+            for token in tokens
+        ):
             return category
     return None
 

@@ -19,21 +19,6 @@
 
 **File:** `web/src/components/ToolCallTracePanel.tsx`
 
-### 7. Testing Strategy
-
-- **`tests/unit/servers/web/test_tool_trace.py`** (new file)
-  - Mock `_run_auto_routed` with an `action_trace` containing two completed calls and one failed call
-  - Assert `AgentExperienceResponse.tool_calls` has length 3
-  - Assert latency computed correctly from `performance.execution_time`
-  - Assert list result → "N items", string result → truncated to 200 chars
-  - Assert `error_message` mapped to `ToolCallView.error`
-
-- **`web/src/components/__tests__/ToolCallTracePanel.test.tsx`** (new file)
-  - Render with two completed calls — assert two cards, both green ✓
-  - Render with one failed call — assert card has `tool-trace-card--failed` class, error text visible
-
-…
-
 ## Implementation Plan Context
 
 ### Task 1: Backend — `arguments` field + `ToolCallView` model + trace parsing
@@ -43,33 +28,6 @@
 - Modify: `src/agents/tool_calling.py`
 - Modify: `src/internal/servers/web/app.py`
 - Create: `tests/unit/servers/web/test_tool_trace.py`
-
-### Step 1: Write failing backend tests
-
-Create `tests/unit/servers/web/test_tool_trace.py`:
-
-```python
-"""Tests for ToolCallView trace parsing in _run_auto_routed."""
-from __future__ import annotations
-
-import json
-from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
-
-from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
-from src.agents.base import AgentLoopOutput
-
-def _make_output(action_trace: str) -> AgentLoopOutput:
-    return AgentLoopOutput(
-        prompt_ids=[],
-        response_ids=[],
-        response_mask=[],
-        num_turns=1,
-        final_answer="done",
-        action_trace=action_trace,
-    )
-
-…
 
 ### Task 2: Frontend types + `ToolCallTracePanel` component
 

@@ -235,3 +235,33 @@ def test_markdown_parser_ignores_heading_syntax_inside_fences(tmp_path: Path) ->
 
     assert [section.heading for section in source.sections] == ["Goal"]
     assert "# not a heading" in source.sections[0].body
+
+
+def test_markdown_parser_requires_matching_fence_type_and_length(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "2026-07-01-shell-design.md"
+    write(
+        source_path,
+        "# Shell\n\n## Goal\n\n````markdown\n```\n# still not a heading\n````\n",
+    )
+
+    source = normalize_source(source_path, "spec")
+
+    assert [section.heading for section in source.sections] == ["Goal"]
+    assert "# still not a heading" in source.sections[0].body
+
+
+def test_category_matching_does_not_treat_substrings_as_words(tmp_path: Path) -> None:
+    root = tmp_path / "superpowers"
+    write(
+        root / "plans/2026-07-01-results.md",
+        "# Results\n\n## Contest Results\n\nA winner.\n\n"
+        "## Final Verification\n\nRun the full suite.\n",
+    )
+
+    generate(root, root / "context-packs")
+
+    pack = (root / "context-packs/results-context-pack.md").read_text(encoding="utf-8")
+    assert "Final Verification" in pack
+    assert "Run the full suite." in pack

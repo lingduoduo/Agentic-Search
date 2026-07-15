@@ -24,14 +24,18 @@ The trace covers the improved control-flow components:
 
 It reports operational decisions and outcomes, not private model reasoning.
 
-### Agent and recorder unit tests
+### Verification
 
-- sequence starts at 1 and increases exactly once per event;
-- timestamps are UTC and events retain insertion order;
-- detail allowlists and string bounds remove sensitive values;
-- sink failure does not raise or stop in-memory collection;
-- component start/completion/failure events carry correct duration and status;
-- one live loop trajectory emits the expected component and decision order.
+```bash
+pytest tests/unit/test_control_flow_trace.py -v
+pytest tests/unit/test_agent_loop.py tests/unit/test_chat_backend.py -v
+cd web && npm test -- --run
+cd web && npm run typecheck
+ruff check src/agents src/internal/servers/web tests/unit
+ruff format --check src/agents src/internal/servers/web tests/unit
+```
+
+Run the repository's full default `pytest` suite before completion.
 
 ### Out of Scope
 
@@ -44,17 +48,6 @@ It reports operational decisions and outcomes, not private model reasoning.
 - Removing the existing `progress` SSE event
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Execute `docs/superpowers/plans/2026-06-27-agent-control-flow-consolidation.md` first; this plan instruments the authoritative component boundaries created there.
-- Do not expose chain-of-thought, prompts, full queries, document text, credentials, headers, cookies, full tool payloads, or raw exception representations.
-- Detail strings are capped at 256 characters and unknown detail keys are dropped.
-- Event order is defined by a run-local sequence starting at 1, not by timestamps.
-- Trace sink failures never alter agent execution or answer delivery.
-- Preserve legacy responses, sessions, and the existing `progress` SSE event.
-
-…
 
 ### Task 1: Build the safe run-local recorder
 
@@ -118,28 +111,6 @@ Expected: FAIL because `AgentLoopOutput` has no trace field.
 - Produces: the stable component/action vocabulary from the spec
 
 - [ ] **Step 1: Add failing component event tests**
-
-…
-
-### Task 4: Add API, SSE, logging, and persistence propagation
-
-**Files:**
-- Modify: `src/internal/servers/web/app.py`
-- Modify: `tests/unit/test_chat_backend.py`
-- Modify: `tests/unit/servers/web/test_sse_streaming.py`
-
-**Interfaces:**
-- Produces: `ControlFlowEventView`
-- Produces: `AgentExperienceResponse.control_flow_trace`
-- Produces SSE: `{type: "trace", event: ControlFlowEventView}`
-
-- [ ] **Step 1: Add failing response and persistence tests**
-
-Assert that a mocked search-agent result with two events produces:
-
-Add an SSE assertion that `trace` appears before `answer`, and `done.control_flow_trace` equals the full ordered list.
-
-- [ ] **Step 2: Run backend tests to verify failure**
 
 …
 

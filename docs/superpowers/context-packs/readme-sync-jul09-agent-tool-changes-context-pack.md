@@ -24,13 +24,6 @@ Document only what changes observable behavior or capability:
 
 …
 
-### Non-goals
-
-- No re-documentation of already-synced pre-#390 July work.
-- No structural rewrite of the README — surgical edits into existing sections.
-- No documentation of pure-internal refactors (#393/#396/#398) that a README
-  reader cannot observe.
-
 ## Implementation Plan Context
 
 ### Overview

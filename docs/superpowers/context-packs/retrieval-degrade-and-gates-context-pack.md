@@ -9,11 +9,6 @@
 
 ## Specification Context
 
-### Non-goals
-
-No change to reranker internals, fusion math, or the query-transform pipeline.
-Behavior on the success path is byte-for-byte identical.
-
 ### Verification
 
 Regression tests in `tests/unit/retrieval/test_service.py`:

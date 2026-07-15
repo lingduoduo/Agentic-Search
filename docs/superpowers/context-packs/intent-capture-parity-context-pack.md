@@ -17,30 +17,7 @@ classifier, no-LLM rule-based), so the Request Inspector always shows how a quer
 was routed and by which mechanism. Preserve the richer classifier detail
 (`prompt`, `raw_label`) that exists today.
 
-### Testing
-
-- **`classify_route` unit tests** (`test_agent_router.py::test_classify_route_*`):
-  update to unpack the new tuple return (`strategy, _ = classify_route(q, llm)`).
-- **`test_stage_emits_intent.py`**: currently asserts `classify_route` emits the
-  intent stage; repoint it to drive `route_query` and assert the stage is emitted
-  there (mechanism `classifier`, with `prompt`/`raw_label`).
-- **New `route_query` capture tests** (under an active capture, one per mechanism):
-  - explicit source → intent stage `mechanism == "explicit_source"`
-  - regex-decided query (`What is FAISS?`) → `mechanism == "regex"`, `strategy == "chat"`
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- One `intent` stage per request, emitted from `route_query`, labeled by mechanism (`explicit_source | regex | classifier | rule_based`); payload `{"mechanism", "strategy", **detail}`.
-- The classifier path preserves `prompt` + `raw_label` in its detail; other paths use `{}`.
-- `_regex_route` keeps its pure `-> RouteStrategy | None` signature (untouched).
-- `record_stage` is a no-op when no capture is active — the hot path must stay unaffected when debug panels are off.
-- No routing-decision changes; no frontend change (RequestInspector renders any payload).
-
-…
 
 ### Task 1: Centralize intent capture in `route_query`
 

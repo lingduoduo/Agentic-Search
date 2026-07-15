@@ -29,33 +29,7 @@ The web backend remains responsible for:
 
 …
 
-### Testing
-
-Use test-driven development with regressions that first fail against the current direct-retrieval implementation:
-
-- all three indexed-document tools forward the current bearer token;
-- `search_indexed_documents` forwards non-empty document-set names;
-- an empty document-set list normalizes to no explicit restriction;
-- missing authentication prevents any backend or raw retrieval call;
-- `401` and `403` do not fall back to raw retrieval;
-- authenticated empty results retain the existing successful empty-result contract;
-- existing MCP result shapes remain compatible;
-- integration coverage proves one user cannot retrieve another user's restricted documents.
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- The web backend is the single authority for user, group, connector, and document-set access.
-- Missing or rejected authentication must never fall back to the raw retrieval service.
-- Existing MCP tool names and successful response fields remain stable.
-- `document_set_names=None` and `[]` mean no caller-specified document-set restriction; normal ACLs still apply.
-- Public web search, URL fetching, query expansion, and non-MCP raw retrieval callers remain unchanged.
-- Use strict red-green-refactor TDD for every behavior change.
-
----
 
 ### Task 1: Enforce authenticated filters in the existing web search endpoint
 

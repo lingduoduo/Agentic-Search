@@ -9,18 +9,6 @@
 
 ## Specification Context
 
-### Non-goals
-
-- No real SQL/KG/API execution backends (interface + tests only for those three).
-- No change to default behavior when routing flags are unset (must stay
-  zero-overhead; the static `RETRIEVAL_BACKEND` path is untouched when disabled).
-- No rewrite of existing modules: `query_constructor.py`, `fusion.py`,
-  `query_router.py`, `service.py` are *extended/consumed*, not rewritten. No
-  changes to public signatures `transform(...)` / `retrieval_variants(...)`.
-- No frontend changes; no swap of embedding/rerank model.
-- Not a replacement for the transform-level `QueryRouter` — that picks transforms;
-  this picks domain/source/retriever. The two compose.
-
 ### 2. Acceptance Criteria (all four gates required)
 
 1. **Routing accuracy** — a new labeled set `data/eval/routing_labels.jsonl`
@@ -35,26 +23,7 @@
 
 …
 
-### 10. Open Questions
-
-- **Phasing:** ship as one PR (large) or split routing layer (Phase A) and the
-  three net-new constructors (Phase B) into two PRs? Default assumption: **one
-  branch, one PR**, since the constructors are interface-only and small — revisit
-  if the diff gets large.
-- **Learned router:** include a joblib learned route classifier now (like
-  `QueryRouter`) or defer until a real labeled corpus exists? Default: **defer** —
-  ship heuristic + optional logical/semantic; learned model is a follow-up.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Never commit to `main`. Work on `feat/routing-layer-optimization` (already created).
-- Every `ROUTING_*` env flag MUST default to disabled (zero overhead when unset).
-- New files are allowed (the three net-new constructors need them) but existing modules — `query_constructor.py`, `fusion.py`, `query_router.py`, `service.py`, `eval_runner.py`, `eval_metrics.py` — are **extended/consumed, never rewritten**. No changes to public signatures `transform(...)` / `retrieval_variants(...)` / `RetrievalService.search(...)`.
-- Fallback-safe: any LLM/embedding failure in a router or constructor degrades to the heuristic / an empty payload; never raises out of `route()` / `construct()`.
-
-…
 
 ### Task 1: Route data model + registry
 

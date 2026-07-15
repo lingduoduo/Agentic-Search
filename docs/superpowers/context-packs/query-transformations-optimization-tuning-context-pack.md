@@ -9,14 +9,6 @@
 
 ## Specification Context
 
-### Non-goals
-
-- No new files/modules. No new wrapper layers. No public API/interface changes
-  to `transform(...)` / `retrieval_variants(...)` signatures.
-- No frontend changes.
-- No swap of the retrieval backend, reranker, or embedding model.
-- No changes to default behavior when `QT_*` flags are unset (must stay zero-overhead).
-
 ### 2. Acceptance Criteria (all three gates required)
 
 Measured with the **existing** harnesses; no new eval tooling.
@@ -37,16 +29,6 @@ Measured with the **existing** harnesses; no new eval tooling.
 Each lever stays inside the listed file. No new files.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Never commit to `main`. Branch `feat/query-transform-optimization-tuning` is already created.
-- All `QT_*` env flags MUST keep defaulting to disabled (zero overhead when unset).
-- No new files/modules; edits stay inside the listed pre-existing files.
-- No change to existing public signatures `transform(...)` / `retrieval_variants(...)`; the only new public surfaces are the `rewrite` config flag/field/method and the `"rewrite"` router label (pre-approved).
-- Fallback-safe: any LLM failure in a leg degrades that leg to empty/None; pipeline continues.
-
-…
 
 ### Task 1: Canonical query-rewrite leg (end-to-end)
 

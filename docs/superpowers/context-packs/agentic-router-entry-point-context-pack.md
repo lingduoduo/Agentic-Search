@@ -28,27 +28,16 @@ search-vs-chat branch that always ran a one-shot retrieval.
   chosen loop's retrieval — a separate follow-up (PR B). M10 routes a query to a
   *retriever backend*; this routes to an *agent strategy*.
 
-### Tests
-
-- `tests/unit/servers/web/test_agent_router.py` — pure decision-logic tests for
-  the cascade, rule-based routing, and the classifier (incl. garbage → default).
-- Auto-route regression in `test_web_experience_app.py` (dispatch contract).
-
 ## Implementation Plan Context
 
-### Tasks
+### Overview
 
-1. **Decision logic (TDD).** `tests/unit/servers/web/test_agent_router.py`:
-   explicit source → SEARCH_AGENT; tool/search/conversational verbs →
-   TOOL/SEARCH/DIRECT; default → AGENTIC_RAG; `llm=None` → rule-based;
-   `classify_route` parses each label, garbage → AGENTIC_RAG. → red.
-2. **Implement** `RouteStrategy`, `_rule_based_route`, `classify_route`,
-   `route_query` in `intent_routing.py` (keep `_infer_intent_from_output`). → green.
-3. **Dispatch** in `_run_auto_routed`: `route_query` → branch per strategy with
-   the degradation table from the spec; set `extra["route"]` /
-   `extra["route_degraded"]`. → verify `tests/unit/servers/web/` green.
+Spec: 2026-06-28-agentic-router-entry-point-design.md
+Status: shipped (consolidated in PR #347).
 
-…
+**Goal:** `mode=None` picks a `RouteStrategy` via `route_query`, then dispatches
+capability-aware. Response contract `(answer, citations, documents, intent, extra)`
+unchanged; no degradation path worse than the old binary router.
 
 ## Context Boundary
 

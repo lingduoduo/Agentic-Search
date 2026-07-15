@@ -28,19 +28,6 @@
 
 …
 
-### Testing Strategy
-
-- **Per-component units:**
-  - Planner: duplicate flagged when query in `previous_queries`; not flagged otherwise; fallback query
-    bounded for multi-line/over-length raw text; existing parse tests unchanged.
-  - SearchTool: second identical query served from cache without a second backend call (spy/counter);
-    web `RetrieveFn` that raises degrades to vdb (result returned, warning logged).
-  - RerankerTool: `max_candidates=N` reranks only N; ≤1 doc returns without calling `rerank_fn`;
-    default `None` preserves full-set rerank.
-  - EvidenceJudge: `marginal_gain` arithmetic; `should_stop` true iff gain `< min_gain`; bounds.
-
-…
-
 ## Context Boundary
 
 This pack summarizes its linked sources. Consult those documents for complete details; no implementation status is inferred here.

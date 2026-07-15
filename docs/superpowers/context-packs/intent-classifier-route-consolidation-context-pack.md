@@ -16,30 +16,7 @@ Retarget the trained classifier to `{chat, search, tool}` and insert it into the
 classification when a model is available. Migrate the CLI consumer to the new
 labels. One label taxonomy, one model, serving both surfaces.
 
-### Testing
-
-- **`ml_intent`**: no env path → `load_intent_model`/`predict_route` return
-  `None`; injected stub pipeline → `predict_route` maps label→`RouteStrategy` +
-  confidence; unknown label → `None`; `predict_text` raising → `None`;
-  `intent_min_confidence` default + override. No test loads a real `.pt`.
-- **`route_query`**: high-confidence model → returns model route, LLM **not**
-  called; low-confidence model → LLM fallback; no model → today's behavior
-  unchanged; a confident regex match still short-circuits before `predict_route`.
-- **`intent_classifier`**: `INTENT_LABELS == ["chat","search","tool"]`; a tiny
-  train→predict round-trip returns one of the three; `resolve_search_settings`
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Label taxonomy is exactly `["chat", "search", "tool"]`, in `RouteStrategy` declaration order (CHAT, SEARCH, TOOL); class indices align with the enum.
-- Ships dark: with `AGENTIC_SEARCH_INTENT_MODEL_PATH` unset, `predict_route` returns `None` and `route_query` behaves exactly as today. The LLM stays the low-confidence fallback even when a model is loaded.
-- Torch/`IntentPipeline` are lazy-imported inside functions, never at module import time (keeps web import + hermetic tests torch-free). No test loads a real `.pt`.
-- `T` = `float(os.environ.get("AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", "0.6"))`.
-
-…
 
 ### Task 1: Retarget classifier labels + `resolve_search_settings` policy
 

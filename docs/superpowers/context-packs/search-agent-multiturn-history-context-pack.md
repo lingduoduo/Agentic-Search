@@ -9,61 +9,14 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No change to the base token-crop (`base.py:186` keep-tail is non-message-aware;
-  that is a separate, known gap — out of scope).
-- No change to `_run_tool_agent`'s existing history handling or the RAG path.
-- No summarization / semantic compression of history.
-- No new persistence — history already loads from `AgenticSearchStore` and is
-  trimmed to `MAX_HISTORY_MESSAGES = 40` in `_run_agent_impl` (`app.py:1267`).
-
-### Components (all in `src/internal/servers/web/app.py`)
-
-1. **Constant** — `SEARCH_AGENT_HISTORY_MESSAGES = 6` (last 3 user/assistant
-   exchanges), beside `MAX_HISTORY_MESSAGES`. Tighter than 40 because search mode
-   adds its own long observations each turn, and the base token-crop drops from
-   the front (the system prompt) on overflow.
-
-2. **Pure helper** — `_build_search_agent_messages(query: str, history: list) -> list[dict]`:
-   - `capped = _trim_history(history, max_messages=SEARCH_AGENT_HISTORY_MESSAGES)`
-   - map each entry to `{"role": m.role, "content": m.content}`
-   - append `{"role": "user", "content": query}`
-   - return the list. No model/loop dependency → unit-testable in isolation.
-
-…
-
-### Testing
-
-Unit tests (no model load — respects the web-test model-load gotcha) on the pure
-helper `_build_search_agent_messages`:
-1. Empty history → `[{"role": "user", "content": query}]`.
-2. Short history (< cap) → all prior turns + query, in order, query last.
-3. Long history (> cap) → only the last `SEARCH_AGENT_HISTORY_MESSAGES` prior
-   turns + query.
-4. Role/content mapping preserved from `ChatMessage`-like entries.
-
-The `_run_search_agent` wiring (loop construction) is covered by the existing web
-integration tests; the new behavior worth asserting in isolation is the message
-buffer construction, which the pure helper localizes.
-
-### Risks
-
-- **Token budget**: history + growing observations could still overflow and the
-  base crop would drop the system prompt. Mitigated (not eliminated) by the tight
-  cap of 6; the deeper fix (message-aware crop) is deliberately out of scope.
+Date: 2026-07-09
+Status: Approved (brainstorming)
+Branch/PR: feat/search-agent-multiturn-history
+Related: [[project_chat_orchestration]]
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Branch off `main` (never commit to `main`); branch `feat/search-agent-multiturn-history`.
-- Only touch `_run_search_agent` and the message-buffer construction; do NOT change `_run_tool_agent`, the RAG path, or the base token-crop.
-- History items are `src.context.ChatMessage` with `.role` / `.content`.
-- Tests must NOT load a model or DB (web-test model-load gotcha) — test the pure helper.
-- Match repo ruff formatting.
-
----
 
 ### Task 1: Pure helper `_build_search_agent_messages` + constant
 

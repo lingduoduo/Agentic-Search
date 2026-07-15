@@ -9,55 +9,13 @@
 
 ## Specification Context
 
-### Non-Goals (YAGNI)
+### Overview
 
-- **No real LLM judge adapter** in this change. The `BatchJudgeFn` interface is
-  already threaded through GRPO; a real judge is a later one-liner behind it.
-- **No reward-model training** (no Bradley-Terry / value head). That is the
-  separate "flavor B" and is explicitly out of scope.
-- **No new dataset.** We reuse the existing bamboogle seed prompts.
-- **No changes to the GRPO core algorithm.** The judge plugs into the existing
-  `batch_judge_fn` parameter of `score_prompt_group` / `score_prompt_batch`.
-
-### Key Decisions
-
-1. **Judge mode: pointwise score.** The judge returns a scalar in `[0, 1]` per
-   answer. GRPO performs the group-relative comparison itself
-   (`compute_grpo_outcome_advantages`, `src/training/reward.py`). This fits the
-   existing `BatchJudgeFn` seam exactly; no ranking schema or chosen/rejected
-   pairs are introduced.
-
-2. **Online, function GRPO calls.** The judge is invoked inside the GRPO loop
-   (one batched call per prompt group), not an offline cached dataset. It scores
-   the *current* policy's fresh rollouts.
-
-3. **Simulated, not real LLM.** A deterministic reference implementation stands
-   in for the LLM. Real LLM = drop-in swap behind the same interface.
-
-…
-
-### Testing (deterministic, offline)
-
-- **Judge stability:** identical inputs → identical scores; empty answer →
-  low score; well-formed cited answer → higher score.
-- **Batch adapter:** `as_batch_judge_fn()` returns correct length; ignores
-  `ground_truths`.
-- **GRPO integration:** `score_prompt_group` with the sim judge yields
-  non-degenerate (non-all-zero) advantages across a varied group.
-- **Validation metric:** agreement computation runs and returns a number on a
-  small synthetic set.
+**Date:** 2026-07-09
+**Status:** Approved (design)
+**Branch:** `feat/simulated-preference-judge`
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Reference-free judge:** the judge scores from the answer string only and MUST ignore the `ground_truths` argument. Gold answers are used only for the validation report, never as a judge input.
-- **Deterministic:** identical answers MUST produce identical scores. Any tie-break jitter derives from `hashlib.sha256`, never the salted built-in `hash()` (which varies per process via `PYTHONHASHSEED`) and never `random`.
-- **Scores clamped to `[0, 1]`.**
-- **No changes to `src/training/grpo.py` or `src/training/reward.py`** — the `batch_judge_fn` seam already exists.
-- **No reward-model training** (flavor B is out of scope).
-
-…
 
 ### Task 1: `SimulatedPreferenceJudge` core + export
 

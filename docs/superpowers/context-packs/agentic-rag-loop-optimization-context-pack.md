@@ -30,34 +30,7 @@
   sufficiency check.
 - No other refactors, renames, prompt edits, or adjacent "improvements".
 
-### 6. Testing strategy
-
-All 10 existing tests must stay green (they encode the LLM-response call order — the
-changes add no extra `complete()` calls, so order is preserved). Add focused tests:
-
-1. **`merged` init** — `AgenticRAGConfig(max_rounds=0)` → `run` returns an
-   `AgenticRAGResult` with empty context, no crash.
-2. **Query normalization** — initial queries differing only by case/whitespace
-   (`"GPT-4 cost"` vs `"gpt-4 cost "`) trigger retrieval once.
-3. **Doc dedup by content** — two retrieved docs with no URL and identical content but
-   different ids collapse to one; distinct content stays separate.
-4. **Follow-up cap** — gap analysis returning 8 queries retrieves ≤5 in the next round.
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Keep happy-path output identical; all 10 existing tests in `tests/unit/test_agentic_rag.py` must stay green.
-- Retrieval always receives the **original** query string; normalization governs only the dedup set.
-- Sufficiency check stays **fail-open**: on timeout/error it returns `True` (stop looping). Do NOT flip to fail-closed.
-- No empty-evidence canned fallback; the loop still calls `generate_answer` with zero docs.
-- Timeout applies only to the sufficiency check, not gap analysis.
-- `max_followups_per_round` default = `5`; `sufficiency_timeout_s` default = `5.0`.
-- Feature branch only (never commit to `main`). Run `ruff check . --fix && ruff format .` and full `pytest` before done.
-
----
 
 ### Task 1: Crash guard — initialize `merged` before the loop
 

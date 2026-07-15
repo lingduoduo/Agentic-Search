@@ -18,12 +18,6 @@
 
 ---
 
-### 1. Remove Mode Selector (`web/src/components/SearchComposer.tsx`)
-
-- Remove the `MODE_OPTIONS` dropdown and `Entry Point` label entirely.
-- Keep: retrieval URL field, top-k field, source provider selector (for power users who set it).
-- The submit button label stays "Search" but could optionally update to "Ask" — out of scope for now.
-
 ### Out of Scope
 
 - Training the `IntentPipeline` model with search/chat/tool labels — it stays as a standalone training artifact.
@@ -32,9 +26,19 @@
 
 ---
 
-### Frontend — Vitest + React Testing Library
+### `SearchComposer.test.tsx` — update existing
 
-All frontend tests live in `web/src/components/__tests__/`. Pattern matches existing tests: `render()`, `screen`, `userEvent`, `vi.fn()`.
+The existing test `"shows all six mode options"` and the `mode` prop must be removed/updated since the mode dropdown is gone.
+
+| Test | What it asserts |
+|---|---|
+| `"no mode dropdown is rendered"` | `screen.queryByLabelText(/entry point/i)` is `null` |
+| `"renders retrieval URL and topK fields"` | Both inputs are present without a mode selector |
+| `"submit enabled when query has content"` | Unchanged from existing test |
+| `"submit disabled when loading"` | Unchanged from existing test |
+| `"Cmd+Enter submits the form"` | `userEvent.keyboard('{Meta>}{Enter}{/Meta}')` triggers `onSubmit` |
+
+…
 
 ## Implementation Plan Context
 

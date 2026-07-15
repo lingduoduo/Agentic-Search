@@ -34,24 +34,7 @@ Both entangle counter mutation with control flow, obscuring the loop's shape.
 - `AgentLoopOutput` fields unchanged.
 - Guard conditions, branch effects, and order of operations preserved exactly.
 
-### Testing
-
-- **Primary gate (behavior-preserving proof):** the search/agent unit suites pass
-  unchanged — `test_agent_loop`, `test_loop_controller`, `test_components`,
-  `test_on_turn_callback`, `test_run_agentic_search`, `test_reward`, `test_sft`,
-  `test_search_tools`, `test_search_query` (287 tests). No existing test modified.
-- The full `pytest tests/unit` sweep is gated by unrelated web/model-load slow
-  tests (see `project_web_test_model_load`); it is not part of this change's gate.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving.** No existing test changes. Logic moves verbatim; `break`→return a BREAK directive, `continue`→return a CONTINUE directive, the auto-search fall-through→return an `injected_actions` directive.
-- **`metrics` dict byte-identical.** `research_followup_queries`, `plateau_early_stop`, `decision_prompts` bumps happen in the same cases and order; `reward.py`/`action_eval.py` consume these keys.
-- **`metrics`, `working_messages`, `turn_observations`, and the count dicts are passed by reference** and mutated in place; scalar counters travel back in the directive and `run()` reassigns them.
-
-…
 
 ### Task 1: `_handle_absent_actions` + `_classify_planned_action`
 

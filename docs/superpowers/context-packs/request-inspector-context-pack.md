@@ -17,14 +17,14 @@ inspectable via a **rolling in-memory history**. The capture path is entirely
 gated behind the existing debug flag and is a **separate channel** from the
 sanitized control-flow trace — the sanitized trace is untouched.
 
-### Testing
+### Verification / success criteria
 
-- **Unit:** `record_stage` no-ops when inactive; `start_capture` + emits produce
-  the expected snapshot; ring buffer evicts past N; endpoints return snapshot /
-  404.
-- **Integration:** one auto-routed request with `debug_panels` on yields a
-  snapshot with all reached stages populated (raw prompt + retrieved docs
-  present); with the flag off, no capture and zero added work.
+- With `AGENTIC_SEARCH_DEBUG_PANELS` on, running a query and opening the Dev
+  Console "Request Inspector" shows that run's intent, search, LLM, and final
+  stages with full raw payloads; recent runs are selectable.
+- With the flag off, `active()` is always `None`, no snapshot is stored, and no
+  new endpoints do work.
+- The sanitized `ControlFlowRecorder` output and existing tests are unchanged.
 
 ## Context Boundary
 

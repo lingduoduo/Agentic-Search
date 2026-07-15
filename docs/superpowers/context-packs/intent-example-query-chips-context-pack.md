@@ -32,26 +32,7 @@ A `.example-chips` row renders under the textarea: one `<button type="button" cl
 - Click → `onExampleSelect(query)` when provided, else `onQueryChange(query)` (fill-only fallback).
 - Chips are hidden while `isLoading` (no chip clicks mid-request).
 
-### Testing
-
-**`SearchComposer.test.tsx`**
-- renders 3 example chips (one per intent).
-- clicking a chip calls `onExampleSelect` with that example's query.
-- chips are not rendered while `isLoading`.
-
-**`App.test.tsx`**
-- clicking an example chip runs the agent (`streamAgent` called) and renders the result with the matching `intent-*` layout class.
-- undefined/unknown intent → no `.intent-badge` and no `intent-*` class (coverage broadening).
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- No backend changes.
-- Existing form-submit and Cmd+Enter paths must be unchanged (still use state `query`).
-- Chips hidden while `isLoading`.
-
----
 
 ### Task 1: SearchComposer chips (TDD)
 

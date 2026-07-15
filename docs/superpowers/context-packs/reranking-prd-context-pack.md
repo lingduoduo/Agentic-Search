@@ -26,13 +26,6 @@ The `retrieval_mode` field in `SearchResponse` gains a `+reranked` suffix when r
 
 ---
 
-### 9. Testing Strategy
-
-- **Unit:** `test_reranker.py` monkeypatches `SentenceTransformerReranker.load` and `cohere_rerank_api` — no model downloads in CI
-- **Unit:** `test_service.py` injects a `MagicMock` reranker; asserts `mode` suffix and that `rerank()` is called with correct args
-- **Smoke:** One test asserts local reranking 20 candidates completes in < 5s (very generous; gate is 800ms measured on real hardware via eval_runner)
-- **Eval gate:** Run manually via `eval_runner.py` against `data/eval/qa_pairs.jsonl`
-
 ## Implementation Plan Context
 
 ### Task 1: `RerankerConfig` + `Reranker`

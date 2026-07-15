@@ -9,49 +9,14 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No change to any weight default, penalty, preset, or the `total` formula.
-- No collapse of the config API to 4 knobs (a separate, breaking option we
-  explicitly declined).
-- No removal/pruning of any existing term.
-- No changes to `grpo.py`, the trainers, or the example scripts.
-
-### Testing
-
-New tests in `tests/unit/test_reward_shapes.py` (fast, no model):
-
-1. `group_reward_components` sums each bucket correctly from a hand-built flat dict
-   with distinct per-key values.
-2. Tolerates a components dict missing optional keys (no `human_feedback`) — no
-   `KeyError`.
-3. Partition invariant on a real `reward_components(...)` output: `sum(4 dims) ==
-   terminal_reward + shaping_total`, and `== total / reward_scale` with a
-   non-unity `reward_scale`, within tolerance.
-4. `reward_components()` output contains the 4 `dim_*` keys; `reward_dimensions()`
-   returns exactly those 4 values.
-5. Partition-completeness guard: every numeric key in a `reward_components` output
-
-…
-
-### Risks
-
-- **Future term escapes the buckets** — mitigated by test 5 (completeness guard).
-- **Double-counting / gap in the map** — mitigated by test 3 (partition invariant)
-  and test 5 (each key in exactly one bucket).
+Date: 2026-07-09
+Status: Approved (brainstorming)
+Branch/PR: feat/simulated-grpo-demo (PR #388, added as related GRPO follow-on)
+Related: Simulated-Judge GRPO Demo
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Add to branch `feat/simulated-grpo-demo` (PR #388) — never commit to `main`.
-- Purely additive: do NOT change any existing weight default, penalty, preset, `reward_mode` handling, or the `total` computation. The original 23 keys keep their names and values.
-- The `reward_components` return type stays `dict[str, float]` (flat `dim_*` keys, no nesting).
-- Dimensions are pre-scale: `sum(4 dims) == terminal_reward + shaping_total == total / reward_scale`.
-- `human_feedback` is NOT a dimension member.
-- Match repo ruff formatting (pre-commit runs ruff).
-
----
 
 ### Task 1: Mapping constant + pure `group_reward_components`
 

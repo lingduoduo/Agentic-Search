@@ -9,39 +9,17 @@
 
 ## Specification Context
 
-### Testing
+### Overview
 
-- Registry resolution: every canonical name + alias resolves to the right class;
-  unknown name raises a clear error (extends existing `get_registered_agent_loop`
-  behavior).
-- CLI dispatch parity: each `--mode` produces the same loop+config as today
-  (golden-path test per mode).
-- Web dispatch parity: `search_agent`/`tool_agent`/`chat_loop` route through the
-  registry and behave identically; pipeline modes unchanged.
-- `AgenticRAGLoop` registration (if it conforms): resolvable and runnable via the
-  registry.
-
-### Non-goals
-
-- **Config-file (`agents.yaml`) rendering DSL.** Deferred — a registry + alias map +
-  scenario table solves today's problem; a declarative agent-rendering system is
-  speculative for ~5 loops and ~3 entry points. Revisit when the count grows.
-- Consolidating retrieval-pipeline modes into the loop registry (different
-  category by design).
-- Changing any agent loop's behavior, or the `LoopController` control-flow work
-  (fully orthogonal).
-- Reworking web intent auto-detection logic (only its *dispatch target* moves to
-  the registry; the detection stays).
+**Date:** 2026-06-25
+**Status:** Approved scope (consolidate on registry + document); implementation
+plan pending.
+**Scope chosen:** route loop-backed entry points through the registry, add
+canonical names + an alias map and a thin scenario→agent map, and document the
+full invocation surface. **Not** a config-file rendering DSL (deferred — YAGNI for
+the current agent count).
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Registry covers exactly four `AgentLoopBase` loops:** `plain_generation`, `single_turn_agent`, `search_agent`, `tool_agent`. `AgenticRAGLoop` (different constructor + `run` signature + return type) is NOT registered — it and the pipelines (`chat_loop`/`search_tool`/`hybrid_search`/`chat_once`) keep their existing dispatch untouched.
-- **No public name removed.** Existing CLI flags (`single`/`search`/`tool`) and web modes keep working; they become documented aliases.
-- **Construction stays per-loop.** The registry supplies the class; each call site constructs with its own config kwargs (`search_config=` / `config=` / `tools=,config=`). Do not attempt a uniform constructor.
-
-…
 
 ### Task 1: Canonical names + alias resolver
 

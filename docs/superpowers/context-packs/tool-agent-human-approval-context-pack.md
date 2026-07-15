@@ -44,31 +44,7 @@ Search-agent XML actions remain automated. Search and reranking are read-only
 and use a different loop. Scheduled-task approval, external-app policy, direct
 registry REST invocation, and MCP invocation are also outside this phase.
 
-### Tool and loop tests
-
-- function-tool unspecified defaults and explicit effect classification,
-- OpenAPI HTTP-method inference,
-- read-only calls execute without a callback,
-- side-effecting calls fail closed without a callback,
-- approval executes once,
-- denial and timeout never call `Tool.execute`,
-- skipped calls are returned to the model and do not count as failures,
-- true tool failures preserve current stopping behavior,
-- parallel approval requests block the whole batch until all resolve.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Approval is per invocation and is never remembered.
-- `READ_ONLY` tools execute unchanged; `SIDE_EFFECTING` and `UNSPECIFIED` tools require approval.
-- Missing callbacks, anonymous callers, denial, timeout, cancellation, and broker errors fail closed.
-- Phase 1 is process-local. Do not add database tables, checkpoints, reconnectable streams, or restart-safe claims.
-- Only the initiating authenticated user may decide.
-- Browser events and logs receive sanitized summaries, never unrestricted arguments.
-- `SearchAgentLoop`, scheduled tasks, direct registry REST invocation, and MCP invocation remain unchanged.
-
----
 
 ### Task 1: Add fail-closed tool effect metadata
 

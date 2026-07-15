@@ -16,37 +16,7 @@ manager. It is a separate world and is **out of scope** — this spec does not m
 or unify training and serving managers. Conflating them would balloon the change
 and couple serving to training internals.
 
-### Testing
-
-- **Protocol conformance:** `isinstance(OpenAIServerManager(...), ServerManager)`
-  and same for Local (via `runtime_checkable`).
-- **Factory dispatch:** `server_url` → OpenAI; `model` only → Local; neither →
-  clear error.
-- **Parity:** web and CLI build the same manager (type + key params) as today for
-  each config combination (golden-path).
-- **Backward-compat imports:** `from examples.run_agentic_search import
-  OpenAIServerManager, LocalServerManager` still resolves via the re-export shim.
-
-### Non-goals
-
-- Unifying training (`LLMGenerationManager`) and serving managers.
-- Adding new providers (Anthropic, etc.) — the factory makes that a later one-line
-  extension, but no new backend ships here.
-- Streaming/token-by-token changes to `.generate()`.
-- Any agent-loop behavior change, or the `LoopController` control-flow work
-  (orthogonal).
-- Folding model selection into agent invocation — kept separate, though both are
-  "factory/selection" wiring (see Relationship).
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving move.** The two manager classes move verbatim — no logic change. Their `.generate(request_id, prompt_ids, sampling_params) -> list[int]` contract is unchanged.
-- **Backward-compatible imports.** `from examples.run_agentic_search import OpenAIServerManager, LocalServerManager` must still resolve (re-export shim). Importers today: `src/internal/servers/web/app.py`, `tests/unit/test_run_agentic_search.py`, `examples/run_bamboogle_eval.py`.
-- **Training-side `LLMGenerationManager` (`src/model/generation.py`) is OUT of scope** — do not touch or unify it.
-
-…
 
 ### Task 1: `ServerManager` Protocol + serving module skeleton
 

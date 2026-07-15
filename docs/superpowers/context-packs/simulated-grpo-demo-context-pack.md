@@ -9,16 +9,6 @@
 
 ## Specification Context
 
-### Non-goals
-
-- No trained reward model / pairwise comparison data (the judge is pointwise and
-  reference-free; that stays as-is).
-- No classic PPO with a value critic — GRPO only (critic-free group baseline).
-- No retrieval server, no `SearchAgentLoop` rollouts.
-- No durability: no checkpointing, resume, or `train_loop.py` wiring. (Possible
-  future follow-up, explicitly out of scope here.)
-- No changes to `reward.py`, `judge.py`, or the trainers.
-
 ### Component: `examples/run_bamboogle_grpo_train.py`
 
 Single new script. Uses only existing machinery.
@@ -37,34 +27,7 @@ Flow:
 
 …
 
-### Two pure helpers (unit-tested)
-
-- `make_judge_fn(judge) -> JudgeFn`: returns `lambda pred, _gt: judge.score(pred)`.
-- `cycle_prompt_batches(prompts, steps, batch_size) -> list[list[str]]` (or a
-  generator): yields `steps` batches of size `batch_size`, cycling `prompts` when
-  exhausted. Keeps the demo runnable with a small `--limit`.
-
-### Risks
-
-- **Noisy signal**: reward may not rise in 10 steps. Mitigated by framing success
-  as "real updates + sane diagnostics + weights changed", not monotonic reward.
-- **Reward hacks form, not correctness**: the judge rewards length/uniqueness/no-
-  hedging, so the policy may learn to pad answers. This is expected and is exactly
-  the known limitation of the reference-free judge — the demo illustrates the
-  mechanism, not a production reward. Documented in the script docstring.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Never commit to `main`; work on branch `feat/simulated-grpo-demo` (already created).
-- No changes to `reward.py`, `judge.py`, or any trainer — reuse only.
-- Heavy imports (`torch`, `transformers`, `src.training.ppo.*`) must be **inside functions**, never at module top level, so `--help` stays light (matches commit `0328b12`).
-- The judge is reference-free and pointwise: `ground_truths` are passed as `""` and ignored.
-- Match existing example conventions (`examples/run_bamboogle_synthetic_grpo.py`, `examples/run_feedback_grpo.py`).
-- Tests for pure helpers must NOT load a model or import torch (respects the web-test model-load gotcha).
-
----
 
 ### Task 1: Pure helpers (`make_judge_fn`, `cycle_prompt_batches`)
 

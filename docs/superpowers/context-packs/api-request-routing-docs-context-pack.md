@@ -26,16 +26,6 @@ Create `docs/request-routing.md` as the canonical routing contract. Update `READ
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- Historical `docs/superpowers/specs/` and `docs/superpowers/plans/` files remain unchanged except for this feature's spec and plan.
-- Auto-routed search with `source_provider=auto` is documented as internal retrieval → sufficiency gate → SerpAPI → configured browser-search service → deterministic no-evidence response.
-- Auto-routed search never substitutes a local-model internal-knowledge answer for missing evidence.
-- Explicit request modes retain their separate documented behavior.
-- Browser search is an HTTP service backed by `playwright-cli`, not in-process browser automation in the request handler.
-
----
-
 ### Task 1: Establish the canonical routing contract
 
 **Files:**

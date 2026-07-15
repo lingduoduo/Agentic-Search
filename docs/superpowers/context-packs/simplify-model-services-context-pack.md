@@ -13,21 +13,7 @@
 
 Make the existing APIs reliably execute one understandable, session-aware pipeline—retrieve candidates, rank/rerank evidence, generate a grounded answer, and persist the turn—without adding new public endpoints or changing current request/response contracts.
 
-### Testing
-
-Tests cover session-context construction, stage boundaries, ranking order and fallback, grounded empty-evidence behavior, persistence metadata, streaming parity, existing endpoint compatibility, and a full in-process query pipeline with fakes. Existing retrieval, reranking, routing, and web endpoint suites remain regression gates.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Add no public endpoint and change no existing request or response schema.
-- Preserve async indexing and every existing retrieval/reranking server entry point.
-- Search inference must not answer without evidence.
-- Optional reranking failure preserves the best prior ordering.
-- Access filters continue to apply to internal retrieval.
-
----
 
 ### Task 1: Session retrieval context
 

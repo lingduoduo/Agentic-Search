@@ -9,12 +9,11 @@
 
 ## Specification Context
 
-### Non-goals (YAGNI)
+### Overview
 
-- No frontend change, no `/auth/dev-login` endpoint, no cookie minting.
-- No host/secret interlock (refuse-if-prod). The explicit default-off flag +
-  startup warning is the agreed guardrail.
-- Does not change the real JWT/super-user path in any way.
+Date: 2026-07-11
+Status: Approved
+Branch/PR: feat/dev-admin-bypass
 
 ## Implementation Plan Context
 

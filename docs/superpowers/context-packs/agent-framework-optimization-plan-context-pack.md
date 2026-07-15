@@ -8,16 +8,6 @@
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- **Never commit to `main`** — work on branch `feat/agent-framework-optimization` (already created); open a PR at the end.
-- **New component args are optional** — existing call sites and tests must pass unchanged.
-- **New reward weight defaults to `0.0`** — `sparse_final_only`, `second_pass`, `third_pass_with_format`, and `retriever_aware` totals must be byte-identical when the weight is 0.
-- **New loop metric is opt-in** — `evidence_plateau_min_gain` defaults to `None`; with `None` the loop is byte-identical and `early_stops` stays `0.0`.
-- **Degrade-don't-crash** on backend failure (log a warning, fall back) — matches the existing pattern.
-
-…
-
 ### Task 1: Planner — duplicate-query guard + bounded fallback
 
 **Files:**

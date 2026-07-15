@@ -16,31 +16,7 @@ Obvious cases are decided deterministically and for free; anything not confident
 matched falls through to the existing LLM classifier (or the existing lenient
 rule-based fallback when no LLM is present). No new dependencies, no ML.
 
-### Testing
-
-- **`_regex_route` unit tests**, one behavior each: tool imperatives → TOOL; bare
-  term + lookup imperative → SEARCH; question/explain/generative/trailing-`?` →
-  CHAT; currency-conflict → None; genuinely ambiguous phrase → None.
-- **`route_query` integration** (reuse `_FakeLLM` that records calls): a confident
-  regex case returns the strategy and the **LLM is never consulted**
-  (`llm.calls == []`); a non-confident case with an LLM **does** consult
-  `classify_route`; the no-LLM path still resolves via `_rule_based_route`.
-- **Regression:** update the `test_agent_router.py` cases that assumed the LLM
-  classifier ran for now-deterministic inputs (e.g. `What is FAISS?` used to reach
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- `_regex_route` is high-precision: return a strategy ONLY on a confident match; return `None` on no-match or a currency/fact cross-cue conflict.
-- Anchor tool/search/chat imperative cues to the START of the stripped query (`^`), so a command (`send an email`) differs from a description (`how to send an email`).
-- Reuse the existing `_is_bare_lookup`; do NOT change `classify_route` or `_rule_based_route` behavior.
-- No new dependencies. No change to `app.py` dispatch/degradation.
-- Run `ruff check <files> --fix && ruff format <files>` before each commit (repo has a ruff pre-commit hook; if a commit aborts because the hook reformatted files, `git add -A` and re-run the same commit).
-
-…
 
 ### Task 1: `_regex_route` pure function + unit tests
 

@@ -9,30 +9,16 @@
 
 ## Specification Context
 
-### Non-goals (deferred to a possible phase 2)
+### Overview
 
-- Extracting the two live functions out of `llm_step` (1632) / `chat_utils`
-  (733) to then delete those + the tangled `chat_state` / `citation_processor` /
-  `emitter` / `tool_call_args_streaming`. That needs real extraction surgery.
-- No change to `src/agents`, the live chat path, or any other subsystem.
-
-### Testing
-
-- **Safety proof:** grep confirms every reference to the eight modules is
-  internal to the deletion set (or in the two test files handled above); zero
-  live/keep-set importers; `chat/__init__.py` re-exports none of them.
-- `python -c "import src"` resolves; the chat keep-set imports
-  (`queue_manager`, `models`, `tool_models`, `chat_utils`, `llm_step`) still load.
-- `ruff check` clean; the unit suite green (minus the removed dormant tests).
+**Date:** 2026-07-03
+**Status:** Approved (design).
+**Scope:** Remove the eight cleanly-dormant modules of the Onyx-derived
+`src/internal/chat/` streaming pipeline that no live code path reaches. Phase 1
+of a possible two-phase removal — the harder extraction-required tranche
+(`llm_step`/`chat_utils` + tangled modules) is explicitly deferred.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **No behavior change to any live path.** Keep-set (`queue_manager`, `models`, `tool_models`, `chat_utils`, `llm_step`) untouched.
-- Only the eight dormant modules + the two test files change.
-
----
 
 ### Task 1: Trim test_llm_providers.py
 

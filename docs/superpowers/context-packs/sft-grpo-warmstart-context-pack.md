@@ -24,9 +24,14 @@ Signal is preserved across phases: thumbs-up sessions are used in Phase 1 as imi
 
 ---
 
-### 5. Testing
+### `test_sft_examples.py`
 
-All unit tests — no GPU, no live server, no model downloads.
+- Thumbs-up session with assistant turn → `SFTExample` with correct `prompt_messages` and `completion`
+- Session with no assistant turn is skipped
+- JSONL row `{"question": "Q", "response": "R"}` → correct `SFTExample`
+- JSONL row missing `response` key is skipped
+- Both sources merged: total count = DB examples + JSONL examples
+- `ValueError` when total < `min_ratings`
 
 ## Implementation Plan Context
 

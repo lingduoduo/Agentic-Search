@@ -9,38 +9,14 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No change to `ToolRegistry.invoke()` behavior (validation there is unchanged).
-- No new validation rules — reuse the existing `_validate_arguments` logic.
-- No dependency on PR #395 (they compose; see below).
-
-### Testing (no model)
-
-- `validate_arguments` (via the new module): missing required → error; wrong type →
-  error; valid → `[]`; empty schema → `[]`.
-- Loop-level: a `FunctionTool` with a required `int` arg, called with a missing arg
-  and with a wrong-typed arg — assert the result is FAILED with
-  `error_code="invalid_arguments"` and that the tool's body did **not** run (a
-  side-effect list stays empty).
-- `test_tool_registry.py` stays green (re-exports intact).
-
-### Risks
-
-- Low. Additive validation on a path that currently fails anyway; the only behavior
-  change is *when* and *how cleanly* an invalid call fails (before execution, with a
-  clear error) — strictly safer.
+Date: 2026-07-09
+Status: Approved (brainstorming)
+Branch/PR: feat/validate-tool-arguments
+Related: [[project_chat_orchestration]] (tool sub-item), composes with PR #395 (tool-error feedback)
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Branch off `main` (never commit to `main`); branch `feat/validate-tool-arguments`.
-- `ToolRegistry.invoke()` behavior and `test_tool_registry.py` must be unchanged (back-compat re-exports keep `_check_json_type`/`_validate_arguments` importable from `registry`).
-- Schemaless tools (`parameters == {}`) behave exactly as before.
-- Match repo ruff formatting.
-
----
 
 ### Task 1: Extract validators to `src/tools/validation.py`
 

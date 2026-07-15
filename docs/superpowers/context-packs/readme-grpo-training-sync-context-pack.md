@@ -9,30 +9,15 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No code changes. Documentation only.
-- No restructuring of the README. Only additive/corrective edits to existing
-  training/reward sections.
-- No new runnable example commands beyond the one demo that now exists.
-
-### Testing
-
-- Run `tests/unit/test_readme_examples.py` — expect pass (docs-only change).
-- Grep-verify each new reference exists in the codebase (demo file, reward
-  symbols, judge class).
+Date: 2026-07-09
+Status: Approved
+Branch/PR: docs/readme-grpo-training-sync (PR #390)
+Related: Simulated-Judge GRPO Demo,
+Reward Dimensions Consolidation
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Branch off `main` (never commit to `main`); PR #390.
-- Documentation only — no code, no behavior change.
-- Match existing README style (tables, fenced bash blocks, `code` symbol refs).
-- Every new symbol reference must resolve to real code.
-- `tests/unit/test_readme_examples.py` must stay green.
-
----
 
 ### Task 1: README edits + verification
 

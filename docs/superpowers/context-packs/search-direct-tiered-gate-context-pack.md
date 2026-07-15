@@ -32,34 +32,7 @@ any tier that fires routes direct; only when none fire do we escalate to search.
 
 …
 
-### Testing
-
-- **Unit — `_direct_gate_decision`** with an injected deterministic
-  `EmbeddingFn` (repo has `deterministic_embedding_fn` / `numpy_embedding_fn`),
-  never a real model:
-  - exact title match → direct, tier `exact`, embedder **not** called.
-  - typo (Levenshtein 1) + high cosine → direct, tier `fuzzy`.
-  - typo (Levenshtein 1) + low cosine (`cat`/`car`) → search.
-  - no lexical match + cosine > 0.8 → direct, tier `semantic`.
-  - no lexical match + cosine ≤ 0.8 → search, tier `weak`.
-  - empty docs → search.
-  - embedder `None` (model unavailable) + only-semantic-would-match → search,
-    no crash.
-- **Unit — backend independence:** the same query/result pair routes `exact`
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- The gate compares the query against the **rank-1** retrieval result only (`docs[0]`, already rerank/MMR-ordered).
-- Tiers are OR'd, short-circuit cheapest-first; any tier firing → direct. Only when none fire → escalate to search (`_escalate`, unchanged).
-- **No score-threshold fallback** — `_search_direct_min_score` and `AGENTIC_SEARCH_SEARCH_DIRECT_MIN_SCORE` are removed from the gate.
-- Semantic tier uses a **fixed-scale** cosine so `AGENTIC_SEARCH_SEARCH_DIRECT_COS_MIN` (default `0.8`) means the same on every backend.
-- Missing/unavailable embedding model → `cosine_fn` returns `None` → semantic + fuzzy-verify no-op → escalate. **Never crash the hot path.**
-
-…
 
 ### Task 1: Pure string helpers — `_norm` + `_levenshtein_lt2`
 

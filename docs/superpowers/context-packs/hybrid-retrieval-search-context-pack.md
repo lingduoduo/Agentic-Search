@@ -39,27 +39,7 @@ docs (brute-force dot product is instant), `DenseRetriever` only exposes e5 *que
 macOS Apple Silicon setup. The hybrid *fusion* (`combine_retrieval_results`) and the sparse
 leg (`TfidfRetriever`) are still reused unchanged.
 
-### Testing
-
-- **Fusion:** a doc ranked high by *both* legs outranks a doc ranked high by only one
-  (through `combine_retrieval_results`).
-- **Contract parity:** hybrid `/retrieve` returns the same shape as `demo.py` (single-query
-  dict, batch list-of-lists, `return_scores` honored).
-- **Degradation:** dense forced to fail / `--no-dense` → server serves TF-IDF-only, 200.
-- **Dense contributes:** with a stub embedder (no e5 download in CI), a query returns a
-  dense-only hit the sparse leg misses.
-
-The real e5/MPS path is excluded from CI (stub the embedder); exercised via manual E2E.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Never commit to `main`; work on branch `feat/hybrid-retrieval-search`. Run `git branch --show-current` before every commit.
-- No Java/Pyserini and no FAISS dependency (faiss-cpu is unreliable on macOS Apple Silicon).
-- The `/retrieve` request/response contract MUST match `demo.py` exactly (so `SearchClient` is unchanged): request is `RetrieveRequest{queries?, query?, topk=5, return_scores=False}`; response is `{"results": <row>}` for a single `query`, `{"results": <list-of-rows>}` for batch `queries`; each row item is `{"document": {id,title,text,url}, "score": float}`, or just the `document` when `return_scores` is False.
-
-…
 
 ### Task 1: `DenseEmbeddingRetriever` (in-memory e5 dense leg)
 

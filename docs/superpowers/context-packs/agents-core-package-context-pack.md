@@ -9,16 +9,16 @@
 
 ## Specification Context
 
-### Key decisions
+### Problem
 
-- **`graph_base` stays a submodule, not re-exported by `core/__init__.py`.**
-  Its `AgentState` TypedDict collides with `state.AgentState`. Re-exporting both
-  would be ambiguous; `state.AgentState` is the one the facade already exposes.
-  `graph_base` symbols are reached via `src.agents.core.graph_base.X`.
-- **No shim modules at old paths.** All deep imports are rewritten to
-  `src.agents.core.*` (same approach #360 used for the loops).
-- **Zero behavior change.** `from src.agents import X` is unchanged; the facade
-  simply points at `.core.*` internally. Existing test suite is the gate.
+PR #360 grouped the 5 loop modules into `generation/`, `search/`, `tool/`
+sub-packages but left the 4 framework modules loose at the top of
+`src/agents/`. The result reads as lopsided: some children are packages, some
+are bare files, with no rule distinguishing them at a glance.
+
+#360 deferred moving `base.py` because of its ~18 importers ("triple the churn
+for no grouping benefit"). But the churn is only mechanical import-path
+rewrites, and the re-export facade neutralizes the public-API risk entirely.
 
 ## Implementation Plan Context
 

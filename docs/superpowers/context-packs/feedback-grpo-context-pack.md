@@ -24,9 +24,13 @@ Signal is query-level — all G rollouts for a rated prompt share the same `+1.0
 
 ---
 
-### 5. Testing
+### `test_feedback_examples.py`
 
-All unit tests — no GPU, no live server, no model downloads.
+- Returns `PromptTrainingExample` with `metadata["human_signal"] == +1.0` for thumbs-up session
+- Returns `metadata["human_signal"] == -1.0` for thumbs-down session
+- Sessions with no chat messages are skipped
+- Raises `ValueError` when rated count < `min_ratings`
+- Sessions without a feedback entry in `retrieval_feedback` are excluded
 
 ## Implementation Plan Context
 

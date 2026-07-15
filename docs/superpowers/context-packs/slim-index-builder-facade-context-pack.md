@@ -9,31 +9,16 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No signature/behavior changes to any chunking/embedding/faiss function.
-- No change to the enterprise vector-DB backends, `interfaces.py` ABCs, the
-  `factory`, or `servers/indexing/`.
-- The facade file stays (back-compat + CLI entrypoint) — only its surface slims.
-
-### Testing
-
-- **Primary gate (behavior-preserving proof):** the indexing unit suites pass
-  unchanged — `test_index_builder.py`, `test_indexing_pipeline.py`,
-  `test_rerank.py`, plus anything importing the facade's public API.
-- Grep proof: zero `_`-prefixed names remain in the facade's imports/`__all__`;
-  every private the tests use is imported from its home module.
-- `ruff check` clean (no unused imports left behind).
+**Date:** 2026-07-03
+**Status:** Approved (design).
+**Scope:** `src/internal/document_index/index_builder.py` (the #363 back-compat
+facade) + the two test files that import internals through it. Local
+FAISS/BM25 indexing path only — no change to the Weaviate/OpenSearch backends,
+the interface ABCs, or `servers/indexing/`.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving.** No public API removed; the documented `python -m …index_builder` entrypoint and every external public import keep working.
-- **Local FAISS/BM25 path only.** No touch to enterprise backends, `interfaces.py`, `factory`, or `servers/indexing/`.
-- **Green gate:** the indexing unit suites pass unchanged.
-
----
 
 ### Task 1: Repoint test imports to home modules
 

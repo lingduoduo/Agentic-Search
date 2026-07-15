@@ -9,25 +9,6 @@
 
 ## Specification Context
 
-### Testing Strategy
-
-Add unit tests in `tests/unit/test_agent_loop.py`:
-
-- normal answer sets `exit_answered`;
-- repeated no-action turns increment `format_error_turns` and eventually set
-  `exit_format_error_limit`;
-- max-turn exhaustion sets `exit_max_turns`;
-- search-limit exhaustion still sets the existing
-  `search_budget_exhausted_without_answer` and also sets `exit_search_limit`;
-- existing evidence and answer-gating tests continue to pass.
-
-Run:
-
-```bash
-pytest tests/unit/test_agent_loop.py -k "exit or format_error or search_limit" -v
-pytest tests/unit/test_agent_loop.py -v
-```
-
 ### Out of Scope
 
 - Importing or depending on `minisweagent`.
@@ -37,17 +18,6 @@ pytest tests/unit/test_agent_loop.py -v
 - Replacing `SearchAgentLoop` with a full state-machine architecture.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- The sample code is reference material and must not remain appended to `examples/run_agentic_search.py` as production CLI code.
-- Public agent APIs stay stable; `SearchAgentLoop.run(...)` still returns `AgentLoopOutput`.
-- The XML action tags stay unchanged.
-- Evidence sufficiency and answer rejection rules stay unchanged.
-- This pass optimizes control flow observability and maintainability, not model policy, reward weights, or retrieval quality.
-- Represent exit status with numeric metrics only, because training/reward code treats metrics as `dict[str, float]`.
-
----
 
 ### Task 1: Terminal Exit Metrics
 

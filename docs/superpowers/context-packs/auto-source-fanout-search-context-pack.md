@@ -24,32 +24,7 @@ failing providers degrade silently. The picker survives only as a `?dev=1` affor
 Out of scope: changing the `chat` / `tool` intents; browser in the default path;
 per-provider UI configuration; reranker wiring.
 
-### Testing
-
-**Backend**
-- Search intent fans out to internal + SerpAPI and returns a merged/deduped list (mock both
-  providers; assert documents from each appear).
-- SerpAPI unconfigured → internal-only, 200, no error.
-- Internal down → SerpAPI-only.
-- Both down → clear "no sources reachable" message, not a silent empty.
-- One provider raising/timing out does not fail the other.
-- `chat` intent still grounds internal-only (regression guard).
-
-**Frontend**
-- Source dropdown absent in normal mode; present under `?dev=1`.
-- Request omits `source_provider` in normal mode.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Never commit to `main`; this work is on branch `feat/auto-source-fanout-search`. Run `git branch --show-current` before every commit.
-- Browser provider (~5–10s/query) stays out of the default fan-out; only `retrieval` + `serpapi`.
-- `chat` and `tool` intents must remain unchanged (regression guard required).
-- Backend lint: `ruff check . --fix && ruff format .` must pass. Frontend: `npm run typecheck` clean.
-- Test commands: backend `PYTHONPATH=src:. python -m pytest <path> -q`; frontend `cd web && npx vitest run <path>`.
-
----
 
 ### Task 1: `auto` provider + default fan-out set
 

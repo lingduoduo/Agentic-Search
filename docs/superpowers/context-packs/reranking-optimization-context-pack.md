@@ -19,32 +19,7 @@ All wrappers share the same interface as `Reranker`:
 
 `AsyncReranker` additionally exposes an `async` variant used by `RetrievalService`.
 
-### Testing Strategy
-
-Each wrapper tested in isolation with mocked inner reranker:
-
-- `test_async_reranker.py` — timeout fires correctly, thread offload returns same results as sync
-- `test_cached_reranker.py` — cache hit skips scorer, key includes sorted doc IDs, TTL respected, stats tracking
-- `test_passage_truncator.py` — truncation at exact boundary, zero-length, env factory
-- `test_onnx_reranker.py` — skipped when `optimum` absent (`pytest.importorskip`), interface parity with `Reranker`
-- `test_two_stage_reranker.py` — fast scorer called with all N, heavy scorer called with top M only, over-fetch multiplier applied correctly
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- All new files: `from __future__ import annotations` first line, then stdlib, then third-party, then local imports (ruff-enforced)
-- All tests: `from src.internal.retrieval.backends.base import RetrievalResult` for the dataclass
-- Helper: `def _result(doc_id, score=1.0)` factory in every test file
-- `RetrievalResult(doc_id, title, text, url, score)` — all five fields required
-- No `import optimum` at module level — lazy inside methods, skip with `pytest.importorskip` in tests
-- Run `pytest tests/unit/retrieval/ -v` after each task; all must pass
-- Branch: `feat/reranking-optimization` (create before Task 1; never commit to main)
-- Commit after every task
-
----
 
 ### Task 1: PassageTruncator + Reranker integration
 

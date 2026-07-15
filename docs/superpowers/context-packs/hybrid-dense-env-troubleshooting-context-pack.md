@@ -25,11 +25,6 @@ changes (a clean install already works).
 Out of scope: changing `requirements.txt` versions; fixing the user's base env (a PR can't);
 any change to the fusion/contract behavior.
 
-### Testing
-
-- `_build_dense` with `build_e5_encoder` monkeypatched to raise returns `None` and logs a
-  warning that mentions the setup doc (via `caplog`).
-
 ## Implementation Plan Context
 
 ### Risk / rollback

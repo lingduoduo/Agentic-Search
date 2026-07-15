@@ -30,17 +30,6 @@ model refusal is never passed off as an answer; see
 
 …
 
-### Tests
-
-- `test_search_agent_loop_auto_searches_when_model_emits_no_action` — genuinely
-  tag-less model: asserts `search_rounds == 1` + an `auto_search` event +
-  `final_answer is None` (honest guarantee, no fabrication).
-- `test_search_agent_loop_auto_search_disabled_preserves_format_recovery` — flag
-  off ⇒ retrieval never runs.
-- Legacy `…stops_after_repeated_no_action_turns` and
-  `deadend_with_no_evidence_does_not_fabricate` pin the flag off to keep
-  validating the format-error-stop / no-fabricate machinery.
-
 ### Out of scope
 
 - Changing `_force_final_answer` / the no-fabricate invariant.
@@ -48,20 +37,14 @@ model refusal is never passed off as an answer; see
 
 ## Implementation Plan Context
 
-### Tasks
+### Overview
 
-1. **Config flag.** `SearchAgentLoopConfig.auto_search_on_deadend: bool = True`.
-2. **Trigger (in `SearchAgentLoop.run`, the `if not actions:` branch).** Before
-   the format-recovery path, when `auto_search_on_deadend and state.search_rounds
-   == 0 and question and consecutive_format_errors + 1 >=
-   max_consecutive_format_errors`: set `actions = [(cfg.search_tag, question)]`,
-   reset the format-error counter, and record an `auto_search` event. Otherwise
-   fall through to the existing `_handle_no_action` path.
-3. **Tests (honest).**
-   - `…auto_searches_when_model_emits_no_action`: genuinely tag-less model ⇒
-     `search_rounds == 1`, `auto_search` event, `final_answer is None`.
+Spec: 2026-06-28-search-agent-deterministic-auto-search-design.md
+Status: shipped (consolidated in PR #347).
 
-…
+**Goal:** guarantee retrieval fires at least once at the format-error dead-end,
+gated behind `auto_search_on_deadend` (default `True`). Honest scope — retrieval
+runs once; the answer still requires an `<answer>` tag (no-fabricate invariant).
 
 ## Context Boundary
 

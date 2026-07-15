@@ -47,14 +47,6 @@ Integration verification will run the preview command and write a temporary parq
 
 ## Implementation Plan Context
 
-### Global Constraints
-
-- The default workflow must run without network access.
-- Use the existing `data/corpus.jsonl`; do not modify or duplicate the corpus.
-- Do not download datasets, build a production retrieval index, or generate Natural Questions caches.
-- Keep `examples.prepare_search_rag_dataset` as the optional FlashRAG/NQ adapter.
-- Reuse existing retrieval and RAG record-formatting code instead of duplicating it.
-
 ### Task 1: Corpus-Backed Retrieval and RAG Record Construction
 
 **Files:**

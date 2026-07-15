@@ -35,21 +35,6 @@ service runs the single-query path unchanged.
 
 ---
 
-### Testing
-
-Unit tests per component with a stub LLM (no network):
-- **async**: parallelism (calls dispatched concurrently), per-transform timeout/degrade,
-  bundle assembled from survivors.
-- **cache**: hit/miss, key includes config signature, TTL/serialization round-trip.
-- **multi-query**: parse numbered/bulleted output, N respected, `[]` on LLM failure.
-- **fusion**: `weighted_rrf_fuse` ordering vs unweighted; `dedup_variants` drops
-  near-duplicates and keeps the original.
-- **router**: heuristic fallback path with no artifact; predicted config shape;
-  serialized-artifact load path with a tiny fixture model.
-- **benchmark**: runs on a tiny fixture corpus, produces ranked rows; `--qt-slo-ms`
-
-…
-
 ### Out of scope
 
 - Replacing the leaf `QueryTransformPipeline` or `QueryEnhancer` (they continue to work).
@@ -59,14 +44,6 @@ Unit tests per component with a stub LLM (no network):
 - New retrieval backends or reranker changes.
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Every new behaviour is gated by a `QT_*` env var that defaults to **off**. With all `QT_*` unset, `RetrievalService.from_env()` must produce `pipeline is None` and search behaviour must be byte-identical to today.
-- Wrappers share the leaf interface: `transform(query, filters=None, *, config_override=None) -> TransformedQueryBundle` and a `max_variants` property and a `base_config` property.
-- Every transformer is fallback-safe: an LLM failure or timeout in one transform degrades that field to its empty/None default; the bundle is still returned. Never raise out of `transform()`.
-
-…
 
 ### Task 1: Refactor leaf to job-based transform
 

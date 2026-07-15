@@ -9,42 +9,14 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No new failure-specific cap (`max_tool_failures`) — the loop is already bounded
-  by `max_user_turns`/`max_assistant_turns` (both 10), and the model can end early
-  by emitting a final answer. Deferred (YAGNI).
-- No change to the SKIPPED tool-response format (kept byte-identical).
-- No change to `action_trace` (it already records FAILED results).
-
-### Testing
-
-- `_tool_message_content` (pure/static): COMPLETED → `str(result)`; SKIPPED →
-  `{"status":"skipped","error_code":...}` (unchanged); FAILED →
-  `{"status":"failed","error_code":...,"error_message":...}`.
-- Loop-level (update `test_failed_tool_retains_stop_behavior` →
-  `test_failed_tool_feeds_error_back_and_continues`): a broken tool then a
-  recovery response — assert the trace records FAILED, the loop continued
-  (`len(manager.prompts) == 2`), and the recovery answer is the final answer.
-- Existing `test_tool_approval` / `test_on_turn_callback` stay green (SKIPPED path
-  unchanged).
-
-### Risks
-
-- A model that keeps calling a broken tool burns up to `max_user_turns` turns
-  before stopping — bounded, acceptable; a dedicated failure cap is the deferred
-  follow-up if it proves noisy.
+Date: 2026-07-09
+Status: Approved (brainstorming)
+Branch/PR: feat/tool-error-feedback
+Related: [[project_chat_orchestration]] (gap #4)
 
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Branch off `main` (never commit to `main`); branch `feat/tool-error-feedback`.
-- COMPLETED and SKIPPED tool-response outputs must be byte-identical to today.
-- No new config; the loop stays bounded by existing `max_user_turns`/`max_assistant_turns`.
-- Match repo ruff formatting.
-
----
 
 ### Task 1: `_tool_message_content` helper + remove abort + tests
 

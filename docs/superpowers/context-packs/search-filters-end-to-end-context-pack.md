@@ -9,11 +9,11 @@
 
 ## Specification Context
 
-### Non-goals
+### Overview
 
-- No change to `SearchClient` (already supports filters).
-- No new filtering in the demo server (single corpus; nothing to enforce).
-- No web-provider filtering (no ACL metadata exists there).
+Date: 2026-07-11
+Status: Approved
+Branch/PR: feat/search-filters-end-to-end
 
 ## Implementation Plan Context
 

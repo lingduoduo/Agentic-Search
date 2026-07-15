@@ -32,30 +32,7 @@ This changes **structure, not behavior**:
   matters. Any diff is a regression, not a refactor.
 - `AgentLoopOutput` fields unchanged.
 
-### Testing
-
-- **Primary gate (behavior-preserving proof):** the full unit suite passes
-  **unchanged**. No existing test is modified; if any assertion shifts, the
-  extraction changed behavior and must be fixed. Diff the `metrics` keys against the
-  `reward.py`/`action_eval.py` consumers to confirm none changed meaning.
-- **Added coverage:** one focused unit test feeding a synthetic `metrics` dict +
-  counters to `_finalize_run_metrics` and asserting the derived keys
-  (`repeated_query_ratio`, `subquestion_coverage_ratio`,
-  `answer_when_evidence_insufficient`, `search_budget_exhausted_without_answer`,
-  the `exit_*` fixups), so the largest extraction has direct unit coverage rather
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving.** No existing test may change. If an assertion shifts, the extraction changed behavior — fix the extraction, not the test.
-- **`metrics` dict byte-identical.** Keys, values, and computation stay the same; `reward.py` / `action_eval.py` consume these keys. The only change is *where* the code lives.
-- **`AgentLoopOutput` fields unchanged.**
-- **No control-flow change.** Only blocks with no `break`/`continue` are extracted. The `for turn` loop, answer-gate, observation assembly, dead-end handling, forced-answer hook, and `finally:` stay in `run()`.
-
-…
 
 ### Task 1: Extract `_generate_turn`
 

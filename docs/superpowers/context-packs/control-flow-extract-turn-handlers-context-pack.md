@@ -26,30 +26,7 @@ control-flow **directive** the caller applies.
 - No behavior change: the guard conditions (`if not actions:`, the answer-`if`),
   every branch's effects, and the order of operations are preserved exactly.
 
-### Testing
-
-- **Primary gate (behavior-preserving proof):** full unit suite passes
-  **unchanged**. No existing test modified. Metrics keys/values byte-identical.
-- **Added coverage:** focused unit tests for each helper driving the real method
-  with a stub server_manager:
-  - `_apply_answer_gate`: REJECT path (insufficient evidence, below cap) returns
-    `CONTINUE`, `final_answer=None`, `consecutive_rejections` incremented; ACCEPT
-    path (sufficient) returns `BREAK`, `exit_status="answered"`.
-  - `_handle_no_action`: format-error-limit path returns `BREAK`,
-    `exit_status="format_error_limit"`; below-limit re-prompt path returns
-    `CONTINUE` with `consecutive_format_errors` incremented.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- **Behavior-preserving.** No existing test may change. The logic moves verbatim; `break`→`return <directive BREAK>`, `continue`→`return <directive CONTINUE>`.
-- **`metrics` dict byte-identical.** All in-place `metrics[...]` bumps happen in the same cases as before; `reward.py`/`action_eval.py` consume these keys.
-- **`metrics` and `working_messages` are passed by reference** and mutated in place inside the helpers; the scalar counters travel back in the directive and `run()` reassigns them.
-- **Guard conditions stay in `run()`** (`if not actions:` and the answer-`if`); only the bodies move.
-- **`cfg` inside helpers is `self.search_config`.**
-
----
 
 ### Task 1: `TurnControl` + `_apply_answer_gate`
 

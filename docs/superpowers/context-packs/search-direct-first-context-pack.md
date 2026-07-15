@@ -34,32 +34,7 @@ All in `src/internal/servers/web/app.py` except the score fix:
 
 …
 
-### Testing
-
-- **Unit — `_run_search_direct_or_escalate`** with a stubbed `_run_direct_search`
-  and a spy/monkeypatch on `_run_search_agent`:
-  - top_score ≥ T → returns the docs, `_run_search_agent` **not** called.
-  - top_score < T → escalates, `_run_search_agent` **is** called.
-  - empty docs → escalates.
-  - no local model + weak → `_auto_search_pipeline` path.
-- **Unit — score preservation**: `search_tool(provider="retrieval")` (or its
-  client) returns documents with non-None `score` when the retriever provides one
-  (stub the retrieval HTTP response with a `score` field).
-- **Integration**: a strong-retrieval SEARCH request through `/api/agent`
-
-…
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- Strong retrieval (docs non-empty AND `top_score >= T`) returns docs + a non-LLM `_search_only_answer` summary — NO LLM, no agent loop.
-- Weak retrieval escalates: `has_local_model` → `_run_search_agent` (today's SearchAgentLoop); else → `_auto_search_pipeline` (today's degraded fallback). Escalation behavior is unchanged.
-- `T` = `float(os.environ.get("AGENTIC_SEARCH_SEARCH_DIRECT_MIN_SCORE", "0.2"))`.
-- Only SEARCH dispatch changes; intent routing, `classify_route`, the SearchAgentLoop, and the CHAT path are untouched.
-- `record_stage` is a no-op when no capture is active — never break the hot path.
-
-…
 
 ### Task 1: Preserve the retrieval score through the direct-search path
 

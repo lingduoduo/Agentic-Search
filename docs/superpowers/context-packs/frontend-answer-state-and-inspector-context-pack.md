@@ -9,18 +9,12 @@
 
 ## Specification Context
 
-### Testing
+### Overview
 
-- App F2: after a grounded turn then an errored follow-up, the answer column has no
-  citation links and no stale answer text.
-- App F1: after a streamed turn the session panel shows a user row (query) then an
-  assistant row (answer).
-- RequestInspector F3: with `selectedRequestId="req-A"`, a user click on `req-B`
-  makes the detail pane load `req-B`.
+Date: 2026-07-11
+Branch: `fix/frontend-answer-state-and-inspector`
 
-Existing App tests that asserted on the answer via `getByText` were scoped to the
-answer column, because the answer now legitimately renders in both the answer panel
-and the session timeline.
+Three verified frontend bugs in `web/src/`. All fixes are frontend-only and behavior-preserving apart from the specific broken paths.
 
 ## Implementation Plan Context
 

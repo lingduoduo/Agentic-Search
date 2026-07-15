@@ -9,53 +9,13 @@
 
 ## Specification Context
 
-### Goals
-
-- Make user memories real local data instead of no-op stubs.
-- Sanitize and bound persisted feedback and memory text before storage.
-- Keep existing feedback APIs and GRPO training compatibility intact.
-- Remove the sampled demo code from the web app module.
-
 ### Architecture
 
 Add a small runtime-feedback utility module for redaction and deterministic text capture. The SQLite store owns durable tables for user memories and enhanced retrieval feedback metadata. `src/internal/db/memory.py` becomes a compatibility layer backed by a default local `AgenticSearchStore`, while exposing a store injection hook for tests and callers that already manage a store.
 
 Retrieval feedback remains append-only and summary-compatible. Optional metadata captures a redacted note, source, parent feedback id, and correlation id, so future feedback loops can reconstruct provenance without exposing secrets.
 
-### Components
-
-- `src/internal/feedback/runtime.py`
-  - `redact_text(text) -> tuple[str, int]`
-  - `deterministic_capture(text, head_lines=5, tail_lines=30, max_chars=4000) -> tuple[str, dict[str, int]]`
-  - Redacts bearer tokens, password/API-key style assignments, AWS keys, Slack tokens, and private key blocks.
-- `src/internal/db/models.py`
-  - Adds `UserMemoryRecord` for store return values.
-- `src/internal/db/store.py`
-  - Adds `user_memories` table and migrations.
-  - Adds `add_user_memory`, `update_user_memory_at_index`, and `get_user_memories`.
-  - Extends `retrieval_feedback` with `metadata_json`, `parent_feedback_id`, and `correlation_id`.
-
-…
-
-### Testing
-
-- Unit-test redaction and deterministic capture.
-- Unit-test memory add/update/list behavior and sanitization.
-- Unit-test feedback metadata persistence, redaction, and existing summary compatibility.
-- Unit-test feedback router optional metadata acceptance.
-- Run targeted pytest suites plus a syntax/import check for `src.internal.servers.web.app`.
-
 ## Implementation Plan Context
-
-### Global Constraints
-
-- No new external dependencies.
-- Preserve existing `POST /api/feedback` request compatibility.
-- Preserve `load_feedback_examples` compatibility with `retrieval_feedback(session_id, signal)`.
-- Redact sensitive text before persistence, not only at read time.
-- Keep edits scoped to runtime feedback, memory, and sampled-code cleanup.
-
----
 
 ### Task 1: Runtime Feedback Sanitization Helpers
 
