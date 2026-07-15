@@ -322,7 +322,8 @@ def render_index(bundles: list[TopicBundle]) -> str:
     lines = [
         "# Context Pack Index",
         "",
-        "Focused context packs generated from `docs/superpowers/specs` and `docs/superpowers/plans`.",
+        "Focused context packs generated from active and archived specs and plans "
+        "under `docs/superpowers`.",
     ]
     by_date: dict[str, list[TopicBundle]] = {}
     for bundle in bundles:

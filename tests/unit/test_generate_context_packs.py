@@ -24,6 +24,10 @@ def test_discover_sources_combines_active_and_archive(tmp_path: Path) -> None:
     generate(root, root / "context-packs")
 
     index = (root / "context-packs/INDEX.md").read_text(encoding="utf-8")
+    assert (
+        "Focused context packs generated from active and archived specs and plans "
+        "under `docs/superpowers`."
+    ) in index
     assert index.count("../specs/2026-07-01-active-design.md") == 1
     assert index.count("../archive/plans/2026-06-01-old.md") == 1
 
