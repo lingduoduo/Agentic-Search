@@ -18,16 +18,11 @@ from typing import Any
 from src.internal.llm.interfaces import LLMConfig
 from src.internal.llm.providers import OpenAICompatibleLLM
 from src.internal.servers.secondary_llm_flows.query_expansion import expand_keywords
-from src.context.pipeline import retrieve_context
-
 from ..api import mcp_server
+from ..retrieval_client import AuthenticatedRetrievalError
+from ..retrieval_client import authenticated_retrieve
 
 logger = logging.getLogger(__name__)
-
-
-def _retrieval_url() -> str:
-    port = os.getenv("AGENTIC_SEARCH_RETRIEVAL_PORT", "8001")
-    return f"http://localhost:{port}/retrieve"
 
 
 def _build_llm() -> OpenAICompatibleLLM | None:
@@ -81,24 +76,20 @@ async def retrieve_documents(
     logger.info("MCP Server: retrieve_documents: query=%r top_k=%d", query, top_k)
 
     try:
-        bundle = await retrieve_context(
-            query,
-            search_url=_retrieval_url(),
-            top_k=top_k,
-        )
-    except Exception as exc:
+        retrieved_documents = await authenticated_retrieve(query, top_k=top_k)
+    except AuthenticatedRetrievalError as exc:
         logger.error("MCP Server: retrieve_documents failed: %s", exc, exc_info=True)
         return {"error": str(exc), "documents": [], "query": query}
 
     documents = [
         {
-            "id": doc.id,
+            "id": f"D{index}",
             "title": doc.title,
             "url": doc.url,
             "content": doc.content,
             "score": doc.score,
         }
-        for doc in bundle.documents
+        for index, doc in enumerate(retrieved_documents, start=1)
     ]
     return {"documents": documents, "query": query}
 

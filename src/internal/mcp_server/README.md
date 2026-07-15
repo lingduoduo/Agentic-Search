@@ -12,7 +12,15 @@ All access controls are managed within the main application.
 ### Authentication
 
 Provide a Personal Access Token or API Key in the `Authorization` header as a Bearer token.
-The MCP server quickly validates and passes through the token on every request.
+FastMCP verifies the credential. Indexed-document tools then forward the request token only to the authenticated web search endpoint, where the backend derives user and group ACLs. Optional document-set filters can narrow those ACLs but cannot expand them.
+
+```text
+MCP bearer token → FastMCP verification → authenticated web search endpoint
+→ server-derived user/group ACL + optional document-set narrowing
+→ internal retrieval → MCP result or grounded synthesis
+```
+
+Authentication and backend failures fail closed: MCP tools return an error or empty result and never fall back to unfiltered raw retrieval.
 
 Depending on usage, the MCP Server may support OAuth and stdio in the future.
 
@@ -41,15 +49,15 @@ The MCP server is built on [FastMCP](https://github.com/jlowin/fastmcp) and runs
 │  ├─ Tools       │
 │  └─ Resources   │
 └────────┬────────┘
-         │ Internal HTTP
-         │ (authenticated)
+         │ Authenticated web search request
+         │ (caller's bearer token)
          ▼
 ┌─────────────────┐
 │  API Server     │
 │  Port 8080      │
-│  ├─ /me (auth)  │
-│  ├─ Search APIs │
-│  └─ ACL checks  │
+│  ├─ Auth checks │
+│  ├─ Derive ACLs │
+│  └─ Retrieval   │
 └─────────────────┘
 ```
 
@@ -81,7 +89,7 @@ Most MCP clients support HTTP transport with custom headers. Refer to your clien
 
 ### Tools
 
-The server provides three tools for searching and retrieving information:
+The server provides tools for searching, retrieving, and synthesizing information. Indexed-document tools all use the authenticated web search boundary described above.
 
 1. `search_indexed_documents`
 Search the user's private knowledge base. Returns ranked documents with content snippets, scores, and metadata.
@@ -91,6 +99,15 @@ Search the public internet for current events and general knowledge. Returns web
 
 3. `open_urls`
 Retrieve the complete text content from specific web URLs. Useful for fetching full page content after finding relevant URLs via `search_web`.
+
+4. `retrieve_documents`
+Return authenticated document content and relevance scores without answer synthesis.
+
+5. `ask_agentic_search`
+Synthesize an answer only from authenticated, non-blank retrieved evidence. Grounding verification validates citation labels and answer/evidence overlap; it reduces unsupported output but is not a hard no-hallucination guarantee.
+
+6. `expand_query`
+Generate keyword variants for improved search recall when an LLM is configured.
 
 ### Resources
 

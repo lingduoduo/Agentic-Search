@@ -60,7 +60,12 @@ def _verify_password(password: str, stored_hash: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _user_from_request(request: Request) -> AuthenticatedUser | None:
+def resolve_request_user(request: Request) -> AuthenticatedUser | None:
+    """Resolve a caller exactly as user-facing identity endpoints do.
+
+    Keep this as the shared authentication boundary for endpoints that must
+    accept every credential type supported by ``/me``.
+    """
     user = user_from_headers(request.headers)
     if user:
         return user
@@ -76,7 +81,7 @@ def _user_from_request(request: Request) -> AuthenticatedUser | None:
 
 
 def _require_auth(request: Request) -> AuthenticatedUser:
-    user = _user_from_request(request)
+    user = resolve_request_user(request)
     if user is None or user.is_anonymous:
         raise HTTPException(status_code=401, detail="Authentication required.")
     return user
