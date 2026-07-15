@@ -40,6 +40,11 @@ from .safety import evidence_from_context
 from .safety import parse_answer_draft
 from .safety import render_verified_answer
 from .safety import verify_answer_draft
+from .structured_output import SchemaUnsupportedError
+from .structured_output import StructuredCompletionMetadata
+from .structured_output import StructuredOutputCapability
+from .structured_output import StructuredOutputRequest
+from .structured_output import answer_draft_json_schema
 from .tool_evidence import ToolDescriptor
 from .tool_evidence import ToolRegistry
 from .tool_evidence import ToolRequest
@@ -74,6 +79,10 @@ __all__ = [
     "SearchFilters",
     "SearchRequest",
     "SearchType",
+    "SchemaUnsupportedError",
+    "StructuredCompletionMetadata",
+    "StructuredOutputCapability",
+    "StructuredOutputRequest",
     "ToolDescriptor",
     "ToolRegistry",
     "ToolRequest",
@@ -83,6 +92,7 @@ __all__ = [
     "VerificationStatus",
     "CANONICAL_ABSTENTION",
     "answer_with_retrieval",
+    "answer_draft_json_schema",
     "build_agent_behavior_prompt",
     "build_answer_prompt",
     "build_chat_prompt",

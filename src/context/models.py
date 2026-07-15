@@ -12,6 +12,7 @@ from src.context.search import SearchResult
 from .enums import AgentBehavior
 from .enums import AnswerStyle
 from .enums import SearchType
+from .structured_output import StructuredCompletionMetadata
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class ChatMessage:
 class LLMResponse:
     text: str
     raw: object | None = None
+    structured: StructuredCompletionMetadata = field(
+        default_factory=StructuredCompletionMetadata
+    )
 
 
 class LLMClient(Protocol):
