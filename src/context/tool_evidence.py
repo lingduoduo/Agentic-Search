@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Awaitable, Protocol
+from typing import Awaitable, Callable, Protocol
 
 from .models import EvidenceSource
 
@@ -61,6 +61,7 @@ async def collect_tool_evidence(
     *,
     max_calls: int = 2,
     timeout_seconds: float = 5.0,
+    status_callback: Callable[[str, str], None] | None = None,
 ) -> list[EvidenceSource]:
     """Collect normalized evidence from explicitly read-only tools.
 
@@ -73,6 +74,7 @@ async def collect_tool_evidence(
         raise ValueError("timeout_seconds must be positive")
 
     descriptors = registry.list_tools()
+    registered_names = {descriptor.name for descriptor in descriptors}
     name_counts = Counter(descriptor.name for descriptor in descriptors)
     eligible = [
         descriptor
@@ -89,6 +91,8 @@ async def collect_tool_evidence(
     attempted = 0
     for request in selected:
         if request.tool_name not in eligible_names:
+            if status_callback is not None and request.tool_name in registered_names:
+                status_callback(request.tool_name, "rejected")
             continue
         if attempted >= max_calls:
             break
@@ -101,7 +105,11 @@ async def collect_tool_evidence(
                 result, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             )
         except Exception:
+            if status_callback is not None:
+                status_callback(request.tool_name, "failed")
             continue
+        if status_callback is not None:
+            status_callback(request.tool_name, "succeeded")
         evidence.append(
             EvidenceSource(
                 id=f"T{len(evidence) + 1}",

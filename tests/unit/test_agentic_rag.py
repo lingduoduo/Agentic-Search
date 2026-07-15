@@ -24,6 +24,12 @@ def _llm_responses(*responses: str) -> MagicMock:
     return llm
 
 
+_GROUNDED_ANSWER = (
+    '{"claims":[{"text":"Content about d1","evidence_ids":["D1"]}],'
+    '"missing_information":[],"abstain":false}'
+)
+
+
 # ---------------------------------------------------------------------------
 # Happy path — sufficient on first round
 # ---------------------------------------------------------------------------
@@ -38,7 +44,7 @@ async def test_run_returns_result_on_single_round():
         "FAISS is a vector search library.",
         "broader query",
         "yes",
-        "Answer text [D1].",
+        _GROUNDED_ANSWER,
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
@@ -70,7 +76,7 @@ async def test_run_iterates_when_insufficient():
         "no",  # sufficiency round 1
         "follow-up query",  # follow-up generation
         "yes",  # sufficiency round 2
-        "Final answer [D1].",  # generate_answer (llm fallback path)
+        _GROUNDED_ANSWER,  # guarded generate_answer
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
@@ -99,7 +105,7 @@ async def test_run_caps_at_max_rounds():
         "no",  # sufficiency round 1
         "follow-up",  # follow-up
         "no",  # sufficiency round 2 (max_rounds=2 → no check, just synth)
-        "answer",  # generate_answer
+        _GROUNDED_ANSWER,  # generate_answer
     )
     config = AgenticRAGConfig(max_rounds=2, topk=5)
 
@@ -144,7 +150,9 @@ async def test_accumulates_unique_docs_across_rounds():
     bundle_r2 = _make_bundle(["d2"])
     bundles = [bundle_r1, bundle_r2]
 
-    llm = _llm_responses("sub", "hyde", "broader", "no", "follow-up", "yes", "answer")
+    llm = _llm_responses(
+        "sub", "hyde", "broader", "no", "follow-up", "yes", _GROUNDED_ANSWER
+    )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     call_count = 0
@@ -198,7 +206,7 @@ async def test_no_duplicate_retrieval_queries_across_rounds():
         "broader question",  # step_back
         "no",  # sufficiency round 1
         "unique sub-query",  # follow-up returns a duplicate → filtered → loop breaks
-        "answer",  # generate_answer
+        _GROUNDED_ANSWER,  # generate_answer
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
     retrieval_calls: list[str] = []
@@ -235,7 +243,7 @@ async def test_follow_up_queries_do_not_duplicate_seen_queries():
         "broader",  # step_back
         "no",  # sufficiency round 1
         f"GAPS:\nmissing info\nQUERIES:\n{original_question}",  # follow-up = already seen
-        "answer",  # generate_answer
+        _GROUNDED_ANSWER,  # generate_answer
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
@@ -263,7 +271,7 @@ async def test_run_emits_control_flow_events_to_recorder():
         "FAISS is a vector search library.",  # hyde
         "broader query",  # step_back
         "yes",  # sufficiency → stop
-        "Answer text [D1].",  # synthesis
+        _GROUNDED_ANSWER,  # synthesis
     )
     recorder = ControlFlowRecorder("req-1", session_id="sess-1")
 
@@ -308,7 +316,7 @@ async def test_case_and_whitespace_variants_retrieve_once():
         "gpt-4   cost ",  # hyde (normalizes to same as decompose)
         " GPT-4 Cost",  # step_back (same normalized form)
         "yes",  # sufficiency
-        "answer",  # generate_answer
+        _GROUNDED_ANSWER,  # generate_answer
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5)
     calls: list[str] = []
@@ -351,7 +359,7 @@ async def test_follow_ups_capped_per_round():
         "no",  # sufficiency round 1
         f"GAPS:\ng\nQUERIES:\n{eight}",  # 8 follow-ups
         "yes",  # sufficiency round 2
-        "answer",  # generate_answer
+        _GROUNDED_ANSWER,  # generate_answer
     )
     config = AgenticRAGConfig(max_rounds=3, topk=5, max_followups_per_round=5)
     calls: list[str] = []
@@ -418,7 +426,7 @@ async def test_generate_followup_parses_queries_on_success():
 @pytest.mark.asyncio
 async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
-    llm = _llm_responses("sub", "hyde", "broader", "yes", "Answer [D1].")
+    llm = _llm_responses("sub", "hyde", "broader", "yes", _GROUNDED_ANSWER)
     with patch(
         "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
     ):

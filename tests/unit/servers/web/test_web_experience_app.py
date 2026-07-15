@@ -1148,7 +1148,16 @@ async def test_run_agentic_rag_populates_control_flow_trace():
         ],
     )
     llm = MagicMock()
-    llm.complete.side_effect = ["sub-q", "hyde text", "broader", "yes", "Answer [D1]."]
+    llm.complete.side_effect = [
+        "sub-q",
+        "hyde text",
+        "broader",
+        "yes",
+        (
+            '{"claims":[{"text":"faiss","evidence_ids":["D1"]}],'
+            '"missing_information":[],"abstain":false}'
+        ),
+    ]
 
     with patch(
         "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)

@@ -303,6 +303,7 @@ class AnswerGenerationResult:
     verification_status: VerificationStatus | None = None
     abstained: bool = False
     tool_evidence: list[EvidenceSource] = field(default_factory=list)
+    retry_count: int = 0
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

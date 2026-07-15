@@ -17,10 +17,13 @@ from .models import SearchFilters
 from .models import SearchRequest
 from .models import VerificationStatus
 from .models import VerificationResult
+from .models import GroundedGenerationConfig
 from .prompts import build_corrective_answer_prompt
 from .prompts import build_chat_prompt
 from .prompts import build_structured_answer_prompt
 from .retrieval.search_runner import build_search_context
+from .tool_evidence import ToolRegistry
+from .tool_evidence import ToolSelector
 from .utils import extract_citations
 
 
@@ -58,6 +61,7 @@ def generate_answer(
     confidence: float | None = None
     verification_status: VerificationStatus | None = None
     abstained = False
+    retry_count = 0
 
     if llm is None:
         answer = synthesize_answer_from_context(request.question, request.context)
@@ -91,7 +95,7 @@ def generate_answer(
             history=request.chat_history,
             evidence=evidence,
         )
-        answer, confidence, verification_status = _generate_guarded_answer(
+        answer, confidence, verification_status, retry_count = _generate_guarded_answer(
             request, llm, prompt, evidence
         )
         abstained = verification_status is VerificationStatus.ABSTAINED
@@ -114,6 +118,7 @@ def generate_answer(
         verification_status=verification_status,
         abstained=abstained,
         tool_evidence=tool_evidence,
+        retry_count=retry_count,
     )
 
 
@@ -122,7 +127,7 @@ def _generate_guarded_answer(
     llm: LLMClient,
     prompt: PromptBundle,
     evidence: list[EvidenceSource],
-) -> tuple[str, float, VerificationStatus]:
+) -> tuple[str, float, VerificationStatus, int]:
     from .safety import parse_answer_draft, render_verified_answer, verify_answer_draft
 
     max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
@@ -160,8 +165,18 @@ def _generate_guarded_answer(
         feedback = _verifier_feedback(result)
 
     if result is None:
-        return _canonical_abstention(), 0.0, VerificationStatus.ABSTAINED
-    return render_verified_answer(result), result.confidence, result.status
+        return (
+            _canonical_abstention(),
+            0.0,
+            VerificationStatus.ABSTAINED,
+            max_attempts - 1,
+        )
+    return (
+        render_verified_answer(result),
+        result.confidence,
+        result.status,
+        int(result.retry_occurred),
+    )
 
 
 def _verifier_feedback(result: VerificationResult) -> str:
@@ -186,18 +201,40 @@ async def answer_with_retrieval(
     search_url: str = "http://localhost:8000/retrieve",
     top_k: int = 5,
     filters: SearchFilters | None = None,
+    tool_registry: ToolRegistry | None = None,
+    tool_selector: ToolSelector | None = None,
+    max_tool_calls: int = 2,
+    tool_timeout_seconds: float = 5.0,
+    grounded_generation: GroundedGenerationConfig | None = None,
+    evidence_sufficiency: float | None = None,
 ) -> AnswerGenerationResult:
+    from .safety import evidence_from_context
+    from .tool_evidence import collect_tool_evidence
     from src.internal.observability.tracer import get_tracer
 
     tracer = get_tracer()
-    with tracer.span("rag.query", query=question, top_k=top_k):
-        with tracer.span("rag.retrieve", search_url=search_url):
+    tool_statuses: list[tuple[str, str]] = []
+    with tracer.span("rag.query", top_k=top_k):
+        with tracer.span("rag.retrieve"):
             context = await retrieve_context(
                 question,
                 search_url=search_url,
                 top_k=top_k,
                 filters=filters,
             )
+        evidence = evidence_from_context(context)
+        if tool_registry is not None and tool_selector is not None:
+            tool_evidence = await collect_tool_evidence(
+                question,
+                tool_registry,
+                tool_selector,
+                max_calls=max_tool_calls,
+                timeout_seconds=tool_timeout_seconds,
+                status_callback=lambda name, status: tool_statuses.append(
+                    (name, status)
+                ),
+            )
+            evidence.extend(tool_evidence)
         with tracer.span(
             "rag.generate",
             num_docs=len(context.documents),
@@ -208,9 +245,31 @@ async def answer_with_retrieval(
                     question=question,
                     context=context,
                     chat_history=chat_history or [],
+                    evidence=evidence,
+                    grounded_generation=grounded_generation
+                    or GroundedGenerationConfig(),
+                    evidence_sufficiency=evidence_sufficiency,
                 ),
                 llm=llm,
             )
+        evidence_types = sorted({item.provenance for item in evidence})
+        verification_status = (
+            result.verification_status.value
+            if result.verification_status
+            else "unverified"
+        )
+        with tracer.span(
+            "rag.summary",
+            evidence_count=len(evidence),
+            evidence_types=",".join(evidence_types),
+            tool_names=",".join(name for name, _ in tool_statuses),
+            tool_statuses=",".join(status for _, status in tool_statuses),
+            retry_count=result.retry_count,
+            verification_status=verification_status,
+            confidence=result.confidence,
+            abstained=result.abstained,
+        ):
+            pass
     return result
 
 

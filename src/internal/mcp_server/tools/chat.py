@@ -24,6 +24,21 @@ from ..retrieval_client import authenticated_retrieve
 logger = logging.getLogger(__name__)
 
 
+def _result_metadata(result: Any | None = None) -> dict[str, Any]:
+    status = getattr(result, "verification_status", None)
+    tool_evidence = getattr(result, "tool_evidence", [])
+    if not isinstance(tool_evidence, list):
+        tool_evidence = []
+    return {
+        "confidence": getattr(result, "confidence", None),
+        "verification_status": getattr(status, "value", status),
+        "abstained": getattr(result, "abstained", False),
+        "tool_sources": [
+            {"name": item.tool_name} for item in tool_evidence if item.tool_name
+        ],
+    }
+
+
 def _build_llm() -> OpenAICompatibleLLM | None:
     """Return an LLM client from env vars, or None to use extractive fallback."""
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AGENTIC_SEARCH_LLM_API_KEY")
@@ -91,6 +106,7 @@ async def ask_agentic_search(
                 "answer": f"I could not find retrieved context to answer: {question}",
                 "citations": [],
                 "sources": [],
+                **_result_metadata(),
             }
 
         llm = _build_llm()
@@ -111,6 +127,7 @@ async def ask_agentic_search(
             "answer": "",
             "citations": [],
             "sources": [],
+            **_result_metadata(),
         }
 
     sources = [
@@ -126,4 +143,5 @@ async def ask_agentic_search(
         "answer": result.answer,
         "citations": result.citations,
         "sources": sources,
+        **_result_metadata(result),
     }
