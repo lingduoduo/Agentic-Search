@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import pytest
 
-from scripts.validate_task_report import parse_report, validate_report
+from scripts.validate_task_report import (
+    GitInspectionError,
+    main,
+    parse_report,
+    resolve_git_commit,
+    validate_report,
+)
 
 
 def canonical_report(*, status: str = "DONE", commit: str = "abc1234") -> str:
@@ -328,3 +337,131 @@ def test_independent_violations_are_aggregated() -> None:
     assert "invalid Status; expected exactly one workflow state" in errors
     assert "commit does not resolve: deadbee" in errors
     assert "section contains placeholder content" in errors
+
+
+def git(cwd: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    )
+    return completed.stdout.strip()
+
+
+def make_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.name", "Test User")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "config", "commit.gpgsign", "false")
+    (repo / "tracked.txt").write_text("content\n", encoding="utf-8")
+    git(repo, "add", "tracked.txt")
+    git(repo, "commit", "-q", "-m", "test commit")
+    return repo, git(repo, "rev-parse", "HEAD")
+
+
+def test_resolve_git_commit_accepts_full_and_unique_abbreviated_sha(
+    tmp_path: Path,
+) -> None:
+    repo, sha = make_repo(tmp_path)
+
+    assert resolve_git_commit(sha, cwd=repo) is True
+    assert resolve_git_commit(sha[:7], cwd=repo) is True
+    assert resolve_git_commit("deadbee", cwd=repo) is False
+
+
+def test_resolve_git_commit_rejects_execution_outside_repository(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        GitInspectionError, match="unable to inspect commits outside a Git worktree"
+    ):
+        resolve_git_commit("deadbee", cwd=tmp_path)
+
+
+def write_repo_report(repo: Path, sha: str, *, tdd: bool = False) -> Path:
+    path = repo / "report.md"
+    text = tdd_report() if tdd else canonical_report()
+    path.write_text(text.replace("abc1234", sha[:7]), encoding="utf-8")
+    return path
+
+
+def test_cli_valid_report_prints_success_and_returns_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, sha = make_repo(tmp_path)
+    report = write_repo_report(repo, sha)
+
+    assert main([str(report)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == f"Validated self-review report: {report}\n"
+    assert captured.err == ""
+
+
+def test_cli_aggregates_contract_diagnostics_and_returns_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, sha = make_repo(tmp_path)
+    report = write_repo_report(repo, sha)
+    report.write_text(
+        report.read_text(encoding="utf-8")
+        .replace("DONE", "COMPLETE", 1)
+        .replace("Implemented the requested validator behavior.", "TODO", 1),
+        encoding="utf-8",
+    )
+
+    assert main([str(report)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == (
+        f"{report}:3: [Status] invalid Status; expected exactly one workflow state\n"
+        f"{report}:11: [Implementation] section contains placeholder content\n"
+    )
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("kind", ["missing", "invalid_utf8"])
+def test_cli_input_errors_go_to_stderr_and_return_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    report = tmp_path / "report.md"
+    if kind == "invalid_utf8":
+        report.write_bytes(b"\xff")
+
+    assert main([str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith(f"{report}: ERROR: ")
+
+
+def test_cli_require_tdd_is_enforced(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, sha = make_repo(tmp_path)
+    report = write_repo_report(repo, sha)
+
+    assert main(["--require-tdd", str(report)]) == 1
+    captured = capsys.readouterr()
+    assert "[Test evidence] missing TDD evidence block: RED" in captured.out
+    assert "[Test evidence] missing TDD evidence block: GREEN" in captured.out
+
+    write_repo_report(repo, sha, tdd=True)
+    assert main(["--require-tdd", str(report)]) == 0
+
+
+def test_cli_git_inspection_error_has_no_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = tmp_path / "report.md"
+    report.write_text(canonical_report(), encoding="utf-8")
+
+    assert main([str(report)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        f"{report}: ERROR: unable to inspect commits outside a Git worktree\n"
+    )
+
+
+def test_cli_invalid_invocation_uses_argparse_exit_two() -> None:
+    with pytest.raises(SystemExit) as caught:
+        main([])
+    assert caught.value.code == 2

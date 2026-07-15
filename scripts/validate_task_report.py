@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import re
+import subprocess
+import sys
 from collections.abc import Callable
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
 FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
@@ -31,6 +36,38 @@ EXPECTED_FAILURE_RE = re.compile(r"(?m)^Expected failure:[ \t]*(?:\n+)?(.+)$")
 PASSING_RESULT_RE = re.compile(
     r"\b(?:pass|passed|passing|exit(?: code)?[ :=]+0)\b", re.IGNORECASE
 )
+
+
+class GitInspectionError(RuntimeError):
+    """Raised when commit resolution cannot inspect the local Git worktree."""
+
+
+def resolve_git_commit(sha: str, *, cwd: Path) -> bool:
+    """Return whether *sha* resolves unambiguously to a commit in *cwd*."""
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            raise GitInspectionError("unable to inspect commits outside a Git worktree")
+        resolved = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise GitInspectionError(str(exc)) from exc
+    if resolved.returncode == 0:
+        return True
+    if resolved.returncode == 1:
+        return False
+    raise GitInspectionError(resolved.stderr.strip() or "Git commit inspection failed")
 
 
 @dataclass(frozen=True, order=True)
@@ -414,3 +451,33 @@ def _prose_text(text: str) -> str:
         if fence is None and line.strip():
             prose.append(line.strip())
     return "\n".join(prose)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Validate a report file and return its operational exit code."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--require-tdd", action="store_true")
+    parser.add_argument("report_file")
+    args = parser.parse_args(argv)
+    report_path = Path(args.report_file)
+    try:
+        text = report_path.read_text(encoding="utf-8")
+        diagnostics = validate_report(
+            parse_report(text),
+            resolve_commit=lambda sha: resolve_git_commit(sha, cwd=report_path.parent),
+            require_tdd=args.require_tdd,
+        )
+    except (OSError, UnicodeError, GitInspectionError) as exc:
+        print(f"{report_path}: ERROR: {exc}", file=sys.stderr)
+        return 2
+    if diagnostics:
+        for diagnostic in diagnostics:
+            section = diagnostic.section or "report"
+            print(f"{report_path}:{diagnostic.line}: [{section}] {diagnostic.message}")
+        return 1
+    print(f"Validated self-review report: {report_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
