@@ -30,6 +30,9 @@ PLACEHOLDER_LINE_RE = re.compile(
 )
 TEMPLATE_TOKEN_RE = re.compile(r"<([A-Z][A-Z0-9_ -]*)>|\[([A-Z][A-Z0-9_ -]*)\]")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]\n]+\]\([^\)\n]*\)")
+REFERENCE_DEFINITION_RE = re.compile(r"(?m)^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]+\S[^\n]*$")
+REFERENCE_LINK_RE = re.compile(r"\[([^\]\n]+)\]\[([^\]\n]*)\]")
+SHORTCUT_REFERENCE_RE = re.compile(r"\[([^\]\n]+)\]")
 COMMAND_LABEL_RE = re.compile(r"(?m)^Command:[ \t]*$")
 RESULT_LABEL_RE = re.compile(r"(?m)^Result:[ \t]*$")
 EXPECTED_FAILURE_RE = re.compile(r"(?m)^Expected failure:[ \t]*(?:\n+)?(.+)$")
@@ -229,7 +232,7 @@ def _placeholder_diagnostics(section: Section) -> list[Diagnostic]:
                 section.line, section.title, "section contains placeholder content"
             )
         )
-    without_links = MARKDOWN_LINK_RE.sub("", section.body)
+    without_links = _strip_markdown_links(section.body)
     if TEMPLATE_TOKEN_RE.search(without_links):
         diagnostics.append(
             Diagnostic(
@@ -399,7 +402,7 @@ def _validate_evidence_blocks(
             result = (
                 _result_text(green.body, matches[0].end()) if len(matches) == 1 else ""
             )
-            if not PASSING_RESULT_RE.search(result):
+            if not _is_passing_result(result):
                 diagnostics.append(
                     Diagnostic(
                         green.line,
@@ -434,6 +437,51 @@ def _has_nonempty_command_fence(body: str, label_end: int) -> bool:
 
 def _result_text(body: str, label_end: int) -> str:
     return _prose_text(body[label_end:])
+
+
+def _strip_markdown_links(text: str) -> str:
+    definitions = {
+        _normalize_reference_label(match.group(1))
+        for match in REFERENCE_DEFINITION_RE.finditer(text)
+    }
+    without_links = MARKDOWN_LINK_RE.sub("", text)
+    without_links = REFERENCE_DEFINITION_RE.sub("", without_links)
+
+    def strip_full_reference(match: re.Match[str]) -> str:
+        target = match.group(2) or match.group(1)
+        return (
+            "" if _normalize_reference_label(target) in definitions else match.group(0)
+        )
+
+    without_links = REFERENCE_LINK_RE.sub(strip_full_reference, without_links)
+    return SHORTCUT_REFERENCE_RE.sub(
+        lambda match: ""
+        if _normalize_reference_label(match.group(1)) in definitions
+        else match.group(0),
+        without_links,
+    )
+
+
+def _normalize_reference_label(label: str) -> str:
+    return " ".join(label.split()).casefold()
+
+
+def _is_passing_result(result: str) -> bool:
+    if re.search(
+        r"\b(?:did|does|do|is|are|was|were|has|have|had)?\s*not\s+pass\w*\b",
+        result,
+        re.IGNORECASE,
+    ):
+        return False
+    if re.search(r"\b0\s+(?:tests?\s+)?passed\b", result, re.IGNORECASE):
+        return False
+    if re.search(
+        r"\b(?:[1-9]\d*\s+(?:tests?\s+)?failed|(?:suite|tests?|checks?)\s+failed)\b",
+        result,
+        re.IGNORECASE,
+    ):
+        return False
+    return PASSING_RESULT_RE.search(result) is not None
 
 
 def _prose_text(text: str) -> str:

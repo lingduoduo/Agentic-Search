@@ -301,7 +301,8 @@ class OpenAICompatibleLLM(LLM):
                     r"(?:(?:parameter|field)\s*)?[:=]?\s*[\"'`]?"
                     r"(?:response_format|json_schema)\b"
                     r"|\b(?:response_format|json_schema)\b"
-                    r"(?:\s+\w+){0,3}\s+(?:unknown|unsupported)\b",
+                    r"(?:\s+\w+){0,3}\s+"
+                    r"(?:unknown|unsupported|not\s+supported)\b",
                     provider_error,
                 )
             )

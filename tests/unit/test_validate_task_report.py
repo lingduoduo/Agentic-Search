@@ -218,6 +218,28 @@ def test_ordinary_markdown_links_are_not_template_tokens() -> None:
 
 
 @pytest.mark.parametrize(
+    "reference",
+    [
+        "See [API][api] for details.\n\n[api]: docs/api.md",
+        "See [API][] for details.\n\n[API]: docs/api.md",
+        "See [API] for details.\n\n[API]: docs/api.md",
+    ],
+)
+def test_reference_style_markdown_links_are_not_template_tokens(reference: str) -> None:
+    text = canonical_report().replace(
+        "Implemented the requested validator behavior.", reference
+    )
+    assert messages(text) == []
+
+
+def test_uppercase_template_token_without_reference_definition_is_rejected() -> None:
+    text = canonical_report().replace(
+        "Implemented the requested validator behavior.", "Implemented [FIELD]."
+    )
+    assert "section contains unexpanded template token" in messages(text)
+
+
+@pytest.mark.parametrize(
     "line",
     ["- `HEAD` symbolic", "abc1234", "- abc1234 unquoted", "- `abc123` short"],
 )
@@ -311,6 +333,22 @@ def test_tdd_green_requires_passing_result() -> None:
     assert "GREEN Result: must state a passing outcome" in messages(
         text, require_tdd=True
     )
+
+
+@pytest.mark.parametrize("result", ["The suite did not pass.", "0 passed, 1 failed."])
+def test_tdd_green_rejects_negated_or_contradictory_passing_result(result: str) -> None:
+    text = tdd_report().replace("The focused suite passed with 20 tests.", result)
+    assert "GREEN Result: must state a passing outcome" in messages(
+        text, require_tdd=True
+    )
+
+
+@pytest.mark.parametrize(
+    "result", ["20 passed.", "All checks are passing.", "Exited with exit code 0."]
+)
+def test_tdd_green_accepts_unambiguous_passing_result(result: str) -> None:
+    text = tdd_report().replace("The focused suite passed with 20 tests.", result)
+    assert messages(text, require_tdd=True) == []
 
 
 def test_result_requires_prose_not_only_a_fence() -> None:

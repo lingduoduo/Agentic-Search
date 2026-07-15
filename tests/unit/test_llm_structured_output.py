@@ -172,6 +172,19 @@ def test_explicit_unsupported_schema_400_is_classified_without_raw_body(schema_r
 
 
 @pytest.mark.parametrize(
+    "body", ["response_format is not supported", "json_schema not supported"]
+)
+def test_explicit_not_supported_schema_400_is_classified(schema_request, body):
+    llm = configured_llm()
+    error = http_error(400, body)
+    response = MagicMock()
+    response.raise_for_status.side_effect = error
+    with patch.object(llm._session, "post", return_value=response):
+        with pytest.raises(SchemaUnsupportedError):
+            llm.complete(MESSAGES, structured_output=schema_request)
+
+
+@pytest.mark.parametrize(
     ("status", "body"),
     [
         (400, "invalid API key"),
