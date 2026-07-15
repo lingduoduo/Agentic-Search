@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Mapping
 
 import pytest
 
@@ -59,7 +60,7 @@ async def test_read_only_tools_supply_stable_normalized_evidence():
         sort_keys=True,
         separators=(",", ":"),
     )
-    assert evidence[0].metadata == {"arguments": {"city": "Boston"}}
+    assert evidence[0].metadata == {}
 
 
 @pytest.mark.asyncio
@@ -78,6 +79,38 @@ async def test_unsafe_and_unknown_tools_are_not_visible_or_invoked():
 
     assert await collect_tool_evidence("query", registry, selector) == []
     assert [tool.name for tool in selector.visible_tools] == ["read"]
+    assert registry.calls == []
+
+
+@pytest.mark.asyncio
+async def test_conflicting_duplicate_registration_is_rejected():
+    registry = Registry(
+        [
+            ToolDescriptor("shared", safety=ToolSafety.READ_ONLY),
+            ToolDescriptor("shared", safety=ToolSafety.SIDE_EFFECTING),
+        ],
+        {"shared": "must not run"},
+    )
+    selector = Selector([ToolRequest("shared")])
+
+    assert await collect_tool_evidence("query", registry, selector) == []
+    assert selector.visible_tools == []
+    assert registry.calls == []
+
+
+@pytest.mark.asyncio
+async def test_same_safety_duplicate_registration_is_rejected():
+    registry = Registry(
+        [
+            ToolDescriptor("duplicate", safety=ToolSafety.READ_ONLY),
+            ToolDescriptor("duplicate", safety=ToolSafety.READ_ONLY),
+        ],
+        {"duplicate": "must not run"},
+    )
+    selector = Selector([ToolRequest("duplicate")])
+
+    assert await collect_tool_evidence("query", registry, selector) == []
+    assert selector.visible_tools == []
     assert registry.calls == []
 
 
@@ -115,6 +148,35 @@ async def test_errors_and_timeouts_degrade_to_available_evidence():
     )
 
     assert [(item.id, item.text) for item in evidence] == [("T1", '"usable"')]
+
+
+@pytest.mark.asyncio
+async def test_tool_arguments_are_not_copied_into_evidence_metadata():
+    registry = Registry(
+        [ToolDescriptor("lookup", safety=ToolSafety.READ_ONLY)], {"lookup": "safe"}
+    )
+    selector = Selector([ToolRequest("lookup", {"api_key": "secret-value"})])
+
+    evidence = await collect_tool_evidence("query", registry, selector)
+
+    assert evidence[0].metadata == {}
+    assert "secret-value" not in repr(evidence[0])
+    assert isinstance(registry.calls[0].arguments, Mapping)
+    assert registry.calls[0].arguments == {"api_key": "secret-value"}
+
+
+def test_tool_request_deeply_copies_arguments_into_immutable_mappings():
+    original = {"filters": {"tenant": "first"}, "items": [1, {"key": "value"}]}
+
+    request = ToolRequest("lookup", original)
+    original["filters"]["tenant"] = "changed"
+    original["items"][1]["key"] = "changed"
+
+    assert isinstance(request.arguments, Mapping)
+    assert request.arguments["filters"]["tenant"] == "first"
+    assert request.arguments["items"][1]["key"] == "value"
+    with pytest.raises(TypeError):
+        request.arguments["new"] = "value"
 
 
 @pytest.mark.asyncio

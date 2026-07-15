@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from types import MappingProxyType
 from typing import Awaitable, Protocol
 
 from .models import EvidenceSource
@@ -30,7 +33,10 @@ class ToolDescriptor:
 @dataclass(frozen=True)
 class ToolRequest:
     tool_name: str
-    arguments: dict[str, object] = field(default_factory=dict)
+    arguments: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "arguments", _freeze_mapping(self.arguments))
 
 
 class ToolRegistry(Protocol):
@@ -66,10 +72,13 @@ async def collect_tool_evidence(
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
 
+    descriptors = registry.list_tools()
+    name_counts = Counter(descriptor.name for descriptor in descriptors)
     eligible = [
         descriptor
-        for descriptor in registry.list_tools()
+        for descriptor in descriptors
         if descriptor.safety is ToolSafety.READ_ONLY
+        and name_counts[descriptor.name] == 1
     ]
     eligible_names = {descriptor.name for descriptor in eligible}
     selected = selector.select(query, eligible)
@@ -100,7 +109,20 @@ async def collect_tool_evidence(
                 title=f"Tool: {request.tool_name}",
                 provenance="tool",
                 tool_name=request.tool_name,
-                metadata={"arguments": request.arguments},
             )
         )
     return evidence
+
+
+def _freeze_mapping(value: Mapping[str, object]) -> Mapping[str, object]:
+    return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+
+
+def _freeze(value: object) -> object:
+    if isinstance(value, Mapping):
+        return _freeze_mapping(value)
+    if isinstance(value, list | tuple):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set | frozenset):
+        return frozenset(_freeze(item) for item in value)
+    return value
