@@ -76,7 +76,9 @@ focused and full-suite verification.
 ## Commit, push, and PR
 
 - Commit `cacb26b` (`docs: document grounded RAG safety`) created after the final
-  verification gate.
+  verification gate. This is the primary Task 5 documentation/archive commit.
+- The final pushed branch head, and `origin/context-packing-artifacts`, is
+  `41b71f1` (`docs: record Task 5 delivery status`).
 - `git push -u origin context-packing-artifacts` succeeded (`63edef9..cacb26b`).
   GitHub reported that the configured repository moved to
   `lingduoduo/Agentic-Search-GRPO`, but accepted and redirected the push.
