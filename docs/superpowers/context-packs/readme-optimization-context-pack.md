@@ -42,23 +42,13 @@ This change reorganizes and edits documentation only. It does not alter applicat
 
 Run:
 
-```bash
-rg -n '^## (Repository Structure|Frontend|Intent Routing|Agent Framework & Control Flow|Agentic RAG|Examples|Retrieval Setup)$|^### ' README.md
-```
-
 Expected: every named source section has one identifiable start line; subordinate headings show the material that belongs with it.
 
 - [ ] **Step 2: Create the architecture guide**
 
 Create `docs/architecture.md` with this order:
 
-```markdown
-
-### Architecture
-
-← Back to README
-
-This guide explains the repository layout, agent families, request routing, and retrieval-grounded agent flow.
+…
 
 ### Task 2: Migrate retrieval and API reference material
 
@@ -74,7 +64,7 @@ This guide explains the repository layout, agent families, request routing, and 
 
 Create `docs/retrieval.md` with this structure:
 
-```markdown
+…
 
 ### Task 3: Migrate training, MCP, configuration, and testing guidance
 
@@ -92,7 +82,9 @@ Create `docs/retrieval.md` with this structure:
 
 Create `docs/training-and-evaluation.md` with:
 
-```markdown
+Move advanced example, dataset, SFT, GRPO, PPO, reward, local-device, and Bamboogle content. Preserve safety flags, hardware notes, prerequisites, and exact commands.
+
+…
 
 ### Task 4: Rewrite the top-level README for local onboarding
 
@@ -107,61 +99,9 @@ Create `docs/training-and-evaluation.md` with:
 
 Rewrite `README.md` in this order:
 
-```markdown
+Keep the architecture image/link under `Architecture`. Limit `What it provides` to a compact list covering agentic RAG, conversation/tool agents, hybrid retrieval and reranking, connectors/indexing, web search, chat UI/observability, training/evaluation, and MCP.
 
-### Task 5: Verify the complete documentation reorganization
-
-**Files:**
-- Verify: `README.md`
-- Verify: `docs/architecture.md`
-- Verify: `docs/retrieval.md`
-- Verify: `docs/api-reference.md`
-- Verify: `docs/training-and-evaluation.md`
-- Verify: `docs/frontend.md`
-- Verify: `docs/mcp.md`
-- Verify: `docs/configuration.md`
-- Verify: `docs/testing.md`
-
-**Interfaces:**
-- Consumes: the complete documentation set produced by Tasks 1–4.
-- Produces: evidence that links resolve, key guidance remains documented, Markdown is structurally sound, and no application files changed.
-
-- [ ] **Step 1: Verify all expected files exist**
-
-Run:
-
-```bash
-for file in README.md docs/architecture.md docs/retrieval.md docs/api-reference.md docs/training-and-evaluation.md docs/frontend.md docs/mcp.md docs/configuration.md docs/testing.md; do test -f "$file" || exit 1; done
-```
-
-Expected: exit status 0 with no output.
-
-- [ ] **Step 2: Verify local Markdown links and heading fragments resolve**
-
-Run this read-only Python check. It validates both relative paths and GitHub-style
-heading fragments, including the `-1`, `-2`, ... suffixes assigned to duplicate
-headings:
-
-```bash
-python3 - <<'PY'
-import collections
-import pathlib
-import re
-import sys
-from urllib.parse import unquote
-
-files = [pathlib.Path("README.md"), *pathlib.Path("docs").glob("*.md")]
-link_re = re.compile(r"\[[^]]+\]\(([^)]+)\)")
-heading_re = re.compile(r"^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$")
-
-def anchors(path):
-    counts = collections.Counter()
-    result = set()
-    fenced = False
-    for line in path.read_text().splitlines():
-        if re.match(r"^ {0,3}(```|~~~)", line):
-
-_[Section compacted.]_
+…
 
 ## Context Boundary
 

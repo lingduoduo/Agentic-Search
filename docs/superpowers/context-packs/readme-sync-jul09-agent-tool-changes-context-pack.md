@@ -21,9 +21,8 @@ Document only what changes observable behavior or capability:
 | #397 | `ToolAgentLoop` validates tool arguments before executing | Yes — safety behavior |
 | #392 | `max_full_page_chars` caps `<fetch>` full-page observations | Brief — new config knob |
 | #399 | `Tool.citeable` / `Tool.stopping` category flags | Brief — new metadata |
-| #393 | centralize citation-label helpers (byte-identical refactor) | No — internal only |
-| #396 | delete dead `AgentState` fields | No — internal only |
-| #398 | route `ToolAgentLoop` execution through a per-loop `ToolRegistry` | No — internal refactor |
+
+…
 
 ### Non-goals
 

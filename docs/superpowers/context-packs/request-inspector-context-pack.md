@@ -17,15 +17,6 @@ inspectable via a **rolling in-memory history**. The capture path is entirely
 gated behind the existing debug flag and is a **separate channel** from the
 sanitized control-flow trace — the sanitized trace is untouched.
 
-### Non-goals
-
-- No change to the user-facing sanitized `ControlFlowRecorder` or its streaming.
-- No durable persistence (snapshots live in memory, cleared on restart).
-- No bespoke views per explicit `mode=`; the first cut targets the default
-  auto-routed path (intent → RAG/search → final). Tool capture lands via the
-  shared base dispatch but gets no dedicated mode-specific UI.
-- No new determinism/routing behavior (covered separately by PR #374).
-
 ### Testing
 
 - **Unit:** `record_stage` no-ops when inactive; `start_capture` + emits produce
@@ -34,15 +25,6 @@ sanitized control-flow trace — the sanitized trace is untouched.
 - **Integration:** one auto-routed request with `debug_panels` on yields a
   snapshot with all reached stages populated (raw prompt + retrieved docs
   present); with the flag off, no capture and zero added work.
-
-### Verification / success criteria
-
-- With `AGENTIC_SEARCH_DEBUG_PANELS` on, running a query and opening the Dev
-  Console "Request Inspector" shows that run's intent, search, LLM, and final
-  stages with full raw payloads; recent runs are selectable.
-- With the flag off, `active()` is always `None`, no snapshot is stored, and no
-  new endpoints do work.
-- The sanitized `ControlFlowRecorder` output and existing tests are unchanged.
 
 ## Context Boundary
 

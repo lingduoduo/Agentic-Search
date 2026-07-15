@@ -21,13 +21,6 @@ Create focused, navigable context packs for every design specification and imple
 - Create a standalone pack when a specification or plan has no counterpart.
 - Preserve all source specifications and plans unchanged.
 
-### Non-Goals
-
-- Changing or correcting existing specifications and plans.
-- Determining whether planned work has been implemented.
-- Creating implementation plans for the context-packing machinery itself beyond what is needed to generate the requested artifacts.
-- Loading every pack simultaneously into an agent session.
-
 ## Implementation Plan Context
 
 ### Global Constraints
@@ -52,26 +45,7 @@ Create focused, navigable context packs for every design specification and imple
 
 - [ ] **Step 1: Write failing unit tests**
 
-Create fixtures in pytest's `tmp_path` covering a matched spec/plan pair, unmatched sources, different dates with the same topic, duplicate normalized slugs, heading-based summary extraction, relative links, deterministic ordering, and exact source coverage in the index.
-
-```python
-def test_generate_pairs_sources_and_indexes_each_once(tmp_path: Path) -> None:
-    root = tmp_path / "superpowers"
-    write(root / "specs/2026-07-01-search-design.md", "# Search\n\n## Goal\n\nFast search.\n")
-    write(root / "plans/2026-07-02-search.md", "# Search Plan\n\n## Tasks\n\n1. Build it.\n")
-
-    written = generate(root, root / "context-packs")
-
-    index = (root / "context-packs/INDEX.md").read_text()
-    pack = (root / "context-packs/search-context-pack.md").read_text()
-    assert index.count("2026-07-01-search-design.md") == 1
-    assert index.count("2026-07-02-search.md") == 1
-    assert "Fast search." in pack
-    assert "Build it." in pack
-    assert len(written) == 2
-```
-
-_[Section compacted.]_
+…
 
 ### Task 2: Generate and Validate Repository Context Packs
 
@@ -87,10 +61,6 @@ _[Section compacted.]_
 
 Run:
 
-```bash
-find docs/superpowers/specs docs/superpowers/plans -type f -name '*.md' -print0 | sort -z | xargs -0 shasum -a 256 > /tmp/context-pack-source-checksums.before
-```
-
 Expected: one checksum line per source document.
 
 - [ ] **Step 2: Generate all packs**
@@ -99,28 +69,7 @@ Run: `python scripts/generate_context_packs.py`
 
 Expected: output reports the generated pack count and `INDEX.md` exists.
 
-- [ ] **Step 3: Verify source files are unchanged**
-
-Run:
-
-```bash
-find docs/superpowers/specs docs/superpowers/plans -type f -name '*.md' -print0 | sort -z | xargs -0 shasum -a 256 > /tmp/context-pack-source-checksums.after
-diff -u /tmp/context-pack-source-checksums.before /tmp/context-pack-source-checksums.after
-```
-
-Expected: `diff` exits 0 with no output.
-
-- [ ] **Step 4: Validate generated coverage and links**
-
-Run: `pytest tests/unit/test_generate_context_packs.py -q`
-
-Then run the generator's repository validation mode:
-
-```bash
-python scripts/generate_context_packs.py --check
-```
-
-_[Section compacted.]_
+…
 
 ## Context Boundary
 

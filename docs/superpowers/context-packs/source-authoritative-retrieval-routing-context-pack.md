@@ -38,12 +38,6 @@ still go to chat — preserving the intent-routing feature for the common case.
 - Frontend: URL field hidden by default, shown with `showUrlField`; request omits
   `search_url` in non-dev mode.
 
-### Out of scope
-
-- Redesigning the Source dropdown options (Google PSE remains disabled).
-- Per-provider URL configuration UI.
-- Any change to explicit-`mode` request paths.
-
 ## Implementation Plan Context
 
 ### Risk / rollback

@@ -31,13 +31,6 @@ into `create_web_app`, alongside the existing `load_dotenv` stub and `OPENAI_API
 delenv. With `resolved.llm.api_key is None` and no `OPENAI_API_KEY` in the environment,
 `create_web_app` builds no LLM and the chat path returns 400 — regardless of `.env`.
 
-### Testing
-
-- No-LLM test passes with a real key present in `.env`.
-- New test: `auto` direct-search does not call `_run_browser_search`; `all` direct-search
-  does (when `browser_search_url` set).
-- Full `pytest` + frontend vitest + typecheck remain green.
-
 ## Implementation Plan Context
 
 ### Risk / rollback

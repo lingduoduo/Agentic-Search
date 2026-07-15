@@ -22,9 +22,8 @@ After the phase-2 extractions, `run()` still carried two large inline blocks:
    plateau check, and the observation/`on_turn` assembly. ~80 lines.
 
 Both entangle counter mutation with control flow, obscuring the loop's shape.
-Extracting them continues the directive pattern already used for
-`_handle_no_action` / `_apply_answer_gate` and leaves `run()` reading as a flat
-sequence of guarded stages.
+
+…
 
 ### Hard constraint: behavior-preserving
 
@@ -44,13 +43,6 @@ sequence of guarded stages.
 - The full `pytest tests/unit` sweep is gated by unrelated web/model-load slow
   tests (see `project_web_test_model_load`); it is not part of this change's gate.
 
-### Non-goals (deferred)
-
-- The explicit state machine (`DECIDE→SEARCH→EVALUATE→ANSWER→STOP`).
-- Consolidating the loop counters into a shared mutable state object — the
-  directives still echo scalars back, by design.
-- Any change to retrieval, plateau, or answer-gate policy.
-
 ## Implementation Plan Context
 
 ### Global Constraints
@@ -58,10 +50,8 @@ sequence of guarded stages.
 - **Behavior-preserving.** No existing test changes. Logic moves verbatim; `break`→return a BREAK directive, `continue`→return a CONTINUE directive, the auto-search fall-through→return an `injected_actions` directive.
 - **`metrics` dict byte-identical.** `research_followup_queries`, `plateau_early_stop`, `decision_prompts` bumps happen in the same cases and order; `reward.py`/`action_eval.py` consume these keys.
 - **`metrics`, `working_messages`, `turn_observations`, and the count dicts are passed by reference** and mutated in place; scalar counters travel back in the directive and `run()` reassigns them.
-- **Guard conditions stay in `run()`** (`if not actions:`, `if search_tool_call.has_new_queries:`); only the bodies move.
-- **`cfg` inside helpers is `self.search_config`.**
 
----
+…
 
 ### Task 1: `_handle_absent_actions` + `_classify_planned_action`
 
@@ -70,12 +60,8 @@ sequence of guarded stages.
 **Interfaces:**
 - `_AbsentActionsDirective(control, injected_actions, exit_status, consecutive_format_errors, consecutive_rejections, forced_answer_attempted, final_answer, num_turns)`.
 - `async _handle_absent_actions(self, *, working_messages, agent_ctx, request_id, sampling_params, recorder, metrics, state, question, latest_evaluation, task_statuses, active_tasks, num_turns, consecutive_format_errors, consecutive_rejections, forced_answer_attempted, final_answer) -> _AbsentActionsDirective`.
-- `_classify_planned_action(action_names, search_tags, answer_tag) -> str`.
 
-- [x] **Step 1:** Move the deadend auto-search decision + `_handle_no_action` delegation into `_handle_absent_actions`; return the directive.
-- [x] **Step 2:** Replace the inline planner-trace `if/elif/else` with `_classify_planned_action`.
-- [x] **Step 3:** In `run()`, apply the directive: `injected_actions`→set `actions`; else `BREAK`/`continue`.
-- [x] **Verify:** search/agent unit suites green.
+…
 
 ### Task 2: `_run_search_stage` + `_plan_only_observation`
 
@@ -86,10 +72,7 @@ sequence of guarded stages.
 - `async _run_search_stage(self, *, search_tool_call, state, recorder, num_turns, agent_ctx, search_cache, active_tasks, task_statuses, task_search_counts, metrics, response_text, turn_observations, working_messages, consecutive_rejections, on_turn) -> _SearchStageResult`.
 - `_plan_only_observation(self, *, declared_subquestions, actions, decision_tag, latest_search_decision, metrics) -> str`.
 
-- [x] **Step 1:** Move follow-up counting + `_execute_search_round` + plateau `LoopSnapshot` check + observation/`on_turn` assembly into `_run_search_stage`.
-- [x] **Step 2:** Extract the plan/subquestions/decision-only observation string into `_plan_only_observation`.
-- [x] **Step 3:** In `run()`, apply `_SearchStageResult` (`plateau`→`continue`).
-- [x] **Verify:** search/agent unit suites green.
+…
 
 ### Task 3: Verification
 

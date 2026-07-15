@@ -27,7 +27,8 @@ layers. Dense uses a local e5 embedding model on Apple Silicon (MPS).
 Out of scope: Pyserini/Java BM25; `DenseRetriever`/FAISS-on-disk plumbing (the demo corpus
 is tiny and `faiss-cpu` is unreliable on macOS Apple Silicon — see Decision below);
 cross-encoder reranking (web backend already supports `rerank_url` separately); changing the
-web backend, agent loops, or frontend.
+
+…
 
 ### Decision: dense leg implementation
 
@@ -37,18 +38,6 @@ docs (brute-force dot product is instant), `DenseRetriever` only exposes e5 *que
 (passage encoding lives behind private helpers), and `import faiss` currently fails on this
 macOS Apple Silicon setup. The hybrid *fusion* (`combine_retrieval_results`) and the sparse
 leg (`TfidfRetriever`) are still reused unchanged.
-
-### Components
-
-- **`hybrid.py`** — a `/retrieve` FastAPI server with the **same request/response contract
-  as `demo.py`**, so `SearchClient` and the whole web stack are unchanged.
-- **Dense half (new, sentence-transformers):** a small `DenseEmbeddingRetriever` wrapping
-  `SentenceTransformer("intfloat/e5-base-v2")` on MPS. Corpus passages are embedded once at
-  startup into an in-memory L2-normalized matrix; per query, encode `"query: <q>"` and take
-  the top matches by dot product. Output shape matches `TfidfRetriever`:
-  `list[list[{"document": {...}, "score": float}]]`.
-- **Sparse half (reuse):** `TfidfRetriever` from `demo.py` (sklearn, no Java).
-- **Fusion (reuse):** `combine_retrieval_results([dense, sparse], rrf_k=60)`.
 
 ### Testing
 
@@ -69,12 +58,8 @@ The real e5/MPS path is excluded from CI (stub the embedder); exercised via manu
 - Never commit to `main`; work on branch `feat/hybrid-retrieval-search`. Run `git branch --show-current` before every commit.
 - No Java/Pyserini and no FAISS dependency (faiss-cpu is unreliable on macOS Apple Silicon).
 - The `/retrieve` request/response contract MUST match `demo.py` exactly (so `SearchClient` is unchanged): request is `RetrieveRequest{queries?, query?, topk=5, return_scores=False}`; response is `{"results": <row>}` for a single `query`, `{"results": <list-of-rows>}` for batch `queries`; each row item is `{"document": {id,title,text,url}, "score": float}`, or just the `document` when `return_scores` is False.
-- Dense embeddings are L2-normalized so dot product == cosine; e5 prefixes: passages `"passage: <text>"`, queries `"query: <text>"`.
-- Each leg over-fetches `2·topk` candidates before RRF, then the fused list is truncated to `topk`.
-- Reuse `combine_retrieval_results` (`src/internal/document_index/hybrid_retriever.py`) and `TfidfRetriever` / `RetrieveRequest` (`src/internal/servers/retrieval/demo.py`); do not reimplement them.
-- Test command: `PYTHONPATH=src:. python -m pytest <path> -q`. CI must not download e5 — inject a stub encoder.
 
----
+…
 
 ### Task 1: `DenseEmbeddingRetriever` (in-memory e5 dense leg)
 
@@ -87,40 +72,7 @@ The real e5/MPS path is excluded from CI (stub the embedder); exercised via manu
   - `DenseEmbeddingRetriever(docs: list[dict], *, encoder: Callable[[list[str]], np.ndarray])` with method `retrieve(queries: list[str], topk: int) -> list[list[dict]]` returning rows of `{"document": {id,title,text,url}, "score": float}` (same shape as `TfidfRetriever.retrieve`).
   - `build_e5_encoder(model_name: str = "intfloat/e5-base-v2", device: str = "mps") -> Callable[[list[str]], np.ndarray]` — lazy-imports sentence-transformers, returns a callable that encodes texts to an L2-normalized float32 matrix.
 
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/unit/servers/retrieval/test_hybrid_retrieval.py`:
-
-```python
-import numpy as np
-import pytest
-
-from src.internal.servers.retrieval.hybrid import DenseEmbeddingRetriever
-
-
-def _stub_encoder(vectors_by_text):
-    """Return a deterministic encoder mapping known texts to unit vectors."""
-
-    def encode(texts):
-        rows = []
-        for t in texts:
-            vec = np.array(vectors_by_text[t], dtype=np.float32)
-            vec = vec / (np.linalg.norm(vec) or 1.0)
-            rows.append(vec)
-        return np.stack(rows)
-
-    return encode
-
-
-def test_dense_retriever_ranks_by_dot_product():
-    docs = [
-        {"id": "a", "title": "Cats", "text": "feline animals"},
-        {"id": "b", "title": "Dogs", "text": "canine animals"},
-    ]
-    vecs = {
-        "passage: Cats feline animals": [1.0, 0.0],
-
-_[Section compacted.]_
+…
 
 ### Task 2: Hybrid `/retrieve` server (RRF fusion + degradation + CLI)
 
@@ -137,35 +89,7 @@ _[Section compacted.]_
 
 Append to `tests/unit/servers/retrieval/test_hybrid_retrieval.py`:
 
-```python
-from fastapi.testclient import TestClient
-
-from src.internal.servers.retrieval.hybrid import create_app
-
-
-class _FakeRetriever:
-    """Returns preconfigured rows per call, shaped like TfidfRetriever.retrieve."""
-
-    def __init__(self, rows_by_query):
-        self._rows_by_query = rows_by_query
-
-    def retrieve(self, queries, topk):
-        out = []
-        for q in queries:
-            out.append(self._rows_by_query.get(q, [])[:topk])
-        return out
-
-
-def _doc(doc_id, score):
-    return {"document": {"id": doc_id, "title": doc_id, "text": "", "url": None}, "score": score}
-
-
-def test_hybrid_retrieve_fuses_dense_and_sparse():
-    # 'shared' appears in both legs → should outrank single-leg docs after RRF.
-    dense = _FakeRetriever({"q": [_doc("shared", 0.9), _doc("dense_only", 0.8)]})
-    sparse = _FakeRetriever({"q": [_doc("shared", 0.5), _doc("sparse_only", 0.4)]})
-
-_[Section compacted.]_
+…
 
 ### Task 3: End-to-end verification
 
@@ -173,29 +97,17 @@ _[Section compacted.]_
 
 - [ ] **Step 1: Verify TF-IDF-only mode boots and matches the demo contract**
 
-```bash
-PYTHONPATH=src:. python -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl --no-dense --port 8011 &
-sleep 3
-curl -s -X POST http://localhost:8011/retrieve -H "Content-Type: application/json" -d '{"query":"FAISS","topk":3}' | python3 -c "import sys,json; print(json.load(sys.stdin)['results'][0]['title'])"
-```
 Expected: a FAISS-related title (e.g. "Dense Retrieval with FAISS"), confirming `/retrieve` contract parity.
 
 - [ ] **Step 2: Verify hybrid (dense enabled) returns fused results**
 
-```bash
-PYTHONPATH=src:. python -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl --port 8012 &
-sleep 20   # first run downloads e5-base-v2
-curl -s -X POST http://localhost:8012/retrieve -H "Content-Type: application/json" -d '{"query":"compare vector index types","topk":5,"return_scores":true}' | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['results']), 'results'); print([r['document']['id'] for r in d['results']])"
-```
 Expected: 5 fused results, returns 200. (Dense leg active; results reflect RRF of e5 + TF-IDF.)
 
 - [ ] **Step 3: Point the web backend at the hybrid server and confirm the UI path works**
 
 With the web backend on :7860 and the hybrid server on :8001 (the backend's default retrieval URL), run a search-intent query and confirm internal results return without error cards:
 
-```bash
-
-_[Section compacted.]_
+…
 
 ## Context Boundary
 

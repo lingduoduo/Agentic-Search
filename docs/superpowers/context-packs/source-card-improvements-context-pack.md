@@ -12,13 +12,6 @@
 
 Single-file change: `web/src/components/SourceGrid.tsx`. Each card becomes a small controlled component (`SourceCard`) that owns its own `expanded` and `copied` state. The parent `SourceGrid` remains a thin mapper.
 
-```
-SourceGrid (memo)
-  └── SourceCard (memo, per document)
-        ├── expanded: boolean  — controls line-clamp CSS class
-        └── copied: boolean    — controls copy button label
-```
-
 ---
 
 ### 6. Testing Strategy

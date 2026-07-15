@@ -11,29 +11,34 @@ from typing import Literal
 DATE_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+)$")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 MARKDOWN_LINK = re.compile(r"\[[^]]+\]\(([^)]+)\)")
-PREFERRED_HEADINGS = (
-    "goal",
-    "overview",
-    "purpose",
-    "outcome",
-    "decision",
-    "architecture",
-    "component",
-    "constraint",
-    "requirement",
-    "scope",
-    "task",
-    "implementation",
-    "verification",
-    "acceptance",
-    "test",
-    "risk",
-    "open question",
-    "non-goal",
-)
-SECTION_LIMIT = 1_600
+CATEGORY_TOKENS = {
+    "summary": ("goal", "overview", "purpose", "outcome"),
+    "decision": (
+        "decision",
+        "architecture",
+        "component",
+        "constraint",
+        "requirement",
+        "scope",
+        "non-goal",
+    ),
+    "task": ("task", "implementation"),
+    "verification": ("verification", "acceptance", "test"),
+    "risk": ("risk", "open question"),
+}
+CATEGORY_LIMITS = {
+    "summary": 1,
+    "decision": 2,
+    "task": 3,
+    "verification": 1,
+    "risk": 1,
+}
+SECTION_LIMIT = 700
 MAX_SECTIONS = 8
 GENERATED_MARKER = "# Generated Context Pack"
+PLACEHOLDER_MARKER = re.compile(
+    r"\b(?:TBD|TODO|PLACEHOLDER)\b|implement later|fill in details", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -77,9 +82,17 @@ def _parse_markdown(text: str) -> tuple[str, str, tuple[Section, ...]]:
     sections: list[Section] = []
     current_heading: str | None = None
     current_body: list[str] = []
+    fence: str | None = None
 
     for line in text.splitlines():
-        match = HEADING.match(line)
+        stripped = line.lstrip()
+        fence_match = re.match(r"(```+|~~~+)", stripped)
+        if fence_match:
+            marker = fence_match.group(1)[0]
+            fence = None if fence == marker else marker
+            current_body.append(line)
+            continue
+        match = None if fence else HEADING.match(line)
         if match:
             if current_heading is not None:
                 sections.append(
@@ -160,35 +173,60 @@ def pair_sources(specs: list[SourceDoc], plans: list[SourceDoc]) -> list[TopicBu
             )
             continue
 
+        collision_counts: dict[tuple[str, str], int] = {}
         for source in (*topic_specs, *topic_plans):
+            collision_key = (source.date, source.kind)
+            collision_counts[collision_key] = collision_counts.get(collision_key, 0) + 1
+            ordinal = collision_counts[collision_key]
+            suffix = f"-{ordinal}" if ordinal > 1 else ""
             bundles.append(
                 TopicBundle(
                     topic,
                     (source,) if source.kind == "spec" else (),
                     (source,) if source.kind == "plan" else (),
-                    f"{topic}-{source.date}-context-pack.md",
+                    f"{topic}-{source.date}-{source.kind}{suffix}-context-pack.md",
                 )
             )
 
     return sorted(bundles, key=lambda bundle: (bundle.topic, bundle.output_name))
 
 
-def _compact(text: str, limit: int = SECTION_LIMIT) -> str:
+def _section_category(heading: str) -> str | None:
+    normalized = heading.lower()
+    for category, tokens in CATEGORY_TOKENS.items():
+        if any(token in normalized for token in tokens):
+            return category
+    return None
+
+
+def _compact(text: str, heading: str, limit: int = SECTION_LIMIT) -> str:
     text = re.sub(r"!?\[([^]]+)]\([^)]+\)", r"\1", text).strip()
+    if _section_category(heading) != "verification":
+        text = re.sub(
+            r"(?:^|\n)(`{3,}|~{3,})[^\n]*\n.*?\n\1\s*", "\n", text, flags=re.DOTALL
+        )
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
     if len(text) <= limit:
         return text
     boundary = text.rfind("\n", 0, limit)
     if boundary < limit // 2:
         boundary = text.rfind(" ", 0, limit)
-    return text[: max(boundary, 0)].rstrip() + "\n\n_[Section compacted.]_"
+    return text[: max(boundary, 0)].rstrip() + "\n\n…"
 
 
 def _selected_sections(source: SourceDoc) -> tuple[Section, ...]:
+    selected_indices: set[int] = set()
+    for category, category_limit in CATEGORY_LIMITS.items():
+        matches = [
+            index
+            for index, section in enumerate(source.sections)
+            if section.body and _section_category(section.heading) == category
+        ]
+        selected_indices.update(matches[:category_limit])
     selected = tuple(
         section
-        for section in source.sections
-        if section.body
-        and any(token in section.heading.lower() for token in PREFERRED_HEADINGS)
+        for index, section in enumerate(source.sections)
+        if index in selected_indices
     )
     if selected:
         return selected[:MAX_SECTIONS]
@@ -234,7 +272,7 @@ def render_pack(bundle: TopicBundle) -> str:
                 [
                     f"### {section.heading}",
                     "",
-                    _compact(section.body),
+                    _compact(section.body, section.heading),
                     "",
                 ]
             )
@@ -283,6 +321,9 @@ def render_index(bundles: list[TopicBundle]) -> str:
 def _expected_outputs(source_root: Path) -> dict[str, str]:
     specs, plans = discover_sources(source_root)
     bundles = pair_sources(specs, plans)
+    names = [bundle.output_name for bundle in bundles]
+    if len(names) != len(set(names)):
+        raise ValueError("context pack output names are not unique")
     rendered = {bundle.output_name: render_pack(bundle) for bundle in bundles}
     rendered["INDEX.md"] = render_index(bundles)
     return rendered
@@ -309,6 +350,7 @@ def generate(source_root: Path, output_dir: Path) -> list[Path]:
 def validate_generated(source_root: Path, output_dir: Path) -> list[str]:
     errors: list[str] = []
     expected = _expected_outputs(source_root)
+    expected_names = set(expected)
     for name, content in expected.items():
         path = output_dir / name
         if not path.exists() or path.read_text(encoding="utf-8") != content:
@@ -316,8 +358,16 @@ def validate_generated(source_root: Path, output_dir: Path) -> list[str]:
 
     for path in sorted(output_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
+        if (
+            path.name.endswith("-context-pack.md")
+            and text.startswith(GENERATED_MARKER)
+            and path.name not in expected_names
+        ):
+            errors.append(f"unexpected generated file: {path}")
         if not text.strip():
             errors.append(f"generated file is empty: {path}")
+        if PLACEHOLDER_MARKER.search(text):
+            errors.append(f"placeholder marker in generated file: {path}")
         for target in MARKDOWN_LINK.findall(text):
             target = target.split("#", 1)[0]
             if not target or "://" in target:
@@ -334,6 +384,15 @@ def validate_generated(source_root: Path, output_dir: Path) -> list[str]:
             count = index.count(link)
             if count != 1:
                 errors.append(f"source appears {count} times in INDEX.md: {link}")
+            backlink_count = sum(
+                (output_dir / name).read_text(encoding="utf-8").count(link)
+                for name in expected_names
+                if name.endswith("-context-pack.md") and (output_dir / name).exists()
+            )
+            if backlink_count != 1:
+                errors.append(
+                    f"source appears {backlink_count} times across context packs: {link}"
+                )
     return errors
 
 

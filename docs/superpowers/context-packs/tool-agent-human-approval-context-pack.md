@@ -33,13 +33,7 @@ an in-memory queue, and persists the assistant message only after completion.
 
 Several existing names suggest approval concepts but do not implement them:
 
-- `Plan.requires_human_approval` has no runtime consumers.
-- `EndpointPolicy.ASK` describes an absent external-app egress layer and has no
-  call sites in this repository.
-- notification constants for approval are declarations only.
-
-The design therefore extends the working `Tool` and `ToolAgentLoop` paths. It
-does not build on those inactive declarations.
+…
 
 ### Scope
 
@@ -61,46 +55,6 @@ registry REST invocation, and MCP invocation are also outside this phase.
 - skipped calls are returned to the model and do not count as failures,
 - true tool failures preserve current stopping behavior,
 - parallel approval requests block the whole batch until all resolve.
-
-### Broker and web tests
-
-- initiating-user ownership,
-- approve, deny, timeout, conflict, unknown-ID, and expired-ID responses,
-- disconnect and exception cleanup,
-- approval event ordering before subsequent progress,
-- automatic Tier-1 and explicit `tool_agent` callback wiring,
-- non-streaming fail-closed behavior.
-
-### Frontend tests
-
-- approval card rendering and sanitised arguments,
-- approve and deny submissions,
-- button locking and endpoint errors,
-- expiry display,
-- stream continuation after a decision,
-- unchanged behavior for streams without approval events.
-
-The complete backend, frontend, typecheck, Ruff, formatting, and diff checks
-must pass.
-
-### Out of scope and Phase 2 boundary
-
-Phase 1 does not provide:
-
-- persistence across process restart,
-- reconnectable approval streams,
-- durable or exactly-once side-effect execution,
-- remembered approvals,
-- administrator approval,
-- cross-process broker coordination,
-- scheduled-task approval,
-- external-app egress policy,
-- approval for direct registry REST or MCP calls.
-
-Phase 2 may introduce a persisted agent-run state machine, durable invocation
-records, reconnectable event delivery, idempotency-key propagation, and
-restart-safe resume. That work must be designed separately against the runtime
-created here; Phase 1 must not imply those guarantees.
 
 ## Implementation Plan Context
 
@@ -136,38 +90,7 @@ created here; Phase 1 must not imply those guarantees.
 - Produces: effect parameters on `FunctionTool`, `FunctionTool.from_fn`, and `ToolRegistry.tool`.
 - Preserves: `ToolSchema.to_dict()`; effect is not shown to the model.
 
-- [ ] **Step 1: Write failing function-tool tests**
-
-Add:
-
-```python
-def test_function_tool_defaults_to_unspecified_effect() -> None:
-    tool = FunctionTool(lambda: "ok", name="unknown")
-    assert tool.effect is ToolEffect.UNSPECIFIED
-    assert "effect" not in tool.schema.to_dict()["function"]
-
-
-def test_registry_decorator_accepts_read_only_effect() -> None:
-    registry = ToolRegistry()
-
-    @registry.tool(effect=ToolEffect.READ_ONLY)
-    def lookup() -> str:
-        return "ok"
-
-    assert registry.get("lookup").effect is ToolEffect.READ_ONLY
-```
-
-- [ ] **Step 2: Write failing OpenAPI inference tests**
-
-Build operations for `get`, `head`, `options`, `post`, `put`, `patch`, and
-`delete`, then assert read methods are `READ_ONLY` and mutation methods are
-`SIDE_EFFECTING`.
-
-- [ ] **Step 3: Verify RED**
-
-Run: `pytest tests/unit/test_tool_registry.py tests/unit/test_api_tools.py -v`
-
-_[Section compacted.]_
+…
 
 ### Task 2: Preflight approvals inside `ToolAgentLoop`
 
@@ -188,28 +111,7 @@ Create `tests/unit/test_tool_approval.py` with the existing minimal tokenizer an
 manager pattern. Assert enum values, then run a side-effecting counting tool
 without a callback:
 
-```python
-assert executions == []
-assert output.tool_results[0].status is TaskStatus.SKIPPED
-assert output.tool_results[0].error_code == "approval_denied"
-```
-
-If `AgentLoopOutput` does not expose `tool_results`, inspect its existing
-newline-delimited `action_trace` exactly as web tool-trace tests do; do not add a
-second output representation solely for this test.
-
-- [ ] **Step 2: Write failing approve, deny, expiry, and callback-error tests**
-
-Callbacks return each decision or raise. Assert only approval calls
-`Tool.execute`; all other cases return `SKIPPED`. Assert requests have unique
-opaque IDs, exact arguments, tool names, and timezone-aware expiration.
-
-- [ ] **Step 3: Write failing parallel and continuation tests**
-
-Generate one read-only and two side-effecting calls. Hold both decisions with
-events and prove no tool executes until both resolve. Approve one and deny one;
-
-_[Section compacted.]_
+…
 
 ### Task 3: Build the process-local approval broker
 
@@ -228,239 +130,23 @@ _[Section compacted.]_
 - [ ] **Step 1: Write failing sanitizer tests**
 
 Assert strings cap at 200 characters plus ellipsis, collections cap at 10,
-recursion caps at depth 2, and case-insensitive secret keys are removed:
-`password`, `secret`, `token`, `cookie`, `authorization`, `headers`, `api_key`.
 
-- [ ] **Step 2: Write failing lifecycle tests**
-
-Start `broker.request()` as a task and cover approve, deny, wrong user, duplicate
-decision, unknown ID, expiry, and cancellation. Assert `pending_count == 0`
-after every terminal path and assert the matching counter increments once.
-
-- [ ] **Step 3: Verify RED**
-
-Run: `pytest tests/unit/servers/web/test_tool_approval_broker.py -v`
-
-Expected: collection failure because the module is absent.
-
-- [ ] **Step 4: Implement the broker**
-
-Use:
-
-```python
-@dataclass(frozen=True, slots=True)
-class ToolApprovalView:
-    id: str
-    tool_name: str
-    arguments: dict[str, object]
-    expires_at: str
-
-
-@dataclass(slots=True)
-class _PendingApproval:
-    owner_user_id: str
-    future: asyncio.Future[ApprovalDecision]
-    expires_at: datetime
-
-_[Section compacted.]_
-
-### Task 4: Wire authenticated approvals through FastAPI and SSE
-
-**Files:**
-- Modify: `src/internal/configs/app_configs.py`
-- Modify: `src/internal/servers/web/app.py`
-- Modify: `tests/unit/test_configs.py`
-- Modify: `tests/unit/servers/web/test_sse_streaming.py`
-- Modify: `tests/unit/servers/web/test_web_experience_app.py`
-
-**Interfaces:**
-- Produces: `AppSettings.tool_approval_timeout_seconds: float = 60.0`.
-- Produces: `POST /api/agent/approvals/{approval_id}`.
-- Produces: `approval_required` SSE event.
-- Extends: `_run_agent_impl` and `_run_auto_routed` with `on_approval=None`.
-
-- [ ] **Step 1: Write failing settings tests**
-
-```python
-def test_tool_approval_timeout_defaults_to_sixty_seconds() -> None:
-    assert load_app_settings({}).tool_approval_timeout_seconds == 60.0
-
-
-def test_tool_approval_timeout_reads_environment() -> None:
-    settings = load_app_settings({"TOOL_APPROVAL_TIMEOUT_SECONDS": "12.5"})
-    assert settings.tool_approval_timeout_seconds == 12.5
-```
-
-- [ ] **Step 2: Write failing SSE and endpoint tests**
-
-Install a fake side-effecting tool and fake model response. Start the stream in
-a thread, wait for `approval_required`, POST approve, and assert the same stream
-later yields answer/done and the tool ran once. Add deny, timeout, anonymous,
-wrong-user, unknown-ID, conflict, and disconnect cases. Assert every fail-closed
-path executes zero side effects.
-
-- [ ] **Step 3: Verify RED**
-
-```bash
-pytest tests/unit/test_configs.py tests/unit/servers/web/test_sse_streaming.py tests/unit/servers/web/test_web_experience_app.py -v
-```
-
-Expected: failure for missing setting, callback, event, and endpoint.
-
-_[Section compacted.]_
-
-### Task 5: Add frontend approval contracts and card
-
-**Files:**
-- Modify: `web/src/types.ts`
-- Modify: `web/src/api.ts`
-- Create: `web/src/components/ToolApprovalCard.tsx`
-- Create: `web/src/components/__tests__/ToolApprovalCard.test.tsx`
-- Modify: `web/src/__tests__/api.test.ts`
-- Modify: `web/src/styles.css`
-
-**Interfaces:**
-- Produces: `ToolApprovalView`, `SSEApprovalRequiredEvent`, `submitToolApproval`.
-- Produces: `<ToolApprovalCard approval onDecision />`.
-
-- [ ] **Step 1: Write failing API and card tests**
-
-Assert `submitToolApproval("a1", "approve")` POSTs
-`{"decision":"approve"}` to `/api/agent/approvals/a1`. Test card tool name,
-safe arguments, countdown, Approve/Deny callbacks, locked buttons while pending
-and after success, and inline endpoint errors.
-
-- [ ] **Step 2: Verify RED**
-
-```bash
-cd web && npm run test:unit -- src/__tests__/api.test.ts src/components/__tests__/ToolApprovalCard.test.tsx
-```
-
-Expected: missing symbols/component failure.
-
-- [ ] **Step 3: Add contracts and API helper**
-
-```typescript
-export interface ToolApprovalView {
-  id: string;
-  tool_name: string;
-  arguments: Record<string, unknown>;
-  expires_at: string;
-}
-
-export interface SSEApprovalRequiredEvent {
-  type: "approval_required";
-  approval: ToolApprovalView;
-}
-```
-
-Add the event to `SSEEvent`. Implement `submitToolApproval` with `requestJson`,
-POST, JSON body, same-origin credentials, and optional abort signal.
-
-- [ ] **Step 4: Implement the focused card and styles**
-
-Render an accessible region named `Approval required for <tool>`, a definition
-list of the bounded server summary, countdown, and Approve/Deny buttons. Use
-
-_[Section compacted.]_
-
-### Task 6: Integrate approval cards into the live App stream
-
-**Files:**
-- Modify: `web/src/App.tsx`
-- Modify: `web/src/components/__tests__/App.test.tsx`
-
-**Interfaces:**
-- Consumes: Task 5 event, API helper, and card.
-- Preserves: one active `streamAgent()` iterator and existing event handling.
-
-- [ ] **Step 1: Write failing App flow tests**
-
-Mock a stream that yields `approval_required`, waits for a click, then yields
-answer/done. Assert the card appears, Approve or Deny posts once, the answer
-arrives, and `streamAgent` was called once. Add submission-error coverage.
-
-- [ ] **Step 2: Verify RED**
-
-Run: `cd web && npm run test:unit -- src/components/__tests__/App.test.tsx`
-
-Expected: failure because App ignores approval events.
-
-- [ ] **Step 3: Implement App integration**
-
-Maintain `pendingApprovals: ToolApprovalView[]`. Upsert by ID on the SSE event,
-render cards beside live progress, and post decisions with the current request
-signal without aborting/restarting the stream. Clear approval state on new
-search, new session, completion, and error.
-
-- [ ] **Step 4: Verify GREEN and commit**
-
-```bash
-cd web && npm run test:unit -- src/components/__tests__/App.test.tsx src/components/__tests__/ToolApprovalCard.test.tsx
-cd web && npm run typecheck
-git add web/src/App.tsx web/src/components/__tests__/App.test.tsx
-git commit -m "feat: approve tools during live agent runs"
-```
-
-Expected: PASS.
-
----
-
-### Task 7: Verify compatibility, privacy, and phase boundary
-
-**Files:**
-- Modify: tests only if verification exposes a missing regression assertion.
-
-**Interfaces:**
-- Verifies: complete Phase 1 acceptance criteria.
-
-- [ ] **Step 1: Scan approval payloads and logs**
-
-```bash
-rg -n "approval_required|ToolApprovalView|sanitize_tool_arguments|logger\..*arguments" src web tests
-```
-
-Expected: SSE uses only sanitized view arguments; no lifecycle logger receives
-raw parsed arguments.
-
-- [ ] **Step 2: Prove durable scope did not leak in**
-
-```bash
-git diff main...HEAD -- src/internal/db
-rg -n "resume_token|restart.safe|durable approval" src web
-```
-
-Expected: no database diff and no production durable-resume contract.
-
-- [ ] **Step 3: Run focused backend verification**
-
-```bash
-pytest tests/unit/test_tool_approval.py tests/unit/test_tool_registry.py tests/unit/test_api_tools.py tests/unit/test_on_turn_callback.py tests/unit/test_state_models.py tests/unit/servers/web/test_tool_approval_broker.py tests/unit/servers/web/test_sse_streaming.py tests/unit/servers/web/test_web_experience_app.py tests/unit/test_execution_fallbacks.py -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 4: Run frontend verification**
-
-```bash
-cd web && npm test -- --run
-cd web && npm run typecheck
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Run static and full backend checks**
-
-```bash
-ruff check src/agents src/tools src/internal/servers/web src/internal/configs tests/unit
-ruff format --check src/agents src/tools src/internal/servers/web src/internal/configs tests/unit
-git diff --check
-pytest
-```
-
-Expected: all checks pass; integration tests requiring external services remain
-
-_[Section compacted.]_
+…
+
+### Final Acceptance Checklist
+
+- [ ] Side-effecting and unspecified calls never execute before approval.
+- [ ] Read-only tools preserve current behavior.
+- [ ] Approval is per invocation and restricted to the initiating authenticated user.
+- [ ] Denial, timeout, anonymity, cancellation, and broker failure fail closed.
+- [ ] Skipped calls return to the model without masquerading as failures.
+- [ ] Parallel calls wait for all decisions before any execution.
+- [ ] SSE continues on the original connection after a decision.
+- [ ] Browser and logs receive only sanitized summaries.
+- [ ] Auto Tier-1 and explicit `tool_agent` share the approval seam.
+- [ ] Non-streaming callers never hang.
+
+…
 
 ## Context Boundary
 

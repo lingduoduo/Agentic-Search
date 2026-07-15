@@ -64,32 +64,9 @@ per-provider UI configuration; reranker wiring.
 
 In `tests/unit/test_execution_fallbacks.py`, append:
 
-```python
-def test_auto_provider_expands_to_internal_and_serpapi():
-    from src.internal.servers.web.app import _source_providers_for
+- [ ] **Step 2: Run tests to verify they fail**
 
-    assert _source_providers_for("auto") == ["retrieval", "serpapi"]
-
-
-def test_auto_is_default_and_not_treated_as_explicit(monkeypatch, tmp_path):
-    """No source_provider → 'auto' → classifier still runs (not forced)."""
-    from src.internal.servers.web.app import _HybridSearchResult
-
-    captured = {}
-
-    async def fake_hybrid(query, **kwargs):
-        captured["source_provider"] = kwargs.get("source_provider")
-        doc = ContextDocument(id="D1", title="t", content="c", url=None, score=0.0)
-        return _HybridSearchResult(executed_queries=[query], documents=[doc])
-
-    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
-    monkeypatch.setattr(
-        "src.internal.servers.web.app._rule_based_is_search", lambda q: True
-    )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
-    with TestClient(app) as client:
-
-_[Section compacted.]_
+…
 
 ### Task 2: Concurrent fan-out with graceful degradation + per-provider timeout
 
@@ -99,25 +76,8 @@ _[Section compacted.]_
 
 **Interfaces:**
 - Consumes: `_source_providers_for` (Task 1), `search_tool`, `_documents_from_search_pages`, `_dedupe_documents`, `_rerank_documents`, `mmr_rerank`, `_reindex_documents`, `_run_browser_search`, `fetch_pages_concurrently`.
-- Produces: `_HybridSearchResult.status: str` (`"ok"|"empty"|"unreachable"`); error docs carry `metadata["error"] = True`; providers run concurrently; `_provider_error_doc(provider, message)`; `_finalize_hybrid(documents, *, executed_queries, query, rerank_url, top_k)`.
 
-- [ ] **Step 1: Write failing tests**
-
-In `tests/unit/servers/web/test_web_experience_app.py`, add (the helper `SearchPage` is imported as `from src.tools import SearchPage` — add that import at the top of the test file if absent):
-
-```python
-def test_hybrid_fanout_merges_real_and_drops_errored_provider(monkeypatch, tmp_path):
-    """retrieval returns real pages, serpapi errors → only real docs, status ok."""
-    import asyncio
-    from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools import SearchPage
-
-    async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
-        if provider == "retrieval":
-            return [SearchPage(title="Real Doc", summary="real", url="http://x/1")]
-        return [SearchPage(error="SERPAPI_API_KEY is required.")]
-
-_[Section compacted.]_
+…
 
 ### Task 3: Auto-router surfaces status as user message
 
@@ -133,109 +93,11 @@ _[Section compacted.]_
 
 In `tests/unit/test_execution_fallbacks.py`, append:
 
-```python
-def test_search_unreachable_returns_clear_message(monkeypatch, tmp_path):
-    from src.internal.servers.web.app import _HybridSearchResult
+- [ ] **Step 2: Run tests to verify they fail**
 
-    async def fake_hybrid(query, **kwargs):
-        return _HybridSearchResult(
-            executed_queries=[query], documents=[], status="unreachable"
-        )
+Run: `PYTHONPATH=src:. python -m pytest tests/unit/test_execution_fallbacks.py -k "unreachable or empty_uses" -q`
 
-    monkeypatch.setattr("src.internal.servers.web.app._run_hybrid_search", fake_hybrid)
-    monkeypatch.setattr(
-        "src.internal.servers.web.app._rule_based_is_search", lambda q: True
-    )
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
-    with TestClient(app) as client:
-        response = client.post("/api/agent", json={"query": "find stuff"})
-    data = response.json()
-    assert data["intent"] == "search"
-    assert "No sources are reachable" in data["answer"]
-    assert data["documents"] == []
-
-
-def test_search_empty_uses_no_results_message(monkeypatch, tmp_path):
-    from src.internal.servers.web.app import _HybridSearchResult
-
-    async def fake_hybrid(query, **kwargs):
-        return _HybridSearchResult(
-
-_[Section compacted.]_
-
-### Task 4: Frontend — remove dropdown from normal UI, gate behind `?dev=1`
-
-**Files:**
-- Modify: `web/src/types.ts` (`SearchSourceProvider` union ~27), `web/src/components/SearchComposer.tsx`, `web/src/App.tsx`
-- Test: `web/src/components/__tests__/SearchComposer.test.tsx`, `web/src/components/__tests__/App.test.tsx`
-
-**Interfaces:**
-- Consumes: existing `DEV_MODE` constant in `App.tsx`, `showUrlField` pattern.
-- Produces: `SearchComposer` prop `showSourcePicker?: boolean` (default `false`); `SearchSourceProvider` includes `"auto"`; normal-mode request omits `source_provider`.
-
-- [ ] **Step 1: Write failing frontend tests**
-
-In `web/src/components/__tests__/SearchComposer.test.tsx`, add:
-
-```typescript
-  it("hides the Source dropdown by default", () => {
-    render(<SearchComposer {...defaultProps} />);
-    expect(screen.queryByText("Local Retrieval")).not.toBeInTheDocument();
-  });
-
-  it("shows the Source dropdown when showSourcePicker is set (dev mode)", () => {
-    render(<SearchComposer {...defaultProps} showSourcePicker />);
-    expect(screen.getByText("Local Retrieval")).toBeInTheDocument();
-  });
-```
-
-In `web/src/components/__tests__/App.test.tsx`, update the existing test in `describe("App retrieval URL handling"...)` so it asserts `source_provider` is omitted in normal mode. Change the assertion block in `"does not send a client search_url in normal (non-dev) mode"`:
-
-```typescript
-    const sentRequest = mockStreamAgent.mock.calls[0][0] as {
-      search_url?: string;
-      source_provider?: string;
-    };
-    expect(sentRequest.search_url).toBeUndefined();
-    expect(sentRequest.source_provider).toBeUndefined();
-```
-
-_[Section compacted.]_
-
-### Task 5: End-to-end verification, full suites, PR
-
-**Files:** none (verification + docs)
-
-- [ ] **Step 1: Rebuild frontend bundle**
-
-Run: `cd web && npm run build`
-Expected: build succeeds; FastAPI will serve the new `web/dist`.
-
-- [ ] **Step 2: Restart stack and verify fan-out + degradation manually**
-
-With retrieval demo on 8001 and the web backend on 7860 (restart it to pick up code), run:
-
-```bash
-curl -s -X POST http://localhost:7860/api/agent -H "Content-Type: application/json" \
-  -d '{"query":"What is FAISS?","top_k":3}' \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print('intent=',d['intent']); [print(x['citation'],x['metadata'].get('source'),x['title']) for x in d['documents']]"
-```
-
-Expected: `intent=search`; documents include `source` of both `Local Retrieval` and `SerpAPI` (if `SERP_API_KEY` set), no `Search error` cards.
-
-- [ ] **Step 3: Run full backend + frontend suites**
-
-Run: `PYTHONPATH=src:. python -m pytest tests/unit -q && cd web && npx vitest run && npm run typecheck`
-Expected: all green.
-
-- [ ] **Step 4: Push and open PR**
-
-```bash
-git push -u origin feat/auto-source-fanout-search
-gh pr create --base main --title "feat(search): auto source fan-out (internal + web), no source picker" --body "<summary referencing spec + plan>"
-```
-
----
+…
 
 ## Context Boundary
 

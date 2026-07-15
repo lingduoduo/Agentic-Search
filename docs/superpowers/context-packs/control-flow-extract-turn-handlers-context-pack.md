@@ -39,16 +39,6 @@ control-flow **directive** the caller applies.
     `exit_status="format_error_limit"`; below-limit re-prompt path returns
     `CONTINUE` with `consecutive_format_errors` incremented.
 
-### Non-goals (deferred)
-
-- The explicit state machine (`DECIDE→SEARCH→EVALUATE→ANSWER→STOP`). These
-  directives are its precursor, not the machine.
-- Consolidating the counters into a shared mutable state object (the directive
-  echoes scalars instead — the deliberate consequence of the sentinel choice).
-- Extracting the observation-assembly block (entangled with search-round
-  execution — a later increment).
-- Component unification (`Planner`/`SearchTool`/…).
-
 ## Implementation Plan Context
 
 ### Global Constraints
@@ -72,48 +62,11 @@ control-flow **directive** the caller applies.
 
 - [ ] **Step 1: Write the failing tests**
 
-```python
+- [ ] **Step 2: Run tests to verify they fail**
 
-### tests/unit/test_agent_loop.py
+Run: `pytest tests/unit/test_agent_loop.py -k apply_answer_gate -v`
 
-def _gate_loop():
-    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    return SearchAgentLoop(
-        tokenizer=DummyTokenizerWithEncode(),
-        server_manager=DummyServerManager([]),
-        search_config=SearchAgentLoopConfig(max_answer_rejections=3),
-    )
-
-def test_apply_answer_gate_rejects_insufficient_evidence():
-    import asyncio
-    from src.agents.search import TurnControl
-    loop = _gate_loop()
-    metrics = loop._initial_metrics()
-    d = asyncio.run(loop._apply_answer_gate(
-        on_turn=None, num_turns=1, rounds_used=1, active_tasks={}, task_statuses={},
-        latest_evaluation=None, latest_search_decision=None,
-        consecutive_rejections=0, final_answer="draft", metrics=metrics,
-        working_messages=[],
-    ))
-    assert d.control is TurnControl.CONTINUE
-    assert d.final_answer is None
-    assert d.consecutive_rejections == 1
-    assert metrics["answer_rejections"] == 1.0
-
-def test_apply_answer_gate_accepts_with_internal_knowledge():
-    import asyncio
-    from src.agents.search import TurnControl, SearchAgentLoopConfig, SearchAgentLoop
-    loop = SearchAgentLoop(
-        tokenizer=DummyTokenizerWithEncode(),
-        server_manager=DummyServerManager([]),
-        search_config=SearchAgentLoopConfig(allow_internal_knowledge_answer=True),
-    )
-    metrics = loop._initial_metrics()
-    d = asyncio.run(loop._apply_answer_gate(
-        on_turn=None, num_turns=1, rounds_used=0, active_tasks={}, task_statuses={},
-        latest_evaluation=None, latest_search_decision="answer",
-
-_[Section compacted.]_
+…
 
 ### Task 2: `_handle_no_action`
 
@@ -123,54 +76,9 @@ _[Section compacted.]_
 
 **Interfaces:**
 - Consumes: `TurnControl` (Task 1), `self._force_final_answer`, `self._build_decision_feedback`, `self._has_sufficient_evidence`.
-- Produces: `_NoActionDirective(control, exit_status, consecutive_format_errors, consecutive_rejections, forced_answer_attempted, final_answer, num_turns)`; `async _handle_no_action(self, *, working_messages, agent_ctx, request_id, sampling_params, metrics, latest_evaluation, task_statuses, active_tasks, rounds_used, consecutive_format_errors, consecutive_rejections, forced_answer_attempted, final_answer, num_turns) -> _NoActionDirective`.
+- Produces: `_NoActionDirective(control, exit_status, consecutive_format_errors, consecutive_rejections, forced_answer_attempted, final_answer, num_turns)`; `async _handle_no_action(self, *, working_messages, agent_ctx, request_id, sampling_params, metrics, latest_evaluation, task_statuses, active_tasks, rounds_used, consecutive_format_errors, consecutive_rejections, forced_answer_attempted,
 
-- [ ] **Step 1: Write the failing tests**
-
-```python
-
-### tests/unit/test_agent_loop.py
-
-def test_handle_no_action_format_error_limit_breaks():
-    import asyncio
-    from src.agents.search import (
-        SearchAgentLoop, SearchAgentLoopConfig, TurnControl,
-    )
-    from src.context.search import AgentContext
-    loop = SearchAgentLoop(
-        tokenizer=DummyTokenizerWithEncode(),
-        server_manager=DummyServerManager([]),
-        search_config=SearchAgentLoopConfig(
-            max_consecutive_format_errors=1, force_answer_on_deadend=False
-        ),
-    )
-    metrics = loop._initial_metrics()
-    d = asyncio.run(loop._handle_no_action(
-        working_messages=[], agent_ctx=AgentContext(), request_id="r",
-        sampling_params={}, metrics=metrics, latest_evaluation=None,
-        task_statuses={}, active_tasks={}, rounds_used=1,
-        consecutive_format_errors=0, consecutive_rejections=0,
-        forced_answer_attempted=False, final_answer=None, num_turns=1,
-    ))
-    assert d.control is TurnControl.BREAK
-    assert d.exit_status == "format_error_limit"
-    assert d.consecutive_format_errors == 1
-    assert metrics["format_error_turns"] == 1.0
-
-def test_handle_no_action_below_limit_reprompts_continue():
-    import asyncio
-    from src.agents.search import (
-        SearchAgentLoop, SearchAgentLoopConfig, TurnControl,
-    )
-    from src.context.search import AgentContext
-    loop = SearchAgentLoop(
-        tokenizer=DummyTokenizerWithEncode(),
-        server_manager=DummyServerManager([]),
-        search_config=SearchAgentLoopConfig(
-            max_consecutive_format_errors=5,
-            require_sufficient_evidence_before_answer=True,
-
-_[Section compacted.]_
+…
 
 ### Task 3: Full-suite + metrics-contract verification
 
@@ -193,14 +101,7 @@ Run: `ruff check . --fix && ruff format .` then re-run `pytest tests/unit -q`.
 
 - [ ] **Step 4: Commit (only if lint changed anything)**
 
-```bash
-git add -A
-git commit -m "chore: lint after turn-handler extraction"
-```
-
-(If nothing changed, skip.)
-
----
+…
 
 ## Context Boundary
 

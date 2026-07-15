@@ -12,21 +12,7 @@
 
 Three self-contained changes, each in a single component file:
 
-```
-AnswerPanel.tsx   ←  react-markdown replaces paragraph splitter
-                      custom text renderer injects citation anchor links
-SessionTimeline.tsx ← <ol> replaced with flex bubble layout
-                        system messages filtered out
-SourceGrid.tsx    ←  id="source-{citation}" added to each <article>
-```
-
 Citation scroll flow:
-```
-User clicks [1] in AnswerPanel
-  → browser navigates to #source-[1]
-  → SourceGrid article with id="source-[1]" scrolls into view
-```
-
 ---
 
 ### 9. Testing Strategy
@@ -41,10 +27,7 @@ User clicks [1] in AnswerPanel
   - Assert user bubble has `chat-row--user` class, assistant has `chat-row--assistant`
   - Assert `rounds_used` / `num_turns` rendered in `.chat-meta` when present in metadata
 
-- **`web/src/components/__tests__/SourceGrid.test.tsx`**
-  - Render with one document (`citation: "[1]"`) — assert article has `id="source-[1]"`
-
----
+…
 
 ## Context Boundary
 

@@ -61,40 +61,13 @@ No integration stack is required for this pass.
 
 Add these tests near the existing rerank tests in `tests/unit/test_agent_loop.py`:
 
-```python
-def test_search_agent_loop_skips_rerank_for_single_result_round():
-    """A one-document round cannot benefit from rerank, so the reranker is not called."""
-    tokenizer = DummyTokenizerWithEncode()
-    server_manager = DummyServerManager(
-        [
-            tokenizer.encode('<search rerank="true">q</search>'),
-            tokenizer.encode("<answer>a [R1Q1D1]</answer>"),
-        ]
-    )
-    loop = SearchAgentLoop(
-        tokenizer=tokenizer,
-        server_manager=server_manager,
-        search_config=SearchAgentLoopConfig(
-            max_turns=4,
-            evaluation_config=SearchEvaluationConfig(
-                min_results_per_query=1, min_total_results=1
-            ),
-        ),
-    )
-    loop._search_client = FakeSearchClient(
-        {("q",): [[SearchResult(contents="single body content", score=0.5)]]}
-    )
-    calls: list[str] = []
+Add a second test for empty results:
 
-    def reranker(query: str, docs: list[SearchResult]) -> list[SearchResult]:
-        calls.append(query)
-        return docs
+- [x] **Step 2: Run tests to verify they fail**
 
-    loop._reranker = reranker
+Run: `pytest tests/unit/test_agent_loop.py -k "rerank" -v`
 
-    output = asyncio.run(
-
-_[Section compacted.]_
+…
 
 ### Task 2: Normalized Repeated Query Blocking
 
@@ -110,42 +83,13 @@ _[Section compacted.]_
 
 Add this test near `test_search_agent_loop_skips_repeated_queries_with_feedback` in `tests/unit/test_agent_loop.py`:
 
-```python
-def test_search_agent_loop_skips_repeated_queries_after_whitespace_normalization():
-    tokenizer = DummyTokenizerWithEncode()
-    responses = [
-        tokenizer.encode("<search>alpha   query</search>"),
-        tokenizer.encode("<search> alpha query </search>"),
-        tokenizer.encode("<answer>Done [R1Q1D1]</answer>"),
-    ]
-    loop = SearchAgentLoop(
-        tokenizer=tokenizer,
-        server_manager=DummyServerManager(responses),
-        search_config=SearchAgentLoopConfig(
-            max_turns=5,
-            evaluation_config=SearchEvaluationConfig(
-                min_results_per_query=1, min_total_results=1
-            ),
-        ),
-    )
-    fake_client = FakeSearchClient(
-        {
-            ("alpha   query",): [
-                [
-                    SearchResult(
-                        contents='"Doc A"\nAlpha body', url="https://example.com/a"
-                    )
-                ],
-            ],
-        }
-    )
-    loop._search_client = fake_client
+- [x] **Step 2: Run test to verify it fails**
 
-    output = asyncio.run(
-        loop.run([{"role": "user", "content": "research this"}], {"temperature": 0.0})
-    )
+Run: `pytest tests/unit/test_agent_loop.py -k "repeated_queries" -v`
 
-_[Section compacted.]_
+Expected: the new test fails because the second query is currently treated as distinct.
+
+…
 
 ### Final Verification
 

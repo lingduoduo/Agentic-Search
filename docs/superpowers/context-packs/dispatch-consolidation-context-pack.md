@@ -36,13 +36,8 @@ One place builds and runs each agent loop; one place assembles the response.
 
 3. **Extract `_finalize_response` + rewire call sites.** Route `_run_auto_routed`
    loop branches and every explicit-mode branch (incl. `search_tool`,
-   `hybrid_search`, default `answer_with_retrieval`) through the runners + tail.
-   Keep degradation in `_run_auto_routed`, 400 guards at explicit sites. Delete the
-   now-dead inline construction/extraction. → verify: `pytest tests/unit/servers/web/ -v`.
 
-4. **Update converged-contract tests.** Fix `test_web_experience_app.py`,
-   `test_tool_trace.py`, `test_agent_router.py` for the additive convergences.
-   → verify: `pytest` (full) green; `ruff check` + `ruff format --check` clean.
+…
 
 ## Context Boundary
 

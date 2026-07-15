@@ -12,16 +12,6 @@
 
 The `intent-*` class already lives on `.results-layout` in `App.tsx`. All layout changes are CSS-only targeting that class. One minimal JS change: add `session-panel` class to the Session `<section>` so it can be targeted independently from other `.panel` elements.
 
-```
-App.tsx  (1 line change)
-  └── <section className="panel session-panel" ...>   ← add "session-panel"
-
-styles.css  (new rules)
-  ├── .intent-search  — sources border highlight + min-height
-  ├── .intent-chat    — flex wrap, answer + session side-by-side, sources full-width
-  └── .intent-tool    — tool-trace-panel full-width, elevated
-```
-
 ---
 
 ### 8. Testing Strategy

@@ -30,18 +30,8 @@ At runtime the command will:
 3. Retrieve the requested top-k documents for every bundled question.
 4. Fail if a question has no retrieved documents rather than producing an empty-context training record.
 5. Convert retrieval results into the context format expected by `build_search_rag_record`.
-6. Print auditable records in preview mode or write a compact parquet dataset in output mode.
 
-The command will default to `data/corpus.jsonl`, a small top-k value, and an output path under `data/`. CLI arguments will allow callers to override the corpus, top-k, output path, and preview behavior.
-
-### Component Boundaries
-
-- `TfidfRetriever` remains responsible only for ranking corpus documents.
-- The new example module owns the bundled QA examples, result adaptation, validation, preview rendering, and parquet orchestration.
-- Existing functions in `src.training.data` remain responsible for canonical RAG prompt and reward-record formatting.
-- `examples.prepare_search_rag_dataset` remains the optional adapter for FlashRAG/NQ plus externally generated retrieval caches.
-
-The smoke workflow will import and reuse these components instead of duplicating retrieval or training-record logic.
+…
 
 ### Testing and Verification
 
@@ -79,40 +69,7 @@ Integration verification will run the preview command and write a temporary parq
 
 Create `tests/unit/test_prepare_local_rag_smoke_dataset.py` with:
 
-```python
-from pathlib import Path
-
-import pytest
-
-from examples.prepare_local_rag_smoke_dataset import build_smoke_records
-
-
-REPO_CORPUS = Path(__file__).parents[2] / "data" / "corpus.jsonl"
-
-
-def test_build_smoke_records_retrieves_expected_context():
-    records = build_smoke_records(REPO_CORPUS, topk=1)
-
-    assert records
-    first = records[0]
-    assert set(first) == {
-        "data_source",
-        "prompt",
-        "ability",
-        "reward_model",
-        "extra_info",
-    }
-    assert "FAISS" in first["prompt"][0]["content"]
-    assert first["reward_model"]["ground_truth"]["target"] == ["FAISS"]
-    assert first["extra_info"] == {"split": "smoke", "index": 0}
-
-
-def test_build_smoke_records_rejects_non_positive_topk():
-    with pytest.raises(ValueError, match="topk must be at least 1"):
-        build_smoke_records(REPO_CORPUS, topk=0)
-```
-
-_[Section compacted.]_
+…
 
 ### Task 2: Preview, Parquet Output, and CLI
 
@@ -128,41 +85,9 @@ _[Section compacted.]_
 
 Append these imports and tests:
 
-```python
-import json
+- [ ] **Step 2: Run tests and verify missing interfaces fail collection**
 
-from examples.prepare_local_rag_smoke_dataset import (
-    preview_records,
-    write_parquet,
-)
-
-
-def test_preview_records_prints_auditable_fields(capsys):
-    records = build_smoke_records(REPO_CORPUS, topk=1)
-
-    preview_records(records[:1])
-
-    lines = capsys.readouterr().out.strip().splitlines()
-    preview = json.loads(lines[-1])
-    assert lines[0] == "Local RAG smoke-test preview"
-    assert "FAISS" in preview["context_excerpt"]
-    assert preview["reward_target"] == ["FAISS"]
-    assert preview["extra_info"] == {"split": "smoke", "index": 0}
-
-
-def test_write_parquet_writes_loadable_compact_records(tmp_path):
-    datasets = pytest.importorskip("datasets")
-    records = build_smoke_records(REPO_CORPUS, topk=1)
-    output = tmp_path / "nested" / "smoke.parquet"
-
-    result = write_parquet(records, output)
-    loaded = datasets.Dataset.from_parquet(str(output))
-
-    assert result == output
-    assert output.is_file()
-    assert len(loaded) == len(records)
-
-_[Section compacted.]_
+…
 
 ### Task 3: Documentation and Regression Verification
 
@@ -177,11 +102,11 @@ _[Section compacted.]_
 
 Insert before the Search-QA commands:
 
-```markdown
+Explain directly below that the command requires no retrieval server, network access, FlashRAG dataset, or retrieval caches.
 
-### Offline local RAG smoke test (4 examples, existing 30-document demo corpus)
+- [ ] **Step 2: Label Search-QA and full NQ RAG as optional large-dataset workflows**
 
-python3 -m examples.prepare_local_rag_smoke_dataset --topk 1 --preview
+…
 
 ## Context Boundary
 

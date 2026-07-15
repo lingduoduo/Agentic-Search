@@ -47,10 +47,8 @@ search-vs-chat branch that always ran a one-shot retrieval.
 3. **Dispatch** in `_run_auto_routed`: `route_query` → branch per strategy with
    the degradation table from the spec; set `extra["route"]` /
    `extra["route_degraded"]`. → verify `tests/unit/servers/web/` green.
-4. **Regression + lint:** web-experience + SSE suites; `ruff`.
 
-> Note: step 3's per-strategy loop construction was later refactored into shared
-> runners — see `2026-06-29-dispatch-consolidation.md`.
+…
 
 ## Context Boundary
 

@@ -13,14 +13,6 @@
 
 A top-level nav toggles between the existing **Search** view and a new **Console** view. Console hosts four panels.
 
-### 6. Testing Strategy
-
-- **Backend (`pytest`):** unit tests for `debug.py` — proxy forwarding + status pass-through (200/404/503), health aggregation, graceful degradation when monitoring data absent. Mirror `tests/unit/servers/retrieval/test_eval_router.py` (MagicMock backend) and existing web-router tests. Run web tests via `examples/run_web_integration_tests.sh` to avoid the lifespan model-load hang (known gotcha).
-- **Frontend (`vitest`):** component tests per panel — render, mode toggles, and **error states** (503 dense, 404 endpoint, server down). Match `web/src/__tests__` conventions.
-- **Acceptance mapping:** every F1–F4 acceptance bullet has a corresponding test. Keep existing agent/reward outputs byte-stable.
-
----
-
 ### 8. Open Questions (resolve during planning)
 
 1. **Worker health source:** does `monitoring_worker` already persist snapshots to `AgenticSearchStore`, or do we add that write? (Affects F2 size.)

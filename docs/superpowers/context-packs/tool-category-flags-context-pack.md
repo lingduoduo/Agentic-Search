@@ -61,56 +61,18 @@ registry-derived count would be wrong. That migration is a separate, larger step
 
 Create `tests/unit/test_tool_categories.py`:
 
-```python
-"""Category flags (citeable / stopping) on the canonical Tool."""
-
-from __future__ import annotations
-
-from src.tools.base import FunctionTool, ToolEffect
-from src.tools.registry import ToolRegistry
-from src.tools.search import MultiQueryWebSearchTool, build_search_tool
-
-
-def test_functiontool_defaults_false():
-    t = FunctionTool(lambda: "ok", name="x")
-    assert t.citeable is False
-    assert t.stopping is False
-
-
-def test_functiontool_flags_settable():
-    t = FunctionTool(lambda: "ok", name="x", citeable=True, stopping=True)
-    assert t.citeable is True
-    assert t.stopping is True
-
-
-def test_flags_not_leaked_into_schema():
-    t = FunctionTool(lambda: "ok", name="x", citeable=True)
-    fn = t.schema.to_dict()["function"]
-    assert "citeable" not in fn
-    assert "stopping" not in fn
-
-
-def test_tool_decorator_threads_flags():
-    reg = ToolRegistry()
-
-    @reg.tool(description="d", citeable=True)
-    def search_ish(q: str) -> str:
-        return q
-
-    assert reg.get("search_ish").citeable is True
-    assert reg.get("search_ish").stopping is False
-
-
-def test_real_search_tools_are_citeable():
-    assert build_search_tool().citeable is True
-    assert MultiQueryWebSearchTool().citeable is True
-    # web_search doesn't stop the loop
-    assert MultiQueryWebSearchTool().stopping is False
-```
-
 - [ ] **Step 2: Run to verify it fails**
 
-_[Section compacted.]_
+Run: `python3 -m pytest tests/unit/test_tool_categories.py -v`
+Expected: FAIL — `FunctionTool` has no `citeable`/`stopping`; `__init__` rejects the kwargs.
+
+- [ ] **Step 3: Add properties to the `Tool` ABC**
+
+In `src/tools/base.py`, in `class Tool(ABC)`, next to the existing `effect`
+property, add:
+- [ ] **Step 4: Add constructor params + property overrides to `FunctionTool`**
+
+…
 
 ## Context Boundary
 

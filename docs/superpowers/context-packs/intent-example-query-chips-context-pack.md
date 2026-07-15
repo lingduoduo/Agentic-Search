@@ -27,10 +27,6 @@ Frontend only. No backend changes.
 
 `SearchComposer` gains an optional prop:
 
-```ts
-onExampleSelect?: (query: string) => void;
-```
-
 A `.example-chips` row renders under the textarea: one `<button type="button" className="example-chip">` per example, labeled with an intent icon + short label (e.g. "🔍 Search example"). The chip's `title`/`aria-label` carries the full query.
 
 - Click → `onExampleSelect(query)` when provided, else `onQueryChange(query)` (fill-only fallback).
@@ -46,12 +42,6 @@ A `.example-chips` row renders under the textarea: one `<button type="button" cl
 **`App.test.tsx`**
 - clicking an example chip runs the agent (`streamAgent` called) and renders the result with the matching `intent-*` layout class.
 - undefined/unknown intent → no `.intent-badge` and no `intent-*` class (coverage broadening).
-
-### Out of scope
-
-- Configurable / admin-editable example sets.
-- Auto-submit behavior changes for the normal typed-query path.
-- Any backend or routing change.
 
 ## Implementation Plan Context
 

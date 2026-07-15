@@ -69,49 +69,14 @@ exercise the cap deterministically.
 
 Create `tests/unit/test_full_page_truncation.py`:
 
-```python
-"""Unit tests for full-page fetch content truncation."""
+- [ ] **Step 2: Run test to verify it fails**
 
-from __future__ import annotations
+Run: `python3 -m pytest tests/unit/test_full_page_truncation.py -v`
+Expected: FAIL — `ImportError` for `_truncate_page_content` / no `max_full_page_chars`.
 
-from src.agents.search.search import (
-    SearchAgentLoop,
-    SearchAgentLoopConfig,
-    _truncate_page_content,
-)
-from src.context.search import SearchResult
-from tests.unit.test_agent_loop import (
-    DummyServerManager,
-    DummyTokenizerWithEncode,
-)
+- [ ] **Step 3: Write minimal implementation**
 
-
-def test_truncate_under_limit_unchanged():
-    assert _truncate_page_content("short", 100) == "short"
-
-
-def test_truncate_over_limit_head_kept_with_marker():
-    text = "x" * 500
-    out = _truncate_page_content(text, 100)
-    assert out == "x" * 100 + "…(truncated)"
-    assert out.startswith("x" * 100)
-    assert out.endswith("…(truncated)")
-
-
-def test_truncate_disabled_when_limit_non_positive():
-    text = "y" * 500
-    assert _truncate_page_content(text, 0) == text
-    assert _truncate_page_content(text, -1) == text
-
-
-def _loop(max_chars: int) -> SearchAgentLoop:
-    return SearchAgentLoop(
-        tokenizer=DummyTokenizerWithEncode(),
-        server_manager=DummyServerManager([]),
-        search_config=SearchAgentLoopConfig(max_full_page_chars=max_chars),
-    )
-
-_[Section compacted.]_
+…
 
 ## Context Boundary
 

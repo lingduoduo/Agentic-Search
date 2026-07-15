@@ -21,33 +21,6 @@
 
 The optimization layer wraps the existing `RetrievalService` without breaking its interface. All changes are additive or internal.
 
-```
-POST /search
-     │
-     ▼
-ResultCache.get(query, filters, top_k)        ← NEW M7: Redis result cache
-     │ miss
-     ▼
-QueryOptimizer.expand(query)                  ← NEW M5: expansion + spell-correct
-     │
-     ▼
-RetrievalService.search(expanded_query, ...)
-  ├── BM25 leg: SparseRetriever               ← M5: tuned k1/b, BM25+ option
-  │   └── QueryExpander (synonyms, acronyms)  ← M5
-  │
-  ├── Dense leg: FAISSBackend                 ← M6: IVF-PQ, ef_search tuning
-  │   └── EmbeddingBatcher (async)            ← M6
-  │
-  ├── RRF fusion                              ← M7: learned weights per source
-  └── MMR rerank                              ← M7: adaptive λ per intent
-     │
-     ▼
-ResultCache.set(...)                          ← NEW M7
-     │
-     ▼
-SearchResponse + latency/cache metrics
-```
-
 All new components are **opt-in via env vars** — unset = unchanged M1–M4 behavior.
 
 ## Context Boundary

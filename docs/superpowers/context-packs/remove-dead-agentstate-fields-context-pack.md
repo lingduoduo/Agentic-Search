@@ -60,20 +60,6 @@ Plus the existing suite (`test_agent_loop`, any state tests) as the behavior gua
 
 Create `tests/unit/test_agent_state_fields.py`:
 
-```python
-"""Guard: dead AgentState memory fields stay removed."""
-
-from __future__ import annotations
-
-from src.agents.core.state import AgentState
-
-
-def test_dead_memory_fields_removed():
-    fields = AgentState.__dataclass_fields__
-    assert "short_term_memory" not in fields
-    assert "long_term_memory" not in fields
-```
-
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `python3 -m pytest tests/unit/test_agent_state_fields.py -v`
@@ -83,11 +69,6 @@ Expected: FAIL — the fields still exist.
 
 In `src/agents/core/state.py`, remove these two lines from `AgentState`:
 
-```python
-    short_term_memory: list[dict[str, str]] = field(default_factory=list)
-    long_term_memory: dict[str, Any] = field(default_factory=dict)
-```
-
 - [ ] **Step 4: Run the guard test + regression**
 
 Run: `python3 -m pytest tests/unit/test_agent_state_fields.py tests/unit/test_agent_loop.py -q`
@@ -95,19 +76,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Grep-verify no references remain**
 
-Run: `grep -rn "short_term_memory\|long_term_memory" src/ tests/`
-Expected: no output (zero references).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/agents/core/state.py tests/unit/test_agent_state_fields.py
-git commit -m "chore(state): remove unused AgentState memory fields
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
-
----
+…
 
 ## Context Boundary
 

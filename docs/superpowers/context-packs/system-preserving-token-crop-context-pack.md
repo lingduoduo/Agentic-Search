@@ -61,48 +61,17 @@ system content is a prefix of `_build_prompt_ids_sync(...)`.
 
 Create `tests/unit/test_prompt_crop.py`:
 
-```python
-"""Unit tests for system-preserving prompt-id truncation."""
+- [ ] **Step 2: Run test to verify it fails**
 
-from __future__ import annotations
+Run: `python3 -m pytest tests/unit/test_prompt_crop.py -v`
+Expected: FAIL — `ImportError` for `_crop_prompt_ids`.
 
-from src.agents.core.base import AgentLoopBase, AgentLoopConfig, _crop_prompt_ids
-from tests.unit.test_agent_loop import DummyServerManager, DummyTokenizerWithEncode
+- [ ] **Step 3: Add the helper + system-prefix encoder**
 
+In `src/agents/core/base.py`, add a module-level helper (near the top, after the
+regex constants):
 
-def test_under_budget_unchanged():
-    full = [1, 2, 3]
-    assert _crop_prompt_ids(full, [9], 10) == full
-    assert _crop_prompt_ids(full, [9], 0) == full  # budget <= 0 → unchanged
-
-
-def test_no_system_tail_crop():
-    full = list(range(10))
-    assert _crop_prompt_ids(full, [], 4) == [6, 7, 8, 9]
-
-
-def test_system_preserved_over_budget():
-    system = [100, 101]
-    full = list(range(20))  # far over budget
-    out = _crop_prompt_ids(full, system, 6)
-    assert len(out) == 6
-    assert out[:2] == system
-    assert out[2:] == full[-(6 - 2):]  # recent tail fills the rest
-
-
-def test_system_larger_than_budget_degenerate():
-    system = [1, 2, 3, 4, 5]
-    full = list(range(50))
-    out = _crop_prompt_ids(full, system, 3)
-    assert out == system[-3:]
-
-
-def test_build_prompt_ids_sync_keeps_system_prefix():
-    loop = AgentLoopBase(
-        tokenizer=DummyTokenizerWithEncode(),
-        server_manager=DummyServerManager([]),
-
-_[Section compacted.]_
+…
 
 ## Context Boundary
 

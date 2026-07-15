@@ -52,25 +52,9 @@ Create `docs/request-routing.md` as the canonical routing contract. Update `READ
 
 Run:
 
-```bash
-rg -n "class AgentRequest|async def _run_agent_impl|async def _run_auto_routed|async def _run_search_direct_or_escalate|def route_query|class RouteStrategy" src/internal/servers/web
-```
-
 Expected: definitions for the API model, dispatcher, three-way router, and sequential search fallback.
 
-- [ ] **Step 2: Write the complete guide**
-
-Create `docs/request-routing.md` with these concrete sections: endpoints and shared dispatcher; request fields; explicit mode table; auto-router decision precedence; search-provider sequence; sufficiency gate; filter behavior; response and SSE fields; configuration dependencies; `RAG`/`GRPO` walkthroughs; troubleshooting; code ownership.
-
-- [ ] **Step 3: Check the guide against the implementation**
-
-Run:
-
-```bash
-rg -n "internal retrieval|SerpAPI|browser|No results|No sources|local model|source_provider|route_degraded|search_mode" docs/request-routing.md src/internal/servers/web/app.py
-```
-
-_[Section compacted.]_
+…
 
 ### Task 2: Synchronize all maintained documentation
 
@@ -91,21 +75,7 @@ _[Section compacted.]_
 
 - [ ] **Step 1: Add the routing entry point to the README**
 
-Add a concise request-routing paragraph and a Documentation-list entry. Replace troubleshooting text that suggests omitting `SEARCH_AGENT_MODEL` is the auto-route provider fallback.
-
-- [ ] **Step 2: Replace stale API and architecture behavior**
-
-In `docs/api-reference.md`, document exact request and response fields, explicit modes, sequential provider precedence, SSE metadata, and examples. Remove the obsolete “known gap” claiming local-model auto routes cannot reach web search.
-
-In `docs/architecture.md`, add an end-to-end request flow and clearly separate strategy routing, source-provider selection, and retrieval-backend routing.
-
-- [ ] **Step 3: Align configuration and retrieval guides**
-
-In `docs/configuration.md`, explain which variables enable SerpAPI, browser fallback, intent models, and explicit local policy modes, including precedence.
-
-In `docs/retrieval.md`, document internal sufficiency gating and sequential external fallback, including filter constraints and deterministic empty/unreachable results.
-
-_[Section compacted.]_
+…
 
 ### Task 3: Verify documentation and routing behavior
 
@@ -126,31 +96,7 @@ Run the repository's documentation/link checker if present; otherwise enumerate 
 
 Expected: zero missing local targets.
 
-- [ ] **Step 2: Run focused behavioral tests**
-
-```bash
-pytest -q tests/unit/test_execution_fallbacks.py tests/unit/servers/web/test_agent_router.py tests/unit/servers/web/test_web_experience_app.py
-```
-
-Expected: all collected tests pass.
-
-- [ ] **Step 3: Run whitespace and final diff checks**
-
-```bash
-git diff --check
-git status --short
-```
-
-Expected: no whitespace errors; only intended documentation changes remain before the final commit.
-
-- [ ] **Step 4: Push and update PR #410**
-
-```bash
-git push
-gh pr edit 410 --repo lingduoduo/Agentic-Search-GRPO --title "fix: prioritize search providers before local model" --body-file /private/tmp/pr410-body.md
-```
-
-Expected: PR #410 contains the routing implementation, canonical guide, synchronized documentation, and verification summary.
+…
 
 ## Context Boundary
 

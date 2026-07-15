@@ -14,11 +14,6 @@
 Green `main`: remove the stale `has_local_model=` keyword from the 4 model-step
 `route_query` calls in `test_agent_router.py`. Test-only; no production change.
 
-### Non-goals
-
-- No change to `route_query`, `ml_intent`, or any production code.
-- No change to the model-step tests' assertions — only the removed kwarg.
-
 ### Testing
 
 - `pytest tests/unit/servers/web/test_agent_router.py` → all pass (40).

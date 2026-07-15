@@ -10,20 +10,6 @@
 
 ### 2. Architecture
 
-```
-Browser                           FastAPI /api/agent/stream
-  │                                          │
-  │  POST /api/agent/stream                  │
-  │─────────────────────────────────────────▶│
-  │                                          │  asyncio.Queue()
-  │                                          │  asyncio.create_task(run_agent(..., on_turn=queue.put))
-  │◀── data: {"type":"progress","turn":1,"text":"search_routing_tool · 5 docs"} ──│
-  │◀── data: {"type":"progress","turn":2,"text":"search_routing_tool · 3 docs"} ──│
-  │◀── data: {"type":"progress","turn":3,"text":"writing answer…"} ────────────────│
-  │◀── data: {"type":"answer","text":"Dense retrieval is…"} ──────────────────────│
-  │◀── data: {"type":"done","session_id":"…","citations":[…],"documents":[…]} ────│
-```
-
 The agent loop receives an `on_turn` async callback. It calls it after each completed turn. The stream endpoint converts each call into an SSE `progress` event. This is the only coupling point — the rest of the agent loop is unchanged.
 
 ---

@@ -16,14 +16,6 @@ Obvious cases are decided deterministically and for free; anything not confident
 matched falls through to the existing LLM classifier (or the existing lenient
 rule-based fallback when no LLM is present). No new dependencies, no ML.
 
-### Non-goals
-
-- Not replacing the LLM classifier — it stays as the fallback for ambiguous input.
-- Not a scoring/weighting model — this is a small, ordered rule list, deliberately
-  kept to a handful of anchored patterns.
-- No change to capability-aware dispatch/degradation in `app.py`.
-- Not touching the separate internal retriever router (`src/internal/routing/`).
-
 ### Testing
 
 - **`_regex_route` unit tests**, one behavior each: tool imperatives → TOOL; bare
@@ -35,8 +27,8 @@ rule-based fallback when no LLM is present). No new dependencies, no ML.
   `classify_route`; the no-LLM path still resolves via `_rule_based_route`.
 - **Regression:** update the `test_agent_router.py` cases that assumed the LLM
   classifier ran for now-deterministic inputs (e.g. `What is FAISS?` used to reach
-  the classifier; now short-circuits to CHAT). Behavior for ambiguous inputs is
-  unchanged.
+
+…
 
 ## Implementation Plan Context
 
@@ -47,9 +39,8 @@ rule-based fallback when no LLM is present). No new dependencies, no ML.
 - Reuse the existing `_is_bare_lookup`; do NOT change `classify_route` or `_rule_based_route` behavior.
 - No new dependencies. No change to `app.py` dispatch/degradation.
 - Run `ruff check <files> --fix && ruff format <files>` before each commit (repo has a ruff pre-commit hook; if a commit aborts because the hook reformatted files, `git add -A` and re-run the same commit).
-- Branch: `feat/regex-first-intent-route` (spec already committed there).
 
----
+…
 
 ### Task 1: `_regex_route` pure function + unit tests
 
@@ -65,7 +56,11 @@ rule-based fallback when no LLM is present). No new dependencies, no ML.
 
 Append to `tests/unit/servers/web/test_agent_router.py`:
 
-```python
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python -m pytest tests/unit/servers/web/test_agent_router.py -k regex_route -v`
+
+…
 
 ### Task 2: wire `_regex_route` into `route_query`
 
@@ -81,7 +76,11 @@ Append to `tests/unit/servers/web/test_agent_router.py`:
 
 Append to `tests/unit/servers/web/test_agent_router.py`:
 
-```python
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python -m pytest tests/unit/servers/web/test_agent_router.py -k "confident_regex or ambiguous_falls or currency_conflict" -v`
+
+…
 
 ## Context Boundary
 

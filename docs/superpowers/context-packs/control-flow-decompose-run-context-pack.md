@@ -43,18 +43,8 @@ This changes **structure, not behavior**:
   (`repeated_query_ratio`, `subquestion_coverage_ratio`,
   `answer_when_evidence_insufficient`, `search_budget_exhausted_without_answer`,
   the `exit_*` fixups), so the largest extraction has direct unit coverage rather
-  than integration coverage alone. Build the loop with a stub server_manager (no
-  generation needed — `_finalize_run_metrics` does not call the model).
 
-### Non-goals (deferred to later specs)
-
-- The explicit state machine (`DECIDE→SEARCH→EVALUATE→ANSWER→STOP`).
-- Consolidating the ~12 control-flow flags into a state object.
-- Unifying the loop onto the modular components (`Planner`/`SearchTool`/… ) — the
-  inline `_parse_actions` vs `Planner.decide()` duplication stays.
-- Extracting the answer-gate / observation-assembly / dead-end blocks (they contain
-  `break`/`continue`; extracting them needs returned control-flow sentinels — out of
-  scope for the smallest decomposition).
+…
 
 ## Implementation Plan Context
 
@@ -64,9 +54,8 @@ This changes **structure, not behavior**:
 - **`metrics` dict byte-identical.** Keys, values, and computation stay the same; `reward.py` / `action_eval.py` consume these keys. The only change is *where* the code lives.
 - **`AgentLoopOutput` fields unchanged.**
 - **No control-flow change.** Only blocks with no `break`/`continue` are extracted. The `for turn` loop, answer-gate, observation assembly, dead-end handling, forced-answer hook, and `finally:` stay in `run()`.
-- **Verbatim move + dedent only.** The extracted bodies are the existing lines, dedented into the method; do not "improve" them.
 
----
+…
 
 ### Task 1: Extract `_generate_turn`
 
@@ -81,33 +70,9 @@ This changes **structure, not behavior**:
 
 Add to `SearchAgentLoop` (place it just before `run()`, after `_execute_search_round`):
 
-```python
-    async def _generate_turn(
-        self,
-        working_messages: list[dict[str, Any]],
-        sampling_params: dict[str, Any],
-        request_id: str,
-        turn: int,
-        metrics: dict[str, float],
-    ) -> tuple[list[int], list[int], str, list[tuple[str, str]]]:
-        """Build the prompt, generate, decode, and parse actions for one turn.
+- [ ] **Step 2: Replace the inline block in `run()`**
 
-        Returns (prompt_ids, response_ids, response_text, actions). Side-effect
-        free on the caller's loop state; the caller applies the returned values.
-        """
-        with simple_timer(f"build_prompt_turn_{turn}", metrics):
-            prompt_ids = await self.build_prompt_ids(working_messages)
-
-        with simple_timer(f"generate_turn_{turn}", metrics):
-            response_ids = await self.generate_response_ids(
-                prompt_ids=prompt_ids,
-                sampling_params=sampling_params,
-                request_id=f"{request_id}_t{turn}",
-            )
-
-        response_text = self.decode_response_ids(response_ids)
-
-_[Section compacted.]_
+…
 
 ### Task 2: Extract `_finalize_run_metrics` + unit test
 
@@ -121,54 +86,10 @@ _[Section compacted.]_
 
 - [ ] **Step 1: Write the failing unit test**
 
-```python
-
-### tests/unit/test_agent_loop.py
-
-def test_finalize_run_metrics_computes_derived_keys():
-    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    from src.context.search import AgentContext
-
-    loop = SearchAgentLoop(
-        tokenizer=DummyTokenizer(),  # reuse the file's existing dummy tokenizer
-        server_manager=DummyServerManager([]),
-        search_config=SearchAgentLoopConfig(max_search_limit=3),
-    )
-    metrics = loop._initial_metrics()
-    metrics["search_queries"] = 2.0
-    metrics["repeated_search_queries"] = 0.0
-    loop._finalize_run_metrics(
-        metrics,
-        rounds_used=0,
-        task_statuses={},
-        task_search_counts={},
-        active_tasks={},
-        agent_ctx=AgentContext(),
-        final_answer=None,
-        latest_evaluation=None,
-        exit_status="answered",
-    )
-    # No subquestions → coverage ratio defaults to 1.0
-    assert metrics["subquestion_coverage_ratio"] == 1.0
-    # No answer → answer_allowed stays 0.0
-    assert metrics["answer_allowed"] == 0.0
-    # rounds_used surfaced as float
-    assert metrics["rounds_used"] == 0.0
-    # exit fixup recorded
-    assert metrics["exit_answered"] == 1.0
-```
-
 (Use the actual dummy tokenizer/server-manager class names already in
 `test_agent_loop.py` — read the file's top to match `DummyTokenizer`/`DummyServerManager`.)
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pytest tests/unit/test_agent_loop.py::test_finalize_run_metrics_computes_derived_keys -v`
-Expected: FAIL — `AttributeError: '_finalize_run_metrics'`.
-
-- [ ] **Step 3: Add the method (verbatim move from `run()`)**
-
-_[Section compacted.]_
+…
 
 ### Task 3: Full-suite + metrics-contract verification
 
@@ -191,14 +112,7 @@ Run: `ruff check . --fix && ruff format .` then re-run `pytest tests/unit -q`.
 
 - [ ] **Step 4: Commit (only if lint changed anything)**
 
-```bash
-git add -A
-git commit -m "chore: lint after run() decomposition"
-```
-
-(If nothing changed, skip.)
-
----
+…
 
 ## Context Boundary
 

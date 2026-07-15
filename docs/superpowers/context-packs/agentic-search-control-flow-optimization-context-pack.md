@@ -64,37 +64,10 @@ pytest tests/unit/test_agent_loop.py -v
 Add these tests near other `SearchAgentLoop` tests in `tests/unit/test_agent_loop.py`:
 
 ```python
-def test_search_agent_loop_records_answered_exit_metric():
-    tokenizer = DummyTokenizerWithEncode()
-    loop = SearchAgentLoop(
-        tokenizer=tokenizer,
-        server_manager=DummyServerManager(
-            [tokenizer.encode("<answer>direct answer</answer>")]
-        ),
-        search_config=SearchAgentLoopConfig(
-            max_turns=2,
-            require_sufficient_evidence_before_answer=False,
-        ),
-    )
-
-    output = asyncio.run(
-        loop.run([{"role": "user", "content": "hello"}], {"temperature": 0.0})
-    )
-
-    assert output.final_answer == "direct answer"
-    assert output.metrics["exit_answered"] == 1.0
-    assert output.metrics["exit_max_turns"] == 0.0
-    assert output.metrics["exit_search_limit"] == 0.0
-    assert output.metrics["exit_no_action"] == 0.0
-```
-
-```python
 def test_search_agent_loop_records_max_turns_exit_metric():
     tokenizer = DummyTokenizerWithEncode()
-    loop = SearchAgentLoop(
-        tokenizer=tokenizer,
 
-_[Section compacted.]_
+…
 
 ### Task 2: No-Action Format Error Limit And Search-Limit Exit
 
@@ -111,41 +84,12 @@ _[Section compacted.]_
 Add these tests to `tests/unit/test_agent_loop.py`:
 
 ```python
-def test_search_agent_loop_stops_after_repeated_no_action_turns():
-    tokenizer = DummyTokenizerWithEncode()
-    loop = SearchAgentLoop(
-        tokenizer=tokenizer,
-        server_manager=DummyServerManager(
-            [
-                tokenizer.encode("no tags here"),
-                tokenizer.encode("still no tags"),
-            ]
-        ),
-        search_config=SearchAgentLoopConfig(
-            max_turns=5,
-            max_consecutive_format_errors=2,
-        ),
-    )
-
-    output = asyncio.run(
-        loop.run([{"role": "user", "content": "research"}], {"temperature": 0.0})
-    )
-
-    assert output.num_turns == 2
-    assert output.metrics["format_error_turns"] == 2.0
-    assert output.metrics["exit_format_error_limit"] == 1.0
-    assert output.metrics["exit_max_turns"] == 0.0
-```
-
-```python
 def test_search_agent_loop_records_search_limit_exit_metric():
     tokenizer = DummyTokenizerWithEncode()
     loop = SearchAgentLoop(
         tokenizer=tokenizer,
-        server_manager=DummyServerManager(
-            [
 
-_[Section compacted.]_
+…
 
 ### Task 3: Remove Sample From CLI File
 
@@ -161,56 +105,17 @@ _[Section compacted.]_
 
 Add this test to `tests/unit/test_run_agentic_search.py`:
 
-```python
-def test_run_agentic_search_has_no_minisweagent_dependency():
-    source = Path("examples/run_agentic_search.py").read_text(encoding="utf-8")
-
-    assert "minisweagent" not in source
-    assert "class DefaultAgent" not in source
-```
-
 If `Path` is not imported in that file, add:
-
-```python
-from pathlib import Path
-```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run:
 
-```bash
-pytest tests/unit/test_run_agentic_search.py -k "minisweagent_dependency" -v
-```
-
 Expected: fail because the sampled Basic agent code is still appended to `examples/run_agentic_search.py`.
 
 - [ ] **Step 3: Remove appended sample code**
 
-Edit `examples/run_agentic_search.py` so the file ends at:
-
-```python
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-Remove everything after that block, including imports from `minisweagent`, `jinja2`, `pydantic`, `Path`, `traceback`, and the `AgentConfig` / `DefaultAgent` definitions.
-
-- [ ] **Step 4: Run test to verify pass**
-
-Run:
-
-```bash
-pytest tests/unit/test_run_agentic_search.py -k "minisweagent_dependency" -v
-```
-
-Expected: pass.
-
-- [ ] **Step 5: Commit Task 3**
-
-```bash
-
-_[Section compacted.]_
+…
 
 ### Final Verification
 

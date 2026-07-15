@@ -68,8 +68,8 @@ def test_pair_sources_keeps_unmatched_and_disambiguates_collisions(
 
     assert [bundle.output_name for bundle in bundles] == [
         "planning-context-pack.md",
-        "routing-2026-07-01-context-pack.md",
-        "routing-2026-07-02-context-pack.md",
+        "routing-2026-07-01-spec-context-pack.md",
+        "routing-2026-07-02-spec-context-pack.md",
     ]
     assert bundles[0].specs == ()
     assert bundles[0].plans[0].topic == "planning"
@@ -162,3 +162,76 @@ def test_validate_coverage_handles_same_basename_in_specs_and_plans(
     assert index.count(f"../specs/{name}") == 1
     assert index.count(f"../plans/{name}") == 1
     assert validate_generated(root, root / "context-packs") == []
+
+
+def test_pair_sources_makes_same_date_collisions_unique(tmp_path: Path) -> None:
+    paths = [
+        ("spec", tmp_path / "specs/2026-07-01-routing-design.md"),
+        ("spec", tmp_path / "other/2026-07-01-routing-design.md"),
+        ("plan", tmp_path / "plans/2026-07-01-routing.md"),
+    ]
+    for kind, path in paths:
+        write(path, f"# {kind.title()}\n")
+
+    bundles = pair_sources(
+        [normalize_source(path, kind) for kind, path in paths if kind == "spec"],
+        [normalize_source(path, kind) for kind, path in paths if kind == "plan"],
+    )
+
+    names = [bundle.output_name for bundle in bundles]
+    assert len(names) == len(set(names)) == 3
+    assert all(name.startswith("routing-2026-07-01-") for name in names)
+
+
+def test_render_pack_reserves_space_for_acceptance_after_many_tasks(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "superpowers"
+    tasks = "\n\n".join(
+        f"## Task {number}\n\n- [ ] Step {number}\n\n```python\nprint({number})\n```"
+        for number in range(1, 10)
+    )
+    write(
+        root / "plans/2026-07-01-routing.md",
+        f"# Routing\n\n{tasks}\n\n## Final Acceptance Checklist\n\n"
+        + ("- [ ] All routing checks pass.\n" * 40),
+    )
+
+    generate(root, root / "context-packs")
+
+    pack = (root / "context-packs/routing-context-pack.md").read_text(encoding="utf-8")
+    assert "Final Acceptance Checklist" in pack
+    assert "All routing checks pass." in pack
+    assert "print(1)" not in pack
+    assert "Section compacted" not in pack
+    assert len(pack.splitlines()) < 100
+
+
+def test_validate_generated_rejects_stale_owned_pack_and_placeholder(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "superpowers"
+    output = root / "context-packs"
+    write(root / "specs/2026-07-01-search-design.md", "# Search\n")
+    generate(root, output)
+    write(output / "stale-context-pack.md", "# Generated Context Pack\n")
+    current = output / "search-context-pack.md"
+    current.write_text(current.read_text() + "\nTODO: generated placeholder\n")
+
+    errors = validate_generated(root, output)
+
+    assert any("unexpected generated file" in error for error in errors)
+    assert any("placeholder marker" in error for error in errors)
+
+
+def test_markdown_parser_ignores_heading_syntax_inside_fences(tmp_path: Path) -> None:
+    source_path = tmp_path / "2026-07-01-shell-design.md"
+    write(
+        source_path,
+        "# Shell\n\n## Goal\n\nRun safely.\n\n```bash\n# not a heading\necho ok\n```\n",
+    )
+
+    source = normalize_source(source_path, "spec")
+
+    assert [section.heading for section in source.sections] == ["Goal"]
+    assert "# not a heading" in source.sections[0].body

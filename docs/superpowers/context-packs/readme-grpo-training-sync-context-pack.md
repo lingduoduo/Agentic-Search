@@ -45,10 +45,8 @@
 - [x] **Step 3: Training table** — add rows for the demo entry point and `src/training/judge.py`.
 - [x] **Step 4: Reward-components section** — document the 4-dimension rollup + partition invariant; add `retriever_aware` to the preset list.
 - [x] **Step 5: Repository tree** — add `judge.py`; annotate `reward.py`.
-- [x] **Step 6: Verify** — `python3 -m pytest tests/unit/test_readme_examples.py -q` (green) and grep-confirm each new reference resolves (`run_bamboogle_grpo_train`, `REWARD_DIMENSIONS`/`group_reward_components`/`reward_dimensions`, `SimulatedPreferenceJudge`).
-- [x] **Step 7: Commit** on branch `docs/readme-grpo-training-sync`.
 
----
+…
 
 ## Context Boundary
 

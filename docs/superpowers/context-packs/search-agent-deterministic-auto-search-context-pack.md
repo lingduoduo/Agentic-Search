@@ -27,8 +27,8 @@ model refusal is never passed off as an answer; see
   produces a *grounded* answer instead of dead-ending empty (realistic weak model;
   covered by `test_deadend_forces_answer_from_evidence`).
 - A genuinely tag-less model (no tag on any turn, including the forced turn) still
-  returns `None` — but now with evidence retrieved rather than none. The honest
-  win is "retrieval always runs", not "the answer is always non-empty".
+
+…
 
 ### Tests
 
@@ -60,9 +60,8 @@ model refusal is never passed off as an answer; see
 3. **Tests (honest).**
    - `…auto_searches_when_model_emits_no_action`: genuinely tag-less model ⇒
      `search_rounds == 1`, `auto_search` event, `final_answer is None`.
-   - `…auto_search_disabled_preserves_format_recovery`: flag off ⇒ no retrieval.
-   - Pin the two legacy dead-end tests to `auto_search_on_deadend=False`.
-4. **Regression + lint:** `tests/unit/test_agent_loop.py`, reward/sft/grpo; `ruff`.
+
+…
 
 ## Context Boundary
 

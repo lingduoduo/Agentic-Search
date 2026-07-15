@@ -56,21 +56,6 @@
 
 Append to `tests/unit/test_tool_arg_validation.py`:
 
-```python
-@pytest.mark.asyncio
-async def test_unknown_tool_reports_not_found():
-    @FunctionTool.from_fn(effect=ToolEffect.READ_ONLY, parameters=_INT_SCHEMA)
-    def needs_int(value: int):
-        return value
-
-    # Model calls a tool that isn't registered in the loop.
-    loop, _ = _loop([needs_int], ['{"name":"ghost","arguments":{}}', "done"])
-    output = await loop.run([{"role": "user", "content": "go"}], {})
-    result = _trace(output)[0]
-    assert result["status"] == str(TaskStatus.FAILED)
-    assert result["error_code"] == "tool_not_found"
-```
-
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `python3 -m pytest tests/unit/test_tool_arg_validation.py::test_unknown_tool_reports_not_found -v`
@@ -79,25 +64,12 @@ Expected: FAIL — current `_call_tool` raises `KeyError` → `error_code == "Ke
 - [ ] **Step 3: Add the ToolRegistry import**
 
 In `src/agents/tool/tool_calling.py`, add:
-```python
-from src.tools.registry import ToolRegistry
-```
-
 - [ ] **Step 4: Build a per-loop registry in `__init__`**
 
 Replace:
-```python
-        _tools = list(tools or [])
-        self.tools: dict[str, Tool] = {t.name: t for t in _tools}
-        self.tool_schemas: list[dict[str, Any]] = [t.schema.to_dict() for t in _tools]
-```
 with:
-```python
-        _tools = list(tools or [])
-        self._registry = ToolRegistry()
-        for _t in _tools:
 
-_[Section compacted.]_
+…
 
 ## Context Boundary
 

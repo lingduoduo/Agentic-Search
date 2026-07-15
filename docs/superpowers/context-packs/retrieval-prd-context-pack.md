@@ -18,29 +18,6 @@ Cross-encoder reranking improvements, LLM-based reranking, connector ingestion p
 
 **Single service, pluggable backend.** One `RetrievalService` process owns all three retrieval modes. The backend is selected at startup via `RETRIEVAL_BACKEND=local|opensearch|weaviate`. The factory pattern in `src/internal/document_index/factory.py` is formalized as the single source of truth.
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  RetrievalService                   │
-│                                                     │
-│  POST /search               ← agents, frontend      │
-│  POST /internal/search/sparse   ← eval, debug       │
-│  POST /internal/search/dense    ← eval, debug       │
-│  POST /internal/search/hybrid   ← eval, tuning      │
-│  GET  /health                                       │
-│  GET  /api/admin/evals/summary  ← online signals    │
-│                                                     │
-│  ┌─────────────┐   ┌──────────────┐                 │
-│  │ BM25 Engine │   │ Dense Engine │                 │
-│  │ (Pyserini / │   │ (FAISS /     │                 │
-│  │  OpenSearch)│   │  OpenSearch /│                 │
-│  │             │   │  Weaviate)   │                 │
-│  └──────┬──────┘   └──────┬───────┘                 │
-│         └────────┬─────────┘                        │
-│              RRF Fusion + MMR                       │
-└─────────────────────────────────────────────────────┘
-         ↑ RETRIEVAL_BACKEND=local|opensearch|weaviate
-```
-
 ## Context Boundary
 
 This pack summarizes its linked sources. Consult those documents for complete details; no implementation status is inferred here.

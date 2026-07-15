@@ -46,10 +46,8 @@ intents), deletes an ungrounded parametric path, and drops one orphaned helper.
 - Do **not** modify `_infer_intent_from_output` — it maps the first tool call to a surfaced intent for the explicit tool-agent finalize path and is out of scope.
 - Keep `classify_route` (LLM classifier) and the capability-aware degradation logic — only the label vocabulary changes.
 - `route` (chosen strategy) and `intent` (what actually ran after degradation) share a vocabulary but remain distinct fields; they can legitimately differ.
-- Every changed line must trace to this refactor. Remove only imports/helpers that *this* change orphans.
-- Reference spec: `docs/superpowers/specs/2026-07-01-simplify-intent-routing-3-strategies-design.md`.
 
----
+…
 
 ### Task 1: Delete the dead `_rule_based_is_search` helper
 
@@ -70,31 +68,7 @@ Expected: exactly one hit — its `def` at `src/internal/servers/web/intent_rout
 
 - [ ] **Step 2: Delete the 7 helper tests and fix the import**
 
-In `tests/unit/test_intent_routing.py`, change the import block (lines 8-11) from:
-
-```python
-from src.internal.servers.web.intent_routing import (
-    _infer_intent_from_output,
-    _rule_based_is_search,
-)
-```
-
-to:
-
-```python
-from src.internal.servers.web.intent_routing import _infer_intent_from_output
-```
-
-Then delete the entire `# --- _rule_based_is_search ---` section (lines 28-59): the seven functions `test_rule_based_is_search_find_keyword`, `test_rule_based_is_search_short_keyword_query`, `test_rule_based_is_search_list_keyword`, `test_rule_based_is_chat_explain_keyword`, `test_rule_based_is_chat_what_is`, `test_rule_based_is_chat_default_no_signal`, `test_rule_based_is_search_show_me`.
-
-- [ ] **Step 3: Delete the helper**
-
-In `src/internal/servers/web/intent_routing.py`, delete the `_rule_based_is_search` function (lines 31-46), the whole block:
-
-```python
-def _rule_based_is_search(query: str) -> bool:
-
-_[Section compacted.]_
+…
 
 ### Task 2: Collapse `RouteStrategy` to `CHAT`/`SEARCH`/`TOOL` and remove the `direct_llm` path
 
@@ -106,24 +80,8 @@ This is one atomic rename: the enum is imported by `app.py` and five test files,
 - Modify: `tests/unit/servers/web/test_agent_router.py`
 - Modify: `tests/unit/test_execution_fallbacks.py`
 - Modify: `tests/unit/servers/web/test_tool_trace.py`
-- Modify: `tests/unit/servers/web/test_web_experience_app.py`
-- Modify: `tests/unit/servers/web/test_sse_streaming.py`
 
-**Interfaces:**
-- Produces: `RouteStrategy` with exactly three members — `CHAT = "chat"`, `SEARCH = "search"`, `TOOL = "tool"`. `route_query(query, *, llm, has_local_model, explicit_source) -> RouteStrategy` (signature unchanged). `_rule_based_route(query) -> RouteStrategy`. `classify_route(query, llm) -> RouteStrategy`.
-- Consumes: `_run_auto_routed` dispatches on the three members; `extra["route"] == strategy.value ∈ {"chat","search","tool"}`.
-
-- [ ] **Step 1: Update `test_agent_router.py` to the new vocabulary**
-
-Rewrite every `RouteStrategy.*` reference and the `classify_route` label expectations. Replace the file's route-assertion bodies as follows.
-
-The cascade tests (`SEARCH_AGENT` → `SEARCH`):
-
-```python
-    assert strategy is RouteStrategy.SEARCH
-```
-
-_[Section compacted.]_
+…
 
 ### Task 3: Guard the accepted tradeoff — a generative query routes to `chat` and dispatches cleanly
 
@@ -139,65 +97,11 @@ Verifies the intended behavior: a generative ask ("write a haiku"), which former
 
 Add to `tests/unit/servers/web/test_web_experience_app.py`:
 
-```python
-def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
-    """A generative ask (former direct_llm) now routes to CHAT → grounded path,
-    and dispatches cleanly even when retrieval yields zero documents."""
-    dispatched = {}
-
-    async def fake_rag(query, **kw):
-        dispatched["query"] = query
-        return "here is a haiku", [], [], "chat", {}
-
-    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
-
-    class _LLM:
-        def complete(self, messages, **_):
-            return "chat"  # LLM classifier picks the chat label
-
-    app = create_web_app(
-        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), llm=_LLM()
-    )
-    client = TestClient(app)
-    response = client.post("/api/agent", json={"query": "write a haiku about the sea"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["intent"] == "chat"
-    assert body["documents"] == []  # zero relevant docs, no crash
-    assert dispatched["query"] == "write a haiku about the sea"
-```
-
 - [ ] **Step 2: Run it**
 
-_[Section compacted.]_
+Run: `pytest tests/unit/servers/web/test_web_experience_app.py::test_generative_query_routes_to_chat_and_dispatches -q`
 
-### Task 4: Update the README
-
-Bring the Intent Routing docs in line with the 3-strategy router.
-
-**Files:**
-- Modify: `README.md:327-333` (Intent Routing table + description)
-- Modify: `README.md:930-962` (auto-router strategy vocabulary)
-
-**Interfaces:** none (docs).
-
-- [ ] **Step 1: Fix the Intent Routing table and description (lines 327-333)**
-
-Replace the table rows and the paragraph so `chat` maps to `AgenticRAGLoop` and the classifier is named correctly:
-
-```markdown
-| Intent | Agent loop | Trigger |
-|--------|-----------|---------|
-| `search` | `SearchAgentLoop` | Query needs external retrieval (web or indexed docs), or a bare entity lookup (e.g. `FAISS`) |
-| `chat` | `AgenticRAGLoop` | Descriptive/conversational questions and generative asks — grounded synthesis |
-| `tool` | `ToolAgentLoop` | Explicit tool use (`search_routing_tool`, custom tools) |
-
-The router is `route_query` (`src/internal/servers/web/intent_routing.py`), dispatched by `_run_auto_routed` in `src/internal/servers/web/app.py`. It runs an LLM-backed 3-way classifier (`classify_route`) and falls back to a rule-based route (default `chat`) on ambiguous input.
-```
-
-- [ ] **Step 2: Fix the auto-router strategy vocabulary (lines 930-962)**
-
-_[Section compacted.]_
+…
 
 ### Final Verification
 

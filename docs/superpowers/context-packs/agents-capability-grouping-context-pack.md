@@ -39,19 +39,6 @@
 - [ ] Point the loop imports at sub-packages: `from .generation import ...`, `from .search import ...`, `from .tool import ...`. Keep all `state`/`base` imports unchanged.
 - [ ] Verify: `python -c "import src.agents; from src.agents.base import list_registered_agent_loops as L; print(sorted(L()))"` → `['plain_generation', 'search_agent', 'single_turn_agent', 'tool_agent']`.
 
-### Task 4: Update external deep-import sites (~29)
-
-- [ ] Rewrite each site (src/, tests/, examples/) to `from src.agents.<capability> import <symbol>` per the spec's list.
-- [ ] **Also rewrite string-literal path references** — `patch("src.agents.<oldmodule>.X")` targets in tests are NOT import statements and are easy to miss. Grep `src\.agents\.(agentic_rag|tool_calling|plain|single_turn)\.` and rewrite `agentic_rag.` → `search.agentic_rag.`, `tool_calling.` → `tool.tool_calling.`, `plain.`/`single_turn.` → `generation.…`. Leave `src.agents.search.<Class>` strings — they still resolve via the package re-export.
-- [ ] Verify: `grep -rn "from src.agents.\(plain\|single_turn\|search\|tool_calling\|agentic_rag\) import" src tests examples | grep -v "agents/\(generation\|search\|tool\)/"` returns nothing (old module-path imports gone), EXCEPT `from src.agents.search import` lines that now resolve to the package (acceptable — they hit `search/__init__`).
-
-### Task 5: Verify + commit
-
-- [ ] `ruff check src tests examples --fix && ruff format .`
-- [ ] `pytest tests/unit/test_agent_loop.py tests/unit/test_agentic_rag.py tests/unit/test_run_agentic_search.py tests/unit/test_on_turn_callback.py tests/unit/test_loop_controller.py tests/unit/servers/web/test_loop_runners.py -q`
-- [ ] Full `pytest` with model-load env overrides.
-- [ ] Commit; push; open PR.
-
 ## Context Boundary
 
 This pack summarizes its linked sources. Consult those documents for complete details; no implementation status is inferred here.
