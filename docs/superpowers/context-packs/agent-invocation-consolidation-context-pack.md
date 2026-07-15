@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-agent-invocation-consolidation-design.md](../specs/2026-06-25-agent-invocation-consolidation-design.md)
-- [Plan: 2026-06-25-agent-invocation-consolidation.md](../plans/2026-06-25-agent-invocation-consolidation.md)
+- [Specification: 2026-06-25-agent-invocation-consolidation-design.md](../archive/specs/2026-06-25-agent-invocation-consolidation-design.md)
+- [Plan: 2026-06-25-agent-invocation-consolidation.md](../archive/plans/2026-06-25-agent-invocation-consolidation.md)
 
 ## Specification Context
 

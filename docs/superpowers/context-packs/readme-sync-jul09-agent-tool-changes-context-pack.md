@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-readme-sync-jul09-agent-tool-changes-design.md](../specs/2026-07-11-readme-sync-jul09-agent-tool-changes-design.md)
-- [Plan: 2026-07-11-readme-sync-jul09-agent-tool-changes.md](../plans/2026-07-11-readme-sync-jul09-agent-tool-changes.md)
+- [Specification: 2026-07-11-readme-sync-jul09-agent-tool-changes-design.md](../archive/specs/2026-07-11-readme-sync-jul09-agent-tool-changes-design.md)
+- [Plan: 2026-07-11-readme-sync-jul09-agent-tool-changes.md](../archive/plans/2026-07-11-readme-sync-jul09-agent-tool-changes.md)
 
 ## Specification Context
 

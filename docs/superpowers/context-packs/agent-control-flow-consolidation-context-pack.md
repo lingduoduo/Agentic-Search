@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-27-agent-control-flow-consolidation-design.md](../specs/2026-06-27-agent-control-flow-consolidation-design.md)
-- [Plan: 2026-06-27-agent-control-flow-consolidation.md](../plans/2026-06-27-agent-control-flow-consolidation.md)
+- [Specification: 2026-06-27-agent-control-flow-consolidation-design.md](../archive/specs/2026-06-27-agent-control-flow-consolidation-design.md)
+- [Plan: 2026-06-27-agent-control-flow-consolidation.md](../archive/plans/2026-06-27-agent-control-flow-consolidation.md)
 
 ## Specification Context
 

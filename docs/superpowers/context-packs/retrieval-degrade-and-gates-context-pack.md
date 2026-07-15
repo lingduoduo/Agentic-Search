@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-retrieval-degrade-and-gates-design.md](../specs/2026-07-11-retrieval-degrade-and-gates-design.md)
-- [Plan: 2026-07-11-retrieval-degrade-and-gates.md](../plans/2026-07-11-retrieval-degrade-and-gates.md)
+- [Specification: 2026-07-11-retrieval-degrade-and-gates-design.md](../archive/specs/2026-07-11-retrieval-degrade-and-gates-design.md)
+- [Plan: 2026-07-11-retrieval-degrade-and-gates.md](../archive/plans/2026-07-11-retrieval-degrade-and-gates.md)
 
 ## Specification Context
 

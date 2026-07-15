@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-29-dispatch-consolidation-design.md](../specs/2026-06-29-dispatch-consolidation-design.md)
-- [Plan: 2026-06-29-dispatch-consolidation.md](../plans/2026-06-29-dispatch-consolidation.md)
+- [Specification: 2026-06-29-dispatch-consolidation-design.md](../archive/specs/2026-06-29-dispatch-consolidation-design.md)
+- [Plan: 2026-06-29-dispatch-consolidation.md](../archive/plans/2026-06-29-dispatch-consolidation.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-delete-dormant-onyx-chat-design.md](../specs/2026-07-03-delete-dormant-onyx-chat-design.md)
-- [Plan: 2026-07-03-delete-dormant-onyx-chat.md](../plans/2026-07-03-delete-dormant-onyx-chat.md)
+- [Specification: 2026-07-03-delete-dormant-onyx-chat-design.md](../archive/specs/2026-07-03-delete-dormant-onyx-chat-design.md)
+- [Plan: 2026-07-03-delete-dormant-onyx-chat.md](../archive/plans/2026-07-03-delete-dormant-onyx-chat.md)
 
 ## Specification Context
 

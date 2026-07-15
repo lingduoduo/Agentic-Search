@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Plan: 2026-06-25-agent-framework-optimization-tasks.md](../plans/2026-06-25-agent-framework-optimization-tasks.md)
+- [Plan: 2026-06-25-agent-framework-optimization-tasks.md](../archive/plans/2026-06-25-agent-framework-optimization-tasks.md)
 
 ## Implementation Plan Context
 

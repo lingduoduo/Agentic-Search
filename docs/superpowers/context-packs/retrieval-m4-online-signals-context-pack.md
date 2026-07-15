@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Plan: 2026-06-16-retrieval-m4-online-signals.md](../plans/2026-06-16-retrieval-m4-online-signals.md)
+- [Plan: 2026-06-16-retrieval-m4-online-signals.md](../archive/plans/2026-06-16-retrieval-m4-online-signals.md)
 
 ## Implementation Plan Context
 

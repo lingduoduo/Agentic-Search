@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-control-flow-extract-turn-handlers-design.md](../specs/2026-06-25-control-flow-extract-turn-handlers-design.md)
-- [Plan: 2026-06-25-control-flow-extract-turn-handlers.md](../plans/2026-06-25-control-flow-extract-turn-handlers.md)
+- [Specification: 2026-06-25-control-flow-extract-turn-handlers-design.md](../archive/specs/2026-06-25-control-flow-extract-turn-handlers-design.md)
+- [Plan: 2026-06-25-control-flow-extract-turn-handlers.md](../archive/plans/2026-06-25-control-flow-extract-turn-handlers.md)
 
 ## Specification Context
 

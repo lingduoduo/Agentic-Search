@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-search-route-access-filters-design.md](../specs/2026-07-11-search-route-access-filters-design.md)
-- [Plan: 2026-07-11-search-route-access-filters.md](../plans/2026-07-11-search-route-access-filters.md)
+- [Specification: 2026-07-11-search-route-access-filters-design.md](../archive/specs/2026-07-11-search-route-access-filters-design.md)
+- [Plan: 2026-07-11-search-route-access-filters.md](../archive/plans/2026-07-11-search-route-access-filters.md)
 
 ## Specification Context
 

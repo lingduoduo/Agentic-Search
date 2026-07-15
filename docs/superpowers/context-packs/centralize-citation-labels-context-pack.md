@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-centralize-citation-labels-design.md](../specs/2026-07-09-centralize-citation-labels-design.md)
-- [Plan: 2026-07-09-centralize-citation-labels.md](../plans/2026-07-09-centralize-citation-labels.md)
+- [Specification: 2026-07-09-centralize-citation-labels-design.md](../archive/specs/2026-07-09-centralize-citation-labels-design.md)
+- [Plan: 2026-07-09-centralize-citation-labels.md](../archive/plans/2026-07-09-centralize-citation-labels.md)
 
 ## Specification Context
 

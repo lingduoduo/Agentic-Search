@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-14-mcp-authenticated-retrieval-design.md](../specs/2026-07-14-mcp-authenticated-retrieval-design.md)
-- [Plan: 2026-07-14-mcp-authenticated-retrieval.md](../plans/2026-07-14-mcp-authenticated-retrieval.md)
+- [Specification: 2026-07-14-mcp-authenticated-retrieval-design.md](../archive/specs/2026-07-14-mcp-authenticated-retrieval-design.md)
+- [Plan: 2026-07-14-mcp-authenticated-retrieval.md](../archive/plans/2026-07-14-mcp-authenticated-retrieval.md)
 
 ## Specification Context
 

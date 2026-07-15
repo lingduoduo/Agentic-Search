@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-21-intent-example-query-chips-design.md](../specs/2026-06-21-intent-example-query-chips-design.md)
-- [Plan: 2026-06-21-intent-example-query-chips.md](../plans/2026-06-21-intent-example-query-chips.md)
+- [Specification: 2026-06-21-intent-example-query-chips-design.md](../archive/specs/2026-06-21-intent-example-query-chips-design.md)
+- [Plan: 2026-06-21-intent-example-query-chips.md](../archive/plans/2026-06-21-intent-example-query-chips.md)
 
 ## Specification Context
 

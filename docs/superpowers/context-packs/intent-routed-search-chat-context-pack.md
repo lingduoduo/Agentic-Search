@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-15-intent-routed-search-chat-design.md](../specs/2026-06-15-intent-routed-search-chat-design.md)
-- [Plan: 2026-06-15-intent-routed-search-chat.md](../plans/2026-06-15-intent-routed-search-chat.md)
+- [Specification: 2026-06-15-intent-routed-search-chat-design.md](../archive/specs/2026-06-15-intent-routed-search-chat-design.md)
+- [Plan: 2026-06-15-intent-routed-search-chat.md](../archive/plans/2026-06-15-intent-routed-search-chat.md)
 
 ## Specification Context
 

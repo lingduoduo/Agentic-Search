@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-validate-tool-arguments-design.md](../specs/2026-07-09-validate-tool-arguments-design.md)
-- [Plan: 2026-07-09-validate-tool-arguments.md](../plans/2026-07-09-validate-tool-arguments.md)
+- [Specification: 2026-07-09-validate-tool-arguments-design.md](../archive/specs/2026-07-09-validate-tool-arguments-design.md)
+- [Plan: 2026-07-09-validate-tool-arguments.md](../archive/plans/2026-07-09-validate-tool-arguments.md)
 
 ## Specification Context
 

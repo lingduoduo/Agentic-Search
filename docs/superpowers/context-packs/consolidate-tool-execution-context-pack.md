@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-consolidate-tool-execution-design.md](../specs/2026-07-09-consolidate-tool-execution-design.md)
-- [Plan: 2026-07-09-consolidate-tool-execution.md](../plans/2026-07-09-consolidate-tool-execution.md)
+- [Specification: 2026-07-09-consolidate-tool-execution-design.md](../archive/specs/2026-07-09-consolidate-tool-execution-design.md)
+- [Plan: 2026-07-09-consolidate-tool-execution.md](../archive/plans/2026-07-09-consolidate-tool-execution.md)
 
 ## Specification Context
 

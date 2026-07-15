@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Specification: 2026-06-16-streaming-ux-design.md](../specs/2026-06-16-streaming-ux-design.md)
+- [Specification: 2026-06-16-streaming-ux-design.md](../archive/specs/2026-06-16-streaming-ux-design.md)
 
 ## Specification Context
 

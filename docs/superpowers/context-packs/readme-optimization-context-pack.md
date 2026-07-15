@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-13-readme-optimization-design.md](../specs/2026-07-13-readme-optimization-design.md)
-- [Plan: 2026-07-13-readme-optimization.md](../plans/2026-07-13-readme-optimization.md)
+- [Specification: 2026-07-13-readme-optimization-design.md](../archive/specs/2026-07-13-readme-optimization-design.md)
+- [Plan: 2026-07-13-readme-optimization.md](../archive/plans/2026-07-13-readme-optimization.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-21-hybrid-dense-env-troubleshooting-design.md](../specs/2026-06-21-hybrid-dense-env-troubleshooting-design.md)
-- [Plan: 2026-06-21-hybrid-dense-env-troubleshooting.md](../plans/2026-06-21-hybrid-dense-env-troubleshooting.md)
+- [Specification: 2026-06-21-hybrid-dense-env-troubleshooting-design.md](../archive/specs/2026-06-21-hybrid-dense-env-troubleshooting-design.md)
+- [Plan: 2026-06-21-hybrid-dense-env-troubleshooting.md](../archive/plans/2026-06-21-hybrid-dense-env-troubleshooting.md)
 
 ## Specification Context
 

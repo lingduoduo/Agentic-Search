@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-16-reranking-prd-design.md](../specs/2026-06-16-reranking-prd-design.md)
-- [Plan: 2026-06-16-reranking-prd.md](../plans/2026-06-16-reranking-prd.md)
+- [Specification: 2026-06-16-reranking-prd-design.md](../archive/specs/2026-06-16-reranking-prd-design.md)
+- [Plan: 2026-06-16-reranking-prd.md](../archive/plans/2026-06-16-reranking-prd.md)
 
 ## Specification Context
 

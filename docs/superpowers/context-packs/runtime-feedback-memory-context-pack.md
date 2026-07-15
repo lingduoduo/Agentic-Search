@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-07-runtime-feedback-memory-design.md](../specs/2026-07-07-runtime-feedback-memory-design.md)
-- [Plan: 2026-07-07-runtime-feedback-memory.md](../plans/2026-07-07-runtime-feedback-memory.md)
+- [Specification: 2026-07-07-runtime-feedback-memory-design.md](../archive/specs/2026-07-07-runtime-feedback-memory-design.md)
+- [Plan: 2026-07-07-runtime-feedback-memory.md](../archive/plans/2026-07-07-runtime-feedback-memory.md)
 
 ## Specification Context
 

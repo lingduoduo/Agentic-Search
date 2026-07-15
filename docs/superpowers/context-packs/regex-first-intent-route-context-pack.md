@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-05-regex-first-intent-route-design.md](../specs/2026-07-05-regex-first-intent-route-design.md)
-- [Plan: 2026-07-05-regex-first-intent-route.md](../plans/2026-07-05-regex-first-intent-route.md)
+- [Specification: 2026-07-05-regex-first-intent-route-design.md](../archive/specs/2026-07-05-regex-first-intent-route-design.md)
+- [Plan: 2026-07-05-regex-first-intent-route.md](../archive/plans/2026-07-05-regex-first-intent-route.md)
 
 ## Specification Context
 

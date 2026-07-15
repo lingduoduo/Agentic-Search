@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-reward-dimensions-consolidation-design.md](../specs/2026-07-09-reward-dimensions-consolidation-design.md)
-- [Plan: 2026-07-09-reward-dimensions-consolidation.md](../plans/2026-07-09-reward-dimensions-consolidation.md)
+- [Specification: 2026-07-09-reward-dimensions-consolidation-design.md](../archive/specs/2026-07-09-reward-dimensions-consolidation-design.md)
+- [Plan: 2026-07-09-reward-dimensions-consolidation.md](../archive/plans/2026-07-09-reward-dimensions-consolidation.md)
 
 ## Specification Context
 

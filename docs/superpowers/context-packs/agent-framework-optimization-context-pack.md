@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-agent-framework-optimization-design.md](../specs/2026-06-25-agent-framework-optimization-design.md)
+- [Specification: 2026-06-25-agent-framework-optimization-design.md](../archive/specs/2026-06-25-agent-framework-optimization-design.md)
 
 ## Specification Context
 

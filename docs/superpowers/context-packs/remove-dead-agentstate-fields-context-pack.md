@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-remove-dead-agentstate-fields-design.md](../specs/2026-07-09-remove-dead-agentstate-fields-design.md)
-- [Plan: 2026-07-09-remove-dead-agentstate-fields.md](../plans/2026-07-09-remove-dead-agentstate-fields.md)
+- [Specification: 2026-07-09-remove-dead-agentstate-fields-design.md](../archive/specs/2026-07-09-remove-dead-agentstate-fields-design.md)
+- [Plan: 2026-07-09-remove-dead-agentstate-fields.md](../archive/plans/2026-07-09-remove-dead-agentstate-fields.md)
 
 ## Specification Context
 

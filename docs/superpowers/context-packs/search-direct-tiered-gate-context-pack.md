@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-07-search-direct-tiered-gate-design.md](../specs/2026-07-07-search-direct-tiered-gate-design.md)
-- [Plan: 2026-07-07-search-direct-tiered-gate.md](../plans/2026-07-07-search-direct-tiered-gate.md)
+- [Specification: 2026-07-07-search-direct-tiered-gate-design.md](../archive/specs/2026-07-07-search-direct-tiered-gate-design.md)
+- [Plan: 2026-07-07-search-direct-tiered-gate.md](../archive/plans/2026-07-07-search-direct-tiered-gate.md)
 
 ## Specification Context
 

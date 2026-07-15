@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-consolidate-rrf-fusion-design.md](../specs/2026-07-03-consolidate-rrf-fusion-design.md)
-- [Plan: 2026-07-03-consolidate-rrf-fusion.md](../plans/2026-07-03-consolidate-rrf-fusion.md)
+- [Specification: 2026-07-03-consolidate-rrf-fusion-design.md](../archive/specs/2026-07-03-consolidate-rrf-fusion-design.md)
+- [Plan: 2026-07-03-consolidate-rrf-fusion.md](../archive/plans/2026-07-03-consolidate-rrf-fusion.md)
 
 ## Specification Context
 

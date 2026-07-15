@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-drop-chat-control-flow-panel-design.md](../specs/2026-07-03-drop-chat-control-flow-panel-design.md)
-- [Plan: 2026-07-03-drop-chat-control-flow-panel.md](../plans/2026-07-03-drop-chat-control-flow-panel.md)
+- [Specification: 2026-07-03-drop-chat-control-flow-panel-design.md](../archive/specs/2026-07-03-drop-chat-control-flow-panel-design.md)
+- [Plan: 2026-07-03-drop-chat-control-flow-panel.md](../archive/plans/2026-07-03-drop-chat-control-flow-panel.md)
 
 ## Specification Context
 

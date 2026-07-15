@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-vite-proxy-admin-panels-design.md](../specs/2026-07-11-vite-proxy-admin-panels-design.md)
-- [Plan: 2026-07-11-vite-proxy-admin-panels.md](../plans/2026-07-11-vite-proxy-admin-panels.md)
+- [Specification: 2026-07-11-vite-proxy-admin-panels-design.md](../archive/specs/2026-07-11-vite-proxy-admin-panels-design.md)
+- [Plan: 2026-07-11-vite-proxy-admin-panels.md](../archive/plans/2026-07-11-vite-proxy-admin-panels.md)
 
 ## Specification Context
 

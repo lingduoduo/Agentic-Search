@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-agentic-search-loop-controller-design.md](../specs/2026-06-25-agentic-search-loop-controller-design.md)
-- [Plan: 2026-06-25-agentic-search-loop-controller.md](../plans/2026-06-25-agentic-search-loop-controller.md)
+- [Specification: 2026-06-25-agentic-search-loop-controller-design.md](../archive/specs/2026-06-25-agentic-search-loop-controller-design.md)
+- [Plan: 2026-06-25-agentic-search-loop-controller.md](../archive/plans/2026-06-25-agentic-search-loop-controller.md)
 
 ## Specification Context
 

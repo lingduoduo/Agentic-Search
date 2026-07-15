@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Plan: 2026-06-15-retrieval-m2-dense-hybrid.md](../plans/2026-06-15-retrieval-m2-dense-hybrid.md)
+- [Plan: 2026-06-15-retrieval-m2-dense-hybrid.md](../archive/plans/2026-06-15-retrieval-m2-dense-hybrid.md)
 
 ## Implementation Plan Context
 

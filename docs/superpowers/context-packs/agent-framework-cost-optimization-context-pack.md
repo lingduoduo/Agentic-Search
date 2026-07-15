@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-agent-framework-cost-optimization-design.md](../specs/2026-06-25-agent-framework-cost-optimization-design.md)
-- [Plan: 2026-06-25-agent-framework-cost-optimization.md](../plans/2026-06-25-agent-framework-cost-optimization.md)
+- [Specification: 2026-06-25-agent-framework-cost-optimization-design.md](../archive/specs/2026-06-25-agent-framework-cost-optimization-design.md)
+- [Plan: 2026-06-25-agent-framework-cost-optimization.md](../archive/plans/2026-06-25-agent-framework-cost-optimization.md)
 
 ## Specification Context
 

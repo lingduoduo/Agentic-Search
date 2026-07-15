@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-search-agent-multiturn-history-design.md](../specs/2026-07-09-search-agent-multiturn-history-design.md)
-- [Plan: 2026-07-09-search-agent-multiturn-history.md](../plans/2026-07-09-search-agent-multiturn-history.md)
+- [Specification: 2026-07-09-search-agent-multiturn-history-design.md](../archive/specs/2026-07-09-search-agent-multiturn-history-design.md)
+- [Plan: 2026-07-09-search-agent-multiturn-history.md](../archive/plans/2026-07-09-search-agent-multiturn-history.md)
 
 ## Specification Context
 

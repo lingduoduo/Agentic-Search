@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-model-backend-consolidation-design.md](../specs/2026-06-25-model-backend-consolidation-design.md)
-- [Plan: 2026-06-25-model-backend-consolidation.md](../plans/2026-06-25-model-backend-consolidation.md)
+- [Specification: 2026-06-25-model-backend-consolidation-design.md](../archive/specs/2026-06-25-model-backend-consolidation-design.md)
+- [Plan: 2026-06-25-model-backend-consolidation.md](../archive/plans/2026-06-25-model-backend-consolidation.md)
 
 ## Specification Context
 

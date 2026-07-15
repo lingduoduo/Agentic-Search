@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-27-control-flow-tracing-design.md](../specs/2026-06-27-control-flow-tracing-design.md)
-- [Plan: 2026-06-27-control-flow-tracing.md](../plans/2026-06-27-control-flow-tracing.md)
+- [Specification: 2026-06-27-control-flow-tracing-design.md](../archive/specs/2026-06-27-control-flow-tracing-design.md)
+- [Plan: 2026-06-27-control-flow-tracing.md](../archive/plans/2026-06-27-control-flow-tracing.md)
 
 ## Specification Context
 

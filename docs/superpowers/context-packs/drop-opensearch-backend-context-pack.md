@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-drop-opensearch-backend-design.md](../specs/2026-07-03-drop-opensearch-backend-design.md)
-- [Plan: 2026-07-03-drop-opensearch-backend.md](../plans/2026-07-03-drop-opensearch-backend.md)
+- [Specification: 2026-07-03-drop-opensearch-backend-design.md](../archive/specs/2026-07-03-drop-opensearch-backend-design.md)
+- [Plan: 2026-07-03-drop-opensearch-backend.md](../archive/plans/2026-07-03-drop-opensearch-backend.md)
 
 ## Specification Context
 

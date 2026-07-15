@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-13-api-request-routing-docs-design.md](../specs/2026-07-13-api-request-routing-docs-design.md)
-- [Plan: 2026-07-13-api-request-routing-docs.md](../plans/2026-07-13-api-request-routing-docs.md)
+- [Specification: 2026-07-13-api-request-routing-docs-design.md](../archive/specs/2026-07-13-api-request-routing-docs-design.md)
+- [Plan: 2026-07-13-api-request-routing-docs.md](../archive/plans/2026-07-13-api-request-routing-docs.md)
 
 ## Specification Context
 

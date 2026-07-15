@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-23-demo-corpus-relevance-and-beir-converter-design.md](../specs/2026-06-23-demo-corpus-relevance-and-beir-converter-design.md)
-- [Plan: 2026-06-23-demo-corpus-relevance-and-beir-converter.md](../plans/2026-06-23-demo-corpus-relevance-and-beir-converter.md)
+- [Specification: 2026-06-23-demo-corpus-relevance-and-beir-converter-design.md](../archive/specs/2026-06-23-demo-corpus-relevance-and-beir-converter-design.md)
+- [Plan: 2026-06-23-demo-corpus-relevance-and-beir-converter.md](../archive/plans/2026-06-23-demo-corpus-relevance-and-beir-converter.md)
 
 ## Specification Context
 

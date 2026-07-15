@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-system-preserving-token-crop-design.md](../specs/2026-07-09-system-preserving-token-crop-design.md)
-- [Plan: 2026-07-09-system-preserving-token-crop.md](../plans/2026-07-09-system-preserving-token-crop.md)
+- [Specification: 2026-07-09-system-preserving-token-crop-design.md](../archive/specs/2026-07-09-system-preserving-token-crop-design.md)
+- [Plan: 2026-07-09-system-preserving-token-crop.md](../archive/plans/2026-07-09-system-preserving-token-crop.md)
 
 ## Specification Context
 

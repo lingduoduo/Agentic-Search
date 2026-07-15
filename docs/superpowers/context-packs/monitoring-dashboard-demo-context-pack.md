@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-02-monitoring-dashboard-demo-design.md](../specs/2026-07-02-monitoring-dashboard-demo-design.md)
-- [Plan: 2026-07-02-monitoring-dashboard-demo.md](../plans/2026-07-02-monitoring-dashboard-demo.md)
+- [Specification: 2026-07-02-monitoring-dashboard-demo-design.md](../archive/specs/2026-07-02-monitoring-dashboard-demo-design.md)
+- [Plan: 2026-07-02-monitoring-dashboard-demo.md](../archive/plans/2026-07-02-monitoring-dashboard-demo.md)
 
 ## Specification Context
 

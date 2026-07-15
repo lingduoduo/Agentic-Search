@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-split-search-tool-html-design.md](../specs/2026-07-03-split-search-tool-html-design.md)
-- [Plan: 2026-07-03-split-search-tool-html.md](../plans/2026-07-03-split-search-tool-html.md)
+- [Specification: 2026-07-03-split-search-tool-html-design.md](../archive/specs/2026-07-03-split-search-tool-html-design.md)
+- [Plan: 2026-07-03-split-search-tool-html.md](../archive/plans/2026-07-03-split-search-tool-html.md)
 
 ## Specification Context
 

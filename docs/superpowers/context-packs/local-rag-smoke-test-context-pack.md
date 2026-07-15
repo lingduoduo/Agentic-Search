@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-05-local-rag-smoke-test-design.md](../specs/2026-07-05-local-rag-smoke-test-design.md)
-- [Plan: 2026-07-05-local-rag-smoke-test.md](../plans/2026-07-05-local-rag-smoke-test.md)
+- [Specification: 2026-07-05-local-rag-smoke-test-design.md](../archive/specs/2026-07-05-local-rag-smoke-test-design.md)
+- [Plan: 2026-07-05-local-rag-smoke-test.md](../archive/plans/2026-07-05-local-rag-smoke-test.md)
 
 ## Specification Context
 

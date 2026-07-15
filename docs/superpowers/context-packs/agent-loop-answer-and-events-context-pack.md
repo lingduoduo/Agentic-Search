@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-agent-loop-answer-and-events-design.md](../specs/2026-07-11-agent-loop-answer-and-events-design.md)
-- [Plan: 2026-07-11-agent-loop-answer-and-events.md](../plans/2026-07-11-agent-loop-answer-and-events.md)
+- [Specification: 2026-07-11-agent-loop-answer-and-events-design.md](../archive/specs/2026-07-11-agent-loop-answer-and-events-design.md)
+- [Plan: 2026-07-11-agent-loop-answer-and-events.md](../archive/plans/2026-07-11-agent-loop-answer-and-events.md)
 
 ## Specification Context
 

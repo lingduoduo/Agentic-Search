@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-readme-grpo-training-sync-design.md](../specs/2026-07-09-readme-grpo-training-sync-design.md)
-- [Plan: 2026-07-09-readme-grpo-training-sync.md](../plans/2026-07-09-readme-grpo-training-sync.md)
+- [Specification: 2026-07-09-readme-grpo-training-sync-design.md](../archive/specs/2026-07-09-readme-grpo-training-sync-design.md)
+- [Plan: 2026-07-09-readme-grpo-training-sync.md](../archive/plans/2026-07-09-readme-grpo-training-sync.md)
 
 ## Specification Context
 

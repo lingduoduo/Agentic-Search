@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-slim-index-builder-facade-design.md](../specs/2026-07-03-slim-index-builder-facade-design.md)
-- [Plan: 2026-07-03-slim-index-builder-facade.md](../plans/2026-07-03-slim-index-builder-facade.md)
+- [Specification: 2026-07-03-slim-index-builder-facade-design.md](../archive/specs/2026-07-03-slim-index-builder-facade-design.md)
+- [Plan: 2026-07-03-slim-index-builder-facade.md](../archive/plans/2026-07-03-slim-index-builder-facade.md)
 
 ## Specification Context
 

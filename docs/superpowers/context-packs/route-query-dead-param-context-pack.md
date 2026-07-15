@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-07-route-query-dead-param-design.md](../specs/2026-07-07-route-query-dead-param-design.md)
-- [Plan: 2026-07-07-route-query-dead-param.md](../plans/2026-07-07-route-query-dead-param.md)
+- [Specification: 2026-07-07-route-query-dead-param-design.md](../archive/specs/2026-07-07-route-query-dead-param-design.md)
+- [Plan: 2026-07-07-route-query-dead-param.md](../archive/plans/2026-07-07-route-query-dead-param.md)
 
 ## Specification Context
 

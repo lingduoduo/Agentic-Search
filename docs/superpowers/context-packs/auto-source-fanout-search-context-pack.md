@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-21-auto-source-fanout-search-design.md](../specs/2026-06-21-auto-source-fanout-search-design.md)
-- [Plan: 2026-06-21-auto-source-fanout-search.md](../plans/2026-06-21-auto-source-fanout-search.md)
+- [Specification: 2026-06-21-auto-source-fanout-search-design.md](../archive/specs/2026-06-21-auto-source-fanout-search-design.md)
+- [Plan: 2026-06-21-auto-source-fanout-search.md](../archive/plans/2026-06-21-auto-source-fanout-search.md)
 
 ## Specification Context
 

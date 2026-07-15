@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-21-hybrid-retrieval-search-design.md](../specs/2026-06-21-hybrid-retrieval-search-design.md)
-- [Plan: 2026-06-21-hybrid-retrieval-search.md](../plans/2026-06-21-hybrid-retrieval-search.md)
+- [Specification: 2026-06-21-hybrid-retrieval-search-design.md](../archive/specs/2026-06-21-hybrid-retrieval-search-design.md)
+- [Plan: 2026-06-21-hybrid-retrieval-search.md](../archive/plans/2026-06-21-hybrid-retrieval-search.md)
 
 ## Specification Context
 

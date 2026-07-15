@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-07-intent-classifier-route-consolidation-design.md](../specs/2026-07-07-intent-classifier-route-consolidation-design.md)
-- [Plan: 2026-07-07-intent-classifier-route-consolidation.md](../plans/2026-07-07-intent-classifier-route-consolidation.md)
+- [Specification: 2026-07-07-intent-classifier-route-consolidation-design.md](../archive/specs/2026-07-07-intent-classifier-route-consolidation-design.md)
+- [Plan: 2026-07-07-intent-classifier-route-consolidation.md](../archive/plans/2026-07-07-intent-classifier-route-consolidation.md)
 
 ## Specification Context
 

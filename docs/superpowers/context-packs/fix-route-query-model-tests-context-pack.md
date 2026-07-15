@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-07-fix-route-query-model-tests-design.md](../specs/2026-07-07-fix-route-query-model-tests-design.md)
-- [Plan: 2026-07-07-fix-route-query-model-tests.md](../plans/2026-07-07-fix-route-query-model-tests.md)
+- [Specification: 2026-07-07-fix-route-query-model-tests-design.md](../archive/specs/2026-07-07-fix-route-query-model-tests-design.md)
+- [Plan: 2026-07-07-fix-route-query-model-tests.md](../archive/plans/2026-07-07-fix-route-query-model-tests.md)
 
 ## Specification Context
 

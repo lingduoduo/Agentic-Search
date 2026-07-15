@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-21-source-authoritative-retrieval-routing.md](../specs/2026-06-21-source-authoritative-retrieval-routing.md)
-- [Plan: 2026-06-21-source-authoritative-retrieval-routing.md](../plans/2026-06-21-source-authoritative-retrieval-routing.md)
+- [Specification: 2026-06-21-source-authoritative-retrieval-routing.md](../archive/specs/2026-06-21-source-authoritative-retrieval-routing.md)
+- [Plan: 2026-06-21-source-authoritative-retrieval-routing.md](../archive/plans/2026-06-21-source-authoritative-retrieval-routing.md)
 
 ## Specification Context
 

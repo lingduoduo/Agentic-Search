@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-03-simplify-search-control-flow-design.md](../specs/2026-07-03-simplify-search-control-flow-design.md)
-- [Plan: 2026-07-03-simplify-search-control-flow.md](../plans/2026-07-03-simplify-search-control-flow.md)
+- [Specification: 2026-07-03-simplify-search-control-flow-design.md](../archive/specs/2026-07-03-simplify-search-control-flow-design.md)
+- [Plan: 2026-07-03-simplify-search-control-flow.md](../archive/plans/2026-07-03-simplify-search-control-flow.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-01-agents-capability-grouping-design.md](../specs/2026-07-01-agents-capability-grouping-design.md)
-- [Plan: 2026-07-01-agents-capability-grouping.md](../plans/2026-07-01-agents-capability-grouping.md)
+- [Specification: 2026-07-01-agents-capability-grouping-design.md](../archive/specs/2026-07-01-agents-capability-grouping-design.md)
+- [Plan: 2026-07-01-agents-capability-grouping.md](../archive/plans/2026-07-01-agents-capability-grouping.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-27-tool-agent-human-approval-design.md](../specs/2026-06-27-tool-agent-human-approval-design.md)
-- [Plan: 2026-06-27-tool-agent-human-approval.md](../plans/2026-06-27-tool-agent-human-approval.md)
+- [Specification: 2026-06-27-tool-agent-human-approval-design.md](../archive/specs/2026-06-27-tool-agent-human-approval-design.md)
+- [Plan: 2026-06-27-tool-agent-human-approval.md](../archive/plans/2026-06-27-tool-agent-human-approval.md)
 
 ## Specification Context
 

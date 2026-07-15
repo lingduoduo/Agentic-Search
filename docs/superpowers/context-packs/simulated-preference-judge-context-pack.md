@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-simulated-preference-judge-design.md](../specs/2026-07-09-simulated-preference-judge-design.md)
-- [Plan: 2026-07-09-simulated-preference-judge.md](../plans/2026-07-09-simulated-preference-judge.md)
+- [Specification: 2026-07-09-simulated-preference-judge-design.md](../archive/specs/2026-07-09-simulated-preference-judge-design.md)
+- [Plan: 2026-07-09-simulated-preference-judge.md](../archive/plans/2026-07-09-simulated-preference-judge.md)
 
 ## Specification Context
 

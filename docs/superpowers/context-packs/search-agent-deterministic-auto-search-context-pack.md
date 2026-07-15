@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-28-search-agent-deterministic-auto-search-design.md](../specs/2026-06-28-search-agent-deterministic-auto-search-design.md)
-- [Plan: 2026-06-28-search-agent-deterministic-auto-search.md](../plans/2026-06-28-search-agent-deterministic-auto-search.md)
+- [Specification: 2026-06-28-search-agent-deterministic-auto-search-design.md](../archive/specs/2026-06-28-search-agent-deterministic-auto-search-design.md)
+- [Plan: 2026-06-28-search-agent-deterministic-auto-search.md](../archive/plans/2026-06-28-search-agent-deterministic-auto-search.md)
 
 ## Specification Context
 

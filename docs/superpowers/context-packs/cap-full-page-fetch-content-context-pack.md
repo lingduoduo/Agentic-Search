@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-cap-full-page-fetch-content-design.md](../specs/2026-07-09-cap-full-page-fetch-content-design.md)
-- [Plan: 2026-07-09-cap-full-page-fetch-content.md](../plans/2026-07-09-cap-full-page-fetch-content.md)
+- [Specification: 2026-07-09-cap-full-page-fetch-content-design.md](../archive/specs/2026-07-09-cap-full-page-fetch-content-design.md)
+- [Plan: 2026-07-09-cap-full-page-fetch-content.md](../archive/plans/2026-07-09-cap-full-page-fetch-content.md)
 
 ## Specification Context
 

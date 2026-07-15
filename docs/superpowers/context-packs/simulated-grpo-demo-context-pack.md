@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-simulated-grpo-demo-design.md](../specs/2026-07-09-simulated-grpo-demo-design.md)
-- [Plan: 2026-07-09-simulated-grpo-demo.md](../plans/2026-07-09-simulated-grpo-demo.md)
+- [Specification: 2026-07-09-simulated-grpo-demo-design.md](../archive/specs/2026-07-09-simulated-grpo-demo-design.md)
+- [Plan: 2026-07-09-simulated-grpo-demo.md](../archive/plans/2026-07-09-simulated-grpo-demo.md)
 
 ## Specification Context
 

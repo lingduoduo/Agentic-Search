@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-01-agentic-rag-loop-optimization-design.md](../specs/2026-07-01-agentic-rag-loop-optimization-design.md)
-- [Plan: 2026-07-01-agentic-rag-loop-optimization.md](../plans/2026-07-01-agentic-rag-loop-optimization.md)
+- [Specification: 2026-07-01-agentic-rag-loop-optimization-design.md](../archive/specs/2026-07-01-agentic-rag-loop-optimization-design.md)
+- [Plan: 2026-07-01-agentic-rag-loop-optimization.md](../archive/plans/2026-07-01-agentic-rag-loop-optimization.md)
 
 ## Specification Context
 

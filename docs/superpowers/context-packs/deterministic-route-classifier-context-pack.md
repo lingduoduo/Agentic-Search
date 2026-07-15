@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-05-deterministic-route-classifier-design.md](../specs/2026-07-05-deterministic-route-classifier-design.md)
-- [Plan: 2026-07-05-deterministic-route-classifier.md](../plans/2026-07-05-deterministic-route-classifier.md)
+- [Specification: 2026-07-05-deterministic-route-classifier-design.md](../archive/specs/2026-07-05-deterministic-route-classifier-design.md)
+- [Plan: 2026-07-05-deterministic-route-classifier.md](../archive/plans/2026-07-05-deterministic-route-classifier.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-19-reranking-optimization-design.md](../specs/2026-06-19-reranking-optimization-design.md)
-- [Plan: 2026-06-19-reranking-optimization.md](../plans/2026-06-19-reranking-optimization.md)
+- [Specification: 2026-06-19-reranking-optimization-design.md](../archive/specs/2026-06-19-reranking-optimization-design.md)
+- [Plan: 2026-06-19-reranking-optimization.md](../archive/plans/2026-06-19-reranking-optimization.md)
 
 ## Specification Context
 

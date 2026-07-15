@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-17-feedback-grpo-design.md](../specs/2026-06-17-feedback-grpo-design.md)
-- [Plan: 2026-06-17-feedback-grpo.md](../plans/2026-06-17-feedback-grpo.md)
+- [Specification: 2026-06-17-feedback-grpo-design.md](../archive/specs/2026-06-17-feedback-grpo-design.md)
+- [Plan: 2026-06-17-feedback-grpo.md](../archive/plans/2026-06-17-feedback-grpo.md)
 
 ## Specification Context
 

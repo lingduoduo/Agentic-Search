@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-16-query-transformations-design.md](../specs/2026-06-16-query-transformations-design.md)
-- [Plan: 2026-06-16-query-transformations.md](../plans/2026-06-16-query-transformations.md)
+- [Specification: 2026-06-16-query-transformations-design.md](../archive/specs/2026-06-16-query-transformations-design.md)
+- [Plan: 2026-06-16-query-transformations.md](../archive/plans/2026-06-16-query-transformations.md)
 
 ## Specification Context
 

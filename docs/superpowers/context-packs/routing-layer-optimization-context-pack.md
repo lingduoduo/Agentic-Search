@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-23-routing-layer-optimization-design.md](../specs/2026-06-23-routing-layer-optimization-design.md)
-- [Plan: 2026-06-23-routing-layer-optimization.md](../plans/2026-06-23-routing-layer-optimization.md)
+- [Specification: 2026-06-23-routing-layer-optimization-design.md](../archive/specs/2026-06-23-routing-layer-optimization-design.md)
+- [Plan: 2026-06-23-routing-layer-optimization.md](../archive/plans/2026-06-23-routing-layer-optimization.md)
 
 ## Specification Context
 

@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Specification: 2026-06-16-chat-markdown-design.md](../specs/2026-06-16-chat-markdown-design.md)
+- [Specification: 2026-06-16-chat-markdown-design.md](../archive/specs/2026-06-16-chat-markdown-design.md)
 
 ## Specification Context
 

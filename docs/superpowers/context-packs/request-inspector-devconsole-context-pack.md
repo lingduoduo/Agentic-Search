@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Plan: 2026-07-05-request-inspector-devconsole.md](../plans/2026-07-05-request-inspector-devconsole.md)
+- [Plan: 2026-07-05-request-inspector-devconsole.md](../archive/plans/2026-07-05-request-inspector-devconsole.md)
 
 ## Implementation Plan Context
 

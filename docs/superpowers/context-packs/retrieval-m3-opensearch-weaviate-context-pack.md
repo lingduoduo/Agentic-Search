@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Plan: 2026-06-15-retrieval-m3-opensearch-weaviate.md](../plans/2026-06-15-retrieval-m3-opensearch-weaviate.md)
+- [Plan: 2026-06-15-retrieval-m3-opensearch-weaviate.md](../archive/plans/2026-06-15-retrieval-m3-opensearch-weaviate.md)
 
 ## Implementation Plan Context
 

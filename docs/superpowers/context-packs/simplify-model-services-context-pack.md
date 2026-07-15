@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-13-simplify-model-services-design.md](../specs/2026-07-13-simplify-model-services-design.md)
-- [Plan: 2026-07-13-simplify-model-services.md](../plans/2026-07-13-simplify-model-services.md)
+- [Specification: 2026-07-13-simplify-model-services-design.md](../archive/specs/2026-07-13-simplify-model-services-design.md)
+- [Plan: 2026-07-13-simplify-model-services.md](../archive/plans/2026-07-13-simplify-model-services.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-dev-admin-bypass-design.md](../specs/2026-07-11-dev-admin-bypass-design.md)
-- [Plan: 2026-07-11-dev-admin-bypass.md](../plans/2026-07-11-dev-admin-bypass.md)
+- [Specification: 2026-07-11-dev-admin-bypass-design.md](../archive/specs/2026-07-11-dev-admin-bypass-design.md)
+- [Plan: 2026-07-11-dev-admin-bypass.md](../archive/plans/2026-07-11-dev-admin-bypass.md)
 
 ## Specification Context
 

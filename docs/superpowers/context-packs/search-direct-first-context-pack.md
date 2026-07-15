@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-05-search-direct-first-design.md](../specs/2026-07-05-search-direct-first-design.md)
-- [Plan: 2026-07-05-search-direct-first.md](../plans/2026-07-05-search-direct-first.md)
+- [Specification: 2026-07-05-search-direct-first-design.md](../archive/specs/2026-07-05-search-direct-first-design.md)
+- [Plan: 2026-07-05-search-direct-first.md](../archive/plans/2026-07-05-search-direct-first.md)
 
 ## Specification Context
 

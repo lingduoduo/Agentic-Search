@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Specification: 2026-07-05-request-inspector-design.md](../specs/2026-07-05-request-inspector-design.md)
+- [Specification: 2026-07-05-request-inspector-design.md](../archive/specs/2026-07-05-request-inspector-design.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-05-intent-capture-parity-design.md](../specs/2026-07-05-intent-capture-parity-design.md)
-- [Plan: 2026-07-05-intent-capture-parity.md](../plans/2026-07-05-intent-capture-parity.md)
+- [Specification: 2026-07-05-intent-capture-parity-design.md](../archive/specs/2026-07-05-intent-capture-parity-design.md)
+- [Plan: 2026-07-05-intent-capture-parity.md](../archive/plans/2026-07-05-intent-capture-parity.md)
 
 ## Specification Context
 

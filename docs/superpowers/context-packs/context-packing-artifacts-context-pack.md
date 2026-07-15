@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-15-context-packing-artifacts-design.md](../specs/2026-07-15-context-packing-artifacts-design.md)
-- [Plan: 2026-07-15-context-packing-artifacts.md](../plans/2026-07-15-context-packing-artifacts.md)
+- [Specification: 2026-07-15-context-packing-artifacts-design.md](../archive/specs/2026-07-15-context-packing-artifacts-design.md)
+- [Plan: 2026-07-15-context-packing-artifacts.md](../archive/plans/2026-07-15-context-packing-artifacts.md)
 
 ## Specification Context
 

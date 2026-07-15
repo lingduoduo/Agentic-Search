@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Specification: 2026-06-15-retrieval-prd-design.md](../specs/2026-06-15-retrieval-prd-design.md)
+- [Specification: 2026-06-15-retrieval-prd-design.md](../archive/specs/2026-06-15-retrieval-prd-design.md)
 
 ## Specification Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-09-tool-error-feedback-design.md](../specs/2026-07-09-tool-error-feedback-design.md)
-- [Plan: 2026-07-09-tool-error-feedback.md](../plans/2026-07-09-tool-error-feedback.md)
+- [Specification: 2026-07-09-tool-error-feedback-design.md](../archive/specs/2026-07-09-tool-error-feedback-design.md)
+- [Plan: 2026-07-09-tool-error-feedback.md](../archive/plans/2026-07-09-tool-error-feedback.md)
 
 ## Specification Context
 

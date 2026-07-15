@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-01-simplify-intent-routing-3-strategies-design.md](../specs/2026-07-01-simplify-intent-routing-3-strategies-design.md)
-- [Plan: 2026-07-01-simplify-intent-routing-3-strategies.md](../plans/2026-07-01-simplify-intent-routing-3-strategies.md)
+- [Specification: 2026-07-01-simplify-intent-routing-3-strategies-design.md](../archive/specs/2026-07-01-simplify-intent-routing-3-strategies-design.md)
+- [Plan: 2026-07-01-simplify-intent-routing-3-strategies.md](../archive/plans/2026-07-01-simplify-intent-routing-3-strategies.md)
 
 ## Specification Context
 

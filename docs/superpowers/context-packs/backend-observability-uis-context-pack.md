@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-29-backend-observability-uis-design.md](../specs/2026-06-29-backend-observability-uis-design.md)
-- [Plan: 2026-06-29-backend-observability-uis.md](../plans/2026-06-29-backend-observability-uis.md)
+- [Specification: 2026-06-29-backend-observability-uis-design.md](../archive/specs/2026-06-29-backend-observability-uis-design.md)
+- [Plan: 2026-06-29-backend-observability-uis.md](../archive/plans/2026-06-29-backend-observability-uis.md)
 
 ## Specification Context
 

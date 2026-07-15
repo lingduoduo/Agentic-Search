@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Specification: 2026-06-16-intent-adaptive-layout-design.md](../specs/2026-06-16-intent-adaptive-layout-design.md)
+- [Specification: 2026-06-16-intent-adaptive-layout-design.md](../archive/specs/2026-06-16-intent-adaptive-layout-design.md)
 
 ## Specification Context
 

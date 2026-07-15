@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-28-agentic-router-entry-point-design.md](../specs/2026-06-28-agentic-router-entry-point-design.md)
-- [Plan: 2026-06-28-agentic-router-entry-point.md](../plans/2026-06-28-agentic-router-entry-point.md)
+- [Specification: 2026-06-28-agentic-router-entry-point-design.md](../archive/specs/2026-06-28-agentic-router-entry-point-design.md)
+- [Plan: 2026-06-28-agentic-router-entry-point.md](../archive/plans/2026-06-28-agentic-router-entry-point.md)
 
 ## Specification Context
 

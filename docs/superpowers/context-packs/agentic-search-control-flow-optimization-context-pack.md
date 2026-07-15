@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-agentic-search-control-flow-optimization-design.md](../specs/2026-06-25-agentic-search-control-flow-optimization-design.md)
-- [Plan: 2026-06-25-agentic-search-control-flow-optimization.md](../plans/2026-06-25-agentic-search-control-flow-optimization.md)
+- [Specification: 2026-06-25-agentic-search-control-flow-optimization-design.md](../archive/specs/2026-06-25-agentic-search-control-flow-optimization-design.md)
+- [Plan: 2026-06-25-agentic-search-control-flow-optimization.md](../archive/plans/2026-06-25-agentic-search-control-flow-optimization.md)
 
 ## Specification Context
 

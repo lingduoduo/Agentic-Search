@@ -4,7 +4,7 @@
 
 ## Sources
 
-- [Plan: 2026-06-15-retrieval-m1-bm25-service-skeleton.md](../plans/2026-06-15-retrieval-m1-bm25-service-skeleton.md)
+- [Plan: 2026-06-15-retrieval-m1-bm25-service-skeleton.md](../archive/plans/2026-06-15-retrieval-m1-bm25-service-skeleton.md)
 
 ## Implementation Plan Context
 

@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-frontend-answer-state-and-inspector-design.md](../specs/2026-07-11-frontend-answer-state-and-inspector-design.md)
-- [Plan: 2026-07-11-frontend-answer-state-and-inspector.md](../plans/2026-07-11-frontend-answer-state-and-inspector.md)
+- [Specification: 2026-07-11-frontend-answer-state-and-inspector-design.md](../archive/specs/2026-07-11-frontend-answer-state-and-inspector-design.md)
+- [Plan: 2026-07-11-frontend-answer-state-and-inspector.md](../archive/plans/2026-07-11-frontend-answer-state-and-inspector.md)
 
 ## Specification Context
 

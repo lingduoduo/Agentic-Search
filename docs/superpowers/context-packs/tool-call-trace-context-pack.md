@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-16-tool-call-trace-design.md](../specs/2026-06-16-tool-call-trace-design.md)
-- [Plan: 2026-06-17-tool-call-trace.md](../plans/2026-06-17-tool-call-trace.md)
+- [Specification: 2026-06-16-tool-call-trace-design.md](../archive/specs/2026-06-16-tool-call-trace-design.md)
+- [Plan: 2026-06-17-tool-call-trace.md](../archive/plans/2026-06-17-tool-call-trace.md)
 
 ## Specification Context
 

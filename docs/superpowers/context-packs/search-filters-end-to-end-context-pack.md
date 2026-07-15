@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-11-search-filters-end-to-end-design.md](../specs/2026-07-11-search-filters-end-to-end-design.md)
-- [Plan: 2026-07-11-search-filters-end-to-end.md](../plans/2026-07-11-search-filters-end-to-end.md)
+- [Specification: 2026-07-11-search-filters-end-to-end-design.md](../archive/specs/2026-07-11-search-filters-end-to-end-design.md)
+- [Plan: 2026-07-11-search-filters-end-to-end.md](../archive/plans/2026-07-11-search-filters-end-to-end.md)
 
 ## Specification Context
 

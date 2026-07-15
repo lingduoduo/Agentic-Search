@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-19-query-transformations-optimization-design.md](../specs/2026-06-19-query-transformations-optimization-design.md)
-- [Plan: 2026-06-19-query-transformations-optimization.md](../plans/2026-06-19-query-transformations-optimization.md)
+- [Specification: 2026-06-19-query-transformations-optimization-design.md](../archive/specs/2026-06-19-query-transformations-optimization-design.md)
+- [Plan: 2026-06-19-query-transformations-optimization.md](../archive/plans/2026-06-19-query-transformations-optimization.md)
 
 ## Specification Context
 

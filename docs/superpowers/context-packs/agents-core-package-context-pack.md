@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-07-01-agents-core-package-design.md](../specs/2026-07-01-agents-core-package-design.md)
-- [Plan: 2026-07-01-agents-core-package.md](../plans/2026-07-01-agents-core-package.md)
+- [Specification: 2026-07-01-agents-core-package-design.md](../archive/specs/2026-07-01-agents-core-package-design.md)
+- [Plan: 2026-07-01-agents-core-package.md](../archive/plans/2026-07-01-agents-core-package.md)
 
 ## Specification Context
 

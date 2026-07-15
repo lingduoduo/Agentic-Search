@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-25-control-flow-decompose-run-design.md](../specs/2026-06-25-control-flow-decompose-run-design.md)
-- [Plan: 2026-06-25-control-flow-decompose-run.md](../plans/2026-06-25-control-flow-decompose-run.md)
+- [Specification: 2026-06-25-control-flow-decompose-run-design.md](../archive/specs/2026-06-25-control-flow-decompose-run-design.md)
+- [Plan: 2026-06-25-control-flow-decompose-run.md](../archive/plans/2026-06-25-control-flow-decompose-run.md)
 
 ## Specification Context
 

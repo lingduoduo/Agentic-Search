@@ -4,8 +4,8 @@
 
 ## Sources
 
-- [Specification: 2026-06-17-sft-grpo-warmstart-design.md](../specs/2026-06-17-sft-grpo-warmstart-design.md)
-- [Plan: 2026-06-17-sft-grpo-warmstart.md](../plans/2026-06-17-sft-grpo-warmstart.md)
+- [Specification: 2026-06-17-sft-grpo-warmstart-design.md](../archive/specs/2026-06-17-sft-grpo-warmstart-design.md)
+- [Plan: 2026-06-17-sft-grpo-warmstart.md](../archive/plans/2026-06-17-sft-grpo-warmstart.md)
 
 ## Specification Context
 
