@@ -10,6 +10,7 @@ from src.context import AnswerGenerationRequest
 from src.context import AnswerStyle
 from src.context import ChatMessage
 from src.context import LLMResponse
+from src.context import GroundedGenerationConfig
 from src.context import SearchRequest
 from src.context import SearchFilters
 from src.context import build_answer_prompt
@@ -76,6 +77,7 @@ def test_generate_answer_uses_llm_and_extracts_citations():
             question="what is faiss",
             context=bundle,
             chat_history=[ChatMessage(role="user", content="hi")],
+            grounded_generation=GroundedGenerationConfig(enabled=False),
         ),
         llm=FakeLLM(),
     )

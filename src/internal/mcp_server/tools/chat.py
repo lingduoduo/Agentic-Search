@@ -12,6 +12,8 @@ import os
 from typing import Any
 
 from src.context import AnswerGenerationRequest
+from src.context import CANONICAL_ABSTENTION
+from src.context import VerificationStatus
 from src.context import build_context_bundle
 from src.context import generate_answer
 from src.context.search import SearchResult
@@ -22,6 +24,33 @@ from ..api import mcp_server
 from ..retrieval_client import authenticated_retrieve
 
 logger = logging.getLogger(__name__)
+
+
+def _result_metadata(result: Any | None = None) -> dict[str, Any]:
+    if result is None:
+        return {
+            "confidence": 0.0,
+            "verification_status": VerificationStatus.ABSTAINED.value,
+            "abstained": True,
+            "retry_count": 0,
+            "tool_sources": [],
+        }
+    status = getattr(result, "verification_status", None)
+    tool_evidence = getattr(result, "tool_evidence", [])
+    if not isinstance(tool_evidence, list):
+        tool_evidence = []
+    retry_count = getattr(result, "retry_count", 0)
+    if not isinstance(retry_count, int):
+        retry_count = 0
+    return {
+        "confidence": getattr(result, "confidence", None),
+        "verification_status": getattr(status, "value", status),
+        "abstained": getattr(result, "abstained", False),
+        "retry_count": retry_count,
+        "tool_sources": [
+            {"name": item.tool_name} for item in tool_evidence if item.tool_name
+        ],
+    }
 
 
 def _build_llm() -> OpenAICompatibleLLM | None:
@@ -88,9 +117,10 @@ async def ask_agentic_search(
         )
         if not context.documents:
             return {
-                "answer": f"I could not find retrieved context to answer: {question}",
+                "answer": CANONICAL_ABSTENTION,
                 "citations": [],
                 "sources": [],
+                **_result_metadata(),
             }
 
         llm = _build_llm()
@@ -107,10 +137,11 @@ async def ask_agentic_search(
     except Exception as exc:
         logger.error("MCP Server: ask_agentic_search failed: %s", exc, exc_info=True)
         return {
-            "error": str(exc),
-            "answer": "",
+            "error": "Unable to answer from available evidence.",
+            "answer": CANONICAL_ABSTENTION,
             "citations": [],
             "sources": [],
+            **_result_metadata(),
         }
 
     sources = [
@@ -126,4 +157,5 @@ async def ask_agentic_search(
         "answer": result.answer,
         "citations": result.citations,
         "sources": sources,
+        **_result_metadata(result),
     }

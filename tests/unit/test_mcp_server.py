@@ -325,6 +325,10 @@ async def test_ask_agentic_search_synthesizes_only_from_authorized_documents():
             answer="Dense and sparse retrieval are supported [D1] [D2].",
             citations=["D1", "D2"],
             context=request.context,
+            confidence=0.8,
+            verification_status="verified",
+            abstained=False,
+            tool_evidence=[],
         )
 
     with (
@@ -373,6 +377,11 @@ async def test_ask_agentic_search_synthesizes_only_from_authorized_documents():
                 "content": "BM25 scoring for keyword search.",
             },
         ],
+        "confidence": 0.8,
+        "verification_status": "verified",
+        "abstained": False,
+        "retry_count": 0,
+        "tool_sources": [],
     }
 
 
@@ -399,9 +408,14 @@ async def test_ask_agentic_search_empty_evidence_skips_llm():
     llm.complete.assert_not_called()
     raw_answer.assert_not_awaited()
     assert result == {
-        "answer": "I could not find retrieved context to answer: unknown",
+        "answer": "I don't know based on the available evidence.",
         "citations": [],
         "sources": [],
+        "confidence": 0.0,
+        "verification_status": "abstained",
+        "abstained": True,
+        "retry_count": 0,
+        "tool_sources": [],
     }
 
 
@@ -427,9 +441,14 @@ async def test_ask_agentic_search_whitespace_evidence_skips_llm_construction():
 
     build_llm.assert_not_called()
     assert result == {
-        "answer": "I could not find retrieved context to answer: unknown",
+        "answer": "I don't know based on the available evidence.",
         "citations": [],
         "sources": [],
+        "confidence": 0.0,
+        "verification_status": "abstained",
+        "abstained": True,
+        "retry_count": 0,
+        "tool_sources": [],
     }
 
 
@@ -459,11 +478,17 @@ async def test_ask_agentic_search_auth_errors_have_no_raw_fallback(message: str)
     llm.complete.assert_not_called()
     raw_answer.assert_not_awaited()
     assert result == {
-        "error": message,
-        "answer": "",
+        "error": "Unable to answer from available evidence.",
+        "answer": "I don't know based on the available evidence.",
         "citations": [],
         "sources": [],
+        "confidence": 0.0,
+        "verification_status": "abstained",
+        "abstained": True,
+        "retry_count": 0,
+        "tool_sources": [],
     }
+    assert message not in repr(result)
 
 
 @pytest.mark.asyncio
@@ -472,7 +497,10 @@ async def test_ask_agentic_search_uses_llm_only_after_authenticated_evidence():
     from src.internal.mcp_server.tools.chat import ask_agentic_search
 
     llm = Mock()
-    llm.complete.return_value = LLMResponse("FAISS provides dense retrieval [D1].")
+    llm.complete.return_value = LLMResponse(
+        '{"claims":[{"text":"FAISS provides dense retrieval",'
+        '"evidence_ids":["D1"]}],"missing_information":[],"abstain":false}'
+    )
     with (
         patch(
             "src.internal.mcp_server.tools.chat.authenticated_retrieve",
@@ -495,7 +523,7 @@ async def test_ask_agentic_search_uses_llm_only_after_authenticated_evidence():
     )
     assert "FAISS-based dense retrieval." in prompt_text
     assert "BM25 scoring" not in prompt_text
-    assert result["answer"] == "FAISS provides dense retrieval [D1]."
+    assert result["answer"] == "FAISS provides dense retrieval [D1]"
     assert result["citations"] == ["D1"]
 
 
@@ -506,7 +534,9 @@ async def test_ask_agentic_search_verifies_adversarial_llm_citations():
 
     llm = Mock()
     llm.complete.return_value = LLMResponse(
-        "FAISS provides dense retrieval [D1]. The moon is cheese [D99]."
+        '{"claims":[{"text":"FAISS provides dense retrieval",'
+        '"evidence_ids":["D1"]},{"text":"The moon is cheese",'
+        '"evidence_ids":["D1"]}],"missing_information":[],"abstain":false}'
     )
     with (
         patch(
@@ -517,9 +547,7 @@ async def test_ask_agentic_search_verifies_adversarial_llm_citations():
     ):
         result = await ask_agentic_search("What provides dense retrieval?")
 
-    assert result["answer"] == (
-        "FAISS provides dense retrieval [D1]. The moon is cheese ."
-    )
+    assert result["answer"] == "FAISS provides dense retrieval [D1]"
     assert result["citations"] == ["D1"]
     assert result["sources"] == [
         {
@@ -559,6 +587,39 @@ async def test_ask_agentic_search_uses_extractive_authenticated_evidence():
             "content": "FAISS-based dense retrieval.",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_ask_agentic_search_adds_guard_metadata_without_removing_existing_keys():
+    from src.context import VerificationStatus
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    generated = Mock(
+        answer="FAISS-based dense retrieval. [D1]",
+        citations=["D1"],
+        context=Mock(documents=[]),
+        confidence=0.9,
+        verification_status=VerificationStatus.VERIFIED,
+        abstained=False,
+        tool_evidence=[Mock(tool_name="health")],
+    )
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            new=AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS[:1]),
+        ),
+        patch(
+            "src.internal.mcp_server.tools.chat.generate_answer", return_value=generated
+        ),
+    ):
+        result = await ask_agentic_search("What provides dense retrieval?")
+
+    assert {"answer", "citations", "sources"} <= result.keys()
+    assert result["confidence"] == 0.9
+    assert result["verification_status"] == "verified"
+    assert result["abstained"] is False
+    assert result["retry_count"] == 0
+    assert result["tool_sources"] == [{"name": "health"}]
 
 
 # ---------------------------------------------------------------------------

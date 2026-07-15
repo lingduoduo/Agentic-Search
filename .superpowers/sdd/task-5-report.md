@@ -1,57 +1,92 @@
-# Task 5 report: authenticated MCP retrieval documentation and regression coverage
+# Task 5 report
 
-## Changes
+## Status
 
-- Documented the actual trust boundary in `docs/mcp.md` and the MCP server README:
-  FastMCP verifies the bearer credential, indexed-document tools forward it only to
-  the authenticated web search endpoint, and the web backend derives user/group ACLs
-  before internal retrieval.
-- Documented fail-closed behavior: authentication, authorization, transport, and
-  backend errors never trigger unfiltered raw retrieval.
-- Described grounding accurately as citation-label and answer/evidence-overlap
-  validation, not a hard no-hallucination guarantee.
-- Repaired the existing integration flow's undefined payload/results variables.
-- Strengthened the Enterprise ACL scenario so a blocked user receives no restricted
-  content from `search_indexed_documents`, `retrieve_documents`, or
-  `ask_agentic_search`.
-- Added a direct streamable-HTTP `tools/call` regression proving an invalid bearer
-  token cannot dispatch `search_indexed_documents`.
-- Added AST-level assertions that the MCP search, research, and chat modules do not
-  import raw retrieval symbols.
+Implemented the user-facing grounded RAG safety contract, archived the approved
+design and plan, regenerated and validated context-pack artifacts, and completed
+focused and full-suite verification.
 
-## Verification
+## Files
 
-- Focused tests: `92 passed`
-  - `pytest tests/unit/test_mcp_server.py tests/unit/test_mcp_retrieval_client.py tests/unit/servers/query_and_chat/test_search_backend.py tests/unit/test_tool_registry.py tests/unit/test_tool_arg_validation.py tests/unit/servers/web/test_tool_admin_api.py -q`
-- MCP server unit tests: `32 passed`
-- Integration collection: `4 tests collected`
-  - `pytest tests/integration/tests/mcp/test_mcp_server_search.py --collect-only -q`
-- Ruff check: passed.
-- Ruff format check: 22 files already formatted.
-- `git diff --check main...HEAD`: passed.
-- `git diff --check`: passed for the uncommitted Task 5 changes.
-- Local documentation links checked: `README.md` and `docs/request-routing.md` exist.
+- `docs/retrieval.md`: documents evidence normalization, read-only tool policy,
+  retry/abstention rules, deterministic confidence, the compatibility switch,
+  additive result metadata, safe trace metadata, JSON-like argument snapshots,
+  and synchronous selector worker-thread lifetime after timeout.
+- `docs/superpowers/archive/specs/2026-07-15-grounded-rag-safety-design.md`:
+  approved design moved with `git mv` (100% similarity).
+- `docs/superpowers/archive/plans/2026-07-15-grounded-rag-safety.md`:
+  approved implementation plan moved with `git mv` (100% similarity).
+- `docs/superpowers/context-packs/grounded-rag-safety-context-pack.md` and
+  `docs/superpowers/context-packs/INDEX.md`: generator-owned safety pack and index
+  entry.
+- `.superpowers/sdd/task-5-report.md`: this handoff report.
+
+## Commands and results
+
+- `python scripts/generate_context_packs.py`
+  - `Generated 96 context packs and INDEX.md`.
+- `python scripts/generate_context_packs.py --check`
+  - `Validated 89 specs and 88 plans`; exit 0.
+- `env HF_HOME=/tmp/agentic-search-hf-cache pytest -q tests/unit/test_rag_safety.py tests/unit/test_rag_tool_evidence.py tests/unit/test_grounded_generation.py tests/unit/test_rag_pipeline_integration.py tests/unit/test_context_pipeline.py tests/unit/test_mcp_server.py tests/unit/test_agentic_rag.py tests/unit/observability/test_tracer.py tests/unit/test_generate_context_packs.py`
+  - 156 passed in 4.98s.
+- `ruff check .`
+  - `All checks passed!`.
+- `ruff format --check .`
+  - 941 files already formatted.
+- `git diff --check`
+  - exit 0, no output.
+- `env HF_HOME=/tmp/agentic-search-hf-cache pytest -q`
+  - 2,549 passed, 6 warnings in 42.98s.
+  - The redirected writable Hugging Face cache removed the earlier sandbox-only
+    cache-lock failure. No tests were deselected. The six warnings are dependency
+    deprecations and the existing empty-gradient warning.
+- Placeholder scan:
+  `rg -n "TODO|TBD|PLACEHOLDER|FIXME|<[^>]+>" docs/retrieval.md docs/superpowers/context-packs/grounded-rag-safety-context-pack.md docs/superpowers/archive/specs/2026-07-15-grounded-rag-safety-design.md docs/superpowers/archive/plans/2026-07-15-grounded-rag-safety.md`
+  - No task placeholders; the only match was unrelated existing prose later in
+    `docs/retrieval.md` containing an angle-bracket example.
+
+## Self-review
+
+- Public schema compatibility: documentation states the established result and
+  MCP keys remain and all safety metadata is additive/defaulted.
+- Evidence leakage: documentation and implementation expose/trace summaries only;
+  evidence bodies, raw tool output, prompts, arguments, and exception text are
+  excluded from operational traces.
+- Retry/call bounds: at most one corrective generation retry; tool calls default
+  to two, selector traversal is bounded, and selector/invocation waits are timed.
+- Timeout limitation: synchronous selectors run through `asyncio.to_thread`; a
+  timed-out worker may continue, so docs require trusted, bounded, nonblocking
+  selectors and do not imply thread cancellation.
+- Argument snapshot limitation: docs restrict the guarantee to recursively frozen
+  JSON-like/standard containers and explicitly avoid claiming arbitrary-object
+  deep immutability.
+- Generated drift and links: generator `--check` passed after archive moves; the
+  new pack and index point to the archived sources, and both targets exist.
+- Unsupported claims and abstention: the focused tests cover supported-only
+  rendering, the one-retry cap, and canonical abstention behavior.
 
 ## Concerns
 
-- The live MCP integration tests were not executed because they require the external
-  MCP server, web API, database/indexing services, and Enterprise ACL configuration.
-  The test module imports and collects successfully.
-- Pre-existing modifications to `.superpowers/sdd/task-3-report.md` and
-  `.superpowers/sdd/task-4-report.md` were left untouched and are not part of the
-  Task 5 commit.
+- Operational limitation: timing out synchronous selector work cannot cancel an
+  already-running executor thread. This is documented and requires trusted,
+  independently bounded selectors.
+- The full suite needs a writable Hugging Face cache under this sandbox; using
+  `HF_HOME=/tmp/agentic-search-hf-cache` passed the complete accepted suite.
 
-## Review follow-up
+## Commit, push, and PR
 
-- Expanded the cross-user integration regression so the privileged user calls all
-  three private-document tools and restricted evidence appears in each stable
-  success shape: `results`, `documents`, and `sources`.
-- The blocked user also calls all three tools; each response must have no `error`,
-  expose its expected list shape, and contain no restricted evidence.
-- Chat access is asserted through `sources`, not generated answer text, because the
-  answer may legitimately vary by LLM or extractive fallback.
-- Strengthened the AST architecture guard: every private-document tool module must
-  import `authenticated_retrieve`, raw retrieval symbols are prohibited, and imports
-  from raw internal retrieval package prefixes are prohibited.
-- Corrected public documentation for currently applied document-set narrowing and
-  keyword expansion, and removed the chat docstring's absolute hallucination claim.
+- Commit `cacb26b` (`docs: document grounded RAG safety`) created after the final
+  verification gate. This is the primary Task 5 documentation/archive commit.
+- The final pushed branch head, and `origin/context-packing-artifacts`, is
+  `41b71f1` (`docs: record Task 5 delivery status`).
+- `git push -u origin context-packing-artifacts` succeeded (`63edef9..cacb26b`).
+  GitHub reported that the configured repository moved to
+  `lingduoduo/Agentic-Search-GRPO`, but accepted and redirected the push.
+- `gh pr edit 414 --body-file /tmp/pr-414-body.md` succeeded. The body now records
+  implemented safety behavior, exact validation evidence, and the selector/cache
+  operational limitations.
+- The task described PR #414 as an existing draft, but GitHub reports it is
+  already `MERGED`, `isDraft=false`, with PR head `63edef9`. Consequently
+  `gh pr ready 414 --undo` was rejected with: `Pull request ... is closed. Only
+  draft pull requests can be marked as "ready for review"`. No readiness or merge
+  action was performed by Task 5; a merged PR cannot be restored to draft.

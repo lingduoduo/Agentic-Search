@@ -218,8 +218,8 @@ async def test_answer_with_retrieval_calls_tracer_spans():
 
 
 @pytest.mark.asyncio
-async def test_answer_with_retrieval_passes_query_to_span():
-    """The rag.query span receives the query text as an attribute."""
+async def test_answer_with_retrieval_omits_query_text_from_span():
+    """The rag.query span records bounded metadata, never prompt text."""
     from src.context.pipeline import answer_with_retrieval
 
     recorded_attrs: dict[str, object] = {}
@@ -250,5 +250,5 @@ async def test_answer_with_retrieval_passes_query_to_span():
     ):
         await answer_with_retrieval("What is FAISS?", top_k=7)
 
-    assert recorded_attrs.get("query") == "What is FAISS?"
+    assert "query" not in recorded_attrs
     assert recorded_attrs.get("top_k") == 7

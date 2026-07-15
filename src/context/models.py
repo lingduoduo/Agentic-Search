@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Protocol
 
 from src.context.search import SearchResult
@@ -187,6 +188,57 @@ class GroundingReport:
 
 
 @dataclass(frozen=True)
+class EvidenceSource:
+    """Normalized retrieval or tool evidence available to answer generation."""
+
+    id: str
+    text: str
+    title: str
+    url: str | None = None
+    provenance: str = "retrieval"
+    tool_name: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AnswerClaim:
+    text: str
+    evidence_ids: list[str]
+
+
+@dataclass(frozen=True)
+class AnswerDraft:
+    claims: list[AnswerClaim]
+    missing_information: list[str] = field(default_factory=list)
+    abstain: bool = False
+
+
+@dataclass(frozen=True)
+class ClaimVerdict:
+    claim: AnswerClaim
+    supported: bool
+    overlap_scores: dict[str, float] = field(default_factory=dict)
+    reason: str | None = None
+
+
+class VerificationStatus(str, Enum):
+    VERIFIED = "verified"
+    PARTIAL = "partial"
+    ABSTAINED = "abstained"
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    verdicts: list[ClaimVerdict]
+    supported_claims: list[AnswerClaim]
+    unsupported_claims: list[AnswerClaim]
+    unknown_evidence_ids: list[str]
+    confidence: float
+    retry_occurred: bool = False
+    status: VerificationStatus = VerificationStatus.ABSTAINED
+
+
+@dataclass(frozen=True)
 class SearchContextBundle:
     query: str
     documents: list[ContextDocument]
@@ -220,12 +272,24 @@ class AgentBehaviorConfig:
 
 
 @dataclass(frozen=True)
+class GroundedGenerationConfig:
+    enabled: bool = True
+    max_retries: int = 1
+    overlap_threshold: float = 0.15
+
+
+@dataclass(frozen=True)
 class AnswerGenerationRequest:
     question: str
     context: SearchContextBundle
     chat_history: list[ChatMessage] = field(default_factory=list)
     behavior: AgentBehaviorConfig = field(default_factory=AgentBehaviorConfig)
     verify_grounding: bool = False
+    evidence: list[EvidenceSource] | None = None
+    grounded_generation: GroundedGenerationConfig = field(
+        default_factory=GroundedGenerationConfig
+    )
+    evidence_sufficiency: float | None = None
 
 
 @dataclass(frozen=True)
@@ -235,6 +299,11 @@ class AnswerGenerationResult:
     context: SearchContextBundle
     prompt: PromptBundle
     grounding_report: GroundingReport | None = None
+    confidence: float | None = None
+    verification_status: VerificationStatus | None = None
+    abstained: bool = False
+    tool_evidence: list[EvidenceSource] = field(default_factory=list)
+    retry_count: int = 0
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

@@ -11,7 +11,7 @@ from .models import ContextDocument
 from .models import ContextSection
 from .models import SearchContextBundle
 
-_CITATION_RE = re.compile(r"\[(D\d+)\]")
+_CITATION_RE = re.compile(r"\[((?:D|T)\d+)\]")
 
 
 def documents_from_search_results(

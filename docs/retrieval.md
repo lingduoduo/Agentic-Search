@@ -4,6 +4,72 @@
 
 This guide covers retrieval services, ranking modes, reranking, and query optimization.
 
+## Grounded answer safety
+
+The shared `src.context` answer pipeline treats retrieval results and approved
+read-only tool results as the complete evidence boundary for factual claims.
+Retrieved documents are normalized as stable `D*` evidence and successful tool
+results as stable `T*` evidence. The model's internal structured draft must cite
+known evidence IDs for every claim; malformed drafts, unknown IDs, and claims
+without sufficient lexical support fail verification. Evidence can still be
+incorrect at its source—the verifier establishes support by the supplied
+evidence, not independent truth.
+
+Guarded generation allows at most one corrective retry with the original
+evidence and the verifier's findings. After that retry, unsupported claims are
+removed. If no supported claim remains, or usable evidence is absent, the result
+is exactly `I don't know based on the available evidence.` A supported answer is
+never replaced with that canonical abstention: partially supported drafts render
+only their supported claims. The no-LLM extractive path also abstains instead of
+selecting an unrelated first sentence.
+
+Confidence is deterministic rather than model-reported. It combines the verified
+claim fraction, evidence coverage, and an optional evidence-sufficiency signal,
+is clamped to `[0.0, 1.0]`, and is `0.0` for abstention. A fully verified answer
+can therefore have confidence below `1.0` when its evidence is weak. The safety
+guard is enabled by default; direct Python callers can explicitly pass
+`GroundedGenerationConfig(enabled=False)` to retain legacy unconstrained
+generation during compatibility migration.
+
+### Approved tool evidence
+
+Tool evidence is opt-in. A caller supplies a registry and selector, and only
+uniquely named tools explicitly classified `read_only` are offered to the
+selector or invoked. Unknown, duplicate, side-effecting, and unspecified tools
+are rejected. Defaults bound execution to two calls with a five-second timeout;
+selection and invocation failures or timeouts degrade to retrieval-only evidence.
+Tool outputs must be JSON-serializable and are normalized as data, never treated
+as instructions.
+
+`ToolRequest` arguments are intended to be JSON-like values built from standard
+containers. Mappings are copied and exposed read-only, while nested mappings,
+lists/tuples, and sets/frozensets are recursively converted to immutable standard
+container snapshots. This does not promise deep immutability for arbitrary
+user-defined objects stored inside those containers; registries and selectors
+should exchange JSON-like arguments only.
+
+Synchronous selector calls and bounded iteration run through
+`asyncio.to_thread` so they do not block the event loop. `asyncio.wait_for`
+limits how long the pipeline awaits them, but timing out does not stop the
+underlying worker thread, which may continue running. Selectors must therefore
+be trusted, independently bounded, and nonblocking; the timeout is a pipeline
+latency/failure boundary, not cancellation of synchronous work.
+
+### Result and operational metadata
+
+Existing result fields—`answer`, `citations`, `context`, `prompt`, and
+`grounding_report`—remain available. The shared result adds defaulted safety
+metadata: `confidence`, `verification_status` (`verified`, `partial`, or
+`abstained`), `abstained`, summarized `tool_evidence`, and `retry_count`. The MCP
+chat adapter preserves its established keys and adds confidence, verification,
+abstention, and tool-source summaries.
+
+Tracing records counts and categories, tool names and statuses, retry count,
+verification status, confidence, and abstention. It deliberately excludes
+evidence bodies, raw tool output, full prompts, and tool arguments. Tool failures
+are operational signals rather than fatal answer errors, because generation can
+continue from retrieval evidence.
+
 ## Retrieval setup
 
 `src.internal.document_index` is the single indexing entry point — filtering, chunking, embedding, retry-isolated writes, and failure reporting. Query-time retrievers and the retrieval HTTP client live in `src.context`. Reranker utilities live in `src.internal.servers.retrieval`.

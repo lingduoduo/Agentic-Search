@@ -4,17 +4,27 @@ from __future__ import annotations
 
 from .models import AnswerGenerationRequest
 from .models import AnswerGenerationResult
+from .models import AnswerClaim
 from .models import ChatMessage
 from .models import ContextDocument
 from .models import ContextSection
 from .models import EvidenceSnippet
+from .models import EvidenceSource
 from .models import LLMClient
 from .models import LLMResponse
+from .models import PromptBundle
 from .models import SearchContextBundle
 from .models import SearchFilters
 from .models import SearchRequest
+from .models import VerificationStatus
+from .models import VerificationResult
+from .models import GroundedGenerationConfig
+from .prompts import build_corrective_answer_prompt
 from .prompts import build_chat_prompt
+from .prompts import build_structured_answer_prompt
 from .retrieval.search_runner import build_search_context
+from .tool_evidence import ToolRegistry
+from .tool_evidence import ToolSelector
 from .utils import extract_citations
 
 
@@ -36,17 +46,63 @@ def generate_answer(
     *,
     llm: LLMClient | None = None,
 ) -> AnswerGenerationResult:
-    prompt = build_chat_prompt(
+    legacy_prompt = build_chat_prompt(
         request.question,
         request.context,
         history=request.chat_history,
         config=request.behavior,
     )
+    config = request.grounded_generation
+    evidence = request.evidence
+    if evidence is None:
+        from .safety import evidence_from_context
+
+        evidence = evidence_from_context(request.context)
+    tool_evidence = [item for item in evidence if item.provenance == "tool"]
+    confidence: float | None = None
+    verification_status: VerificationStatus | None = None
+    abstained = False
+    retry_count = 0
+
     if llm is None:
-        answer = synthesize_answer_from_context(request.question, request.context)
-    else:
-        raw = llm.complete(prompt.messages)
+        answer, verification = _generate_extractive_answer(
+            request.question,
+            evidence,
+            evidence_sufficiency=request.evidence_sufficiency,
+            overlap_threshold=config.overlap_threshold,
+        )
+        confidence = verification.confidence
+        verification_status = verification.status
+        abstained = verification.status is VerificationStatus.ABSTAINED
+        prompt = legacy_prompt
+    elif not config.enabled:
+        raw = llm.complete(legacy_prompt.messages)
         answer = raw.text if isinstance(raw, LLMResponse) else str(raw)
+        prompt = legacy_prompt
+    elif not evidence:
+        answer = _canonical_abstention()
+        confidence = 0.0
+        verification_status = VerificationStatus.ABSTAINED
+        abstained = True
+        prompt = build_structured_answer_prompt(
+            request.question,
+            request.context,
+            request.behavior,
+            history=request.chat_history,
+            evidence=evidence,
+        )
+    else:
+        prompt = build_structured_answer_prompt(
+            request.question,
+            request.context,
+            request.behavior,
+            history=request.chat_history,
+            evidence=evidence,
+        )
+        answer, confidence, verification_status, retry_count = _generate_guarded_answer(
+            request, llm, prompt, evidence
+        )
+        abstained = verification_status is VerificationStatus.ABSTAINED
 
     grounding_report = None
     if request.verify_grounding:
@@ -62,7 +118,83 @@ def generate_answer(
         context=request.context,
         prompt=prompt,
         grounding_report=grounding_report,
+        confidence=confidence,
+        verification_status=verification_status,
+        abstained=abstained,
+        tool_evidence=tool_evidence,
+        retry_count=retry_count,
     )
+
+
+def _generate_guarded_answer(
+    request: AnswerGenerationRequest,
+    llm: LLMClient,
+    prompt: PromptBundle,
+    evidence: list[EvidenceSource],
+) -> tuple[str, float, VerificationStatus, int]:
+    from .safety import parse_answer_draft, render_verified_answer, verify_answer_draft
+
+    max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
+    raw_text = ""
+    feedback = ""
+    result = None
+    for attempt in range(max_attempts):
+        active_prompt = prompt
+        if attempt:
+            active_prompt = build_corrective_answer_prompt(
+                request.question,
+                request.context,
+                original_draft=raw_text,
+                verifier_feedback=feedback,
+                config=request.behavior,
+                history=request.chat_history,
+                evidence=evidence,
+            )
+        raw = llm.complete(active_prompt.messages)
+        raw_text = raw.text if isinstance(raw, LLMResponse) else str(raw)
+        try:
+            draft = parse_answer_draft(raw_text, evidence)
+        except ValueError as exc:
+            feedback = str(exc)
+            continue
+        result = verify_answer_draft(
+            draft,
+            evidence,
+            overlap_threshold=request.grounded_generation.overlap_threshold,
+            evidence_sufficiency=request.evidence_sufficiency,
+            retry_occurred=bool(attempt),
+        )
+        if draft.abstain or not result.unsupported_claims:
+            break
+        feedback = _verifier_feedback(result)
+
+    if result is None:
+        return (
+            _canonical_abstention(),
+            0.0,
+            VerificationStatus.ABSTAINED,
+            max_attempts - 1,
+        )
+    return (
+        render_verified_answer(result),
+        result.confidence,
+        result.status,
+        int(result.retry_occurred),
+    )
+
+
+def _verifier_feedback(result: VerificationResult) -> str:
+    return "\n".join(
+        f"Unsupported claim: {verdict.claim.text} ({verdict.reason})"
+        for verdict in result.verdicts
+        if not verdict.supported
+    )
+
+
+def _canonical_abstention() -> str:
+    from .safety import CANONICAL_ABSTENTION
+
+    return CANONICAL_ABSTENTION
 
 
 async def answer_with_retrieval(
@@ -73,18 +205,40 @@ async def answer_with_retrieval(
     search_url: str = "http://localhost:8000/retrieve",
     top_k: int = 5,
     filters: SearchFilters | None = None,
+    tool_registry: ToolRegistry | None = None,
+    tool_selector: ToolSelector | None = None,
+    max_tool_calls: int = 2,
+    tool_timeout_seconds: float = 5.0,
+    grounded_generation: GroundedGenerationConfig | None = None,
+    evidence_sufficiency: float | None = None,
 ) -> AnswerGenerationResult:
+    from .safety import evidence_from_context
+    from .tool_evidence import collect_tool_evidence
     from src.internal.observability.tracer import get_tracer
 
     tracer = get_tracer()
-    with tracer.span("rag.query", query=question, top_k=top_k):
-        with tracer.span("rag.retrieve", search_url=search_url):
+    tool_statuses: list[tuple[str, str]] = []
+    with tracer.span("rag.query", top_k=top_k):
+        with tracer.span("rag.retrieve"):
             context = await retrieve_context(
                 question,
                 search_url=search_url,
                 top_k=top_k,
                 filters=filters,
             )
+        evidence = evidence_from_context(context)
+        if tool_registry is not None and tool_selector is not None:
+            tool_evidence = await collect_tool_evidence(
+                question,
+                tool_registry,
+                tool_selector,
+                max_calls=max_tool_calls,
+                timeout_seconds=tool_timeout_seconds,
+                status_callback=lambda name, status: tool_statuses.append(
+                    (name, status)
+                ),
+            )
+            evidence.extend(tool_evidence)
         with tracer.span(
             "rag.generate",
             num_docs=len(context.documents),
@@ -95,9 +249,31 @@ async def answer_with_retrieval(
                     question=question,
                     context=context,
                     chat_history=chat_history or [],
+                    evidence=evidence,
+                    grounded_generation=grounded_generation
+                    or GroundedGenerationConfig(),
+                    evidence_sufficiency=evidence_sufficiency,
                 ),
                 llm=llm,
             )
+        evidence_types = sorted({item.provenance for item in evidence})
+        verification_status = (
+            result.verification_status.value
+            if result.verification_status
+            else "unverified"
+        )
+        with tracer.span(
+            "rag.summary",
+            evidence_count=len(evidence),
+            evidence_types=",".join(evidence_types),
+            tool_names=",".join(name for name, _ in tool_statuses),
+            tool_statuses=",".join(status for _, status in tool_statuses),
+            retry_count=result.retry_count,
+            verification_status=verification_status,
+            confidence=result.confidence,
+            abstained=result.abstained,
+        ):
+            pass
     return result
 
 
@@ -114,12 +290,73 @@ def synthesize_answer_from_context(question: str, context: SearchContextBundle) 
 
     snippets = rank_evidence_snippets(question, context, max_snippets=3)
     if not snippets:
-        doc = context.documents[0]
-        lead = _first_sentence(_contextualized_content(doc, context.sections))
-        return f"{lead} {doc.citation}"
+        return _canonical_abstention()
 
     parts = [f"{snippet.text} {snippet.citation}" for snippet in snippets]
     return " ".join(parts)
+
+
+def _generate_extractive_answer(
+    question: str,
+    evidence: list[EvidenceSource],
+    *,
+    evidence_sufficiency: float | None,
+    overlap_threshold: float,
+) -> tuple[str, VerificationResult]:
+    """Select and verify extractive claims from the normalized evidence bundle."""
+    from .models import AnswerDraft
+    from .safety import render_verified_answer, verify_answer_draft
+
+    claims = _rank_normalized_evidence(question, evidence, max_snippets=3)
+    draft = AnswerDraft(claims=claims, abstain=not claims)
+    verification = verify_answer_draft(
+        draft,
+        evidence,
+        overlap_threshold=overlap_threshold,
+        evidence_sufficiency=evidence_sufficiency,
+    )
+    return render_verified_answer(verification), verification
+
+
+def _rank_normalized_evidence(
+    question: str,
+    evidence: list[EvidenceSource],
+    *,
+    max_snippets: int,
+) -> list[AnswerClaim]:
+    """Return relevant verbatim claims while retaining their stable source IDs."""
+    if max_snippets < 1:
+        return []
+    question_tokens = _tokenize(question)
+    if not question_tokens:
+        return []
+
+    scored: list[tuple[float, int, int, str, str]] = []
+    for evidence_index, source in enumerate(evidence):
+        for sentence_index, sentence in enumerate(_split_sentences(source.text)):
+            overlap = _overlap_score(question_tokens, _tokenize(sentence))
+            if overlap <= 0:
+                continue
+            title_overlap = _overlap_score(question_tokens, _tokenize(source.title))
+            score = (
+                overlap * 10.0
+                + title_overlap * 2.0
+                + 0.2 / (evidence_index + 1)
+                + 0.1 / (sentence_index + 1)
+            )
+            scored.append((score, evidence_index, sentence_index, sentence, source.id))
+
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    selected: list[AnswerClaim] = []
+    selected_ids: set[str] = set()
+    for _, _, _, sentence, evidence_id in scored:
+        if evidence_id in selected_ids:
+            continue
+        selected.append(AnswerClaim(text=sentence, evidence_ids=[evidence_id]))
+        selected_ids.add(evidence_id)
+        if len(selected) >= max_snippets:
+            break
+    return selected
 
 
 def rank_evidence_snippets(
