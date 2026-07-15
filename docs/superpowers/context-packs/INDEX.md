@@ -503,3 +503,8 @@ Focused context packs generated from active and archived specs and plans under `
 
 - [Spec: Context Packing Artifacts Design](../archive/specs/2026-07-15-context-packing-artifacts-design.md)
 - [Plan: Context Packing Artifacts Implementation Plan](../archive/plans/2026-07-15-context-packing-artifacts.md)
+
+### [Grounded Rag Safety](grounded-rag-safety-context-pack.md)
+
+- [Spec: Grounded RAG Safety Design](../archive/specs/2026-07-15-grounded-rag-safety-design.md)
+- [Plan: Grounded RAG Safety Implementation Plan](../archive/plans/2026-07-15-grounded-rag-safety.md)
