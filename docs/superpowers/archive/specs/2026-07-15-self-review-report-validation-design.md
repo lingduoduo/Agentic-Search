@@ -185,7 +185,7 @@ services.
 ## Acceptance Criteria
 
 - A canonical task report passes the validator and returns exit code `0`.
-- Any missing, duplicated, out-of-order, empty, or placeholder required section
+- Any missing, duplicated, out-of-order, empty, or template-marker required section
   causes exit code `1` with an actionable diagnostic.
 - Only the four established statuses are accepted.
 - At least one resolvable commit SHA is required.
