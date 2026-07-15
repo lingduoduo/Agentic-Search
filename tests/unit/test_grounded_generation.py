@@ -222,6 +222,7 @@ def test_guarded_generation_abstains_without_calling_llm_when_evidence_is_empty(
 
     assert result.answer == CANONICAL_ABSTENTION
     assert result.abstained is True
+    assert result.structured_output_requested is False
     assert llm.calls == []
 
 
@@ -241,6 +242,7 @@ def test_schema_unsupported_downgrades_without_consuming_semantic_retry():
         False,
     ]
     assert result.retry_count == 1
+    assert result.structured_output_requested is True
     assert result.structured_output_downgraded is True
 
 
@@ -257,13 +259,15 @@ def test_native_schema_success_and_prompt_only_compatibility():
         AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
         llm=native,
     )
-    generate_answer(
+    prompt_only_result = generate_answer(
         AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
         llm=prompt_only,
     )
     assert native.calls[0].structured_output.name == "answer_draft"
     assert prompt_only.calls[0].structured_output is None
     assert native_result.structured_output_applied is True
+    assert native_result.structured_output_requested is True
+    assert prompt_only_result.structured_output_requested is False
 
 
 def test_refusal_abstains_without_exposing_text():
@@ -317,7 +321,7 @@ def test_ordinary_provider_error_propagates_without_downgrade():
 
 def test_legacy_disabled_mode_never_requests_schema():
     llm = SequenceLLM("legacy", capability=StructuredOutputCapability.JSON_SCHEMA)
-    generate_answer(
+    result = generate_answer(
         AnswerGenerationRequest(
             question="What is FAISS?",
             context=_bundle(),
@@ -325,6 +329,7 @@ def test_legacy_disabled_mode_never_requests_schema():
         ),
         llm=llm,
     )
+    assert result.structured_output_requested is False
     assert llm.calls[0].structured_output is None
 
 
@@ -410,6 +415,7 @@ def test_extractive_fallback_empty_evidence_uses_canonical_abstention_metadata()
     assert result.confidence == 0.0
     assert result.abstained is True
     assert result.retry_count == 0
+    assert result.structured_output_requested is False
 
 
 def test_extractive_fallback_uses_retrieval_only_normalized_evidence():

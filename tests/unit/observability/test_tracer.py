@@ -275,6 +275,7 @@ async def test_rag_summary_exposes_only_aggregate_structured_output_metadata():
         confidence=0.0,
         abstained=True,
         structured_output_applied=False,
+        structured_output_requested=True,
         structured_output_downgraded=True,
         structured_output_category="refused",
     )
@@ -300,6 +301,7 @@ async def test_rag_summary_exposes_only_aggregate_structured_output_metadata():
             "confidence": 0.0,
             "abstained": True,
             "structured_output_applied": False,
+            "structured_output_requested": True,
             "structured_output_downgraded": True,
             "structured_output_category": "refused",
         }

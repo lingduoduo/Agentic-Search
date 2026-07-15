@@ -67,6 +67,7 @@ def generate_answer(
     verification_status: VerificationStatus | None = None
     abstained = False
     retry_count = 0
+    structured_output_requested = False
     structured_output_applied = False
     structured_output_downgraded = False
     structured_output_category = None
@@ -111,6 +112,7 @@ def generate_answer(
             confidence,
             verification_status,
             retry_count,
+            structured_output_requested,
             structured_output_applied,
             structured_output_downgraded,
             structured_output_category,
@@ -136,6 +138,7 @@ def generate_answer(
         abstained=abstained,
         tool_evidence=tool_evidence,
         retry_count=retry_count,
+        structured_output_requested=structured_output_requested,
         structured_output_applied=structured_output_applied,
         structured_output_downgraded=structured_output_downgraded,
         structured_output_category=structured_output_category,
@@ -147,7 +150,7 @@ def _generate_guarded_answer(
     llm: LLMClient,
     prompt: PromptBundle,
     evidence: list[EvidenceSource],
-) -> tuple[str, float, VerificationStatus, int, bool, bool, str | None]:
+) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
     from .safety import parse_answer_draft, render_verified_answer, verify_answer_draft
 
     max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
@@ -162,6 +165,7 @@ def _generate_guarded_answer(
         schema_request = StructuredOutputRequest(
             name="answer_draft", schema=answer_draft_json_schema()
         )
+    requested = schema_request is not None
     downgraded = False
     applied = False
     category = None
@@ -196,6 +200,7 @@ def _generate_guarded_answer(
                     0.0,
                     VerificationStatus.ABSTAINED,
                     attempt,
+                    requested,
                     applied,
                     downgraded,
                     "refused",
@@ -227,6 +232,7 @@ def _generate_guarded_answer(
             0.0,
             VerificationStatus.ABSTAINED,
             max_attempts - 1,
+            requested,
             applied,
             downgraded,
             category,
@@ -236,6 +242,7 @@ def _generate_guarded_answer(
         result.confidence,
         result.status,
         int(result.retry_occurred),
+        requested,
         applied,
         downgraded,
         category,
@@ -331,6 +338,7 @@ async def answer_with_retrieval(
             verification_status=verification_status,
             confidence=result.confidence,
             abstained=result.abstained,
+            structured_output_requested=result.structured_output_requested,
             structured_output_applied=result.structured_output_applied,
             structured_output_downgraded=result.structured_output_downgraded,
             structured_output_category=result.structured_output_category,

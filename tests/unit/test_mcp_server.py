@@ -382,6 +382,7 @@ async def test_ask_agentic_search_synthesizes_only_from_authorized_documents():
         "abstained": False,
         "retry_count": 0,
         "tool_sources": [],
+        "structured_output_requested": False,
         "structured_output_applied": False,
         "structured_output_downgraded": False,
         "structured_output_category": None,
@@ -419,6 +420,7 @@ async def test_ask_agentic_search_empty_evidence_skips_llm():
         "abstained": True,
         "retry_count": 0,
         "tool_sources": [],
+        "structured_output_requested": False,
         "structured_output_applied": False,
         "structured_output_downgraded": False,
         "structured_output_category": None,
@@ -455,6 +457,7 @@ async def test_ask_agentic_search_whitespace_evidence_skips_llm_construction():
         "abstained": True,
         "retry_count": 0,
         "tool_sources": [],
+        "structured_output_requested": False,
         "structured_output_applied": False,
         "structured_output_downgraded": False,
         "structured_output_category": None,
@@ -496,6 +499,7 @@ async def test_ask_agentic_search_auth_errors_have_no_raw_fallback(message: str)
         "abstained": True,
         "retry_count": 0,
         "tool_sources": [],
+        "structured_output_requested": False,
         "structured_output_applied": False,
         "structured_output_downgraded": False,
         "structured_output_category": None,
@@ -615,6 +619,7 @@ async def test_ask_agentic_search_adds_guard_metadata_without_removing_existing_
         abstained=False,
         tool_evidence=[Mock(tool_name="health")],
         structured_output_applied=True,
+        structured_output_requested=True,
         structured_output_downgraded=False,
         structured_output_category="incomplete",
     )
@@ -636,6 +641,7 @@ async def test_ask_agentic_search_adds_guard_metadata_without_removing_existing_
     assert result["retry_count"] == 0
     assert result["tool_sources"] == [{"name": "health"}]
     assert result["structured_output_applied"] is True
+    assert result["structured_output_requested"] is True
     assert result["structured_output_downgraded"] is False
     assert result["structured_output_category"] == "incomplete"
 

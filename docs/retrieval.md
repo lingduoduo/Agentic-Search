@@ -64,6 +64,11 @@ results and traces contain only aggregate booleans and categories, never raw
 provider errors, refusals, model output, prompts, schemas, evidence bodies, or
 tool arguments.
 
+`structured_output_requested` records whether generation initially asked the
+provider to enforce the answer schema. It remains `true` after an explicit
+unsupported-schema downgrade, while `structured_output_applied` records whether
+the provider actually applied that constraint.
+
 `structured_output_category` is encounter-level aggregate metadata. It records
 that a refusal or incomplete structured response occurred during generation, so
 the value may remain `incomplete` even when a later corrective draft succeeds
