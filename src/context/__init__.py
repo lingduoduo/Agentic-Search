@@ -37,6 +37,12 @@ from .safety import evidence_from_context
 from .safety import parse_answer_draft
 from .safety import render_verified_answer
 from .safety import verify_answer_draft
+from .tool_evidence import ToolDescriptor
+from .tool_evidence import ToolRegistry
+from .tool_evidence import ToolRequest
+from .tool_evidence import ToolSafety
+from .tool_evidence import ToolSelector
+from .tool_evidence import collect_tool_evidence
 from .utils import build_context_bundle
 from .utils import documents_from_search_results
 from .utils import extract_citations
@@ -64,6 +70,11 @@ __all__ = [
     "SearchFilters",
     "SearchRequest",
     "SearchType",
+    "ToolDescriptor",
+    "ToolRegistry",
+    "ToolRequest",
+    "ToolSafety",
+    "ToolSelector",
     "VerificationResult",
     "VerificationStatus",
     "CANONICAL_ABSTENTION",
@@ -73,6 +84,7 @@ __all__ = [
     "build_chat_prompt",
     "build_context_bundle",
     "build_retrieval_prompt",
+    "collect_tool_evidence",
     "documents_from_search_results",
     "extract_citations",
     "evidence_from_context",
