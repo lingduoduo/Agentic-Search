@@ -174,7 +174,7 @@ def pair_sources(specs: list[SourceDoc], plans: list[SourceDoc]) -> list[TopicBu
 
 
 def _compact(text: str, limit: int = SECTION_LIMIT) -> str:
-    text = text.strip()
+    text = re.sub(r"!?\[([^]]+)]\([^)]+\)", r"\1", text).strip()
     if len(text) <= limit:
         return text
     boundary = text.rfind("\n", 0, limit)
@@ -330,11 +330,10 @@ def validate_generated(source_root: Path, output_dir: Path) -> list[str]:
         index = index_path.read_text(encoding="utf-8")
         specs, plans = discover_sources(source_root)
         for source in (*specs, *plans):
-            count = index.count(source.path.name)
+            link = _source_link(source)
+            count = index.count(link)
             if count != 1:
-                errors.append(
-                    f"source appears {count} times in INDEX.md: {source.path.name}"
-                )
+                errors.append(f"source appears {count} times in INDEX.md: {link}")
     return errors
 
 

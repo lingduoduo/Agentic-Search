@@ -131,3 +131,34 @@ def test_validate_generated_detects_drift_and_broken_links(tmp_path: Path) -> No
     errors = validate_generated(root, output)
     assert any("out of date" in error for error in errors)
     assert any("broken link" in error for error in errors)
+
+
+def test_generate_strips_embedded_links_from_compacted_source(tmp_path: Path) -> None:
+    root = tmp_path / "superpowers"
+    write(
+        root / "specs/2026-07-01-search-design.md",
+        "# Search\n\n## Goal\n\nRead the [repository guide](../../../README.md).\n",
+    )
+
+    generate(root, root / "context-packs")
+
+    pack = (root / "context-packs/search-context-pack.md").read_text(encoding="utf-8")
+    assert "Read the repository guide." in pack
+    assert "../../../README.md" not in pack
+    assert validate_generated(root, root / "context-packs") == []
+
+
+def test_validate_coverage_handles_same_basename_in_specs_and_plans(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "superpowers"
+    name = "2026-07-01-routing.md"
+    write(root / "specs" / name, "# Routing Spec\n")
+    write(root / "plans" / name, "# Routing Plan\n")
+
+    generate(root, root / "context-packs")
+
+    index = (root / "context-packs/INDEX.md").read_text(encoding="utf-8")
+    assert index.count(f"../specs/{name}") == 1
+    assert index.count(f"../plans/{name}") == 1
+    assert validate_generated(root, root / "context-packs") == []
