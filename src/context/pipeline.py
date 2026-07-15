@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .models import AnswerGenerationRequest
 from .models import AnswerGenerationResult
+from .models import AnswerClaim
 from .models import ChatMessage
 from .models import ContextDocument
 from .models import ContextSection
@@ -64,12 +65,15 @@ def generate_answer(
     retry_count = 0
 
     if llm is None:
-        answer = synthesize_answer_from_context(request.question, request.context)
-        abstained = answer == _canonical_abstention()
-        confidence = 0.0 if abstained else 1.0
-        verification_status = (
-            VerificationStatus.ABSTAINED if abstained else VerificationStatus.VERIFIED
+        answer, verification = _generate_extractive_answer(
+            request.question,
+            evidence,
+            evidence_sufficiency=request.evidence_sufficiency,
+            overlap_threshold=config.overlap_threshold,
         )
+        confidence = verification.confidence
+        verification_status = verification.status
+        abstained = verification.status is VerificationStatus.ABSTAINED
         prompt = legacy_prompt
     elif not config.enabled:
         raw = llm.complete(legacy_prompt.messages)
@@ -290,6 +294,69 @@ def synthesize_answer_from_context(question: str, context: SearchContextBundle) 
 
     parts = [f"{snippet.text} {snippet.citation}" for snippet in snippets]
     return " ".join(parts)
+
+
+def _generate_extractive_answer(
+    question: str,
+    evidence: list[EvidenceSource],
+    *,
+    evidence_sufficiency: float | None,
+    overlap_threshold: float,
+) -> tuple[str, VerificationResult]:
+    """Select and verify extractive claims from the normalized evidence bundle."""
+    from .models import AnswerDraft
+    from .safety import render_verified_answer, verify_answer_draft
+
+    claims = _rank_normalized_evidence(question, evidence, max_snippets=3)
+    draft = AnswerDraft(claims=claims, abstain=not claims)
+    verification = verify_answer_draft(
+        draft,
+        evidence,
+        overlap_threshold=overlap_threshold,
+        evidence_sufficiency=evidence_sufficiency,
+    )
+    return render_verified_answer(verification), verification
+
+
+def _rank_normalized_evidence(
+    question: str,
+    evidence: list[EvidenceSource],
+    *,
+    max_snippets: int,
+) -> list[AnswerClaim]:
+    """Return relevant verbatim claims while retaining their stable source IDs."""
+    if max_snippets < 1:
+        return []
+    question_tokens = _tokenize(question)
+    if not question_tokens:
+        return []
+
+    scored: list[tuple[float, int, int, str, str]] = []
+    for evidence_index, source in enumerate(evidence):
+        for sentence_index, sentence in enumerate(_split_sentences(source.text)):
+            overlap = _overlap_score(question_tokens, _tokenize(sentence))
+            if overlap <= 0:
+                continue
+            title_overlap = _overlap_score(question_tokens, _tokenize(source.title))
+            score = (
+                overlap * 10.0
+                + title_overlap * 2.0
+                + 0.2 / (evidence_index + 1)
+                + 0.1 / (sentence_index + 1)
+            )
+            scored.append((score, evidence_index, sentence_index, sentence, source.id))
+
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    selected: list[AnswerClaim] = []
+    selected_ids: set[str] = set()
+    for _, _, _, sentence, evidence_id in scored:
+        if evidence_id in selected_ids:
+            continue
+        selected.append(AnswerClaim(text=sentence, evidence_ids=[evidence_id]))
+        selected_ids.add(evidence_id)
+        if len(selected) >= max_snippets:
+            break
+    return selected
 
 
 def rank_evidence_snippets(

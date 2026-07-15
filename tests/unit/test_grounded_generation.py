@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 import src.context as context_api
 from src.context import (
     CANONICAL_ABSTENTION,
     AnswerGenerationRequest,
     ChatMessage,
+    EvidenceSource,
     LLMResponse,
     VerificationStatus,
     build_context_bundle,
@@ -270,6 +273,142 @@ def test_extractive_fallback_abstains_without_relevant_snippet():
 
     assert result.answer == CANONICAL_ABSTENTION
     assert result.abstained is True
+
+
+def test_extractive_fallback_empty_evidence_uses_canonical_abstention_metadata():
+    empty = build_context_bundle("What is FAISS?", [])
+
+    result = generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=empty), llm=None
+    )
+
+    assert result.answer == "I don't know based on the available evidence."
+    assert result.citations == []
+    assert result.verification_status is VerificationStatus.ABSTAINED
+    assert result.confidence == 0.0
+    assert result.abstained is True
+    assert result.retry_count == 0
+
+
+def test_extractive_fallback_uses_retrieval_only_normalized_evidence():
+    context = build_context_bundle("What is FAISS?", [])
+    evidence = [
+        EvidenceSource(
+            id="D7",
+            text="FAISS provides efficient vector similarity search.",
+            title="Normalized retrieval",
+            url="https://example.test/faiss",
+            metadata={"document_id": "faiss-guide"},
+        )
+    ]
+
+    result = generate_answer(
+        AnswerGenerationRequest(
+            question="What is FAISS?", context=context, evidence=evidence
+        ),
+        llm=None,
+    )
+
+    assert result.answer == "FAISS provides efficient vector similarity search. [D7]"
+    assert result.citations == ["D7"]
+    assert result.verification_status is VerificationStatus.VERIFIED
+
+
+def test_extractive_fallback_uses_tool_only_evidence_and_preserves_source_metadata():
+    context = build_context_bundle("What is the service status?", [])
+    tool_source = EvidenceSource(
+        id="T1",
+        text="The service status is operational.",
+        title="Status API",
+        url="https://status.example.test",
+        provenance="tool",
+        tool_name="read_status",
+        metadata={"region": "us-east"},
+    )
+
+    result = generate_answer(
+        AnswerGenerationRequest(
+            question="What is the service status?",
+            context=context,
+            evidence=[tool_source],
+        ),
+        llm=None,
+    )
+
+    assert result.answer == "The service status is operational. [T1]"
+    assert result.citations == ["T1"]
+    assert result.tool_evidence == [tool_source]
+    assert result.tool_evidence[0].url == "https://status.example.test"
+    assert result.tool_evidence[0].metadata == {"region": "us-east"}
+
+
+def test_extractive_fallback_ranks_mixed_retrieval_and_tool_evidence():
+    context = build_context_bundle("FAISS service latency", [])
+    evidence = [
+        EvidenceSource(
+            id="D1",
+            text="FAISS is a vector similarity search library.",
+            title="FAISS guide",
+        ),
+        EvidenceSource(
+            id="T1",
+            text="Current FAISS service latency is 12 milliseconds.",
+            title="Latency monitor",
+            provenance="tool",
+            tool_name="read_latency",
+        ),
+    ]
+
+    result = generate_answer(
+        AnswerGenerationRequest(
+            question="FAISS service latency", context=context, evidence=evidence
+        ),
+        llm=None,
+    )
+
+    assert "Current FAISS service latency is 12 milliseconds. [T1]" in result.answer
+    assert result.citations[0] == "T1"
+    assert set(result.citations) == {"T1", "D1"}
+
+
+def test_extractive_fallback_confidence_uses_verification_formula_and_sufficiency():
+    context = build_context_bundle("What is FAISS?", [])
+    evidence = [
+        EvidenceSource(
+            id="D1",
+            text="FAISS is a vector similarity search library.",
+            title="FAISS",
+        ),
+        EvidenceSource(
+            id="D2",
+            text="Bread should bake for thirty minutes.",
+            title="Cooking",
+        ),
+    ]
+
+    high = generate_answer(
+        AnswerGenerationRequest(
+            question="What is FAISS?",
+            context=context,
+            evidence=evidence,
+            evidence_sufficiency=1.0,
+        ),
+        llm=None,
+    )
+    low = generate_answer(
+        AnswerGenerationRequest(
+            question="What is FAISS?",
+            context=context,
+            evidence=evidence,
+            evidence_sufficiency=0.0,
+        ),
+        llm=None,
+    )
+
+    # support=1/1, evidence coverage=1/2, then supplied sufficiency.
+    assert high.confidence == pytest.approx(0.9)
+    assert low.confidence == pytest.approx(0.7)
+    assert high.confidence != 1.0
 
 
 def test_result_metadata_defaults_remain_backward_compatible():
