@@ -342,6 +342,10 @@ def test_tdd_green_requires_passing_result() -> None:
         "The tests were not all passing.",
         "The suite has not fully passed.",
         "The checks are not currently passing.",
+        "The tests were not quite all currently passing.",
+        "Exited with exit code 0, although assertions failed.",
+        "20 passed. A later validation step reported an error.",
+        "All checks are passing. One integration test is failing.",
         "0 passed, 1 failed.",
     ],
 )
@@ -357,6 +361,13 @@ def test_tdd_green_rejects_negated_or_contradictory_passing_result(result: str) 
 )
 def test_tdd_green_accepts_unambiguous_passing_result(result: str) -> None:
     text = tdd_report().replace("The focused suite passed with 20 tests.", result)
+    assert messages(text, require_tdd=True) == []
+
+
+def test_tdd_green_allows_warnings_with_positive_pass_count() -> None:
+    text = tdd_report().replace(
+        "The focused suite passed with 20 tests.", "2644 passed, 6 warnings."
+    )
     assert messages(text, require_tdd=True) == []
 
 

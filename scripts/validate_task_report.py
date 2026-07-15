@@ -36,8 +36,21 @@ SHORTCUT_REFERENCE_RE = re.compile(r"\[([^\]\n]+)\]")
 COMMAND_LABEL_RE = re.compile(r"(?m)^Command:[ \t]*$")
 RESULT_LABEL_RE = re.compile(r"(?m)^Result:[ \t]*$")
 EXPECTED_FAILURE_RE = re.compile(r"(?m)^Expected failure:[ \t]*(?:\n+)?(.+)$")
-PASSING_RESULT_RE = re.compile(
-    r"\b(?:pass|passed|passing|exit(?: code)?[ :=]+0)\b", re.IGNORECASE
+NEGATIVE_OUTCOME_RE = re.compile(
+    r"\b(?:not|never|failed|failing|failures?|errors?)\b", re.IGNORECASE
+)
+ZERO_PASSED_RE = re.compile(r"\b0\s+(?:tests?\s+)?passed\b", re.IGNORECASE)
+POSITIVE_PASSED_COUNT_RE = re.compile(
+    r"\b[1-9]\d*\s+(?:tests?\s+)?passed\b", re.IGNORECASE
+)
+CLEAR_PASSING_STATEMENT_RE = re.compile(
+    r"\b(?:pytest|suite|tests?|checks?)\s+"
+    r"(?:(?:is|are|was|were|has|have)\s+)?(?:passed|passing)\b",
+    re.IGNORECASE,
+)
+EXIT_CODE_ZERO_RE = re.compile(
+    r"\bexit(?:ed)?(?:\s+with)?\s+(?:exit\s+)?code\s*[:=]?\s*0\b",
+    re.IGNORECASE,
 )
 
 
@@ -467,22 +480,18 @@ def _normalize_reference_label(label: str) -> str:
 
 
 def _is_passing_result(result: str) -> bool:
-    if re.search(
-        r"\b(?:did|does|do|is|are|was|were|has|have|had)?\s*"
-        r"not(?:\s+\w+){0,2}\s+pass\w*\b",
-        result,
-        re.IGNORECASE,
-    ):
+    if NEGATIVE_OUTCOME_RE.search(result):
         return False
-    if re.search(r"\b0\s+(?:tests?\s+)?passed\b", result, re.IGNORECASE):
+    if ZERO_PASSED_RE.search(result):
         return False
-    if re.search(
-        r"\b(?:[1-9]\d*\s+(?:tests?\s+)?failed|(?:suite|tests?|checks?)\s+failed)\b",
-        result,
-        re.IGNORECASE,
-    ):
-        return False
-    return PASSING_RESULT_RE.search(result) is not None
+    return any(
+        pattern.search(result)
+        for pattern in (
+            POSITIVE_PASSED_COUNT_RE,
+            CLEAR_PASSING_STATEMENT_RE,
+            EXIT_CODE_ZERO_RE,
+        )
+    )
 
 
 def _prose_text(text: str) -> str:
