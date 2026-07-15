@@ -12,6 +12,7 @@ from src.context.search import SearchResult
 from .enums import AgentBehavior
 from .enums import AnswerStyle
 from .enums import SearchType
+from .structured_output import StructuredCompletionMetadata
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class ChatMessage:
 class LLMResponse:
     text: str
     raw: object | None = None
+    structured: StructuredCompletionMetadata = field(
+        default_factory=StructuredCompletionMetadata
+    )
 
 
 class LLMClient(Protocol):
@@ -304,6 +308,10 @@ class AnswerGenerationResult:
     abstained: bool = False
     tool_evidence: list[EvidenceSource] = field(default_factory=list)
     retry_count: int = 0
+    structured_output_requested: bool = False
+    structured_output_applied: bool = False
+    structured_output_downgraded: bool = False
+    structured_output_category: str | None = None
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

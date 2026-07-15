@@ -508,3 +508,8 @@ Focused context packs generated from active and archived specs and plans under `
 
 - [Spec: Grounded RAG Safety Design](../archive/specs/2026-07-15-grounded-rag-safety-design.md)
 - [Plan: Grounded RAG Safety Implementation Plan](../archive/plans/2026-07-15-grounded-rag-safety.md)
+
+### [Provider Structured Rag Output](provider-structured-rag-output-context-pack.md)
+
+- [Spec: Provider-Enforced Structured RAG Output Design](../archive/specs/2026-07-15-provider-structured-rag-output-design.md)
+- [Plan: Provider-Enforced Structured RAG Output Implementation Plan](../archive/plans/2026-07-15-provider-structured-rag-output.md)

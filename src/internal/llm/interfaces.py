@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from src.context.structured_output import StructuredOutputCapability
+
 from .constants import LlmProviderNames
 from .models import LanguageModelInput, ReasoningEffort, ToolChoiceOptions
 
@@ -45,6 +47,11 @@ class LLM(abc.ABC):
     @property
     @abc.abstractmethod
     def config(self) -> LLMConfig: ...
+
+    @property
+    def structured_output_capability(self) -> StructuredOutputCapability:
+        """Return the strongest structured-output mode safely supported."""
+        return StructuredOutputCapability.PROMPT_ONLY
 
     def invoke(
         self,

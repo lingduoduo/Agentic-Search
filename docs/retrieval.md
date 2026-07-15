@@ -31,6 +31,51 @@ guard is enabled by default; direct Python callers can explicitly pass
 `GroundedGenerationConfig(enabled=False)` to retain legacy unconstrained
 generation during compatibility migration.
 
+### Provider-enforced structured output
+
+Guarded generation always asks for the canonical `AnswerDraft` shape in its
+prompt and always runs the local parser and evidence verifier. When the native
+OpenAI adapter reports JSON Schema capability, it additionally sends that shape
+as a strict Chat Completions `response_format`. Schema enforcement improves the
+structural reliability of the provider response; it does not establish that a
+claim is factually correct or supported by the retrieved evidence. Local
+`parse_answer_draft` and `verify_answer_draft` therefore remain mandatory for
+every successful draft, including provider-constrained drafts.
+
+Generic OpenAI-compatible endpoints default to prompt-only generation because
+compatibility with the OpenAI request shape does not imply support for Structured
+Outputs. Operators may explicitly opt in a compatible endpoint by setting its
+provider `custom_config` value `supports_json_schema` to the string `"true"`
+(case-insensitive). Other providers remain prompt-only; the implementation does
+not probe endpoints dynamically or infer support from model names.
+
+If a schema-enabled request receives a 400 response that explicitly identifies
+`response_format` or `json_schema` as unsupported or unknown, that same semantic
+attempt is retried once in prompt-only mode. The endpoint remains prompt-only for
+any later corrective attempt. This transport-level downgrade does not consume or
+increase the single semantic corrective retry. Authentication, rate-limit,
+timeout, transport, server, and unrelated request failures propagate normally;
+they never trigger a schema downgrade.
+
+A provider refusal produces the canonical abstention without exposing refusal
+text. An incomplete response, such as a length-truncated completion, is treated
+as verifier feedback and may use the one corrective semantic retry. Public
+results and traces contain only aggregate booleans and categories, never raw
+provider errors, refusals, model output, prompts, schemas, evidence bodies, or
+tool arguments.
+
+`structured_output_requested` records whether generation initially asked the
+provider to enforce the answer schema. It remains `true` after an explicit
+unsupported-schema downgrade, while `structured_output_applied` records whether
+the provider actually applied that constraint.
+
+`structured_output_category` is encounter-level aggregate metadata. It records
+that a refusal or incomplete structured response occurred during generation, so
+the value may remain `incomplete` even when a later corrective draft succeeds
+and produces a verified answer. Consult `verification_status`, `abstained`, and
+the rendered answer for the final answer outcome; do not interpret
+`structured_output_category` as final answer verification status.
+
 ### Approved tool evidence
 
 Tool evidence is opt-in. A caller supplies a registry and selector, and only

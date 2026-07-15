@@ -10,6 +10,11 @@ from typing import cast
 from typing import TYPE_CHECKING
 from typing import Union
 
+from src.context.structured_output import (
+    StructuredOutputCapability,
+    StructuredOutputRequest,
+)
+
 from .constants import LlmProviderNames
 from .interfaces import LLM, LLMConfig, LLMUserIdentity
 from .model_response import ModelResponse, ModelResponseStream, Usage
@@ -604,7 +609,20 @@ class LitellmLLM(LLM):
             # OpenAI will error if parallel_tool_calls is True and tools are not specified
             optional_kwargs["parallel_tool_calls"] = parallel_tool_calls
 
-        if structured_response_format:
+        if isinstance(structured_response_format, StructuredOutputRequest):
+            if (
+                self.structured_output_capability
+                is StructuredOutputCapability.JSON_SCHEMA
+            ):
+                optional_kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_response_format.name,
+                        "strict": structured_response_format.strict,
+                        "schema": structured_response_format.schema,
+                    },
+                }
+        elif structured_response_format:
             optional_kwargs["response_format"] = structured_response_format
 
         if (
@@ -756,6 +774,19 @@ class LitellmLLM(LLM):
             custom_config=self._custom_config,
             max_input_tokens=self._max_input_tokens,
         )
+
+    @property
+    def structured_output_capability(self) -> StructuredOutputCapability:
+        if self._model_provider == LlmProviderNames.OPENAI:
+            return StructuredOutputCapability.JSON_SCHEMA
+        configured = (self._custom_config or {}).get("supports_json_schema")
+        if (
+            self._model_provider == LlmProviderNames.OPENAI_COMPATIBLE
+            and configured is not None
+            and configured.lower() == "true"
+        ):
+            return StructuredOutputCapability.JSON_SCHEMA
+        return StructuredOutputCapability.PROMPT_ONLY
 
     def invoke(
         self,
