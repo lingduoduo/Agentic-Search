@@ -335,7 +335,16 @@ def test_tdd_green_requires_passing_result() -> None:
     )
 
 
-@pytest.mark.parametrize("result", ["The suite did not pass.", "0 passed, 1 failed."])
+@pytest.mark.parametrize(
+    "result",
+    [
+        "The suite did not pass.",
+        "The tests were not all passing.",
+        "The suite has not fully passed.",
+        "The checks are not currently passing.",
+        "0 passed, 1 failed.",
+    ],
+)
 def test_tdd_green_rejects_negated_or_contradictory_passing_result(result: str) -> None:
     text = tdd_report().replace("The focused suite passed with 20 tests.", result)
     assert "GREEN Result: must state a passing outcome" in messages(

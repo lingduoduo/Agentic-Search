@@ -468,7 +468,8 @@ def _normalize_reference_label(label: str) -> str:
 
 def _is_passing_result(result: str) -> bool:
     if re.search(
-        r"\b(?:did|does|do|is|are|was|were|has|have|had)?\s*not\s+pass\w*\b",
+        r"\b(?:did|does|do|is|are|was|were|has|have|had)?\s*"
+        r"not(?:\s+\w+){0,2}\s+pass\w*\b",
         result,
         re.IGNORECASE,
     ):
