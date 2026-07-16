@@ -513,3 +513,8 @@ Focused context packs generated from active and archived specs and plans under `
 
 - [Spec: Provider-Enforced Structured RAG Output Design](../archive/specs/2026-07-15-provider-structured-rag-output-design.md)
 - [Plan: Provider-Enforced Structured RAG Output Implementation Plan](../archive/plans/2026-07-15-provider-structured-rag-output.md)
+
+### [Self Review Report Validation](self-review-report-validation-context-pack.md)
+
+- [Spec: Self-Review Report Validation Design](../archive/specs/2026-07-15-self-review-report-validation-design.md)
+- [Plan: Self-Review Report Validation Implementation Plan](../archive/plans/2026-07-15-self-review-report-validation.md)

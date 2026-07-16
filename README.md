@@ -146,3 +146,4 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - [MCP server](docs/mcp.md) — installation, transport, client configuration, tools, and resources
 - [Configuration](docs/configuration.md) — environment variables for providers, services, retrieval, and routing
 - [Testing](docs/testing.md) — backend and frontend checks, integration tests, and debugging commands
+- [Self-review task reports](docs/development/self-review-reports.md) — validated implementation handoffs and mandatory review gates
