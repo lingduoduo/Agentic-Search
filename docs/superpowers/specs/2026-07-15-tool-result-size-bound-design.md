@@ -3,9 +3,12 @@
 ## Goal
 
 Bound the size of a registered tool's result before it becomes RAG evidence, so that an
-oversized result cannot enter the prompt, exhaust memory, or block the event loop.
-Oversized results degrade to retrieval-only answering through the fail-closed path that
-`collect_tool_evidence` already implements.
+oversized result cannot enter the prompt. Oversized results degrade to retrieval-only
+answering through the fail-closed path that `collect_tool_evidence` already implements.
+
+The prompt-size bound is the guarantee this design delivers unconditionally. The bound also
+reduces the peak memory and event-loop time a single result can consume, but — as set out
+under Chosen Approach — it does not cap them.
 
 ## Current State
 
@@ -30,7 +33,9 @@ generation prompt. There is no size limit, so three distinct failures are unboun
    every other request in the process.
 
 The third is the reason a post-serialization length check is insufficient: by the time the
-length is known, the cost has already been paid.
+length is known, the cost has already been paid. The incremental encoder chosen below
+improves on this but does not eliminate it for a result whose bulk sits in a single large
+string; see Chosen Approach.
 
 The module's docstring (`tool_evidence.py:69-71`) already promises that "results that cannot
 be represented as JSON are ignored so retrieval-based answering can continue". This change
