@@ -62,17 +62,21 @@ async def collect_tool_evidence(
     *,
     max_calls: int = 2,
     timeout_seconds: float = 5.0,
+    max_result_chars: int = 8192,
     status_callback: Callable[[str, str], None] | None = None,
 ) -> list[EvidenceSource]:
     """Collect normalized evidence from explicitly read-only tools.
 
-    Invalid selections, invocation failures, timeouts, and results that cannot be
-    represented as JSON are ignored so retrieval-based answering can continue.
+    Invalid selections, invocation failures, timeouts, results that exceed
+    ``max_result_chars`` once serialized, and results that cannot be represented
+    as JSON are ignored so retrieval-based answering can continue.
     """
     if max_calls < 0:
         raise ValueError("max_calls must be non-negative")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if max_result_chars <= 0:
+        raise ValueError("max_result_chars must be positive")
 
     try:
         descriptors = registry.list_tools()
@@ -131,9 +135,7 @@ async def collect_tool_evidence(
             result = await asyncio.wait_for(
                 registry.invoke(request), timeout=timeout_seconds
             )
-            text = json.dumps(
-                result, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-            )
+            text = _encode_bounded(result, max_result_chars)
         except Exception:
             if status_callback is not None:
                 status_callback(request.tool_name, "failed")
@@ -150,6 +152,26 @@ async def collect_tool_evidence(
             )
         )
     return evidence
+
+
+def _encode_bounded(result: object, max_result_chars: int) -> str:
+    """Serialize ``result`` to canonical JSON, aborting once it exceeds the cap.
+
+    ``iterencode`` must not be passed ``_one_shot=True``: that selects the C
+    encoder, which returns the whole document as one chunk and would defeat the
+    early abort that bounds memory and event-loop time.
+    """
+    encoder = json.JSONEncoder(
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    chunks: list[str] = []
+    total = 0
+    for chunk in encoder.iterencode(result):
+        total += len(chunk)
+        if total > max_result_chars:
+            raise ValueError("tool result exceeds max_result_chars")
+        chunks.append(chunk)
+    return "".join(chunks)
 
 
 def _freeze_mapping(value: Mapping[str, object]) -> Mapping[str, object]:
