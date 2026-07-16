@@ -81,8 +81,9 @@ the rendered answer for the final answer outcome; do not interpret
 Tool evidence is opt-in. A caller supplies a registry and selector, and only
 uniquely named tools explicitly classified `read_only` are offered to the
 selector or invoked. Unknown, duplicate, side-effecting, and unspecified tools
-are rejected. Defaults bound execution to two calls with a five-second timeout;
-selection and invocation failures or timeouts degrade to retrieval-only evidence.
+are rejected. Defaults bound execution to two calls, a five-second timeout, and an
+8192-character result size; selection and invocation failures or timeouts degrade
+to retrieval-only evidence.
 Tool outputs must be JSON-serializable and are normalized as data, never treated
 as instructions.
 
@@ -101,14 +102,20 @@ be trusted, independently bounded, and nonblocking; the timeout is a pipeline
 latency/failure boundary, not cancellation of synchronous work.
 
 Tool results are serialized incrementally and rejected once the encoding exceeds
-`max_result_chars` (default 8192 characters), so an oversized result is refused
-before it is encoded in full. Rejection is deliberate rather than truncation:
-truncated JSON is not valid JSON, and a truncated result can drop a negation and
-become evidence that misleads the verifier. An oversized result is reported with
-the existing `failed` status and degrades to retrieval-only answering, exactly
-like an invocation failure. Serialization is synchronous and therefore covered by
-no timeout; this bound is what limits the prompt size, peak memory, and
-event-loop time that a single result can consume.
+`max_result_chars` (default 8192 characters). Every chunk is counted before being
+appended and `text` is joined only from counted chunks, so no result over the cap
+ever reaches the prompt; total tool evidence is bounded at `max_calls ×
+max_result_chars`. Rejection is deliberate rather than truncation: truncated JSON
+is not valid JSON, and a truncated result can drop a negation and become evidence
+that misleads the verifier. An oversized result is reported with the existing
+`failed` status and degrades to retrieval-only answering, exactly like an
+invocation failure. Serialization is synchronous and therefore covered by no
+timeout. The pure-Python encoder backing this check yields one chunk per string
+scalar, so the size check can only run between chunks: encoding work is bounded
+by the cap plus at most one fully-encoded scalar, and peak memory and event-loop
+time are proportional to the largest individual string in the result, not to the
+cap — the same species of caveat as the synchronous selector above, whose timeout
+bounds pipeline latency but does not stop the underlying thread's work.
 
 ### Result and operational metadata
 

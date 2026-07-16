@@ -53,8 +53,16 @@ for chunk in encoder.iterencode(result):
 text = "".join(chunks)
 ```
 
-This bounds prompt size, peak memory, and event-loop blocking with one mechanism. A hostile
-or defective tool causes at most `max_result_chars` of encoding work.
+This bounds prompt size unconditionally: every chunk is counted before being appended, so no
+result over the cap ever reaches the prompt, and total tool evidence is bounded at `max_calls
+× max_result_chars`. It does not bound peak memory or event-loop blocking to the cap: the
+pure-Python encoder yields one chunk per string scalar, so the size check can only run between
+chunks. A result whose bulk sits in a single large string is encoded in full — and its peak
+memory and event-loop cost paid in full — before the first check ever fires. Peak memory and
+event-loop time are therefore proportional to the largest individual string in the result, not
+to `max_result_chars`. The incremental approach is still worth it: it is never worse than
+`json.dumps` and aborts near-instantly when the bulk is spread across many scalars, which is
+the common shape for tool output (lists, tables, paginated records).
 
 `iterencode` with identical `sort_keys`, `separators`, and `ensure_ascii` settings produces
 output byte-identical to the current `json.dumps` call for every result under the cap, so no
@@ -75,14 +83,21 @@ whole result is already encoded, and the memory and event-loop protections silen
 while every test that only checks the returned evidence still passes. Test 5 exists to fail
 loudly if that happens.
 
-The cost of the pure-Python encoder is bounded by the cap: at most `max_result_chars` of
-encoding work, which at 8192 characters is negligible.
+The cost of the pure-Python encoder is bounded by the cap plus at most one fully-encoded
+scalar: negligible when a result's bulk is spread across many scalars, but proportional to
+the largest single string otherwise.
 
 ### Rejected alternative: check length after serializing
 
 `text = json.dumps(...)` followed by `if len(text) > cap: reject` is shorter, but it bounds
-only what reaches the prompt. It still materializes the whole string and still blocks the
-event loop for the full serialization. It cannot address failure 3 at any cap value.
+only what reaches the prompt: it always materializes the whole string and always blocks the
+event loop for the full serialization. The incremental approach strictly dominates it — it is
+never slower, since it aborts as soon as the running length exceeds the cap — and for a result
+whose bulk is spread across many scalars it aborts near-instantly instead of paying for full
+serialization. It does not, however, solve failure 3 for a result whose bulk sits in a single
+large string: the pure-Python encoder yields that string as one chunk, so the check cannot
+fire until the whole string is already encoded. Neither approach bounds peak memory or
+event-loop time for that shape without truncating, which this design rejects (see below).
 
 ### Rejected alternative: truncate instead of reject
 
