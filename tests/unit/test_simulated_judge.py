@@ -1,5 +1,7 @@
 import pytest
 
+pytest.importorskip("torch")
+
 from src.agents.core.base import AgentLoopOutput
 from src.training.grpo import GRPORolloutSample, score_prompt_group
 from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement

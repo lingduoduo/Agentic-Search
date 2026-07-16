@@ -1,6 +1,8 @@
 import json
 import pytest
 
+pytest.importorskip("torch")
+
 from examples.prepare_local_rag_smoke_dataset import (
     build_smoke_records,
     parse_args,
