@@ -100,6 +100,16 @@ underlying worker thread, which may continue running. Selectors must therefore
 be trusted, independently bounded, and nonblocking; the timeout is a pipeline
 latency/failure boundary, not cancellation of synchronous work.
 
+Tool results are serialized incrementally and rejected once the encoding exceeds
+`max_result_chars` (default 8192 characters), so an oversized result is refused
+before it is encoded in full. Rejection is deliberate rather than truncation:
+truncated JSON is not valid JSON, and a truncated result can drop a negation and
+become evidence that misleads the verifier. An oversized result is reported with
+the existing `failed` status and degrades to retrieval-only answering, exactly
+like an invocation failure. Serialization is synchronous and therefore covered by
+no timeout; this bound is what limits the prompt size, peak memory, and
+event-loop time that a single result can consume.
+
 ### Result and operational metadata
 
 Existing result fields—`answer`, `citations`, `context`, `prompt`, and
