@@ -65,9 +65,23 @@ pure-Python encoder yields one chunk per string scalar, so the size check can on
 chunks. A result whose bulk sits in a single large string is encoded in full — and its peak
 memory and event-loop cost paid in full — before the first check ever fires. Peak memory and
 event-loop time are therefore proportional to the largest individual string in the result, not
-to `max_result_chars`. The incremental approach is still worth it: it is never worse than
-`json.dumps` and aborts near-instantly when the bulk is spread across many scalars, which is
-the common shape for tool output (lists, tables, paginated records).
+to `max_result_chars`. The incremental approach is a trade, not a strict win. Measured against
+`json.dumps`:
+
+| Case | `json.dumps` | Incremental (`iterencode`) |
+| --- | --- | --- |
+| Accepted, len 333 | 5.9µs | 23.2µs |
+| Accepted, len 2083 | 28.4µs | 122.5µs |
+| Accepted, len 8646 | 103.6µs | 468.4µs |
+| Over cap, bulk in many scalars | 26.3ms | 0.045ms (~580x faster) |
+| Over cap, single 5M-char string | 9.5ms | 8.8ms (no material difference) |
+
+On an accepted result — the normal outcome for every successful tool call — the incremental
+approach costs a fixed ~4x constant-factor overhead, negligible in absolute terms (~0.4ms at
+the default 8192 cap). That cost buys a ~580x win on an over-cap result whose bulk is spread
+across many scalars, which is the common shape for tool output (lists, tables, paginated
+records) and for defective tool output specifically. Where a result's bulk sits in a single
+huge string, the two approaches cost about the same.
 
 `iterencode` with identical `sort_keys`, `separators`, and `ensure_ascii` settings produces
 output byte-identical to the current `json.dumps` call for every result under the cap, so no
@@ -83,10 +97,14 @@ equal to the current `json.dumps` output.
 as a **single chunk**.
 
 Early abort therefore depends on the default. If someone later "optimizes" this call by
-passing `_one_shot=True`, the loop receives one chunk, the size check fires only after the
-whole result is already encoded, and the memory and event-loop protections silently vanish
-while every test that only checks the returned evidence still passes. Test 5 exists to fail
-loudly if that happens.
+passing `_one_shot=True`, the loop receives one chunk, and the size check fires only after the
+whole result is already encoded. The prompt-size bound survives this: the single chunk is
+still counted before `text` is joined, so an over-cap result still never reaches the prompt.
+What vanishes is the early-abort work saving on the common multi-scalar shape: an over-cap
+result whose bulk is spread across many scalars, which today aborts in microseconds, would
+instead pay for full serialization every time (a ~580x regression, per the measurements
+above) — while every test that only checks the returned evidence still passes. Test 5 exists
+to fail loudly if that happens.
 
 The cost of the pure-Python encoder is bounded by the cap plus at most one fully-encoded
 scalar: negligible when a result's bulk is spread across many scalars, but proportional to
@@ -96,10 +114,12 @@ the largest single string otherwise.
 
 `text = json.dumps(...)` followed by `if len(text) > cap: reject` is shorter, but it bounds
 only what reaches the prompt: it always materializes the whole string and always blocks the
-event loop for the full serialization. The incremental approach strictly dominates it — it is
-never slower, since it aborts as soon as the running length exceeds the cap — and for a result
-whose bulk is spread across many scalars it aborts near-instantly instead of paying for full
-serialization. It does not, however, solve failure 3 for a result whose bulk sits in a single
+event loop for the full serialization. The incremental approach does not strictly dominate it:
+on an accepted result this alternative pays only the `json.dumps` cost, so the incremental
+approach's ~4x constant-factor overhead (see the table above) applies here too. What it buys is
+a result whose bulk is spread across many scalars aborting near-instantly instead of paying for
+full serialization — a ~580x win this alternative cannot match. It does not, however, solve
+failure 3 for a result whose bulk sits in a single
 large string: the pure-Python encoder yields that string as one chunk, so the check cannot
 fire until the whole string is already encoded. Neither approach bounds peak memory or
 event-loop time for that shape without truncating, which this design rejects (see below).

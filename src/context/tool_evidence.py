@@ -158,8 +158,11 @@ def _encode_bounded(result: object, max_result_chars: int) -> str:
     """Serialize ``result`` to canonical JSON, aborting once it exceeds the cap.
 
     ``iterencode`` must not be passed ``_one_shot=True``: that selects the C
-    encoder, which returns the whole document as one chunk and would defeat the
-    early abort that bounds memory and event-loop time.
+    encoder, which returns the whole document as one chunk. The prompt-size
+    bound would survive that (the single chunk is still counted before use),
+    but the early-abort work saving would not: an over-cap result whose bulk
+    is spread across many scalars would pay for full serialization instead of
+    aborting near-instantly (~580x slower, by prior measurement).
     """
     encoder = json.JSONEncoder(
         sort_keys=True, separators=(",", ":"), ensure_ascii=False

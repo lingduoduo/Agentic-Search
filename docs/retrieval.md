@@ -110,7 +110,7 @@ is not valid JSON, and a truncated result can drop a negation and become evidenc
 that misleads the verifier. An oversized result is reported with the existing
 `failed` status and degrades to retrieval-only answering, exactly like an
 invocation failure. Serialization is synchronous and therefore covered by no
-timeout. The pure-Python encoder backing this check yields one chunk per string
+timeout. The pure-Python encoder backing this check yields one chunk per
 scalar, so the size check can only run between chunks: encoding work is bounded
 by the cap plus at most one fully-encoded scalar, and peak memory and event-loop
 time are proportional to the largest individual string in the result, not to the
