@@ -54,7 +54,7 @@ If a schema-enabled request receives a 400 response that explicitly identifies
 attempt is retried once in prompt-only mode. The endpoint remains prompt-only for
 any later corrective attempt. This transport-level downgrade does not consume or
 increase the single semantic corrective retry. Authentication, rate-limit,
-timeout, transport, server, and unrelated request failures propagate normally;
+transport, server, and unrelated request failures propagate normally;
 they never trigger a schema downgrade.
 
 A provider refusal produces the canonical abstention without exposing refusal
@@ -70,11 +70,13 @@ unsupported-schema downgrade, while `structured_output_applied` records whether
 the provider actually applied that constraint.
 
 `structured_output_category` is encounter-level aggregate metadata. It records
-that a refusal or incomplete structured response occurred during generation, so
-the value may remain `incomplete` even when a later corrective draft succeeds
-and produces a verified answer. Consult `verification_status`, `abstained`, and
-the rendered answer for the final answer outcome; do not interpret
-`structured_output_category` as final answer verification status.
+that a refusal, incomplete structured response, or timeout occurred during
+generation, so the value may remain `incomplete` even when a later corrective
+draft succeeds and produces a verified answer. A `timeout` category, unlike
+`incomplete`, is always terminal: the timeout branch returns immediately, so no
+later corrective draft can follow it. Consult `verification_status`,
+`abstained`, and the rendered answer for the final answer outcome; do not
+interpret `structured_output_category` as final answer verification status.
 
 ### Approved tool evidence
 
@@ -125,6 +127,17 @@ metadata: `confidence`, `verification_status` (`verified`, `partial`, or
 `abstained`), `abstained`, summarized `tool_evidence`, and `retry_count`. The MCP
 chat adapter preserves its established keys and adds confidence, verification,
 abstention, and tool-source summaries.
+
+A timeout on the primary synthesis call returns a degraded answer rather than an
+error; a timeout on the schema-downgrade retry call (see Provider-enforced
+structured output) is not guarded and still propagates as an error. The degraded
+answer is abstention-shaped—`confidence` `0.0`, `verification_status` `abstained`,
+no citations—so it flows through the same safe paths as any other abstention, but
+it carries its own answer text and the `structured_output_category` `timeout`. The
+distinction is deliberate: the canonical abstention asserts a conclusion about the
+evidence, which a timeout cannot support, and collapsing the two would make an LLM
+outage indistinguishable from a normal low-confidence answer. A timeout does not
+consume a generation retry.
 
 Tracing records counts and categories, tool names and statuses, retry count,
 verification status, confidence, and abstention. It deliberately excludes

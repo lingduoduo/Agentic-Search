@@ -18,6 +18,7 @@ from .models import EvidenceSnippet
 from .models import GroundedGenerationConfig
 from .models import LLMClient
 from .models import LLMResponse
+from .models import LLMTimeoutError
 from .models import PromptBundle
 from .models import SearchContextBundle
 from .models import SearchFilters
@@ -36,6 +37,7 @@ from .prompts import build_corrective_answer_prompt
 from .prompts import build_retrieval_prompt
 from .prompts import build_structured_answer_prompt
 from .safety import CANONICAL_ABSTENTION
+from .safety import TIMEOUT_DEGRADED_ANSWER
 from .safety import evidence_from_context
 from .safety import parse_answer_draft
 from .safety import render_verified_answer
@@ -73,6 +75,7 @@ __all__ = [
     "GroundedGenerationConfig",
     "LLMClient",
     "LLMResponse",
+    "LLMTimeoutError",
     "PromptBundle",
     "QueryType",
     "SearchContextBundle",
@@ -91,6 +94,7 @@ __all__ = [
     "VerificationResult",
     "VerificationStatus",
     "CANONICAL_ABSTENTION",
+    "TIMEOUT_DEGRADED_ANSWER",
     "answer_with_retrieval",
     "answer_draft_json_schema",
     "build_agent_behavior_prompt",

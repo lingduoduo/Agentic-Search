@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from src.context.models import LLMResponse
+from src.context.models import LLMResponse, LLMTimeoutError
 from src.context.structured_output import (
     SchemaUnsupportedError,
     StructuredOutputCapability,
@@ -203,13 +203,19 @@ def test_other_http_errors_propagate_unchanged(schema_request, status, body):
     assert caught.value is error
 
 
-@pytest.mark.parametrize(
-    "error", [requests.Timeout("timeout"), requests.ConnectionError("down")]
-)
-def test_transport_errors_propagate_unchanged(schema_request, error):
+def test_timeout_is_normalized_to_llm_timeout_error(schema_request):
     llm = configured_llm()
+    error = requests.Timeout("timeout")
     with patch.object(llm._session, "post", side_effect=error):
-        with pytest.raises(type(error)) as caught:
+        with pytest.raises(LLMTimeoutError):
+            llm.complete(MESSAGES, structured_output=schema_request)
+
+
+def test_connection_error_propagates_unchanged(schema_request):
+    llm = configured_llm()
+    error = requests.ConnectionError("down")
+    with patch.object(llm._session, "post", side_effect=error):
+        with pytest.raises(requests.ConnectionError) as caught:
             llm.complete(MESSAGES, structured_output=schema_request)
     assert caught.value is error
 

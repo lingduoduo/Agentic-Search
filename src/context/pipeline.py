@@ -12,6 +12,7 @@ from .models import EvidenceSnippet
 from .models import EvidenceSource
 from .models import LLMClient
 from .models import LLMResponse
+from .models import LLMTimeoutError
 from .models import PromptBundle
 from .models import SearchContextBundle
 from .models import SearchFilters
@@ -151,7 +152,12 @@ def _generate_guarded_answer(
     prompt: PromptBundle,
     evidence: list[EvidenceSource],
 ) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
-    from .safety import parse_answer_draft, render_verified_answer, verify_answer_draft
+    from .safety import (
+        TIMEOUT_DEGRADED_ANSWER,
+        parse_answer_draft,
+        render_verified_answer,
+        verify_answer_draft,
+    )
 
     max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
     raw_text = ""
@@ -185,6 +191,17 @@ def _generate_guarded_answer(
             raw = llm.complete(
                 active_prompt.messages,
                 **({"structured_output": schema_request} if schema_request else {}),
+            )
+        except LLMTimeoutError:
+            return (
+                TIMEOUT_DEGRADED_ANSWER,
+                0.0,
+                VerificationStatus.ABSTAINED,
+                attempt,
+                requested,
+                applied,
+                downgraded,
+                "timeout",
             )
         except SchemaUnsupportedError:
             if schema_request is None:

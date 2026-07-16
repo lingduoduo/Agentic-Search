@@ -14,9 +14,11 @@ from src.context import (
     ChatMessage,
     EvidenceSource,
     LLMResponse,
+    LLMTimeoutError,
     SchemaUnsupportedError,
     StructuredCompletionMetadata,
     StructuredOutputCapability,
+    TIMEOUT_DEGRADED_ANSWER,
     VerificationStatus,
     build_context_bundle,
     generate_answer,
@@ -309,9 +311,10 @@ def test_incomplete_may_consume_semantic_retry():
 
 def test_ordinary_provider_error_propagates_without_downgrade():
     llm = SequenceLLM(
-        requests.Timeout("timeout"), capability=StructuredOutputCapability.JSON_SCHEMA
+        requests.ConnectionError("connection refused"),
+        capability=StructuredOutputCapability.JSON_SCHEMA,
     )
-    with pytest.raises(requests.Timeout):
+    with pytest.raises(requests.ConnectionError):
         generate_answer(
             AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
             llm=llm,
@@ -346,6 +349,27 @@ def test_guarded_generation_never_exceeds_two_llm_calls():
     )
 
     assert len(llm.calls) == 2
+
+
+def test_llm_timeout_returns_degraded_answer_without_retrying():
+    llm = SequenceLLM(LLMTimeoutError("LLM request timed out"))
+
+    result = generate_answer(
+        AnswerGenerationRequest(question="What is FAISS?", context=_bundle()), llm=llm
+    )
+
+    assert result.answer == TIMEOUT_DEGRADED_ANSWER
+    assert result.confidence == 0.0
+    assert result.verification_status is VerificationStatus.ABSTAINED
+    assert result.abstained is True
+    assert result.structured_output_category == "timeout"
+    assert result.citations == []
+    assert len(llm.calls) == 1  # a timeout must not consume a retry
+
+
+def test_timeout_answer_is_distinct_from_evidence_abstention():
+    assert TIMEOUT_DEGRADED_ANSWER != CANONICAL_ABSTENTION
+    assert "evidence" not in TIMEOUT_DEGRADED_ANSWER.lower()
 
 
 def test_disabling_guard_preserves_legacy_free_text_generation():

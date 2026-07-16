@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import pytest
+import requests
 from unittest.mock import MagicMock, patch
 
 
+from src.context.models import LLMTimeoutError
 from src.internal.llm.interfaces import LLMConfig, ToolChoiceOptions
 from src.internal.llm.providers import (
     OpenAICompatibleLLM,
@@ -251,3 +254,72 @@ def test_complete_forwards_temperature():
 
     body = mock_post.call_args[1]["json"]
     assert body["temperature"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# LLM timeout handling
+# ---------------------------------------------------------------------------
+
+
+def _timeout_llm() -> OpenAICompatibleLLM:
+    return OpenAICompatibleLLM(
+        LLMConfig(
+            model_provider="openai",
+            model_name="test-model",
+            api_key="test-key",
+        )
+    )
+
+
+def test_read_timeout_is_normalized_to_llm_timeout_error():
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session,
+        "post",
+        side_effect=requests.ReadTimeout(
+            "HTTPSConnectionPool(host='secret-endpoint.invalid', port=443): Read timed out."
+        ),
+    ):
+        with pytest.raises(LLMTimeoutError):
+            llm.complete([{"role": "user", "content": "hi"}])
+
+
+def test_connect_timeout_is_normalized_to_llm_timeout_error():
+    # ConnectTimeout subclasses BOTH Timeout and ConnectionError. It is a timeout,
+    # so it must be handled — the ConnectionError exclusion does not reach it.
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session, "post", side_effect=requests.ConnectTimeout("connect timed out")
+    ):
+        with pytest.raises(LLMTimeoutError):
+            llm.complete([{"role": "user", "content": "hi"}])
+
+
+def test_llm_timeout_error_does_not_leak_endpoint_or_original_text():
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session,
+        "post",
+        side_effect=requests.ReadTimeout(
+            "HTTPSConnectionPool(host='secret-endpoint.invalid', port=443): Read timed out."
+        ),
+    ):
+        with pytest.raises(LLMTimeoutError) as caught:
+            llm.complete([{"role": "user", "content": "hi"}])
+    assert "secret-endpoint.invalid" not in str(caught.value)
+    assert "HTTPSConnectionPool" not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
+
+
+def test_plain_connection_error_still_propagates():
+    # Scope boundary: a host that is down or refusing is a misconfiguration signal
+    # and must stay loud. Plain ConnectionError is NOT a Timeout, so it escapes.
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session,
+        "post",
+        side_effect=requests.ConnectionError("connection refused"),
+    ):
+        with pytest.raises(requests.ConnectionError):
+            llm.complete([{"role": "user", "content": "hi"}])
