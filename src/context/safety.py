@@ -17,6 +17,7 @@ from .models import (
 )
 
 CANONICAL_ABSTENTION = "I don't know based on the available evidence."
+TIMEOUT_DEGRADED_ANSWER = "I couldn't complete an answer in time. Please try again."
 
 
 def evidence_from_context(context: SearchContextBundle) -> list[EvidenceSource]:

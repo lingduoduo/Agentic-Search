@@ -18,7 +18,7 @@ from typing import Any
 import requests
 from requests.adapters import HTTPAdapter
 
-from src.context.models import LLMResponse
+from src.context.models import LLMResponse, LLMTimeoutError
 from src.context.structured_output import (
     SchemaUnsupportedError,
     StructuredCompletionMetadata,
@@ -292,6 +292,8 @@ class OpenAICompatibleLLM(LLM):
                 timeout=timeout,
             )
             resp.raise_for_status()
+        except requests.Timeout:
+            raise LLMTimeoutError("LLM request timed out") from None
         except requests.HTTPError as exc:
             response = exc.response
             provider_error = response.text.lower() if response is not None else ""

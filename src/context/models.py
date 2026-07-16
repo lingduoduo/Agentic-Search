@@ -37,6 +37,10 @@ class LLMClient(Protocol):
         """Return an LLM completion for chat-style messages."""
 
 
+class LLMTimeoutError(RuntimeError):
+    """The LLM call exceeded its timeout."""
+
+
 @dataclass(frozen=True)
 class SearchFilters:
     source_types: list[str] | None = None
