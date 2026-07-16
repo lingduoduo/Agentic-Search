@@ -54,7 +54,7 @@ If a schema-enabled request receives a 400 response that explicitly identifies
 attempt is retried once in prompt-only mode. The endpoint remains prompt-only for
 any later corrective attempt. This transport-level downgrade does not consume or
 increase the single semantic corrective retry. Authentication, rate-limit,
-timeout, transport, server, and unrelated request failures propagate normally;
+transport, server, and unrelated request failures propagate normally;
 they never trigger a schema downgrade.
 
 A provider refusal produces the canonical abstention without exposing refusal

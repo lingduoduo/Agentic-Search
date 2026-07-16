@@ -308,6 +308,8 @@ def test_llm_timeout_error_does_not_leak_endpoint_or_original_text():
             llm.complete([{"role": "user", "content": "hi"}])
     assert "secret-endpoint.invalid" not in str(caught.value)
     assert "HTTPSConnectionPool" not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
 
 
 def test_plain_connection_error_still_propagates():

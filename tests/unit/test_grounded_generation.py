@@ -311,9 +311,10 @@ def test_incomplete_may_consume_semantic_retry():
 
 def test_ordinary_provider_error_propagates_without_downgrade():
     llm = SequenceLLM(
-        requests.Timeout("timeout"), capability=StructuredOutputCapability.JSON_SCHEMA
+        requests.ConnectionError("connection refused"),
+        capability=StructuredOutputCapability.JSON_SCHEMA,
     )
-    with pytest.raises(requests.Timeout):
+    with pytest.raises(requests.ConnectionError):
         generate_answer(
             AnswerGenerationRequest(question="What is FAISS?", context=_bundle()),
             llm=llm,
