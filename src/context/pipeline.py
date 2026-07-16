@@ -274,6 +274,7 @@ async def answer_with_retrieval(
     tool_registry: ToolRegistry | None = None,
     tool_selector: ToolSelector | None = None,
     max_tool_calls: int = 2,
+    max_tool_result_chars: int = 8192,
     tool_timeout_seconds: float = 5.0,
     grounded_generation: GroundedGenerationConfig | None = None,
     evidence_sufficiency: float | None = None,
@@ -300,6 +301,7 @@ async def answer_with_retrieval(
                 tool_selector,
                 max_calls=max_tool_calls,
                 timeout_seconds=tool_timeout_seconds,
+                max_result_chars=max_tool_result_chars,
                 status_callback=lambda name, status: tool_statuses.append(
                     (name, status)
                 ),

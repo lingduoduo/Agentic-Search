@@ -10,6 +10,7 @@ from src.context import (
     ToolSafety,
     collect_tool_evidence,
 )
+from src.context.tool_evidence import _encode_bounded
 
 
 class Registry:
@@ -285,3 +286,105 @@ async def test_invalid_limits_reject_without_selecting_or_invoking():
         await collect_tool_evidence("query", registry, selector, max_calls=-1)
     with pytest.raises(ValueError, match="timeout_seconds"):
         await collect_tool_evidence("query", registry, selector, timeout_seconds=0)
+    with pytest.raises(ValueError, match="max_result_chars"):
+        await collect_tool_evidence("query", registry, selector, max_result_chars=0)
+    with pytest.raises(ValueError, match="max_result_chars"):
+        await collect_tool_evidence("query", registry, selector, max_result_chars=-1)
+
+
+@pytest.mark.asyncio
+async def test_oversized_tool_result_is_rejected_and_reported_failed():
+    registry = Registry(
+        [ToolDescriptor("bulk", "Bulk data", ToolSafety.READ_ONLY)],
+        {"bulk": {"blob": "x" * 5000}},
+    )
+    selector = Selector([ToolRequest("bulk")])
+    statuses: list[tuple[str, str]] = []
+
+    evidence = await collect_tool_evidence(
+        "query",
+        registry,
+        selector,
+        max_result_chars=1000,
+        status_callback=lambda name, status: statuses.append((name, status)),
+    )
+
+    assert evidence == []
+    assert statuses == [("bulk", "failed")]
+
+
+@pytest.mark.asyncio
+async def test_result_at_exactly_the_cap_is_accepted_and_one_over_is_rejected():
+    result = {"value": "x" * 10}
+    exact = json.dumps(
+        result, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    registry = Registry(
+        [ToolDescriptor("probe", "Probe", ToolSafety.READ_ONLY)], {"probe": result}
+    )
+    selector = Selector([ToolRequest("probe")])
+
+    accepted = await collect_tool_evidence(
+        "query", registry, selector, max_result_chars=len(exact)
+    )
+    assert [item.text for item in accepted] == [exact]
+
+    rejected = await collect_tool_evidence(
+        "query", registry, selector, max_result_chars=len(exact) - 1
+    )
+    assert rejected == []
+
+
+@pytest.mark.asyncio
+async def test_under_cap_encoding_is_byte_identical_to_json_dumps():
+    result = {"z": 1.5, "a": "café", "n": [1, 2, {"k": None}]}
+    registry = Registry(
+        [ToolDescriptor("probe", "Probe", ToolSafety.READ_ONLY)], {"probe": result}
+    )
+    selector = Selector([ToolRequest("probe")])
+
+    evidence = await collect_tool_evidence("query", registry, selector)
+
+    assert evidence[0].text == json.dumps(
+        result, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+
+
+def test_bounded_encoding_aborts_before_walking_the_whole_structure():
+    # Observing early abort requires calling the encoder directly: through
+    # collect_tool_evidence both outcomes collapse to the same "failed" status.
+    # A sentinel json cannot serialize sits past the cap. Aborting early raises
+    # ValueError without ever reaching it; encoding the whole structure would
+    # instead raise TypeError. This test fails if _one_shot=True is introduced.
+    class Unserializable:
+        pass
+
+    result = ["y" * 1000 for _ in range(50)] + [Unserializable()]
+
+    with pytest.raises(ValueError, match="max_result_chars"):
+        _encode_bounded(result, 8192)
+
+
+@pytest.mark.asyncio
+async def test_oversized_result_does_not_prevent_other_tool_evidence():
+    registry = Registry(
+        [
+            ToolDescriptor("bulk", "Bulk data", ToolSafety.READ_ONLY),
+            ToolDescriptor("small", "Small data", ToolSafety.READ_ONLY),
+        ],
+        {"bulk": {"blob": "x" * 5000}, "small": {"ok": True}},
+    )
+    selector = Selector([ToolRequest("bulk"), ToolRequest("small")])
+    statuses: list[tuple[str, str]] = []
+
+    evidence = await collect_tool_evidence(
+        "query",
+        registry,
+        selector,
+        max_result_chars=1000,
+        status_callback=lambda name, status: statuses.append((name, status)),
+    )
+
+    assert [item.tool_name for item in evidence] == ["small"]
+    assert evidence[0].id == "T1"
+    assert statuses == [("bulk", "failed"), ("small", "succeeded")]

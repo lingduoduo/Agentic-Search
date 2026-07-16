@@ -196,3 +196,28 @@ async def test_pipeline_trace_contains_only_safe_summary_metadata(monkeypatch):
 
 async def _async(value):
     return value
+
+
+@pytest.mark.asyncio
+async def test_pipeline_answers_from_retrieval_when_tool_result_is_oversized(
+    monkeypatch,
+):
+    registry = Registry(
+        [ToolDescriptor("bulk", safety=ToolSafety.READ_ONLY)],
+        {"bulk": {"blob": "x" * 5000}},
+    )
+    selector = Selector([ToolRequest("bulk")])
+    monkeypatch.setattr(
+        "src.context.pipeline.retrieve_context", lambda *a, **k: _async(_context())
+    )
+
+    result = await answer_with_retrieval(
+        "FAISS status",
+        tool_registry=registry,
+        tool_selector=selector,
+        max_tool_result_chars=1000,
+    )
+
+    assert [request.tool_name for request in registry.calls] == ["bulk"]
+    assert result.tool_evidence == []
+    assert result.answer == "FAISS search is currently available. [D1]"
