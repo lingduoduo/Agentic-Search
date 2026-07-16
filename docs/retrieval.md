@@ -109,6 +109,15 @@ metadata: `confidence`, `verification_status` (`verified`, `partial`, or
 chat adapter preserves its established keys and adds confidence, verification,
 abstention, and tool-source summaries.
 
+A timed-out synthesis call returns a degraded answer rather than an error. It is
+abstention-shaped—`confidence` `0.0`, `verification_status` `abstained`, no
+citations—so it flows through the same safe paths as any other abstention, but it
+carries its own answer text and the `structured_output_category` `timeout`. The
+distinction is deliberate: the canonical abstention asserts a conclusion about the
+evidence, which a timeout cannot support, and collapsing the two would make an LLM
+outage indistinguishable from a normal low-confidence answer. A timeout does not
+consume a generation retry.
+
 Tracing records counts and categories, tool names and statuses, retry count,
 verification status, confidence, and abstention. It deliberately excludes
 evidence bodies, raw tool output, full prompts, and tool arguments. Tool failures
