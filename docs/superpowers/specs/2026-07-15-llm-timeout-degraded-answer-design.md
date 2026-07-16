@@ -200,6 +200,12 @@ Each is a separate finding; none is addressed here:
 - **The `grounded_generation.enabled=False` legacy path** (`pipeline.py:87`). It opts out of
   the grounding and abstention machinery entirely and returns raw text with no confidence or
   verification status, so it has no degraded result to return. A timeout there still raises.
+- **The post-downgrade `llm.complete` call** inside the `except SchemaUnsupportedError`
+  handler (`pipeline.py:194`). A timeout there still propagates. The new `except` clause
+  guards only the primary call. This is a narrow path — the provider must reject the schema
+  and *then* time out on the immediate re-call — and guarding it would mean restructuring the
+  downgrade logic, which this change is not meant to touch. Deliberately excluded rather than
+  overlooked.
 - **`OpenAICompatibleLLM.stream`** (`providers.py:175`). A different method, not used by the
   RAG synthesis path. Note its `timeout` covers only connect and time-to-first-byte, not the
   `iter_lines` body loop.
