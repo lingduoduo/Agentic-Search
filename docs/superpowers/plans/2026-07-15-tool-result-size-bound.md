@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reject a registered tool's result when its serialized JSON exceeds a size cap, so that an oversized result cannot enter the RAG prompt, exhaust memory, or block the event loop.
+**Goal:** Reject a registered tool's result when its serialized JSON exceeds a size cap, so that an oversized result cannot enter the RAG prompt. The prompt-size bound is the guarantee this delivers unconditionally; the incremental encoder also reduces — but does not cap — peak memory and event-loop time, because a result whose bulk is a single large scalar is encoded in full before the first size check.
 
 **Architecture:** Replace the unbounded `json.dumps` in `collect_tool_evidence` with an incremental `JSONEncoder.iterencode` loop that raises `ValueError` as soon as the running length exceeds `max_result_chars`. The raise lands in the function's existing `except Exception`, which already marks the tool `"failed"` and continues — so oversized results degrade to retrieval-only answering with no new status, branch, or trace attribute. Thread a matching parameter through `answer_with_retrieval`.
 
@@ -14,7 +14,7 @@ Spec: `docs/superpowers/specs/2026-07-15-tool-result-size-bound-design.md`
 
 - Default cap is exactly `8192` characters, in both `collect_tool_evidence` and `answer_with_retrieval`.
 - The boundary is exclusive: a serialized length of exactly `max_result_chars` is **accepted**; `max_result_chars + 1` is rejected. The check is `if total > max_result_chars`, never `>=`.
-- **Never pass `_one_shot=True` to `iterencode`.** `JSONEncoder.iterencode(o)` defaults to `_one_shot=False`, selecting the pure-Python generator that yields many small chunks. `_one_shot=True` selects the C encoder, which returns the whole document as a single chunk — the size check would then fire only after the entire result was already encoded, silently destroying the memory and event-loop protections while tests that only inspect returned evidence still pass.
+- **Never pass `_one_shot=True` to `iterencode`.** `JSONEncoder.iterencode(o)` defaults to `_one_shot=False`, selecting the pure-Python generator that yields many small chunks. `_one_shot=True` selects the C encoder, which returns the whole document as a single chunk — the size check would then fire only after the entire result was already encoded. The prompt-size bound would survive that (the single chunk is still counted before use), but the early-abort work saving would not: an over-cap result whose bulk is spread across many scalars would pay for full serialization instead of aborting near-instantly (~580x slower), while tests that only inspect returned evidence still pass.
 - The encoder must keep the exact settings the current code uses: `sort_keys=True, separators=(",", ":"), ensure_ascii=False`. Output must stay byte-identical to today's `json.dumps` for under-cap results.
 - Reject; never truncate. Truncated JSON is invalid JSON and can silently drop a negation, turning a result into evidence that misleads the lexical verifier.
 - Do not add a new status string. Oversized results reuse the existing `"failed"` status.
@@ -173,8 +173,11 @@ def _encode_bounded(result: object, max_result_chars: int) -> str:
     """Serialize ``result`` to canonical JSON, aborting once it exceeds the cap.
 
     ``iterencode`` must not be passed ``_one_shot=True``: that selects the C
-    encoder, which returns the whole document as one chunk and would defeat the
-    early abort that bounds memory and event-loop time.
+    encoder, which returns the whole document as one chunk. The prompt-size
+    bound would survive that (the single chunk is still counted before use),
+    but the early-abort work saving would not: an over-cap result whose bulk
+    is spread across many scalars would pay for full serialization instead of
+    aborting near-instantly (~580x slower, by prior measurement).
     """
     encoder = json.JSONEncoder(
         sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -378,14 +381,20 @@ synchronous work." and before the `### Result and operational metadata` heading:
 
 ```markdown
 Tool results are serialized incrementally and rejected once the encoding exceeds
-`max_result_chars` (default 8192 characters), so an oversized result is refused
-before it is encoded in full. Rejection is deliberate rather than truncation:
-truncated JSON is not valid JSON, and a truncated result can drop a negation and
-become evidence that misleads the verifier. An oversized result is reported with
-the existing `failed` status and degrades to retrieval-only answering, exactly
-like an invocation failure. Serialization is synchronous and therefore covered by
-no timeout; this bound is what limits the prompt size, peak memory, and
-event-loop time that a single result can consume.
+`max_result_chars` (default 8192 characters). Every chunk is counted before being
+appended and `text` is joined only from counted chunks, so no result over the cap
+ever reaches the prompt; total tool evidence is bounded at `max_calls ×
+max_result_chars`. Rejection is deliberate rather than truncation: truncated JSON
+is not valid JSON, and a truncated result can drop a negation and become evidence
+that misleads the verifier. An oversized result is reported with the existing
+`failed` status and degrades to retrieval-only answering, exactly like an
+invocation failure. Serialization is synchronous and therefore covered by no
+timeout. The pure-Python encoder backing this check yields one chunk per scalar,
+so the size check can only run between chunks: encoding work is bounded by the cap
+plus at most one fully-encoded scalar, and peak memory and event-loop time are
+proportional to the largest individual scalar in the result, not to the cap — the
+same species of caveat as the synchronous selector above, whose timeout bounds
+pipeline latency but does not stop the underlying thread's work.
 ```
 
 - [ ] **Step 3: Verify no other docs contradict the new text**
