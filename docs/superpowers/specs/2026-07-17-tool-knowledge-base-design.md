@@ -233,6 +233,22 @@ Rewrite the "Semantic tool discovery (server-side)" section:
 - Note seeding is per-process; the MCP server process is separate and not seeded
   here.
 
+## Open items
+
+1. **Seed the LLM-backed tool?** The web lifespan seeds with `llm=None`, so the
+   dashboard shows three built-ins (`web_search`, `search`, `search_routing_tool`)
+   but not `rag_routing_tool`. Passing the app's configured LLM into
+   `seed_tools(tool_registry, tools=tool_knowledge_base(llm=app_llm))` would add
+   the 4th. **Default for this design: no LLM (3 tools);** wiring the app LLM is a
+   follow-up unless decided otherwise before implementation.
+2. **Reversal vs coexist.** This design reverses #422's MCP-surface catalog and
+   deletes its drift-guard test. The alternative ("coexist") keeps #422 intact and
+   adds the KB as a separate source. Decision on record: **replace.** Flagged here
+   as the last reversible checkpoint before the plan is written.
+3. **Cross-process MCP seeding (follow-up).** Exposing the seeded built-ins over
+   MCP requires seeding the MCP server process's own registry too (per-process
+   singleton). Out of scope here; tracked as a follow-up.
+
 ## Success criteria
 
 1. `from src.tools.knowledge_base import tool_knowledge_base, seed_tools` works;
