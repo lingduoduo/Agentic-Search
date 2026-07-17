@@ -13,7 +13,6 @@ import type {
   ServerHealth,
   WorkerMetrics,
   ConnectorCreateRequest,
-  ConnectorDetailView,
   ConnectorView,
   OpenAPIRegisterRequest,
   OpenAPIRegisterResponse,
@@ -286,15 +285,6 @@ export function createConnector(
   });
 }
 
-export function getConnector(
-  connectorId: string,
-  init?: Pick<RequestInit, "signal">,
-): Promise<ConnectorDetailView> {
-  return requestJson<ConnectorDetailView>(`/admin/connectors/${connectorId}`, {
-    signal: init?.signal,
-  });
-}
-
 export function updateConnector(
   connectorId: string,
   patch: { name?: string; config?: Record<string, unknown>; enabled?: boolean },
@@ -333,12 +323,6 @@ export function listTools(
   return requestJson<ToolView[]>("/admin/tools", { signal: init?.signal });
 }
 
-export function getTool(
-  name: string,
-  init?: Pick<RequestInit, "signal">,
-): Promise<ToolView> {
-  return requestJson<ToolView>(`/admin/tools/${name}`, { signal: init?.signal });
-}
 
 export function registerOpenAPITools(
   req: OpenAPIRegisterRequest,
