@@ -27,7 +27,14 @@ and can also ingest live `ToolRegistry` entries so it scales as tools register.
 - Remove the sampled `SemanticRouter` / `StructuredRequestParser` block from
   `src/tools/routing_tools.py` (leaving its `build_search_routing_tool` /
   `build_rag_routing_tool` untouched).
-- New `tests/unit/test_semantic_router.py`.
+- New `tests/unit/test_semantic_router.py`, including a **drift-guard test** that
+  ties the catalog's MCP-sourced tools to the documented tool table in
+  `docs/mcp.md`.
+- **Documentation consolidation in `docs/mcp.md`:** a new "Semantic tool
+  discovery" section describing the server-side router and relating it to the
+  existing "MCP tool selection is independent" note and the dynamic-tool
+  mirroring note. This is the doc where tool setup and tool selection already
+  live; the new mechanism belongs beside them.
 
 ### Non-goals
 - No wiring into `ToolAgentLoop` or the MCP server (the "full integration"
@@ -35,6 +42,8 @@ and can also ingest live `ToolRegistry` entries so it scales as tools register.
 - No dense embeddings — TF-IDF only (sklearn is already a dependency).
 - No new dependency.
 - No `rewrite` of the FunctionTool builders in `routing_tools.py`.
+- No changes to `docs/request-routing.md` (consolidation is scoped to
+  `docs/mcp.md`).
 
 ### File placement
 The router is a distinct responsibility from `routing_tools.py`'s FunctionTool
@@ -74,8 +83,16 @@ Declarative, grounded in the repo's real tools:
 | `answer` — grounded answer synthesis over retrieved evidence | `ask_agentic_search`, `rag_routing_tool` |
 
 Tool descriptions reuse the real one-line summaries from the MCP tool
-docstrings. Each `ToolDefinition.server` is set to its owning server name and
-`source="mcp"` (or `"function"` for `rag_routing_tool`).
+docstrings / `docs/mcp.md`. Each `ToolDefinition.server` is set to its owning
+server name. **`source` labels are accurate to what the investigation found**:
+- `source="mcp"` — the six tools actually exposed over MCP (`search_web`,
+  `open_urls`, `search_indexed_documents`, `retrieve_documents`, `expand_query`,
+  `ask_agentic_search`). These must exactly match the `docs/mcp.md` tool table.
+- `source="retrieval-server"` — `browser_search`, the standalone playwright-cli
+  browser retrieval server. It is a real routable capability but **not** an
+  MCP-exposed tool, so it is labelled honestly and excluded from the drift guard.
+- `source="function"` — `rag_routing_tool`, a `FunctionTool` builder in
+  `routing_tools.py`.
 
 ### 3. `catalog_from_registry(registry) -> list[ServerDefinition]`
 
@@ -176,6 +193,29 @@ TF-IDF fit/transform + cosine similarity are confined to two small private
 helpers (`_fit(texts)` / `_similarity(vectorizer, matrix, query)`) so a dense
 encoder could replace them later. No public interface is introduced now (YAGNI).
 
+### 8. Documentation consolidation (`docs/mcp.md`)
+
+`docs/mcp.md` already documents tool setup (the "Tools available to the LLM
+client" table) and tool selection (the note that MCP tool selection is client-
+driven, and the dynamic-mirroring note). The new server-side router belongs
+beside them. Add a **"Semantic tool discovery"** subsection after the tools
+table that:
+- Describes `discover_tools(request)` / `SemanticRouter`: a server-side,
+  two-stage (server → tool) TF-IDF matcher that narrows a large tool set to the
+  most relevant tools for a natural-language request. It is an **optional helper
+  for callers/agents**, not a change to how MCP clients invoke tools — it does
+  not contradict the existing "MCP tool selection is independent of the web UI's
+  auto-router" statement, which stays true.
+- Shows the domain-server catalog (`web_search` / `knowledge_base` / `answer`)
+  and notes `browser_search` is the provider-backed browser retrieval server,
+  not an MCP tool.
+- Ties `catalog_from_registry` to the existing dynamic-mirroring note
+  (`sync_tool_to_mcp`): the same live `ToolRegistry` that feeds MCP also feeds
+  the router's catalog, so dynamically registered tools become discoverable.
+
+No behavioral doc claims change; the tools table stays the source of truth for
+the MCP surface, and the drift-guard test keeps the catalog aligned with it.
+
 ## Tests (`tests/unit/test_semantic_router.py`)
 
 - `default_tool_catalog()` returns the three named servers with the listed tools.
@@ -193,6 +233,11 @@ encoder could replace them later. No public interface is introduced now (YAGNI).
   returns `None`; text missing the `tool:` line returns `None`.
 - Edges: empty catalog → `[]`; a request with no shared terms and
   `similarity_threshold=0.5` → `[]`; `top_k` larger than the catalog is clamped.
+- **Drift guard:** parse the "Tools available to the LLM client" table in
+  `docs/mcp.md`, extract the documented MCP tool names, and assert they exactly
+  equal the set of `source="mcp"` tool names in `default_tool_catalog()`. Fails
+  if the catalog or the doc drifts. (`browser_search`/`rag_routing_tool` are
+  excluded since they are not `source="mcp"`.)
 
 ## Success criteria
 
@@ -202,3 +247,6 @@ encoder could replace them later. No public interface is introduced now (YAGNI).
 3. `routing_tools.py` no longer contains `SemanticRouter`/`StructuredRequestParser`
    and still imports/works (its FunctionTool builders unchanged).
 4. No `tool_knowledge_base` or bare `import config` anywhere; `ruff` clean.
+5. `docs/mcp.md` has a "Semantic tool discovery" section consolidating the new
+   mechanism with the existing tools table and dynamic-mirroring note; the
+   drift-guard test passes (catalog MCP tools == documented MCP tools).

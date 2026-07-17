@@ -18,6 +18,8 @@
 - No wiring into `ToolAgentLoop` or the MCP server.
 - `routing_tools.py`'s `build_search_routing_tool` / `build_rag_routing_tool` stay byte-for-byte unchanged; only the sampled `SemanticRouter`/`StructuredRequestParser` block is removed.
 - `RoutingConfig` defaults (verbatim): `top_k_servers=3, top_k_tools=3, similarity_threshold=0.0, server_weight=0.3, tool_weight=0.7`.
+- `source` labels are accurate: `"mcp"` only for the six tools actually exposed over MCP (`search_web`, `open_urls`, `search_indexed_documents`, `retrieve_documents`, `expand_query`, `ask_agentic_search`); `browser_search` is `"retrieval-server"`; `rag_routing_tool` is `"function"`. The `source="mcp"` set must equal the `docs/mcp.md` tool table.
+- Documentation consolidation is scoped to `docs/mcp.md` only (no `docs/request-routing.md` change).
 - `ruff check` / `ruff format` clean.
 
 ---
@@ -104,6 +106,40 @@ def test_catalog_from_registry_groups_by_provider_and_source():
 
 def test_catalog_from_registry_empty_is_empty():
     assert catalog_from_registry(_fake_registry([])) == []
+
+
+def _documented_mcp_tools() -> set[str]:
+    """Tool names from the 'Tools available to the LLM client' table in docs/mcp.md.
+
+    Consolidation guard: the catalog's MCP-sourced tools must match the doc.
+    """
+    from pathlib import Path
+    import re
+
+    doc = (Path(__file__).resolve().parents[2] / "docs" / "mcp.md").read_text()
+    start = doc.index("## Tools available to the LLM client")
+    section = doc[start : doc.index("\n## ", start + 1)]
+    names: set[str] = set()
+    for line in section.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        first_col = line.split("|")[1].strip()
+        m = re.fullmatch(r"`([a-z_]+)`", first_col)
+        if m:
+            names.add(m.group(1))
+    return names
+
+
+def test_catalog_mcp_tools_match_docs_mcp_table():
+    catalog = default_tool_catalog()
+    catalog_mcp = {
+        t.name
+        for server in catalog
+        for t in server.tools
+        if t.source == "mcp"
+    }
+    assert catalog_mcp == _documented_mcp_tools()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -174,7 +210,7 @@ def default_tool_catalog() -> list[ServerDefinition]:
                 ToolDefinition(
                     "browser_search",
                     "Browser-driven web search via playwright-cli when web APIs are unavailable.",
-                    "mcp",
+                    "retrieval-server",
                     "web_search",
                 ),
             ],
@@ -259,7 +295,7 @@ def catalog_from_registry(registry) -> list[ServerDefinition]:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_semantic_router.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (6 tests, including the docs drift guard)
 
 - [ ] **Step 5: Commit**
 
@@ -759,14 +795,84 @@ git commit -m "refactor: move sampled semantic router out of routing_tools.py"
 
 ---
 
+### Task 5: Consolidate semantic tool discovery into docs/mcp.md
+
+**Files:**
+- Modify: `docs/mcp.md`
+
+**Interfaces:**
+- Consumes: `discover_tools`, `SemanticRouter`, `catalog_from_registry` (Tasks 1–3).
+- Produces: documentation only.
+
+- [ ] **Step 1: Add the "Semantic tool discovery" section**
+
+In `docs/mcp.md`, insert the following new section immediately AFTER the
+dynamic-mirroring paragraph (the line ending
+"`... (src/internal/mcp_server/tools/dynamic.py).`") and BEFORE the `## Resources`
+heading:
+
+```markdown
+## Semantic tool discovery (server-side)
+
+As the exposed tool set grows, a caller or agent can narrow it to the most
+relevant tools for a request instead of reasoning over the full list.
+`src/tools/semantic_router.py` provides this as an optional, server-side helper:
+
+- `discover_tools(request)` returns the tools most relevant to a natural-language
+  request, using a two-stage TF-IDF match — first rank domain *servers*, then
+  rank *tools* within the top servers, then combine the scores.
+- The default catalog groups the real capabilities into three domain servers:
+
+  | server | tools |
+  |--------|-------|
+  | `web_search` | `search_web`, `open_urls`, `browser_search` |
+  | `knowledge_base` | `search_indexed_documents`, `retrieve_documents`, `expand_query` |
+  | `answer` | `ask_agentic_search`, `rag_routing_tool` |
+
+  `browser_search` is the standalone playwright-cli browser retrieval server, a
+  routable capability that is **not** exposed as an MCP tool; the six tools in
+  the [table above](#tools-available-to-the-llm-client) are the MCP surface.
+- A structured request (`<tool_request>server: … tool: …</tool_request>`) routes
+  the `server:` text through the server stage and the `tool:` text through the
+  tool stage.
+
+This does not change how MCP clients invoke tools — MCP tool selection stays
+client-driven, as described above. Discovery is a ranking aid, not a dispatcher.
+`catalog_from_registry()` builds the catalog from the live `ToolRegistry`, so any
+tool mirrored to MCP via `sync_tool_to_mcp` (see the note above) also becomes
+discoverable through the router.
+```
+
+- [ ] **Step 2: Verify the doc is consistent and links resolve**
+
+Run:
+```bash
+grep -n "Semantic tool discovery" docs/mcp.md
+python3 -c "import re,pathlib; d=pathlib.Path('docs/mcp.md').read_text(); assert d.index('Semantic tool discovery') < d.index('## Resources'); print('placement ok')"
+pytest tests/unit/test_semantic_router.py::test_catalog_mcp_tools_match_docs_mcp_table -q
+```
+Expected: the grep finds the heading; "placement ok"; the drift-guard test still
+passes (the new section does not alter the tools table).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/mcp.md
+git commit -m "docs: consolidate semantic tool discovery into the MCP tools guide"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
 - Catalog dataclasses + default catalog + `catalog_from_registry` → Task 1. ✓
+- Accurate `source` labels (`browser_search`="retrieval-server") + docs drift-guard test → Task 1. ✓
 - `RoutingConfig` + `SemanticRouter` (fixes: top imports, no `import config`, no attribute injection; robustness; two-field `server_hint`; `get_routing_details`) → Task 2. ✓
 - `StructuredRequestParser` + `discover_tools` → Task 3. ✓
 - Remove sampled block from `routing_tools.py`, builders untouched → Task 4. ✓
-- Non-goals (no loop/MCP wiring, no dense, no new dep) → enforced by Global Constraints. ✓
+- Documentation consolidation in `docs/mcp.md` (Semantic tool discovery section, relates to tools table + dynamic-mirroring note) → Task 5. ✓
+- Non-goals (no loop/MCP wiring, no dense, no new dep, no request-routing.md change) → enforced by Global Constraints. ✓
 - Encoder seam (`_fit`/`_similarity`) → Task 2. ✓
 
 **Placeholder scan:** No TBD/TODO; every code step shows full code. The empty-vocabulary fallback in `_fit` is concrete.
