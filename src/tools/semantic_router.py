@@ -32,82 +32,14 @@ class ServerDefinition:
 
 
 def default_tool_catalog() -> list[ServerDefinition]:
-    """The repo's real tool surface, grouped into domain servers."""
-    return [
-        ServerDefinition(
-            name="web_search",
-            description=(
-                "Search the public internet for news, documentation, and general "
-                "facts, and fetch full page content from URLs."
-            ),
-            tools=[
-                ToolDefinition(
-                    "search_web",
-                    "Search the public internet via Google, SerpAPI, or Serper.",
-                    "mcp",
-                    "web_search",
-                ),
-                ToolDefinition(
-                    "open_urls",
-                    "Fetch the full text content of specific web page URLs.",
-                    "mcp",
-                    "web_search",
-                ),
-                ToolDefinition(
-                    "browser_search",
-                    "Browser-driven web search via playwright-cli when web APIs are unavailable.",
-                    "retrieval-server",
-                    "web_search",
-                ),
-            ],
-        ),
-        ServerDefinition(
-            name="knowledge_base",
-            description=(
-                "Search and retrieve documents from the private indexed corpus."
-            ),
-            tools=[
-                ToolDefinition(
-                    "search_indexed_documents",
-                    "Search the private knowledge base with optional document-set narrowing.",
-                    "mcp",
-                    "knowledge_base",
-                ),
-                ToolDefinition(
-                    "retrieve_documents",
-                    "Retrieve raw indexed document content and relevance scores.",
-                    "mcp",
-                    "knowledge_base",
-                ),
-                ToolDefinition(
-                    "expand_query",
-                    "Expand a query into BM25-optimised keyword variants for better recall.",
-                    "mcp",
-                    "knowledge_base",
-                ),
-            ],
-        ),
-        ServerDefinition(
-            name="answer",
-            description=(
-                "Synthesize a grounded answer from retrieved evidence with citations."
-            ),
-            tools=[
-                ToolDefinition(
-                    "ask_agentic_search",
-                    "Synthesize a cited answer from authenticated retrieved evidence.",
-                    "mcp",
-                    "answer",
-                ),
-                ToolDefinition(
-                    "rag_routing_tool",
-                    "Answer a question using retrieval-augmented generation.",
-                    "function",
-                    "answer",
-                ),
-            ],
-        ),
-    ]
+    """The default routing catalog: the live tool registry (built-ins + OpenAPI).
+
+    Read at call time so it reflects tools registered at runtime (e.g. OpenAPI
+    providers). Empty until the registry is seeded / a tool is registered.
+    """
+    from .registry import tool_registry
+
+    return catalog_from_registry(tool_registry)
 
 
 def catalog_from_registry(registry) -> list[ServerDefinition]:

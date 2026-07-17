@@ -9,35 +9,75 @@ from src.tools.semantic_router import (
     StructuredRequestParser,
     ToolDefinition,
     catalog_from_registry,
-    default_tool_catalog,
     discover_tools,
     get_all_tools,
 )
 
 
-def test_default_catalog_has_three_named_servers_with_expected_tools():
-    catalog = default_tool_catalog()
-    by_name = {s.name: s for s in catalog}
-    assert set(by_name) == {"web_search", "knowledge_base", "answer"}
-    assert {t.name for t in by_name["web_search"].tools} == {
-        "search_web",
-        "open_urls",
-        "browser_search",
-    }
-    assert {t.name for t in by_name["knowledge_base"].tools} == {
-        "search_indexed_documents",
-        "retrieve_documents",
-        "expand_query",
-    }
-    assert {t.name for t in by_name["answer"].tools} == {
-        "ask_agentic_search",
-        "rag_routing_tool",
-    }
-    # Every tool records its owning server.
-    for server in catalog:
-        for tool in server.tools:
-            assert tool.server == server.name
-            assert tool.description
+def _sample_catalog() -> list[ServerDefinition]:
+    """A fixed multi-server catalog for router-ranking tests (not production)."""
+    return [
+        ServerDefinition(
+            "web_search",
+            "Search the public internet for news and fetch page content from URLs.",
+            [
+                ToolDefinition(
+                    "search_web", "Search the public internet.", "mcp", "web_search"
+                ),
+                ToolDefinition(
+                    "open_urls",
+                    "Fetch full text of web page URLs.",
+                    "mcp",
+                    "web_search",
+                ),
+                ToolDefinition(
+                    "browser_search",
+                    "Browser-driven web search.",
+                    "retrieval-server",
+                    "web_search",
+                ),
+            ],
+        ),
+        ServerDefinition(
+            "knowledge_base",
+            "Search and retrieve documents from the private indexed corpus.",
+            [
+                ToolDefinition(
+                    "search_indexed_documents",
+                    "Search the private knowledge base.",
+                    "mcp",
+                    "knowledge_base",
+                ),
+                ToolDefinition(
+                    "retrieve_documents",
+                    "Retrieve raw indexed document content.",
+                    "mcp",
+                    "knowledge_base",
+                ),
+                ToolDefinition(
+                    "expand_query",
+                    "Expand a query into keyword variants.",
+                    "mcp",
+                    "knowledge_base",
+                ),
+            ],
+        ),
+        ServerDefinition(
+            "answer",
+            "Synthesize a grounded answer from retrieved evidence.",
+            [
+                ToolDefinition(
+                    "ask_agentic_search", "Synthesize a cited answer.", "mcp", "answer"
+                ),
+                ToolDefinition(
+                    "rag_routing_tool",
+                    "Answer via retrieval-augmented generation.",
+                    "function",
+                    "answer",
+                ),
+            ],
+        ),
+    ]
 
 
 def _entry(name, desc, source, provider_id=None):
@@ -69,7 +109,7 @@ def test_catalog_from_registry_empty_is_empty():
 
 
 def test_get_all_tools_flattens_every_server():
-    catalog = default_tool_catalog()
+    catalog = _sample_catalog()
     flat = get_all_tools(catalog)
     # One flat entry per tool across all servers, order preserved.
     assert flat == [tool for server in catalog for tool in server.tools]
@@ -90,46 +130,15 @@ def test_get_all_tools_empty_catalog_is_empty():
     assert get_all_tools([]) == []
 
 
-def _documented_mcp_tools() -> set[str]:
-    """Tool names from the 'Tools available to the LLM client' table in docs/mcp.md.
-
-    Consolidation guard: the catalog's MCP-sourced tools must match the doc.
-    """
-    from pathlib import Path
-    import re
-
-    doc = (Path(__file__).resolve().parents[2] / "docs" / "mcp.md").read_text()
-    start = doc.index("## Tools available to the LLM client")
-    section = doc[start : doc.index("\n## ", start + 1)]
-    names: set[str] = set()
-    for line in section.splitlines():
-        line = line.strip()
-        if not line.startswith("|"):
-            continue
-        first_col = line.split("|")[1].strip()
-        m = re.fullmatch(r"`([a-z_]+)`", first_col)
-        if m:
-            names.add(m.group(1))
-    return names
-
-
-def test_catalog_mcp_tools_match_docs_mcp_table():
-    catalog = default_tool_catalog()
-    catalog_mcp = {
-        t.name for server in catalog for t in server.tools if t.source == "mcp"
-    }
-    assert catalog_mcp == _documented_mcp_tools()
-
-
 def test_router_ranks_web_tools_for_internet_request():
-    router = SemanticRouter(default_tool_catalog())
+    router = SemanticRouter(_sample_catalog())
     tools = router.route_request("search the public internet for recent news")
     assert tools, "expected at least one routed tool"
     assert tools[0].server == "web_search"
 
 
 def test_router_ranks_knowledge_base_for_internal_docs_request():
-    router = SemanticRouter(default_tool_catalog())
+    router = SemanticRouter(_sample_catalog())
     tools = router.route_request("find internal indexed documents about FAISS")
     assert tools[0].server == "knowledge_base"
 
@@ -174,16 +183,14 @@ def test_empty_catalog_routes_to_nothing():
 
 
 def test_threshold_filters_zero_similarity_requests():
-    router = SemanticRouter(
-        default_tool_catalog(), RoutingConfig(similarity_threshold=0.5)
-    )
+    router = SemanticRouter(_sample_catalog(), RoutingConfig(similarity_threshold=0.5))
     # No shared vocabulary with any server/tool description.
     assert router.route_request("qwerty zxcvbn asdfgh") == []
 
 
 def test_top_k_larger_than_catalog_is_clamped_and_deduped():
     router = SemanticRouter(
-        default_tool_catalog(), RoutingConfig(top_k_servers=10, top_k_tools=10)
+        _sample_catalog(), RoutingConfig(top_k_servers=10, top_k_tools=10)
     )
     tools = router.route_request("search retrieve documents and answer questions")
     names = [t.name for t in tools]
@@ -192,7 +199,7 @@ def test_top_k_larger_than_catalog_is_clamped_and_deduped():
 
 
 def test_routing_details_shape():
-    router = SemanticRouter(default_tool_catalog())
+    router = SemanticRouter(_sample_catalog())
     details = router.get_routing_details("search the public internet for news")
     assert details["request"] == "search the public internet for news"
     assert isinstance(details["stage1_servers"], list)
@@ -217,7 +224,9 @@ def test_parser_missing_tool_line_returns_none():
 
 
 def test_discover_tools_unstructured_web_request():
-    tools = discover_tools("search the public internet for recent news")
+    tools = discover_tools(
+        "search the public internet for recent news", catalog=_sample_catalog()
+    )
     assert tools[0].server == "web_search"
 
 
@@ -225,7 +234,7 @@ def test_discover_tools_uses_structured_server_hint():
     request = StructuredRequestParser.format_request(
         "public web internet search", "fetch the full text of a web page url"
     )
-    tools = discover_tools(request)
+    tools = discover_tools(request, catalog=_sample_catalog())
     assert tools[0].server == "web_search"
 
 

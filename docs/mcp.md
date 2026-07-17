@@ -78,33 +78,32 @@ Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored 
 
 ## Semantic tool discovery (server-side)
 
-As the exposed tool set grows, a caller or agent can narrow it to the most
-relevant tools for a request instead of reasoning over the full list.
-`src/tools/semantic_router.py` provides this as an optional, server-side helper:
+The **`ToolRegistry` is the single source of truth** for the web/agent process's
+runnable tools. `src/tools/knowledge_base.py` provides the built-in seed set, and
+`seed_tools(tool_registry)` loads it into the registry at web startup; OpenAPI
+tools are added at runtime via `register_from_openapi`. Discovery covers the
+union of both:
 
 - `discover_tools(request)` returns the tools most relevant to a natural-language
-  request, using a two-stage TF-IDF match — first rank domain *servers*, then
-  rank *tools* within the top servers, then combine the scores.
-- The default catalog groups the real capabilities into three domain servers:
+  request, using a two-stage TF-IDF match (rank servers, then tools).
+- `default_tool_catalog()` is `catalog_from_registry(tool_registry)`, read at call
+  time — so it reflects whatever is registered (empty until seeding runs). Built-in
+  tools group into a `local` server; each OpenAPI provider gets its own server.
 
-  | server | tools |
-  |--------|-------|
-  | `web_search` | `search_web`, `open_urls`, `browser_search` |
-  | `knowledge_base` | `search_indexed_documents`, `retrieve_documents`, `expand_query` |
-  | `answer` | `ask_agentic_search`, `rag_routing_tool` |
-
-  `browser_search` is the standalone playwright-cli browser retrieval server, a
-  routable capability that is **not** exposed as an MCP tool; the six tools in
-  the [table above](#tools-available-to-the-llm-client) are the MCP surface.
-- A structured request (`<tool_request>server: … tool: …</tool_request>`) routes
-  the `server:` text through the server stage and the `tool:` text through the
-  tool stage.
+Built-in seed tools: `web_search`, `search`, `search_routing_tool` (and
+`rag_routing_tool` when an LLM is configured).
 
 This does not change how MCP clients invoke tools — MCP tool selection stays
 client-driven, as described above. Discovery is a ranking aid, not a dispatcher.
-`catalog_from_registry()` builds the catalog from the live `ToolRegistry`, so any
-tool mirrored to MCP via `sync_tool_to_mcp` (see the note above) also becomes
-discoverable through the router.
+
+**Relationship to the MCP tools:** the `@mcp_server.tool()` functions
+(`search_web`, `open_urls`, `ask_agentic_search`, `retrieve_documents`,
+`expand_query`, `search_indexed_documents`) are registered with FastMCP, not the
+`ToolRegistry`, and several are bound to the MCP request's auth context. The
+`dynamic.py` bridge mirrors the `ToolRegistry` **into** the MCP server
+(`sync_tool_to_mcp`), so the registry feeds MCP — not the reverse. Seeding is
+per-process; exposing the built-ins over MCP would require seeding the MCP
+server process's own registry (a separate follow-up).
 
 ## Resources
 
