@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import pytest
 
+from src.training.rl_agent import QLearningAgent
 from src.training.search_environment import SearchEnvironment
 
 
@@ -125,3 +127,39 @@ def test_stochastic_relevant_retrieval_can_fail():
     _, reward, _ = env.execute_action("retrieve:faiss")
     assert env.gathered == set()  # forced failure
     assert reward == -1
+
+
+def test_dqn_agent_is_gone():
+    import src.training.rl_agent as mod
+
+    assert not hasattr(mod, "DQNAgent")
+
+
+def test_state_hash_is_stable_and_reflects_gathered():
+    env = _env()
+    _reset_to(env, "what_is_faiss")
+    agent = QLearningAgent()
+    h0 = agent._get_state_hash(env)
+    assert agent._get_state_hash(env) == h0  # deterministic
+    env.execute_action("retrieve:faiss")
+    assert agent._get_state_hash(env) != h0  # gathering changes the state
+
+
+def test_update_q_value_matches_bellman():
+    agent = QLearningAgent(learning_rate=0.5, discount_factor=0.9)
+    agent.q_table["s'"]["a1"] = 10.0
+    agent.q_table["s'"]["a2"] = 4.0
+    # current Q(s,a) defaults to 0.0
+    agent.update_q_value(
+        "s", "a", reward=2.0, next_state="s'", next_actions=["a1", "a2"], done=False
+    )
+    # target = 2 + 0.9*10 = 11 ; Q <- 0 + 0.5*(11-0) = 5.5
+    assert agent.q_table["s"]["a"] == pytest.approx(5.5)
+
+
+def test_update_q_value_terminal_uses_reward_only():
+    agent = QLearningAgent(learning_rate=1.0, discount_factor=0.9)
+    agent.update_q_value(
+        "s", "a", reward=7.0, next_state="s'", next_actions=[], done=True
+    )
+    assert agent.q_table["s"]["a"] == pytest.approx(7.0)
