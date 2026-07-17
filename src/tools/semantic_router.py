@@ -210,7 +210,7 @@ class SemanticRouter:
         sims = self._similarity(self._server_vectorizer, self._server_embeddings, query)
         if sims.size == 0:
             return []
-        order = np.argsort(sims)[::-1][:top_k]
+        order = np.argsort(sims, kind="stable")[::-1][:top_k]
         return [(self.servers[i], float(sims[i])) for i in order]
 
     def _route_to_tools(self, server: ServerDefinition, query: str, top_k: int):
@@ -221,7 +221,7 @@ class SemanticRouter:
         sims = self._similarity(vectorizer, embeddings, query)
         if sims.size == 0:
             return []
-        order = np.argsort(sims)[::-1][:top_k]
+        order = np.argsort(sims, kind="stable")[::-1][:top_k]
         return [(server.tools[i], float(sims[i])) for i in order]
 
     def _combined(self, server_score: float, tool_score: float) -> float:
