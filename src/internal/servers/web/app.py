@@ -1283,7 +1283,9 @@ def create_web_app(
         seed_db(db)
         seed_tools(
             tool_registry,
-            tools=tool_knowledge_base(search_url=resolved.services.retrieval_url),
+            tools=tool_knowledge_base(
+                search_url=resolved.services.retrieval_url, llm=llm
+            ),
         )
         check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
         _app.state.search_agent_manager = None
