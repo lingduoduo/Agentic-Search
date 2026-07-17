@@ -69,6 +69,14 @@ open.
    degenerates to one server) — but it gains a server per OpenAPI provider as
    providers register, which is exactly the intended "covers all Tool Registry"
    behavior.
+3. **Seeding also feeds the tool-agent.** `_run_tool_agent`
+   (`src/internal/servers/web/app.py`) already builds its tool list from
+   `tool_registry.list_tools()`, so seeding populates `ToolAgentLoop` too (both
+   the auto-route and explicit-mode call sites) — not just the dashboard.
+   Therefore the lifespan seeds with the **resolved retrieval URL**
+   (`tool_knowledge_base(search_url=resolved.services.retrieval_url)`), not the
+   bare `localhost:8000` default, and `_run_tool_agent` drops any seeded `search`
+   when the request supplies its own so the request-configured URL wins.
 
 ## Tool-system landscape (why MCP tools stay separate)
 
