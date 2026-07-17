@@ -102,11 +102,6 @@ export interface ConnectorView {
   last_attempt: IndexAttemptView | null;
 }
 
-export interface ConnectorDetailView extends ConnectorView {
-  attempts: IndexAttemptView[];
-  document_count: number;
-}
-
 export interface ConnectorCreateRequest {
   name: string;
   source: string;
