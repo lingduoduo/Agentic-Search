@@ -27,6 +27,8 @@ try:
     from .data import make_search_rag_map_fn as make_search_rag_map_fn
     from .data import make_search_qa_map_fn as make_search_qa_map_fn
     from .data import normalize_question_text as normalize_question_text
+    from .rl_agent import QLearningAgent as QLearningAgent
+    from .search_environment import SearchEnvironment as SearchEnvironment
 except ImportError:
     pass
 from .evaluation import SearchEvaluationConfig as SearchEvaluationConfig
