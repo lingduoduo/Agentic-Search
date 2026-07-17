@@ -79,3 +79,38 @@ class SearchEnvironment:
 
     def get_available_actions(self) -> list[str]:
         return [f"retrieve:{t}" for t in self.topics] + ["answer", "stop"]
+
+    def execute_action(self, action: str) -> tuple[str, float, bool]:
+        if self.game_over:
+            return ("episode over", 0.0, True)
+
+        self.steps += 1
+        required = self._current()["required_facts"]
+
+        # Budget check first: an over-budget step terminates with a fixed penalty.
+        if self.steps >= self.max_steps and action not in ("answer", "stop"):
+            self.game_over = True
+            return ("out of steps", -10.0, True)
+
+        if action == "answer":
+            self.game_over = True
+            if required.issubset(self.gathered):
+                self.victory = True
+                return ("correct answer", 50.0, True)
+            return ("answered too early", -10.0, True)
+
+        if action == "stop":
+            self.game_over = True
+            return ("gave up", -5.0, True)
+
+        if action.startswith("retrieve:"):
+            topic = action.split(":", 1)[1]
+            relevant_new = topic in required and topic not in self.gathered
+            if relevant_new:
+                if self.stochastic and self._rng.random() < self.fail_prob:
+                    return (f"retrieve {topic} failed", -1.0, False)
+                self.gathered.add(topic)
+                return (f"retrieved {topic}", 1.0, False)
+            return (f"retrieve {topic} wasted", -1.0, False)
+
+        return ("unknown action", -1.0, False)
