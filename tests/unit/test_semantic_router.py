@@ -3,6 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.tools.semantic_router import (
+    RoutingConfig,
+    SemanticRouter,
+    ServerDefinition,
+    ToolDefinition,
     catalog_from_registry,
     default_tool_catalog,
 )
@@ -90,3 +94,83 @@ def test_catalog_mcp_tools_match_docs_mcp_table():
         t.name for server in catalog for t in server.tools if t.source == "mcp"
     }
     assert catalog_mcp == _documented_mcp_tools()
+
+
+def test_router_ranks_web_tools_for_internet_request():
+    router = SemanticRouter(default_tool_catalog())
+    tools = router.route_request("search the public internet for recent news")
+    assert tools, "expected at least one routed tool"
+    assert tools[0].server == "web_search"
+
+
+def test_router_ranks_knowledge_base_for_internal_docs_request():
+    router = SemanticRouter(default_tool_catalog())
+    tools = router.route_request("find internal indexed documents about FAISS")
+    assert tools[0].server == "knowledge_base"
+
+
+def _divergence_catalog():
+    return [
+        ServerDefinition(
+            "weather",
+            "weather forecast temperature climate",
+            [
+                ToolDefinition(
+                    "lookup_weather", "get the current temperature", "", "weather"
+                )
+            ],
+        ),
+        ServerDefinition(
+            "finance",
+            "stock market finance trading",
+            [
+                ToolDefinition(
+                    "lookup_stock", "get the current temperature", "", "finance"
+                )
+            ],
+        ),
+    ]
+
+
+def test_server_hint_changes_stage1_winner():
+    router = SemanticRouter(_divergence_catalog())
+    # Without a hint the request text drives stage 1: "temperature" matches weather.
+    no_hint = router.route_request("get the current temperature")
+    assert no_hint[0].name == "lookup_weather"
+    # With a hint the server-stage text picks finance instead.
+    hinted = router.route_request(
+        "get the current temperature", server_hint="stock market finance"
+    )
+    assert hinted[0].name == "lookup_stock"
+
+
+def test_empty_catalog_routes_to_nothing():
+    assert SemanticRouter([]).route_request("anything") == []
+
+
+def test_threshold_filters_zero_similarity_requests():
+    router = SemanticRouter(
+        default_tool_catalog(), RoutingConfig(similarity_threshold=0.5)
+    )
+    # No shared vocabulary with any server/tool description.
+    assert router.route_request("qwerty zxcvbn asdfgh") == []
+
+
+def test_top_k_larger_than_catalog_is_clamped_and_deduped():
+    router = SemanticRouter(
+        default_tool_catalog(), RoutingConfig(top_k_servers=10, top_k_tools=10)
+    )
+    tools = router.route_request("search retrieve documents and answer questions")
+    names = [t.name for t in tools]
+    assert len(names) == len(set(names))  # no duplicates
+    assert len(names) <= 8  # total tools in the default catalog
+
+
+def test_routing_details_shape():
+    router = SemanticRouter(default_tool_catalog())
+    details = router.get_routing_details("search the public internet for news")
+    assert details["request"] == "search the public internet for news"
+    assert isinstance(details["stage1_servers"], list)
+    assert details["stage1_servers"][0]["name"] == "web_search"
+    assert "web_search" in details["stage2_tools"]
+    assert details["final_tools"][0]["server"] == "web_search"
