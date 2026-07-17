@@ -140,6 +140,14 @@ def catalog_from_registry(registry) -> list[ServerDefinition]:
     return [s for s in servers.values() if s.tools]
 
 
+def get_all_tools(servers: list[ServerDefinition]) -> list[ToolDefinition]:
+    """Flatten a catalog into a single list of every tool across all servers."""
+    all_tools: list[ToolDefinition] = []
+    for server in servers:
+        all_tools.extend(server.tools)
+    return all_tools
+
+
 @dataclass(frozen=True)
 class RoutingConfig:
     top_k_servers: int = 3
