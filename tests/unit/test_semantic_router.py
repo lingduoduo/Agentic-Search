@@ -11,6 +11,7 @@ from src.tools.semantic_router import (
     catalog_from_registry,
     default_tool_catalog,
     discover_tools,
+    get_all_tools,
 )
 
 
@@ -65,6 +66,28 @@ def test_catalog_from_registry_groups_by_provider_and_source():
 
 def test_catalog_from_registry_empty_is_empty():
     assert catalog_from_registry(_fake_registry([])) == []
+
+
+def test_get_all_tools_flattens_every_server():
+    catalog = default_tool_catalog()
+    flat = get_all_tools(catalog)
+    # One flat entry per tool across all servers, order preserved.
+    assert flat == [tool for server in catalog for tool in server.tools]
+    assert len(flat) == sum(len(server.tools) for server in catalog)
+    assert {t.name for t in flat} == {
+        "search_web",
+        "open_urls",
+        "browser_search",
+        "search_indexed_documents",
+        "retrieve_documents",
+        "expand_query",
+        "ask_agentic_search",
+        "rag_routing_tool",
+    }
+
+
+def test_get_all_tools_empty_catalog_is_empty():
+    assert get_all_tools([]) == []
 
 
 def _documented_mcp_tools() -> set[str]:
