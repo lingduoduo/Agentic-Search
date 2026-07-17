@@ -98,7 +98,7 @@ from src.internal.servers.reporting.api import create_reporting_router
 from src.internal.servers.scim.api import create_scim_router
 from src.internal.servers.scim.api import register_scim_exception_handlers
 from src.internal.servers.web.seeding import seed_db
-from src.tools.knowledge_base import seed_tools
+from src.tools.knowledge_base import seed_tools, tool_knowledge_base
 from src.tools.registry import tool_registry
 from src.internal.servers.web.tool_approval import (
     ApprovalConflict,
@@ -715,7 +715,9 @@ async def _run_tool_agent(
 
     tools = list(tool_registry.list_tools())
     if with_search_tool:
-        tools = [build_search_tool(search_url=search_url)] + tools
+        tools = [build_search_tool(search_url=search_url)] + [
+            t for t in tools if t.name != "search"
+        ]
     loop = ToolAgentLoop(
         tokenizer=tokenizer,
         server_manager=manager,
@@ -1279,7 +1281,10 @@ def create_web_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         seed_db(db)
-        seed_tools(tool_registry)
+        seed_tools(
+            tool_registry,
+            tools=tool_knowledge_base(search_url=resolved.services.retrieval_url),
+        )
         check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
         _app.state.search_agent_manager = None
         _app.state.search_agent_tokenizer = None
