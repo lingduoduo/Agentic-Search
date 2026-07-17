@@ -98,6 +98,8 @@ from src.internal.servers.reporting.api import create_reporting_router
 from src.internal.servers.scim.api import create_scim_router
 from src.internal.servers.scim.api import register_scim_exception_handlers
 from src.internal.servers.web.seeding import seed_db
+from src.tools.knowledge_base import seed_tools
+from src.tools.registry import tool_registry
 from src.internal.servers.web.tool_approval import (
     ApprovalConflict,
     ApprovalExpired,
@@ -1277,6 +1279,7 @@ def create_web_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         seed_db(db)
+        seed_tools(tool_registry)
         check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
         _app.state.search_agent_manager = None
         _app.state.search_agent_tokenizer = None
