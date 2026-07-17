@@ -76,6 +76,36 @@ Grounding verification checks citation labels and lexical overlap with retrieved
 
 Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored to MCP by calling `sync_tool_to_mcp(name)` after registration (`src/internal/mcp_server/tools/dynamic.py`).
 
+## Semantic tool discovery (server-side)
+
+As the exposed tool set grows, a caller or agent can narrow it to the most
+relevant tools for a request instead of reasoning over the full list.
+`src/tools/semantic_router.py` provides this as an optional, server-side helper:
+
+- `discover_tools(request)` returns the tools most relevant to a natural-language
+  request, using a two-stage TF-IDF match — first rank domain *servers*, then
+  rank *tools* within the top servers, then combine the scores.
+- The default catalog groups the real capabilities into three domain servers:
+
+  | server | tools |
+  |--------|-------|
+  | `web_search` | `search_web`, `open_urls`, `browser_search` |
+  | `knowledge_base` | `search_indexed_documents`, `retrieve_documents`, `expand_query` |
+  | `answer` | `ask_agentic_search`, `rag_routing_tool` |
+
+  `browser_search` is the standalone playwright-cli browser retrieval server, a
+  routable capability that is **not** exposed as an MCP tool; the six tools in
+  the [table above](#tools-available-to-the-llm-client) are the MCP surface.
+- A structured request (`<tool_request>server: … tool: …</tool_request>`) routes
+  the `server:` text through the server stage and the `tool:` text through the
+  tool stage.
+
+This does not change how MCP clients invoke tools — MCP tool selection stays
+client-driven, as described above. Discovery is a ranking aid, not a dispatcher.
+`catalog_from_registry()` builds the catalog from the live `ToolRegistry`, so any
+tool mirrored to MCP via `sync_tool_to_mcp` (see the note above) also becomes
+discoverable through the router.
+
 ## Resources
 
 | Resource | What it exposes |
