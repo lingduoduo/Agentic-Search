@@ -6,9 +6,11 @@ from src.tools.semantic_router import (
     RoutingConfig,
     SemanticRouter,
     ServerDefinition,
+    StructuredRequestParser,
     ToolDefinition,
     catalog_from_registry,
     default_tool_catalog,
+    discover_tools,
 )
 
 
@@ -174,3 +176,35 @@ def test_routing_details_shape():
     assert details["stage1_servers"][0]["name"] == "web_search"
     assert "web_search" in details["stage2_tools"]
     assert details["final_tools"][0]["server"] == "web_search"
+
+
+def test_parser_round_trips():
+    text = StructuredRequestParser.format_request("web platform", "fetch a page")
+    parsed = StructuredRequestParser.parse_request(text)
+    assert parsed == {"server": "web platform", "tool": "fetch a page"}
+
+
+def test_parser_without_tags_returns_none():
+    assert StructuredRequestParser.parse_request("just some text") is None
+
+
+def test_parser_missing_tool_line_returns_none():
+    text = "<tool_request>\nserver: web\n</tool_request>"
+    assert StructuredRequestParser.parse_request(text) is None
+
+
+def test_discover_tools_unstructured_web_request():
+    tools = discover_tools("search the public internet for recent news")
+    assert tools[0].server == "web_search"
+
+
+def test_discover_tools_uses_structured_server_hint():
+    request = StructuredRequestParser.format_request(
+        "public web internet search", "fetch the full text of a web page url"
+    )
+    tools = discover_tools(request)
+    assert tools[0].server == "web_search"
+
+
+def test_discover_tools_empty_catalog():
+    assert discover_tools("anything", catalog=[]) == []

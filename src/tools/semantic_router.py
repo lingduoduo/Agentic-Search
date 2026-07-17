@@ -318,3 +318,77 @@ class SemanticRouter:
             "stage2_tools": stage2,
             "final_tools": final,
         }
+
+
+class StructuredRequestParser:
+    """Parse and format MCP-Zero structured tool requests.
+
+    Format::
+
+        <tool_request>
+        server: [platform/domain description]
+        tool: [operation description]
+        </tool_request>
+    """
+
+    OPEN = "<tool_request>"
+    CLOSE = "</tool_request>"
+
+    @staticmethod
+    def parse_request(text: str) -> dict | None:
+        if (
+            StructuredRequestParser.OPEN not in text
+            or StructuredRequestParser.CLOSE not in text
+        ):
+            return None
+        start = text.find(StructuredRequestParser.OPEN) + len(
+            StructuredRequestParser.OPEN
+        )
+        end = text.find(StructuredRequestParser.CLOSE)
+        body = text[start:end].strip()
+
+        result: dict[str, str] = {}
+        for line in body.splitlines():
+            line = line.strip()
+            if line.startswith("server:"):
+                result["server"] = line[len("server:") :].strip()
+            elif line.startswith("tool:"):
+                result["tool"] = line[len("tool:") :].strip()
+
+        if "server" in result and "tool" in result:
+            return result
+        return None
+
+    @staticmethod
+    def format_request(server_desc: str, tool_desc: str) -> str:
+        return (
+            f"{StructuredRequestParser.OPEN}\n"
+            f"server: {server_desc}\n"
+            f"tool: {tool_desc}\n"
+            f"{StructuredRequestParser.CLOSE}"
+        )
+
+
+def discover_tools(
+    request: str,
+    *,
+    catalog: list[ServerDefinition] | None = None,
+    config: RoutingConfig | None = None,
+) -> list[ToolDefinition]:
+    """Discover the most relevant tools for a natural-language request.
+
+    If *request* contains a ``<tool_request>`` block, the ``server:`` description
+    drives server-stage routing and the ``tool:`` description drives tool-stage
+    routing; otherwise the raw *request* drives both stages.
+    """
+    catalog = catalog if catalog is not None else default_tool_catalog()
+    parsed = StructuredRequestParser.parse_request(request)
+    if parsed is not None:
+        server_hint: str | None = parsed["server"]
+        tool_request = parsed["tool"]
+    else:
+        server_hint = None
+        tool_request = request
+
+    router = SemanticRouter(catalog, config)
+    return router.route_request(tool_request, server_hint=server_hint)
