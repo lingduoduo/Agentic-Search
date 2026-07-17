@@ -70,6 +70,35 @@ open.
    providers register, which is exactly the intended "covers all Tool Registry"
    behavior.
 
+## Tool-system landscape (why MCP tools stay separate)
+
+The repo has four parallel tool systems. This design makes the `ToolRegistry` the
+source of truth for the **web/agent process** only; the MCP-native tools are
+intentionally left out because they cannot run outside the MCP process.
+
+| System | Registered via | In `ToolRegistry`? |
+|---|---|---|
+| `src/tools/` executable Tools (`web_search`, `search`, `search_routing_tool`, `rag_routing_tool`) | `seed_tools()` (this design) + `@tool_registry.tool` | **Yes** (seeded) |
+| OpenAPI tools | `register_from_openapi()` (dashboard, runtime) | **Yes** |
+| `src/internal/mcp_server/tools/` (`search_web`, `open_urls`, `ask_agentic_search`, `retrieve_documents`, `expand_query`, `search_indexed_documents`) | `@mcp_server.tool()` (FastMCP) | **No** — FastMCP-only |
+| `src/internal/tools/built_in_tools.py` (chat-path classes) | none central | **No** |
+
+**Why the MCP-native tools are not pulled in:** three of them
+(`search_indexed_documents`, `retrieve_documents`, `ask_agentic_search`) call
+`authenticated_retrieve`, which needs the MCP request's bearer token — they only
+work inside the MCP server process. Wrapping them as web-process `ToolRegistry`
+tools would fail on invoke and couple `src/tools` → `mcp_server`.
+
+**The bridge already unifies the correct direction.**
+`src/internal/mcp_server/tools/dynamic.py` mirrors **`ToolRegistry` → FastMCP**
+(`_sync_all()` at import, plus `sync_tool_to_mcp(name)` at runtime). So the
+`ToolRegistry` is the source of truth and the MCP server *consumes* it — seeding
+the registry with built-ins makes them available over MCP too, **within a
+process**. Because the registry is a per-process singleton, exposing the built-ins
+over MCP requires seeding the **MCP process's** registry as well; that
+cross-process seeding is a **follow-up, out of scope here** (this design seeds the
+web process only).
+
 ## Components
 
 ### 1. `src/tools/knowledge_base.py`
