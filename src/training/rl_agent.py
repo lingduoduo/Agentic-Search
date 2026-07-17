@@ -19,7 +19,7 @@ from .search_environment import SearchEnvironment
 
 class QLearningAgent:
     """
-    Q-learning agent for the treasure hunt game.
+    Q-learning agent for the synthetic search environment.
     Uses tabular Q-learning with state-action pairs.
     """
 

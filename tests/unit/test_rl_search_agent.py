@@ -192,9 +192,6 @@ def test_agent_learns_single_fact_question():
     agent = QLearningAgent(epsilon=1.0, epsilon_decay=0.99, epsilon_min=0.05)
     for _ in range(400):
         agent.train_episode(env)
-    agent.evaluate(num_episodes=50, stochastic=False)
-    # evaluate() builds its own env (all questions); assert on the shared trained
-    # policy instead by running greedy episodes on the single-fact env:
     wins = 0
     agent.epsilon = 0.0
     for _ in range(50):
