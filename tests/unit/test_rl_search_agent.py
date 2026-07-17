@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import random
+
+import numpy as np
 import pytest
 
 from src.training.rl_agent import QLearningAgent
@@ -163,3 +166,56 @@ def test_update_q_value_terminal_uses_reward_only():
         "s", "a", reward=7.0, next_state="s'", next_actions=[], done=True
     )
     assert agent.q_table["s"]["a"] == pytest.approx(7.0)
+
+
+def test_epsilon_decays_toward_min():
+    random.seed(0)
+    np.random.seed(0)
+    agent = QLearningAgent(epsilon=1.0, epsilon_decay=0.99, epsilon_min=0.1)
+    env = SearchEnvironment(seed=0)
+    start = agent.epsilon
+    for _ in range(50):
+        agent.train_episode(env)
+    assert agent.epsilon < start
+    assert agent.epsilon >= agent.epsilon_min
+
+
+def test_agent_learns_single_fact_question():
+    random.seed(0)
+    np.random.seed(0)
+    # Environment with only the trivial one-fact question, so learning is fast.
+    env = SearchEnvironment(seed=0)
+    env.questions = [
+        {"id": "what_is_faiss", "required_facts": {"faiss"}, "answer": "faiss"}
+    ]
+    env._question_idx = 0
+    agent = QLearningAgent(epsilon=1.0, epsilon_decay=0.99, epsilon_min=0.05)
+    for _ in range(400):
+        agent.train_episode(env)
+    agent.evaluate(num_episodes=50, stochastic=False)
+    # evaluate() builds its own env (all questions); assert on the shared trained
+    # policy instead by running greedy episodes on the single-fact env:
+    wins = 0
+    agent.epsilon = 0.0
+    for _ in range(50):
+        env.reset()
+        while not env.game_over:
+            action = agent.choose_action(env, training=False)
+            env.execute_action(action)
+        wins += int(env.victory)
+    assert wins / 50 > 0.9
+
+
+def test_save_and_load_round_trips(tmp_path):
+    agent = QLearningAgent()
+    agent.q_table["s"]["a"] = 3.14
+    agent.total_episodes = 5
+    agent.victories = 2
+    path = tmp_path / "qtable.pkl"
+    agent.save(str(path))
+
+    fresh = QLearningAgent()
+    fresh.load(str(path))
+    assert fresh.q_table["s"]["a"] == pytest.approx(3.14)
+    assert fresh.total_episodes == 5
+    assert fresh.victories == 2
