@@ -2502,18 +2502,6 @@ def _document_with_metadata(
     )
 
 
-def _dedupe_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
-    deduped: list[ContextDocument] = []
-    seen: set[tuple[str | None, str]] = set()
-    for document in documents:
-        key = (document.url, document.content[:160])
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(document)
-    return deduped
-
-
 def _reindex_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
     return [
         ContextDocument(
