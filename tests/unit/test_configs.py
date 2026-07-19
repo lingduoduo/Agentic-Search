@@ -98,12 +98,24 @@ def test_load_app_settings_reads_search_agent_server_url():
     assert settings.search_agent_model == "Qwen/Qwen2.5-1.5B-Instruct"
 
 
+def test_load_app_settings_reads_rerank_url():
+    assert (
+        load_app_settings(
+            {"AGENTIC_SEARCH_RERANK_URL": "http://localhost:8002/rerank"}
+        ).services.rerank_url
+        == "http://localhost:8002/rerank"
+    )
+    # Unset ⇒ None (rerank stays off by default).
+    assert load_app_settings({}).services.rerank_url is None
+
+
 def test_web_settings_can_be_built_from_app_settings():
     app_settings = load_app_settings(
         {
             "AGENTIC_SEARCH_RETRIEVAL_URL": "http://search.test/retrieve",
             "AGENTIC_SEARCH_WEB_TOP_K": "9",
             "AGENTIC_SEARCH_WEB_DB_PATH": "/tmp/search.sqlite3",
+            "AGENTIC_SEARCH_RERANK_URL": "http://rr.test/rerank",
         }
     )
 
@@ -112,6 +124,7 @@ def test_web_settings_can_be_built_from_app_settings():
     assert web_settings.search_url == "http://search.test/retrieve"
     assert web_settings.top_k == 9
     assert web_settings.db_path == "/tmp/search.sqlite3"
+    assert web_settings.rerank_url == "http://rr.test/rerank"
 
 
 def test_tool_agent_parser_defaults_to_json():
