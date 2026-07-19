@@ -71,3 +71,27 @@ def test_union_docs_feed_from_docs_retriever(manifest):
     retriever = TfidfRetriever.from_docs(docs)
     rows = retriever.retrieve(["beta"], topk=5)
     assert rows[0][0]["document"]["id"] == "b1"
+
+
+def test_resolve_all_skips_missing_files_and_loads_present(manifest, caplog):
+    manifest = dict(manifest)
+    manifest["missing"] = {"path": "/nonexistent/path/does-not-exist.jsonl"}
+    with caplog.at_level("WARNING"):
+        docs = resolve_corpus_docs("all", manifest)
+    assert [d["id"] for d in docs] == ["a1", "b1"]
+    assert "missing" in caplog.text
+    assert "/nonexistent/path/does-not-exist.jsonl" in caplog.text
+
+
+def test_resolve_missing_named_corpus_raises(manifest):
+    manifest = dict(manifest)
+    manifest["missing"] = {"path": "/nonexistent/path/does-not-exist.jsonl"}
+    with pytest.raises(ValueError):
+        resolve_corpus_docs("missing", manifest)
+
+
+def test_resolve_empty_spec_raises(manifest):
+    with pytest.raises(ValueError):
+        resolve_corpus_docs("", manifest)
+    with pytest.raises(ValueError):
+        resolve_corpus_docs(None, manifest)

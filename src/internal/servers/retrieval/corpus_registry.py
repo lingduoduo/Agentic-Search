@@ -47,6 +47,11 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
     if manifest is None:
         manifest = load_manifest()
 
+    if not spec:
+        raise ValueError(
+            "Empty corpus spec; pass a corpus name, 'all', or a file path."
+        )
+
     if spec == "all":
         names = list(manifest.keys())
         if not names:
@@ -69,7 +74,22 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
     for name in names:
         entry = manifest[name]
         path = entry["path"] if isinstance(entry, dict) else entry
+        if not os.path.exists(path):
+            logger.warning(
+                "Corpus %r file %r is missing; skipping (regenerate via beir_to_corpus.py)",
+                name,
+                path,
+            )
+            continue
         docs.extend(_load_corpus(path))
+    # Dedupe collapses only true duplicate ids across corpora (first occurrence
+    # wins); a shared-id-namespace collision between unrelated corpora would
+    # silently shrink the union.
     docs = _dedupe_by_id(docs)
+    if not docs:
+        raise ValueError(
+            f"None of the requested corpora {names} have files on disk. "
+            "Regenerate them via beir_to_corpus.py or provide a valid corpus path."
+        )
     logger.info("Loaded corpora %s (%d docs after dedupe)", names, len(docs))
     return docs
