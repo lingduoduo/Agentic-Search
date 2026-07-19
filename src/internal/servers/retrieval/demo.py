@@ -41,7 +41,16 @@ def _load_corpus(corpus_path: str) -> list[dict]:
 
 class TfidfRetriever:
     def __init__(self, corpus_path: str) -> None:
-        self._docs = _load_corpus(corpus_path)
+        self._build(_load_corpus(corpus_path))
+
+    @classmethod
+    def from_docs(cls, docs: list[dict]) -> "TfidfRetriever":
+        obj = cls.__new__(cls)
+        obj._build(docs)
+        return obj
+
+    def _build(self, docs: list[dict]) -> None:
+        self._docs = docs
         texts = [
             f"{d.get('title', '')} {d.get('contents', d.get('text', ''))}"
             for d in self._docs

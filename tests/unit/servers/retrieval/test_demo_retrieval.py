@@ -31,3 +31,13 @@ def test_retrieve_drops_zero_relevance_documents(tmp_path):
     retriever = TfidfRetriever(_write_corpus(tmp_path, docs))
     rows = retriever.retrieve(["GRPO"], topk=5)
     assert rows[0] == []
+
+
+def test_from_docs_builds_retriever_without_a_file():
+    docs = [
+        {"id": "a", "title": "Cats", "contents": "feline animals purr"},
+        {"id": "b", "title": "Dogs", "contents": "canine animals bark"},
+    ]
+    retriever = TfidfRetriever.from_docs(docs)
+    rows = retriever.retrieve(["feline purr"], topk=5)
+    assert rows[0][0]["document"]["id"] == "a"
