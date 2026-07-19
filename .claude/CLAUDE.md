@@ -88,6 +88,11 @@ python3 -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl
 # add --no-dense to force TF-IDF only (skips the e5 model download)
 # dense setup / "Dense leg unavailable" troubleshooting: docs/hybrid-dense-setup.md
 
+# Optional — cross-encoder reranker (Terminal 1b). Then set the env on the web
+# backend and restart it so retrieved docs are reranked before display:
+python3 -m src.internal.servers.retrieval.rerank --port 8002
+# web backend env: AGENTIC_SEARCH_RERANK_URL=http://localhost:8002/rerank
+
 # Terminal 2 — web backend (port 7860)
 PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 

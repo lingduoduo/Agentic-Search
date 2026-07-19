@@ -87,6 +87,13 @@ python3 -m src.internal.servers.retrieval.demo --corpus demo   # curated 30-doc 
 python3 -m src.internal.servers.retrieval.demo --corpus all    # union of all registered corpora
 ```
 
+```bash
+# Optional — cross-encoder reranker (Terminal 1b). Then set the env on the web
+# backend and restart it so retrieved docs are reranked before display:
+python3 -m src.internal.servers.retrieval.rerank --port 8002
+# web backend env: AGENTIC_SEARCH_RERANK_URL=http://localhost:8002/rerank
+```
+
 ### 2. Start the API
 
 The FastAPI backend runs on port **7860**:
