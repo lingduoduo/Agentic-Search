@@ -286,3 +286,14 @@ def test_eval_results_missing_dir_returns_empty(monkeypatch):
     resp = client.get("/api/debug/eval-results")
     assert resp.status_code == 200
     assert resp.json()["results"] == []
+
+
+def test_eval_results_drops_non_finite_metrics(tmp_path, monkeypatch):
+    (tmp_path / "nan.json").write_text(json.dumps({"good": 0.5, "bad": float("nan")}))
+    monkeypatch.setenv("AGENTIC_SEARCH_EVAL_RESULTS_DIR", str(tmp_path))
+
+    client = _client(_ok)
+    resp = client.get("/api/debug/eval-results")
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert results[0]["metrics"] == {"good": 0.5}

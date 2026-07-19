@@ -80,6 +80,7 @@ def create_debug_router(
         the configured directory; never raises.
         """
         import json
+        import math
         import os
         from pathlib import Path
 
@@ -93,6 +94,7 @@ def create_debug_router(
         for path in sorted(results_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text())
+                mtime = path.stat().st_mtime
             except Exception:
                 continue
             if not isinstance(data, dict):
@@ -100,12 +102,14 @@ def create_debug_router(
             metrics = {
                 k: v
                 for k, v in data.items()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)
+                if isinstance(v, (int, float))
+                and not isinstance(v, bool)
+                and math.isfinite(v)
             }
             out.append(
                 {
                     "name": path.name,
-                    "modified": path.stat().st_mtime,
+                    "modified": mtime,
                     "metrics": metrics,
                 }
             )
