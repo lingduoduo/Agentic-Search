@@ -69,7 +69,7 @@ describe("App adaptive layout", () => {
   it("adds intent-search class to results layout on search response", async () => {
     mockStreamAgent.mockReturnValue(fakeStream("search"));
     render(<App />);
-    await submitQuery("find the onboarding doc");
+    await submitQuery("find docs on cross-encoder reranking");
     await waitFor(() => {
       const layout = document.querySelector(".results-layout");
       expect(layout?.classList).toContain("intent-search");
