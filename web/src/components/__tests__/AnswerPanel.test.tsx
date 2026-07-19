@@ -135,6 +135,18 @@ it("renders citation [D1] as an anchor link", () => {
   expect(link).toHaveClass("citation-link");
 });
 
+it("renders citation [R1Q1D1] as an anchor link", () => {
+  render(
+    <AnswerPanel
+      answer="See [R1Q1D1] for details."
+      citations={[]}
+    />
+  );
+  const link = screen.getByRole("link", { name: "[R1Q1D1]" });
+  expect(link).toHaveAttribute("href", "#source-[R1Q1D1]");
+  expect(link).toHaveClass("citation-link");
+});
+
 it("renders no anchor when answer has no citation pattern", () => {
   render(
     <AnswerPanel
