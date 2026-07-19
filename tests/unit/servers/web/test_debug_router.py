@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -257,3 +259,41 @@ def test_unknown_mode_rejected_without_calling_upstream():
 
     assert resp.status_code == 404
     assert called is False
+
+
+def _ok(request):  # trivial httpx handler; the eval-results endpoint ignores http
+    return httpx.Response(200, json={})
+
+
+def test_eval_results_lists_numeric_metrics(tmp_path, monkeypatch):
+    (tmp_path / "beir.json").write_text(
+        json.dumps({"recall@10": 0.5, "ndcg@10": 0.4, "_note": "x"})
+    )
+    (tmp_path / "notjson.txt").write_text("nope")
+    monkeypatch.setenv("AGENTIC_SEARCH_EVAL_RESULTS_DIR", str(tmp_path))
+
+    client = _client(_ok)
+    resp = client.get("/api/debug/eval-results")
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert [r["name"] for r in results] == ["beir.json"]
+    assert results[0]["metrics"] == {"recall@10": 0.5, "ndcg@10": 0.4}  # _note dropped
+
+
+def test_eval_results_missing_dir_returns_empty(monkeypatch):
+    monkeypatch.setenv("AGENTIC_SEARCH_EVAL_RESULTS_DIR", "/nonexistent/xyz-eval")
+    client = _client(_ok)
+    resp = client.get("/api/debug/eval-results")
+    assert resp.status_code == 200
+    assert resp.json()["results"] == []
+
+
+def test_eval_results_drops_non_finite_metrics(tmp_path, monkeypatch):
+    (tmp_path / "nan.json").write_text(json.dumps({"good": 0.5, "bad": float("nan")}))
+    monkeypatch.setenv("AGENTIC_SEARCH_EVAL_RESULTS_DIR", str(tmp_path))
+
+    client = _client(_ok)
+    resp = client.get("/api/debug/eval-results")
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert results[0]["metrics"] == {"good": 0.5}
