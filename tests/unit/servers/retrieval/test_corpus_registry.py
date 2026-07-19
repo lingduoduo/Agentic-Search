@@ -17,6 +17,7 @@ def _write_corpus(path, docs):
 
 @pytest.fixture
 def manifest(tmp_path):
+    """Two corpora with disjoint id namespaces (the expected, mergeable case)."""
     _write_corpus(
         tmp_path / "a.jsonl", [{"id": "a1", "title": "A1", "contents": "alpha"}]
     )
@@ -24,7 +25,7 @@ def manifest(tmp_path):
         tmp_path / "b.jsonl",
         [
             {"id": "b1", "title": "B1", "contents": "beta"},
-            {"id": "a1", "title": "dup", "contents": "duplicate of a1"},
+            {"id": "b2", "title": "B2", "contents": "gamma"},
         ],
     )
     return {
@@ -38,16 +39,32 @@ def test_resolve_by_name(manifest):
     assert [d["id"] for d in docs] == ["a1"]
 
 
-def test_resolve_all_unions_and_dedupes_by_id(manifest):
+def test_resolve_all_unions_disjoint_corpora(manifest):
     docs = resolve_corpus_docs("all", manifest)
-    # a1 from "a" wins; a1 duplicate in "b" is dropped; b1 kept.
-    assert [d["id"] for d in docs] == ["a1", "b1"]
+    assert [d["id"] for d in docs] == ["a1", "b1", "b2"]
 
 
-def test_resolve_comma_list(manifest):
+def test_resolve_comma_list_preserves_order(manifest):
     docs = resolve_corpus_docs("b,a", manifest)
-    # b first (b1, a1-dup), then a's a1 is a dup and dropped.
-    assert [d["id"] for d in docs] == ["b1", "a1"]
+    assert [d["id"] for d in docs] == ["b1", "b2", "a1"]
+
+
+def test_resolve_same_corpus_repeated_dedupes(manifest):
+    # A registered corpus loaded twice collapses its own repeat (no collision).
+    docs = resolve_corpus_docs("a,a", manifest)
+    assert [d["id"] for d in docs] == ["a1"]
+
+
+def test_resolve_cross_corpus_id_collision_raises(tmp_path):
+    # Two *different* corpora sharing an id must fail loud, not silently drop.
+    _write_corpus(tmp_path / "x.jsonl", [{"id": "5", "title": "X", "contents": "x"}])
+    _write_corpus(tmp_path / "y.jsonl", [{"id": "5", "title": "Y", "contents": "y"}])
+    colliding = {
+        "x": {"path": str(tmp_path / "x.jsonl")},
+        "y": {"path": str(tmp_path / "y.jsonl")},
+    }
+    with pytest.raises(ValueError, match="id collision"):
+        resolve_corpus_docs("all", colliding)
 
 
 def test_resolve_path_backcompat(tmp_path, manifest):
@@ -69,8 +86,8 @@ def test_load_manifest_missing_file_returns_empty(tmp_path):
 def test_union_docs_feed_from_docs_retriever(manifest):
     docs = resolve_corpus_docs("all", manifest)
     retriever = TfidfRetriever.from_docs(docs)
-    rows = retriever.retrieve(["beta"], topk=5)
-    assert rows[0][0]["document"]["id"] == "b1"
+    rows = retriever.retrieve(["gamma"], topk=5)
+    assert rows[0][0]["document"]["id"] == "b2"
 
 
 def test_resolve_all_skips_missing_files_and_loads_present(manifest, caplog):
@@ -78,7 +95,7 @@ def test_resolve_all_skips_missing_files_and_loads_present(manifest, caplog):
     manifest["missing"] = {"path": "/nonexistent/path/does-not-exist.jsonl"}
     with caplog.at_level("WARNING"):
         docs = resolve_corpus_docs("all", manifest)
-    assert [d["id"] for d in docs] == ["a1", "b1"]
+    assert [d["id"] for d in docs] == ["a1", "b1", "b2"]
     assert "missing" in caplog.text
     assert "/nonexistent/path/does-not-exist.jsonl" in caplog.text
 

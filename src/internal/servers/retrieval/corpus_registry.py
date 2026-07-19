@@ -2,7 +2,10 @@
 
 A spec is one of:
   - a registered name from data/corpora.json (e.g. "demo")
-  - "all" — the union of every registered corpus, deduped by id
+  - "all" — the union of every registered corpus. A registered corpus loaded
+    more than once (e.g. "a,a") collapses its repeat, but an id shared by two
+    *different* corpora is a collision and is rejected, since merging would
+    conflate distinct documents under one id.
   - a comma-separated list of names (e.g. "demo,scifact")
   - a filesystem path to a .jsonl corpus (back-compat with --corpus_path)
 """
@@ -27,20 +30,6 @@ def load_manifest(path: str = DEFAULT_MANIFEST_PATH) -> dict[str, dict]:
         return {}
     with open(path) as f:
         return json.load(f)
-
-
-def _dedupe_by_id(docs: list[dict]) -> list[dict]:
-    seen: set = set()
-    out: list[dict] = []
-    for d in docs:
-        doc_id = d.get("id")
-        if doc_id is not None and doc_id in seen:
-            logger.warning("Dropping duplicate corpus id %r", doc_id)
-            continue
-        if doc_id is not None:
-            seen.add(doc_id)
-        out.append(d)
-    return out
 
 
 def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
@@ -71,6 +60,8 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
             )
 
     docs: list[dict] = []
+    id_source: dict[object, str] = {}
+    loaded: list[str] = []
     for name in names:
         entry = manifest[name]
         path = entry["path"] if isinstance(entry, dict) else entry
@@ -81,15 +72,30 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
                 path,
             )
             continue
-        docs.extend(_load_corpus(path))
-    # Dedupe collapses only true duplicate ids across corpora (first occurrence
-    # wins); a shared-id-namespace collision between unrelated corpora would
-    # silently shrink the union.
-    docs = _dedupe_by_id(docs)
+        loaded.append(name)
+        for doc in _load_corpus(path):
+            doc_id = doc.get("id")
+            if doc_id is not None and doc_id in id_source:
+                prior = id_source[doc_id]
+                if prior == name:
+                    # Same corpus loaded more than once (e.g. "a,a") or an
+                    # internal duplicate — collapse the repeat.
+                    continue
+                # Distinct corpora sharing an id would conflate unrelated docs
+                # under one citation. Fail loud rather than silently drop one.
+                raise ValueError(
+                    f"Corpus id collision: id {doc_id!r} appears in both "
+                    f"{prior!r} and {name!r}. Combining these corpora would "
+                    f"conflate distinct documents; give them disjoint ids "
+                    f"(namespace by corpus) before merging."
+                )
+            if doc_id is not None:
+                id_source[doc_id] = name
+            docs.append(doc)
     if not docs:
         raise ValueError(
             f"None of the requested corpora {names} have files on disk. "
             "Regenerate them via beir_to_corpus.py or provide a valid corpus path."
         )
-    logger.info("Loaded corpora %s (%d docs after dedupe)", names, len(docs))
+    logger.info("Loaded corpora %s (%d docs)", loaded, len(docs))
     return docs
