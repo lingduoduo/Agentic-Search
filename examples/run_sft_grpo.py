@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-from pathlib import Path
 
 
 def _parse_args() -> argparse.Namespace:
@@ -77,13 +76,7 @@ async def _train(args: argparse.Namespace) -> None:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    from src.agents.search import SearchAgentLoop
-    from src.training.data import load_feedback_examples, load_sft_examples
-    from src.training.grpo import GRPOAdvantageConfig
-    from src.training.ppo.llm_grpo_trainer import LLMGRPOConfig
-    from src.training.ppo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
-    from src.training.reward import SearchRewardConfig, SearchRewardFunction
-    from src.training.reward import simple_sparse_correctness_reward
+    from src.training.data import load_sft_examples
     from src.training.sft import SFTConfig, SFTTrainer
 
     device = torch.device(args.device)
@@ -123,45 +116,20 @@ async def _train(args: argparse.Namespace) -> None:
         grpo_model_path = args.sft_output_dir  # GRPO starts from SFT checkpoint
 
     # ── Phase 2: GRPO ────────────────────────────────────────────────────────
-    print("[Phase 2] Loading feedback examples for GRPO …")
-    feedback_examples = load_feedback_examples(
-        args.db_path, min_ratings=args.min_ratings
-    )
-    print(f"  {len(feedback_examples)} rated sessions loaded")
+    from examples._grpo_common import run_feedback_grpo_step
 
-    prompts = [ex.question for ex in feedback_examples]
-    ground_truths = [ex.ground_truth for ex in feedback_examples]
-    metadata = [dict(ex.metadata) for ex in feedback_examples]
-
-    reward_fn = SearchRewardFunction(
-        SearchRewardConfig(
-            human_feedback_weight=args.human_feedback_weight,
-            correctness_weight=0.0,
-        )
-    )
-
-    def loop_factory():
-        return SearchAgentLoop(search_url=args.search_url)
-
-    grpo_trainer = SearchAgentGRPOTrainer.from_pretrained(
-        grpo_model_path,
-        judge_fn=simple_sparse_correctness_reward,
-        loop_factory=loop_factory,
-        reward_fn=reward_fn,
-        config=LLMGRPOConfig(num_rollouts=args.num_rollouts),
-        advantage_config=GRPOAdvantageConfig(),
+    print("[Phase 2] Running GRPO over feedback examples …")
+    metrics = await run_feedback_grpo_step(
+        model_path=grpo_model_path,
+        db_path=args.db_path,
+        output_dir=args.grpo_output_dir,
+        min_ratings=args.min_ratings,
+        human_feedback_weight=args.human_feedback_weight,
+        num_rollouts=args.num_rollouts,
+        search_url=args.search_url,
         device=args.device,
     )
-
-    print("  Running GRPO step …")
-    metrics = await grpo_trainer.step_async(prompts, ground_truths, metadata=metadata)
     print(f"  GRPO metrics: {metrics}")
-
-    grpo_output_dir = Path(args.grpo_output_dir)
-    grpo_output_dir.mkdir(parents=True, exist_ok=True)
-    grpo_trainer.policy.save_pretrained(grpo_output_dir)
-    grpo_trainer.tokenizer.save_pretrained(grpo_output_dir)
-    print(f"  GRPO checkpoint saved to {grpo_output_dir}")
 
 
 def main() -> None:
