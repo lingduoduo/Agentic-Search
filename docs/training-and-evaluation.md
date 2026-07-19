@@ -179,13 +179,15 @@ python3 -m examples.run_sft_grpo \
 | Format compliance | `format_reward_weight` | Structural compliance in the final answer |
 | Human feedback | `human_feedback_weight` | `human_signal` (±1.0) from thumbs-up/down sessions; `0.0` by default (off) |
 
-Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` | `retriever_aware` (see `SearchRewardConfig` in `src/training/reward.py`).
+Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` | `retriever_aware` (see `SearchRewardConfig` in `src/training/reward.py`). The Bamboogle eval CLI (`run_bamboogle_eval --reward_preset`) exposes the shorthand `sparse_final_only | simple_sparse | second_pass | third_pass`, which map to the first four config presets; `retriever_aware` is config-only.
+
+**The judge.** The `correctness` term is `judge_fn(answer, gold)`. The example trainers pass `simple_sparse_correctness_reward` (exact-normalized match → 1.0, gold contained in prediction → 0.7, else 0.0), which is what the "EM / contains-match" row above refers to. `SimulatedPreferenceJudge` (`src/training/judge.py`) is a separate, **deterministic reference-free heuristic** (length + lexical diversity − hedging) that stands in for a real LLM-as-judge — it ignores the gold answer and is used by the `run_bamboogle_grpo_train` / `run_bamboogle_synthetic_grpo` examples. There is no trained reward model or LLM judge; a real judge would slot in behind the same `BatchJudgeFn` interface.
 
 **Four reward dimensions** — `reward_components()` also groups every term into four subtotals via `REWARD_DIMENSIONS`, emitted as `dim_correctness`, `dim_citation_support`, `dim_retrieval_quality`, `dim_search_efficiency` (and available directly via `reward_dimensions()` or the pure `group_reward_components(components)`). Pre-scale, so `sum(dims) == terminal_reward + shaping_total == total / reward_scale`. The rollup is purely additive — no weight, preset, or `total` formula changed.
 
 **GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo.py`.
 
-**PPO** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)`; `compute_value_loss` returns `(vf_loss, vf_clipfrac)`. Both require an `eos_mask` tensor. See `src/training/ppo/core_algos.py`.
+**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use (with a group-relative advantage in place of GAE). `compute_value_loss` and `compute_gae_advantages` implement the PPO-with-critic path but are **not wired into any trainer** — training here is critic-free GRPO (no value/critic model), and those helpers exist for parity/tests only. All require an `eos_mask` tensor. See `src/training/ppo/core_algos.py`.
 
 ### Smoke test
 
