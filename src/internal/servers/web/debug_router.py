@@ -71,6 +71,47 @@ def create_debug_router(
         except Exception as exc:  # never break the console on a metrics hiccup
             return {"metrics": None, "error": str(exc)}
 
+    @router.get("/eval-results")
+    def eval_results() -> dict:
+        """Read-only listing of evaluation result files.
+
+        Scans AGENTIC_SEARCH_EVAL_RESULTS_DIR (default data/eval/) for *.json and
+        returns each file's numeric top-level metrics, newest first. Confined to
+        the configured directory; never raises.
+        """
+        import json
+        import os
+        from pathlib import Path
+
+        results_dir = Path(
+            os.environ.get("AGENTIC_SEARCH_EVAL_RESULTS_DIR", "data/eval")
+        )
+        if not results_dir.is_dir():
+            return {"results": []}
+
+        out: list[dict] = []
+        for path in sorted(results_dir.glob("*.json")):
+            try:
+                data = json.loads(path.read_text())
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            metrics = {
+                k: v
+                for k, v in data.items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            }
+            out.append(
+                {
+                    "name": path.name,
+                    "modified": path.stat().st_mtime,
+                    "metrics": metrics,
+                }
+            )
+        out.sort(key=lambda r: r["modified"], reverse=True)
+        return {"results": out}
+
     @router.post("/query-transform")
     def query_transform(body: DebugQueryTransformRequest) -> dict:
         """Run *only* the query-transform pipeline (no retrieval).
