@@ -659,7 +659,15 @@ async def _run_search_agent(
         on_turn=on_turn,
         on_trace=on_trace,
     )
-    documents = _search_agent_documents(output)
+    documents = [
+        _document_with_metadata(
+            document,
+            source_provider="retrieval",
+            query=query,
+            entry_point="search_agent",
+        )
+        for document in _search_agent_documents(output)
+    ]
     extra = {
         "control_flow_trace": output.control_flow_trace,
         "num_turns": output.num_turns,
@@ -696,10 +704,19 @@ async def _run_agentic_rag(
 
     recorder = ControlFlowRecorder(uuid4().hex)
     rag = await rag_loop.run(query, chat_history=history, recorder=recorder)
+    documents = [
+        _document_with_metadata(
+            document,
+            source_provider="retrieval",
+            query=query,
+            entry_point="agentic_rag",
+        )
+        for document in rag.context.documents
+    ]
     return (
         rag.answer,
         rag.citations,
-        rag.context.documents,
+        documents,
         "chat",
         {
             "rounds_used": rag.rounds_used,
