@@ -21,9 +21,9 @@ const SOURCE_OPTIONS: Array<{
 // can exercise the intent router in a single click. The chip shows the query
 // itself — clearest for a test-case affordance. See the intent-routed spec.
 const EXAMPLE_QUERIES: Array<{ intent: string; icon: string; query: string }> = [
-  { intent: "search", icon: "🔍", query: "find the onboarding checklist" },
+  { intent: "search", icon: "🔍", query: "find docs on cross-encoder reranking" },
   { intent: "chat", icon: "💬", query: "explain how FAISS indexing works" },
-  { intent: "tool", icon: "🛠", query: "summarize the latest sales figures and chart them" },
+  { intent: "tool", icon: "🛠", query: "chart the tradeoffs between BM25 and dense retrieval" },
 ];
 
 interface SearchComposerProps {
