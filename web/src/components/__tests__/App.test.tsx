@@ -258,7 +258,7 @@ describe("App example chips", () => {
     mockStreamAgent.mockReturnValue(fakeStream("search"));
     render(<App />);
     await userEvent.click(
-      screen.getByRole("button", { name: /find the onboarding checklist/i }),
+      screen.getByRole("button", { name: /find docs on cross-encoder reranking/i }),
     );
     await waitFor(() => {
       expect(mockStreamAgent).toHaveBeenCalledTimes(1);
@@ -266,7 +266,7 @@ describe("App example chips", () => {
       expect(layout?.classList).toContain("intent-search");
     });
     const sentRequest = mockStreamAgent.mock.calls[0][0] as { query: string };
-    expect(sentRequest.query).toBe("find the onboarding checklist");
+    expect(sentRequest.query).toBe("find docs on cross-encoder reranking");
   });
 });
 

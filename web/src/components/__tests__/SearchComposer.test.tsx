@@ -86,13 +86,13 @@ describe("SearchComposer", () => {
     const { container } = render(<SearchComposer {...defaultProps} />);
     expect(container.querySelectorAll(".example-chip")).toHaveLength(3);
     expect(
-      screen.getByRole("button", { name: /find the onboarding checklist/i }),
+      screen.getByRole("button", { name: /find docs on cross-encoder reranking/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /explain how FAISS indexing works/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /summarize the latest sales figures/i }),
+      screen.getByRole("button", { name: /chart the tradeoffs between BM25 and dense retrieval/i }),
     ).toBeInTheDocument();
   });
 
@@ -100,9 +100,9 @@ describe("SearchComposer", () => {
     const onExampleSelect = vi.fn();
     render(<SearchComposer {...defaultProps} onExampleSelect={onExampleSelect} />);
     await userEvent.click(
-      screen.getByRole("button", { name: /find the onboarding checklist/i }),
+      screen.getByRole("button", { name: /find docs on cross-encoder reranking/i }),
     );
-    expect(onExampleSelect).toHaveBeenCalledWith("find the onboarding checklist");
+    expect(onExampleSelect).toHaveBeenCalledWith("find docs on cross-encoder reranking");
   });
 
   it("falls back to onQueryChange when onExampleSelect is not provided", async () => {
