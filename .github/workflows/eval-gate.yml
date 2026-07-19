@@ -22,6 +22,14 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Report gate status
+        run: |
+          if [ "${{ steps.check.outputs.exists }}" != "true" ]; then
+            msg="Retrieval eval gate INACTIVE: no data/eval/baseline_metrics.json committed (see docs/training-and-evaluation.md)."
+            echo "::warning title=Eval gate inactive::$msg"
+            echo "⚠️ $msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Set up Python 3.12
         if: steps.check.outputs.exists == 'true'
         uses: actions/setup-python@v5
@@ -51,9 +59,20 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         run: |
           python - <<'EOF'
-          import json, sys
+          import json, os, sys
           baseline = json.load(open("data/eval/baseline_metrics.json"))
           current  = json.load(open("/tmp/current_metrics.json"))
+
+          gated = ["recall@10", "ndcg@10"]
+          if all((baseline.get(k) or 0) == 0 for k in gated):
+              msg = (
+                  "Retrieval eval gate INACTIVE: baseline is a zero placeholder; "
+                  "not enforcing regressions (see docs/training-and-evaluation.md)."
+              )
+              print(f"::warning title=Eval gate inactive::{msg}")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  open(summary, "a").write(f"⚠️ {msg}\n")
 
           failures = []
           for key, threshold in [("recall@10", 0.02), ("ndcg@10", 0.01)]:
@@ -89,6 +108,14 @@ jobs:
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report gate status
+        run: |
+          if [ "${{ steps.check.outputs.exists }}" != "true" ]; then
+            msg="RAGAS eval gate INACTIVE: no data/eval/ragas_baseline.json committed (see docs/training-and-evaluation.md)."
+            echo "::warning title=Eval gate inactive::$msg"
+            echo "⚠️ $msg" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Set up Python 3.12

@@ -274,3 +274,27 @@ bin/generate_training_data.sh --dataset hotpotqa --max_examples 500
 ```
 
 Each run writes `data/<dataset>_train/train.parquet` and `data/<dataset>_train/test.parquet` ready for `LLMGRPOTrainer` or SFT.
+
+### Activating the eval gates
+
+The `Eval Gate` CI workflow (`.github/workflows/eval-gate.yml`) has two jobs — retrieval and RAGAS regression gates — that are **inactive placeholders** until real baselines are committed:
+
+- The retrieval gate reads `data/eval/baseline_metrics.json`, which ships as a zero placeholder, so no regression can trip it. CI emits an `INACTIVE` warning until a real baseline lands.
+- The RAGAS gate needs `data/eval/ragas_baseline.json`, which is not committed, so it reports `INACTIVE` and runs nothing.
+
+To enforce them, generate real baselines against your canonical retrieval stack and commit the results:
+
+```bash
+# Retrieval baseline (needs a built index / BM25_INDEX_PATH or a running retrieval server)
+python -m src.internal.retrieval.eval_runner \
+  --dataset data/eval/qa_pairs.jsonl --top_k 10 \
+  --output data/eval/baseline_metrics.json
+
+# RAGAS baseline (needs OPENAI_API_KEY + the retrieval stack)
+python -m src.internal.retrieval.ragas_eval \
+  --dataset data/eval/ragas_qa.jsonl \
+  --metrics faithfulness answer_relevancy \
+  --output data/eval/ragas_baseline.json
+```
+
+Once a non-zero `baseline_metrics.json` (and/or a `ragas_baseline.json`) is committed, the corresponding gate starts enforcing regressions automatically.
