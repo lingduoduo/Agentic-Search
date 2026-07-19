@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from src.agents.search import AgenticRAGResult
 from src.agents.core.base import AgentLoopOutput
-from src.context.models import SearchContextBundle, SearchFilters
+from src.context.models import ContextDocument, SearchContextBundle, SearchFilters
 from src.context.search import SearchResult
 from src.internal.servers.web import app as web_app
 
@@ -61,6 +61,9 @@ async def test_run_search_agent_returns_canonical_tuple(monkeypatch):
     assert len(documents) == 1
     assert documents[0].citation == "[R1Q1D1]"
     assert citations == ["[R1Q1D1]"]
+    # Source cards must show a provider label, not "Unknown": the search-agent
+    # path retrieves from the local retrieval server.
+    assert documents[0].metadata["source"] == "Local Retrieval"
     assert extra["num_turns"] == 1
     assert extra["control_flow_trace"] == ["e1"]
 
@@ -90,6 +93,35 @@ async def test_run_agentic_rag_returns_canonical_tuple(monkeypatch):
     # F3: _run_agentic_rag now returns the chat-loop control-flow trace in extra.
     # The monkeypatched run() ignores the recorder, so the trace is empty here.
     assert extra == {"rounds_used": 2, "control_flow_trace": []}
+
+
+@pytest.mark.asyncio
+async def test_run_agentic_rag_labels_document_source(monkeypatch):
+    # RAG documents carry raw retrieval metadata (no "source" key); the runner
+    # must stamp a provider label so source cards don't render "Unknown".
+    doc = ContextDocument(
+        id="D1", title="T", content="c", url=None, score=0.5, metadata={}
+    )
+    result = AgenticRAGResult(
+        answer="synth",
+        citations=["[D1]"],
+        rounds_used=1,
+        context=SearchContextBundle(query="q", documents=[doc]),
+    )
+    monkeypatch.setattr(
+        "src.agents.search.agentic_rag.AgenticRAGLoop.run",
+        AsyncMock(return_value=result),
+    )
+    _, _, documents, _, _ = await web_app._run_agentic_rag(
+        "q",
+        llm=MagicMock(),
+        search_url="http://x/retrieve",
+        top_k=5,
+        history=[],
+    )
+    assert documents[0].metadata["source"] == "Local Retrieval"
+    # Citation id is preserved so answer links still resolve to the card.
+    assert documents[0].citation == "[D1]"
 
 
 @pytest.mark.asyncio
