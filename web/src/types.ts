@@ -347,6 +347,12 @@ export interface RequestSnapshot {
   stages: StageRecordView[];
 }
 
+export interface EvalResultFile {
+  name: string;
+  modified: number;
+  metrics: Record<string, number>;
+}
+
 export interface QueryTransformResult {
   original: string;
   variants: string[];

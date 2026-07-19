@@ -1,4 +1,5 @@
 import type { ControlFlowEventView } from "../../types";
+import { EvalResultsPanel } from "./EvalResultsPanel";
 import { QueryTransformInspector } from "./QueryTransformInspector";
 import { RequestInspector } from "./RequestInspector";
 import { RequestTracePanel } from "./RequestTracePanel";
@@ -29,6 +30,7 @@ export function DevConsole({ answer, citations, controlFlowTrace, selectedReques
       <WorkerMonitor />
       <QueryTransformInspector />
       <RetrievalLab />
+      <EvalResultsPanel />
     </section>
   );
 }

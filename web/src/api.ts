@@ -8,6 +8,7 @@ import type {
   DebugRetrievalOutcome,
   DebugRetrievalParams,
   DebugRetrievalResponse,
+  EvalResultFile,
   QueryTransformResult,
   RetrievalMode,
   ServerHealth,
@@ -67,6 +68,11 @@ export function getServerHealth(): Promise<{ servers: ServerHealth[] }> {
 /** Fetch a live indexing-pipeline snapshot (dev console). */
 export function getWorkerMetrics(): Promise<{ metrics: WorkerMetrics | null }> {
   return requestJson<{ metrics: WorkerMetrics | null }>("/api/debug/workers");
+}
+
+/** List evaluation result files from the configured results dir (dev console). */
+export function getEvalResults(): Promise<{ results: EvalResultFile[] }> {
+  return requestJson<{ results: EvalResultFile[] }>("/api/debug/eval-results");
 }
 
 /** Run only the query-transform pipeline for a query (dev console). */
