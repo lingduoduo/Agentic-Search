@@ -1,0 +1,5 @@
+{
+  "demo": {"path": "data/corpus.jsonl", "domain": "retrieval/ML", "docs": 30},
+  "scifact": {"path": "data/corpus_scifact.jsonl", "domain": "scientific", "docs": 5183},
+  "nfcorpus": {"path": "data/corpus_nfcorpus.jsonl", "domain": "medical", "docs": 3633}
+}
