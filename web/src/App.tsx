@@ -365,15 +365,6 @@ export function App() {
           />
         )}
 
-        {adminSummary && <AdminOverview summary={adminSummary} />}
-        {(analyticsByLLM || analyticsByPersona || analyticsByFlow) && (
-          <AnalyticsDashboard
-            byLLM={analyticsByLLM}
-            byPersona={analyticsByPersona}
-            byFlow={analyticsByFlow}
-          />
-        )}
-
         {showConnectors && <ConnectorPanel />}
 
         {showTools && <ToolPanel />}
@@ -423,6 +414,15 @@ export function App() {
             <SessionTimeline messages={messages} />
           </section>
         </div>
+
+        {adminSummary && <AdminOverview summary={adminSummary} />}
+        {(analyticsByLLM || analyticsByPersona || analyticsByFlow) && (
+          <AnalyticsDashboard
+            byLLM={analyticsByLLM}
+            byPersona={analyticsByPersona}
+            byFlow={analyticsByFlow}
+          />
+        )}
       </section>
     </main>
   );

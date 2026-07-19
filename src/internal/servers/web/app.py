@@ -51,7 +51,7 @@ from src.context import build_context_bundle
 from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.models import SearchFilters
-from src.context.search import SearchResult
+from src.context.search import SearchResult, citation_key
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.internal.db import AgenticSearchStore
 from src.internal.hooks import HookPoint
@@ -595,15 +595,32 @@ async def _auto_search_pipeline(
 
 
 def _search_agent_documents(output) -> list[ContextDocument]:
-    """Extract + dedupe documents from a SearchAgentLoop output's turn contexts."""
+    """Extract documents from a SearchAgentLoop output, preserving each result's
+    real ``[RxQyDz]`` citation label so answer markers resolve to source cards.
+
+    Rounds/queries/docs are enumerated 1-based to match
+    ``SearchAgentLoop._format_round_information`` (the labels the model cited).
+    Dedup is intentionally skipped here: every cited label needs its own card so
+    no citation dangles, even when the same doc is retrieved under two queries.
+    """
     documents: list[ContextDocument] = []
-    if output.context is not None:
-        for sc in output.context.turns:
-            for result in sc.results:
+    rounds = getattr(output.context, "rounds", None) or []
+    for round_idx, round_ctxs in enumerate(rounds, 1):
+        for query_idx, ctx in enumerate(round_ctxs, 1):
+            for doc_idx, result in enumerate(ctx.results, 1):
+                key = citation_key(round_idx, query_idx, doc_idx)
+                base = ContextDocument.from_search_result(result, index=doc_idx)
                 documents.append(
-                    ContextDocument.from_search_result(result, index=len(documents) + 1)
+                    ContextDocument(
+                        id=key,
+                        title=base.title,
+                        content=base.content,
+                        url=base.url,
+                        score=base.score,
+                        metadata=base.metadata,
+                    )
                 )
-    return _dedupe_documents(documents)
+    return documents
 
 
 async def _run_search_agent(
@@ -2483,18 +2500,6 @@ def _document_with_metadata(
             "query": query,
         },
     )
-
-
-def _dedupe_documents(documents: list[ContextDocument]) -> list[ContextDocument]:
-    deduped: list[ContextDocument] = []
-    seen: set[tuple[str | None, str]] = set()
-    for document in documents:
-        key = (document.url, document.content[:160])
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(document)
-    return deduped
 
 
 def _reindex_documents(documents: list[ContextDocument]) -> list[ContextDocument]:

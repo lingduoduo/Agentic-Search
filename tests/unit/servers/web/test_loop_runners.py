@@ -19,8 +19,14 @@ from src.context.search import SearchResult
 from src.internal.servers.web import app as web_app
 
 
-def _search_output(*, turns, num_turns=1, final_answer="grounded", trace=("e1",)):
-    context = types.SimpleNamespace(turns=turns)
+def _search_output(
+    *, turns=None, rounds=None, num_turns=1, final_answer="grounded", trace=("e1",)
+):
+    if rounds is None:
+        rounds = [list(turns)] if turns else []
+    if turns is None:
+        turns = [ctx for round_ctxs in rounds for ctx in round_ctxs]
+    context = types.SimpleNamespace(turns=turns, rounds=rounds)
     return AgentLoopOutput(
         prompt_ids=[],
         response_ids=[],
@@ -34,12 +40,12 @@ def _search_output(*, turns, num_turns=1, final_answer="grounded", trace=("e1",)
 
 @pytest.mark.asyncio
 async def test_run_search_agent_returns_canonical_tuple(monkeypatch):
-    turn = types.SimpleNamespace(
+    ctx = types.SimpleNamespace(
         results=[SearchResult(contents="Title\nbody", url=None)]
     )
     monkeypatch.setattr(
         "src.agents.search.SearchAgentLoop.run",
-        AsyncMock(return_value=_search_output(turns=[turn])),
+        AsyncMock(return_value=_search_output(rounds=[[ctx]])),
     )
     answer, citations, documents, intent, extra = await web_app._run_search_agent(
         "q",
@@ -53,7 +59,8 @@ async def test_run_search_agent_returns_canonical_tuple(monkeypatch):
     assert answer == "grounded"
     assert intent == "search"
     assert len(documents) == 1
-    assert citations == [documents[0].citation]
+    assert documents[0].citation == "[R1Q1D1]"
+    assert citations == ["[R1Q1D1]"]
     assert extra["num_turns"] == 1
     assert extra["control_flow_trace"] == ["e1"]
 

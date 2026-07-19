@@ -467,3 +467,21 @@ describe("App tool approvals", () => {
     });
   });
 });
+
+describe("App dashboard layout order", () => {
+  it("renders results-layout above the admin overview panel", async () => {
+    vi.mocked(api.getAdminSummary).mockResolvedValueOnce({
+      health_label: "OK",
+      health_score: 1,
+      metrics: [],
+      sections: [],
+    });
+    render(<App />);
+    const admin = await screen.findByLabelText(/admin and observability/i);
+    const layout = document.querySelector(".results-layout");
+    expect(layout).toBeInTheDocument();
+    expect(
+      layout!.compareDocumentPosition(admin) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});

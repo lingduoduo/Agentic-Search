@@ -13,7 +13,7 @@ interface AnswerPanelProps {
   completedSteps?: ProgressStep[];
 }
 
-const CITATION_RE = /(\[D\d+\])/;
+const CITATION_RE = /(\[(?:R\d+Q\d+)?D\d+\])/;
 
 function linkifyCitations(children: React.ReactNode): React.ReactNode {
   if (Array.isArray(children)) {
@@ -22,7 +22,7 @@ function linkifyCitations(children: React.ReactNode): React.ReactNode {
       const parts = child.split(CITATION_RE);
       if (parts.length === 1) return [child];
       return parts.map((part, j) =>
-        /^\[D\d+\]$/.test(part)
+        /^\[(?:R\d+Q\d+)?D\d+\]$/.test(part)
           ? React.createElement("a", { key: `${i}-${j}`, href: `#source-${part}`, className: "citation-link" }, part)
           : part
       );
@@ -32,7 +32,7 @@ function linkifyCitations(children: React.ReactNode): React.ReactNode {
   const parts = children.split(CITATION_RE);
   if (parts.length === 1) return children;
   return parts.map((part, i) =>
-    /^\[D\d+\]$/.test(part)
+    /^\[(?:R\d+Q\d+)?D\d+\]$/.test(part)
       ? React.createElement("a", { key: i, href: `#source-${part}`, className: "citation-link" }, part)
       : part
   );
