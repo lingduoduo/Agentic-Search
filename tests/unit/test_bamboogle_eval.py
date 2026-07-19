@@ -385,6 +385,28 @@ def test_resume_false_reruns_all(mock_load, tmp_path):
     assert call_count == 2
 
 
+def test_write_summary_json(tmp_path):
+    from examples.run_bamboogle_eval import write_summary_json
+    from src.training.eval.bamboogle import BamboogleSummary
+
+    out = tmp_path / "bamboogle_results.jsonl"
+    summary = BamboogleSummary(
+        num_examples=3, exact_match=0.66, contains_match=1.0, avg_reward=0.5
+    )
+    path = write_summary_json(str(out), summary)
+
+    assert path == tmp_path / "bamboogle_results.summary.json"
+    import json
+
+    data = json.loads(path.read_text())
+    assert data == {
+        "num_examples": 3,
+        "exact_match": 0.66,
+        "contains_match": 1.0,
+        "avg_reward": 0.5,
+    }
+
+
 @patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
 def test_evaluate_reward_uses_gold_list(mock_load):
     """judge_fn must check against all gold answers, not just the first."""

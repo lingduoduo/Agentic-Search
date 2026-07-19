@@ -19,7 +19,22 @@ from __future__ import annotations
 import argparse
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def write_summary_json(output_path: str, summary) -> "Path":
+    """Write a flat summary JSON (BamboogleSummary fields) next to the rows file
+    so the Dev Console eval-results panel can surface EM/contains at a glance."""
+    import dataclasses
+    import json
+    from pathlib import Path
+
+    path = Path(output_path).with_suffix(".summary.json")
+    path.write_text(json.dumps(dataclasses.asdict(summary), indent=2))
+    return path
 
 
 def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
@@ -206,7 +221,7 @@ def main() -> None:
     agent = _build_agent(args, tokenizer, server_manager)
     reward_fn = _build_reward_fn(args.reward_preset)
 
-    _summary, rows = evaluate_bamboogle(
+    summary, rows = evaluate_bamboogle(
         agent,
         reward_fn=reward_fn,
         limit=args.limit,
@@ -215,6 +230,7 @@ def main() -> None:
         concurrency=args.concurrency,
         resume=args.resume,
     )
+    write_summary_json(args.output, summary)
 
     if args.print_output:
         print("\n--- per-example predictions ---")
