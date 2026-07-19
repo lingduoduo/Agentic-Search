@@ -6,6 +6,7 @@ from src.internal.servers.retrieval.corpus_registry import (
     load_manifest,
     resolve_corpus_docs,
 )
+from src.internal.servers.retrieval.demo import TfidfRetriever
 
 
 def _write_corpus(path, docs):
@@ -63,3 +64,10 @@ def test_resolve_unknown_spec_raises(manifest):
 
 def test_load_manifest_missing_file_returns_empty(tmp_path):
     assert load_manifest(str(tmp_path / "absent.json")) == {}
+
+
+def test_union_docs_feed_from_docs_retriever(manifest):
+    docs = resolve_corpus_docs("all", manifest)
+    retriever = TfidfRetriever.from_docs(docs)
+    rows = retriever.retrieve(["beta"], topk=5)
+    assert rows[0][0]["document"]["id"] == "b1"
