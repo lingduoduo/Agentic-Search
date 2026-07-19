@@ -106,8 +106,7 @@ def test_build_dense_failure_logs_actionable_hint(monkeypatch, caplog):
         raise RuntimeError("Could not import module 'BertModel'")
 
     monkeypatch.setattr(hybrid, "build_e5_encoder", _boom)
-    monkeypatch.setattr(hybrid, "_load_corpus", lambda path: [{"id": "1", "text": "x"}])
     with caplog.at_level(logging.WARNING):
-        result = hybrid._build_dense("data/corpus.jsonl", "cpu")
+        result = hybrid._build_dense([{"id": "1", "text": "x"}], "cpu")
     assert result is None
     assert "hybrid-dense-setup" in caplog.text

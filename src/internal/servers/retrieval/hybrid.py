@@ -23,7 +23,6 @@ from src.internal.servers.retrieval.demo import (
     DEFAULT_TOPK,
     RetrieveRequest,
     TfidfRetriever,
-    _load_corpus,
 )
 
 
@@ -136,8 +135,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Hybrid (dense + sparse) retrieval server"
     )
-    parser.add_argument(
-        "--corpus_path", type=str, required=True, help="Path to corpus.jsonl"
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--corpus_path", type=str, help="Path to a corpus .jsonl file")
+    source.add_argument(
+        "--corpus",
+        type=str,
+        help="Registered corpus name, comma-list, or 'all' (see data/corpora.json)",
     )
     parser.add_argument("--topk", type=int, default=DEFAULT_TOPK)
     parser.add_argument(
@@ -156,9 +159,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _build_dense(corpus_path: str, device: str) -> DenseEmbeddingRetriever | None:
+def _build_dense(docs: list[dict], device: str) -> DenseEmbeddingRetriever | None:
     try:
-        docs = _load_corpus(corpus_path)
         encoder = build_e5_encoder(device=device)
         return DenseEmbeddingRetriever(docs, encoder=encoder)
     except Exception as exc:  # missing deps, model download, MPS unavailable
@@ -175,8 +177,11 @@ def _build_dense(corpus_path: str, device: str) -> DenseEmbeddingRetriever | Non
 def main() -> None:
     load_environment()
     args = parse_args()
-    sparse = TfidfRetriever(args.corpus_path)
-    dense = None if args.no_dense else _build_dense(args.corpus_path, args.device)
+    from src.internal.servers.retrieval.corpus_registry import resolve_corpus_docs
+
+    docs = resolve_corpus_docs(args.corpus or args.corpus_path)
+    sparse = TfidfRetriever.from_docs(docs)
+    dense = None if args.no_dense else _build_dense(docs, args.device)
     app = create_app(dense=dense, sparse=sparse)
     run_uvicorn_app(app, host=args.host, port=args.port)
 

@@ -41,7 +41,16 @@ def _load_corpus(corpus_path: str) -> list[dict]:
 
 class TfidfRetriever:
     def __init__(self, corpus_path: str) -> None:
-        self._docs = _load_corpus(corpus_path)
+        self._build(_load_corpus(corpus_path))
+
+    @classmethod
+    def from_docs(cls, docs: list[dict]) -> "TfidfRetriever":
+        obj = cls.__new__(cls)
+        obj._build(docs)
+        return obj
+
+    def _build(self, docs: list[dict]) -> None:
+        self._docs = docs
         texts = [
             f"{d.get('title', '')} {d.get('contents', d.get('text', ''))}"
             for d in self._docs
@@ -112,8 +121,12 @@ def create_app(retriever: TfidfRetriever):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Demo TF-IDF retrieval server")
-    parser.add_argument(
-        "--corpus_path", type=str, required=True, help="Path to corpus.jsonl"
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--corpus_path", type=str, help="Path to a corpus .jsonl file")
+    source.add_argument(
+        "--corpus",
+        type=str,
+        help="Registered corpus name, comma-list, or 'all' (see data/corpora.json)",
     )
     parser.add_argument("--topk", type=int, default=DEFAULT_TOPK)
     add_host_port_args(
@@ -129,7 +142,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     load_environment()
     args = parse_args()
-    retriever = TfidfRetriever(args.corpus_path)
+    # Imported here (not at module top) to avoid a circular import:
+    # corpus_registry imports _load_corpus from this module.
+    from src.internal.servers.retrieval.corpus_registry import resolve_corpus_docs
+
+    docs = resolve_corpus_docs(args.corpus or args.corpus_path)
+    retriever = TfidfRetriever.from_docs(docs)
     app = create_app(retriever)
     run_uvicorn_app(app, host=args.host, port=args.port)
 

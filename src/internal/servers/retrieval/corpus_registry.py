@@ -1,0 +1,101 @@
+"""Corpus registry: resolve a corpus spec to a list of documents.
+
+A spec is one of:
+  - a registered name from data/corpora.json (e.g. "demo")
+  - "all" — the union of every registered corpus. A registered corpus loaded
+    more than once (e.g. "a,a") collapses its repeat, but an id shared by two
+    *different* corpora is a collision and is rejected, since merging would
+    conflate distinct documents under one id.
+  - a comma-separated list of names (e.g. "demo,scifact")
+  - a filesystem path to a .jsonl corpus (back-compat with --corpus_path)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+
+from src.internal.servers.retrieval.demo import _load_corpus
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MANIFEST_PATH = "data/corpora.json"
+
+
+def load_manifest(path: str = DEFAULT_MANIFEST_PATH) -> dict[str, dict]:
+    """Load the corpus manifest; a missing file yields an empty manifest so
+    path-only (--corpus_path) usage keeps working with no manifest present."""
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
+
+
+def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
+    if manifest is None:
+        manifest = load_manifest()
+
+    if not spec:
+        raise ValueError(
+            "Empty corpus spec; pass a corpus name, 'all', or a file path."
+        )
+
+    if spec == "all":
+        names = list(manifest.keys())
+        if not names:
+            raise ValueError("No corpora registered in the manifest for 'all'.")
+    else:
+        candidate = [s.strip() for s in spec.split(",") if s.strip()]
+        if candidate and all(n in manifest for n in candidate):
+            names = candidate
+        elif os.path.exists(spec):
+            docs = _load_corpus(spec)
+            logger.info("Loaded corpus from path %s (%d docs)", spec, len(docs))
+            return docs
+        else:
+            available = ", ".join(sorted(manifest)) or "(none)"
+            raise ValueError(
+                f"Unknown corpus spec {spec!r}. Available: {available}, or a file path."
+            )
+
+    docs: list[dict] = []
+    id_source: dict[object, str] = {}
+    loaded: list[str] = []
+    for name in names:
+        entry = manifest[name]
+        path = entry["path"] if isinstance(entry, dict) else entry
+        if not os.path.exists(path):
+            logger.warning(
+                "Corpus %r file %r is missing; skipping (regenerate via beir_to_corpus.py)",
+                name,
+                path,
+            )
+            continue
+        loaded.append(name)
+        for doc in _load_corpus(path):
+            doc_id = doc.get("id")
+            if doc_id is not None and doc_id in id_source:
+                prior = id_source[doc_id]
+                if prior == name:
+                    # Same corpus loaded more than once (e.g. "a,a") or an
+                    # internal duplicate — collapse the repeat.
+                    continue
+                # Distinct corpora sharing an id would conflate unrelated docs
+                # under one citation. Fail loud rather than silently drop one.
+                raise ValueError(
+                    f"Corpus id collision: id {doc_id!r} appears in both "
+                    f"{prior!r} and {name!r}. Combining these corpora would "
+                    f"conflate distinct documents; give them disjoint ids "
+                    f"(namespace by corpus) before merging."
+                )
+            if doc_id is not None:
+                id_source[doc_id] = name
+            docs.append(doc)
+    if not docs:
+        raise ValueError(
+            f"None of the requested corpora {names} have files on disk. "
+            "Regenerate them via beir_to_corpus.py or provide a valid corpus path."
+        )
+    logger.info("Loaded corpora %s (%d docs)", loaded, len(docs))
+    return docs

@@ -81,6 +81,12 @@ The bundled demo corpus is served on port **8001**:
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 ```
 
+```bash
+# Named corpora / union via the registry (data/corpora.json):
+python3 -m src.internal.servers.retrieval.demo --corpus demo   # curated 30-doc demo (default)
+python3 -m src.internal.servers.retrieval.demo --corpus all    # union of all registered corpora
+```
+
 ### 2. Start the API
 
 The FastAPI backend runs on port **7860**:
