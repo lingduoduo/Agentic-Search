@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import re
 
-from .models import CitationVerdict, GroundingReport, SearchContextBundle
+from .models import (
+    CitationVerdict,
+    EvidenceSource,
+    GroundingReport,
+    SearchContextBundle,
+)
 
-_CITATION_RE = re.compile(r"\[(D\d+)\]")
+_CITATION_RE = re.compile(r"\[([DT]\d+)\]")
 _STOPWORDS = frozenset(
     "a an the is are was were be been being have has had do does did "
     "will would could should may might shall can need dare ought used "
@@ -32,21 +37,23 @@ def _overlap(sentence_tokens: set[str], doc_tokens: set[str]) -> float:
 
 
 def _split_sentences(text: str) -> list[str]:
-    # Don't split immediately before a citation like [D1] — keep citation with its claim.
-    raw = re.split(r"(?<=[.!?])\s+(?!\[D\d+\])", text.strip())
+    # Don't split immediately before a citation like [D1]/[T1] — keep citation with its claim.
+    raw = re.split(r"(?<=[.!?])\s+(?!\[[DT]\d+\])", text.strip())
     return [s.strip() for s in raw if s.strip()]
 
 
 class GroundingVerifier:
-    """Verifies that each [Dx] citation in an answer is supported by the cited document.
+    """Verifies that each [Dx]/[Tx] citation in an answer is supported by its evidence.
 
+    Retrieval documents (``[Dx]``) are matched against the context bundle; approved
+    tool results (``[Tx]``) are matched against ``tool_evidence`` when supplied.
     Uses stopword-filtered lexical overlap as a cheap entailment proxy — no NLI
     model required, runs in < 1 ms per answer.  Dangling citations (referencing
-    documents not present in the context) are always flagged regardless of threshold.
+    evidence not present) are always flagged regardless of threshold.
 
     Args:
         overlap_threshold: Minimum fraction of sentence tokens that must appear in
-            the cited document for the citation to be considered grounded.
+            the cited evidence for the citation to be considered grounded.
             Default 0.15 is intentionally lenient to avoid false positives on
             paraphrase-style citations.
     """
@@ -54,15 +61,23 @@ class GroundingVerifier:
     def __init__(self, *, overlap_threshold: float = 0.15) -> None:
         self.overlap_threshold = overlap_threshold
 
-    def verify(self, answer: str, context: SearchContextBundle) -> GroundingReport:
-        doc_map = {doc.id: doc for doc in context.documents}
+    def verify(
+        self,
+        answer: str,
+        context: SearchContextBundle,
+        tool_evidence: list[EvidenceSource] | None = None,
+    ) -> GroundingReport:
+        # Unified id → text map: retrieval docs (D*) plus any tool evidence (T*).
+        text_by_id = {doc.id: doc.content for doc in context.documents}
+        for source in tool_evidence or ():
+            text_by_id.setdefault(source.id, source.text)
         sentences = _split_sentences(answer)
 
         verdicts: list[CitationVerdict] = []
         for sentence in sentences:
             for citation in _CITATION_RE.findall(sentence):
-                doc = doc_map.get(citation)
-                if doc is None:
+                evidence_text = text_by_id.get(citation)
+                if evidence_text is None:
                     verdicts.append(
                         CitationVerdict(
                             citation=citation,
@@ -73,7 +88,7 @@ class GroundingVerifier:
                         )
                     )
                     continue
-                score = _overlap(_tokenize(sentence), _tokenize(doc.content))
+                score = _overlap(_tokenize(sentence), _tokenize(evidence_text))
                 verdicts.append(
                     CitationVerdict(
                         citation=citation,
