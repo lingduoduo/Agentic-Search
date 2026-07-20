@@ -89,6 +89,13 @@ to retrieval-only evidence.
 Tool outputs must be JSON-serializable and are normalized as data, never treated
 as instructions.
 
+Tool evidence passes through the same mandatory claim-support verifier as
+retrieval evidence, and a supported claim citing a `T*` ID renders its `[Tx]`
+marker like any `[Dx]`. Note, however, that the *optional* secondary
+sentence-level grounding verifier (`src.context.grounding`) matches only `[Dx]`
+citations — tool `[Tx]` markers are outside its regex, so that extra pass neither
+checks nor strips them.
+
 `ToolRequest` arguments are intended to be JSON-like values built from standard
 containers. Mappings are copied and exposed read-only, while nested mappings,
 lists/tuples, and sets/frozensets are recursively converted to immutable standard
@@ -160,6 +167,17 @@ Index construction is upstream and asynchronous: connectors and ingestion jobs p
 | `server.py` | Full `RetrievalService` (BM25 / dense / hybrid, env-configured via `RETRIEVAL_BACKEND`) with per-mode + admin endpoints |
 | `rerank.py` | Standalone cross-encoder reranker (no retrieval) |
 
+> **Two independent local stacks, not one.** `demo.py` and `hybrid.py` are
+> self-contained servers — sklearn TF-IDF (plus an in-memory e5 dot-product leg in
+> `hybrid.py`, no FAISS) — and expose `POST /retrieve` returning raw document
+> dicts. `server.py` is a *different* stack: it wraps `RetrievalService` →
+> `LocalBackend` → Pyserini/Lucene BM25 + FAISS/e5 and exposes `POST /search`
+> returning `RetrievalResult`-shaped rows. They share neither code path nor API
+> shape, so "hybrid" names two different implementations depending on which server
+> you run. Everything below — reranking, retrieval optimization, query
+> transformation, and routing — applies to the `RetrievalService` stack
+> (`server.py` and the web backend), **not** to `demo.py`/`hybrid.py`.
+
 **Web search servers** (`src/internal/servers/web_search/`):
 
 | Module | Description |
@@ -223,6 +241,15 @@ This sequence is different from explicit `mode=hybrid_search`, whose helper can 
 
 Authenticated requests carry document-access filters and use the filter-aware pipeline rather than the unfiltered direct-first shortcut. Internal retrieval receives the ACL filters; external web providers do not receive internal document ACL objects. See [API request routing](request-routing.md) for exact modes, metadata, and fallbacks.
 
+> **`LocalBackend` filter caveat.** Internal retrieval applies filters *after*
+> top-k retrieval as an exact-match over document metadata, and only over
+> *non-standard* document keys — the standard fields `id`, `title`, `text`,
+> `contents`, and `url` are excluded from the matchable metadata, so a filter on
+> one of those keys silently matches nothing. Because filtering is post-hoc,
+> aggressive filters can shrink a result set below `top_k`;
+> `OVER_FETCH_MULTIPLIER` compensates upstream. See
+> `src/internal/document_index/FILTER_SEMANTICS.md`.
+
 The filter-aware path uses the same internal stage sequence throughout the web backend:
 
 1. bounded session history resolves continuation-style queries into a retrieval query while retaining the original user question;
@@ -232,6 +259,85 @@ The filter-aware path uses the same internal stage sequence throughout the web b
 5. shared response finalization persists citations, documents, and stage metadata.
 
 These stages are internal adapters. Existing `/retrieve`, `/search`, and `/rerank` endpoints remain available with their current payloads, and no new retrieval API was added. Backend RRF inside `RetrievalService` remains distinct from web-layer candidate ranking: RRF fuses backend result lists; the web ranking stage normalizes, deduplicates, optionally reranks, and diversifies the resulting evidence.
+
+### The direct-first sufficiency gate
+
+For an unfiltered `auto`/`retrieval` request, the backend runs internal retrieval
+and compares the query to the **rank-1 result only** through a
+backend-independent tiered gate (`_direct_gate_decision`):
+
+| Tier | Condition | Outcome |
+|------|-----------|---------|
+| `exact` | normalized query == normalized title | direct |
+| `fuzzy` | Levenshtein(query, title) < 2 **and** cosine(query, passage) > threshold | direct |
+| `semantic` | cosine(query, passage) > threshold | direct |
+| `weak` | none of the above | escalate |
+
+A **direct** hit returns the ranked documents with a deterministic non-LLM
+summary — no agent loop, no model call. A **weak** result escalates. Note: with
+no e5 gate model loaded, `cosine` is `None`, so only `exact`-title queries go
+direct and everything else escalates.
+
+## The agentic search loop
+
+Escalation hands off to `SearchAgentLoop` (`src/agents/search/search.py`) — the
+"agentic" core, a multi-turn retrieval-grounded agent. (It only runs when a local
+model is loaded; without one, the request degrades to the filter-aware pipeline
+above.) Unlike `ToolAgentLoop`'s JSON tool calls, this loop is **XML-tag driven**:
+the system prompt teaches the model a fixed action vocabulary, and the
+environment answers back in the same language by injecting result blocks.
+
+| Tag | Written by | Purpose |
+|-----|-----------|---------|
+| `<think>` | model | reason about what's known/missing (opens every turn) |
+| `<search>` / `<searches>` | model | one query / parallel independent queries |
+| `<search retriever="web">` | model | live web vs. internal corpus (`vdb`, default) |
+| `<fetch>` | model | pull full page content when snippets are thin |
+| `<subquestions>` | model | decompose a multi-facet task |
+| `<search_decision>answer` | model | skip search, answer from internal knowledge |
+| `<answer>` | model | final grounded answer |
+| `<information>` / `<search_evaluation>` | **environment only** | injected results + sufficiency verdict |
+
+**Turn cycle** (`run()`, bounded by `max_turns`): generate → parse XML actions →
+register `<subquestions>` as tracks → dedup/budget the requested queries → if
+`<answer>` with no new search, apply the answer gate → else run a search round
+(retrieve, dedup by source, judge sufficiency, inject `<information>` +
+`<search_evaluation>`) → repeat until answered, forced, or budget-exhausted.
+
+**Citations.** Rounds are the citation coordinate system: each result is labeled
+`[RxQyDz]` (round, query, doc — all 1-based). The web backend re-enumerates
+rounds→queries→docs identically and deliberately skips dedup so every cited label
+resolves to its own source card.
+
+### Adaptive budget and the sufficiency control layer
+
+Two decisions — *keep searching?* and *how to answer?* — are computed by three
+collaborating pieces, split into a stateless policy over a snapshot of mutable
+loop state:
+
+- **`SearchResultEvaluator`** (`src/training/evaluation.py`) — the boolean
+  threshold gate. A round is sufficient iff total results ≥ `min_total_results`
+  and every query individually clears result-count / content-length / score
+  thresholds. Emits human-readable reasons that become the `<search_evaluation>`
+  weak-query hints. Score thresholds default to `0.0`, so out of the box
+  sufficiency is about *presence of substantive results*, not score magnitude.
+- **`EvidenceJudge`** (`src/agents/components/evidence_judge.py`) — wraps the
+  boolean as a safety rail and adds a continuous `evidence_score ∈ [0,1]`
+  (`0.5·frac_sufficient + 0.5·mean(squash(top_score))`). The score term keeps the
+  signal monotonic in retrieval quality even after every query clears the boolean
+  bar, giving the plateau detector and the GRPO reward a smooth gradient.
+- **`LoopController`** (`src/agents/components/loop_controller.py`) — pure policy.
+  The search budget is **adaptive**: `effective_search_limit` grows with the
+  number of open subquestions, clamped to `max_search_limit_cap` (10). The answer
+  gate returns `ACCEPT` (evidence sufficient), `FORCE` (budget reached — best
+  effort, flagged), or `REJECT` (insufficient — search again). `FORCE` after
+  `max_answer_rejections` is the escape hatch that prevents an infinite
+  reject loop.
+
+The loop's large per-run metrics dict (`citation_count`,
+`cited_task_coverage_ratio`, `useful_fetched_pages` vs `unnecessary_fetch_count`,
+`answer_when_evidence_insufficient`, `budget_used_ratio`, …) is not only
+observability — it is the shaped reward signal for GRPO training.
 
 ## Neural reranking
 
@@ -464,6 +570,20 @@ rows = run_query_transform_benchmark(dataset, retrieve, [
 ## Routing and query construction
 
 The RAG **Routing → Query Construction** stage (`src/internal/routing/`). It decides **where** a query should go (domain → source → retriever) and **how** to express it for the chosen backend. Distinct from [Intent Routing](architecture.md#intent-routing) (web-level `search`/`chat`/`tool`) and from `QueryRouter` (which picks *transforms*): this layer picks the *retriever/construction target* per query.
+
+**Four routing layers, four jobs.** The word "routing" refers to four independent
+mechanisms in this codebase — easy to conflate, so:
+
+| Layer | Where | Decides | Values |
+|-------|-------|---------|--------|
+| Intent routing | web backend (`route_query`) | which experience to run | `chat` · `search` · `tool` |
+| Provider cascade | web auto-search | which evidence source | internal → serpapi → browser |
+| Retriever-target routing | `src/internal/routing/` | which retriever / construction target | `sparse·dense·hybrid·metadata·sql·graph·api` |
+| Transform routing | `QueryRouter` (`QT_ROUTER`) | which query transforms to apply | `decompose·hyde·step_back·keywords·construct_filters·multi_query·rewrite` |
+
+They run at different stages and compose: intent picks `search`, the provider
+cascade sources evidence, and (when enabled) transform routing and
+retriever-target routing shape the internal-retrieval leg.
 
 **Backend-only and default-off.** With no `ROUTING_*` env set, `build_router_from_env()` returns `None`, `RetrievalService.search` skips the routing branch entirely, and behavior is byte-identical to today — zero overhead, no frontend change. There is no dedicated HTTP endpoint or UI; routing runs inside `RetrievalService.from_env()`.
 
