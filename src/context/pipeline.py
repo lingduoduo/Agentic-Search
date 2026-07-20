@@ -124,7 +124,9 @@ def generate_answer(
     if request.verify_grounding:
         from .grounding import GroundingVerifier
 
-        report = GroundingVerifier().verify(answer, request.context)
+        report = GroundingVerifier().verify(
+            answer, request.context, tool_evidence=tool_evidence
+        )
         answer = report.answer_clean
         grounding_report = report
 

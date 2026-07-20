@@ -164,7 +164,7 @@ class EvidenceSnippet:
 
 @dataclass(frozen=True)
 class CitationVerdict:
-    """Grounding verdict for a single [Dx] citation in a generated answer."""
+    """Grounding verdict for a single [Dx]/[Tx] citation in a generated answer."""
 
     citation: str
     document_found: bool

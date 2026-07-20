@@ -5,6 +5,7 @@ from __future__ import annotations
 from src.context.grounding import GroundingVerifier
 from src.context.models import (
     ContextDocument,
+    EvidenceSource,
     GroundingReport,
     SearchContextBundle,
 )
@@ -21,6 +22,12 @@ def _bundle(*doc_contents: str) -> SearchContextBundle:
         for i, content in enumerate(doc_contents, 1)
     ]
     return SearchContextBundle(query="test", documents=docs)
+
+
+def _tool_ev(id: str, text: str) -> EvidenceSource:
+    return EvidenceSource(
+        id=id, text=text, title=f"Tool {id}", provenance="tool", tool_name="demo_tool"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +130,80 @@ def test_ungrounded_citations_includes_dangling_and_low_overlap():
     answer = "FAISS is used for vector search. [D1]"
     report = GroundingVerifier(overlap_threshold=0.5).verify(answer, bundle)
     assert "D1" in report.ungrounded_citations
+
+
+# ---------------------------------------------------------------------------
+# GroundingVerifier.verify — tool [Tx] citations
+# ---------------------------------------------------------------------------
+
+
+def test_verify_grounds_tool_citation():
+    bundle = _bundle("An unrelated retrieval document about cooking.")
+    tool = [_tool_ev("T1", "The current temperature in Tokyo is 20 degrees and sunny.")]
+    answer = "The temperature in Tokyo is 20 degrees and sunny. [T1]"
+    report = GroundingVerifier().verify(answer, bundle, tool_evidence=tool)
+    v = {x.citation: x for x in report.verdicts}["T1"]
+    assert v.document_found is True
+    assert v.overlap_score > 0.0
+    assert v.is_grounded is True
+    assert "[T1]" in report.answer_clean
+
+
+def test_verify_dangling_tool_citation_flagged_and_stripped():
+    bundle = _bundle("FAISS content.")
+    answer = "Some tool-derived fact. [T9] More text."
+    report = GroundingVerifier().verify(answer, bundle)  # no tool evidence supplied
+    v = {x.citation: x for x in report.verdicts}["T9"]
+    assert v.document_found is False
+    assert v.is_grounded is False
+    assert "[T9]" not in report.answer_clean
+    assert "Some tool-derived fact." in report.answer_clean
+
+
+def test_verify_mixed_doc_and_tool_citations():
+    bundle = _bundle("Dense retrieval uses vector embeddings.")
+    tool = [_tool_ev("T1", "The weather API returned sunny skies at 20 degrees.")]
+    answer = (
+        "Dense retrieval uses vector embeddings. [D1] It is sunny at 20 degrees. [T1]"
+    )
+    report = GroundingVerifier().verify(answer, bundle, tool_evidence=tool)
+    cites = {x.citation: x for x in report.verdicts}
+    assert cites["D1"].document_found is True
+    assert cites["T1"].document_found is True
+    assert "[D1]" in report.answer_clean
+    assert "[T1]" in report.answer_clean
+
+
+def test_generate_answer_forwards_tool_evidence_to_verifier(monkeypatch):
+    from src.context.pipeline import generate_answer
+    from src.context.models import AnswerGenerationRequest
+
+    captured: dict = {}
+    real_verify = GroundingVerifier.verify
+
+    def spy(self, answer, context, tool_evidence=None):
+        captured["tool_evidence"] = tool_evidence
+        return real_verify(self, answer, context, tool_evidence=tool_evidence)
+
+    monkeypatch.setattr(GroundingVerifier, "verify", spy)
+
+    bundle = _bundle("FAISS is a vector similarity search library.")
+    tool = [_tool_ev("T1", "tool observation text")]
+    req = AnswerGenerationRequest(
+        question="What is FAISS?",
+        context=bundle,
+        verify_grounding=True,
+        evidence=[
+            EvidenceSource(
+                id="D1",
+                text="FAISS is a vector similarity search library.",
+                title="Doc 1",
+            ),
+            *tool,
+        ],
+    )
+    generate_answer(req, llm=None)
+    assert captured["tool_evidence"] == tool
 
 
 # ---------------------------------------------------------------------------
