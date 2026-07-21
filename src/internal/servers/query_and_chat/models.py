@@ -210,15 +210,34 @@ class ToolHistoryResponse(BaseModel):
     sessions: list[ToolSessionSummary] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Chat message (direct LLM, no retrieval/tools)
+# ---------------------------------------------------------------------------
+
+
+class SendChatMessageRequest(BaseModel):
+    session_id: str | None = None
+    message: str
+    stream: bool = True
+
+
+class ChatMessageResponse(BaseModel):
+    session_id: str
+    answer: str
+    error: str | None = None
+
+
 __all__ = [
     "ChatFeedbackRequest",
     "ChatMessageDetail",
     "ChatRenameRequest",
     "ChatSessionCreationRequest",
+    "ChatMessageResponse",
     "ChatSessionDetailResponse",
     "ChatSessionDetails",
     "ChatSessionsResponse",
     "RenameChatSessionResponse",
+    "SendChatMessageRequest",
     "SearchDocWithContent",
     "SearchFlowClassificationRequest",
     "SearchFlowClassificationResponse",
