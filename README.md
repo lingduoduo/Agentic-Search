@@ -75,6 +75,10 @@ The search agent classifies each request, tries internal retrieval first, and fa
 
 The chat agent answers conversational requests with retrieval-grounded synthesis and multi-turn memory. See [Chat engine](docs/chat-engine.md) for capabilities and routing.
 
+## Tool engine
+
+The tool agent runs multi-turn function calling with structured tool dispatch over a registry of built-in and OpenAPI-backed tools. See [Tool engine](docs/tool-engine.md) for capabilities, routing, and the tool registry.
+
 ## Run locally
 
 Start each service in a separate terminal from the repository root.
@@ -152,6 +156,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - [Search engine](docs/search-engine.md) — search-agent capabilities and request-routing overview
 - [Chat engine](docs/chat-engine.md) — chat-agent capabilities and routing overview
 - [API request routing](docs/request-routing.md) — modes, intent classification, provider order, fallbacks, and response metadata
+- [Tool engine](docs/tool-engine.md) — tool-agent capabilities, routing, and the tool registry
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
 - [Ingestion](docs/ingestion.md) — connectors, document ingestion, indexing, and background workers
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
