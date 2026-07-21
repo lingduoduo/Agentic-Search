@@ -43,6 +43,17 @@ Built-in seed tools: `web_search`, `search`, `search_routing_tool` (and
 `rag_routing_tool` when an LLM is configured). Discovery is a ranking aid, not a
 dispatcher.
 
+## Inspecting the registry
+
+Two read-only debug endpoints (backing the Dev Console **Tools** panel) expose
+the live registry without running the agent:
+
+- `GET /api/debug/tools` — returns `registered` (every registered tool) plus the
+  `catalog` grouped by server, read from the process-wide `tool_registry`
+  singleton. An empty registry yields empty lists, never a 500.
+- `POST /api/debug/tools/discover` — ranks tools for a `query` via the same
+  TF-IDF `SemanticRouter`, returning the per-stage routing details (no LLM).
+
 ## Relationship to MCP
 
 The [MCP server](mcp.md) exposes a set of tools to external MCP clients (Claude
