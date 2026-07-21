@@ -30,7 +30,33 @@ describe("ToolAgentView", () => {
     fireEvent.click(screen.getByText("Send"));
 
     await waitFor(() => expect(screen.getByText("done answer")).toBeInTheDocument());
-    expect(screen.getByText(/search · 3 docs/)).toBeInTheDocument();
+    // Progress is ephemeral (shown only while a turn is pending); the durable
+    // record after completion is the tool-call trace.
+    expect(screen.getByText(/3 items/)).toBeInTheDocument();
+  });
+
+  it("keeps prior turns visible across two submits", async () => {
+    const answers = ["first answer", "second answer"];
+    let call = 0;
+    vi.spyOn(api, "sendToolMessage").mockImplementation((() => {
+      const text = answers[call++];
+      async function* g() {
+        yield { type: "answer", text } as const;
+        yield { type: "done", session_id: "s1", tool_calls: [], num_turns: 1 } as const;
+      }
+      return g();
+    }) as never);
+
+    render(<ToolAgentView />);
+    const input = screen.getByLabelText("Tool agent message");
+    fireEvent.change(input, { target: { value: "q1" } });
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() => expect(screen.getByText("first answer")).toBeInTheDocument());
+    fireEvent.change(input, { target: { value: "q2" } });
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() => expect(screen.getByText("second answer")).toBeInTheDocument());
+    expect(screen.getByText("first answer")).toBeInTheDocument();
+    expect(screen.getByText("q1")).toBeInTheDocument();
   });
 
   it("shows the no-model banner on NO_LOCAL_MODEL", async () => {
