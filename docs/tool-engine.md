@@ -44,6 +44,11 @@ reuses the shared loop runner in `src/internal/servers/web/tool_agent_runner.py`
 In the web UI, the **Tool Agent** tab (Assistant | Tool Agent switcher) drives
 this endpoint with a live tool-call trace.
 
+Gated tools prompt for approval on the streaming path, at parity with the
+auto-router: the endpoint emits `approval_required` events through the
+`ToolApprovalBroker` and waits for the user's decision via the shared
+`POST /api/agent/approvals/{approval_id}` endpoint (authenticated users only).
+
 ## Tool registry and discovery
 
 The **`ToolRegistry` is the single source of truth** for the web/agent process's
