@@ -79,3 +79,109 @@ def test_send_tool_message_streams_progress_then_done(monkeypatch):
     assert tool_call["tool_name"] == "search"
     done = events[-1]
     assert done["num_turns"] == 1 and done["session_id"]
+
+
+def test_send_tool_message_emits_approval_required(monkeypatch):
+    from dataclasses import dataclass
+
+    from src.internal.servers.query_and_chat import tool_backend
+    from src.internal.servers.web.tool_agent_runner import ToolCallView
+
+    @dataclass
+    class _View:
+        id: str
+        tool_name: str
+        arguments: dict
+        expires_at: str
+
+    class _Broker:
+        async def request(self, owner_user_id, approval_request, on_registered=None):
+            if on_registered:
+                on_registered(
+                    _View(
+                        id="ap1",
+                        tool_name="web_search",
+                        arguments={},
+                        expires_at="2030-01-01T00:00:00Z",
+                    )
+                )
+            return "approve"
+
+    captured = {}
+
+    async def fake_run_tool_agent(query, *, on_turn=None, on_approval=None, **kw):
+        captured["on_approval"] = on_approval
+        if on_approval is not None:
+            await on_approval(object())
+        tc = ToolCallView(
+            tool_name="web_search",
+            status="completed",
+            arguments={},
+            result_summary="ok",
+            latency_ms=1,
+            error=None,
+        )
+        return ("done", [], [], "tool", {"tool_calls": [tc], "num_turns": 1})
+
+    from src.internal.servers.web import tool_agent_runner
+
+    monkeypatch.setattr(tool_agent_runner, "_run_tool_agent", fake_run_tool_agent)
+
+    class _User:
+        id = "u1"
+        is_anonymous = False
+        email = "u@x"
+
+    monkeypatch.setattr(tool_backend, "resolve_request_user", lambda *a, **k: _User())
+
+    app = _make_app(with_model=True)
+    app.state.tool_approval_broker = _Broker()
+    from src.internal.db import UserRecord
+
+    app.state._store.upsert_user(UserRecord(id="u1", email="u@x"))
+
+    client = TestClient(app)
+    with client.stream(
+        "POST", "/tool/send-tool-message", json={"message": "go", "stream": True}
+    ) as resp:
+        events = [
+            json.loads(line[len("data:") :].strip())
+            for line in resp.iter_lines()
+            if line.startswith("data:")
+        ]
+
+    assert captured["on_approval"] is not None
+    assert any(
+        e["type"] == "approval_required" and e["approval"]["id"] == "ap1"
+        for e in events
+    )
+
+
+def test_no_broker_means_on_approval_none(monkeypatch):
+    from src.internal.servers.web.tool_agent_runner import ToolCallView
+
+    captured = {}
+
+    async def fake_run_tool_agent(query, *, on_turn=None, on_approval=None, **kw):
+        captured["on_approval"] = on_approval
+        tc = ToolCallView(
+            tool_name="x",
+            status="completed",
+            arguments={},
+            result_summary="",
+            latency_ms=1,
+            error=None,
+        )
+        return ("done", [], [], "tool", {"tool_calls": [tc], "num_turns": 1})
+
+    from src.internal.servers.web import tool_agent_runner
+
+    monkeypatch.setattr(tool_agent_runner, "_run_tool_agent", fake_run_tool_agent)
+
+    app = _make_app(with_model=True)  # broker is None by default
+    client = TestClient(app)
+    with client.stream(
+        "POST", "/tool/send-tool-message", json={"message": "go", "stream": True}
+    ) as resp:
+        list(resp.iter_lines())
+    assert captured["on_approval"] is None
