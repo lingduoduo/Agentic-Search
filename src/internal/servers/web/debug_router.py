@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import httpx
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.internal.retrieval.query_transform_factory import (
     build_query_transform_pipeline_from_env,
@@ -30,6 +30,17 @@ class DebugRetrievalRequest(BaseModel):
 class DebugQueryTransformRequest(BaseModel):
     query: str = Field(..., min_length=1)
     filters: dict | None = None
+
+
+class DebugToolDiscoverRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+
+    @field_validator("query")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("query must not be blank")
+        return v
 
 
 def _retrieval_base(search_url: str) -> str:
@@ -115,6 +126,30 @@ def create_debug_router(
             )
         out.sort(key=lambda r: r["modified"], reverse=True)
         return {"results": out}
+
+    @router.get("/tools")
+    def tools() -> dict:
+        """Registered tools plus the discovery catalog grouped by server.
+
+        Reads the process-wide ``tool_registry`` singleton (seeded at web
+        startup). Empty registry → empty lists, never 500.
+        """
+        from dataclasses import asdict
+
+        from src.tools.registry import tool_registry
+        from src.tools.semantic_router import catalog_from_registry
+
+        return {
+            "registered": tool_registry.all_summaries(),
+            "catalog": [asdict(s) for s in catalog_from_registry(tool_registry)],
+        }
+
+    @router.post("/tools/discover")
+    def tools_discover(req: DebugToolDiscoverRequest) -> dict:
+        """Rank tools for *query* via the semantic router (TF-IDF, no LLM)."""
+        from src.tools.semantic_router import SemanticRouter, default_tool_catalog
+
+        return SemanticRouter(default_tool_catalog()).get_routing_details(req.query)
 
     @router.post("/query-transform")
     def query_transform(body: DebugQueryTransformRequest) -> dict:
