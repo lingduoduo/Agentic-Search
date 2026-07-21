@@ -16,6 +16,30 @@ describe("ChatView", () => {
     await waitFor(() => expect(screen.getByText("hello there")).toBeInTheDocument());
   });
 
+  it("keeps prior turns visible across two submits", async () => {
+    const answers = ["first answer", "second answer"];
+    let call = 0;
+    vi.spyOn(api, "sendChatMessage").mockImplementation((() => {
+      const text = answers[call++];
+      async function* g() {
+        yield { type: "answer", text } as const;
+        yield { type: "done", session_id: "s1" } as const;
+      }
+      return g();
+    }) as never);
+
+    render(<ChatView />);
+    const input = screen.getByLabelText("Chat message");
+    fireEvent.change(input, { target: { value: "q1" } });
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() => expect(screen.getByText("first answer")).toBeInTheDocument());
+    fireEvent.change(input, { target: { value: "q2" } });
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() => expect(screen.getByText("second answer")).toBeInTheDocument());
+    expect(screen.getByText("first answer")).toBeInTheDocument();
+    expect(screen.getByText("q1")).toBeInTheDocument();
+  });
+
   it("shows the no-model banner on NO_LOCAL_MODEL", async () => {
     vi.spyOn(api, "sendChatMessage").mockImplementation((() => {
       async function* g() { throw new Error("NO_LOCAL_MODEL"); yield undefined as never; }
