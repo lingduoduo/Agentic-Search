@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -224,3 +226,50 @@ def test_feedback_negative(client: TestClient):
         },
     )
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# POST /chat/send-chat-message
+# ---------------------------------------------------------------------------
+
+
+def _make_app(*, with_model: bool) -> FastAPI:
+    store = AgenticSearchStore(":memory:")
+    app = FastAPI()
+    app.include_router(create_chat_router(store))
+    app.state.search_agent_manager = object() if with_model else None
+    app.state.search_agent_tokenizer = object() if with_model else None
+    return app
+
+
+def test_send_chat_message_no_model_returns_400():
+    client = TestClient(_make_app(with_model=False))
+    resp = client.post(
+        "/chat/send-chat-message", json={"message": "hi", "stream": False}
+    )
+    assert resp.status_code == 400
+    assert "requires a local model" in resp.json()["detail"]
+
+
+def test_send_chat_message_streams_answer_then_done(monkeypatch):
+    from src.internal.servers.query_and_chat import chat_backend
+
+    async def fake_run_plain_chat(message, *, on_turn=None, **kw):
+        return f"echo: {message}"
+
+    monkeypatch.setattr(chat_backend, "_run_plain_chat", fake_run_plain_chat)
+
+    client = TestClient(_make_app(with_model=True))
+    with client.stream(
+        "POST", "/chat/send-chat-message", json={"message": "hello", "stream": True}
+    ) as resp:
+        assert resp.status_code == 200
+        events = [
+            json.loads(line[len("data:") :].strip())
+            for line in resp.iter_lines()
+            if line.startswith("data:")
+        ]
+    types = [e["type"] for e in events]
+    assert types == ["answer", "done"]
+    assert events[0]["text"] == "echo: hello"
+    assert events[-1]["session_id"]

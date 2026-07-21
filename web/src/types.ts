@@ -412,3 +412,42 @@ export interface SendToolMessageBody {
   run_search_tool?: boolean;
   stream?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Direct chat/search surfaces
+// ---------------------------------------------------------------------------
+
+export type ChatStreamEvent =
+  | { type: "answer"; text: string }
+  | { type: "done"; session_id: string }
+  | { type: "error"; detail: string };
+
+export interface SendChatMessageBody {
+  session_id?: string;
+  message: string;
+  stream?: boolean;
+}
+
+export interface SendSearchMessageBody {
+  search_query: string;
+  num_hits?: number;
+}
+
+// Mirrors SearchDocWithContent in
+// src/internal/servers/query_and_chat/models.py — no document_id field.
+export interface SearchDocView {
+  title: string | null;
+  url: string | null;
+  content: string;
+  score: number;
+  metadata: Record<string, unknown>;
+}
+
+// Mirrors SearchFullResponse in
+// src/internal/servers/query_and_chat/models.py.
+export interface SearchFullResponse {
+  all_executed_queries: string[];
+  search_docs: SearchDocView[];
+  llm_selected_doc_ids?: string[] | null;
+  error?: string | null;
+}

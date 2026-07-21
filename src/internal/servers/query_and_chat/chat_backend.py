@@ -6,25 +6,64 @@ The send-message flow is handled by POST /api/agent in the web app.
 
 from __future__ import annotations
 
+import json as _json
 import logging
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi.responses import StreamingResponse
 
+from src.context import ChatMessage
 from src.internal.auth import AuthenticatedUser
 from src.internal.auth import user_from_headers
 from src.internal.db import AgenticSearchStore
 from src.internal.servers.query_and_chat.models import ChatFeedbackRequest
 from src.internal.servers.query_and_chat.models import ChatMessageDetail
+from src.internal.servers.query_and_chat.models import ChatMessageResponse
 from src.internal.servers.query_and_chat.models import ChatRenameRequest
 from src.internal.servers.query_and_chat.models import ChatSessionCreationRequest
 from src.internal.servers.query_and_chat.models import ChatSessionDetailResponse
 from src.internal.servers.query_and_chat.models import ChatSessionDetails
 from src.internal.servers.query_and_chat.models import ChatSessionsResponse
 from src.internal.servers.query_and_chat.models import RenameChatSessionResponse
+from src.internal.servers.query_and_chat.models import SendChatMessageRequest
+from src.internal.servers.users.api import resolve_request_user
 
 logger = logging.getLogger(__name__)
+_MAX_HISTORY_MESSAGES = 40
+
+
+async def _run_plain_chat(
+    message: str,
+    *,
+    manager,
+    tokenizer,
+    history: list,
+    on_turn=None,
+) -> str:
+    """Delegate to the plain-chat runner.
+
+    Deferred import: plain_chat_runner lives inside src.internal.servers.web,
+    whose package __init__ eagerly imports app.py, and app.py's
+    _register_routers imports this module back to mount the router. A
+    module-level import here would deadlock that cycle when this module is
+    the import entry point (e.g. in tests). Defined as a real function here
+    (rather than imported directly into the endpoint) so tests can
+    monkeypatch chat_backend._run_plain_chat.
+    """
+    from src.internal.servers.web.plain_chat_runner import (
+        _run_plain_chat as _impl,
+    )
+
+    return await _impl(
+        message,
+        manager=manager,
+        tokenizer=tokenizer,
+        history=history,
+        on_turn=on_turn,
+    )
 
 
 def create_chat_router(store: AgenticSearchStore) -> APIRouter:
@@ -124,6 +163,62 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
             logger.warning(
                 "Feedback for unknown message %s ignored", feedback.chat_message_id
             )
+
+    @router.post("/send-chat-message", response_model=None)
+    async def send_chat_message(body: SendChatMessageRequest, http_request: Request):
+        from src.internal.servers.web.tool_agent_runner import NO_LOCAL_MODEL_MESSAGE
+
+        manager = getattr(http_request.app.state, "search_agent_manager", None)
+        tokenizer = getattr(http_request.app.state, "search_agent_tokenizer", None)
+        if manager is None or tokenizer is None:
+            raise HTTPException(status_code=400, detail=NO_LOCAL_MODEL_MESSAGE)
+
+        user = resolve_request_user(http_request)
+        user_id = user.id if user and not user.is_anonymous else None
+        if body.session_id and store.get_chat_session(body.session_id):
+            session_id = body.session_id
+        else:
+            session_id = store.create_chat_session(
+                user_id=user_id,
+                title=body.message[:80],
+                metadata={"source": "chat"},
+                session_id=body.session_id,
+            ).id
+        history = [
+            ChatMessage(role=m.role, content=m.content)
+            for m in store.list_chat_messages(session_id)
+        ][-_MAX_HISTORY_MESSAGES:]
+        store.add_chat_message(session_id, role="user", content=body.message)
+
+        if not body.stream:
+            try:
+                answer = await _run_plain_chat(
+                    body.message, manager=manager, tokenizer=tokenizer, history=history
+                )
+                store.add_chat_message(session_id, role="assistant", content=answer)
+                return ChatMessageResponse(session_id=session_id, answer=answer)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Chat failed for: %r", body.message)
+                return ChatMessageResponse(
+                    session_id=session_id, answer="", error=str(exc)
+                )
+
+        async def _gen() -> AsyncGenerator[str, None]:
+            def _sse(data: dict) -> str:
+                return f"data: {_json.dumps(data)}\n\n"
+
+            try:
+                answer = await _run_plain_chat(
+                    body.message, manager=manager, tokenizer=tokenizer, history=history
+                )
+                store.add_chat_message(session_id, role="assistant", content=answer)
+                yield _sse({"type": "answer", "text": answer})
+                yield _sse({"type": "done", "session_id": session_id})
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Streaming chat failed for: %r", body.message)
+                yield _sse({"type": "error", "detail": str(exc)})
+
+        return StreamingResponse(_gen(), media_type="text/event-stream")
 
     return router
 
