@@ -25,6 +25,8 @@ export default defineConfig({
       "/admin": "http://127.0.0.1:7860",
       "/analytics": "http://127.0.0.1:7860",
       "/chat": "http://127.0.0.1:7860",
+      "/search": "http://127.0.0.1:7860",
+      "/tool": "http://127.0.0.1:7860",
     },
   },
 });

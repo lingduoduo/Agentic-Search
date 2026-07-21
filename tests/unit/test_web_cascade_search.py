@@ -62,13 +62,13 @@ def test_serpapi_error_falls_back_to_browser():
     assert [p.url for p in pages] == ["http://browser/2"]
 
 
-def test_no_browser_configured_returns_serp_result_as_is():
+def test_no_browser_configured_returns_empty_on_unusable_serp():
     async def fake_serp(query, **kw):
         return [_err()]
 
     fn = make_web_cascade_search(browser_search_url=None, serpapi_fn=fake_serp)
     pages = asyncio.run(fn("q"))
-    assert pages and pages[0].error == "boom"
+    assert pages == []
 
 
 def test_seeded_web_search_uses_cascade_not_retrieval():

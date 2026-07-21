@@ -330,16 +330,19 @@ def make_web_cascade_search(
             return serp_pages
         if browser_search_url:
             try:
-                return await browser_fn(
+                browser_pages = await browser_fn(
                     query,
                     provider="retrieval",
                     search_url=browser_search_url,
                     page=page,
                     page_size=page_size,
                 )
+                if _pages_are_usable(browser_pages):
+                    return browser_pages
             except Exception as exc:  # noqa: BLE001
                 logger.warning("browser cascade leg failed for %r: %s", query, exc)
-        return serp_pages
+        logger.warning("web cascade produced no usable results for %r", query)
+        return []
 
     return _cascade
 
