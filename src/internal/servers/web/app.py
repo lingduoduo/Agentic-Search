@@ -355,6 +355,10 @@ def _register_routers(
     # --- Core search & chat ---
     app.include_router(create_chat_router(db))
     app.include_router(create_search_router(db, search_url=search_url))
+
+    from src.internal.servers.query_and_chat.tool_backend import create_tool_router
+
+    app.include_router(create_tool_router(db, search_url=search_url, resolved=settings))
     app.include_router(query_basic_router)
     app.include_router(create_query_history_router(db, settings))
 
