@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -15,6 +16,8 @@ from ..context.search import SearchResult
 from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
 from .base import FunctionTool, Tool, ToolEffect, ToolSchema
 from .html_text import _html_to_text
+
+logger = logging.getLogger(__name__)
 
 SearchProvider = Literal["retrieval", "google", "serpapi", "serper"]
 
@@ -289,6 +292,56 @@ async def search_tool(
             timeout_seconds=timeout_seconds,
         )
     raise ValueError("provider must be 'retrieval', 'google', 'serpapi', or 'serper'")
+
+
+def _pages_are_usable(pages: list[SearchPage]) -> bool:
+    """True when at least one page carries a result and none is an error page."""
+    if not pages:
+        return False
+    return any(p.url for p in pages) and not any(p.error for p in pages)
+
+
+def make_web_cascade_search(
+    *,
+    browser_search_url: str | None = None,
+    serpapi_fn=serpapi_search,
+    browser_fn=search_tool,
+):
+    """Return a ``search_fn`` that tries SerpAPI, then falls back to the browser
+    search server (retrieval-shaped ``/retrieve``). First usable result wins.
+
+    Compatible with ``MultiQueryWebSearchTool(search_fn=...)``.
+    """
+
+    async def _cascade(
+        query: str,
+        *,
+        provider: SearchProvider = "serpapi",
+        search_url: str = "http://localhost:8000/retrieve",
+        page: int = 1,
+        page_size: int = 5,
+        timeout_seconds: int = 15,
+    ) -> list[SearchPage]:
+        del provider, search_url  # cascade owns provider selection
+        serp_pages = await serpapi_fn(
+            query, page=page, page_size=page_size, timeout_seconds=timeout_seconds
+        )
+        if _pages_are_usable(serp_pages):
+            return serp_pages
+        if browser_search_url:
+            try:
+                return await browser_fn(
+                    query,
+                    provider="retrieval",
+                    search_url=browser_search_url,
+                    page=page,
+                    page_size=page_size,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("browser cascade leg failed for %r: %s", query, exc)
+        return serp_pages
+
+    return _cascade
 
 
 async def search_for_list(

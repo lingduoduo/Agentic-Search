@@ -9,10 +9,12 @@ are not registered here.
 
 from __future__ import annotations
 
+import os
+
 from .base import Tool
 from .registry import ToolRegistry
 from .routing_tools import build_rag_routing_tool, build_search_routing_tool
-from .search import MultiQueryWebSearchTool, build_search_tool
+from .search import MultiQueryWebSearchTool, build_search_tool, make_web_cascade_search
 
 DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve"
 
@@ -30,7 +32,10 @@ def tool_knowledge_base(
     """
     tools: list[Tool] = [
         MultiQueryWebSearchTool(
-            provider="retrieval", search_url=search_url, page_size=top_k
+            search_fn=make_web_cascade_search(
+                browser_search_url=os.getenv("AGENTIC_SEARCH_BROWSER_SEARCH_URL")
+            ),
+            page_size=top_k,
         ),
         build_search_tool(provider="retrieval", search_url=search_url, page_size=top_k),
         build_search_routing_tool(search_url=search_url, top_k=top_k),
