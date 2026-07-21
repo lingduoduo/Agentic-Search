@@ -61,6 +61,15 @@ Built-in seed tools: `web_search`, `search`, `search_routing_tool` (and
 `rag_routing_tool` when an LLM is configured). Discovery is a ranking aid, not a
 dispatcher.
 
+### `web_search` fetches the real web
+
+The seeded `web_search` tool uses a sequential cascade: SerpAPI first
+(`SERP_API_KEY`), falling back to the browser search server
+(`AGENTIC_SEARCH_BROWSER_SEARCH_URL`, a `/retrieve`-shaped playwright server)
+when SerpAPI is empty or unavailable. With neither configured it returns no
+results and the agent answers without web context. This applies to both the
+Tool Agent tab and the `/api/agent` tool path.
+
 ## Inspecting the registry
 
 Two read-only debug endpoints (backing the Dev Console **Tools** panel) expose
