@@ -5,6 +5,7 @@ import { RequestInspector } from "./RequestInspector";
 import { RequestTracePanel } from "./RequestTracePanel";
 import { RetrievalLab } from "./RetrievalLab";
 import { ServerHealthGrid } from "./ServerHealthGrid";
+import { ToolsPanel } from "./ToolsPanel";
 import { WorkerMonitor } from "./WorkerMonitor";
 
 interface Props {
@@ -31,6 +32,7 @@ export function DevConsole({ answer, citations, controlFlowTrace, selectedReques
       <QueryTransformInspector />
       <RetrievalLab />
       <EvalResultsPanel />
+      <ToolsPanel />
     </section>
   );
 }

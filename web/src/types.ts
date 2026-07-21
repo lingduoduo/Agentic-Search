@@ -188,6 +188,31 @@ export interface ToolView {
   provider_id: string | null;
 }
 
+export interface CatalogTool {
+  name: string;
+  description: string;
+  source: string;
+  server: string;
+}
+
+export interface CatalogServer {
+  name: string;
+  description: string;
+  tools: CatalogTool[];
+}
+
+export interface DebugToolsResult {
+  registered: ToolView[];
+  catalog: CatalogServer[];
+}
+
+export interface ToolDiscoverResult {
+  request: string;
+  stage1_servers: { name: string; score: number }[];
+  stage2_tools: Record<string, { server_score: number; tools: [string, number][] }>;
+  final_tools: { name: string; server: string; score: number }[];
+}
+
 export interface OpenAPIRegisterRequest {
   name: string;
   openapi_json: string;

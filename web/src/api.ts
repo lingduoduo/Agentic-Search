@@ -15,6 +15,8 @@ import type {
   WorkerMetrics,
   ConnectorCreateRequest,
   ConnectorView,
+  DebugToolsResult,
+  ToolDiscoverResult,
   OpenAPIRegisterRequest,
   OpenAPIRegisterResponse,
   QueryHistoryPage,
@@ -73,6 +75,19 @@ export function getWorkerMetrics(): Promise<{ metrics: WorkerMetrics | null }> {
 /** List evaluation result files from the configured results dir (dev console). */
 export function getEvalResults(): Promise<{ results: EvalResultFile[] }> {
   return requestJson<{ results: EvalResultFile[] }>("/api/debug/eval-results");
+}
+
+/** Registered tools + the discovery catalog grouped by server (dev console). */
+export function getDebugTools(): Promise<DebugToolsResult> {
+  return requestJson<DebugToolsResult>("/api/debug/tools");
+}
+
+/** Rank tools for a query via the semantic router (dev console). */
+export function discoverTools(query: string): Promise<ToolDiscoverResult> {
+  return requestJson<ToolDiscoverResult>("/api/debug/tools/discover", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
 }
 
 /** Run only the query-transform pipeline for a query (dev console). */
