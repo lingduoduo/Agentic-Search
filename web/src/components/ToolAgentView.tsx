@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { sendToolMessage } from "../api";
-import type { ConversationTurn } from "../types";
+import { sendToolMessage, submitToolApproval } from "../api";
+import type { ConversationTurn, ToolApprovalView } from "../types";
+import { ToolApprovalCard } from "./ToolApprovalCard";
 import { Transcript } from "./Transcript";
 
 export function ToolAgentView() {
   const [message, setMessage] = useState("");
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<ToolApprovalView[]>([]);
   const [noModel, setNoModel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function ToolAgentView() {
     setBusy(true);
     setError(null);
     setNoModel(false);
+    setPendingApprovals([]);
     setTurns((prev) => [
       ...prev,
       { role: "user", content: text },
@@ -43,17 +46,22 @@ export function ToolAgentView() {
           patchLastAssistant((t) => ({ ...t, toolCalls: [...(t.toolCalls ?? []), e] }));
         else if (e.type === "answer")
           patchLastAssistant((t) => ({ ...t, content: e.text }));
+        else if (e.type === "approval_required")
+          setPendingApprovals((a) => [...a, e.approval]);
         else if (e.type === "done") {
           setSessionId(e.session_id);
+          setPendingApprovals([]);
           patchLastAssistant((t) => ({ ...t, pending: false }));
         } else if (e.type === "error") {
           setError(e.detail);
+          setPendingApprovals([]);
           patchLastAssistant((t) => ({ ...t, pending: false }));
         }
       }
       setMessage("");
     } catch (err) {
       patchLastAssistant((t) => ({ ...t, pending: false }));
+      setPendingApprovals([]);
       if (err instanceof Error && err.message === "NO_LOCAL_MODEL") setNoModel(true);
       else setError(err instanceof Error ? err.message : "Tool agent failed");
     } finally {
@@ -70,6 +78,17 @@ export function ToolAgentView() {
         </div>
       )}
       <Transcript turns={turns} />
+      {pendingApprovals.map((approval) => (
+        <ToolApprovalCard
+          key={approval.id}
+          approval={approval}
+          onDecision={(decision) =>
+            submitToolApproval(approval.id, decision).finally(() =>
+              setPendingApprovals((a) => a.filter((p) => p.id !== approval.id)),
+            )
+          }
+        />
+      ))}
       {error && <div className="error-banner">{error}</div>}
       <div className="tool-agent-view__composer">
         <input

@@ -403,6 +403,7 @@ export type ToolStreamEvent =
   | { type: "progress"; turn: number; text: string }
   | ({ type: "tool_call" } & ToolCallTraceView)
   | { type: "answer"; text: string }
+  | { type: "approval_required"; approval: ToolApprovalView }
   | { type: "done"; session_id: string; tool_calls: ToolCallTraceView[]; num_turns: number }
   | { type: "error"; detail: string };
 

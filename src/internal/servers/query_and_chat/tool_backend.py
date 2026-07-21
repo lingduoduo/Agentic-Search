@@ -82,7 +82,7 @@ def create_tool_router(
         history = _history(session_id)
         store.add_chat_message(session_id, role="user", content=body.message)
 
-        async def _run(on_turn=None):
+        async def _run(on_turn=None, on_approval=None):
             answer, _citations, documents, _intent, extra = await _run_tool_agent(
                 body.message,
                 manager=manager,
@@ -91,7 +91,7 @@ def create_tool_router(
                 history=history,
                 resolved=resolved,
                 on_turn=on_turn,
-                on_approval=None,
+                on_approval=on_approval,
                 with_search_tool=body.run_search_tool,
             )
             answer = answer or extra.pop("_assistant_fallback", "")
@@ -128,7 +128,17 @@ def create_tool_router(
                 )
                 await queue.put({"type": "progress", "turn": turn, "text": text})
 
-            task = asyncio.create_task(_run(on_turn=on_turn))
+            broker = getattr(http_request.app.state, "tool_approval_broker", None)
+            on_approval = None
+            if user is not None and not user.is_anonymous and broker is not None:
+                from src.internal.servers.web.app import _request_tool_approval
+
+                async def on_approval(approval_request):
+                    return await _request_tool_approval(
+                        broker, user.id, approval_request, queue
+                    )
+
+            task = asyncio.create_task(_run(on_turn=on_turn, on_approval=on_approval))
             try:
                 while not task.done():
                     try:
