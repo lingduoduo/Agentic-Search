@@ -13,6 +13,11 @@ from pydantic import BaseModel
 from src.context.models import ContextDocument
 from .intent_routing import _infer_intent_from_output
 
+NO_LOCAL_MODEL_MESSAGE = (
+    "tool_agent mode requires a local model. "
+    "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
+)
+
 
 class ToolCallView(BaseModel):
     tool_name: str

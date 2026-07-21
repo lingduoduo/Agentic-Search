@@ -27,10 +27,6 @@ from src.internal.servers.users.api import resolve_request_user
 
 logger = logging.getLogger(__name__)
 
-_NO_MODEL_MSG = (
-    "tool_agent mode requires a local model. "
-    "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
-)
 _MAX_HISTORY_MESSAGES = 40
 
 
@@ -67,9 +63,18 @@ def create_tool_router(
 
     @router.post("/send-tool-message", response_model=None)
     async def send_tool_message(body: SendToolMessageRequest, http_request: Request):
+        # Deferred to call time: tool_agent_runner lives inside src.internal.servers.web,
+        # whose package __init__ eagerly imports app.py, and app.py's _register_routers
+        # imports this module back to mount the router. A module-level import here would
+        # deadlock that cycle when this module is the import entry point (e.g. in tests).
+        from src.internal.servers.web.tool_agent_runner import (
+            NO_LOCAL_MODEL_MESSAGE,
+            _run_tool_agent,
+        )
+
         manager, tokenizer = _model_backend(http_request)
         if manager is None or tokenizer is None:
-            raise HTTPException(status_code=400, detail=_NO_MODEL_MSG)
+            raise HTTPException(status_code=400, detail=NO_LOCAL_MODEL_MESSAGE)
 
         user = resolve_request_user(http_request)
         user_id = user.id if user and not user.is_anonymous else None
@@ -185,14 +190,5 @@ def create_tool_router(
 
     return router
 
-
-# Imported here (after create_tool_router is defined) rather than at module top:
-# tool_agent_runner lives inside src.internal.servers.web, whose package __init__
-# eagerly imports app.py, and app.py's _register_routers imports this module back
-# to mount the router. Importing tool_agent_runner before create_tool_router
-# exists would deadlock that cycle when this module is the import entry point
-# (e.g. in tests); importing it after means the reentrant import of this module
-# already finds create_tool_router defined.
-from src.internal.servers.web.tool_agent_runner import _run_tool_agent  # noqa: E402
 
 __all__ = ["create_tool_router"]

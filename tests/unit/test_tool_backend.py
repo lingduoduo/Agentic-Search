@@ -40,7 +40,7 @@ def test_tool_history_anonymous_is_empty():
 
 
 def test_send_tool_message_streams_progress_then_done(monkeypatch):
-    from src.internal.servers.query_and_chat import tool_backend
+    from src.internal.servers.web import tool_agent_runner
     from src.internal.servers.web.tool_agent_runner import ToolCallView
 
     async def fake_run_tool_agent(query, *, on_turn=None, **kw):
@@ -56,7 +56,10 @@ def test_send_tool_message_streams_progress_then_done(monkeypatch):
         )
         return ("the answer", [], [], "tool", {"tool_calls": [tc], "num_turns": 1})
 
-    monkeypatch.setattr(tool_backend, "_run_tool_agent", fake_run_tool_agent)
+    # tool_backend now imports _run_tool_agent function-locally (per-call) from
+    # tool_agent_runner, so patch the source module rather than tool_backend's
+    # (now nonexistent) module-level attribute.
+    monkeypatch.setattr(tool_agent_runner, "_run_tool_agent", fake_run_tool_agent)
 
     client = TestClient(_make_app(with_model=True))
     with client.stream(

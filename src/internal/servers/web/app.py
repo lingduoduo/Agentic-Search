@@ -124,6 +124,7 @@ from .intent_routing import (
     route_query,
 )
 from .tool_agent_runner import (
+    NO_LOCAL_MODEL_MESSAGE,
     ToolCallView,
     _run_tool_agent,
 )
@@ -1614,10 +1615,7 @@ def create_web_app(
                     if manager is None or tokenizer is None:
                         raise HTTPException(
                             status_code=400,
-                            detail=(
-                                "tool_agent mode requires a local model. "
-                                "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
-                            ),
+                            detail=NO_LOCAL_MODEL_MESSAGE,
                         )
                     answer, citations, documents, intent, extra = await _run_tool_agent(
                         query,
