@@ -67,6 +67,10 @@ Provider, web-search, retrieval, reranking, routing, and application settings ar
 
 The search agent classifies each request, tries internal retrieval first, and falls through to web search when evidence is weak. See [Search engine](docs/search-engine.md) for capabilities and request routing.
 
+## Chat engine
+
+The chat agent answers conversational requests with retrieval-grounded synthesis and multi-turn memory. See [Chat engine](docs/chat-engine.md) for capabilities and routing.
+
 ## Run locally
 
 Start each service in a separate terminal from the repository root.
@@ -142,6 +146,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 
 - [Architecture](docs/architecture.md) — repository layout, agent families, routing, and request flows
 - [Search engine](docs/search-engine.md) — search-agent capabilities and request-routing overview
+- [Chat engine](docs/chat-engine.md) — chat-agent capabilities and routing overview
 - [API request routing](docs/request-routing.md) — modes, intent classification, provider order, fallbacks, and response metadata
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
