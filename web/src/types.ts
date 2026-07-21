@@ -392,3 +392,23 @@ export interface QueryTransformResult {
     keywords?: string[];
   };
 }
+
+export interface ToolSessionSummary {
+  session_id: string;
+  title: string;
+  created_at: string;
+}
+
+export type ToolStreamEvent =
+  | { type: "progress"; turn: number; text: string }
+  | ({ type: "tool_call" } & ToolCallTraceView)
+  | { type: "answer"; text: string }
+  | { type: "done"; session_id: string; tool_calls: ToolCallTraceView[]; num_turns: number }
+  | { type: "error"; detail: string };
+
+export interface SendToolMessageBody {
+  session_id?: string;
+  message: string;
+  run_search_tool?: boolean;
+  stream?: boolean;
+}

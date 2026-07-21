@@ -22,10 +22,13 @@ import type {
   QueryHistoryPage,
   RequestSnapshot,
   RequestSummary,
+  SendToolMessageBody,
   SessionCreateRequest,
   SSEEvent,
   ToolInvokeRequest,
   ToolInvokeResponse,
+  ToolSessionSummary,
+  ToolStreamEvent,
   ToolView,
 } from "./types";
 
@@ -393,4 +396,44 @@ export function submitFeedback(
     }),
     signal: init?.signal,
   });
+}
+
+export async function* sendToolMessage(
+  body: SendToolMessageBody,
+  init?: Pick<RequestInit, "signal">,
+): AsyncGenerator<ToolStreamEvent> {
+  const response = await fetch("/tool/send-tool-message", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stream: true, ...body }),
+    signal: init?.signal,
+  });
+  if (response.status === 400) {
+    throw new Error("NO_LOCAL_MODEL");
+  }
+  if (!response.ok || !response.body) {
+    throw new Error(`Tool stream failed: ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("data:")) {
+        const payload = trimmed.slice("data:".length).trim();
+        if (payload) yield JSON.parse(payload) as ToolStreamEvent;
+      }
+    }
+  }
+}
+
+export function getToolHistory(): Promise<{ sessions: ToolSessionSummary[] }> {
+  return requestJson<{ sessions: ToolSessionSummary[] }>("/tool/tool-history");
 }
