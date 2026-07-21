@@ -23,6 +23,8 @@ import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
 import { ToolAgentView } from "./components/ToolAgentView";
+import { ChatView } from "./components/ChatView";
+import { SearchView } from "./components/SearchView";
 import type {
   AdminSurfaceSummary,
   AgentExperienceRequest,
@@ -85,7 +87,7 @@ export function App() {
   const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
-  const [surface, setSurface] = useState<"assistant" | "tool">("assistant");
+  const [surface, setSurface] = useState<"assistant" | "search" | "chat" | "tool">("assistant");
   // Dev-only observability console; gated at build time, never on in prod.
   const debugPanels = import.meta.env.VITE_DEBUG_PANELS === "1";
   const requestRef = useRef<AbortController | null>(null);
@@ -303,6 +305,22 @@ export function App() {
               </button>
               <button
                 role="tab"
+                aria-selected={surface === "search"}
+                className={`icon-button${surface === "search" ? " active" : ""}`}
+                onClick={() => setSurface("search")}
+              >
+                Search
+              </button>
+              <button
+                role="tab"
+                aria-selected={surface === "chat"}
+                className={`icon-button${surface === "chat" ? " active" : ""}`}
+                onClick={() => setSurface("chat")}
+              >
+                Chat
+              </button>
+              <button
+                role="tab"
                 aria-selected={surface === "tool"}
                 className={`icon-button${surface === "tool" ? " active" : ""}`}
                 onClick={() => setSurface("tool")}
@@ -439,6 +457,10 @@ export function App() {
               <SessionTimeline messages={messages} />
             </section>
           </div>
+        ) : surface === "search" ? (
+          <SearchView />
+        ) : surface === "chat" ? (
+          <ChatView />
         ) : (
           <ToolAgentView />
         )}
