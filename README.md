@@ -63,6 +63,10 @@ GEN_AI_API_KEY=...
 
 Provider, web-search, retrieval, reranking, routing, and application settings are documented in [Configuration](docs/configuration.md).
 
+## Ingestion
+
+Connectors pull documents into asynchronous ingestion and indexing jobs that build the searchable indexes before query time. See [Ingestion](docs/ingestion.md) for connectors, indexing, and the background workers.
+
 ## Search engine
 
 The search agent classifies each request, tries internal retrieval first, and falls through to web search when evidence is weak. See [Search engine](docs/search-engine.md) for capabilities and request routing.
@@ -149,6 +153,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - [Chat engine](docs/chat-engine.md) — chat-agent capabilities and routing overview
 - [API request routing](docs/request-routing.md) — modes, intent classification, provider order, fallbacks, and response metadata
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
+- [Ingestion](docs/ingestion.md) — connectors, document ingestion, indexing, and background workers
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
 - [Training and evaluation](docs/training-and-evaluation.md) — examples, datasets, SFT, GRPO/PPO, and benchmarks
 - [Frontend development](docs/frontend.md) — React/Vite workflow, UI behavior, and observability surfaces
