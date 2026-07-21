@@ -180,6 +180,36 @@ class ChatFeedbackRequest(BaseModel):
     feedback_text: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Tool-agent message / history
+# ---------------------------------------------------------------------------
+
+
+class SendToolMessageRequest(BaseModel):
+    session_id: str | None = None
+    message: str
+    run_search_tool: bool = True
+    stream: bool = True
+
+
+class ToolAgentMessageResponse(BaseModel):
+    session_id: str
+    answer: str
+    tool_calls: list[dict] = Field(default_factory=list)
+    num_turns: int = 0
+    error: str | None = None
+
+
+class ToolSessionSummary(BaseModel):
+    session_id: str
+    title: str
+    created_at: datetime
+
+
+class ToolHistoryResponse(BaseModel):
+    sessions: list[ToolSessionSummary] = Field(default_factory=list)
+
+
 __all__ = [
     "ChatFeedbackRequest",
     "ChatMessageDetail",
@@ -196,4 +226,8 @@ __all__ = [
     "SearchHistoryResponse",
     "SearchQueryResponse",
     "SendSearchQueryRequest",
+    "SendToolMessageRequest",
+    "ToolAgentMessageResponse",
+    "ToolHistoryResponse",
+    "ToolSessionSummary",
 ]

@@ -26,6 +26,24 @@ falls back to grounded chat. The explicit `tool_agent` mode selects the loop
 directly. See [API request routing](request-routing.md) for the full decision
 order and response metadata (tool calls are surfaced as `tool_calls`).
 
+## Dedicated tool-agent surface (`/tool/*`)
+
+Beyond the unified `/api/agent`, the tool engine has its own conversational
+surface, parallel to `/search/*` and `/chat/*`:
+
+- `POST /tool/send-tool-message` — runs `ToolAgentLoop` and streams Server-Sent
+  Events: `progress` (per turn), `tool_call` (each completed call), `answer`,
+  and a final `done`. Requires a local model (`SEARCH_AGENT_MODEL` /
+  `SEARCH_AGENT_SERVER_URL`); returns **400** otherwise. Pass `stream:false` for
+  a single JSON response.
+- `GET /tool/tool-history` — past sessions for the caller (session proxy, like
+  `/search/search-history`).
+
+The router (`create_tool_router`, `src/internal/servers/query_and_chat/tool_backend.py`)
+reuses the shared loop runner in `src/internal/servers/web/tool_agent_runner.py`.
+In the web UI, the **Tool Agent** tab (Assistant | Tool Agent switcher) drives
+this endpoint with a live tool-call trace.
+
 ## Tool registry and discovery
 
 The **`ToolRegistry` is the single source of truth** for the web/agent process's

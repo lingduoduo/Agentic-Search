@@ -22,6 +22,7 @@ import { ToolApprovalCard } from "./components/ToolApprovalCard";
 import { SearchComposer } from "./components/SearchComposer";
 import { SessionTimeline } from "./components/SessionTimeline";
 import { SourceGrid } from "./components/SourceGrid";
+import { ToolAgentView } from "./components/ToolAgentView";
 import type {
   AdminSurfaceSummary,
   AgentExperienceRequest,
@@ -84,6 +85,7 @@ export function App() {
   const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
+  const [surface, setSurface] = useState<"assistant" | "tool">("assistant");
   // Dev-only observability console; gated at build time, never on in prod.
   const debugPanels = import.meta.env.VITE_DEBUG_PANELS === "1";
   const requestRef = useRef<AbortController | null>(null);
@@ -290,6 +292,24 @@ export function App() {
                 {routeDegraded ? " ⚠" : ""}
               </span>
             )}
+            <div className="surface-switcher" role="tablist" aria-label="Surface">
+              <button
+                role="tab"
+                aria-selected={surface === "assistant"}
+                className={`icon-button${surface === "assistant" ? " active" : ""}`}
+                onClick={() => setSurface("assistant")}
+              >
+                Assistant
+              </button>
+              <button
+                role="tab"
+                aria-selected={surface === "tool"}
+                className={`icon-button${surface === "tool" ? " active" : ""}`}
+                onClick={() => setSurface("tool")}
+              >
+                Tool Agent
+              </button>
+            </div>
             <button
               className={`icon-button${showConnectors ? " active" : ""}`}
               type="button"
@@ -335,26 +355,30 @@ export function App() {
           </div>
         </header>
 
-        <SearchComposer
-          query={query}
-          searchUrl={searchUrl}
-          topK={topK}
-          sourceProvider={sourceProvider}
-          isLoading={isLoading}
-          showUrlField={DEV_MODE}
-          showSourcePicker={DEV_MODE}
-          onQueryChange={setQuery}
-          onSearchUrlChange={setSearchUrl}
-          onTopKChange={handleTopKChange}
-          onSourceProviderChange={handleSourceProviderChange}
-          onSubmit={handleSubmit}
-          onExampleSelect={(q) => {
-            setQuery(q);
-            handleSubmit(q);
-          }}
-        />
+        {surface === "assistant" && (
+          <>
+            <SearchComposer
+              query={query}
+              searchUrl={searchUrl}
+              topK={topK}
+              sourceProvider={sourceProvider}
+              isLoading={isLoading}
+              showUrlField={DEV_MODE}
+              showSourcePicker={DEV_MODE}
+              onQueryChange={setQuery}
+              onSearchUrlChange={setSearchUrl}
+              onTopKChange={handleTopKChange}
+              onSourceProviderChange={handleSourceProviderChange}
+              onSubmit={handleSubmit}
+              onExampleSelect={(q) => {
+                setQuery(q);
+                handleSubmit(q);
+              }}
+            />
 
-        {error && <div className="error-banner">{error}</div>}
+            {error && <div className="error-banner">{error}</div>}
+          </>
+        )}
 
         {debugPanels && showConsole && (
           <DevConsole
@@ -371,49 +395,53 @@ export function App() {
 
         {showQueryHistory && <QueryHistoryPanel />}
 
-        <div className={`results-layout${intent ? ` intent-${intent}` : ""}`}>
-          <section className="answer-column" aria-label="Answer">
-            <div className="section-heading">
-              <Bot size={18} />
-              <h2>Answer</h2>
-            </div>
-            <AnswerPanel
-              answer={streamingAnswer || answer}
-              citations={citations}
-              intent={intent}
-              documentCount={documents.length}
-              progressSteps={progressSteps}
-              completedSteps={completedSteps}
-            />
-            {pendingApprovals.map((approval) => (
-              <ToolApprovalCard
-                key={approval.id}
-                approval={approval}
-                onDecision={(decision) =>
-                  handleApprovalDecision(approval.id, decision)
-                }
+        {surface === "assistant" ? (
+          <div className={`results-layout${intent ? ` intent-${intent}` : ""}`}>
+            <section className="answer-column" aria-label="Answer">
+              <div className="section-heading">
+                <Bot size={18} />
+                <h2>Answer</h2>
+              </div>
+              <AnswerPanel
+                answer={streamingAnswer || answer}
+                citations={citations}
+                intent={intent}
+                documentCount={documents.length}
+                progressSteps={progressSteps}
+                completedSteps={completedSteps}
               />
-            ))}
-            {intent === "tool" && <ToolCallTracePanel calls={toolCalls} />}
-          </section>
+              {pendingApprovals.map((approval) => (
+                <ToolApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  onDecision={(decision) =>
+                    handleApprovalDecision(approval.id, decision)
+                  }
+                />
+              ))}
+              {intent === "tool" && <ToolCallTracePanel calls={toolCalls} />}
+            </section>
 
-          <section className="panel sources-panel wide" aria-label="Sources">
-            <div className="section-heading">
-              <Search size={18} />
-              <h2>Sources</h2>
-              <span className="count">{documents.length}</span>
-            </div>
-            <SourceGrid documents={documents} />
-          </section>
+            <section className="panel sources-panel wide" aria-label="Sources">
+              <div className="section-heading">
+                <Search size={18} />
+                <h2>Sources</h2>
+                <span className="count">{documents.length}</span>
+              </div>
+              <SourceGrid documents={documents} />
+            </section>
 
-          <section className="panel session-panel" aria-label="Session">
-            <div className="section-heading">
-              <MessageSquarePlus size={18} />
-              <h2>Session</h2>
-            </div>
-            <SessionTimeline messages={messages} />
-          </section>
-        </div>
+            <section className="panel session-panel" aria-label="Session">
+              <div className="section-heading">
+                <MessageSquarePlus size={18} />
+                <h2>Session</h2>
+              </div>
+              <SessionTimeline messages={messages} />
+            </section>
+          </div>
+        ) : (
+          <ToolAgentView />
+        )}
 
         {adminSummary && <AdminOverview summary={adminSummary} />}
         {(analyticsByLLM || analyticsByPersona || analyticsByFlow) && (

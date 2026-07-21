@@ -1,0 +1,194 @@
+"""Tool-agent API router — the tool engine's own conversational surface.
+
+Parallels search_backend/chat_backend. Endpoints:
+  POST /tool/send-tool-message  — run ToolAgentLoop, stream progress + tool calls
+  GET  /tool/tool-history       — past sessions for the caller (session proxy)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json as _json
+import logging
+from collections.abc import AsyncGenerator
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+
+from src.context import ChatMessage
+from src.internal.db import AgenticSearchStore
+from src.internal.servers.query_and_chat.models import (
+    SendToolMessageRequest,
+    ToolAgentMessageResponse,
+    ToolHistoryResponse,
+    ToolSessionSummary,
+)
+from src.internal.servers.users.api import resolve_request_user
+
+logger = logging.getLogger(__name__)
+
+_MAX_HISTORY_MESSAGES = 40
+
+
+def create_tool_router(
+    store: AgenticSearchStore,
+    *,
+    search_url: str = "http://localhost:8000/retrieve",
+    resolved,
+) -> APIRouter:
+    router = APIRouter(prefix="/tool", tags=["tool"])
+
+    def _model_backend(request: Request):
+        manager = getattr(request.app.state, "search_agent_manager", None)
+        tokenizer = getattr(request.app.state, "search_agent_tokenizer", None)
+        return manager, tokenizer
+
+    def _ensure_session(body: SendToolMessageRequest, user_id: str | None) -> str:
+        if body.session_id and store.get_chat_session(body.session_id):
+            return body.session_id
+        session = store.create_chat_session(
+            user_id=user_id,
+            title=body.message[:80],
+            metadata={"source": "tool"},
+            session_id=body.session_id,
+        )
+        return session.id
+
+    def _history(session_id: str) -> list[ChatMessage]:
+        msgs = [
+            ChatMessage(role=m.role, content=m.content)
+            for m in store.list_chat_messages(session_id)
+        ]
+        return msgs[-_MAX_HISTORY_MESSAGES:]
+
+    @router.post("/send-tool-message", response_model=None)
+    async def send_tool_message(body: SendToolMessageRequest, http_request: Request):
+        # Deferred to call time: tool_agent_runner lives inside src.internal.servers.web,
+        # whose package __init__ eagerly imports app.py, and app.py's _register_routers
+        # imports this module back to mount the router. A module-level import here would
+        # deadlock that cycle when this module is the import entry point (e.g. in tests).
+        from src.internal.servers.web.tool_agent_runner import (
+            NO_LOCAL_MODEL_MESSAGE,
+            _run_tool_agent,
+        )
+
+        manager, tokenizer = _model_backend(http_request)
+        if manager is None or tokenizer is None:
+            raise HTTPException(status_code=400, detail=NO_LOCAL_MODEL_MESSAGE)
+
+        user = resolve_request_user(http_request)
+        user_id = user.id if user and not user.is_anonymous else None
+        session_id = _ensure_session(body, user_id)
+        history = _history(session_id)
+        store.add_chat_message(session_id, role="user", content=body.message)
+
+        async def _run(on_turn=None):
+            answer, _citations, documents, _intent, extra = await _run_tool_agent(
+                body.message,
+                manager=manager,
+                tokenizer=tokenizer,
+                search_url=search_url,
+                history=history,
+                resolved=resolved,
+                on_turn=on_turn,
+                on_approval=None,
+                with_search_tool=body.run_search_tool,
+            )
+            answer = answer or extra.pop("_assistant_fallback", "")
+            tool_calls = extra.get("tool_calls", [])
+            return answer, tool_calls, extra.get("num_turns", 0)
+
+        if not body.stream:
+            try:
+                answer, tool_calls, num_turns = await _run()
+                store.add_chat_message(session_id, role="assistant", content=answer)
+                return ToolAgentMessageResponse(
+                    session_id=session_id,
+                    answer=answer,
+                    tool_calls=[tc.model_dump() for tc in tool_calls],
+                    num_turns=num_turns,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Tool agent failed for: %r", body.message)
+                return ToolAgentMessageResponse(
+                    session_id=session_id, answer="", error=str(exc)
+                )
+
+        async def _gen() -> AsyncGenerator[str, None]:
+            def _sse(data: dict) -> str:
+                return f"data: {_json.dumps(data)}\n\n"
+
+            queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
+
+            async def on_turn(turn: int, tool_name, doc_count: int) -> None:
+                text = (
+                    f"{tool_name} · {doc_count} docs"
+                    if tool_name
+                    else "writing answer..."
+                )
+                await queue.put({"type": "progress", "turn": turn, "text": text})
+
+            task = asyncio.create_task(_run(on_turn=on_turn))
+            try:
+                while not task.done():
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=0.05)
+                        yield _sse(item)
+                    except asyncio.TimeoutError:
+                        continue
+                while not queue.empty():
+                    yield _sse(queue.get_nowait())
+
+                answer, tool_calls, num_turns = task.result()
+                store.add_chat_message(session_id, role="assistant", content=answer)
+                for tc in tool_calls:
+                    yield _sse({"type": "tool_call", **tc.model_dump()})
+                yield _sse({"type": "answer", "text": answer})
+                yield _sse(
+                    {
+                        "type": "done",
+                        "session_id": session_id,
+                        "tool_calls": [tc.model_dump() for tc in tool_calls],
+                        "num_turns": num_turns,
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Streaming tool agent failed for: %r", body.message)
+                yield _sse({"type": "error", "detail": str(exc)})
+
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    @router.get("/tool-history")
+    def tool_history(
+        limit: int = 100,
+        filter_days: int | None = None,
+        http_request: Request = None,
+    ) -> ToolHistoryResponse:
+        if limit <= 0 or limit > 1000:
+            raise HTTPException(
+                status_code=400, detail="limit must be between 1 and 1000"
+            )
+        if filter_days is not None and filter_days <= 0:
+            raise HTTPException(status_code=400, detail="filter_days must be > 0")
+
+        user = resolve_request_user(http_request) if http_request else None
+        if user is None or user.is_anonymous:
+            return ToolHistoryResponse(sessions=[])
+
+        sessions = store.list_sessions_for_user(
+            user.id, limit=limit, filter_days=filter_days
+        )
+        return ToolHistoryResponse(
+            sessions=[
+                ToolSessionSummary(
+                    session_id=s.id, title=s.title or s.id, created_at=s.created_at
+                )
+                for s in sessions
+                if s.created_at
+            ]
+        )
+
+    return router
+
+
+__all__ = ["create_tool_router"]
