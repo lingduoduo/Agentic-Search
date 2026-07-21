@@ -63,11 +63,9 @@ GEN_AI_API_KEY=...
 
 Provider, web-search, retrieval, reranking, routing, and application settings are documented in [Configuration](docs/configuration.md).
 
-## Request routing
+## Search engine
 
-With `mode` omitted, `/api/agent` classifies each request as `chat`, `search`, or `tool`. An unfiltered auto-routed search tries internal retrieval first; weak or empty evidence falls through to SerpAPI and then the configured browser-search service. If no source returns evidence, the API reports that directly instead of asking a local model to answer from memory. See [API request routing](docs/request-routing.md) for modes, provider precedence, access-filter behavior, metadata, and examples.
-
-Searchable documents are prepared before query time by the existing asynchronous ingestion and indexing jobs. Filter-aware and degraded search paths use the shared composed pipeline: bounded session history resolves follow-ups for retrieval, then candidates are ranked/reranked and used for evidence-grounded inference. Strong unfiltered auto-search remains a distinct direct-first path: it queries the original request, applies its direct ranking and sufficiency gate, and falls through to SerpAPI and browser search when needed. Every path persists finalized answers, citations, documents, and stage metadata through the same JSON/SSE response tail. This internal simplification introduces no new public API and does not change the request or response schemas.
+The search agent classifies each request, tries internal retrieval first, and falls through to web search when evidence is weak. See [Search engine](docs/search-engine.md) for capabilities and request routing.
 
 ## Run locally
 
@@ -143,6 +141,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 ## Documentation
 
 - [Architecture](docs/architecture.md) — repository layout, agent families, routing, and request flows
+- [Search engine](docs/search-engine.md) — search-agent capabilities and request-routing overview
 - [API request routing](docs/request-routing.md) — modes, intent classification, provider order, fallbacks, and response metadata
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
