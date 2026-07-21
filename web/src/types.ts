@@ -451,3 +451,11 @@ export interface SearchFullResponse {
   llm_selected_doc_ids?: string[] | null;
   error?: string | null;
 }
+
+export interface ConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: ToolCallTraceView[];
+  progress?: string[];
+  pending?: boolean;
+}
