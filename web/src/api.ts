@@ -30,6 +30,10 @@ import type {
   ToolSessionSummary,
   ToolStreamEvent,
   ToolView,
+  ChatStreamEvent,
+  SendChatMessageBody,
+  SendSearchMessageBody,
+  SearchFullResponse,
 } from "./types";
 
 /**
@@ -436,4 +440,52 @@ export async function* sendToolMessage(
 
 export function getToolHistory(): Promise<{ sessions: ToolSessionSummary[] }> {
   return requestJson<{ sessions: ToolSessionSummary[] }>("/tool/tool-history");
+}
+
+export async function* sendChatMessage(
+  body: SendChatMessageBody,
+  init?: Pick<RequestInit, "signal">,
+): AsyncGenerator<ChatStreamEvent> {
+  const response = await fetch("/chat/send-chat-message", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stream: true, ...body }),
+    signal: init?.signal,
+  });
+  if (response.status === 400) throw new Error("NO_LOCAL_MODEL");
+  if (!response.ok || !response.body) {
+    throw new Error(`Chat stream failed: ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("data:")) {
+        const payload = trimmed.slice("data:".length).trim();
+        if (payload) yield JSON.parse(payload) as ChatStreamEvent;
+      }
+    }
+  }
+}
+
+export function sendSearchMessage(
+  body: SendSearchMessageBody,
+): Promise<SearchFullResponse> {
+  return requestJson<SearchFullResponse>("/search/send-search-message", {
+    method: "POST",
+    body: JSON.stringify({
+      search_query: body.search_query,
+      num_hits: body.num_hits ?? 8,
+      run_query_expansion: false,
+      stream: false,
+    }),
+  });
 }
