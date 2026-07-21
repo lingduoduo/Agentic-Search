@@ -6,6 +6,36 @@ import * as api from "../../api";
 describe("ToolAgentView", () => {
   beforeEach(() => vi.restoreAllMocks());
 
+  it("shows an approval card and posts the decision", async () => {
+    const submitSpy = vi.spyOn(api, "submitToolApproval").mockResolvedValue({});
+    // Only an approval_required event: the real backend blocks on the decision
+    // before continuing, so no done/answer arrives yet and the card stays mounted.
+    async function* fake() {
+      yield {
+        type: "approval_required",
+        approval: {
+          id: "ap1",
+          tool_name: "web_search",
+          arguments: {},
+          expires_at: "2030-01-01T00:00:00Z",
+        },
+      } as const;
+    }
+    vi.spyOn(api, "sendToolMessage").mockImplementation(fake as never);
+
+    render(<ToolAgentView />);
+    fireEvent.change(screen.getByLabelText("Tool agent message"), {
+      target: { value: "go" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+
+    const approveBtn = await screen.findByRole("button", { name: /approve/i });
+    fireEvent.click(approveBtn);
+    await waitFor(() =>
+      expect(submitSpy).toHaveBeenCalledWith("ap1", "approve"),
+    );
+  });
+
   it("renders streamed tool calls and the answer", async () => {
     async function* fake() {
       yield { type: "progress", turn: 1, text: "search · 3 docs" } as const;
