@@ -41,8 +41,9 @@ surface, parallel to `/search/*` and `/chat/*`:
 
 The router (`create_tool_router`, `src/internal/servers/query_and_chat/tool_backend.py`)
 reuses the shared loop runner in `src/internal/servers/web/tool_agent_runner.py`.
-In the web UI, the **Tool Agent** tab (Assistant | Tool Agent switcher) drives
-this endpoint with a live tool-call trace.
+In the web UI, the **Tool Agent** tab drives this endpoint and renders a running
+transcript: each turn interleaves its live tool-call trace, and gated tools show
+an inline approval prompt (Approve / Deny) before they run.
 
 Gated tools prompt for approval on the streaming path, at parity with the
 auto-router: the endpoint emits `approval_required` events through the

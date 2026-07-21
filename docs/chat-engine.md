@@ -37,4 +37,5 @@ local model with no retrieval and no tools:
   one JSON `{ session_id, answer }`. The runner is
   `src/internal/servers/web/plain_chat_runner.py`.
 
-In the web UI, the **Chat** tab drives this endpoint.
+In the web UI, the **Chat** tab drives this endpoint and renders a running
+transcript of the session's turns (accumulated client-side as you chat).

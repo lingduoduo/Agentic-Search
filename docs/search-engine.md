@@ -25,6 +25,20 @@ asking a local model to answer from memory. See
 [API request routing](request-routing.md) for modes, provider precedence,
 access-filter behavior, metadata, and examples.
 
+## Dedicated search surface (`/search/*`)
+
+Beyond the unified `/api/agent`, search has its own retrieval-only surface,
+parallel to `/chat/*` and `/tool/*`:
+
+- `POST /search/send-search-message` — runs the (optionally expanded) retrieval
+  pipeline and returns the ranked documents with their executed queries. No LLM
+  synthesis. Returns JSON, or a newline-delimited JSON stream when `stream:true`.
+- `POST /search/search-flow-classification` — keyword-vs-chat routing hint.
+- `GET /search/search-history` — past sessions for the caller.
+
+In the web UI, the **Search** tab drives `send-search-message` and renders the
+returned documents directly (no answer panel).
+
 Searchable documents are prepared before query time by the existing asynchronous
 ingestion and indexing jobs. Filter-aware and degraded search paths use the
 shared composed pipeline: bounded session history resolves follow-ups for
