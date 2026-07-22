@@ -43,6 +43,8 @@ def build_answer_prompt(
     question: str,
     context: SearchContextBundle,
     config: AgentBehaviorConfig | None = None,
+    *,
+    user_memory: str | None = None,
 ) -> PromptBundle:
     config = config or AgentBehaviorConfig()
     system = (
@@ -56,7 +58,7 @@ def build_answer_prompt(
         "4. For multi-step questions, reason through each step explicitly before stating the conclusion.\n"
         "5. If the context is insufficient to answer fully, state exactly what information is missing "
         "rather than speculating."
-    )
+    ) + (user_memory or "")
     user = (
         f"Question:\n{question}\n\n"
         f"Retrieved context:\n{context.to_context_text()}\n\n"
@@ -76,8 +78,10 @@ def build_chat_prompt(
     context: SearchContextBundle,
     history: list[ChatMessage] | None = None,
     config: AgentBehaviorConfig | None = None,
+    *,
+    user_memory: str | None = None,
 ) -> PromptBundle:
-    prompt = build_answer_prompt(question, context, config)
+    prompt = build_answer_prompt(question, context, config, user_memory=user_memory)
     messages = [prompt.messages[0], *(history or []), prompt.messages[1]]
     return PromptBundle(system=prompt.system, user=prompt.user, messages=messages)
 
@@ -89,6 +93,7 @@ def build_structured_answer_prompt(
     *,
     history: list[ChatMessage] | None = None,
     evidence: list[EvidenceSource] | None = None,
+    user_memory: str | None = None,
 ) -> PromptBundle:
     """Build the strict internal AnswerDraft prompt used by the safety guard."""
     config = config or AgentBehaviorConfig()
@@ -102,7 +107,7 @@ def build_structured_answer_prompt(
         "claim must be supported by every evidence ID it cites. If evidence is "
         "missing or you are uncertain, record the gap in missing_information or "
         "set abstain to true; never guess."
-    )
+    ) + (user_memory or "")
     evidence_text = (
         _format_evidence(evidence)
         if evidence is not None
@@ -126,10 +131,16 @@ def build_corrective_answer_prompt(
     config: AgentBehaviorConfig | None = None,
     history: list[ChatMessage] | None = None,
     evidence: list[EvidenceSource] | None = None,
+    user_memory: str | None = None,
 ) -> PromptBundle:
     """Build one bounded correction request without changing the evidence."""
     prompt = build_structured_answer_prompt(
-        question, context, config, history=history, evidence=evidence
+        question,
+        context,
+        config,
+        history=history,
+        evidence=evidence,
+        user_memory=user_memory,
     )
     user = (
         f"{prompt.user}\n\nOriginal structured draft:\n{original_draft}\n\n"

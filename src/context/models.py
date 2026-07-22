@@ -298,6 +298,7 @@ class AnswerGenerationRequest:
         default_factory=GroundedGenerationConfig
     )
     evidence_sufficiency: float | None = None
+    user_memory: str | None = None
 
 
 @dataclass(frozen=True)

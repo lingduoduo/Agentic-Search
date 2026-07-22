@@ -75,6 +75,7 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         search_url: str,
         top_k: int,
         filters=None,
+        user_memory=None,
     ) -> AnswerGenerationResult:
         assert filters is None
         assert question == "How do I deploy?"
@@ -232,6 +233,7 @@ def test_agent_endpoint_reuses_existing_session_history(monkeypatch, tmp_path):
         search_url: str,
         top_k: int,
         filters=None,
+        user_memory=None,
     ) -> AnswerGenerationResult:
         del filters
         observed_history.extend(chat_history or [])
@@ -287,6 +289,7 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
         search_url: str,
         top_k: int,
         filters=None,
+        user_memory=None,
     ) -> AnswerGenerationResult:
         del llm, chat_history, search_url, top_k, filters
         assert question == "rewritten deploy question"
@@ -656,7 +659,14 @@ def test_run_agent_chat_once_mode_returns_answer(monkeypatch, tmp_path):
     )
 
     async def fake_answer(
-        question, *, llm=None, chat_history=None, search_url, top_k, filters=None
+        question,
+        *,
+        llm=None,
+        chat_history=None,
+        search_url,
+        top_k,
+        filters=None,
+        user_memory=None,
     ):
         return _answer_result(question)
 
@@ -811,7 +821,9 @@ def test_explicit_mode_still_works(monkeypatch, tmp_path):
     """Passing explicit mode='chat_once' still routes to answer_with_retrieval."""
     called = {}
 
-    async def fake_answer(q, *, llm, chat_history, search_url, top_k, filters):
+    async def fake_answer(
+        q, *, llm, chat_history, search_url, top_k, filters, user_memory=None
+    ):
         called["answer"] = True
         return _answer_result(q)
 
