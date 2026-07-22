@@ -78,6 +78,18 @@ class UserProfileEntryRecord:
 
 
 @dataclass(slots=True)
+class MemoryTrajectoryRecord:
+    """Audit record of one memory-curation run."""
+
+    id: str
+    user_id: str
+    session_id: str | None
+    model: str
+    trajectory: JsonObject = field(default_factory=dict)
+    created_at: str | None = None
+
+
+@dataclass(slots=True)
 class GroupRecord:
     """Named group and its current user membership."""
 

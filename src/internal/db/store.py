@@ -20,6 +20,7 @@ from .models import (
     HookRecord,
     IndexAttemptRecord,
     IndexAttemptStatus,
+    MemoryTrajectoryRecord,
     StoredDocument,
     UserMemoryRecord,
     UserProfileEntryRecord,
@@ -340,6 +341,16 @@ class AgenticSearchStore:
             );
             CREATE INDEX IF NOT EXISTS idx_user_profiles_user
                 ON user_profiles(user_id, topic, id);
+            CREATE TABLE IF NOT EXISTS memory_trajectories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                session_id TEXT,
+                model TEXT NOT NULL DEFAULT '',
+                trajectory_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_trajectories_user
+                ON memory_trajectories(user_id, created_at, id);
 
             CREATE TABLE IF NOT EXISTS retrieval_feedback (
                 id TEXT PRIMARY KEY,
@@ -398,6 +409,16 @@ class AgenticSearchStore:
             );
             CREATE INDEX IF NOT EXISTS idx_user_profiles_user
                 ON user_profiles(user_id, topic, id);
+            CREATE TABLE IF NOT EXISTS memory_trajectories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                session_id TEXT,
+                model TEXT NOT NULL DEFAULT '',
+                trajectory_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_trajectories_user
+                ON memory_trajectories(user_id, created_at, id);
             """
         )
         for col, ddl in [
@@ -2582,6 +2603,65 @@ class AgenticSearchStore:
                 content=r["content"],
                 created_at=r["created_at"],
                 updated_at=r["updated_at"],
+            )
+            for r in rows
+        ]
+
+    def add_memory_trajectory(
+        self,
+        user_id: str,
+        *,
+        session_id: str | None,
+        model: str,
+        trajectory: dict[str, Any],
+    ) -> MemoryTrajectoryRecord:
+        rid = _new_id("mtraj")
+        now = _now()
+        self._conn.execute(
+            """
+            INSERT INTO memory_trajectories
+                (id, user_id, session_id, model, trajectory_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rid,
+                user_id,
+                session_id,
+                model,
+                json.dumps(trajectory, sort_keys=True),
+                now,
+            ),
+        )
+        self._conn.commit()
+        return MemoryTrajectoryRecord(
+            id=rid,
+            user_id=user_id,
+            session_id=session_id,
+            model=model,
+            trajectory=trajectory,
+            created_at=now,
+        )
+
+    def list_memory_trajectories(
+        self, user_id: str, limit: int = 20
+    ) -> list[MemoryTrajectoryRecord]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM memory_trajectories
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+        return [
+            MemoryTrajectoryRecord(
+                id=r["id"],
+                user_id=r["user_id"],
+                session_id=r["session_id"],
+                model=r["model"],
+                trajectory=json.loads(r["trajectory_json"] or "{}"),
+                created_at=r["created_at"],
             )
             for r in rows
         ]
