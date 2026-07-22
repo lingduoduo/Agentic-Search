@@ -49,7 +49,11 @@ def sync_tool_to_mcp(name: str) -> bool:
         return False
     wrapper = _make_mcp_wrapper(name)
     wrapper.__doc__ = tool.schema.description or name
-    mcp_server.tool()(wrapper)
+    try:
+        mcp_server.tool()(wrapper)
+    except Exception as exc:
+        logger.warning("sync_tool_to_mcp: could not mirror tool %r: %s", name, exc)
+        return False
     logger.debug("MCP tool registered dynamically: %s", name)
     return True
 
@@ -60,7 +64,13 @@ def _sync_all() -> int:
     for entry in tool_registry.list():
         wrapper = _make_mcp_wrapper(entry.tool.name)
         wrapper.__doc__ = entry.tool.schema.description or entry.tool.name
-        mcp_server.tool()(wrapper)
+        try:
+            mcp_server.tool()(wrapper)
+        except Exception as exc:
+            logger.warning(
+                "_sync_all: could not mirror tool %r: %s", entry.tool.name, exc
+            )
+            continue
         count += 1
     if count:
         logger.info(
