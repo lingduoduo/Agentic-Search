@@ -22,6 +22,7 @@ from .models import (
     IndexAttemptStatus,
     StoredDocument,
     UserMemoryRecord,
+    UserProfileEntryRecord,
     UserRecord,
 )
 from src.internal.feedback.runtime import deterministic_capture
@@ -328,6 +329,17 @@ class AgenticSearchStore:
             );
             CREATE INDEX IF NOT EXISTS idx_user_memories_user_active
                 ON user_memories(user_id, is_active, created_at, id);
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                subtopic TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_profiles_user
+                ON user_profiles(user_id, topic, id);
 
             CREATE TABLE IF NOT EXISTS retrieval_feedback (
                 id TEXT PRIMARY KEY,
@@ -375,6 +387,17 @@ class AgenticSearchStore:
             );
             CREATE INDEX IF NOT EXISTS idx_user_memories_user_active
                 ON user_memories(user_id, is_active, created_at, id);
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                subtopic TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_profiles_user
+                ON user_profiles(user_id, topic, id);
             """
         )
         for col, ddl in [
@@ -2508,6 +2531,60 @@ class AgenticSearchStore:
         )
         self._conn.commit()
         return cur.rowcount > 0
+
+    def replace_user_profile(
+        self, user_id: str, entries: list[dict[str, Any]]
+    ) -> list[UserProfileEntryRecord]:
+        """Atomically replace a user's profile with *entries* ({topic, subtopic, content})."""
+        now = _now()
+        self._conn.execute("DELETE FROM user_profiles WHERE user_id = ?", (user_id,))
+        out: list[UserProfileEntryRecord] = []
+        for entry in entries:
+            topic = str(entry.get("topic", "")).strip()
+            subtopic = str(entry.get("subtopic", "")).strip()
+            content = str(entry.get("content", "")).strip()
+            if not topic and not content:
+                continue
+            rid = _new_id("prof")
+            self._conn.execute(
+                """
+                INSERT INTO user_profiles
+                    (id, user_id, topic, subtopic, content, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (rid, user_id, topic, subtopic, content, now, now),
+            )
+            out.append(
+                UserProfileEntryRecord(
+                    id=rid,
+                    user_id=user_id,
+                    topic=topic,
+                    subtopic=subtopic,
+                    content=content,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        self._conn.commit()
+        return out
+
+    def get_user_profile(self, user_id: str) -> list[UserProfileEntryRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM user_profiles WHERE user_id = ? ORDER BY topic, id",
+            (user_id,),
+        ).fetchall()
+        return [
+            UserProfileEntryRecord(
+                id=r["id"],
+                user_id=r["user_id"],
+                topic=r["topic"],
+                subtopic=r["subtopic"],
+                content=r["content"],
+                created_at=r["created_at"],
+                updated_at=r["updated_at"],
+            )
+            for r in rows
+        ]
 
     # ------------------------------------------------------------------
     # Retrieval feedback

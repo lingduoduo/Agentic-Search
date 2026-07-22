@@ -65,6 +65,19 @@ class UserMemoryRecord:
 
 
 @dataclass(slots=True)
+class UserProfileEntryRecord:
+    """One entry of an LLM-consolidated user profile."""
+
+    id: str
+    user_id: str
+    topic: str
+    subtopic: str
+    content: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(slots=True)
 class GroupRecord:
     """Named group and its current user membership."""
 
