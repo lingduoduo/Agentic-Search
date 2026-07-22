@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"github.com/lingduoduo/Agentic-Search/cli/api"
 	"github.com/lingduoduo/Agentic-Search/cli/clientauth"
 	"github.com/lingduoduo/Agentic-Search/cli/config"
+	"github.com/lingduoduo/Agentic-Search/cli/exitcodes"
 	"github.com/lingduoduo/Agentic-Search/cli/models"
 )
 
@@ -32,13 +35,13 @@ Commands:
   profile                  Show the user profile (--generate to rebuild via LLM)
   curate                   Reconcile memories from conversation (--session-id S)
 
-Common flags: --url, --token, --user-id, --email, --secret`)
+Common flags: --url, --token, --user-id, --email, --secret, --json`)
 }
 
 func run(args []string) int {
 	if len(args) == 0 {
 		usage()
-		return 2
+		return int(exitcodes.BadRequest)
 	}
 	cmd, rest := args[0], args[1:]
 
@@ -48,6 +51,7 @@ func run(args []string) int {
 	userIDFlag := fs.String("user-id", "", "User ID — mint a JWT when no token is given")
 	emailFlag := fs.String("email", "", "Email embedded in the minted JWT")
 	secretFlag := fs.String("secret", "", "JWT signing secret (else AGENTIC_SEARCH_AUTH_SECRET / AUTH_SECRET)")
+	jsonFlag := fs.Bool("json", false, "output the raw response as JSON")
 	topK := fs.Int("top-k", 5, "search: max results")
 	noConflict := fs.Bool("no-conflict", false, "consolidate: dedup only")
 	generate := fs.Bool("generate", false, "profile: rebuild via the LLM")
@@ -57,15 +61,15 @@ func run(args []string) int {
 	case "add", "list", "search", "consolidate", "profile", "curate":
 	case "help", "-h", "--help":
 		usage()
-		return 0
+		return int(exitcodes.Success)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		usage()
-		return 2
+		return int(exitcodes.BadRequest)
 	}
 
 	if err := fs.Parse(rest); err != nil {
-		return 2
+		return int(exitcodes.BadRequest)
 	}
 
 	cfg := config.Load()
@@ -80,23 +84,44 @@ func run(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if err := dispatch(ctx, client, cmd, fs, *topK, *noConflict, *generate, *sessionID); err != nil {
+	if err := dispatch(ctx, client, cmd, fs, *jsonFlag, *topK, *noConflict, *generate, *sessionID); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
+		var exitErr *exitcodes.ExitError
+		if errors.As(err, &exitErr) {
+			return int(exitErr.Code)
+		}
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) {
+			return int(exitcodes.ForHTTPStatus(apiErr.StatusCode))
+		}
+		return int(exitcodes.General)
 	}
-	return 0
+	return int(exitcodes.Success)
 }
 
-func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.FlagSet, topK int, noConflict, generate bool, sessionID string) error {
+// printJSON writes v as indented JSON to stdout (used by every --json branch).
+func printJSON(v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+	return nil
+}
+
+func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.FlagSet, jsonOut bool, topK int, noConflict, generate bool, sessionID string) error {
 	switch cmd {
 	case "add":
 		text := strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if text == "" {
-			return fmt.Errorf("add requires memory text")
+			return exitcodes.Newf(exitcodes.BadRequest, "add requires memory text")
 		}
 		resp, err := client.SaveMemory(ctx, text)
 		if err != nil {
 			return err
+		}
+		if jsonOut {
+			return printJSON(resp)
 		}
 		id := "(empty, not saved)"
 		if resp.MemoryID != nil {
@@ -108,6 +133,9 @@ func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.Flag
 		if err != nil {
 			return err
 		}
+		if jsonOut {
+			return printJSON(resp)
+		}
 		if len(resp.Memories) == 0 {
 			fmt.Println("(no memories)")
 		}
@@ -117,11 +145,14 @@ func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.Flag
 	case "search":
 		query := strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
-			return fmt.Errorf("search requires a query")
+			return exitcodes.Newf(exitcodes.BadRequest, "search requires a query")
 		}
 		resp, err := client.SearchMemories(ctx, query, topK)
 		if err != nil {
 			return err
+		}
+		if jsonOut {
+			return printJSON(resp)
 		}
 		if len(resp.Results) == 0 {
 			fmt.Printf("no memories matched %q\n", query)
@@ -133,6 +164,9 @@ func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.Flag
 		resp, err := client.ConsolidateMemories(ctx, !noConflict)
 		if err != nil {
 			return err
+		}
+		if jsonOut {
+			return printJSON(resp)
 		}
 		rep := resp.Report
 		fmt.Printf("initial=%d duplicates_removed=%d conflicts_resolved=%d final=%d\n",
@@ -151,6 +185,9 @@ func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.Flag
 		if err != nil {
 			return err
 		}
+		if jsonOut {
+			return printJSON(resp)
+		}
 		if len(resp.Profile) == 0 {
 			fmt.Println("(empty profile)")
 		}
@@ -165,6 +202,9 @@ func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.Flag
 		resp, err := client.CurateMemory(ctx, sid)
 		if err != nil {
 			return err
+		}
+		if jsonOut {
+			return printJSON(resp)
 		}
 		if resp.Message != "" {
 			fmt.Printf("status=%s: %s\n", resp.Status, resp.Message)
