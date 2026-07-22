@@ -247,8 +247,10 @@ Authenticated requests carry document-access filters and use the filter-aware pi
 > `contents`, and `url` are excluded from the matchable metadata, so a filter on
 > one of those keys silently matches nothing. Because filtering is post-hoc,
 > aggressive filters can shrink a result set below `top_k`;
-> `OVER_FETCH_MULTIPLIER` compensates upstream. See
-> `src/internal/document_index/FILTER_SEMANTICS.md`.
+> `OVER_FETCH_MULTIPLIER` compensates upstream. (The separate enterprise
+> document-index backend has a richer multi-tenant `IndexFilters` model — see
+> `src/internal/document_index/FILTER_SEMANTICS.md` — which the local stack does
+> not use.)
 
 The filter-aware path uses the same internal stage sequence throughout the web backend:
 
