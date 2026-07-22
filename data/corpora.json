@@ -1,4 +1,4 @@
 {
-  "demo": {"path": "data/corpus.jsonl", "domain": "retrieval/ML", "docs": 20},
-  "scifact": {"path": "data/corpus_scifact.jsonl", "domain": "scientific", "docs": 5183}
+  "demo": {"path": "data/corpus.jsonl", "domain": "retrieval/ML", "docs": 20, "source": "ML Knowledge Base"},
+  "scifact": {"path": "data/corpus_scifact.jsonl", "domain": "scientific", "docs": 5183, "source": "SciFact Corpus"}
 }

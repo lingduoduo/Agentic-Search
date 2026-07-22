@@ -44,6 +44,9 @@ def _as_document(doc: dict, index: int) -> dict:
         "title": doc.get("title", ""),
         "text": doc.get("contents", doc.get("text", "")),
         "url": doc.get("url"),
+        # Forward corpus metadata (incl. the per-document "source") so result
+        # cards can show a real origin instead of the generic provider label.
+        "metadata": doc.get("metadata") or {},
     }
 
 

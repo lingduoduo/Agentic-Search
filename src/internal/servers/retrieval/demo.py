@@ -80,6 +80,9 @@ class TfidfRetriever:
                                 "contents", self._docs[i].get("text", "")
                             ),
                             "url": self._docs[i].get("url"),
+                            # Forward corpus metadata (incl. the per-document
+                            # "source") so result cards can show a real origin.
+                            "metadata": self._docs[i].get("metadata") or {},
                         },
                         "score": float(score),
                     }

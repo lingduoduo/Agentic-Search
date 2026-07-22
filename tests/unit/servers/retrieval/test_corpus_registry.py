@@ -112,3 +112,32 @@ def test_resolve_empty_spec_raises(manifest):
         resolve_corpus_docs("", manifest)
     with pytest.raises(ValueError):
         resolve_corpus_docs(None, manifest)
+
+
+def test_manifest_source_label_stamped_on_docs(tmp_path):
+    _write_corpus(tmp_path / "a.jsonl", [{"id": "a1", "title": "A1", "contents": "x"}])
+    manifest = {"a": {"path": str(tmp_path / "a.jsonl"), "source": "Team Wiki"}}
+    docs = resolve_corpus_docs("a", manifest)
+    assert docs[0]["metadata"]["source"] == "Team Wiki"
+
+
+def test_per_doc_source_overrides_corpus_default(tmp_path):
+    _write_corpus(
+        tmp_path / "a.jsonl",
+        [
+            {"id": "a1", "title": "A1", "contents": "x", "metadata": {"source": "PDF"}},
+            {"id": "a2", "title": "A2", "contents": "y"},
+        ],
+    )
+    manifest = {"a": {"path": str(tmp_path / "a.jsonl"), "source": "Team Wiki"}}
+    docs = resolve_corpus_docs("a", manifest)
+    # Explicit per-doc source wins; the other doc gets the corpus default.
+    assert docs[0]["metadata"]["source"] == "PDF"
+    assert docs[1]["metadata"]["source"] == "Team Wiki"
+
+
+def test_no_source_when_manifest_lacks_one(manifest):
+    # Manifest entries without a "source" leave docs unlabeled, so the web
+    # backend can fall back to its provider label.
+    docs = resolve_corpus_docs("a", manifest)
+    assert "source" not in (docs[0].get("metadata") or {})

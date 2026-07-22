@@ -34,11 +34,26 @@ Provider-level label (not per-document origin). Two layers:
    "Unknown"; a document whose metadata lacks a `source` defaults to
    "Local Retrieval" (the app's default retrieval backend).
 
+## Follow-up (same PR): per-document real source
+
+After the provider-label fix landed, we extended the change so cards show each
+document's **real origin** rather than a uniform provider label:
+
+- Documents carry a per-document `metadata.source`. Precedence:
+  explicit per-doc `source` > per-corpus default (`corpora.json` `source`
+  field) > provider label ("Local Retrieval").
+- The corpus registry (`resolve_corpus_docs`) stamps the source at load time.
+- The retrieval servers (`demo.py`, `hybrid.py`) forward `metadata` on
+  `/retrieve` (they previously dropped it).
+- The web backend (`_document_with_metadata`) prefers the document's real
+  `source`, falling back to the provider label only when absent.
+
+The provider label remains the fallback, so nothing ever renders "Unknown".
+
 ## Non-goals
 
-- Per-document origin/source (would require adding a `source` field to every
-  corpus doc). Explicitly out of scope for this change.
-- Changing the provider label set or colors.
+- Changing the provider label set or per-provider colors.
+- Per-source colors for the new corpus sources (they use the default swatch).
 
 ## Acceptance criteria
 

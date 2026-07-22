@@ -27,6 +27,17 @@ drop. Confirm this and report; build a fresh FAISS/BM25 index via the
 document-index CLI only if a persisted index is actually in use.
 → verify: document what was (or was not) dropped/rebuilt in the PR body.
 
+## Step 4b — Per-document real source (follow-up in same PR)
+1. `corpus_registry.py`: `_apply_source` stamps `metadata.source` at load time
+   (per-doc override > per-corpus manifest `source` > untouched).
+2. `data/corpora.json`: add a `source` label per corpus; `data/corpus.jsonl`:
+   add a per-doc `metadata.source` reflecting each doc's topic.
+3. `demo.py` + `hybrid.py`: forward `metadata` on `/retrieve`.
+4. `app.py` `_document_with_metadata`: prefer `document.metadata["source"]`
+   over the provider label.
+→ verify: registry test (stamp + override), demo/hybrid passthrough test,
+  backend precedence test.
+
 ## Step 5 — Ship
 `pytest`, `npm run typecheck`, `ruff check . --fix && ruff format .`, commit,
 push, open PR.

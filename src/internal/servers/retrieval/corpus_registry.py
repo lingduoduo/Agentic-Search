@@ -23,6 +23,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_MANIFEST_PATH = "data/corpora.json"
 
 
+def _apply_source(doc: dict, corpus_source: str | None) -> dict:
+    """Ensure a document carries a human-readable ``metadata.source``.
+
+    Precedence: an explicit per-document source (a top-level ``source`` field or
+    an existing ``metadata.source``) wins over the corpus-level default label
+    from the manifest. A document with neither is returned untouched, so the web
+    backend can still fall back to its provider label ("Local Retrieval").
+    """
+    meta = dict(doc.get("metadata") or {})
+    source = doc.get("source") or meta.get("source") or corpus_source
+    if source is None:
+        return doc
+    meta["source"] = source
+    return {**doc, "metadata": meta}
+
+
 def load_manifest(path: str = DEFAULT_MANIFEST_PATH) -> dict[str, dict]:
     """Load the corpus manifest; a missing file yields an empty manifest so
     path-only (--corpus_path) usage keeps working with no manifest present."""
@@ -50,7 +66,7 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
         if candidate and all(n in manifest for n in candidate):
             names = candidate
         elif os.path.exists(spec):
-            docs = _load_corpus(spec)
+            docs = [_apply_source(d, None) for d in _load_corpus(spec)]
             logger.info("Loaded corpus from path %s (%d docs)", spec, len(docs))
             return docs
         else:
@@ -65,6 +81,7 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
     for name in names:
         entry = manifest[name]
         path = entry["path"] if isinstance(entry, dict) else entry
+        corpus_source = entry.get("source") if isinstance(entry, dict) else None
         if not os.path.exists(path):
             logger.warning(
                 "Corpus %r file %r is missing; skipping (regenerate via beir_to_corpus.py)",
@@ -91,7 +108,7 @@ def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:
                 )
             if doc_id is not None:
                 id_source[doc_id] = name
-            docs.append(doc)
+            docs.append(_apply_source(doc, corpus_source))
     if not docs:
         raise ValueError(
             f"None of the requested corpora {names} have files on disk. "

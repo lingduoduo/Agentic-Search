@@ -124,6 +124,34 @@ async def test_run_agentic_rag_labels_document_source(monkeypatch):
     assert documents[0].citation == "[D1]"
 
 
+def test_document_with_metadata_prefers_real_source_over_provider_label():
+    # When the retrieval layer supplies a real per-document source, it wins over
+    # the generic provider label; source_provider still records the fetcher.
+    doc = ContextDocument(
+        id="D1",
+        title="T",
+        content="c",
+        url=None,
+        score=0.5,
+        metadata={"source": "Team Wiki"},
+    )
+    labeled = web_app._document_with_metadata(
+        doc, source_provider="retrieval", query="q", entry_point="rag"
+    )
+    assert labeled.metadata["source"] == "Team Wiki"
+    assert labeled.metadata["source_provider"] == "retrieval"
+
+
+def test_document_with_metadata_falls_back_to_provider_label():
+    doc = ContextDocument(
+        id="D1", title="T", content="c", url=None, score=0.5, metadata={}
+    )
+    labeled = web_app._document_with_metadata(
+        doc, source_provider="retrieval", query="q", entry_point="rag"
+    )
+    assert labeled.metadata["source"] == "Local Retrieval"
+
+
 @pytest.mark.asyncio
 async def test_run_agentic_rag_threads_access_filters_into_loop(monkeypatch):
     filters = SearchFilters(access_acl=["user:alice"])
