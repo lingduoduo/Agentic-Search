@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 from typing import Any, Callable
 
 from src.internal.db.models import UserMemoryRecord
+from src.internal.memory.tools import build_memory_registry
 
 DEFAULT_MEMORY_USER_ID = "default_user"
 MAX_CURATION_TURNS = 6
@@ -113,3 +116,144 @@ def consolidate_memories(
         store.delete_user_memory(user_id, r.id)
     report["final"] = len(keep)
     return report
+
+
+_CURATION_SYSTEM = (
+    "You maintain a user's long-term memory. Given a recent conversation and the "
+    "user's current memories, reconcile them by calling add_memory, update_memory, "
+    "and delete_memory. Add new durable facts/preferences, update changed ones, and "
+    "delete outdated or contradicted ones. Keep each memory a single contextual "
+    "sentence. Do NOT store secrets (passwords, PINs, full SSNs, or full card/account "
+    "numbers). When there is nothing left to change, reply with STOP and no tool calls."
+)
+
+_CURATION_USER = (
+    "Recent conversation:\n{conversation}\n\n"
+    "Current memories (id: text):\n{memories}\n\n"
+    "Update the memory set now using the tools."
+)
+
+
+def _gather_sources(store, user_id: str, session_id: str | None) -> str:
+    sessions = (
+        [store.get_chat_session(session_id)]
+        if session_id
+        else store.list_sessions_for_user(user_id)
+    )
+    lines: list[str] = []
+    for sess in sessions:
+        if sess is None:
+            continue
+        for msg in store.list_chat_messages(sess.id):
+            lines.append(f"{msg.role.upper()}: {msg.content}")
+    text = "\n".join(lines)
+    return text[-MEMORY_GATHER_CHAR_BUDGET:]
+
+
+def _format_memories(store, user_id: str) -> str:
+    records = store.get_user_memory_records(user_id)
+    if not records:
+        return "(none)"
+    return "\n".join(f"{r.id}: {r.memory_text}" for r in records)
+
+
+def _stream_turn(
+    llm, messages: list[dict], schemas: list[dict]
+) -> tuple[str, list[dict]]:
+    content_parts: list[str] = []
+    acc: dict[int, dict[str, str]] = {}
+    for chunk in llm.stream(messages, tools=schemas, max_tokens=1024):
+        delta = chunk.choice.delta
+        if delta.content:
+            content_parts.append(delta.content)
+        for tcd in delta.tool_calls:
+            slot = acc.setdefault(tcd.index, {"id": "", "name": "", "arguments": ""})
+            if tcd.id:
+                slot["id"] = tcd.id
+            if tcd.function is not None:
+                if tcd.function.name:
+                    slot["name"] = tcd.function.name
+                if tcd.function.arguments:
+                    slot["arguments"] += tcd.function.arguments
+    tool_calls = [acc[i] for i in sorted(acc)]
+    return "".join(content_parts), tool_calls
+
+
+async def curate_from_conversation(
+    store,
+    user_id: str,
+    llm,
+    session_id: str | None = None,
+    max_turns: int = MAX_CURATION_TURNS,
+) -> dict[str, Any]:
+    sources = _gather_sources(store, user_id, session_id)
+    if not sources.strip():
+        return {
+            "status": "empty",
+            "message": "no conversations or notes yet",
+            "counts": {},
+        }
+
+    before = [r.memory_text for r in store.get_user_memory_records(user_id)]
+    registry, counts, schemas = build_memory_registry(store, user_id)
+    messages: list[dict] = [
+        {"role": "system", "content": _CURATION_SYSTEM},
+        {
+            "role": "user",
+            "content": _CURATION_USER.format(
+                conversation=sources, memories=_format_memories(store, user_id)
+            ),
+        },
+    ]
+    tool_call_log: list[dict] = []
+    for _ in range(max_turns):
+        content, tool_calls = await asyncio.to_thread(
+            _stream_turn, llm, messages, schemas
+        )
+        assistant: dict[str, Any] = {"role": "assistant", "content": content or None}
+        if tool_calls:
+            assistant["tool_calls"] = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                }
+                for tc in tool_calls
+            ]
+        messages.append(assistant)
+        if not tool_calls:
+            break
+        for tc in tool_calls:
+            try:
+                args = json.loads(tc["arguments"] or "{}")
+            except json.JSONDecodeError as exc:
+                result = f"error: invalid JSON arguments: {exc}"
+            else:
+                response, _raw, errors = await registry.invoke(tc["name"], args)
+                result = response or ("; ".join(errors) if errors else "ok")
+                tool_call_log.append(
+                    {"name": tc["name"], "arguments": args, "result": result}
+                )
+            messages.append(
+                {"role": "tool", "tool_call_id": tc["id"], "content": result}
+            )
+
+    after = [r.memory_text for r in store.get_user_memory_records(user_id)]
+    trajectory = {
+        "memory_before": before,
+        "tool_calls": tool_call_log,
+        "memory_after": after,
+        "counts": dict(counts),
+    }
+    record = store.add_memory_trajectory(
+        user_id,
+        session_id=session_id,
+        model=getattr(getattr(llm, "config", None), "model_name", ""),
+        trajectory=trajectory,
+    )
+    return {
+        "status": "ok",
+        "trajectory_id": record.id,
+        "counts": dict(counts),
+        "memory_count": len(after),
+    }
