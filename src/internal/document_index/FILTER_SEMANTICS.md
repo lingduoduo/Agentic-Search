@@ -1,6 +1,17 @@
 # Vector DB Filter Semantics
 
-How `IndexFilters` fields combine into the final query filter. Applies to OpenSearch.
+> **Scope: enterprise document-index backend — not the local Agentic Search stack.**
+> This documents how `IndexFilters` (multi-tenant / ACL / persona / project /
+> hierarchy) combine into the OpenSearch/Weaviate query filter. The running
+> stack (web backend + the demo/hybrid retrieval servers) does **not** use
+> `IndexFilters`; it filters with the simpler `SearchFilters`
+> (`src/context/models.py`: `source_types`, `document_sets`, `tags`,
+> `access_acl`, `time_cutoff`) applied post-hoc via `SearchFilters.matches()`.
+> `IndexFilters` is imported only within `src/internal/document_index` and the
+> `src/internal/context/search` heritage tree. Treat this file as reference for
+> that enterprise index path, not live behavior.
+
+How `IndexFilters` fields combine into the final query filter (OpenSearch/Weaviate backend).
 
 ## Filter categories
 
