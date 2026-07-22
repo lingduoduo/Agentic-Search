@@ -50,3 +50,35 @@ def test_prompt_builders_unchanged_without_memory():
     ctx = SearchContextBundle(query="q", documents=[])
     assert "allergic" not in build_answer_prompt("q", ctx).system
     assert "allergic" not in build_structured_answer_prompt("q", ctx).system
+
+
+class _CapturingLLM:
+    """Fake LLM that records the messages it was asked to complete."""
+
+    def __init__(self):
+        self.seen: list = []
+
+    def complete(self, messages, **kwargs):
+        self.seen = messages
+        return "an answer"
+
+
+def test_generate_answer_injects_memory_into_system_message():
+    """End-to-end through the real pipeline: the memory reaches the LLM's system
+    message, not just a helper string."""
+    from src.context.models import AnswerGenerationRequest, GroundedGenerationConfig
+    from src.context.pipeline import generate_answer
+
+    ctx = SearchContextBundle(query="q", documents=[])
+    pre = "\n\nUser memory:\n- User is allergic to peanuts"
+    request = AnswerGenerationRequest(
+        question="Recommend Thai food",
+        context=ctx,
+        user_memory=pre,
+        grounded_generation=GroundedGenerationConfig(enabled=False),
+    )
+    llm = _CapturingLLM()
+    generate_answer(request, llm=llm)
+
+    system = next(m.content for m in llm.seen if m.role == "system")
+    assert "allergic to peanuts" in system

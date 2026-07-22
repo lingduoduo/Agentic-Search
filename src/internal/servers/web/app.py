@@ -1127,6 +1127,8 @@ async def _run_auto_routed(
         return answer, citations, documents, intent, extra
 
     # ---- CHAT: grounded synthesis via AgenticRAGLoop (degrade to pipeline) ----
+    # Memory injection is intentionally scoped to this CHAT/AgenticRAG path (and
+    # the classic RAG path); SEARCH/TOOL routes do not receive user_memory.
     if strategy is RouteStrategy.CHAT:
         if llm is not None:
             answer, citations, documents, intent, run_extra = await _run_agentic_rag(
