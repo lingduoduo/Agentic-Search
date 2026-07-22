@@ -2457,6 +2457,58 @@ class AgenticSearchStore:
         ).fetchall()
         return [str(row["memory_text"]) for row in rows]
 
+    def get_user_memory_records(self, user_id: str) -> list[UserMemoryRecord]:
+        """Return active memory records (with ids) for a user in display order."""
+        rows = self._conn.execute(
+            """
+            SELECT * FROM user_memories
+            WHERE user_id = ? AND is_active = 1
+            ORDER BY created_at, id
+            """,
+            (user_id,),
+        ).fetchall()
+        return [self._row_to_user_memory(row) for row in rows]
+
+    def update_user_memory(
+        self,
+        user_id: str,
+        memory_id: str,
+        new_text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> UserMemoryRecord | None:
+        """Replace one active memory identified by id (scoped to user_id)."""
+        if not new_text.strip():
+            return None
+        row = self._conn.execute(
+            "SELECT * FROM user_memories WHERE id = ? AND user_id = ? AND is_active = 1",
+            (memory_id, user_id),
+        ).fetchone()
+        if row is None:
+            return None
+        captured, capture_meta = deterministic_capture(new_text.strip())
+        merged_meta = _json_loads(row["metadata_json"])
+        merged_meta.update(metadata or {})
+        merged_meta.update(capture_meta)
+        self._conn.execute(
+            "UPDATE user_memories SET memory_text = ?, metadata_json = ?, updated_at = ? WHERE id = ?",
+            (captured, _json_dumps(merged_meta), _now(), memory_id),
+        )
+        self._conn.commit()
+        updated = self._conn.execute(
+            "SELECT * FROM user_memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        return self._row_to_user_memory(updated)
+
+    def delete_user_memory(self, user_id: str, memory_id: str) -> bool:
+        """Soft-delete one active memory by id (scoped to user_id)."""
+        cur = self._conn.execute(
+            "UPDATE user_memories SET is_active = 0, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND is_active = 1",
+            (_now(), memory_id, user_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     # ------------------------------------------------------------------
     # Retrieval feedback
     # ------------------------------------------------------------------
