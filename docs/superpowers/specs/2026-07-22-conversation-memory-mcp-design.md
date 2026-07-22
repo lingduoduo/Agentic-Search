@@ -33,11 +33,18 @@ uses internally — not `ToolAgentLoop` itself.
   key-values.
 - A persisted **structured user profile** (`topic / subtopic / content`),
   consolidated from the curated memories.
+- A persisted, inspectable **curation trajectory** (what the LLM saw, its tool
+  calls, before/after memory state) — implemented repo-native (a store table +
+  returned from the tool), echoing the existing request-capture pattern, not a
+  loose `memory_trajectory.json` in cwd.
+- A **secret guardrail**: the curation prompt instructs the LLM not to persist
+  obvious secrets (passwords, PINs, full SSNs, full card/account numbers).
 
 **Drop (YAGNI / this repo has equivalents):**
 - Provider zoo (siliconflow/doubao/kimi/moonshot/openrouter) + reasoning-temp
   hacks → use `OpenAICompatibleLLM`.
-- Console streaming, verbose prints, `memory_trajectory.json`.
+- Console streaming, verbose prints, and the loose `memory_trajectory.json`
+  file (we persist the trajectory to the store instead).
 - The four memory modes → **one** representation (enhanced notes for raw
   memories; structured topic/subtopic/content for the profile).
 - Hand-rolled provider/streaming/ReAct plumbing → reuse `OpenAICompatibleLLM`
@@ -49,7 +56,8 @@ uses internally — not `ToolAgentLoop` itself.
 - `update_memory_from_conversation(session_id=None)` — **agentic curation.** A
   thin bounded loop drives `OpenAICompatibleLLM`'s tool-calling with internal
   add/update/delete tools over the user's conversation turns + current memories;
-  the LLM reconciles the memory set.
+  the LLM reconciles the memory set. Persists a trajectory and returns its
+  summary.
 - `generate_user_profile()` — LLM consolidates the curated memories into
   structured `{topic, subtopic, content}` entries; persists them.
 - `get_user_profile()` — return the persisted structured profile.
@@ -104,10 +112,15 @@ uses), and `build_e5_encoder` (`servers/retrieval/hybrid.py`).
    `add_memory(content)`, `update_memory(memory_id, content)`,
    `delete_memory(memory_id)`.
 3. Thin bounded loop (≤ `MAX_CURATION_TURNS`): call
-   `llm` with the enhanced-notes system prompt + gathered text + `tools`; for
-   each returned tool call, `registry.invoke(...)`; append results; repeat until
-   the model stops emitting tool calls (or the cap is hit).
-4. Return a summary (counts of add/update/delete applied).
+   `llm` with the enhanced-notes system prompt (which includes the **secret
+   guardrail** — do not store passwords, PINs, full SSNs, full card/account
+   numbers) + gathered text + `tools`; for each returned tool call,
+   `registry.invoke(...)`; append results; repeat until the model stops emitting
+   tool calls (or the cap is hit).
+4. Build a trajectory record — `{model, session_id, memory_before, tool_calls
+   (name/args/result), memory_after, counts}` — and persist it via
+   `store.add_memory_trajectory(...)`.
+5. Return the trajectory summary (counts + before/after sizes).
 
 ### Data flow — `generate_user_profile()`
 
@@ -151,6 +164,25 @@ Exact accessor pinned in the plan against what the verifier exposes.
 - New `UserProfileEntryRecord` in `db/models.py` (+ export).
 - New accessors: `replace_user_profile`, `get_user_profile`,
   `list_chat_sessions(user_id)` (uses `idx_chat_sessions_user_updated`).
+- **New `memory_trajectories` table** (curation audit trail):
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS memory_trajectories (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      session_id TEXT,
+      model TEXT NOT NULL DEFAULT '',
+      trajectory_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_memory_trajectories_user
+      ON memory_trajectories(user_id, created_at, id);
+  ```
+
+  `trajectory_json` holds `{memory_before, tool_calls, memory_after, counts}`.
+  New `MemoryTrajectoryRecord` in `db/models.py` (+ export) and accessors
+  `add_memory_trajectory(...)` / `list_memory_trajectories(user_id, limit)`.
+  (A Dev Console panel over this is a later, separate step — not in scope here.)
 
 ## Semantic search
 
@@ -180,7 +212,9 @@ Unit tests (no model download, no network):
 - Memory tools (`add/update/delete` `Tool`s) invoked directly → assert the store
   mutates correctly (no LLM needed).
 - `service.curate` with a **fake LLM** that emits scripted tool calls then stops
-  → assert add/update/delete land in the store, and the turn cap is honored.
+  → assert add/update/delete land in the store, the turn cap is honored, and a
+  `memory_trajectories` row is persisted with before/after + tool calls.
+- Store: `add_memory_trajectory` / `list_memory_trajectories` round-trip.
 - `service.generate_profile` with a fake LLM returning JSON → persisted entries;
   malformed JSON → empty + message.
 - `service.search` lexical fallback → deterministic ranking.
@@ -202,8 +236,9 @@ ideas live on in `tools/memory.py`, `src/internal/memory/service.py`, and
 ## Acceptance criteria
 
 - MCP tools registered in `api.py` and callable.
-- `update_memory_from_conversation` runs the thin tool-calling loop and
-  reconciles memories (add/update/delete) from conversation + existing notes.
+- `update_memory_from_conversation` runs the thin tool-calling loop, reconciles
+  memories (add/update/delete) from conversation + existing notes, and persists a
+  trajectory (before/after + tool calls) it returns a summary of.
 - `generate_user_profile` persists LLM-consolidated `{topic, subtopic, content}`;
   `get_user_profile` returns them.
 - `search_memories` ranks memories with no external service / forced model
