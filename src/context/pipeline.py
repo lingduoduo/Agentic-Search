@@ -56,6 +56,7 @@ def generate_answer(
         request.context,
         history=request.chat_history,
         config=request.behavior,
+        user_memory=request.user_memory,
     )
     config = request.grounded_generation
     evidence = request.evidence
@@ -99,6 +100,7 @@ def generate_answer(
             request.behavior,
             history=request.chat_history,
             evidence=evidence,
+            user_memory=request.user_memory,
         )
     else:
         prompt = build_structured_answer_prompt(
@@ -107,6 +109,7 @@ def generate_answer(
             request.behavior,
             history=request.chat_history,
             evidence=evidence,
+            user_memory=request.user_memory,
         )
         (
             answer,
@@ -188,6 +191,7 @@ def _generate_guarded_answer(
                 config=request.behavior,
                 history=request.chat_history,
                 evidence=evidence,
+                user_memory=request.user_memory,
             )
         try:
             raw = llm.complete(
@@ -297,6 +301,7 @@ async def answer_with_retrieval(
     tool_timeout_seconds: float = 5.0,
     grounded_generation: GroundedGenerationConfig | None = None,
     evidence_sufficiency: float | None = None,
+    user_memory: str | None = None,
 ) -> AnswerGenerationResult:
     from .safety import evidence_from_context
     from .tool_evidence import collect_tool_evidence
@@ -340,6 +345,7 @@ async def answer_with_retrieval(
                     grounded_generation=grounded_generation
                     or GroundedGenerationConfig(),
                     evidence_sufficiency=evidence_sufficiency,
+                    user_memory=user_memory,
                 ),
                 llm=llm,
             )

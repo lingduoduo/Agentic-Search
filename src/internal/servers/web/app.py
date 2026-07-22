@@ -54,6 +54,7 @@ from src.context.models import SearchFilters
 from src.context.search import SearchResult, citation_key
 from src.context.preprocessing.access_filters import build_user_only_filters
 from src.internal.db import AgenticSearchStore
+from src.internal.memory.service import memory_preamble
 from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
@@ -148,6 +149,8 @@ class SearchExperienceSettings:
     allow_client_search_url: bool = False
     # Dev-only observability console. Off by default; never enable in prod.
     debug_panels: bool = False
+    # Inject the user's stored memories into the answer prompt. Off by default.
+    memory_injection: bool = False
 
     @classmethod
     def from_app_settings(
@@ -167,6 +170,7 @@ class SearchExperienceSettings:
             db_path=app_settings.services.web_db_path,
             allow_client_search_url=_flag("AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL"),
             debug_panels=_flag("AGENTIC_SEARCH_DEBUG_PANELS"),
+            memory_injection=_flag("AGENTIC_SEARCH_MEMORY_INJECTION"),
         )
 
 
@@ -633,6 +637,7 @@ async def _run_agentic_rag(
     top_k: int,
     filters=None,
     history: list,
+    user_memory: str | None = None,
 ) -> tuple:
     """Run the AgenticRAGLoop (decompose + HyDE). Assumes an LLM is configured."""
     rag_loop = AgenticRAGLoop(
@@ -647,7 +652,9 @@ async def _run_agentic_rag(
     from uuid import uuid4
 
     recorder = ControlFlowRecorder(uuid4().hex)
-    rag = await rag_loop.run(query, chat_history=history, recorder=recorder)
+    rag = await rag_loop.run(
+        query, chat_history=history, recorder=recorder, user_memory=user_memory
+    )
     documents = [
         _document_with_metadata(
             document,
@@ -1045,6 +1052,7 @@ async def _run_auto_routed(
     source_provider: str = "retrieval",
     on_turn=None,
     on_approval=None,
+    user_memory: str | None = None,
 ) -> tuple:
     """3-way agentic routing. Returns (answer, citations, documents, intent, extra).
 
@@ -1119,6 +1127,8 @@ async def _run_auto_routed(
         return answer, citations, documents, intent, extra
 
     # ---- CHAT: grounded synthesis via AgenticRAGLoop (degrade to pipeline) ----
+    # Memory injection is intentionally scoped to this CHAT/AgenticRAG path (and
+    # the classic RAG path); SEARCH/TOOL routes do not receive user_memory.
     if strategy is RouteStrategy.CHAT:
         if llm is not None:
             answer, citations, documents, intent, run_extra = await _run_agentic_rag(
@@ -1128,6 +1138,7 @@ async def _run_auto_routed(
                 top_k=top_k,
                 filters=filters,
                 history=history,
+                user_memory=user_memory,
             )
             extra.update(run_extra)
             return answer, citations, documents, intent, extra
@@ -1362,6 +1373,13 @@ def create_web_app(
 
         auth_user = _optional_user_from_request(http_request)
         user_id = request.user_id or (auth_user.id if auth_user else None)
+        # Memory-augmented generation: inject the user's stored memories into the
+        # answer prompt (off unless AGENTIC_SEARCH_MEMORY_INJECTION is set).
+        user_memory = (
+            memory_preamble(db, user_id)
+            if settings.memory_injection and user_id
+            else None
+        )
         hook_result = execute_hook(
             hook_point=HookPoint.QUERY_PROCESSING,
             payload={"query": query, "user_id": user_id},
@@ -1446,6 +1464,7 @@ def create_web_app(
                         ),
                         on_turn=on_turn,
                         on_approval=on_approval,
+                        user_memory=user_memory,
                     )
                     _cap = _capture.active()
                     if _cap is not None:
@@ -1563,6 +1582,7 @@ def create_web_app(
                         top_k=top_k,
                         filters=filters,
                         history=history,
+                        user_memory=user_memory,
                     )
                     return _finalize_response(
                         db,
@@ -1656,6 +1676,7 @@ def create_web_app(
                     search_url=search_url,
                     top_k=top_k,
                     filters=filters,
+                    user_memory=user_memory,
                 )
             except HTTPException:
                 raise

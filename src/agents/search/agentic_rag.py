@@ -194,6 +194,7 @@ class AgenticRAGLoop:
         *,
         chat_history: list[ChatMessage] | None = None,
         recorder: "ControlFlowRecorder | None" = None,
+        user_memory: str | None = None,
     ) -> AgenticRAGResult:
         def _emit(
             component: str,
@@ -318,6 +319,7 @@ class AgenticRAGLoop:
                 question=question,
                 context=merged,
                 chat_history=chat_history or [],
+                user_memory=user_memory,
             ),
             llm=self.llm,
         )

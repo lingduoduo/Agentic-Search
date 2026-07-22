@@ -435,3 +435,39 @@ async def test_run_without_recorder_is_unchanged():
         result = await loop.run("q")  # no recorder → no crash, same result
     assert result.answer
     assert result.rounds_used == 1
+
+
+@pytest.mark.asyncio
+async def test_run_threads_user_memory_into_answer_request():
+    """AgenticRAGLoop.run(user_memory=...) sets it on the AnswerGenerationRequest
+    handed to generate_answer (the shared synthesis prompt)."""
+    from src.context.models import AnswerGenerationResult, PromptBundle
+
+    bundle = _make_bundle(["d1"])
+    llm = MagicMock()
+    llm.complete.return_value = "x"  # generic enhancer responses; answer is stubbed
+    config = AgenticRAGConfig(max_rounds=1, topk=5)
+    captured: dict = {}
+
+    def fake_generate_answer(request, *, llm=None):
+        captured["user_memory"] = request.user_memory
+        return AnswerGenerationResult(
+            answer="ok",
+            citations=[],
+            context=request.context,
+            prompt=PromptBundle(system="", user="", messages=[]),
+        )
+
+    with (
+        patch(
+            "src.agents.search.agentic_rag.retrieve_context",
+            AsyncMock(return_value=bundle),
+        ),
+        patch("src.agents.search.agentic_rag.generate_answer", fake_generate_answer),
+    ):
+        loop = AgenticRAGLoop(config, llm=llm)
+        await loop.run(
+            "what is FAISS?", user_memory="\n\nUser memory:\n- allergic to peanuts"
+        )
+
+    assert captured["user_memory"] == "\n\nUser memory:\n- allergic to peanuts"

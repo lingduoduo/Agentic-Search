@@ -17,8 +17,31 @@ logger = logging.getLogger(__name__)
 DEFAULT_MEMORY_USER_ID = "default_user"
 MAX_CURATION_TURNS = 6
 MEMORY_GATHER_CHAR_BUDGET = 12000
+MEMORY_INJECTION_MAX = 20
 
 Encoder = Callable[[list[str]], Any]  # list[str] -> np.ndarray
+
+_MEMORY_PREAMBLE_HEADER = (
+    "\n\nWhat you know about this user (remembered from earlier conversations). "
+    "Use these facts when relevant and apply them proactively — honor stated "
+    "preferences, and warn about allergies or constraints:\n"
+)
+
+
+def memory_preamble(
+    store, user_id: str, *, max_items: int = MEMORY_INJECTION_MAX
+) -> str:
+    """Format the user's most-recent active memories as a system-prompt preamble.
+
+    Returns an instructional block (leading blank line included) listing up to
+    *max_items* memories, or ``""`` when the user has none. The instructional
+    wording is what drives proactive use (e.g. warn about a stored allergy).
+    """
+    memories = store.get_user_memories(user_id)
+    if not memories:
+        return ""
+    recent = memories[-max_items:]
+    return _MEMORY_PREAMBLE_HEADER + "\n".join(f"- {m}" for m in recent)
 
 
 def maybe_build_encoder() -> Encoder | None:
