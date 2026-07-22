@@ -39,6 +39,11 @@ uses internally — not `ToolAgentLoop` itself.
   loose `memory_trajectory.json` in cwd.
 - A **secret guardrail**: the curation prompt instructs the LLM not to persist
   obvious secrets (passwords, PINs, full SSNs, full card/account numbers).
+- A deterministic **consolidate** op (no LLM): exact-content dedup + attribute
+  conflict resolution (keep the newest per attribute, supersede older),
+  returning a report. Complements the LLM curation. The attribute key is an
+  optional `tags`/`attribute` stored in the existing `user_memories.metadata_json`
+  (no schema change); memories with no attribute are only exact-deduped.
 
 **Drop (YAGNI / this repo has equivalents):**
 - Provider zoo (siliconflow/doubao/kimi/moonshot/openrouter) + reasoning-temp
@@ -62,10 +67,13 @@ uses internally — not `ToolAgentLoop` itself.
   structured `{topic, subtopic, content}` entries; persists them.
 - `get_user_profile()` — return the persisted structured profile.
 - `search_memories(query, max_results)` — semantic recall over the memories.
+- `consolidate_memories(resolve_conflicts=True)` — deterministic dedup +
+  attribute conflict resolution; returns a `{initial, duplicates_removed,
+  conflicts_resolved[], final}` report. No LLM.
 
 `add/update/delete` are **internal** `Tool`s the curation loop calls — not part
 of the MCP surface (which stays: save / update-from-conversation / generate /
-get / search).
+get / search / consolidate).
 
 ## Non-goals
 
@@ -90,7 +98,8 @@ src/internal/memory/service.py            (logic; no MCP dependency)
         ├─ generate_profile→ LLM.complete() over curated memories → parse
         │                     → store.replace_user_profile()
         ├─ get_profile     → store.get_user_profile(user_id)
-        └─ search          → e5 cosine over memories (lexical fallback)
+        ├─ search          → e5 cosine over memories (lexical fallback)
+        └─ consolidate     → dedup + attribute conflict resolution (no LLM)
 
 src/internal/memory/tools.py              (add/update/delete Tool factory,
                                            closing over user_id + store)
@@ -128,6 +137,21 @@ uses), and `build_e5_encoder` (`servers/retrieval/hybrid.py`).
 array of `{topic, subtopic, content}`, parsed defensively (bad/empty → empty
 list + clear message) → `store.replace_user_profile(user_id, entries)` (atomic
 delete-then-insert). Returns the entries.
+
+### Data flow — `consolidate_memories(resolve_conflicts=True)` (no LLM)
+
+Ported from the Go sample's `Consolidate`, operating on the shared store:
+
+1. Load `store.get_user_memory_records(user_id)`.
+2. **Dedup:** drop memories with identical trimmed content, keeping the newest
+   (`updated_at`). Count removals.
+3. **Conflict resolution** (when `resolve_conflicts`): group by `attribute`
+   (a `tags[0]`-style key read from each memory's `metadata_json`); within each
+   group keep the newest and mark the rest superseded, recording
+   `{attribute, kept, superseded[]}`. Memories without an attribute pass through.
+4. Apply by soft-deleting the removed/superseded memories via
+   `delete_user_memory`; return the `ConsolidationReport`
+   (`initial / duplicates_removed / conflicts_resolved[] / final`).
 
 ### Identity
 
@@ -218,6 +242,9 @@ Unit tests (no model download, no network):
 - `service.generate_profile` with a fake LLM returning JSON → persisted entries;
   malformed JSON → empty + message.
 - `service.search` lexical fallback → deterministic ranking.
+- `service.consolidate` → exact duplicates removed (newest kept); tagged
+  conflicts resolve to newest-per-attribute with a correct report; untagged
+  memories survive.
 - Registration: importing `tools.memory` registers the tools; `api.py` imports
   it without error.
 
@@ -226,6 +253,17 @@ Unit tests (no model download, no network):
 No new required config. Reuse the LLM env (`GEN_AI_*` / `AGENTIC_SEARCH_LLM_*`)
 via `_build_llm()` and the e5 default (`intfloat/e5-base-v2`). Gather budget and
 `MAX_CURATION_TURNS` are module constants.
+
+## Follow-on deliverable (separate spec) — memory CLI
+
+Out of scope here, recorded so this spec builds toward it: a CLI to manage
+memory (add / query / update / show / consolidate). It will be a **subcommand of
+the existing Go `cli/`** (`cli/api/client.go` HTTP client), calling **backend
+memory HTTP endpoints** on the web app — one source of truth (SQLite), reusing
+`memory/service.py`. We are **not** adding the sampled standalone Go tool with
+its own `data/memories/*.json` store (it would fork user-memory into a second
+silo disconnected from the MCP tools + web app). Building it requires (a) memory
+REST endpoints on the web backend and (b) Go subcommands — its own spec/plan.
 
 ## Cleanup
 
@@ -241,6 +279,8 @@ ideas live on in `tools/memory.py`, `src/internal/memory/service.py`, and
   trajectory (before/after + tool calls) it returns a summary of.
 - `generate_user_profile` persists LLM-consolidated `{topic, subtopic, content}`;
   `get_user_profile` returns them.
+- `consolidate_memories` deterministically dedups + resolves tagged conflicts and
+  returns a report (no LLM).
 - `search_memories` ranks memories with no external service / forced model
   download in tests.
 - `pytest` green; `ruff` clean.
