@@ -7,7 +7,7 @@ import json
 import re
 from typing import Any, Callable
 
-from src.internal.db.models import UserMemoryRecord
+from src.internal.db.models import UserMemoryRecord, UserProfileEntryRecord
 from src.internal.memory.tools import build_memory_registry
 
 DEFAULT_MEMORY_USER_ID = "default_user"
@@ -257,3 +257,56 @@ async def curate_from_conversation(
         "counts": dict(counts),
         "memory_count": len(after),
     }
+
+
+_PROFILE_SYSTEM = (
+    "You build a concise structured profile of a user from their memories. "
+    "Return ONLY a JSON array of objects with keys 'topic', 'subtopic', and "
+    "'content'. Group related facts under a shared topic. No prose outside the array."
+)
+
+_PROFILE_USER = "User memories:\n{memories}\n\nReturn the JSON profile array now."
+
+
+def _parse_profile_json(text: str) -> list[dict[str, str]]:
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end == -1 or end < start:
+        return []
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    out: list[dict[str, str]] = []
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and (item.get("topic") or item.get("content")):
+                out.append(
+                    {
+                        "topic": str(item.get("topic", "")),
+                        "subtopic": str(item.get("subtopic", "")),
+                        "content": str(item.get("content", "")),
+                    }
+                )
+    return out
+
+
+def generate_user_profile(store, user_id: str, llm) -> list[UserProfileEntryRecord]:
+    memories = [r.memory_text for r in store.get_user_memory_records(user_id)]
+    if not memories:
+        return store.replace_user_profile(user_id, [])
+    prompt = [
+        {"role": "system", "content": _PROFILE_SYSTEM},
+        {
+            "role": "user",
+            "content": _PROFILE_USER.format(
+                memories="\n".join(f"- {m}" for m in memories)
+            ),
+        },
+    ]
+    raw = llm.complete(prompt, max_tokens=800, temperature=0.0)
+    text = raw if isinstance(raw, str) else getattr(raw, "text", "")
+    return store.replace_user_profile(user_id, _parse_profile_json(text))
+
+
+def get_user_profile(store, user_id: str) -> list[UserProfileEntryRecord]:
+    return store.get_user_profile(user_id)
