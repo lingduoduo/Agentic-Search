@@ -356,6 +356,72 @@ func (c *Client) StopChatSession(ctx context.Context, sessionID string) {
 	_ = resp.Body.Close()
 }
 
+// SaveMemory calls POST /api/memory/save.
+func (c *Client) SaveMemory(ctx context.Context, text string) (*models.MemorySaveResponse, error) {
+	var resp models.MemorySaveResponse
+	if err := c.doJSON(ctx, "POST", "/memory/save", models.MemorySaveRequest{Text: text}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ListMemories calls GET /api/memory/list.
+func (c *Client) ListMemories(ctx context.Context) (*models.MemoryListResponse, error) {
+	var resp models.MemoryListResponse
+	if err := c.doJSON(ctx, "GET", "/memory/list", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// SearchMemories calls POST /api/memory/search.
+func (c *Client) SearchMemories(ctx context.Context, query string, maxResults int) (*models.MemorySearchResponse, error) {
+	var resp models.MemorySearchResponse
+	req := models.MemorySearchRequest{Query: query, MaxResults: maxResults}
+	if err := c.doJSON(ctx, "POST", "/memory/search", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ConsolidateMemories calls POST /api/memory/consolidate.
+func (c *Client) ConsolidateMemories(ctx context.Context, resolveConflicts bool) (*models.MemoryConsolidateResponse, error) {
+	var resp models.MemoryConsolidateResponse
+	req := models.MemoryConsolidateRequest{ResolveConflicts: resolveConflicts}
+	if err := c.doJSON(ctx, "POST", "/memory/consolidate", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// GetMemoryProfile calls GET /api/memory/profile.
+func (c *Client) GetMemoryProfile(ctx context.Context) (*models.MemoryProfileResponse, error) {
+	var resp models.MemoryProfileResponse
+	if err := c.doJSON(ctx, "GET", "/memory/profile", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// GenerateMemoryProfile calls POST /api/memory/profile/generate.
+func (c *Client) GenerateMemoryProfile(ctx context.Context) (*models.MemoryProfileResponse, error) {
+	var resp models.MemoryProfileResponse
+	if err := c.doJSONWith(ctx, c.searchHTTPClient, "POST", "/memory/profile/generate", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// CurateMemory calls POST /api/memory/curate.
+func (c *Client) CurateMemory(ctx context.Context, sessionID *string) (*models.MemoryCurateResponse, error) {
+	var resp models.MemoryCurateResponse
+	req := models.MemoryCurateRequest{SessionID: sessionID}
+	if err := c.doJSONWith(ctx, c.searchHTTPClient, "POST", "/memory/curate", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // ClientAPI is the interface satisfied by Client.
 type ClientAPI interface {
 	TestConnection(ctx context.Context) error
@@ -369,6 +435,13 @@ type ClientAPI interface {
 	SendMessageStream(ctx context.Context, message string, chatSessionID *string, agentID int, parentMessageID *int, fileDescriptors []models.FileDescriptorPayload) <-chan models.StreamEvent
 	Search(ctx context.Context, req models.SearchRequest) (*models.SearchResponse, error)
 	QueryAgent(ctx context.Context, query string, topK int, sessionID *string) (*models.AgentResult, error)
+	SaveMemory(ctx context.Context, text string) (*models.MemorySaveResponse, error)
+	ListMemories(ctx context.Context) (*models.MemoryListResponse, error)
+	SearchMemories(ctx context.Context, query string, maxResults int) (*models.MemorySearchResponse, error)
+	ConsolidateMemories(ctx context.Context, resolveConflicts bool) (*models.MemoryConsolidateResponse, error)
+	GetMemoryProfile(ctx context.Context) (*models.MemoryProfileResponse, error)
+	GenerateMemoryProfile(ctx context.Context) (*models.MemoryProfileResponse, error)
+	CurateMemory(ctx context.Context, sessionID *string) (*models.MemoryCurateResponse, error)
 }
 
 var _ ClientAPI = (*Client)(nil)

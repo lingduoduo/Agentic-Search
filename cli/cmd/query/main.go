@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/lingduoduo/Agentic-Search/cli/api"
+	"github.com/lingduoduo/Agentic-Search/cli/clientauth"
 	"github.com/lingduoduo/Agentic-Search/cli/config"
 	"github.com/lingduoduo/Agentic-Search/cli/iostreams"
 	"github.com/lingduoduo/Agentic-Search/cli/render"
@@ -64,7 +64,7 @@ func run() int {
 		cfg.ServerURL = *urlFlag
 	}
 
-	token, err := resolveToken(*tokenFlag, cfg.APIKey, *userIDFlag, *emailFlag, *secretFlag)
+	token, err := clientauth.ResolveToken(*tokenFlag, cfg.APIKey, *userIDFlag, *emailFlag, *secretFlag)
 	if err != nil {
 		fmt.Fprintf(ios.ErrOut, "auth error: %v\n", err)
 		return 1
@@ -102,36 +102,4 @@ func run() int {
 	render.Progressive(ios.Out, result.Answer, 30.0, width)
 	fmt.Fprintf(ios.Out, "\nsession_id: %s\n", result.SessionID)
 	return 0
-}
-
-func resolveToken(flagToken, configToken, userID, email, secret string) (string, error) {
-	if flagToken != "" {
-		return flagToken, nil
-	}
-	if configToken != "" {
-		return configToken, nil
-	}
-	if userID != "" {
-		return mintJWT(userID, email, resolveSecret(secret))
-	}
-	return "", fmt.Errorf("provide -token, set AGENTIC_SEARCH_PAT, or pass -user-id to authenticate")
-}
-
-func resolveSecret(s string) string {
-	if s != "" {
-		return s
-	}
-	return os.Getenv("AUTH_SECRET")
-}
-
-func mintJWT(userID, email, secret string) (string, error) {
-	claims := jwtlib.MapClaims{
-		"sub": userID,
-		"iat": time.Now().Unix(),
-	}
-	if email != "" {
-		claims["email"] = email
-	}
-	tok := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
-	return tok.SignedString([]byte(secret))
 }

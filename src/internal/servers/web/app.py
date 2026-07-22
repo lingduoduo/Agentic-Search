@@ -403,6 +403,11 @@ def _register_routers(
 
     app.include_router(create_feedback_router(db))
 
+    # --- Memory ---
+    from src.internal.memory.router import create_memory_router
+
+    app.include_router(create_memory_router(db, llm))
+
     # --- Dev console (gated; dev-only observability) ---
     if debug_panels:
         from src.internal.servers.web.debug_router import create_debug_router

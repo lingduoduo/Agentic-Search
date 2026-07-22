@@ -4,17 +4,41 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 import re
 from typing import Any, Callable
 
 from src.internal.db.models import UserMemoryRecord, UserProfileEntryRecord
 from src.internal.memory.tools import build_memory_registry
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_MEMORY_USER_ID = "default_user"
 MAX_CURATION_TURNS = 6
 MEMORY_GATHER_CHAR_BUDGET = 12000
 
 Encoder = Callable[[list[str]], Any]  # list[str] -> np.ndarray
+
+
+def maybe_build_encoder() -> Encoder | None:
+    """Build the e5 memory encoder when AGENTIC_SEARCH_MEMORY_SEMANTIC is set,
+    else return None so callers use the lexical search fallback."""
+    if os.getenv("AGENTIC_SEARCH_MEMORY_SEMANTIC", "").lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return None
+    try:
+        from src.internal.servers.retrieval.hybrid import build_e5_encoder
+
+        return build_e5_encoder(
+            device=os.getenv("AGENTIC_SEARCH_MEMORY_EMBED_DEVICE", "cpu")
+        )
+    except Exception as exc:  # noqa: BLE001 — fall back to lexical
+        logger.warning("Memory e5 encoder unavailable, using lexical search: %s", exc)
+        return None
 
 
 def save_memory(store, user_id: str, text: str) -> str | None:
