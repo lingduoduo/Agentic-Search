@@ -12,7 +12,7 @@ from src.internal.db.store import AgenticSearchStore
 from src.internal.llm.interfaces import LLMConfig
 from src.internal.llm.providers import OpenAICompatibleLLM
 from src.internal.memory import service
-from src.internal.memory.service import DEFAULT_MEMORY_USER_ID
+from src.internal.memory.service import DEFAULT_MEMORY_USER_ID, maybe_build_encoder
 
 from ..api import mcp_server
 from ..utils import require_access_token
@@ -63,24 +63,6 @@ def _build_llm() -> OpenAICompatibleLLM | None:
             api_base=os.getenv("AGENTIC_SEARCH_LLM_API_BASE"),
         )
     )
-
-
-def _maybe_encoder():
-    if os.getenv("AGENTIC_SEARCH_MEMORY_SEMANTIC", "").lower() not in {
-        "1",
-        "true",
-        "yes",
-    }:
-        return None
-    try:
-        from src.internal.servers.retrieval.hybrid import build_e5_encoder
-
-        return build_e5_encoder(
-            device=os.getenv("AGENTIC_SEARCH_MEMORY_EMBED_DEVICE", "cpu")
-        )
-    except Exception as exc:  # noqa: BLE001 — fall back to lexical
-        logger.warning("Memory e5 encoder unavailable, using lexical search: %s", exc)
-        return None
 
 
 @mcp_server.tool()
@@ -143,7 +125,7 @@ async def search_memories(query: str, max_results: int = 5) -> dict[str, Any]:
             _resolve_user_id(),
             query,
             max_results=max_results,
-            encoder=_maybe_encoder(),
+            encoder=maybe_build_encoder(),
         )
         return {
             "status": "ok",
