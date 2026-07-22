@@ -1663,13 +1663,22 @@ def create_web_app(
                 )
                 raise HTTPException(status_code=502, detail=detail) from exc
 
+            documents = [
+                _document_with_metadata(
+                    document,
+                    source_provider="retrieval",
+                    query=query,
+                    entry_point="rag",
+                )
+                for document in result.context.documents
+            ]
             return _finalize_response(
                 db,
                 session_id,
                 query=query,
                 answer=result.answer,
                 citations=result.citations,
-                documents=result.context.documents,
+                documents=documents,
                 intent="chat",
                 hook_metadata=hook_metadata,
                 extra={},
@@ -2378,7 +2387,11 @@ def _document_with_metadata(
         metadata={
             **document.metadata,
             "entry_point": entry_point,
-            "source": _source_label(source_provider),
+            # Prefer the document's real per-corpus/per-doc source when the
+            # retrieval layer supplied one; otherwise fall back to the provider
+            # label ("Local Retrieval"). source_provider always records which
+            # provider fetched the document.
+            "source": document.metadata.get("source") or _source_label(source_provider),
             "source_provider": source_provider,
             "query": query,
         },

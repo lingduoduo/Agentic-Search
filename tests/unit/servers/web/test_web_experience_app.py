@@ -120,6 +120,29 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
     store.close()
 
 
+def test_agent_endpoint_labels_source_not_unknown(monkeypatch, tmp_path):
+    # The classic answer_with_retrieval path returns documents carrying raw
+    # retrieval metadata (no "source" key). The endpoint must stamp a provider
+    # label so source cards render "Local Retrieval", never "Unknown".
+    async def fake_answer_with_retrieval(question, **kwargs) -> AnswerGenerationResult:
+        return _answer_result(question)
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval",
+        fake_answer_with_retrieval,
+    )
+    app = create_web_app(SearchExperienceSettings())
+    response = TestClient(app).post(
+        "/api/agent",
+        json={"query": "How do I deploy?", "mode": "chat_once"},
+    )
+
+    assert response.status_code == 200
+    document = response.json()["documents"][0]
+    assert document["metadata"]["source"] == "Local Retrieval"
+    assert document["metadata"]["source_provider"] == "retrieval"
+
+
 def test_agent_endpoint_persists_pipeline_stage_summary(monkeypatch, tmp_path):
     async def fake_run_auto_routed(query, **kwargs):
         result = _answer_result(query)
