@@ -35,6 +35,7 @@ from .tools import search  # noqa: E402, F401
 from .tools import chat  # noqa: E402, F401
 from .tools import research  # noqa: E402, F401
 from .tools import dynamic  # noqa: E402, F401
+from .tools import memory  # noqa: E402, F401
 
 logger.info("MCP server instance created")
 
