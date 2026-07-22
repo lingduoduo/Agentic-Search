@@ -65,6 +65,31 @@ class UserMemoryRecord:
 
 
 @dataclass(slots=True)
+class UserProfileEntryRecord:
+    """One entry of an LLM-consolidated user profile."""
+
+    id: str
+    user_id: str
+    topic: str
+    subtopic: str
+    content: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(slots=True)
+class MemoryTrajectoryRecord:
+    """Audit record of one memory-curation run."""
+
+    id: str
+    user_id: str
+    session_id: str | None
+    model: str
+    trajectory: JsonObject = field(default_factory=dict)
+    created_at: str | None = None
+
+
+@dataclass(slots=True)
 class GroupRecord:
     """Named group and its current user membership."""
 

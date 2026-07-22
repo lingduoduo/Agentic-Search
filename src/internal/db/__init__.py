@@ -7,8 +7,10 @@ from .models import (
     DocumentPermission,
     GroupRecord,
     IndexAttemptRecord,
+    MemoryTrajectoryRecord,
     StoredDocument,
     UserMemoryRecord,
+    UserProfileEntryRecord,
     UserRecord,
 )
 from .store import AgenticSearchStore
@@ -21,7 +23,9 @@ __all__ = [
     "DocumentPermission",
     "GroupRecord",
     "IndexAttemptRecord",
+    "MemoryTrajectoryRecord",
     "StoredDocument",
     "UserMemoryRecord",
+    "UserProfileEntryRecord",
     "UserRecord",
 ]

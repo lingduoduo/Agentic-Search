@@ -20,8 +20,10 @@ from .models import (
     HookRecord,
     IndexAttemptRecord,
     IndexAttemptStatus,
+    MemoryTrajectoryRecord,
     StoredDocument,
     UserMemoryRecord,
+    UserProfileEntryRecord,
     UserRecord,
 )
 from src.internal.feedback.runtime import deterministic_capture
@@ -328,6 +330,27 @@ class AgenticSearchStore:
             );
             CREATE INDEX IF NOT EXISTS idx_user_memories_user_active
                 ON user_memories(user_id, is_active, created_at, id);
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                subtopic TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_profiles_user
+                ON user_profiles(user_id, topic, id);
+            CREATE TABLE IF NOT EXISTS memory_trajectories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                session_id TEXT,
+                model TEXT NOT NULL DEFAULT '',
+                trajectory_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_trajectories_user
+                ON memory_trajectories(user_id, created_at, id);
 
             CREATE TABLE IF NOT EXISTS retrieval_feedback (
                 id TEXT PRIMARY KEY,
@@ -375,6 +398,27 @@ class AgenticSearchStore:
             );
             CREATE INDEX IF NOT EXISTS idx_user_memories_user_active
                 ON user_memories(user_id, is_active, created_at, id);
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                subtopic TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_profiles_user
+                ON user_profiles(user_id, topic, id);
+            CREATE TABLE IF NOT EXISTS memory_trajectories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                session_id TEXT,
+                model TEXT NOT NULL DEFAULT '',
+                trajectory_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_trajectories_user
+                ON memory_trajectories(user_id, created_at, id);
             """
         )
         for col, ddl in [
@@ -2456,6 +2500,171 @@ class AgenticSearchStore:
             (user_id,),
         ).fetchall()
         return [str(row["memory_text"]) for row in rows]
+
+    def get_user_memory_records(self, user_id: str) -> list[UserMemoryRecord]:
+        """Return active memory records (with ids) for a user in display order."""
+        rows = self._conn.execute(
+            """
+            SELECT * FROM user_memories
+            WHERE user_id = ? AND is_active = 1
+            ORDER BY created_at, id
+            """,
+            (user_id,),
+        ).fetchall()
+        return [self._row_to_user_memory(row) for row in rows]
+
+    def update_user_memory(
+        self,
+        user_id: str,
+        memory_id: str,
+        new_text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> UserMemoryRecord | None:
+        """Replace one active memory identified by id (scoped to user_id)."""
+        if not new_text.strip():
+            return None
+        row = self._conn.execute(
+            "SELECT * FROM user_memories WHERE id = ? AND user_id = ? AND is_active = 1",
+            (memory_id, user_id),
+        ).fetchone()
+        if row is None:
+            return None
+        captured, capture_meta = deterministic_capture(new_text.strip())
+        merged_meta = _json_loads(row["metadata_json"])
+        merged_meta.update(metadata or {})
+        merged_meta.update(capture_meta)
+        self._conn.execute(
+            "UPDATE user_memories SET memory_text = ?, metadata_json = ?, updated_at = ? WHERE id = ?",
+            (captured, _json_dumps(merged_meta), _now(), memory_id),
+        )
+        self._conn.commit()
+        updated = self._conn.execute(
+            "SELECT * FROM user_memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        return self._row_to_user_memory(updated)
+
+    def delete_user_memory(self, user_id: str, memory_id: str) -> bool:
+        """Soft-delete one active memory by id (scoped to user_id)."""
+        cur = self._conn.execute(
+            "UPDATE user_memories SET is_active = 0, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND is_active = 1",
+            (_now(), memory_id, user_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def replace_user_profile(
+        self, user_id: str, entries: list[dict[str, Any]]
+    ) -> list[UserProfileEntryRecord]:
+        """Atomically replace a user's profile with *entries* ({topic, subtopic, content})."""
+        now = _now()
+        self._conn.execute("DELETE FROM user_profiles WHERE user_id = ?", (user_id,))
+        out: list[UserProfileEntryRecord] = []
+        for entry in entries:
+            topic = str(entry.get("topic", "")).strip()
+            subtopic = str(entry.get("subtopic", "")).strip()
+            content = str(entry.get("content", "")).strip()
+            if not topic and not content:
+                continue
+            rid = _new_id("prof")
+            self._conn.execute(
+                """
+                INSERT INTO user_profiles
+                    (id, user_id, topic, subtopic, content, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (rid, user_id, topic, subtopic, content, now, now),
+            )
+            out.append(
+                UserProfileEntryRecord(
+                    id=rid,
+                    user_id=user_id,
+                    topic=topic,
+                    subtopic=subtopic,
+                    content=content,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        self._conn.commit()
+        return out
+
+    def get_user_profile(self, user_id: str) -> list[UserProfileEntryRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM user_profiles WHERE user_id = ? ORDER BY topic, id",
+            (user_id,),
+        ).fetchall()
+        return [
+            UserProfileEntryRecord(
+                id=r["id"],
+                user_id=r["user_id"],
+                topic=r["topic"],
+                subtopic=r["subtopic"],
+                content=r["content"],
+                created_at=r["created_at"],
+                updated_at=r["updated_at"],
+            )
+            for r in rows
+        ]
+
+    def add_memory_trajectory(
+        self,
+        user_id: str,
+        *,
+        session_id: str | None,
+        model: str,
+        trajectory: dict[str, Any],
+    ) -> MemoryTrajectoryRecord:
+        rid = _new_id("mtraj")
+        now = _now()
+        self._conn.execute(
+            """
+            INSERT INTO memory_trajectories
+                (id, user_id, session_id, model, trajectory_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rid,
+                user_id,
+                session_id,
+                model,
+                json.dumps(trajectory, sort_keys=True),
+                now,
+            ),
+        )
+        self._conn.commit()
+        return MemoryTrajectoryRecord(
+            id=rid,
+            user_id=user_id,
+            session_id=session_id,
+            model=model,
+            trajectory=trajectory,
+            created_at=now,
+        )
+
+    def list_memory_trajectories(
+        self, user_id: str, limit: int = 20
+    ) -> list[MemoryTrajectoryRecord]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM memory_trajectories
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+        return [
+            MemoryTrajectoryRecord(
+                id=r["id"],
+                user_id=r["user_id"],
+                session_id=r["session_id"],
+                model=r["model"],
+                trajectory=json.loads(r["trajectory_json"] or "{}"),
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
 
     # ------------------------------------------------------------------
     # Retrieval feedback
