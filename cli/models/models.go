@@ -245,6 +245,7 @@ type MemoryCurateRequest struct {
 // MemoryCurateResponse is the response from POST /api/memory/curate.
 type MemoryCurateResponse struct {
 	Status       string         `json:"status"`
+	Message      string         `json:"message,omitempty"`
 	TrajectoryID string         `json:"trajectory_id"`
 	Counts       map[string]int `json:"counts"`
 	MemoryCount  int            `json:"memory_count"`

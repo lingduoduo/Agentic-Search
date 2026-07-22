@@ -406,7 +406,7 @@ func (c *Client) GetMemoryProfile(ctx context.Context) (*models.MemoryProfileRes
 // GenerateMemoryProfile calls POST /api/memory/profile/generate.
 func (c *Client) GenerateMemoryProfile(ctx context.Context) (*models.MemoryProfileResponse, error) {
 	var resp models.MemoryProfileResponse
-	if err := c.doJSON(ctx, "POST", "/memory/profile/generate", nil, &resp); err != nil {
+	if err := c.doJSONWith(ctx, c.searchHTTPClient, "POST", "/memory/profile/generate", nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

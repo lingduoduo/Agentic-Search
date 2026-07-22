@@ -65,3 +65,19 @@ func TestCurateMemory_Success(t *testing.T) {
 		t.Errorf("resp = %+v", resp)
 	}
 }
+
+func TestCurateMemory_EmptyDecodesMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"empty","message":"no conversations or notes yet","counts":{}}`))
+	}))
+	defer srv.Close()
+
+	resp, err := testutil.NewClient(srv.URL).CurateMemory(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("CurateMemory: %v", err)
+	}
+	if resp.Status != "empty" || resp.Message != "no conversations or notes yet" {
+		t.Errorf("resp = %+v", resp)
+	}
+}

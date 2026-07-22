@@ -166,8 +166,12 @@ func dispatch(ctx context.Context, client *api.Client, cmd string, fs *flag.Flag
 		if err != nil {
 			return err
 		}
-		fmt.Printf("status=%s trajectory=%s counts=%v memories=%d\n",
-			resp.Status, resp.TrajectoryID, resp.Counts, resp.MemoryCount)
+		if resp.Message != "" {
+			fmt.Printf("status=%s: %s\n", resp.Status, resp.Message)
+		} else {
+			fmt.Printf("status=%s trajectory=%s counts=%v memories=%d\n",
+				resp.Status, resp.TrajectoryID, resp.Counts, resp.MemoryCount)
+		}
 	}
 	return nil
 }
