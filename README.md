@@ -162,6 +162,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
 - [Training and evaluation](docs/training-and-evaluation.md) — examples, datasets, SFT, GRPO/PPO, and benchmarks
 - [Frontend development](docs/frontend.md) — React/Vite workflow, UI behavior, and observability surfaces
+- [Command-line tools](docs/cli.md) — the Go `query` + `memory` CLIs, build, usage, auth, and exit codes
 - [MCP server](docs/mcp.md) — installation, transport, client configuration, tools, and resources
 - [Configuration](docs/configuration.md) — environment variables for providers, services, retrieval, and routing
 - [Testing](docs/testing.md) — backend and frontend checks, integration tests, and debugging commands
