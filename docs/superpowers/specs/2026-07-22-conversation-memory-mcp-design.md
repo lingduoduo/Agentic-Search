@@ -284,3 +284,12 @@ ideas live on in `tools/memory.py`, `src/internal/memory/service.py`, and
 - `search_memories` ranks memories with no external service / forced model
   download in tests.
 - `pytest` green; `ruff` clean.
+
+## Deployment note
+
+The MCP server runs as a separate process from the web backend. For the memory
+tools to see the web app's chat sessions and for saved memories to persist
+across restarts, both processes must be started with `AGENTIC_SEARCH_WEB_DB_PATH`
+set to the same real file path (not the `:memory:` default). If left unset,
+`_get_store()` logs a one-time warning and the two processes silently operate
+on disconnected, ephemeral databases.

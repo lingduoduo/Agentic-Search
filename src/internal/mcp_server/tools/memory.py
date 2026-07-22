@@ -20,12 +20,22 @@ from ..utils import require_access_token
 logger = logging.getLogger(__name__)
 
 _STORE: AgenticSearchStore | None = None
+_WARNED_MEMORY_DB = False
 
 
 def _get_store() -> AgenticSearchStore:
-    global _STORE
+    global _STORE, _WARNED_MEMORY_DB
     if _STORE is None:
         db_path = load_app_settings().services.web_db_path
+        if str(db_path) == ":memory:" and not _WARNED_MEMORY_DB:
+            _WARNED_MEMORY_DB = True
+            logger.warning(
+                "Memory store is using an in-memory (:memory:) SQLite DB. This MCP "
+                "server runs as a separate process from the web backend, so it "
+                "will not share chat sessions or memories with it, and memories "
+                "will not persist across restarts. Set AGENTIC_SEARCH_WEB_DB_PATH "
+                "to the same real file path used by the web backend to share data."
+            )
         _STORE = AgenticSearchStore(db_path)
     return _STORE
 

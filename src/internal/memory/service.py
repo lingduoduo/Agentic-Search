@@ -228,6 +228,13 @@ async def curate_from_conversation(
                 args = json.loads(tc["arguments"] or "{}")
             except json.JSONDecodeError as exc:
                 result = f"error: invalid JSON arguments: {exc}"
+                tool_call_log.append(
+                    {
+                        "name": tc["name"],
+                        "arguments": tc["arguments"],
+                        "result": result,
+                    }
+                )
             else:
                 response, _raw, errors = await registry.invoke(tc["name"], args)
                 result = response or ("; ".join(errors) if errors else "ok")

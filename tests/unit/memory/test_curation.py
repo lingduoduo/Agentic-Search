@@ -88,3 +88,30 @@ def test_curation_empty_sources_returns_message():
     summary = asyncio.run(service.curate_from_conversation(store, "nobody", llm))
     assert summary["status"] == "empty"
     store.close()
+
+
+def test_curation_logs_malformed_tool_call_in_trajectory():
+    store = AgenticSearchStore(":memory:")
+    store.upsert_user(UserRecord(id="u1"))
+    session = store.create_chat_session(user_id="u1")
+    store.add_chat_message(session.id, role="user", content="I just moved to Shanghai.")
+    store.add_chat_message(session.id, role="assistant", content="Noted!")
+
+    llm = _FakeLLM(
+        turns=[
+            [_tool_chunk(0, "c1", "add_memory", "{not json")],
+            [_text_chunk("STOP")],  # second turn: no tool calls -> loop ends
+        ]
+    )
+
+    summary = asyncio.run(service.curate_from_conversation(store, "u1", llm))
+    assert summary["status"] == "ok"
+
+    traj = store.list_memory_trajectories("u1")
+    assert len(traj) == 1
+    tool_calls = traj[0].trajectory["tool_calls"]
+    assert len(tool_calls) == 1
+    assert tool_calls[0]["name"] == "add_memory"
+    assert tool_calls[0]["arguments"] == "{not json"
+    assert "invalid JSON arguments" in tool_calls[0]["result"]
+    store.close()
