@@ -1663,13 +1663,22 @@ def create_web_app(
                 )
                 raise HTTPException(status_code=502, detail=detail) from exc
 
+            documents = [
+                _document_with_metadata(
+                    document,
+                    source_provider="retrieval",
+                    query=query,
+                    entry_point="rag",
+                )
+                for document in result.context.documents
+            ]
             return _finalize_response(
                 db,
                 session_id,
                 query=query,
                 answer=result.answer,
                 citations=result.citations,
-                documents=result.context.documents,
+                documents=documents,
                 intent="chat",
                 hook_metadata=hook_metadata,
                 extra={},

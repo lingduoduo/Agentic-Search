@@ -32,10 +32,12 @@ const SourceCard = memo(function SourceCard({ document, index }: SourceCardProps
     });
   }, [document.content]);
 
+  // Default to the app's local retrieval backend rather than "Unknown" when a
+  // document arrives without a provider label (older records, edge paths).
   const source =
-    typeof document.metadata.source === "string"
+    typeof document.metadata.source === "string" && document.metadata.source
       ? document.metadata.source
-      : "Unknown";
+      : "Local Retrieval";
   const mmrRank =
     typeof document.metadata.mmr_rank === "number"
       ? (document.metadata.mmr_rank as number)
