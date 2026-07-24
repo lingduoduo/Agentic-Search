@@ -6,7 +6,6 @@ import { RequestTracePanel } from "./RequestTracePanel";
 import { RetrievalLab } from "./RetrievalLab";
 import { ServerHealthGrid } from "./ServerHealthGrid";
 import { ToolsPanel } from "./ToolsPanel";
-import { WorkerMonitor } from "./WorkerMonitor";
 
 interface Props {
   /** Last agent run — feeds the grounding debug ("sources but empty answer"). */
@@ -20,7 +19,7 @@ interface Props {
 
 /**
  * Dev-console container. Hosts observability panels for the backend servers.
- * Request Trace spine + Server Health/Grounding + Retrieval Lab; workers/chat follow.
+ * Request Trace spine + Server Health/Grounding + Retrieval Lab; chat follows.
  */
 export function DevConsole({ answer, citations, controlFlowTrace, selectedRequestId }: Props) {
   return (
@@ -28,7 +27,6 @@ export function DevConsole({ answer, citations, controlFlowTrace, selectedReques
       <RequestInspector selectedRequestId={selectedRequestId} />
       <RequestTracePanel events={controlFlowTrace} />
       <ServerHealthGrid answer={answer} citations={citations} />
-      <WorkerMonitor />
       <QueryTransformInspector />
       <RetrievalLab />
       <EvalResultsPanel />

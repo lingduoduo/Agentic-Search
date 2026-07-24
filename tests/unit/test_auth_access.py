@@ -5,15 +5,12 @@ import pytest
 from src.internal.access import acl_for_store_user
 from src.internal.access import acl_for_user
 from src.internal.access import can_access_document
-from src.internal.access import get_access_for_document
 from src.internal.access import metadata_with_acl
 from src.internal.auth import AuthenticatedUser
 from src.internal.auth import generate_user_jwt_token
 from src.internal.auth import user_from_jwt_token
 from src.internal.db import AgenticSearchStore
-from src.internal.db import DocumentPermission
 from src.internal.db import GroupRecord
-from src.internal.db import StoredDocument
 from src.internal.db import UserRecord
 from src.internal.document_index.models import DocumentAccess
 
@@ -64,24 +61,16 @@ def test_access_acl_allows_public_user_and_group_entries():
     assert not can_access_document(private_group, AuthenticatedUser(id="bob"))
 
 
-def test_store_permissions_build_document_and_user_acl(tmp_path):
+def test_store_permissions_build_user_acl(tmp_path):
     with AgenticSearchStore(tmp_path / "state.sqlite3") as store:
         store.upsert_user(UserRecord(id="alice", email="alice@example.test"))
         store.upsert_group(
             GroupRecord(id="eng", name="Engineering", user_ids=["alice"])
         )
         store.create_scim_group_mapping("eng", external_id="okta-eng")
-        store.upsert_document(StoredDocument(id="doc", title="Doc", contents="Body"))
-        store.grant_document_access(
-            DocumentPermission(
-                document_id="doc", principal_type="group", principal_id="eng"
-            )
-        )
 
-        access = get_access_for_document(store, "doc")
         user_acl = acl_for_store_user(store, "alice")
 
-    assert access == DocumentAccess(is_public=False, group_ids={"eng"})
     assert user_acl >= {
         "public",
         "user:alice",
@@ -89,4 +78,6 @@ def test_store_permissions_build_document_and_user_acl(tmp_path):
         "group:eng",
         "external_group:okta-eng",
     }
+
+    access = DocumentAccess(is_public=False, group_ids={"eng"})
     assert metadata_with_acl(access=access)["acl"] == ["group:eng"]

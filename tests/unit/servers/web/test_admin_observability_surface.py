@@ -6,9 +6,7 @@ from src.internal.auth import generate_user_jwt_token
 from src.internal.configs import AppSettings
 from src.internal.configs import AuthSettings
 from src.internal.db import AgenticSearchStore
-from src.internal.db import ConnectorConfig
 from src.internal.db import GroupRecord
-from src.internal.db import StoredDocument
 from src.internal.db import UserRecord
 from src.internal.db.models import HookRecord
 from src.internal.observability import build_admin_surface_summary
@@ -28,26 +26,6 @@ def _settings() -> AppSettings:
 
 
 def _seed_admin_surface(store: AgenticSearchStore) -> None:
-    store.upsert_connector(
-        ConnectorConfig(id="slack", name="Slack", source="slack", enabled=True)
-    )
-    store.upsert_connector(
-        ConnectorConfig(id="drive", name="Drive", source="google_drive", enabled=False)
-    )
-    store.upsert_document(
-        StoredDocument(
-            id="doc-1",
-            title="Runbook",
-            contents="Deploy runbook",
-            connector_id="slack",
-        )
-    )
-    store.create_index_attempt(
-        connector_id="slack",
-        status="success",
-        total_documents=1,
-        total_chunks=2,
-    )
     store.upsert_user(UserRecord(id="alice", email="alice@example.test"))
     store.upsert_group(GroupRecord(id="eng", name="Engineering", user_ids=["alice"]))
     store.create_scim_user_mapping("alice", external_id="okta-alice")
@@ -70,13 +48,11 @@ def test_admin_surface_summary_rolls_up_operational_state(tmp_path):
         summary = build_admin_surface_summary(store, _settings())
 
         assert summary.health_score == 100
-        assert summary.metrics[0].label == "Connectors"
-        assert summary.metrics[0].value == "1"
-        assert summary.metrics[1].value == "1"
-        assert summary.metrics[2].detail == "2 SCIM mapped"
-        assert {section.key for section in summary.sections} >= {
-            "connectors",
-            "indexing",
+        assert summary.metrics[0].label == "Users/groups"
+        assert summary.metrics[0].value == "1/1"
+        assert summary.metrics[0].detail == "2 SCIM mapped"
+        assert summary.metrics[1].label == "Tools/actions"
+        assert {section.key for section in summary.sections} == {
             "access",
             "auth",
             "models",
@@ -108,6 +84,6 @@ def test_admin_observability_endpoint_requires_admin(tmp_path):
         assert authorized.status_code == 200
         data = authorized.json()
         assert data["health_score"] == 100
-        assert data["sections"][0]["key"] == "connectors"
+        assert data["sections"][0]["key"] == "access"
     finally:
         store.close()

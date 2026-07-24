@@ -3,41 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
 from src.shared_configs.enums import EmbeddingProvider
 
 JsonObject = dict[str, Any]
-PrincipalType = Literal["public", "user", "group"]
-IndexAttemptStatus = Literal["not_started", "in_progress", "success", "failed"]
-
-
-@dataclass(slots=True)
-class ConnectorConfig:
-    """Configuration and metadata for a document connector."""
-
-    id: str
-    name: str
-    source: str
-    config: JsonObject = field(default_factory=dict)
-    enabled: bool = True
-    metadata: JsonObject = field(default_factory=dict)
-    created_at: str | None = None
-    updated_at: str | None = None
-
-
-@dataclass(slots=True)
-class StoredDocument:
-    """Document payload and source metadata managed by the store."""
-
-    id: str
-    title: str
-    contents: str
-    url: str | None = None
-    connector_id: str | None = None
-    metadata: JsonObject = field(default_factory=dict)
-    created_at: str | None = None
-    updated_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -102,17 +72,6 @@ class GroupRecord:
 
 
 @dataclass(slots=True)
-class DocumentPermission:
-    """Read permission for a document granted to public, a user, or a group."""
-
-    document_id: str
-    principal_type: PrincipalType
-    principal_id: str | None = None
-    access: str = "read"
-    created_at: str | None = None
-
-
-@dataclass(slots=True)
 class ChatSessionRecord:
     """Conversation session metadata."""
 
@@ -150,21 +109,6 @@ class HookRecord:
     is_active: bool = True
     is_reachable: bool | None = None
     creator_id: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
-
-
-@dataclass(slots=True)
-class IndexAttemptRecord:
-    """Status and counters for a connector indexing attempt."""
-
-    id: str
-    connector_id: str | None = None
-    status: IndexAttemptStatus = "not_started"
-    total_documents: int = 0
-    total_chunks: int = 0
-    error: str | None = None
-    metadata: JsonObject = field(default_factory=dict)
     created_at: str | None = None
     updated_at: str | None = None
 

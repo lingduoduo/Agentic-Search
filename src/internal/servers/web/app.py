@@ -71,9 +71,7 @@ from src.internal.servers.web import request_capture as _capture
 from src.internal.servers.web.auth_check import PUBLIC_ENDPOINT_SPECS
 from src.internal.servers.web.auth_check import check_router_auth
 from src.internal.servers.billing.api import create_billing_router
-from src.internal.servers.connectors.api import create_connectors_router
 from src.internal.servers.tools.api import create_tools_router
-from src.internal.servers.documents.cc_pair import create_documents_router
 from src.internal.servers.enterprise_settings.api import (
     create_enterprise_settings_routers,
 )
@@ -367,9 +365,6 @@ def _register_routers(
     app.include_router(query_basic_router)
     app.include_router(create_query_history_router(db, settings))
 
-    # --- Documents & connectors ---
-    app.include_router(create_documents_router(db, settings))
-    app.include_router(create_connectors_router(db, settings))
     app.include_router(create_tools_router(settings))
 
     # --- Users & groups ---

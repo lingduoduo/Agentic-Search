@@ -123,14 +123,12 @@ def test_get_seed_config_returns_none_when_env_not_set(monkeypatch):
 def test_get_seed_config_parses_valid_json(monkeypatch):
     payload = {
         "users": [{"id": "u1", "email": "u1@test.com"}],
-        "connectors": [{"id": "c1", "name": "MyConnector", "source": "file"}],
         "admin_user_ids": ["u1"],
     }
     monkeypatch.setenv("ENV_SEED_CONFIGURATION", json.dumps(payload))
     config = get_seed_config()
     assert config is not None
     assert config.users[0].id == "u1"
-    assert config.connectors[0].name == "MyConnector"
     assert config.admin_user_ids == ["u1"]
 
 
@@ -146,14 +144,11 @@ def test_seed_db_no_op_when_no_env(monkeypatch, tmp_path):
     store.close()
 
 
-def test_seed_db_inserts_users_and_connectors(monkeypatch, tmp_path):
+def test_seed_db_inserts_users(monkeypatch, tmp_path):
     payload = {
         "users": [
             {"id": "u1", "email": "alice@example.com", "name": "Alice"},
             {"id": "u2", "email": "bob@example.com"},
-        ],
-        "connectors": [
-            {"id": "conn1", "name": "FileConn", "source": "local_file", "enabled": True}
         ],
     }
     monkeypatch.setenv("ENV_SEED_CONFIGURATION", json.dumps(payload))
@@ -168,11 +163,6 @@ def test_seed_db_inserts_users_and_connectors(monkeypatch, tmp_path):
 
     bob = store.get_user("u2")
     assert bob is not None
-
-    connector = store.get_connector("conn1")
-    assert connector is not None
-    assert connector.name == "FileConn"
-    assert connector.source == "local_file"
 
     store.close()
 
@@ -192,5 +182,4 @@ def test_seed_db_is_idempotent(monkeypatch, tmp_path):
 def test_seed_configuration_model_defaults():
     config = SeedConfiguration()
     assert config.users == []
-    assert config.connectors == []
     assert config.admin_user_ids == []

@@ -78,38 +78,6 @@ export interface SessionCreateRequest {
   user_id?: string | null;
 }
 
-export type IndexAttemptStatus = "not_started" | "in_progress" | "success" | "failed";
-
-export interface IndexAttemptView {
-  id: string;
-  status: IndexAttemptStatus;
-  total_documents: number;
-  total_chunks: number;
-  error: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-}
-
-export interface ConnectorView {
-  id: string;
-  name: string;
-  source: string;
-  config: Record<string, unknown>;
-  enabled: boolean;
-  metadata: Record<string, unknown>;
-  created_at: string | null;
-  updated_at: string | null;
-  last_attempt: IndexAttemptView | null;
-}
-
-export interface ConnectorCreateRequest {
-  name: string;
-  source: string;
-  config: Record<string, unknown>;
-  enabled?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
 export interface QueryHistoryItem {
   id: string;
   user_id: string | null;
@@ -138,8 +106,6 @@ export interface AuditSummary {
 }
 
 export type AdminSurfaceKey =
-  | "connectors"
-  | "indexing"
   | "access"
   | "auth"
   | "models"
@@ -335,15 +301,6 @@ export interface ServerHealth {
   name: string;
   url: string;
   status: "up" | "down" | string;
-}
-
-export interface WorkerMetrics {
-  process_memory_mb: number;
-  pending_index_attempts: number;
-  in_progress_index_attempts: number;
-  active_connectors: number;
-  total_documents: number;
-  timestamp: string;
 }
 
 export interface StageRecordView {

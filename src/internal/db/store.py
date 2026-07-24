@@ -14,14 +14,9 @@ from uuid import uuid4
 from .models import (
     ChatMessageRecord,
     ChatSessionRecord,
-    ConnectorConfig,
-    DocumentPermission,
     GroupRecord,
     HookRecord,
-    IndexAttemptRecord,
-    IndexAttemptStatus,
     MemoryTrajectoryRecord,
-    StoredDocument,
     UserMemoryRecord,
     UserProfileEntryRecord,
     UserRecord,
@@ -89,7 +84,7 @@ def get_session_with_current_tenant():
 
 
 class AgenticSearchStore:
-    """Small SQLite repository for connector, document, ACL, chat, and indexing state."""
+    """Small SQLite repository for user, group, chat, and admin state."""
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
@@ -118,28 +113,6 @@ class AgenticSearchStore:
     def _init_schema(self) -> None:
         self._conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS connector_configs (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                source TEXT NOT NULL,
-                config_json TEXT NOT NULL,
-                enabled INTEGER NOT NULL,
-                metadata_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS documents (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                contents TEXT NOT NULL,
-                url TEXT,
-                connector_id TEXT REFERENCES connector_configs(id) ON DELETE SET NULL,
-                metadata_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE,
@@ -162,15 +135,6 @@ class AgenticSearchStore:
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (group_id, user_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS document_permissions (
-                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-                principal_type TEXT NOT NULL,
-                principal_id TEXT NOT NULL DEFAULT '',
-                access TEXT NOT NULL DEFAULT 'read',
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (document_id, principal_type, principal_id, access)
             );
 
             CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -205,18 +169,6 @@ class AgenticSearchStore:
                 is_active INTEGER NOT NULL DEFAULT 1,
                 is_reachable INTEGER,
                 creator_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS index_attempts (
-                id TEXT PRIMARY KEY,
-                connector_id TEXT REFERENCES connector_configs(id) ON DELETE SET NULL,
-                status TEXT NOT NULL,
-                total_documents INTEGER NOT NULL,
-                total_chunks INTEGER NOT NULL,
-                error TEXT,
-                metadata_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -299,14 +251,8 @@ class AgenticSearchStore:
                 is_active INTEGER NOT NULL DEFAULT 1
             );
 
-            CREATE INDEX IF NOT EXISTS idx_documents_connector_updated
-                ON documents(connector_id, updated_at DESC, id);
-            CREATE INDEX IF NOT EXISTS idx_documents_updated
-                ON documents(updated_at DESC, id);
             CREATE INDEX IF NOT EXISTS idx_group_members_user
                 ON group_members(user_id, group_id);
-            CREATE INDEX IF NOT EXISTS idx_document_permissions_principal
-                ON document_permissions(principal_type, principal_id, document_id);
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated
                 ON chat_sessions(user_id, updated_at DESC, id);
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_llm
@@ -317,8 +263,6 @@ class AgenticSearchStore:
                 ON chat_sessions(flow_type, created_at);
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
                 ON chat_messages(session_id, created_at, id);
-            CREATE INDEX IF NOT EXISTS idx_index_attempts_connector_updated
-                ON index_attempts(connector_id, updated_at DESC, id);
             CREATE TABLE IF NOT EXISTS user_memories (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
@@ -440,221 +384,6 @@ class AgenticSearchStore:
             except sqlite3.OperationalError:
                 pass
         self._conn.commit()
-
-    def upsert_connector(self, connector: ConnectorConfig) -> ConnectorConfig:
-        now = _now()
-        created_at = connector.created_at or self._created_at(
-            "connector_configs", connector.id, now
-        )
-        record = ConnectorConfig(
-            id=connector.id,
-            name=connector.name,
-            source=connector.source,
-            config=dict(connector.config),
-            enabled=connector.enabled,
-            metadata=dict(connector.metadata),
-            created_at=created_at,
-            updated_at=now,
-        )
-        self._conn.execute(
-            """
-            INSERT INTO connector_configs (
-                id, name, source, config_json, enabled, metadata_json, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
-                source = excluded.source,
-                config_json = excluded.config_json,
-                enabled = excluded.enabled,
-                metadata_json = excluded.metadata_json,
-                updated_at = excluded.updated_at
-            """,
-            (
-                record.id,
-                record.name,
-                record.source,
-                _json_dumps(record.config),
-                int(record.enabled),
-                _json_dumps(record.metadata),
-                record.created_at,
-                record.updated_at,
-            ),
-        )
-        self._conn.commit()
-        return record
-
-    def get_connector(self, connector_id: str) -> ConnectorConfig | None:
-        row = self._conn.execute(
-            "SELECT * FROM connector_configs WHERE id = ?", (connector_id,)
-        ).fetchone()
-        return self._row_to_connector(row) if row else None
-
-    def list_connectors(self, *, enabled: bool | None = None) -> list[ConnectorConfig]:
-        query = "SELECT * FROM connector_configs"
-        params: tuple[object, ...] = ()
-        if enabled is not None:
-            query += " WHERE enabled = ?"
-            params = (int(enabled),)
-        query += " ORDER BY name"
-        rows = self._conn.execute(query, params).fetchall()
-        return [self._row_to_connector(row) for row in rows]
-
-    def upsert_document(self, document: StoredDocument) -> StoredDocument:
-        now = _now()
-        created_at = document.created_at or self._created_at(
-            "documents", document.id, now
-        )
-        record = StoredDocument(
-            id=document.id,
-            title=document.title,
-            contents=document.contents,
-            url=document.url,
-            connector_id=document.connector_id,
-            metadata=dict(document.metadata),
-            created_at=created_at,
-            updated_at=now,
-        )
-        self._conn.execute(
-            """
-            INSERT INTO documents (
-                id, title, contents, url, connector_id, metadata_json, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title = excluded.title,
-                contents = excluded.contents,
-                url = excluded.url,
-                connector_id = excluded.connector_id,
-                metadata_json = excluded.metadata_json,
-                updated_at = excluded.updated_at
-            """,
-            (
-                record.id,
-                record.title,
-                record.contents,
-                record.url,
-                record.connector_id,
-                _json_dumps(record.metadata),
-                record.created_at,
-                record.updated_at,
-            ),
-        )
-        self._conn.commit()
-        return record
-
-    def upsert_documents_bulk(
-        self, documents: list[StoredDocument]
-    ) -> list[StoredDocument]:
-        """Upsert multiple documents in a single transaction."""
-        if not documents:
-            return []
-        now = _now()
-        doc_ids = [d.id for d in documents]
-        placeholders = ", ".join("?" * len(doc_ids))
-        existing_created_at: dict[str, str] = {
-            row["id"]: str(row["created_at"])
-            for row in self._conn.execute(
-                f"SELECT id, created_at FROM documents WHERE id IN ({placeholders})",
-                tuple(doc_ids),
-            ).fetchall()
-        }
-        records: list[StoredDocument] = []
-        params: list[tuple] = []
-        for document in documents:
-            fetched = existing_created_at.get(document.id)
-            created_at = (
-                fetched if fetched is not None else (document.created_at or now)
-            )
-            record = StoredDocument(
-                id=document.id,
-                title=document.title,
-                contents=document.contents,
-                url=document.url,
-                connector_id=document.connector_id,
-                metadata=dict(document.metadata),
-                created_at=created_at,
-                updated_at=now,
-            )
-            records.append(record)
-            params.append(
-                (
-                    record.id,
-                    record.title,
-                    record.contents,
-                    record.url,
-                    record.connector_id,
-                    _json_dumps(record.metadata),
-                    record.created_at,
-                    record.updated_at,
-                )
-            )
-        try:
-            self._conn.executemany(
-                """
-                INSERT INTO documents (
-                    id, title, contents, url, connector_id, metadata_json, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = excluded.title,
-                    contents = excluded.contents,
-                    url = excluded.url,
-                    connector_id = excluded.connector_id,
-                    metadata_json = excluded.metadata_json,
-                    updated_at = excluded.updated_at
-                """,
-                params,
-            )
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
-        return records
-
-    def get_document(self, document_id: str) -> StoredDocument | None:
-        row = self._conn.execute(
-            "SELECT * FROM documents WHERE id = ?", (document_id,)
-        ).fetchone()
-        return self._row_to_document(row) if row else None
-
-    def list_documents(
-        self, *, connector_id: str | None = None, limit: int | None = None
-    ) -> list[StoredDocument]:
-        query = "SELECT * FROM documents"
-        params: list[object] = []
-        if connector_id is not None:
-            query += " WHERE connector_id = ?"
-            params.append(connector_id)
-        query += " ORDER BY updated_at DESC, id"
-        if limit is not None:
-            query += " LIMIT ?"
-            params.append(limit)
-        rows = self._conn.execute(query, tuple(params)).fetchall()
-        return [self._row_to_document(row) for row in rows]
-
-    def delete_document(self, document_id: str) -> bool:
-        cursor = self._conn.execute(
-            "DELETE FROM documents WHERE id = ?", (document_id,)
-        )
-        self._conn.commit()
-        return cursor.rowcount > 0
-
-    def delete_documents_bulk(self, doc_ids: list[str]) -> int:
-        """Delete multiple documents by ID in a single transaction. Returns count deleted."""
-        if not doc_ids:
-            return 0
-        placeholders = ", ".join("?" * len(doc_ids))
-        try:
-            cursor = self._conn.execute(
-                f"DELETE FROM documents WHERE id IN ({placeholders})",
-                tuple(doc_ids),
-            )
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
-        return cursor.rowcount
 
     def upsert_user(self, user: UserRecord) -> UserRecord:
         now = _now()
@@ -795,109 +524,6 @@ class AgenticSearchStore:
         ).fetchall()
         return [row["group_id"] for row in rows]
 
-    def grant_document_access(
-        self, permission: DocumentPermission
-    ) -> DocumentPermission:
-        principal_id = permission.principal_id or ""
-        now = permission.created_at or _now()
-        self._conn.execute(
-            """
-            INSERT OR REPLACE INTO document_permissions (
-                document_id, principal_type, principal_id, access, created_at
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                permission.document_id,
-                permission.principal_type,
-                principal_id,
-                permission.access,
-                now,
-            ),
-        )
-        self._conn.commit()
-        return DocumentPermission(
-            document_id=permission.document_id,
-            principal_type=permission.principal_type,
-            principal_id=principal_id or None,
-            access=permission.access,
-            created_at=now,
-        )
-
-    def grant_document_access_bulk(self, permissions: list[DocumentPermission]) -> int:
-        """Write multiple permission grants in a single transaction. Returns count written."""
-        if not permissions:
-            return 0
-        now = _now()
-        params = [
-            (
-                p.document_id,
-                p.principal_type,
-                p.principal_id or "",
-                p.access,
-                p.created_at or now,
-            )
-            for p in permissions
-        ]
-        try:
-            self._conn.executemany(
-                """
-                INSERT OR REPLACE INTO document_permissions (
-                    document_id, principal_type, principal_id, access, created_at
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                params,
-            )
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
-        # INSERT OR REPLACE always writes one row per entry; len(params) == rows written.
-        return len(params)
-
-    def get_document_permissions(self, document_id: str) -> list[DocumentPermission]:
-        rows = self._conn.execute(
-            """
-            SELECT * FROM document_permissions
-            WHERE document_id = ?
-            ORDER BY principal_type, principal_id, access
-            """,
-            (document_id,),
-        ).fetchall()
-        return [self._row_to_permission(row) for row in rows]
-
-    def documents_visible_to_user(
-        self,
-        user_id: str | None,
-        *,
-        group_ids: Iterable[str] | None = None,
-    ) -> list[StoredDocument]:
-        groups = set(group_ids or [])
-        if user_id is not None:
-            groups.update(self.list_group_ids_for_user(user_id))
-        clauses = ["p.principal_type = 'public'"]
-        params: list[object] = []
-        if user_id is not None:
-            clauses.append("(p.principal_type = 'user' AND p.principal_id = ?)")
-            params.append(user_id)
-        if groups:
-            placeholders = ", ".join("?" for _ in groups)
-            clauses.append(
-                f"(p.principal_type = 'group' AND p.principal_id IN ({placeholders}))"
-            )
-            params.extend(sorted(groups))
-        rows = self._conn.execute(
-            f"""
-            SELECT DISTINCT d.* FROM documents d
-            JOIN document_permissions p ON p.document_id = d.id
-            WHERE {" OR ".join(clauses)}
-            ORDER BY d.updated_at DESC, d.id
-            """,
-            tuple(params),
-        ).fetchall()
-        return [self._row_to_document(row) for row in rows]
-
     def create_chat_session(
         self,
         *,
@@ -997,187 +623,6 @@ class AgenticSearchStore:
             (session_id,),
         ).fetchall()
         return [self._row_to_chat_message(row) for row in rows]
-
-    def create_index_attempt(
-        self,
-        *,
-        connector_id: str | None = None,
-        status: IndexAttemptStatus = "not_started",
-        total_documents: int = 0,
-        total_chunks: int = 0,
-        error: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        attempt_id: str | None = None,
-    ) -> IndexAttemptRecord:
-        now = _now()
-        record = IndexAttemptRecord(
-            id=attempt_id or _new_id("index"),
-            connector_id=connector_id,
-            status=status,
-            total_documents=total_documents,
-            total_chunks=total_chunks,
-            error=error,
-            metadata=dict(metadata or {}),
-            created_at=now,
-            updated_at=now,
-        )
-        self._conn.execute(
-            """
-            INSERT INTO index_attempts (
-                id, connector_id, status, total_documents, total_chunks,
-                error, metadata_json, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record.id,
-                record.connector_id,
-                record.status,
-                record.total_documents,
-                record.total_chunks,
-                record.error,
-                _json_dumps(record.metadata),
-                record.created_at,
-                record.updated_at,
-            ),
-        )
-        self._conn.commit()
-        return record
-
-    def update_index_attempt(
-        self,
-        attempt_id: str,
-        *,
-        status: IndexAttemptStatus | None = None,
-        total_documents: int | None = None,
-        total_chunks: int | None = None,
-        error: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> IndexAttemptRecord:
-        existing = self.get_index_attempt(attempt_id)
-        if existing is None:
-            msg = f"Index attempt {attempt_id!r} does not exist"
-            raise KeyError(msg)
-        updated = IndexAttemptRecord(
-            id=existing.id,
-            connector_id=existing.connector_id,
-            status=status or existing.status,
-            total_documents=(
-                existing.total_documents if total_documents is None else total_documents
-            ),
-            total_chunks=existing.total_chunks
-            if total_chunks is None
-            else total_chunks,
-            error=existing.error if error is None else error,
-            metadata=existing.metadata if metadata is None else dict(metadata),
-            created_at=existing.created_at,
-            updated_at=_now(),
-        )
-        self._conn.execute(
-            """
-            UPDATE index_attempts
-            SET status = ?, total_documents = ?, total_chunks = ?, error = ?,
-                metadata_json = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                updated.status,
-                updated.total_documents,
-                updated.total_chunks,
-                updated.error,
-                _json_dumps(updated.metadata),
-                updated.updated_at,
-                updated.id,
-            ),
-        )
-        self._conn.commit()
-        return updated
-
-    def get_index_attempt(self, attempt_id: str) -> IndexAttemptRecord | None:
-        row = self._conn.execute(
-            "SELECT * FROM index_attempts WHERE id = ?", (attempt_id,)
-        ).fetchone()
-        return self._row_to_index_attempt(row) if row else None
-
-    def list_index_attempts(
-        self, *, connector_id: str | None = None
-    ) -> list[IndexAttemptRecord]:
-        query = "SELECT * FROM index_attempts"
-        params: tuple[object, ...] = ()
-        if connector_id is not None:
-            query += " WHERE connector_id = ?"
-            params = (connector_id,)
-        query += " ORDER BY created_at DESC, id"
-        rows = self._conn.execute(query, params).fetchall()
-        return [self._row_to_index_attempt(row) for row in rows]
-
-    def delete_connector(self, connector_id: str) -> bool:
-        """Delete a connector and all its associated documents and index attempts.
-
-        Returns True if the connector existed and was deleted.
-        """
-        if (
-            self._conn.execute(
-                "SELECT 1 FROM connector_configs WHERE id = ?", (connector_id,)
-            ).fetchone()
-            is None
-        ):
-            return False
-        self._conn.execute(
-            "DELETE FROM index_attempts WHERE connector_id = ?", (connector_id,)
-        )
-        self._conn.execute(
-            "DELETE FROM documents WHERE connector_id = ?", (connector_id,)
-        )
-        self._conn.execute(
-            "DELETE FROM connector_configs WHERE id = ?", (connector_id,)
-        )
-        self._conn.commit()
-        return True
-
-    def delete_old_index_attempts(self, connector_id: str, keep_last_n: int) -> int:
-        """Delete all but the most recent *keep_last_n* attempts for *connector_id*.
-
-        Returns the number of rows deleted.
-        """
-        rows = self._conn.execute(
-            "SELECT id FROM index_attempts WHERE connector_id = ? ORDER BY created_at DESC, id",
-            (connector_id,),
-        ).fetchall()
-        to_delete = [row["id"] for row in rows[keep_last_n:]]
-        if not to_delete:
-            return 0
-        placeholders = ", ".join("?" * len(to_delete))
-        cursor = self._conn.execute(
-            f"DELETE FROM index_attempts WHERE id IN ({placeholders})",
-            tuple(to_delete),
-        )
-        self._conn.commit()
-        return cursor.rowcount
-
-    def delete_stale_index_attempts(
-        self,
-        *,
-        older_than_days: int,
-        statuses: tuple[str, ...] = ("success", "failed"),
-    ) -> int:
-        """Delete finished attempts whose *updated_at* is older than *older_than_days*.
-
-        Only rows matching *statuses* are considered; defaults to completed states.
-        Returns the number of rows deleted.
-        """
-        from datetime import datetime, timedelta, timezone
-
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=older_than_days)
-        ).isoformat()
-        placeholders = ", ".join("?" * len(statuses))
-        cursor = self._conn.execute(
-            f"DELETE FROM index_attempts WHERE status IN ({placeholders}) AND updated_at < ?",
-            (*statuses, cutoff),
-        )
-        self._conn.commit()
-        return cursor.rowcount
 
     def _created_at(self, table: str, record_id: str, default: str) -> str:
         row = self._conn.execute(
@@ -1428,30 +873,6 @@ class AgenticSearchStore:
             updated_at=row["updated_at"],
         )
 
-    def _row_to_connector(self, row: sqlite3.Row) -> ConnectorConfig:
-        return ConnectorConfig(
-            id=row["id"],
-            name=row["name"],
-            source=row["source"],
-            config=_json_loads(row["config_json"]),
-            enabled=bool(row["enabled"]),
-            metadata=_json_loads(row["metadata_json"]),
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-
-    def _row_to_document(self, row: sqlite3.Row) -> StoredDocument:
-        return StoredDocument(
-            id=row["id"],
-            title=row["title"],
-            contents=row["contents"],
-            url=row["url"],
-            connector_id=row["connector_id"],
-            metadata=_json_loads(row["metadata_json"]),
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-
     def _row_to_user(self, row: sqlite3.Row) -> UserRecord:
         return UserRecord(
             id=row["id"],
@@ -1505,16 +926,6 @@ class AgenticSearchStore:
             updated_at=row["updated_at"],
         )
 
-    def _row_to_permission(self, row: sqlite3.Row) -> DocumentPermission:
-        principal_id = row["principal_id"] or None
-        return DocumentPermission(
-            document_id=row["document_id"],
-            principal_type=row["principal_type"],
-            principal_id=principal_id,
-            access=row["access"],
-            created_at=row["created_at"],
-        )
-
     def _row_to_chat_session(self, row: sqlite3.Row) -> ChatSessionRecord:
         return ChatSessionRecord(
             id=row["id"],
@@ -1533,19 +944,6 @@ class AgenticSearchStore:
             content=row["content"],
             metadata=_json_loads(row["metadata_json"]),
             created_at=row["created_at"],
-        )
-
-    def _row_to_index_attempt(self, row: sqlite3.Row) -> IndexAttemptRecord:
-        return IndexAttemptRecord(
-            id=row["id"],
-            connector_id=row["connector_id"],
-            status=row["status"],
-            total_documents=row["total_documents"],
-            total_chunks=row["total_chunks"],
-            error=row["error"],
-            metadata=_json_loads(row["metadata_json"]),
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
         )
 
     def _row_to_user_memory(self, row: sqlite3.Row) -> UserMemoryRecord:

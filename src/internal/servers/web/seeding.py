@@ -1,7 +1,7 @@
 """Environment-driven DB seeding for Agentic Search.
 
 On startup, ``seed_db(store)`` reads ``ENV_SEED_CONFIGURATION`` (a JSON string)
-and upserts the declared users and connectors into ``AgenticSearchStore``.
+and upserts the declared users into ``AgenticSearchStore``.
 
 This is the repo-native port of the seeding module. repo-specific
 concepts (personas, LLM providers, tools, enterprise settings, logos, analytics
@@ -20,7 +20,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from src.internal.db import AgenticSearchStore
-from src.internal.db.models import ConnectorConfig
 from src.internal.db.models import UserRecord
 
 logger = logging.getLogger(__name__)
@@ -42,22 +41,10 @@ class UserSeed(BaseModel):
     metadata: dict[str, Any] = {}
 
 
-class ConnectorSeed(BaseModel):
-    """Fields forwarded to ``AgenticSearchStore.upsert_connector``."""
-
-    id: str
-    name: str
-    source: str
-    config: dict[str, Any] = {}
-    enabled: bool = True
-    metadata: dict[str, Any] = {}
-
-
 class SeedConfiguration(BaseModel):
     """Top-level seed configuration loaded from ``ENV_SEED_CONFIGURATION``."""
 
     users: list[UserSeed] = []
-    connectors: list[ConnectorSeed] = []
     # IDs to surface as admin in AppSettings.auth.super_users.
     # Recorded here for documentation; no DB action is taken.
     admin_user_ids: list[str] = []
@@ -103,29 +90,6 @@ def _seed_users(store: AgenticSearchStore, users: list[UserSeed]) -> None:
             logger.error("Failed to seed user %s: %s", u.id, exc)
 
 
-def _seed_connectors(
-    store: AgenticSearchStore, connectors: list[ConnectorSeed]
-) -> None:
-    if not connectors:
-        return
-    logger.info("Seeding %d connector(s).", len(connectors))
-    for c in connectors:
-        try:
-            store.upsert_connector(
-                ConnectorConfig(
-                    id=c.id,
-                    name=c.name,
-                    source=c.source,
-                    config=c.config,
-                    enabled=c.enabled,
-                    metadata=c.metadata,
-                )
-            )
-            logger.debug("Seeded connector %s (%s).", c.id, c.name)
-        except Exception as exc:
-            logger.error("Failed to seed connector %s: %s", c.id, exc)
-
-
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -139,7 +103,6 @@ def seed_db(store: AgenticSearchStore) -> None:
         return
 
     _seed_users(store, config.users)
-    _seed_connectors(store, config.connectors)
 
     if config.admin_user_ids:
         logger.info(
@@ -153,7 +116,6 @@ def seed_db(store: AgenticSearchStore) -> None:
 
 
 __all__ = [
-    "ConnectorSeed",
     "SeedConfiguration",
     "UserSeed",
     "get_seed_config",

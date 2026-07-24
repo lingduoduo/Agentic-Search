@@ -326,11 +326,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AgenticSearchStore": (".internal.db", "AgenticSearchStore"),
     "ChatMessageRecord": (".internal.db", "ChatMessageRecord"),
     "ChatSessionRecord": (".internal.db", "ChatSessionRecord"),
-    "ConnectorConfig": (".internal.db", "ConnectorConfig"),
-    "DocumentPermission": (".internal.db", "DocumentPermission"),
     "GroupRecord": (".internal.db", "GroupRecord"),
-    "IndexAttemptRecord": (".internal.db", "IndexAttemptRecord"),
-    "StoredDocument": (".internal.db", "StoredDocument"),
     "UserRecord": (".internal.db", "UserRecord"),
     # training.ppo.controller
     "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from collections import Counter
-
 from pydantic import BaseModel, Field
 
 from src.internal.configs import AppSettings
 from src.internal.db import AgenticSearchStore
-from src.internal.db import IndexAttemptRecord
 from src.internal.tools.built_in_tools import CITEABLE_TOOLS_NAMES
 from src.internal.tools.built_in_tools import STOPPING_TOOLS_NAMES
 from src.internal.tools.built_in_tools import TOOL_NAME_TO_CLASS
@@ -46,11 +43,6 @@ def build_admin_surface_summary(
 ) -> AdminSurfaceSummary:
     """Build one compact admin/observability snapshot from local state."""
 
-    connectors = store.list_connectors()
-    enabled_connectors = [connector for connector in connectors if connector.enabled]
-    documents = store.list_documents()
-    attempts = store.list_index_attempts()
-    attempt_statuses = Counter(attempt.status for attempt in attempts)
     users = store.list_users()
     groups = store.list_groups()
     hooks = store.list_hooks()
@@ -62,37 +54,15 @@ def build_admin_surface_summary(
         1 for group in groups if store.get_scim_group_mapping(group.id)
     )
 
-    failed_attempts = attempt_statuses.get("failed", 0)
-    in_progress_attempts = attempt_statuses.get("in_progress", 0)
-    attempted_connector_ids = {attempt.connector_id for attempt in attempts}
-    stale_connectors = [
-        connector
-        for connector in enabled_connectors
-        if connector.id not in attempted_connector_ids
-    ]
-    watch_count = failed_attempts + len(stale_connectors)
-    health_score = max(0, min(100, 100 - watch_count * 8))
-
-    source_counts = Counter(connector.source for connector in enabled_connectors)
-    top_sources = ", ".join(
-        f"{source}:{count}" for source, count in source_counts.most_common(3)
-    )
-    latest_attempt = attempts[0] if attempts else None
     active_hooks = sum(1 for hook in hooks if hook.is_active)
+
+    # Only the "auth" card below can report a "watch" tone now that the
+    # connectors/indexing signals are gone; base the score on it.
+    health_score = 100 if settings.auth.super_users else 80
 
     return AdminSurfaceSummary(
         health_score=health_score,
         metrics=[
-            AdminSurfaceMetric(
-                label="Connectors",
-                value=str(len(enabled_connectors)),
-                detail=f"{len(connectors)} configured",
-            ),
-            AdminSurfaceMetric(
-                label="Indexed docs",
-                value=str(len(documents)),
-                detail=_index_attempt_detail(attempt_statuses),
-            ),
             AdminSurfaceMetric(
                 label="Users/groups",
                 value=f"{len(users)}/{len(groups)}",
@@ -105,29 +75,6 @@ def build_admin_surface_summary(
             ),
         ],
         sections=[
-            AdminSurfaceCard(
-                key="connectors",
-                title="Connector management",
-                status="Healthy" if not stale_connectors else "Needs sync",
-                tone="good" if not stale_connectors else "watch",
-                description="Source syncs, credentials, crawl windows, and permission sync.",
-                items=[
-                    top_sources or "No enabled connector sources",
-                    f"{len(stale_connectors)} enabled connectors without attempts",
-                ],
-            ),
-            AdminSurfaceCard(
-                key="indexing",
-                title="Indexing status",
-                status="Watching" if failed_attempts else "Ready",
-                tone="watch" if failed_attempts else "good",
-                description="Fetch, parse, chunk, enrich, embed, and search-index pipeline.",
-                items=[
-                    f"{attempt_statuses.get('success', 0)} successful attempts",
-                    f"{failed_attempts} failed, {in_progress_attempts} in progress",
-                    _latest_attempt_item(latest_attempt),
-                ],
-            ),
             AdminSurfaceCard(
                 key="access",
                 title="Users and groups",
@@ -204,16 +151,3 @@ def build_admin_surface_summary(
             ),
         ],
     )
-
-
-def _index_attempt_detail(statuses: Counter[str]) -> str:
-    if not statuses:
-        return "no index attempts"
-    return ", ".join(f"{status}:{count}" for status, count in sorted(statuses.items()))
-
-
-def _latest_attempt_item(attempt: IndexAttemptRecord | None) -> str:
-    if attempt is None:
-        return "No indexing attempts yet"
-    connector_id = attempt.connector_id or "unassigned"
-    return f"Latest {connector_id}: {attempt.status}"

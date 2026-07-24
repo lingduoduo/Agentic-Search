@@ -1,8 +1,6 @@
 import {
   Activity,
-  Boxes,
   Braces,
-  DatabaseZap,
   KeyRound,
   LineChart,
   ShieldCheck,
@@ -15,9 +13,7 @@ interface AdminOverviewProps {
   summary: AdminSurfaceSummary;
 }
 
-const iconByKey: Record<AdminSurfaceKey, LucideIcon> = {
-  connectors: Boxes,
-  indexing: DatabaseZap,
+const iconByKey: Partial<Record<AdminSurfaceKey, LucideIcon>> = {
   access: UsersRound,
   auth: KeyRound,
   models: Braces,
@@ -52,7 +48,7 @@ export function AdminOverview({ summary }: AdminOverviewProps) {
 
       <div className="admin-grid">
         {summary.sections.map((section) => {
-          const Icon = iconByKey[section.key];
+          const Icon = iconByKey[section.key] ?? Activity;
           return (
             <article className="admin-card" key={section.key}>
               <div className="admin-card-title">

@@ -15,7 +15,6 @@ vi.mock("../../api", () => ({
   getAnalyticsByFlow: vi.fn().mockRejectedValue(new Error()),
   runDebugRetrieval: vi.fn(),
   getServerHealth: vi.fn().mockResolvedValue({ servers: [] }),
-  getWorkerMetrics: vi.fn().mockResolvedValue({ metrics: null }),
   getEvalResults: vi.fn().mockResolvedValue({ results: [] }),
   getDebugTools: vi.fn().mockResolvedValue({ registered: [], catalog: [] }),
   discoverTools: vi.fn(),
