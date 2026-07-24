@@ -43,7 +43,6 @@ def test_splits_at_heading_boundaries_first():
         "# Title\nintro line\n\n## Section A\naaa aaa aaa\n\n## Section B\nbbb bbb bbb"
     )
     pieces = chunking._recursive_split(text, chunking._RECURSIVE_SEPARATORS, 6, 0)
-    joined = "\n".join(pieces)  # noqa: F841 — unused; kept per brief for readability
     # each H2 marker stays attached to its section's content
     a = next(p for p in pieces if "Section A" in p)
     b = next(p for p in pieces if "Section B" in p)
