@@ -166,17 +166,33 @@ chunks (`src/internal/document_index/chunking.py`, driven by `ChunkingConfig` in
 
 | Strategy | Status | Where |
 |----------|--------|-------|
-| Recursive / structure-aware | **default** | `_split_text_paragraphs` |
+| Structure-aware packer | **default** | `_split_text_paragraphs` |
+| Recursive (heading hierarchy + code/table integrity) | **opt-in** | `_split_text_recursive` |
 | Fixed-size + overlap | fallback + config | `_split_token_window` |
 | Semantic | **opt-in** | `_split_text_semantic` |
 
-**Recursive / structure-aware (default).** `_split_text_paragraphs` splits along
+**Structure-aware packer (default).** `_split_text_paragraphs` splits along
 natural boundaries in descending order — paragraph/section breaks (a blank line, or
 a newline before a Markdown `#` heading) → sentences (`.!?` and CJK `。！？`) — and
 greedily packs sentences into a `chunk_size` budget, flushing at a section boundary
 once a chunk is ≥ 50% full. A single sentence longer than `chunk_size` falls back to
 a fixed-size token window. Overlap between adjacent chunks is sentence-granular
-(`_overlap_tail`, `chunk_overlap` tokens).
+(`_overlap_tail`, `chunk_overlap` tokens). It is *structure-aware but not fully
+recursive*: a fixed paragraph→sentence hierarchy, flat heading treatment, and no
+code-block/table protection (see the opt-in recursive mode below for those).
+
+**Recursive (opt-in).** Set `ChunkingConfig.recursive_chunking=True` to route to
+`_split_text_recursive` — the genuinely recursive, structure-aware splitter. It
+first marks fenced code blocks (` ``` `/`~~~`) and Markdown tables as **atomic**
+(kept whole, never split internally — an oversized block becomes one chunk rather
+than a fragment with a dangling fence), then splits the prose between them along a
+coarse→fine hierarchy — Markdown heading levels (`\n# ` → `\n## ` → `\n### `) →
+paragraph → line → sentence → word — recursing to a finer separator only when a
+piece still exceeds `chunk_size`, and finally merges pieces up to `chunk_size` with
+overlap carried from trailing prose only (so an atomic block is never sliced across
+chunks). Mutually exclusive with `semantic_chunking`; purely lexical (no embedder).
+Scope is Markdown + code/table integrity — **no HTML**; block detection is
+heuristic, and a missed block degrades to prose rather than erroring.
 
 **Fixed-size + overlap.** `_split_token_window` is a classic sliding window
 (`step = chunk_size − chunk_overlap`). It is not a top-level mode — it is the
@@ -201,8 +217,11 @@ the corpus at index time, which is why it is off by default.
 ```python
 from src.internal.document_index.models import ChunkingConfig
 
-# structure-aware (default)
+# structure-aware packer (default)
 ChunkingConfig()
+
+# recursive: heading hierarchy + code/table integrity
+ChunkingConfig(recursive_chunking=True)
 
 # semantic chunking, cut at the 90th-percentile distance breakpoint
 ChunkingConfig(semantic_chunking=True, semantic_breakpoint_percentile=90.0)
@@ -211,10 +230,11 @@ ChunkingConfig(semantic_chunking=True, semantic_breakpoint_percentile=90.0)
 > **Two caveats.** (1) "Tokens" here are whitespace-delimited words
 > (`re.findall(r"\S+")`), **not** model/BPE tokens — `chunk_size=900` is ~900 words
 > (roughly 1,100–1,300 BPE tokens), so budget against an embedder's context window
-> accordingly. (2) The structure-aware splitter is **not** code-block or table
-> aware: splitting on blank lines can cut inside a fenced code block or a Markdown
-> table. Prose and heading-structured Markdown are handled well; richly structured
-> documents are not specially protected.
+> accordingly. (2) The **default** packer is **not** code-block or table aware:
+> splitting on blank lines can cut inside a fenced code block or a Markdown table.
+> Enable `recursive_chunking` (above) for code/table integrity; the default handles
+> prose and heading-structured Markdown well but does not specially protect richly
+> structured documents.
 
 **Retrieval servers** (`src/internal/servers/retrieval/`):
 
