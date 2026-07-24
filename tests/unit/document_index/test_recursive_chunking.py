@@ -94,6 +94,19 @@ def test_table_never_split_across_chunks():
     assert "| 0 | 0 |" in holders[0] and "| 14 | 28 |" in holders[0]
 
 
+def test_atomic_block_intact_with_overlap():
+    code = "```\n" + "\n".join(f"line{i} = {i}" for i in range(20)) + "\n```"
+    text = f"Intro prose here.\n\n{code}\n\nOutro prose one. Outro prose two."
+    chunks = chunking._split_text_recursive(text, chunk_size=8, chunk_overlap=4)
+    fence_chunks = [c for c in chunks if "```" in c]
+    assert len(fence_chunks) == 1
+    assert fence_chunks[0].count("```") == 2
+    for c in chunks:
+        if c is not fence_chunks[0]:
+            assert "```" not in c
+            assert "line19 = 19" not in c
+
+
 def test_chunk_document_routes_to_recursive_when_enabled():
     text = "# A\naaa\n\n## B\nbbb\n\n## C\nccc"
     cfg = ChunkingConfig(

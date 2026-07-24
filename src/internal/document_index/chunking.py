@@ -527,42 +527,59 @@ def _recursive_split(
 
 
 def _merge_recursive_pieces(
-    pieces: list[str], chunk_size: int, chunk_overlap: int
+    pieces: list[tuple[bool, str]], chunk_size: int, chunk_overlap: int
 ) -> list[str]:
-    """Greedily merge ordered pieces up to chunk_size, carrying overlap. Pieces are
-    never split here, so atomic blocks stay intact."""
+    """Greedily merge ordered (is_atomic, text) pieces up to chunk_size, carrying
+    overlap from trailing PROSE pieces only. Atomic blocks are never split and never
+    sliced into an overlap tail."""
     chunks: list[str] = []
-    current: list[str] = []
+    current: list[tuple[bool, str]] = []
     current_tokens = 0
-    for piece in pieces:
+
+    def _emit_and_carry() -> None:
+        nonlocal current, current_tokens
+        if not current:
+            return
+        chunks.append("\n\n".join(t for _, t in current).strip())
+        tail_prose: list[str] = []
+        for is_atomic, t in reversed(current):
+            if is_atomic:
+                break
+            tail_prose.insert(0, t)
+        carried = _overlap_tail(tail_prose, chunk_overlap) if tail_prose else []
+        current = [(False, t) for t in carried]
+        current_tokens = (
+            _token_count("\n\n".join(t for _, t in current)) if current else 0
+        )
+
+    for is_atomic, piece in pieces:
         piece = piece.strip()
         if not piece:
             continue
         piece_tokens = _token_count(piece)
         if current and current_tokens + piece_tokens > chunk_size:
-            chunks.append("\n\n".join(current).strip())
-            current = list(_overlap_tail(current, chunk_overlap))
-            current_tokens = _token_count("\n\n".join(current)) if current else 0
-        current.append(piece)
+            _emit_and_carry()
+        current.append((is_atomic, piece))
         current_tokens += piece_tokens
     if current:
-        chunks.append("\n\n".join(current).strip())
+        chunks.append("\n\n".join(t for _, t in current).strip())
     return [c for c in chunks if c]
 
 
 def _split_text_recursive(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     """Structure-aware recursive chunking: keep code blocks/tables intact, split
     prose along a coarse->fine Markdown separator hierarchy, then merge + overlap."""
-    pieces: list[str] = []
+    pieces: list[tuple[bool, str]] = []
     for kind, seg in _segment_blocks(text):
         if kind == "atomic":
             # Atomic blocks (code fences, tables) are never split internally, even
             # when they exceed chunk_size — that's what keeps them intact.
-            pieces.append(seg)
+            pieces.append((True, seg))
         else:
-            pieces.extend(
-                _recursive_split(seg, _RECURSIVE_SEPARATORS, chunk_size, chunk_overlap)
-            )
+            for p in _recursive_split(
+                seg, _RECURSIVE_SEPARATORS, chunk_size, chunk_overlap
+            ):
+                pieces.append((False, p))
     return _merge_recursive_pieces(pieces, chunk_size, chunk_overlap)
 
 
