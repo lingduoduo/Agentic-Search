@@ -15,9 +15,7 @@ from src.internal.retrieval.passage_truncator import PassageTruncator
 from src.internal.servers.retrieval.rerank import SentenceTransformerReranker
 
 try:
-    from src.internal.natural_language_processing.search_nlp_models import (
-        cohere_rerank_api,
-    )
+    from src.internal.retrieval.cohere_rerank import cohere_rerank_api
 except ImportError:
     cohere_rerank_api = None  # type: ignore[assignment]
 
