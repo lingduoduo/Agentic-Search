@@ -16,6 +16,22 @@
 - Reuse existing chunking helpers (`_token_count`, `_split_token_window`, `_overlap_tail`, `re`); do not add new deps.
 - `ruff check .` + `pytest` green at the end of every task.
 
+> **AS-SHIPPED CORRECTIONS (discovered during Task 4 + review — this plan's Task 4
+> snippets below are the pre-pivot design; the shipped code differs):**
+> 1. **Atomic blocks are kept WHOLE, never token-windowed.** The Task 4 snippet that
+>    token-windows an oversized atomic segment (and the PR-body draft's "token-windowed
+>    as a last resort") was dropped: an oversized code block / table larger than
+>    `chunk_size` becomes one oversized chunk. Token-windowing it would re-introduce
+>    the mid-block splitting this feature exists to prevent. `_split_text_recursive`
+>    appends every atomic segment whole.
+> 2. **Merge carries overlap from trailing PROSE pieces only.** A confirmed bug (fix
+>    commit `94914c7`) was that `_overlap_tail` sliced the tail of an oversized atomic
+>    block into the next chunk when `chunk_overlap > 0` (production default 120).
+>    `_merge_recursive_pieces` now takes `list[tuple[bool, str]]` (`is_atomic`, text)
+>    and builds the overlap tail by walking from the end and stopping at the first
+>    atomic piece — so an atomic block is never fragmented across chunks. See the
+>    reconciled spec for the authoritative behavior.
+
 ---
 
 ### Task 1: Config field + mutual-exclusivity validation

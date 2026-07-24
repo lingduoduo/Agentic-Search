@@ -126,3 +126,18 @@ def test_recursive_off_matches_today():
     got = [c.text for c in chunking.chunk_document(_doc(text), cfg)]
     expected_texts = chunking._split_text(text, cfg.chunk_size, cfg.chunk_overlap)
     assert got == expected_texts
+
+
+def test_table_intact_with_overlap():
+    # twin of test_code_block_never_split_across_chunks, at chunk_overlap > 0:
+    # an oversized table must never leak a row fragment into an adjacent chunk.
+    rows = "\n".join(f"| {i} | {i * 2} |" for i in range(15))
+    text = f"Before prose.\n\n| a | b |\n| --- | --- |\n{rows}\n\nAfter one. After two."
+    chunks = chunking._split_text_recursive(text, chunk_size=8, chunk_overlap=4)
+    holders = [c for c in chunks if "| --- | --- |" in c]
+    assert len(holders) == 1
+    assert "| 0 | 0 |" in holders[0] and "| 14 | 28 |" in holders[0]
+    for c in chunks:
+        if c is not holders[0]:
+            assert "| --- | --- |" not in c
+            assert "| 14 | 28 |" not in c
