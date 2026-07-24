@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 RETURN_SEPARATOR = "\n\n"
 SECTION_SEPARATOR = "\n\n---\n\n"
 
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_TABLE_DELIM_RE = re.compile(r"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$")
+
 
 def chunk_document(
     document: Document,
@@ -71,7 +74,11 @@ def chunk_document(
         title_prefix = ""
         content_token_limit = config.chunk_size
 
-    if config.semantic_chunking and embedding_fn is not None:
+    if config.recursive_chunking:
+        chunk_texts = _split_text_recursive(
+            text, content_token_limit, config.chunk_overlap
+        )
+    elif config.semantic_chunking and embedding_fn is not None:
         chunk_texts = _split_text_semantic(
             text,
             content_token_limit,
@@ -261,6 +268,55 @@ def _split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     return _split_text_paragraphs(text, chunk_size, chunk_overlap)
 
 
+def _segment_blocks(text: str) -> list[tuple[str, str]]:
+    """Partition text into ordered ("atomic"|"prose", segment) parts.
+
+    Fenced code blocks and Markdown tables are "atomic" (never split internally);
+    the text between them is "prose". A missed/ambiguous block simply stays prose.
+    """
+    lines = text.split("\n")
+    segments: list[tuple[str, str]] = []
+    prose: list[str] = []
+
+    def flush_prose() -> None:
+        if prose:
+            joined = "\n".join(prose).strip()
+            if joined:
+                segments.append(("prose", joined))
+            prose.clear()
+
+    i, n = 0, len(lines)
+    while i < n:
+        fence = _FENCE_RE.match(lines[i])
+        if fence:
+            marker = fence.group(1)
+            flush_prose()
+            block = [lines[i]]
+            i += 1
+            while i < n:
+                block.append(lines[i])
+                closed = lines[i].strip().startswith(marker)
+                i += 1
+                if closed:
+                    break
+            segments.append(("atomic", "\n".join(block).strip()))
+            continue
+        if "|" in lines[i] and i + 1 < n and _TABLE_DELIM_RE.match(lines[i + 1]):
+            flush_prose()
+            block = [lines[i], lines[i + 1]]
+            i += 2
+            while i < n and lines[i].strip() and "|" in lines[i]:
+                block.append(lines[i])
+                i += 1
+            segments.append(("atomic", "\n".join(block).strip()))
+            continue
+        prose.append(lines[i])
+        i += 1
+
+    flush_prose()
+    return segments
+
+
 def _split_paragraphs(text: str) -> list[str]:
     """Split text on paragraph and section boundaries without destroying internal whitespace.
 
@@ -417,6 +473,114 @@ def _split_text_semantic(
         else:
             chunks.append(group_text)
     return [c for c in chunks if c]
+
+
+# coarse -> fine; heading levels keep their marker attached to the section below.
+_RECURSIVE_SEPARATORS = ["\n# ", "\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " "]
+
+
+def _split_on_separator(text: str, sep: str) -> list[str]:
+    if sep.startswith("\n#"):
+        marker = sep[1:]  # e.g. "# "
+        return re.split(rf"\n(?={re.escape(marker)})", text)
+    if sep == ". ":
+        return re.split(r"(?<=[.!?。！？])\s+", text)
+    return text.split(sep)
+
+
+def _recursive_split(
+    text: str,
+    separators: list[str],
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[str]:
+    """Split prose along a coarse->fine separator list, recursing only when a piece
+    still exceeds chunk_size; the finest level falls back to a token window."""
+    text = text.strip()
+    if not text:
+        return []
+    if _token_count(text) <= chunk_size:
+        return [text]
+
+    sep = separators[-1]
+    rest: list[str] = []
+    for idx, candidate in enumerate(separators):
+        if candidate in text:
+            sep = candidate
+            rest = separators[idx + 1 :]
+            break
+
+    out: list[str] = []
+    for piece in _split_on_separator(text, sep):
+        piece = piece.strip()
+        if not piece:
+            continue
+        if _token_count(piece) <= chunk_size or not rest:
+            # kept when it fits, or when no finer separator remains (a single
+            # whitespace-token cannot be reduced further — the atomic-block path
+            # in _split_text_recursive is where genuinely oversized spans are
+            # token-windowed).
+            out.append(piece)
+        else:
+            out.extend(_recursive_split(piece, rest, chunk_size, chunk_overlap))
+    return out
+
+
+def _merge_recursive_pieces(
+    pieces: list[tuple[bool, str]], chunk_size: int, chunk_overlap: int
+) -> list[str]:
+    """Greedily merge ordered (is_atomic, text) pieces up to chunk_size, carrying
+    overlap from trailing PROSE pieces only. Atomic blocks are never split and never
+    sliced into an overlap tail."""
+    chunks: list[str] = []
+    current: list[tuple[bool, str]] = []
+    current_tokens = 0
+
+    def _emit_and_carry() -> None:
+        nonlocal current, current_tokens
+        if not current:
+            return
+        chunks.append("\n\n".join(t for _, t in current).strip())
+        tail_prose: list[str] = []
+        for is_atomic, t in reversed(current):
+            if is_atomic:
+                break
+            tail_prose.insert(0, t)
+        carried = _overlap_tail(tail_prose, chunk_overlap) if tail_prose else []
+        current = [(False, t) for t in carried]
+        current_tokens = (
+            _token_count("\n\n".join(t for _, t in current)) if current else 0
+        )
+
+    for is_atomic, piece in pieces:
+        piece = piece.strip()
+        if not piece:
+            continue
+        piece_tokens = _token_count(piece)
+        if current and current_tokens + piece_tokens > chunk_size:
+            _emit_and_carry()
+        current.append((is_atomic, piece))
+        current_tokens += piece_tokens
+    if current:
+        chunks.append("\n\n".join(t for _, t in current).strip())
+    return [c for c in chunks if c]
+
+
+def _split_text_recursive(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Structure-aware recursive chunking: keep code blocks/tables intact, split
+    prose along a coarse->fine Markdown separator hierarchy, then merge + overlap."""
+    pieces: list[tuple[bool, str]] = []
+    for kind, seg in _segment_blocks(text):
+        if kind == "atomic":
+            # Atomic blocks (code fences, tables) are never split internally, even
+            # when they exceed chunk_size — that's what keeps them intact.
+            pieces.append((True, seg))
+        else:
+            for p in _recursive_split(
+                seg, _RECURSIVE_SEPARATORS, chunk_size, chunk_overlap
+            ):
+                pieces.append((False, p))
+    return _merge_recursive_pieces(pieces, chunk_size, chunk_overlap)
 
 
 def _split_token_window(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

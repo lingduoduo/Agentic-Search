@@ -151,6 +151,7 @@ class ChunkingConfig:
     semantic_chunking: bool = False
     semantic_breakpoint_percentile: float = 95.0
     semantic_buffer_size: int = 1
+    recursive_chunking: bool = False
 
     def validate(self) -> None:
         if self.chunk_size < 1:
@@ -177,6 +178,10 @@ class ChunkingConfig:
             )
         if self.semantic_buffer_size < 1:
             raise ValueError("semantic_buffer_size must be at least 1.")
+        if self.recursive_chunking and self.semantic_chunking:
+            raise ValueError(
+                "recursive_chunking and semantic_chunking are mutually exclusive."
+            )
 
 
 @dataclass(frozen=True)
