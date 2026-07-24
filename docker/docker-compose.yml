@@ -3,7 +3,7 @@ version: "3.8"
 # Full local stack for Agentic Search.
 #
 # Bring up infrastructure only:
-#   docker compose -f docker/docker-compose.yml up postgres redis weaviate
+#   docker compose -f docker/docker-compose.yml up postgres redis
 #
 # Bring up everything:
 #   docker compose -f docker/docker-compose.yml up --build
@@ -34,13 +34,6 @@ x-app-env: &app-env
   CELERY_TASK_IGNORE_RESULT: "False"
   CELERY_RESULT_EXPIRES: "3600"
   CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: "True"
-
-  # --- Weaviate ---
-  WEAVIATE_HTTP_HOST: weaviate
-  WEAVIATE_HTTP_PORT: "8080"
-  WEAVIATE_GRPC_HOST: weaviate
-  WEAVIATE_GRPC_PORT: "50051"
-  WEAVIATE_API_KEY: ""
 
   # --- LLM (override with real keys in .env) ---
   GEN_AI_MODEL_PROVIDER: openai
@@ -90,28 +83,6 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - agentic_search_default
-
-  weaviate:
-    image: cr.weaviate.io/semitechnologies/weaviate:1.29.0
-    restart: unless-stopped
-    environment:
-      QUERY_DEFAULTS_VECTORIZER: none
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
-      PERSISTENCE_DATA_PATH: /var/lib/weaviate
-      ENABLE_API_BASED_MODULES: "false"
-      CLUSTER_HOSTNAME: weaviate-node
-    volumes:
-      - weaviate_data:/var/lib/weaviate
-    ports:
-      - "8090:8080"   # HTTP — offset to avoid collision with the web backend
-      - "50051:50051" # gRPC
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
-      interval: 15s
-      timeout: 10s
       retries: 5
     networks:
       - agentic_search_default
@@ -173,7 +144,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  weaviate_data:
   app_data:
 
 networks:

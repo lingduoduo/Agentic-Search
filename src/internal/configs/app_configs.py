@@ -109,7 +109,8 @@ class LLMSettings:
 
 @dataclass(frozen=True)
 class VectorDbSettings:
-    """Settings for the Weaviate vector database backend."""
+    """Vector-DB feature flags (vestigial: the Weaviate backend was removed;
+    kept for AppSettings compatibility)."""
 
     disable_vector_db: bool = False
     multi_tenant: bool = False
