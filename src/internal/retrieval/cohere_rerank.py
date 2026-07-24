@@ -6,12 +6,12 @@ module requires the optional ``cohere`` dependency, so callers import it inside 
 try/except ImportError guard.
 """
 
+import logging
+
 from cohere import AsyncClient as CohereAsyncClient
 from cohere.core.api_error import ApiError
 
-from src.internal.document_index.utils import setup_logger
-
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class CohereBillingLimitError(Exception):
