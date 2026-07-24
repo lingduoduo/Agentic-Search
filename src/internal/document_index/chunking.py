@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 RETURN_SEPARATOR = "\n\n"
 SECTION_SEPARATOR = "\n\n---\n\n"
 
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_TABLE_DELIM_RE = re.compile(r"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$")
+
 
 def chunk_document(
     document: Document,
@@ -259,6 +262,55 @@ def _make_mini_chunk_texts(
 def _split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     """Split text into chunks, respecting paragraph and section boundaries."""
     return _split_text_paragraphs(text, chunk_size, chunk_overlap)
+
+
+def _segment_blocks(text: str) -> list[tuple[str, str]]:
+    """Partition text into ordered ("atomic"|"prose", segment) parts.
+
+    Fenced code blocks and Markdown tables are "atomic" (never split internally);
+    the text between them is "prose". A missed/ambiguous block simply stays prose.
+    """
+    lines = text.split("\n")
+    segments: list[tuple[str, str]] = []
+    prose: list[str] = []
+
+    def flush_prose() -> None:
+        if prose:
+            joined = "\n".join(prose).strip()
+            if joined:
+                segments.append(("prose", joined))
+            prose.clear()
+
+    i, n = 0, len(lines)
+    while i < n:
+        fence = _FENCE_RE.match(lines[i])
+        if fence:
+            marker = fence.group(1)
+            flush_prose()
+            block = [lines[i]]
+            i += 1
+            while i < n:
+                block.append(lines[i])
+                closed = lines[i].strip().startswith(marker)
+                i += 1
+                if closed:
+                    break
+            segments.append(("atomic", "\n".join(block).strip()))
+            continue
+        if "|" in lines[i] and i + 1 < n and _TABLE_DELIM_RE.match(lines[i + 1]):
+            flush_prose()
+            block = [lines[i], lines[i + 1]]
+            i += 2
+            while i < n and lines[i].strip() and "|" in lines[i]:
+                block.append(lines[i])
+                i += 1
+            segments.append(("atomic", "\n".join(block).strip()))
+            continue
+        prose.append(lines[i])
+        i += 1
+
+    flush_prose()
+    return segments
 
 
 def _split_paragraphs(text: str) -> list[str]:
