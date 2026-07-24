@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any
 
 from src.internal.auth import AuthenticatedUser
 from src.internal.db import AgenticSearchStore
-from src.internal.db import DocumentPermission
 from src.internal.document_index.models import DocumentAccess
 
 PUBLIC_ACL = "public"
@@ -79,36 +78,6 @@ def acl_for_document_access(access: DocumentAccess) -> set[str]:
     return entries
 
 
-def acl_for_document_permissions(
-    permissions: Sequence[DocumentPermission],
-) -> set[str]:
-    entries: set[str] = set()
-    for permission in permissions:
-        if permission.principal_type == "public":
-            entries.add(PUBLIC_ACL)
-        elif permission.principal_type == "user" and permission.principal_id:
-            entries.add(prefix_user(permission.principal_id))
-        elif permission.principal_type == "group" and permission.principal_id:
-            entries.add(prefix_group(permission.principal_id))
-    return entries
-
-
-def document_access_from_permissions(
-    permissions: Sequence[DocumentPermission],
-) -> DocumentAccess:
-    is_public = False
-    user_ids: set[str] = set()
-    group_ids: set[str] = set()
-    for p in permissions:
-        if p.principal_type == "public":
-            is_public = True
-        elif p.principal_type == "user" and p.principal_id:
-            user_ids.add(p.principal_id)
-        elif p.principal_type == "group" and p.principal_id:
-            group_ids.add(p.principal_id)
-    return DocumentAccess(is_public=is_public, user_ids=user_ids, group_ids=group_ids)
-
-
 def can_access_acl(
     document_acl: Iterable[str],
     user_acl: Iterable[str],
@@ -155,13 +124,6 @@ def _external_group_ids_from_metadata(metadata: dict[str, Any]) -> set[str]:
     return values
 
 
-def get_access_for_document(
-    store: AgenticSearchStore,
-    document_id: str,
-) -> DocumentAccess:
-    return document_access_from_permissions(store.get_document_permissions(document_id))
-
-
 __all__ = [
     "EMAIL_PREFIX",
     "EXTERNAL_GROUP_PREFIX",
@@ -169,13 +131,10 @@ __all__ = [
     "PUBLIC_ACL",
     "USER_PREFIX",
     "acl_for_document_access",
-    "acl_for_document_permissions",
     "acl_for_store_user",
     "acl_for_user",
     "can_access_acl",
     "can_access_document",
-    "document_access_from_permissions",
-    "get_access_for_document",
     "metadata_with_acl",
     "prefix_email",
     "prefix_external_group",
