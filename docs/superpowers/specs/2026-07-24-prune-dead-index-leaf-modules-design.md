@@ -22,19 +22,28 @@ Each PR is standalone, branches off `origin/main`, and carries its own spec + pl
 
 ## Goal
 
-Delete three dead leaf modules and fix one dangling documentation reference, with
+Delete two dead leaf modules and fix one dangling documentation reference, with
 **zero change to live runtime behavior**. This PR is deliberately the low-risk
 warm-up: every target has zero non-test importers, verified below.
 
 ## Scope
 
-### Delete — source modules (557 LOC)
+### Delete — source modules (155 LOC)
 
 | File | LOC | Evidence it's dead |
 |------|-----|--------------------|
 | `src/internal/retrieval/indexer.py` | 115 | Dead duplicate FAISS-HNSW builder. Zero non-test importers. Superseded by the live `document_index` build tool (`index_builder`/`cli`/`faiss_io`). |
-| `src/internal/document_index/indexing.py` | 402 | Onyx batch-indexing orchestration. **Zero importers anywhere** — not even tests. |
-| `src/internal/document_index/document_metadata.py` | 40 | Exports only `DocumentMetadata` (zero src importers). Only reference is a smoke-test import. |
+| `src/internal/document_index/document_metadata.py` | 40 | Exports only `DocumentMetadata` (zero src importers). Only reference is a smoke-test import. Not re-exported by the package `__init__`. |
+
+**Scope correction (2026-07-24):** `document_index/indexing.py` (402 LOC) was
+originally slated for this PR but is **moved to PR2**. It is not a clean leaf: the
+package `__init__.py` lazily re-exports its symbols via `__getattr__`
+(`_INDEXING_EXPORTS`), and its only non-test consumer is
+`backgroundworker/docprocessing.py` — a PR2 target. Deleting it in isolation
+breaks `from src.internal.document_index import <symbol>` and leaves the
+`_INDEXING_EXPORTS` block dangling. It must be removed together with
+`docprocessing.py`, the facade tests, and the lazy-export block, all in PR2. The
+original audit's plain-grep missed the lazy re-export.
 
 ### Delete / edit — tests
 

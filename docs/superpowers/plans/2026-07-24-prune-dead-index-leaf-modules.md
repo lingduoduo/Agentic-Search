@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Delete three dead leaf modules (~557 LOC) and one dangling doc example from the indexing/document-store side, with zero live-behavior change.
+**Goal:** Delete two dead leaf modules (~155 LOC) and one dangling doc example from the indexing/document-store side, with zero live-behavior change. (A third module, `indexing.py`, was moved to PR2 — see the struck-through Task 2.)
 
 **Architecture:** Pure removal. Each target is import-reachability-verified dead (zero non-test importers). Verification is inverted from normal TDD: instead of a failing test, each task first *proves the target is dead* via `grep`, then deletes, then proves the full suite stays green. This is PR1 of a 3-PR campaign (spec: `docs/superpowers/specs/2026-07-24-prune-dead-index-leaf-modules-design.md`).
 
@@ -63,46 +63,19 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 2: Delete orphaned Onyx batch-indexing orchestration (`document_index/indexing.py`)
+### ~~Task 2: Delete `document_index/indexing.py`~~ — MOVED TO PR2
 
-**Files:**
-- Delete: `src/internal/document_index/indexing.py` (402 LOC)
-
-**Interfaces:**
-- Consumes: nothing.
-- Produces: nothing (removal only).
-
-- [ ] **Step 1: Prove it's dead (no importers at all, not even tests)**
-
-Run: `grep -rn "document_index.indexing\b\|document_index import indexing\b\|from src.internal.document_index.indexing" src/ examples/ tests/ --include="*.py"`
-Expected: no output.
-
-- [ ] **Step 2: Delete the file**
-
-```bash
-git rm src/internal/document_index/indexing.py
-```
-
-- [ ] **Step 3: Verify suite is green**
-
-Run: `ruff check . && pytest -q`
-Expected: both pass.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add -A
-git commit -m "chore: remove orphaned document_index/indexing.py
-
-Onyx batch-indexing orchestration with zero importers anywhere (not even
-tests). Not on the documented index_builder build path.
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-```
+**Removed from this plan (2026-07-24).** `indexing.py` is not a clean leaf: the
+package `__init__.py` lazily re-exports its symbols via `__getattr__`
+(`_INDEXING_EXPORTS`), and its only non-test consumer is
+`backgroundworker/docprocessing.py` (a PR2 target). Deleting it in isolation
+breaks package-level imports and orphans the `_INDEXING_EXPORTS` block. It will be
+removed in PR2 together with `docprocessing.py`, the facade tests, and the
+lazy-export block. Tasks below are renumbered accordingly.
 
 ---
 
-### Task 3: Delete dead `document_metadata.py` and its smoke test
+### Task 2: Delete dead `document_metadata.py` and its smoke test
 
 **Files:**
 - Delete: `src/internal/document_index/document_metadata.py` (40 LOC)
@@ -156,7 +129,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 4: Remove the dangling IVF-PQ doc example
+### Task 3: Remove the dangling IVF-PQ doc example
 
 **Files:**
 - Modify: `docs/retrieval.md` (~L468-476)
@@ -204,7 +177,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Final full-suite gate + push + open PR
+### Task 4: Final full-suite gate + push + open PR
 
 **Files:** none (verification + integration).
 
@@ -216,7 +189,7 @@ Expected: all green.
 - [ ] **Step 2: Confirm the diff is deletions + one doc edit only**
 
 Run: `git diff --stat origin/main...HEAD`
-Expected: `indexer.py`, `test_indexer.py`, `indexing.py`, `document_metadata.py` deleted; `test_imports.py` and `docs/retrieval.md` trimmed; the spec + this plan added. No other source files modified.
+Expected: `indexer.py`, `test_indexer.py`, `document_metadata.py` deleted; `test_imports.py` and `docs/retrieval.md` trimmed; the spec + this plan added. `indexing.py` is NOT touched (moved to PR2). No other source files modified.
 
 - [ ] **Step 3: Push and open PR**
 
@@ -225,11 +198,10 @@ git push -u origin chore/prune-dead-index-leaf-modules
 gh pr create --base main --title "chore: prune dead index/document leaf modules (PR1 of 3)" --body "$(cat <<'EOF'
 PR1 of a 3-PR dead-code-removal campaign on the indexing/document-store side.
 
-Removes three import-reachability-verified dead leaf modules (~557 LOC) and one
+Removes two import-reachability-verified dead leaf modules (~155 LOC) and one
 dangling documentation example:
 
 - `src/internal/retrieval/indexer.py` — dead duplicate FAISS builder (superseded by the live document_index build tool)
-- `src/internal/document_index/indexing.py` — orphaned Onyx batch-indexing orchestration, zero importers
 - `src/internal/document_index/document_metadata.py` — `DocumentMetadata`, zero src importers
 - `docs/retrieval.md` IVF-PQ example importing the already-deleted `index_optimizer` module
 
@@ -253,7 +225,7 @@ Expected: PR opened against `main`.
 
 ## Self-Review
 
-**Spec coverage:** Every spec deletion target maps to a task — indexer.py (T1), indexing.py (T2), document_metadata.py + test_imports edit (T3), docs/retrieval.md IVF-PQ block (T4). Out-of-scope guards (enrichment, embedding_cache, Weaviate, workers) are carried in Global Constraints. Final gate + PR is T5.
+**Spec coverage:** Every spec deletion target maps to a task — indexer.py (T1), document_metadata.py + test_imports edit (T2), docs/retrieval.md IVF-PQ block (T3). `indexing.py` moved to PR2 (not a clean leaf — lazy re-export + docprocessing.py consumer). Out-of-scope guards (enrichment, embedding_cache, Weaviate, workers) are carried in Global Constraints. Final gate + PR is T4.
 
 **Placeholder scan:** No TBD/TODO/"handle edge cases". Every code/doc change shows exact content or exact grep/commands.
 
