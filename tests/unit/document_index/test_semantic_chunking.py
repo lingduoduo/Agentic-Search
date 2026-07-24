@@ -1,7 +1,13 @@
 from src.internal.connectors.models import Document
 from src.internal.document_index import chunking
 from src.internal.document_index.embedding import deterministic_embedding_fn
-from src.internal.document_index.models import ChunkingConfig
+from src.internal.document_index.models import (
+    ChunkingConfig,
+    EmbeddingConfig,
+    IndexingPipelineConfig,
+    IndexWriterConfig,
+)
+from src.internal.document_index.pipeline import run_indexing_pipeline
 
 EMB = deterministic_embedding_fn(dim=8)
 
@@ -99,3 +105,28 @@ def test_chunk_documents_threads_embedding_fn():
     )
     chunks = chunking.chunk_documents([_doc(text)], cfg, embedding_fn=EMB)
     assert len(chunks) == 2
+
+
+def test_pipeline_builds_index_with_semantic_chunking(tmp_path):
+    text = (
+        "cats cats cats. cats cats cats. cats cats cats. "
+        "dogs dogs dogs. dogs dogs dogs."
+    )
+    config = IndexingPipelineConfig(
+        chunking=ChunkingConfig(
+            semantic_chunking=True, include_title=False, include_metadata=False
+        ),
+        embedding=EmbeddingConfig(retrieval_method="contriever", batch_size=2),
+        writer=IndexWriterConfig(save_dir=tmp_path),
+    )
+
+    result = run_indexing_pipeline(
+        [_doc(text)],
+        config=config,
+        embedding_fn=deterministic_embedding_fn(dim=8),
+    )
+
+    assert result.total_documents == 1
+    assert result.total_chunks == 2
+    assert result.corpus_path.exists()
+    assert result.embedding_path.exists()
