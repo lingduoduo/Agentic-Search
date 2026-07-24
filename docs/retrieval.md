@@ -158,6 +158,64 @@ continue from retrieval evidence.
 
 Index construction is a separate offline step: the `index_builder` CLI reads a corpus and writes the searchable sparse/dense indexes. Query requests consume those existing indexes; they do not re-ingest or retrain on documents.
 
+## Chunking
+
+The first stage of index construction splits each document into token-budgeted
+chunks (`src/internal/document_index/chunking.py`, driven by `ChunkingConfig` in
+`models.py`). All three canonical chunking strategies are available:
+
+| Strategy | Status | Where |
+|----------|--------|-------|
+| Recursive / structure-aware | **default** | `_split_text_paragraphs` |
+| Fixed-size + overlap | fallback + config | `_split_token_window` |
+| Semantic | **opt-in** | `_split_text_semantic` |
+
+**Recursive / structure-aware (default).** `_split_text_paragraphs` splits along
+natural boundaries in descending order — paragraph/section breaks (a blank line, or
+a newline before a Markdown `#` heading) → sentences (`.!?` and CJK `。！？`) — and
+greedily packs sentences into a `chunk_size` budget, flushing at a section boundary
+once a chunk is ≥ 50% full. A single sentence longer than `chunk_size` falls back to
+a fixed-size token window. Overlap between adjacent chunks is sentence-granular
+(`_overlap_tail`, `chunk_overlap` tokens).
+
+**Fixed-size + overlap.** `_split_token_window` is a classic sliding window
+(`step = chunk_size − chunk_overlap`). It is not a top-level mode — it is the
+fallback the recursive splitter uses for an oversized sentence. A separate
+BPE-tokenizer fixed-size splitter, `split_text_by_tokens`
+(`natural_language_processing/utils.py`, no overlap, best-effort), exists for
+trimming oversized content. Defaults: `chunk_size=900`, `chunk_overlap=120`.
+
+**Semantic (opt-in).** Set `ChunkingConfig.semantic_chunking=True` to route to
+`_split_text_semantic`: it embeds each sentence (via the indexing pipeline's
+`embedding_fn`), then places a boundary wherever the cosine distance between
+adjacent sentences exceeds this document's `semantic_breakpoint_percentile`
+(default `95.0`) — a self-calibrating breakpoint, so no fixed threshold to tune.
+`semantic_buffer_size` (default `1`) optionally embeds each sentence with its
+neighbors to denoise the signal. Every semantic chunk is still capped at
+`chunk_size` (oversized topic regions are re-split with the structure-aware
+splitter), and the whole path degrades to `_split_text_paragraphs` when no
+embedder is supplied, the document has fewer than two sentences, or embedding
+fails — it never blocks indexing. Tradeoff: one extra sentence-embedding pass over
+the corpus at index time, which is why it is off by default.
+
+```python
+from src.internal.document_index.models import ChunkingConfig
+
+# structure-aware (default)
+ChunkingConfig()
+
+# semantic chunking, cut at the 90th-percentile distance breakpoint
+ChunkingConfig(semantic_chunking=True, semantic_breakpoint_percentile=90.0)
+```
+
+> **Two caveats.** (1) "Tokens" here are whitespace-delimited words
+> (`re.findall(r"\S+")`), **not** model/BPE tokens — `chunk_size=900` is ~900 words
+> (roughly 1,100–1,300 BPE tokens), so budget against an embedder's context window
+> accordingly. (2) The structure-aware splitter is **not** code-block or table
+> aware: splitting on blank lines can cut inside a fenced code block or a Markdown
+> table. Prose and heading-structured Markdown are handled well; richly structured
+> documents are not specially protected.
+
 **Retrieval servers** (`src/internal/servers/retrieval/`):
 
 | Module | Description |
