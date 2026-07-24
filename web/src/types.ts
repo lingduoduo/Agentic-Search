@@ -106,8 +106,6 @@ export interface AuditSummary {
 }
 
 export type AdminSurfaceKey =
-  | "connectors"
-  | "indexing"
   | "access"
   | "auth"
   | "models"
