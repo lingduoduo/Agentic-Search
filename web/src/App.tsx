@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bot, ClipboardList, FileSearch, Gauge, MessageSquarePlus, Plug, Search, Wrench } from "lucide-react";
+import { Bot, ClipboardList, FileSearch, Gauge, MessageSquarePlus, Search, Wrench } from "lucide-react";
 import {
   createSession,
   getAdminSummary,
@@ -14,7 +14,6 @@ import { AdminOverview } from "./components/AdminOverview";
 import { ToolCallTracePanel } from "./components/ToolCallTracePanel";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AnswerPanel } from "./components/AnswerPanel";
-import { ConnectorPanel } from "./components/ConnectorPanel";
 import { DevConsole } from "./components/debug/DevConsole";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { ToolPanel } from "./components/ToolPanel";
@@ -84,7 +83,6 @@ export function App() {
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<ToolApprovalView[]>([]);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
-  const [showConnectors, setShowConnectors] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
   const [surface, setSurface] = useState<"assistant" | "search" | "chat" | "tool">("assistant");
@@ -329,15 +327,6 @@ export function App() {
               </button>
             </div>
             <button
-              className={`icon-button${showConnectors ? " active" : ""}`}
-              type="button"
-              onClick={() => setShowConnectors((v) => !v)}
-              title="Manage connectors"
-            >
-              <Plug size={18} />
-              <span>Connectors</span>
-            </button>
-            <button
               className={`icon-button${showTools ? " active" : ""}`}
               type="button"
               onClick={() => setShowTools((v) => !v)}
@@ -406,8 +395,6 @@ export function App() {
             selectedRequestId={lastRequestId}
           />
         )}
-
-        {showConnectors && <ConnectorPanel />}
 
         {showTools && <ToolPanel />}
 
