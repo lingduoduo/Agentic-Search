@@ -1,4 +1,12 @@
+from src.internal.connectors.models import Document
 from src.internal.document_index import chunking
+from src.internal.document_index.models import ChunkingConfig
+
+
+def _doc(text):
+    return Document(
+        id="d1", title="", contents=text, url=None, metadata={}, permissions=[]
+    )
 
 
 def test_code_fence_is_one_atomic_segment():
@@ -64,3 +72,44 @@ def test_spaceless_blob_terminates_as_one_piece():
     text = "x" * 50
     pieces = chunking._recursive_split(text, chunking._RECURSIVE_SEPARATORS, 2, 0)
     assert pieces == [text]
+
+
+def test_code_block_never_split_across_chunks():
+    code = "```\n" + "\n".join(f"line{i} = {i}" for i in range(20)) + "\n```"
+    text = f"Intro.\n\n{code}\n\nOutro."
+    chunks = chunking._split_text_recursive(text, chunk_size=8, chunk_overlap=0)
+    # the whole fenced block lands inside exactly one chunk (opening + closing fence together)
+    holders = [c for c in chunks if "```" in c]
+    assert len(holders) == 1
+    assert holders[0].count("```") == 2
+    assert "line0 = 0" in holders[0] and "line19 = 19" in holders[0]
+
+
+def test_table_never_split_across_chunks():
+    rows = "\n".join(f"| {i} | {i * 2} |" for i in range(15))
+    text = f"Before.\n\n| a | b |\n| --- | --- |\n{rows}\n\nAfter."
+    chunks = chunking._split_text_recursive(text, chunk_size=8, chunk_overlap=0)
+    holders = [c for c in chunks if "| --- | --- |" in c]
+    assert len(holders) == 1
+    assert "| 0 | 0 |" in holders[0] and "| 14 | 28 |" in holders[0]
+
+
+def test_chunk_document_routes_to_recursive_when_enabled():
+    text = "# A\naaa\n\n## B\nbbb\n\n## C\nccc"
+    cfg = ChunkingConfig(
+        recursive_chunking=True,
+        include_title=False,
+        include_metadata=False,
+        chunk_size=4,
+        chunk_overlap=0,
+    )
+    chunks = chunking.chunk_document(_doc(text), cfg)
+    assert len(chunks) >= 2  # split along headings
+
+
+def test_recursive_off_matches_today():
+    text = "one one one. two two two. three three three."
+    cfg = ChunkingConfig(include_title=False, include_metadata=False)  # off
+    got = [c.text for c in chunking.chunk_document(_doc(text), cfg)]
+    expected_texts = chunking._split_text(text, cfg.chunk_size, cfg.chunk_overlap)
+    assert got == expected_texts

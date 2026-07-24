@@ -74,7 +74,11 @@ def chunk_document(
         title_prefix = ""
         content_token_limit = config.chunk_size
 
-    if config.semantic_chunking and embedding_fn is not None:
+    if config.recursive_chunking:
+        chunk_texts = _split_text_recursive(
+            text, content_token_limit, config.chunk_overlap
+        )
+    elif config.semantic_chunking and embedding_fn is not None:
         chunk_texts = _split_text_semantic(
             text,
             content_token_limit,
@@ -520,6 +524,46 @@ def _recursive_split(
         else:
             out.extend(_recursive_split(piece, rest, chunk_size, chunk_overlap))
     return out
+
+
+def _merge_recursive_pieces(
+    pieces: list[str], chunk_size: int, chunk_overlap: int
+) -> list[str]:
+    """Greedily merge ordered pieces up to chunk_size, carrying overlap. Pieces are
+    never split here, so atomic blocks stay intact."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_tokens = 0
+    for piece in pieces:
+        piece = piece.strip()
+        if not piece:
+            continue
+        piece_tokens = _token_count(piece)
+        if current and current_tokens + piece_tokens > chunk_size:
+            chunks.append("\n\n".join(current).strip())
+            current = list(_overlap_tail(current, chunk_overlap))
+            current_tokens = _token_count("\n\n".join(current)) if current else 0
+        current.append(piece)
+        current_tokens += piece_tokens
+    if current:
+        chunks.append("\n\n".join(current).strip())
+    return [c for c in chunks if c]
+
+
+def _split_text_recursive(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Structure-aware recursive chunking: keep code blocks/tables intact, split
+    prose along a coarse->fine Markdown separator hierarchy, then merge + overlap."""
+    pieces: list[str] = []
+    for kind, seg in _segment_blocks(text):
+        if kind == "atomic":
+            # Atomic blocks (code fences, tables) are never split internally, even
+            # when they exceed chunk_size — that's what keeps them intact.
+            pieces.append(seg)
+        else:
+            pieces.extend(
+                _recursive_split(seg, _RECURSIVE_SEPARATORS, chunk_size, chunk_overlap)
+            )
+    return _merge_recursive_pieces(pieces, chunk_size, chunk_overlap)
 
 
 def _split_token_window(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
