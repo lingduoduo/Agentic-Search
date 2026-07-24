@@ -30,3 +30,38 @@ def test_plain_prose_is_single_prose_segment():
     text = "Just one paragraph.\n\nAnd another."
     segs = chunking._segment_blocks(text)
     assert [k for k, _ in segs] == ["prose"]
+
+
+def test_short_text_returns_whole():
+    assert chunking._recursive_split(
+        "small text", chunking._RECURSIVE_SEPARATORS, 900, 0
+    ) == ["small text"]
+
+
+def test_splits_at_heading_boundaries_first():
+    text = (
+        "# Title\nintro line\n\n## Section A\naaa aaa aaa\n\n## Section B\nbbb bbb bbb"
+    )
+    pieces = chunking._recursive_split(text, chunking._RECURSIVE_SEPARATORS, 6, 0)
+    joined = "\n".join(pieces)  # noqa: F841 — unused; kept per brief for readability
+    # each H2 marker stays attached to its section's content
+    a = next(p for p in pieces if "Section A" in p)
+    b = next(p for p in pieces if "Section B" in p)
+    assert "aaa" in a and "bbb" not in a
+    assert "bbb" in b and "aaa" not in b
+
+
+def test_recurses_to_words_and_never_exceeds_size():
+    text = "alpha beta gamma delta epsilon zeta eta theta iota kappa"
+    pieces = chunking._recursive_split(text, chunking._RECURSIVE_SEPARATORS, 3, 0)
+    assert pieces
+    for p in pieces:
+        assert chunking._token_count(p) <= 3
+
+
+def test_spaceless_blob_terminates_as_one_piece():
+    # a single whitespace-token (no separators present) is one token -> kept as-is;
+    # this guards against infinite recursion at the finest separator.
+    text = "x" * 50
+    pieces = chunking._recursive_split(text, chunking._RECURSIVE_SEPARATORS, 2, 0)
+    assert pieces == [text]

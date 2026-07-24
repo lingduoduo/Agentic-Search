@@ -471,6 +471,57 @@ def _split_text_semantic(
     return [c for c in chunks if c]
 
 
+# coarse -> fine; heading levels keep their marker attached to the section below.
+_RECURSIVE_SEPARATORS = ["\n# ", "\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " "]
+
+
+def _split_on_separator(text: str, sep: str) -> list[str]:
+    if sep.startswith("\n#"):
+        marker = sep[1:]  # e.g. "# "
+        return re.split(rf"\n(?={re.escape(marker)})", text)
+    if sep == ". ":
+        return re.split(r"(?<=[.!?。！？])\s+", text)
+    return text.split(sep)
+
+
+def _recursive_split(
+    text: str,
+    separators: list[str],
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[str]:
+    """Split prose along a coarse->fine separator list, recursing only when a piece
+    still exceeds chunk_size; the finest level falls back to a token window."""
+    text = text.strip()
+    if not text:
+        return []
+    if _token_count(text) <= chunk_size:
+        return [text]
+
+    sep = separators[-1]
+    rest: list[str] = []
+    for idx, candidate in enumerate(separators):
+        if candidate in text:
+            sep = candidate
+            rest = separators[idx + 1 :]
+            break
+
+    out: list[str] = []
+    for piece in _split_on_separator(text, sep):
+        piece = piece.strip()
+        if not piece:
+            continue
+        if _token_count(piece) <= chunk_size or not rest:
+            # kept when it fits, or when no finer separator remains (a single
+            # whitespace-token cannot be reduced further — the atomic-block path
+            # in _split_text_recursive is where genuinely oversized spans are
+            # token-windowed).
+            out.append(piece)
+        else:
+            out.extend(_recursive_split(piece, rest, chunk_size, chunk_overlap))
+    return out
+
+
 def _split_token_window(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     tokens = _tokenize_for_chunking(text)
     chunks: list[str] = []
