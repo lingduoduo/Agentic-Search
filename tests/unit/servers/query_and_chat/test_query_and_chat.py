@@ -1,4 +1,4 @@
-"""Tests for src/servers/query_and_chat and src/servers/documents."""
+"""Tests for src/servers/query_and_chat."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from src.internal.auth import generate_user_jwt_token
 from src.internal.configs import AppSettings
 from src.internal.configs import AuthSettings
 from src.internal.db import AgenticSearchStore
-from src.internal.db.models import ConnectorConfig
 from src.internal.db.models import UserRecord
 from src.context.search import SearchResult
 from src.internal.servers.query_and_chat.models import SearchDocWithContent
@@ -274,97 +273,4 @@ def test_query_standard_answer_returns_501(tmp_path):
     client, store = _admin_client(tmp_path)
     response = client.get("/query/standard-answer")
     assert response.status_code == 501
-    store.close()
-
-
-# ---------------------------------------------------------------------------
-# documents (cc_pair / connector sync)
-# ---------------------------------------------------------------------------
-
-
-def _make_connector(store: AgenticSearchStore, connector_id: str) -> None:
-    store.upsert_connector(
-        ConnectorConfig(id=connector_id, name="TestConn", source="local_file")
-    )
-
-
-def test_get_connector_last_sync_returns_none_when_no_attempts(tmp_path):
-    client, store = _admin_client(tmp_path)
-    _make_connector(store, "conn1")
-    response = client.get(
-        "/manage/admin/connector/conn1/last-sync",
-        headers=_bearer(_ADMIN_ID),
-    )
-    assert response.status_code == 200
-    assert response.json() is None
-    store.close()
-
-
-def test_get_connector_last_sync_returns_timestamp_after_attempt(tmp_path):
-    client, store = _admin_client(tmp_path)
-    _make_connector(store, "conn1")
-    store.create_index_attempt(connector_id="conn1")
-    response = client.get(
-        "/manage/admin/connector/conn1/last-sync",
-        headers=_bearer(_ADMIN_ID),
-    )
-    assert response.status_code == 200
-    assert response.json() is not None
-    store.close()
-
-
-def test_trigger_connector_sync_creates_index_attempt(tmp_path):
-    client, store = _admin_client(tmp_path)
-    _make_connector(store, "conn1")
-    response = client.post(
-        "/manage/admin/connector/conn1/sync",
-        headers=_bearer(_ADMIN_ID),
-    )
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-    attempts = store.list_index_attempts(connector_id="conn1")
-    assert len(attempts) == 1
-    assert attempts[0].status == "not_started"
-    store.close()
-
-
-def test_connector_sync_404_for_missing_connector(tmp_path):
-    client, store = _admin_client(tmp_path)
-    response = client.post(
-        "/manage/admin/connector/nonexistent/sync",
-        headers=_bearer(_ADMIN_ID),
-    )
-    assert response.status_code == 404
-    store.close()
-
-
-def test_connector_sync_requires_admin(tmp_path):
-    client, store = _admin_client(tmp_path)
-    _make_connector(store, "conn1")
-    response = client.post(
-        "/manage/admin/connector/conn1/sync",
-        headers=_bearer(_USER_ID),
-    )
-    assert response.status_code == 403
-    store.close()
-
-
-def test_group_sync_returns_501(tmp_path):
-    client, store = _admin_client(tmp_path)
-    _make_connector(store, "conn1")
-    response = client.post(
-        "/manage/admin/connector/conn1/sync-groups",
-        headers=_bearer(_ADMIN_ID),
-    )
-    assert response.status_code == 501
-    store.close()
-
-
-def test_group_sync_404_for_missing_connector(tmp_path):
-    client, store = _admin_client(tmp_path)
-    response = client.post(
-        "/manage/admin/connector/nonexistent/sync-groups",
-        headers=_bearer(_ADMIN_ID),
-    )
-    assert response.status_code == 404
     store.close()
