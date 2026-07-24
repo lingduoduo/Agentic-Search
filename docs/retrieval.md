@@ -196,10 +196,9 @@ heuristic, and a missed block degrades to prose rather than erroring.
 
 **Fixed-size + overlap.** `_split_token_window` is a classic sliding window
 (`step = chunk_size − chunk_overlap`). It is not a top-level mode — it is the
-fallback the recursive splitter uses for an oversized sentence. A separate
-BPE-tokenizer fixed-size splitter, `split_text_by_tokens`
-(`natural_language_processing/utils.py`, no overlap, best-effort), exists for
-trimming oversized content. Defaults: `chunk_size=900`, `chunk_overlap=120`.
+fallback the structure-aware and recursive splitters use for a single unit
+(sentence or word) that alone exceeds `chunk_size`. Defaults: `chunk_size=900`,
+`chunk_overlap=120`.
 
 **Semantic (opt-in).** Set `ChunkingConfig.semantic_chunking=True` to route to
 `_split_text_semantic`: it embeds each sentence (via the indexing pipeline's

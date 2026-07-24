@@ -4,7 +4,7 @@
 
 This guide is the source of truth for how the web API turns an agent request into a chat, search, or tool execution. It covers `POST /api/agent` and `POST /api/agent/stream`; both endpoints share the same dispatcher in `src/internal/servers/web/app.py`.
 
-The pipeline described here is query-time orchestration over indexes produced by asynchronous ingestion jobs. It reuses the existing `/api/agent`, `/api/agent/stream`, `/retrieve`, `/search`, and `/rerank` contracts; no public endpoint or schema was added.
+The pipeline described here is query-time orchestration over indexes produced offline by the `index_builder`. It reuses the existing `/api/agent`, `/api/agent/stream`, `/retrieve`, `/search`, and `/rerank` contracts; no public endpoint or schema was added.
 
 ## Routing at a glance
 
