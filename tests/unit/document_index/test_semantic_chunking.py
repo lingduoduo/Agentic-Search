@@ -1,3 +1,5 @@
+import numpy as np
+
 from src.internal.connectors.models import Document
 from src.internal.document_index import chunking
 from src.internal.document_index.embedding import deterministic_embedding_fn
@@ -130,3 +132,14 @@ def test_pipeline_builds_index_with_semantic_chunking(tmp_path):
     assert result.total_chunks == 2
     assert result.corpus_path.exists()
     assert result.embedding_path.exists()
+
+
+def test_fallback_on_malformed_embedding_shape():
+    # embedder returns the wrong number of rows -> shape mismatch -> paragraph fallback.
+    def wrong_shape(sentences):
+        return np.zeros((len(sentences) - 1, 8))
+
+    text = "one one one. two two two. three three three."
+    assert _semantic(text, embedding_fn=wrong_shape) == chunking._split_text_paragraphs(
+        text, 900, 0
+    )
