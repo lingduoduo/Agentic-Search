@@ -61,26 +61,12 @@ def create_debug_router(
 
     @router.get("/workers")
     def workers() -> dict:
-        """Live indexing-pipeline snapshot (queue depth, docs, connectors).
+        """Indexing-pipeline snapshot placeholder.
 
-        Computed on-demand from the store via MonitoringWorker — no persisted
-        snapshots, so it's never stale. Returns ``metrics: null`` when no store is
-        wired; never 500.
+        The async ingestion worker fleet was removed; this endpoint now always
+        returns ``metrics: null``. Kept for Dev Console compatibility.
         """
-        if db is None:
-            return {"metrics": None}
-        try:
-            from src.internal.servers.backgroundworker.monitoring_worker import (
-                MonitoringConfig,
-                MonitoringWorker,
-            )
-
-            worker = MonitoringWorker(
-                db, config=MonitoringConfig(cloud_report_url=None)
-            )
-            return {"metrics": worker.run_once().as_dict()}
-        except Exception as exc:  # never break the console on a metrics hiccup
-            return {"metrics": None, "error": str(exc)}
+        return {"metrics": None}
 
     @router.get("/eval-results")
     def eval_results() -> dict:

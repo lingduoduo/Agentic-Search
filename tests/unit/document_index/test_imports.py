@@ -11,7 +11,3 @@ def test_interfaces_importable():
 
 def test_document_index_utils_importable():
     import src.internal.document_index.document_index_utils  # noqa: F401
-
-
-def test_chunk_content_enrichment_importable():
-    import src.internal.document_index.chunk_content_enrichment  # noqa: F401

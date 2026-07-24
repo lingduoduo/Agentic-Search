@@ -181,10 +181,10 @@ React 19 + Vite + TypeScript. No component library — custom components only. P
 `answer_with_retrieval` wires retrieval → context-building → prompting → LLM call. `preprocessing/` holds access filters applied before retrieval.
 
 **Retrieval internals** (`src/internal/document_index/`, `src/internal/retrieval/`)
-Low-level chunking, embedding, FAISS index building, sparse BM25, and hybrid retrieval. Used both by the retrieval servers and the indexing pipeline.
+Low-level chunking, embedding, FAISS index building, sparse BM25, and hybrid retrieval. Used by the retrieval servers and the offline index-build CLI.
 
-**Indexing pipeline** (`src/internal/servers/backgroundworker/`)
-Async workers: `light_worker` (polling/scheduling), `heavy_worker` (embedding + indexing), `beat_worker` (cron), `monitoring_worker`. Connectors (`src/internal/connectors/`) feed documents into this pipeline.
+**Indexing** (`src/internal/document_index/index_builder`)
+Index construction is an offline step: the `index_builder` CLI reads a corpus and writes the searchable sparse/dense indexes. (The former async worker fleet and `servers/indexing` pipeline were Onyx heritage and have been removed.) `src/internal/connectors/models.py` holds the shared `Document`/`ConnectorFailure` data models.
 
 **Configuration** (`src/internal/configs/`)
 Typed dataclasses loaded from environment variables. Key env vars:

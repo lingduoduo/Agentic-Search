@@ -25,23 +25,18 @@ def _client(handler, db=None) -> TestClient:
     return TestClient(app)
 
 
-def test_workers_returns_live_snapshot_from_store():
+def test_workers_without_store_returns_empty_not_500():
+    client = _client(lambda r: httpx.Response(200, json={}), db=None)
+    resp = client.get("/api/debug/workers")
+    assert resp.status_code == 200
+    assert resp.json()["metrics"] is None
+
+
+def test_workers_with_store_still_returns_null_metrics():
     from src.internal.db import AgenticSearchStore
 
     db = AgenticSearchStore(":memory:")
     client = _client(lambda r: httpx.Response(200, json={}), db=db)
-    resp = client.get("/api/debug/workers")
-    assert resp.status_code == 200
-    m = resp.json()["metrics"]
-    # empty store → zeros, never errors
-    assert m["pending_index_attempts"] == 0
-    assert m["in_progress_index_attempts"] == 0
-    assert m["total_documents"] == 0
-    assert "timestamp" in m
-
-
-def test_workers_without_store_returns_empty_not_500():
-    client = _client(lambda r: httpx.Response(200, json={}), db=None)
     resp = client.get("/api/debug/workers")
     assert resp.status_code == 200
     assert resp.json()["metrics"] is None

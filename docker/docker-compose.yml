@@ -170,44 +170,6 @@ services:
     networks:
       - agentic_search_default
 
-  worker-light:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      <<: *app-env
-    command: >
-      python -m src.internal.servers.backgroundworker.light_worker
-    volumes:
-      - app_data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - agentic_search_default
-
-  worker-heavy:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      <<: *app-env
-    command: >
-      python -m src.internal.servers.backgroundworker.heavy_worker
-    volumes:
-      - app_data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - agentic_search_default
-
 volumes:
   postgres_data:
   redis_data:

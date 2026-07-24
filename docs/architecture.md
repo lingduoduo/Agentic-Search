@@ -28,7 +28,7 @@ src/
     ├── cache/                   # In-memory cache backend (chat session state)
     ├── chat/                    # Chat pipeline (loop, steps, citations, compression)
     ├── configs/                 # Environment-based configuration (AppSettings)
-    ├── connectors/              # Data source connectors
+    ├── connectors/              # Connector data models (connector classes removed)
     ├── context/                 # Internal retrieval context helpers
     ├── db/                      # SQLite store (AgenticSearchStore)
     ├── document_index/          # Document index (FAISS / BM25)
@@ -49,14 +49,12 @@ src/
     └── servers/
         ├── admin_surface/       # Admin summary endpoint
         ├── analytics/           # Usage analytics API
-        ├── backgroundworker/    # Async workers (beat, docfetching, light, heavy, monitoring)
         ├── billing/             # Stripe billing proxy
         ├── connectors/          # Connector management endpoints
         ├── documents/           # Connector-credential pair management
         ├── enterprise_settings/ # Enterprise configuration endpoints
         ├── evals/               # Evaluation endpoints
         ├── features/            # Feature-flag endpoints
-        ├── indexing/            # Indexing status & control endpoints
         ├── license/             # License validation & seat management
         ├── limits/              # Usage limit enforcement
         ├── middleware/          # License enforcement, tier gate, tenant tracking
