@@ -16,6 +16,17 @@
 - **KEEP:** all chat/memory/user/SCIM/hooks tables + methods; the ACL string-builder path (`context/preprocessing/access_filters.py` + `PUBLIC_ACL`/`prefix_user`/`prefix_email`/`prefix_group` in `src.internal.access`); user seeding; the `/admin/observability/summary` endpoint (trimmed, not removed).
 - The admin summary is consumed generically by `AdminOverview.tsx` (`summary.metrics.map`, `summary.sections.map`) — trimming cards needs NO frontend type change, only removal of now-unused icon imports.
 
+> **Execution reorder (discovered mid-run, 2026-07-24):** Task 4 (store methods)
+> was BLOCKED — two callers survived: `access.py get_access_for_document` (calls
+> `store.get_document_permissions`) and `examples/seed_monitoring_demo.py` (calls
+> `upsert_connector`/`upsert_document`/index-attempt methods). Both must be removed
+> BEFORE the store methods. New execution order: **T1 frontend → T2 routers → T3
+> seeding+admin_surface → T6 ACL readers → T-new seed_monitoring_demo → T4 store
+> methods+tables → T5 dataclasses → T7 final**. The task bodies below are unchanged
+> except: the store-methods Step-1 grep now also expects `access.py` and the demo
+> script to be clean (they're removed first). The seed-demo removal is a small added
+> task; ACL removal (T6 body) simply runs earlier.
+
 ---
 
 ### Task 1: Remove the frontend Connectors panel + WorkerMonitor
