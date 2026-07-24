@@ -465,16 +465,6 @@ QUERY_EXPANSION_ENABLED=true SPELL_CORRECTION_ENABLED=true EXPANSION_MAX_TERMS=3
   PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 ```
 
-**Build an IVF-PQ FAISS index** (cuts memory from ~30 GB to ≤ 4 GB at 10 M docs):
-```python
-from src.internal.retrieval.index_optimizer import FAISSIndexBuilder
-import numpy as np
-
-builder = FAISSIndexBuilder()
-index = builder.build_ivfpq(embeddings, nlist=4096, m=96, nbits=8, nprobe=64)
-# Save alongside existing index; load via FAISS_INDEX_TYPE=ivfpq
-```
-
 ## Query transformation optimization
 
 A layered-wrapper optimization stack over `QueryTransformPipeline`, parallel to Neural Reranking. Every layer is opt-in; with all `QT_*` unset, `RetrievalService` runs the single-query path unchanged (`build_query_transform_pipeline_from_env` returns `None`).
