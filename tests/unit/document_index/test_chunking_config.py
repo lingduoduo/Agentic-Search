@@ -20,3 +20,18 @@ def test_validate_rejects_bad_percentile(pct):
 def test_validate_rejects_bad_buffer():
     with pytest.raises(ValueError):
         ChunkingConfig(semantic_buffer_size=0).validate()
+
+
+def test_recursive_default_off():
+    c = ChunkingConfig()
+    assert c.recursive_chunking is False
+    c.validate()
+
+
+def test_recursive_and_semantic_are_mutually_exclusive():
+    with pytest.raises(ValueError):
+        ChunkingConfig(recursive_chunking=True, semantic_chunking=True).validate()
+
+
+def test_recursive_alone_is_valid():
+    ChunkingConfig(recursive_chunking=True).validate()
