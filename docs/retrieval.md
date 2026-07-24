@@ -156,7 +156,7 @@ continue from retrieval evidence.
 
 `src.internal.document_index` is the single indexing entry point — filtering, chunking, embedding, retry-isolated writes, and failure reporting. Query-time retrievers and the retrieval HTTP client live in `src.context`. Reranker utilities live in `src.internal.servers.retrieval`.
 
-Index construction is upstream and asynchronous: connectors and ingestion jobs prepare documents, then the document-index pipeline writes the searchable sparse/dense indexes. Query requests consume those existing indexes; they do not re-ingest or retrain on documents.
+Index construction is a separate offline step: the `index_builder` CLI reads a corpus and writes the searchable sparse/dense indexes. Query requests consume those existing indexes; they do not re-ingest or retrain on documents.
 
 **Retrieval servers** (`src/internal/servers/retrieval/`):
 
