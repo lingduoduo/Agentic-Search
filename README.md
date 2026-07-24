@@ -65,7 +65,7 @@ Provider, web-search, retrieval, reranking, routing, and application settings ar
 
 ## Ingestion
 
-Connectors pull documents into asynchronous ingestion and indexing jobs that build the searchable indexes before query time. See [Ingestion](docs/ingestion.md) for connectors, indexing, and the background workers.
+The offline `index_builder` turns a corpus into the searchable sparse/dense indexes that queries read at request time — chunking, embedding, and writing the index artifacts. Chunking offers three strategies: a default structure-aware packer plus opt-in **recursive** (heading hierarchy + code/table integrity) and **semantic** (embedding-similarity) modes. See [Ingestion](docs/ingestion.md) for the pipeline and connector data models, and [Retrieval](docs/retrieval.md#chunking) for chunking details.
 
 ## Search engine
 
@@ -158,7 +158,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - [API request routing](docs/request-routing.md) — modes, intent classification, provider order, fallbacks, and response metadata
 - [Tool engine](docs/tool-engine.md) — tool-agent capabilities, routing, and the tool registry
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
-- [Ingestion](docs/ingestion.md) — connectors, document ingestion, indexing, and background workers
+- [Ingestion](docs/ingestion.md) — connector data models and the offline `index_builder` indexing tool
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
 - [Training and evaluation](docs/training-and-evaluation.md) — examples, datasets, SFT, GRPO/PPO, and benchmarks
 - [Frontend development](docs/frontend.md) — React/Vite workflow, UI behavior, and observability surfaces

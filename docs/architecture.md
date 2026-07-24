@@ -37,8 +37,6 @@ src/
     ├── hooks/                   # Outbound webhook execution
     ├── llm/                     # LLM provider integrations
     ├── mcp_server/              # MCP server (tools, resources, auth)
-    ├── metrics/                 # Metrics collection helpers
-    ├── natural_language_processing/  # NLP utilities
     ├── observability/           # Admin surface summary & health score
     ├── prompts/                 # Prompt templates
     ├── retrieval/               # Retrieval core: service, fusion, query transforms, routers
@@ -162,7 +160,7 @@ The router is `route_query` (`src/internal/servers/web/intent_routing.py`), disp
 ### End-to-end request flow
 
 ```text
-async connectors / ingestion jobs
+offline index_builder (corpus.jsonl)
   → chunk + embed/index documents
   → searchable retrieval indexes
 

@@ -16,10 +16,10 @@ see [Retrieval](retrieval.md).
 
 `src/internal/connectors/models.py` defines the shared document models
 (`Document`, `SlimDocument`, etc.) used by connector integrations; the
-connector *implementations* that produced them have been removed. Connector
-configuration, credentials, and OAuth authorization are still managed through
-the admin/enterprise routers registered in `create_web_app()` (`connectors/`,
-`documents/`, `oauth/` endpoints — see the [HTTP API reference](api-reference.md)).
+connector *implementations* that produced them — and the connector/document
+management endpoints and their ingestion tables — have since been removed.
+OAuth authorization is still managed through the `oauth/` router registered in
+`create_web_app()` (see the [HTTP API reference](api-reference.md)).
 
 ## Building search indexes
 
