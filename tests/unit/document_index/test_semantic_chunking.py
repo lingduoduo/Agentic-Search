@@ -1,7 +1,15 @@
+from src.internal.connectors.models import Document
 from src.internal.document_index import chunking
 from src.internal.document_index.embedding import deterministic_embedding_fn
+from src.internal.document_index.models import ChunkingConfig
 
 EMB = deterministic_embedding_fn(dim=8)
+
+
+def _doc(text):
+    return Document(
+        id="d1", title="", contents=text, url=None, metadata={}, permissions=[]
+    )
 
 
 def _semantic(text, chunk_size=900, overlap=0, embedding_fn=EMB, pct=95.0, buf=1):
@@ -59,3 +67,35 @@ def test_fallback_on_embedder_error():
     assert _semantic(text, embedding_fn=boom) == chunking._split_text_paragraphs(
         text, 900, 0
     )
+
+
+def test_chunk_document_routes_to_semantic_when_enabled():
+    text = (
+        "cats cats cats. cats cats cats. cats cats cats. "
+        "dogs dogs dogs. dogs dogs dogs."
+    )
+    cfg = ChunkingConfig(
+        semantic_chunking=True, include_title=False, include_metadata=False
+    )
+    chunks = chunking.chunk_document(_doc(text), cfg, embedding_fn=EMB)
+    assert len(chunks) == 2
+
+
+def test_chunk_document_semantic_off_matches_today():
+    text = "cats cats cats. dogs dogs dogs. birds birds birds."
+    cfg = ChunkingConfig(include_title=False, include_metadata=False)  # off
+    with_fn = chunking.chunk_document(_doc(text), cfg, embedding_fn=EMB)
+    without_fn = chunking.chunk_document(_doc(text), cfg)
+    assert [c.text for c in with_fn] == [c.text for c in without_fn]
+
+
+def test_chunk_documents_threads_embedding_fn():
+    text = (
+        "cats cats cats. cats cats cats. cats cats cats. "
+        "dogs dogs dogs. dogs dogs dogs."
+    )
+    cfg = ChunkingConfig(
+        semantic_chunking=True, include_title=False, include_metadata=False
+    )
+    chunks = chunking.chunk_documents([_doc(text)], cfg, embedding_fn=EMB)
+    assert len(chunks) == 2

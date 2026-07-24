@@ -28,7 +28,12 @@ RETURN_SEPARATOR = "\n\n"
 SECTION_SEPARATOR = "\n\n---\n\n"
 
 
-def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChunk]:
+def chunk_document(
+    document: Document,
+    config: ChunkingConfig,
+    *,
+    embedding_fn=None,
+) -> list[IndexChunk]:
     """Split one document into token-budgeted chunks ready for indexing."""
 
     config.validate()
@@ -66,7 +71,17 @@ def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChun
         title_prefix = ""
         content_token_limit = config.chunk_size
 
-    chunk_texts = _split_text(text, content_token_limit, config.chunk_overlap)
+    if config.semantic_chunking and embedding_fn is not None:
+        chunk_texts = _split_text_semantic(
+            text,
+            content_token_limit,
+            config.chunk_overlap,
+            embedding_fn,
+            config.semantic_breakpoint_percentile,
+            config.semantic_buffer_size,
+        )
+    else:
+        chunk_texts = _split_text(text, content_token_limit, config.chunk_overlap)
     chunks: list[IndexChunk] = []
     for chunk_id, chunk_text in enumerate(chunk_texts):
         index_text = (
@@ -108,13 +123,14 @@ def chunk_documents(
     config: ChunkingConfig,
     *,
     callback: IndexingHeartbeatInterface | None = None,
+    embedding_fn=None,
 ) -> list[IndexChunk]:
     """Chunk all non-empty documents."""
 
     chunks: list[IndexChunk] = []
     for document in documents:
         _raise_if_indexing_stopped(callback, "chunk_documents")
-        document_chunks = chunk_document(document, config)
+        document_chunks = chunk_document(document, config, embedding_fn=embedding_fn)
         chunks.extend(document_chunks)
         _report_indexing_progress(callback, "chunk_documents", len(document_chunks))
     return chunks
