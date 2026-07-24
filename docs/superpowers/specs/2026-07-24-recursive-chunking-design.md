@@ -27,7 +27,11 @@ today.
 - **Opt-in**, not a replacement for the default (zero risk to existing indexes).
 - **Markdown + code/table integrity**; **no HTML** (out of scope this version).
 - Oversized *atomic* block (a lone code block / table larger than `chunk_size`) is
-  token-windowed as a last resort — bounded chunks beat one giant chunk.
+  **kept whole** — integrity is absolute; a large code block or table becomes one
+  oversized chunk (the embedder truncates it) rather than a fragmented block with a
+  dangling fence or orphaned rows. (Decided during implementation: token-windowing
+  such a block reintroduces exactly the mid-block splitting this feature exists to
+  prevent, for its highest-value case.)
 - Separator hierarchy is **hardcoded** (a sensible Markdown default), not a config
   field (YAGNI).
 
@@ -73,15 +77,19 @@ coarse→fine:
    the marker, mirroring the current `\n(?=#)` behavior).
 2. For each piece: if `_token_count(piece) <= chunk_size`, keep it; else recurse
    with the remaining (finer) separators.
-3. A piece that cannot be reduced below `chunk_size` even at the finest separator
-   (`" "`) is token-windowed via the existing `_split_token_window`.
+3. At the finest separator (`" "`) a piece is a single whitespace token and is kept
+   as-is (under the whitespace-token model a lone token is count 1, so this terminates
+   without further splitting).
 
-**Step 3 — an oversized atomic segment** (`_token_count > chunk_size`) is
-token-windowed; otherwise it passes through whole.
+**Step 3 — atomic segments pass through whole**, regardless of size (see the Scope
+decision above: integrity is absolute, an oversized code/table becomes one chunk).
 
-**Step 4 — merge + overlap.** Greedily merge the ordered pieces (prose sub-pieces
-and atomic blocks, in document order) into chunks up to `chunk_size`, carrying
-`chunk_overlap` tokens between emitted chunks via `_overlap_tail`. An atomic block
+**Step 4 — merge + overlap.** Greedily merge the ordered `(is_atomic, text)` pieces
+(prose sub-pieces and atomic blocks, in document order) into chunks up to
+`chunk_size`, carrying `chunk_overlap` tokens between emitted chunks via
+`_overlap_tail` **computed from trailing prose pieces only** — an atomic block is
+never sliced into an overlap tail (that would leak a fence/row fragment into the
+next chunk). An atomic block
 is never merged *into* in a way that would split it; if adding it would exceed
 `chunk_size`, flush first and emit the atomic block as its own chunk.
 
@@ -103,11 +111,12 @@ parameter (recursive is purely lexical).
    the internal `\n\n` or `#`.
 4. **Table integrity:** a Markdown table's rows stay together in one chunk.
 5. **Recursion fallback:** a heading-less paragraph exceeding `chunk_size` descends
-   to sentence then word splitting; no emitted chunk exceeds `chunk_size` except a
-   lone atomic block that alone exceeds it (which is token-windowed, so also
-   bounded).
+   to sentence then word splitting; no emitted *prose* chunk exceeds `chunk_size`.
+   (An atomic code/table block larger than `chunk_size` is the sole exception — kept
+   whole by design.)
 6. **Merge + overlap:** small adjacent sections merge up to `chunk_size` with the
-   configured overlap.
+   configured overlap; overlap is carried from trailing prose only, so an atomic
+   block is never fragmented across chunks even when `chunk_overlap > 0`.
 7. `validate()` raises when `recursive_chunking and semantic_chunking`.
 8. `chunking.py` imports nothing from `natural_language_processing`.
 9. `ruff check .` + `pytest` green.
