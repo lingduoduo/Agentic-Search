@@ -32,6 +32,16 @@ def test_workers_without_store_returns_empty_not_500():
     assert resp.json()["metrics"] is None
 
 
+def test_workers_with_store_still_returns_null_metrics():
+    from src.internal.db import AgenticSearchStore
+
+    db = AgenticSearchStore(":memory:")
+    client = _client(lambda r: httpx.Response(200, json={}), db=db)
+    resp = client.get("/api/debug/workers")
+    assert resp.status_code == 200
+    assert resp.json()["metrics"] is None
+
+
 class _StubPipeline:
     def __init__(self, bundle):
         self._bundle = bundle
