@@ -7,9 +7,12 @@ independent of embedding and FAISS concerns.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable, Sequence
 from typing import Any
+
+import numpy as np
 
 from src.internal.connectors.models import ConnectorFailure, Document
 from src.internal.document_index._common import (
@@ -19,11 +22,18 @@ from src.internal.document_index._common import (
 )
 from src.internal.document_index.models import ChunkingConfig, IndexChunk
 
+logger = logging.getLogger(__name__)
+
 RETURN_SEPARATOR = "\n\n"
 SECTION_SEPARATOR = "\n\n---\n\n"
 
 
-def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChunk]:
+def chunk_document(
+    document: Document,
+    config: ChunkingConfig,
+    *,
+    embedding_fn=None,
+) -> list[IndexChunk]:
     """Split one document into token-budgeted chunks ready for indexing."""
 
     config.validate()
@@ -61,7 +71,17 @@ def chunk_document(document: Document, config: ChunkingConfig) -> list[IndexChun
         title_prefix = ""
         content_token_limit = config.chunk_size
 
-    chunk_texts = _split_text(text, content_token_limit, config.chunk_overlap)
+    if config.semantic_chunking and embedding_fn is not None:
+        chunk_texts = _split_text_semantic(
+            text,
+            content_token_limit,
+            config.chunk_overlap,
+            embedding_fn,
+            config.semantic_breakpoint_percentile,
+            config.semantic_buffer_size,
+        )
+    else:
+        chunk_texts = _split_text(text, content_token_limit, config.chunk_overlap)
     chunks: list[IndexChunk] = []
     for chunk_id, chunk_text in enumerate(chunk_texts):
         index_text = (
@@ -103,13 +123,14 @@ def chunk_documents(
     config: ChunkingConfig,
     *,
     callback: IndexingHeartbeatInterface | None = None,
+    embedding_fn=None,
 ) -> list[IndexChunk]:
     """Chunk all non-empty documents."""
 
     chunks: list[IndexChunk] = []
     for document in documents:
         _raise_if_indexing_stopped(callback, "chunk_documents")
-        document_chunks = chunk_document(document, config)
+        document_chunks = chunk_document(document, config, embedding_fn=embedding_fn)
         chunks.extend(document_chunks)
         _report_indexing_progress(callback, "chunk_documents", len(document_chunks))
     return chunks
@@ -311,6 +332,91 @@ def _split_text_paragraphs(text: str, chunk_size: int, chunk_overlap: int) -> li
         chunks.append(" ".join(current).strip())
 
     return [chunk for chunk in chunks if chunk]
+
+
+def _document_sentences(text: str) -> list[str]:
+    """Flatten a document into an ordered sentence list (paragraph then sentence)."""
+    sentences: list[str] = []
+    for para in _split_paragraphs(text):
+        sentences.extend(_split_sentences_in_paragraph(para))
+    return sentences
+
+
+def _buffered_sentences(sentences: list[str], buffer_size: int) -> list[str]:
+    """Combine each sentence with its neighbors to denoise the similarity signal."""
+    if buffer_size <= 1:
+        return sentences
+    half = buffer_size - 1
+    combined: list[str] = []
+    for i in range(len(sentences)):
+        lo = max(0, i - half)
+        hi = min(len(sentences), i + half + 1)
+        combined.append(" ".join(sentences[lo:hi]))
+    return combined
+
+
+def _adjacent_distances(vectors: np.ndarray) -> np.ndarray:
+    """Cosine distance (1 - cos) between each adjacent pair of row vectors."""
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    safe = np.where(norms == 0.0, 1.0, norms)
+    unit = vectors / safe
+    sims = np.sum(unit[:-1] * unit[1:], axis=1)
+    return 1.0 - sims
+
+
+def _split_text_semantic(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    embedding_fn,
+    percentile: float,
+    buffer_size: int,
+) -> list[str]:
+    """Chunk at points where adjacent-sentence cosine distance spikes.
+
+    Falls back to the paragraph splitter when embeddings are unavailable, the
+    document has fewer than two sentences, or embedding fails.
+    """
+    if embedding_fn is None:
+        return _split_text_paragraphs(text, chunk_size, chunk_overlap)
+
+    sentences = _document_sentences(text)
+    if len(sentences) < 2:
+        return _split_text_paragraphs(text, chunk_size, chunk_overlap)
+
+    try:
+        vectors = np.asarray(embedding_fn(_buffered_sentences(sentences, buffer_size)))
+        if vectors.ndim != 2 or vectors.shape[0] != len(sentences):
+            raise ValueError("embedding output shape does not match sentence count")
+    except Exception as exc:  # noqa: BLE001 — degrade to structural chunking
+        logger.warning(
+            "Semantic chunking embedding failed (%s); using paragraphs.", exc
+        )
+        return _split_text_paragraphs(text, chunk_size, chunk_overlap)
+
+    distances = _adjacent_distances(vectors)
+    threshold = float(np.percentile(distances, percentile))
+
+    groups: list[list[str]] = []
+    current: list[str] = [sentences[0]]
+    for i, dist in enumerate(distances):
+        if dist > threshold:
+            groups.append(current)
+            current = []
+        current.append(sentences[i + 1])
+    if current:
+        groups.append(current)
+
+    chunks: list[str] = []
+    for group in groups:
+        group_text = " ".join(group).strip()
+        if not group_text:
+            continue
+        if _token_count(group_text) > chunk_size:
+            chunks.extend(_split_text_paragraphs(group_text, chunk_size, chunk_overlap))
+        else:
+            chunks.append(group_text)
+    return [c for c in chunks if c]
 
 
 def _split_token_window(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

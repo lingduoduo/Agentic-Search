@@ -48,7 +48,12 @@ def run_indexing_pipeline(
         max_document_chars=config.chunking.max_document_chars,
     )
     _raise_if_indexing_stopped(callback, "run_indexing_pipeline")
-    chunks = chunk_documents(indexable_docs, config.chunking, callback=callback)
+    chunks = chunk_documents(
+        indexable_docs,
+        config.chunking,
+        callback=callback,
+        embedding_fn=embedding_fn,
+    )
     if not chunks:
         raise ValueError("No non-empty chunks were produced.")
 

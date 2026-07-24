@@ -148,6 +148,9 @@ class ChunkingConfig:
     max_document_chars: int | None = None
     max_metadata_percentage: float = MAX_METADATA_PERCENTAGE
     min_content_tokens: int = CHUNK_MIN_CONTENT
+    semantic_chunking: bool = False
+    semantic_breakpoint_percentile: float = 95.0
+    semantic_buffer_size: int = 1
 
     def validate(self) -> None:
         if self.chunk_size < 1:
@@ -168,6 +171,12 @@ class ChunkingConfig:
             raise ValueError("max_metadata_percentage must be between 0 and 1.")
         if self.min_content_tokens < 1:
             raise ValueError("min_content_tokens must be at least 1.")
+        if not 0 < self.semantic_breakpoint_percentile < 100:
+            raise ValueError(
+                "semantic_breakpoint_percentile must be between 0 and 100 (exclusive)."
+            )
+        if self.semantic_buffer_size < 1:
+            raise ValueError("semantic_buffer_size must be at least 1.")
 
 
 @dataclass(frozen=True)
