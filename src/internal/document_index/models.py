@@ -655,7 +655,3 @@ except ImportError:
         time_cutoff: Any = None
         is_public: bool | None = None
         tenant_id: str | None = None
-
-
-# Alias used by chunk_content_enrichment.py
-DocAwareChunk = DocMetadataAwareIndexChunk

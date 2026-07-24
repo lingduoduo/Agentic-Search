@@ -2,44 +2,36 @@
 
 [← Back to README](../README.md)
 
-This guide covers how documents get into the system before query time:
-connectors, document ingestion, indexing, and the background workers that run it.
+This guide covers how documents get into the system before query time.
 For the repository layout and the end-to-end request flow, see
 [Architecture](architecture.md); for chunking, embedding, and index internals,
 see [Retrieval](retrieval.md).
 
-## Pipeline at a glance
-
-```text
-async connectors / ingestion jobs
-  → chunk + embed/index documents
-  → searchable retrieval indexes
-```
-
-Searchable documents are prepared **before** query time by asynchronous ingestion
-and indexing jobs. The search and chat paths read the indexes these jobs produce;
-they never index on the request path.
+> **Note:** the async connector/background-worker ingestion pipeline previously
+> documented here has been removed from this repo. What remains is the
+> connector data-model + management API surface, and the offline `index_builder`
+> tool described below.
 
 ## Connectors
 
-Connectors (`src/internal/connectors/`) pull documents from data sources into the
-pipeline. Connector setup, credentials, and OAuth authorization are managed
-through the admin/enterprise routers registered in `create_web_app()`
-(`connectors/`, `documents/`, `oauth/`, and `indexing/` endpoints — see the
-[HTTP API reference](api-reference.md)).
+`src/internal/connectors/models.py` defines the shared document models
+(`Document`, `SlimDocument`, etc.) used by connector integrations; the
+connector *implementations* that produced them have been removed. Connector
+configuration, credentials, and OAuth authorization are still managed through
+the admin/enterprise routers registered in `create_web_app()` (`connectors/`,
+`documents/`, `oauth/` endpoints — see the [HTTP API reference](api-reference.md)).
 
-## Background processing
+## Building search indexes
 
-Ingestion and indexing run as asynchronous workers under
-`src/internal/servers/backgroundworker/`:
+Searchable indexes are built offline with the `index_builder` CLI, documented in
+[Retrieval](retrieval.md#retrieval-setup):
 
-- **`beat_worker`** — cron-style scheduling of recurring jobs.
-- **`light_worker`** — polling and job scheduling.
-- **`docfetching` / `docprocessing`** — fetch source documents and normalize them.
-- **`heavy_worker`** — chunking, embedding, and index building.
-- **`monitoring_worker`** — health and progress monitoring.
-- **`user_file_processing_worker`** — ingestion of user-uploaded files.
+```bash
+python3 -m src.internal.document_index.index_builder \
+  --retrieval_method e5 --model_path intfloat/e5-base-v2 \
+  --corpus_path data/corpus.jsonl --faiss_type Flat --save_dir data/indexes/
+```
 
-The low-level chunking, embedding, and FAISS index-building these workers invoke
-live in `src/internal/document_index/` and `src/internal/retrieval/`, and are
-documented in [Retrieval](retrieval.md).
+The retrieval servers (`src/internal/servers/retrieval/`) then read the
+indexes it produces. The search and chat paths only read these indexes; they
+never index on the request path.
