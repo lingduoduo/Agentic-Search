@@ -109,6 +109,25 @@ Synthesize an answer only from authenticated, non-blank retrieved evidence. Grou
 6. `expand_query`
 Generate keyword variants for improved search recall when an LLM is configured.
 
+7. `extract_document`
+Extract bounded content from a document supplied directly in the tool request. Supported extensions are `.pdf`, `.docx`, `.pptx`, `.csv`, and `.txt`. Install the optional parsers with:
+
+```bash
+pip install "agentic-search[mcp-documents]"
+```
+
+The tool accepts only a simple file name and base64-encoded document bytes; paths and URLs are intentionally unsupported. Its request schema is:
+
+```json
+{
+  "file_name": "report.pdf",
+  "content_base64": "<base64 document bytes>",
+  "page_range": "1-3"
+}
+```
+
+`page_range` is optional and applies only to PDF files. CSV requests may set `max_rows` (default 1,000; maximum 10,000 rows). Decoded input is limited to 20 MiB and returned text or structured document content is limited to 50,000 characters; responses report when output is truncated.
+
 ### Resources
 
 1. `indexed_sources`

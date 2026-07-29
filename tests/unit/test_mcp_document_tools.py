@@ -5,11 +5,22 @@ import asyncio
 import base64
 import io
 import tempfile
+import tomllib
 from pathlib import Path
 
 import pytest
 
 from src.internal.mcp_server.tools import documents
+
+
+def test_document_parser_extra_declares_all_optional_parsers():
+    """Installing document extraction support provides every parser it needs."""
+    project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+    requirements = project["optional-dependencies"]["mcp-documents"]
+
+    assert any(item.startswith("PyPDF2") for item in requirements)
+    assert any(item.startswith("python-docx") for item in requirements)
+    assert any(item.startswith("python-pptx") for item in requirements)
 
 
 def _imports_documents(module_path: Path, from_module: str | None) -> bool:
