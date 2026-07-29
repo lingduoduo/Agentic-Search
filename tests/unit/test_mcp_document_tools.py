@@ -3,13 +3,20 @@
 import ast
 import asyncio
 import base64
+import concurrent.futures
 import io
+import json
+import os
 import tempfile
+import threading
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from src.internal.mcp_server.tools import documents
+from src.internal.mcp_server import document_parser_runtime
+from tests.unit import _document_parser_probes as parser_probes
 
 try:
     import tomllib
@@ -29,9 +36,20 @@ def test_document_parser_extra_declares_all_optional_parsers():
     project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
     requirements = project["optional-dependencies"]["mcp-documents"]
 
-    assert any(item.startswith("PyPDF2") for item in requirements)
+    assert any(item.startswith("pypdf>=6.12.2") for item in requirements)
+    assert any(item.startswith("psutil") for item in requirements)
     assert any(item.startswith("python-docx") for item in requirements)
     assert any(item.startswith("python-pptx") for item in requirements)
+
+
+def test_unit_test_requirements_install_document_parsers():
+    """A clean unit-test install exercises every supported parser format."""
+    requirements = Path("requirements-unit-test.txt").read_text().splitlines()
+
+    assert any(requirement.startswith("pypdf>=6.12.2") for requirement in requirements)
+    assert any(requirement.startswith("psutil") for requirement in requirements)
+    assert any(requirement.startswith("python-docx") for requirement in requirements)
+    assert any(requirement.startswith("python-pptx") for requirement in requirements)
 
 
 def _imports_documents(module_path: Path, from_module: str | None) -> bool:
@@ -159,9 +177,9 @@ def test_parse_page_range_rejects_empty_documents():
 
 def _two_page_pdf() -> bytes:
     """Build a small text PDF without a non-PDF test dependency."""
-    pypdf2 = pytest.importorskip("PyPDF2")
-    generic = pypdf2.generic
-    writer = pypdf2.PdfWriter()
+    pypdf = pytest.importorskip("pypdf")
+    generic = pypdf.generic
+    writer = pypdf.PdfWriter()
 
     for text in ("alpha", "beta"):
         writer.add_blank_page(width=200, height=200)
@@ -204,16 +222,36 @@ def test_extract_pdf_returns_selected_labeled_pages():
     }
 
 
+def test_extract_pdf_uses_the_maintained_pypdf_package(monkeypatch):
+    """PDF extraction lazily imports the maintained package name."""
+    imported: list[str] = []
+    real_import = document_parser_runtime.importlib.import_module
+
+    def record_import(module_name: str):
+        imported.append(module_name)
+        return real_import(module_name)
+
+    monkeypatch.setattr(
+        document_parser_runtime.importlib, "import_module", record_import
+    )
+
+    document_parser_runtime.extract_pdf(_two_page_pdf(), "notes.pdf", "1")
+
+    assert imported == ["pypdf"]
+
+
 def test_extract_pdf_reports_missing_optional_dependency(monkeypatch):
     """Absent PDF support explains how to install the document extra."""
 
     def missing_module(module_name: str):
         raise ImportError(module_name)
 
-    monkeypatch.setattr(documents.importlib, "import_module", missing_module)
+    monkeypatch.setattr(
+        document_parser_runtime.importlib, "import_module", missing_module
+    )
 
     with pytest.raises(ImportError, match=r"agentic-search\[mcp-documents\]"):
-        documents._require_module("PyPDF2", "PyPDF2")
+        document_parser_runtime._require_module("pypdf", "pypdf")
 
 
 @pytest.mark.asyncio
@@ -310,23 +348,70 @@ async def test_extract_document_rejects_input_larger_than_limit(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_extract_document_rejects_oversized_base64_before_decode(monkeypatch):
+    """Encoded input is rejected before allocating a decoded byte payload."""
+    assert hasattr(documents, "MAX_ENCODED_INPUT_CHARS")
+    monkeypatch.setattr(documents, "MAX_ENCODED_INPUT_CHARS", 4)
+    decode_called = False
+
+    def forbidden_decode(*args, **kwargs):
+        nonlocal decode_called
+        decode_called = True
+        raise AssertionError("oversized base64 must not be decoded")
+
+    monkeypatch.setattr(documents.base64, "b64decode", forbidden_decode)
+
+    result = await documents.extract_document("notes.txt", "YWFhYQ==")
+
+    assert result["document"] is None
+    assert "encoded input limit" in result["error"].lower()
+    assert decode_called is False
+
+
+@pytest.mark.asyncio
+async def test_extract_document_rejects_oversized_filename_without_echoing_it():
+    """Filename validation is bounded and never reflects attacker-controlled text."""
+    attacker_text = "SENSITIVE-FILENAME-" + ("x" * 255)
+
+    result = await documents.extract_document(
+        f"{attacker_text}.txt", base64.b64encode(b"alpha").decode()
+    )
+
+    assert result["document"] is None
+    assert attacker_text not in result["error"]
+    assert len(json.dumps(result, ensure_ascii=False)) <= 50_000
+
+
+@pytest.mark.asyncio
+async def test_extract_document_rejects_oversized_page_range_without_echoing_it():
+    """PDF option validation is bounded and never reflects attacker-controlled text."""
+    attacker_text = "SENSITIVE-PAGE-RANGE-" + ("9" * 256)
+
+    result = await documents.extract_document(
+        "notes.pdf",
+        base64.b64encode(_two_page_pdf()).decode(),
+        page_range=attacker_text,
+    )
+
+    assert result["document"] is None
+    assert attacker_text not in result["error"]
+    assert len(json.dumps(result, ensure_ascii=False)) <= 50_000
+
+
+@pytest.mark.asyncio
 async def test_extract_document_truncates_text_larger_than_output_limit(monkeypatch):
     """TXT responses expose truncation while retaining the original length."""
-    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 3)
+    assert hasattr(documents, "MAX_RESPONSE_CHARS")
+    monkeypatch.setattr(documents, "MAX_RESPONSE_CHARS", 112)
 
     result = await documents.extract_document(
         "notes.txt", base64.b64encode(b"four").decode()
     )
 
-    assert result == {
-        "document": {
-            "file_name": "notes.txt",
-            "file_type": "txt",
-            "text": "fou",
-            "text_length": 4,
-            "truncated": True,
-        }
-    }
+    assert result["document"]["text"] != "four"
+    assert result["document"]["text_length"] == 4
+    assert result["document"]["truncated"] is True
+    assert len(json.dumps(result, ensure_ascii=False)) <= 112
 
 
 @pytest.mark.asyncio
@@ -430,33 +515,56 @@ async def test_extract_document_rejects_duplicate_csv_headings():
 @pytest.mark.asyncio
 async def test_extract_document_bounds_csv_records(monkeypatch):
     """CSV records stop before nested output can exceed the shared character budget."""
-    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 20)
+    assert hasattr(documents, "MAX_RESPONSE_CHARS")
+    monkeypatch.setattr(documents, "MAX_RESPONSE_CHARS", 150)
     payload = base64.b64encode(b"name\nfirst\nsecond\n").decode()
     result = await documents.extract_document("rows.csv", payload, max_rows=2)
 
-    assert result["document"]["records"] == [{"name": "first"}]
-    assert result["document"]["rows"] == 1
+    assert len(result["document"]["records"]) < 2
     assert result["document"]["truncated"] is True
+    assert len(json.dumps(result, ensure_ascii=False)) <= 150
+
+
+@pytest.mark.asyncio
+async def test_csv_headings_count_toward_complete_response_budget(monkeypatch):
+    """CSV records cannot consume space already occupied by column headings."""
+    assert hasattr(documents, "MAX_RESPONSE_CHARS")
+    monkeypatch.setattr(documents, "MAX_RESPONSE_CHARS", 200)
+    headings = "first_long_heading,second_long_heading"
+    payload = base64.b64encode(f"{headings}\na,b\n".encode()).decode()
+
+    result = await documents.extract_document("rows.csv", payload)
+
+    assert result["document"]["columns"] == [
+        "first_long_heading",
+        "second_long_heading",
+    ]
+    assert result["document"]["records"] == []
+    assert result["document"]["truncated"] is True
+    assert len(json.dumps(result, ensure_ascii=False)) <= 200
 
 
 @pytest.mark.asyncio
 async def test_extract_document_bounds_docx_tables(monkeypatch):
     """DOCX table cells stop accumulating after the shared character budget."""
-    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 20)
+    assert hasattr(documents, "MAX_RESPONSE_CHARS")
+    monkeypatch.setattr(documents, "MAX_RESPONSE_CHARS", 140)
     result = await documents.extract_document("notes.docx", _docx_payload())
 
-    assert result["document"]["tables"] == []
     assert result["document"]["truncated"] is True
+    assert len(json.dumps(result, ensure_ascii=False)) <= 140
 
 
 @pytest.mark.asyncio
 async def test_extract_document_bounds_pptx_slides(monkeypatch):
     """PPTX slide objects stop accumulating after the shared character budget."""
-    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 20)
+    assert hasattr(documents, "MAX_RESPONSE_CHARS")
+    monkeypatch.setattr(documents, "MAX_RESPONSE_CHARS", 190)
     result = await documents.extract_document("slides.pptx", _pptx_payload())
 
     assert result["document"]["slides"] == []
     assert result["document"]["truncated"] is True
+    assert len(json.dumps(result, ensure_ascii=False)) <= 190
 
 
 @pytest.mark.asyncio
@@ -464,7 +572,8 @@ async def test_extract_document_reports_complete_pptx_slide_counts_after_truncat
     monkeypatch,
 ):
     """PPTX metadata distinguishes all nonblank slides from returned slides."""
-    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 30)
+    assert hasattr(documents, "MAX_RESPONSE_CHARS")
+    monkeypatch.setattr(documents, "MAX_RESPONSE_CHARS", 210)
     result = await documents.extract_document(
         "slides.pptx", _pptx_payload(("a", "b", ""))
     )
@@ -473,6 +582,166 @@ async def test_extract_document_reports_complete_pptx_slide_counts_after_truncat
     assert result["document"]["nonblank_slides"] == 2
     assert result["document"]["returned_slides"] == 1
     assert result["document"]["truncated"] is True
+
+
+def _office_zip(entries: list[tuple[str, bytes]]) -> bytes:
+    """Build a compressed Office-like archive for preflight tests."""
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in entries:
+            archive.writestr(name, content)
+    return output.getvalue()
+
+
+def test_office_zip_preflight_rejects_too_many_entries(monkeypatch):
+    """Office archives cannot exceed the explicit central-directory entry cap."""
+    assert hasattr(documents, "MAX_OFFICE_ZIP_ENTRIES")
+    assert hasattr(documents, "_preflight_office_zip")
+    monkeypatch.setattr(documents, "MAX_OFFICE_ZIP_ENTRIES", 1)
+    data = _office_zip([("one.xml", b"x"), ("two.xml", b"x")])
+
+    with pytest.raises(ValueError, match="too many entries"):
+        documents._preflight_office_zip(data)
+
+
+def test_office_zip_preflight_rejects_aggregate_expansion(monkeypatch):
+    """Aggregate uncompressed Office content is bounded before parser startup."""
+    assert hasattr(documents, "MAX_OFFICE_UNCOMPRESSED_BYTES")
+    assert hasattr(documents, "MAX_OFFICE_COMPRESSION_RATIO")
+    assert hasattr(documents, "_preflight_office_zip")
+    monkeypatch.setattr(documents, "MAX_OFFICE_UNCOMPRESSED_BYTES", 3)
+    monkeypatch.setattr(documents, "MAX_OFFICE_COMPRESSION_RATIO", 10_000)
+    data = _office_zip([("one.xml", b"four")])
+
+    with pytest.raises(ValueError, match="expanded content limit"):
+        documents._preflight_office_zip(data)
+
+
+def test_office_zip_preflight_rejects_high_compression_ratio(monkeypatch):
+    """Highly compressed Office entries are rejected as expansion bombs."""
+    assert hasattr(documents, "MAX_OFFICE_COMPRESSION_RATIO")
+    assert hasattr(documents, "_preflight_office_zip")
+    monkeypatch.setattr(documents, "MAX_OFFICE_COMPRESSION_RATIO", 2)
+    data = _office_zip([("one.xml", b"A" * 2_000)])
+
+    with pytest.raises(ValueError, match="compression ratio"):
+        documents._preflight_office_zip(data)
+
+
+def test_parser_timeout_terminates_the_worker_process(monkeypatch):
+    """A timed-out parser process is killed and reaped before returning."""
+    assert hasattr(documents, "_PARSER_CONTEXT")
+    assert hasattr(documents, "ParserTimeoutError")
+    assert hasattr(documents, "_run_parser_in_process")
+    context = documents._PARSER_CONTEXT
+    pid_queue = context.Queue()
+    monkeypatch.setattr(documents, "PARSER_TIMEOUT_SECONDS", 1.5)
+
+    with pytest.raises(documents.ParserTimeoutError, match="timed out"):
+        documents._run_parser_in_process(parser_probes.sleeping_parser, pid_queue, 5.0)
+
+    pid = pid_queue.get(timeout=1)
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+def test_parser_processes_respect_the_concurrency_boundary(monkeypatch):
+    """Concurrent parser requests never exceed the configured process count."""
+    assert hasattr(documents, "_PARSER_CONTEXT")
+    assert hasattr(documents, "_PARSER_SLOTS")
+    assert hasattr(documents, "_run_parser_in_process")
+    context = documents._PARSER_CONTEXT
+    active = context.Value("i", 0)
+    maximum = context.Value("i", 0)
+    lock = context.Lock()
+    monkeypatch.setattr(documents, "_PARSER_SLOTS", threading.BoundedSemaphore(1))
+    monkeypatch.setattr(documents, "PARSER_TIMEOUT_SECONDS", 10.0)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                documents._run_parser_in_process,
+                parser_probes.concurrency_probe_parser,
+                active,
+                maximum,
+                lock,
+                0.15,
+            )
+            for _ in range(2)
+        ]
+        for future in futures:
+            future.result(timeout=15)
+
+    assert maximum.value == 1
+
+
+def test_parser_resource_failures_are_bounded_and_nonsensitive():
+    """Resource exhaustion does not expose child-process exception details."""
+    assert hasattr(documents, "ParserResourceError")
+    assert hasattr(documents, "_run_parser_in_process")
+    with pytest.raises(documents.ParserResourceError) as raised:
+        documents._run_parser_in_process(parser_probes.resource_failure_parser)
+
+    assert "SENSITIVE-PARSER-DETAIL" not in str(raised.value)
+    assert len(str(raised.value)) <= 256
+
+
+def test_parser_watchdog_fails_closed_when_process_metrics_are_denied():
+    """An unavailable RSS/CPU sample cannot silently disable resource limits."""
+
+    class FakePsutil:
+        class NoSuchProcess(Exception):
+            pass
+
+        class AccessDenied(Exception):
+            pass
+
+        @staticmethod
+        def Process(process_id):
+            raise FakePsutil.AccessDenied(process_id)
+
+    with pytest.raises(documents.ParserResourceError, match="unavailable"):
+        documents._watchdog_limit_exceeded(FakePsutil, 123)
+
+
+def test_parser_watchdog_terminates_a_process_over_the_rss_limit(monkeypatch):
+    """Fallback platforms kill and reap a parser whose sampled RSS is excessive."""
+    context = documents._PARSER_CONTEXT
+    pid_reader, pid_writer = context.Pipe(duplex=False)
+    monkeypatch.setattr(documents, "_USES_PARENT_RESOURCE_WATCHDOG", True)
+    monkeypatch.setattr(documents, "PARSER_MEMORY_BYTES", 256 * 1024 * 1024)
+    monkeypatch.setattr(documents, "PARSER_TIMEOUT_SECONDS", 5.0)
+
+    with pytest.raises(documents.ParserResourceError, match="resource limit"):
+        documents._run_parser_in_process(
+            parser_probes.memory_hog_parser,
+            pid_writer,
+            384 * 1024 * 1024,
+            2.0,
+        )
+
+    pid_writer.close()
+    assert pid_reader.poll(1)
+    pid = pid_reader.recv()
+    pid_reader.close()
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+@pytest.mark.asyncio
+async def test_complete_success_and_error_payloads_fit_response_cap():
+    """The central response guard bounds both tool result variants."""
+    success = await documents.extract_document(
+        "notes.txt", base64.b64encode(b"x" * 100_000).decode()
+    )
+    error = await documents.extract_document(
+        "notes.pdf",
+        base64.b64encode(b"x").decode(),
+        page_range="SENSITIVE-" + ("9" * 256),
+    )
+
+    assert len(json.dumps(success, ensure_ascii=False)) <= 50_000
+    assert len(json.dumps(error, ensure_ascii=False)) <= 50_000
 
 
 @pytest.mark.parametrize(
@@ -493,10 +762,10 @@ async def test_extract_document_reports_missing_office_dependency(
             raise ImportError(name)
         return __import__(name)
 
-    monkeypatch.setattr(documents.importlib, "import_module", missing_module)
-    result = await documents.extract_document(
-        f"notes.{extension}", base64.b64encode(b"x").decode()
+    monkeypatch.setattr(
+        document_parser_runtime.importlib, "import_module", missing_module
     )
+    with pytest.raises(document_parser_runtime.ParserDependencyError) as raised:
+        document_parser_runtime._require_module(module_name, distribution_name)
 
-    assert result["document"] is None
-    assert distribution_name in result["error"]
+    assert distribution_name in str(raised.value)

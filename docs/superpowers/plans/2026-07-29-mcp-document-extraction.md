@@ -4,9 +4,9 @@
 
 **Goal:** Add one native Agentic Search MCP tool that safely extracts bounded content from base64-encoded PDF, DOCX, PPTX, CSV, and TXT documents.
 
-**Architecture:** A focused `documents.py` MCP module owns request validation, strict decoding, format dispatch, extraction helpers, response normalization, and FastMCP registration. It accepts document bytes rather than local paths or URLs, runs synchronous parsers off the event loop, cleans up parser temporary files, returns ordinary dictionaries, and imports format libraries only when the selected format needs them.
+**Architecture:** A focused `documents.py` MCP module owns request validation, strict decoding, format dispatch, extraction helpers, response normalization, and FastMCP registration. It accepts document bytes rather than local paths or URLs, runs synchronous work off the event loop, and places untrusted PDF/Office parsers in concurrency-limited disposable processes with ZIP preflight, wall-time, CPU, and memory limits. It returns ordinary dictionaries and imports format libraries only when the selected format needs them.
 
-**Tech Stack:** Python 3.10+, FastMCP, pytest, standard-library `base64`/`csv`/`tempfile`, optional PyPDF2, python-docx, and python-pptx.
+**Tech Stack:** Python 3.10+, FastMCP, pytest, standard-library `base64`/`csv`/`multiprocessing`/`resource`/`zipfile`, psutil watchdog support, and optional pypdf, python-docx, and python-pptx.
 
 ## Global Constraints
 
@@ -16,13 +16,13 @@
 - Never accept or dereference a server-local path or remote URL.
 - Return `{"document": {...}}` on success and `{"error": str, "document": None}` on failure.
 - Do not expose tracebacks, temporary paths, document bytes, or host details in errors.
-- Enforce `MAX_INPUT_BYTES = 20 * 1024 * 1024`, `MAX_OUTPUT_CHARS = 50_000`, and `MAX_CSV_ROWS = 10_000`.
+- Enforce `MAX_INPUT_BYTES = 20 * 1024 * 1024`, `MAX_RESPONSE_CHARS = 50_000`, and `MAX_CSV_ROWS = 10_000`.
 - Parse PDF page ranges as one-based, deduplicated, sorted, bounded selections; reject malformed and descending ranges.
-- Run synchronous extraction with `asyncio.to_thread`.
-- Delete every temporary parser file in a `finally` block.
+- Run synchronous dispatch with `asyncio.to_thread`; run PDF/DOCX/PPTX parsing in killable, concurrency-limited child processes. Enforce CPU/memory with Linux kernel limits and a sampled psutil parent watchdog on macOS/Windows.
+- Keep parser inputs memory-backed; if a future parser requires a temporary file, delete it in a `finally` block.
 - Importing the MCP server must succeed without optional document parser libraries.
 - Do not modify or delete the user-supplied reference files `src/internal/document_index/base.py` and `src/internal/document_index/document_processing.py`.
-- Any `.superpowers/sdd/*report.md` produced during execution must follow `docs/development/self-review-reports.md` and pass `python scripts/validate_task_report.py --require-tdd REPORT_FILE` before review.
+- Any `.superpowers/sdd/*report.md` produced for TDD implementation work must follow `docs/development/self-review-reports.md` and pass `python scripts/validate_task_report.py --require-tdd REPORT_FILE` before review. A report produced only for Task 6 verification uses normal canonical validation without `--require-tdd`; do not fabricate RED/GREEN evidence for verification-only work.
 
 ---
 
@@ -217,10 +217,10 @@ def test_parse_page_range(raw, total, expected):
 ```
 
 Assert `ValueError` for `""`, `"0"`, `"-1"`, `"3-1"`, `"1-"`, `"1--2"`,
-`"a"`, and total pages less than one. Generate a two-page PDF using PyPDF2,
-skip the test only when PyPDF2 is not installed, and assert selected page
+`"a"`, and total pages less than one. Generate a two-page PDF using pypdf
+and assert selected page
 headers, total pages, extracted pages, and text. Monkeypatch `__import__` or the
-module import helper to assert a missing PyPDF2 returns an actionable
+module import helper to assert a missing pypdf returns an actionable
 `mcp-documents` installation error.
 
 - [ ] **Step 2: Run PDF tests and verify RED**
@@ -249,7 +249,7 @@ def _require_module(module_name: str, distribution_name: str) -> Any:
         ) from exc
 ```
 
-Use `io.BytesIO(data)` with `PyPDF2.PdfReader`, extract selected pages, convert
+Use `io.BytesIO(data)` with `pypdf.PdfReader`, extract selected pages, convert
 `None` page text to `""`, add `--- Page N ---` labels, and bound the combined
 text. Reject a non-`None` `page_range` for every non-PDF format.
 
@@ -434,7 +434,7 @@ git commit -m "feat: register document extraction MCP tool"
 - Modify: `tests/unit/test_mcp_document_tools.py`
 
 **Interfaces:**
-- Produces: `agentic-search[mcp-documents]` with `PyPDF2`, `python-docx`, and `python-pptx`.
+- Produces: `agentic-search[mcp-documents]` with `pypdf>=6.12.2`, `psutil`, `python-docx`, and `python-pptx`.
 - Documents: tool schema and safe direct-content boundary.
 
 - [ ] **Step 1: Write failing dependency-contract test**
@@ -445,7 +445,8 @@ Parse `pyproject.toml` with `tomllib` and assert:
 def test_document_parser_extra_declares_all_optional_parsers():
     project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
     requirements = project["optional-dependencies"]["mcp-documents"]
-    assert any(item.startswith("PyPDF2") for item in requirements)
+    assert any(item.startswith("pypdf>=6.12.2") for item in requirements)
+    assert any(item.startswith("psutil") for item in requirements)
     assert any(item.startswith("python-docx") for item in requirements)
     assert any(item.startswith("python-pptx") for item in requirements)
 ```
@@ -466,7 +467,8 @@ Add:
 
 ```toml
 mcp-documents = [
-    "PyPDF2>=3.0.0",
+    "pypdf>=6.12.2",
+    "psutil>=5.9.0",
     "python-docx>=1.1.0",
     "python-pptx>=1.0.0",
 ]

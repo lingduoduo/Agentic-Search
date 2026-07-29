@@ -110,10 +110,10 @@ Synthesize an answer only from authenticated, non-blank retrieved evidence. Grou
 Generate keyword variants for improved search recall when an LLM is configured.
 
 7. `extract_document`
-Extract bounded content from a document supplied directly in the tool request. Supported extensions are `.pdf`, `.docx`, `.pptx`, `.csv`, and `.txt`. Install the optional parsers with:
+Extract bounded content from a document supplied directly in the tool request. Supported extensions are `.pdf`, `.docx`, `.pptx`, `.csv`, and `.txt`. Install the MCP runtime and optional parsers together with:
 
 ```bash
-pip install "agentic-search[mcp-documents]"
+pip install "agentic-search[mcp,mcp-documents]"
 ```
 
 The tool accepts only a simple file name and base64-encoded document bytes; paths and URLs are intentionally unsupported. Its request schema is:
@@ -126,7 +126,9 @@ The tool accepts only a simple file name and base64-encoded document bytes; path
 }
 ```
 
-`page_range` is optional and applies only to PDF files. CSV requests may set `max_rows` (default 1,000; maximum 10,000 rows). Decoded input is limited to 20 MiB and returned text or structured document content is limited to 50,000 characters; responses report when output is truncated.
+`page_range` is optional, limited to 256 characters, and applies only to PDF files. File names are simple basenames limited to 255 characters. CSV requests may set `max_rows` (default 1,000; maximum 10,000 rows). Encoded input is rejected before decoding when it cannot fit the 20 MiB decoded-input limit. The complete serialized response is limited to 50,000 characters; responses report when output is truncated.
+
+PDF and Office parsing is limited to two concurrent disposable processes, a 15-second wall timeout, 10 CPU seconds, and 1 GiB RSS/address space. Linux uses kernel CPU/address-space limits. macOS and Windows use a 50 ms parent `psutil` watchdog that samples aggregate child RSS and CPU time, then kills and reaps an over-limit parser. DOCX/PPTX archives are preflighted at 5,000 entries, 100 MiB aggregate expansion, and a 100:1 compression ratio before parser startup. Missing or unavailable resource-limit support fails closed.
 
 Successful requests return the shape `{"document": {...}}`:
 

@@ -13,7 +13,8 @@ mcp = [
     "httpx2>=0.28.0",
 ]
 mcp-documents = [
-    "PyPDF2>=3.0.0",
+    "pypdf>=6.12.2",
+    "psutil>=5.9.0",
     "python-docx>=1.1.0",
     "python-pptx>=1.0.0",
 ]
