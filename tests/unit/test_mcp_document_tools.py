@@ -1,11 +1,84 @@
 """Tests for MCP document extraction input and TXT handling."""
 
+import ast
+import asyncio
 import base64
 import io
+import tempfile
+from pathlib import Path
 
 import pytest
 
 from src.internal.mcp_server.tools import documents
+
+
+def _imports_documents(module_path: Path, from_module: str | None) -> bool:
+    """Return whether a module explicitly imports the document tool module."""
+    tree = ast.parse(module_path.read_text())
+    return any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == from_module
+        and any(alias.name == "documents" for alias in node.names)
+        for node in ast.walk(tree)
+    )
+
+
+def test_document_tool_is_registered_by_mcp_startup_modules():
+    """Startup wiring imports the decorated tool rather than relying on test imports."""
+    server_dir = Path(documents.__file__).resolve().parents[1]
+
+    assert _imports_documents(server_dir / "api.py", "tools")
+    assert _imports_documents(server_dir / "tools" / "__init__.py", None)
+
+
+@pytest.mark.asyncio
+async def test_extract_document_is_registered():
+    """The running MCP server exposes document extraction to clients."""
+    from src.internal.mcp_server.api import mcp_server
+
+    names = {tool.name for tool in await mcp_server.list_tools()}
+    assert "extract_document" in names
+
+
+@pytest.mark.asyncio
+async def test_extract_document_runs_sync_parser_in_a_worker_thread(monkeypatch):
+    """The async tool offloads blocking extraction without changing its response."""
+    calls: list[tuple[object, tuple[object, ...]]] = []
+
+    async def worker_spy(function, *args):
+        calls.append((function, args))
+        return function(*args)
+
+    monkeypatch.setattr(asyncio, "to_thread", worker_spy)
+
+    result = await documents.extract_document(
+        "notes.txt", base64.b64encode(b"alpha").decode()
+    )
+
+    assert result["document"]["text"] == "alpha"
+    assert calls == [
+        (
+            documents._extract_document_sync,
+            ("notes.txt", b"alpha", None, 1000),
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_extract_document_keeps_docx_extraction_memory_backed(monkeypatch):
+    """DOCX parsing consumes bytes in memory and never creates a temporary file."""
+    created: list[object] = []
+
+    def named_temporary_file(*args, **kwargs):
+        created.append((args, kwargs))
+        raise AssertionError("document extraction must not create temporary files")
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", named_temporary_file)
+
+    result = await documents.extract_document("notes.docx", _docx_payload())
+
+    assert result["document"]["paragraphs"] == ["paragraph text"]
+    assert created == []
 
 
 def _docx_payload() -> str:
