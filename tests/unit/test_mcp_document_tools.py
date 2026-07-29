@@ -5,12 +5,23 @@ import asyncio
 import base64
 import io
 import tempfile
-import tomllib
 from pathlib import Path
 
 import pytest
 
 from src.internal.mcp_server.tools import documents
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
+
+def test_python_310_unit_test_requirements_include_tomli():
+    """Python 3.10 test runs install the TOML parser used by this contract test."""
+    requirements = Path("requirements-unit-test.txt").read_text().splitlines()
+
+    assert any(requirement.startswith("tomli") for requirement in requirements)
 
 
 def test_document_parser_extra_declares_all_optional_parsers():

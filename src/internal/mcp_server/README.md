@@ -128,6 +128,18 @@ The tool accepts only a simple file name and base64-encoded document bytes; path
 
 `page_range` is optional and applies only to PDF files. CSV requests may set `max_rows` (default 1,000; maximum 10,000 rows). Decoded input is limited to 20 MiB and returned text or structured document content is limited to 50,000 characters; responses report when output is truncated.
 
+Successful requests return the shape `{"document": {...}}`:
+
+```json
+{"document": {"...": "extracted document fields"}}
+```
+
+Invalid input, unsupported formats, unavailable optional parsers, and extraction failures return the shape `{"error": str, "document": null}`:
+
+```json
+{"error": "error description", "document": null}
+```
+
 ### Resources
 
 1. `indexed_sources`

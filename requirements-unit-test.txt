@@ -20,6 +20,8 @@ python-dotenv
 mcp>=1.0.0
 fastmcp>=2.0.0
 pytest-asyncio>=0.23.0
+# Backport for TOML-based packaging contract tests on Python 3.10.
+tomli>=2.0.0; python_version < "3.11"
 pyarrow>=14
 tqdm==4.66.4
 google-api-python-client
