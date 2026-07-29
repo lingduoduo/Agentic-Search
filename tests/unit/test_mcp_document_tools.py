@@ -46,6 +46,25 @@ async def test_extract_document_rejects_invalid_input(
     assert error_fragment in result["error"].lower()
 
 
+@pytest.mark.parametrize(
+    "file_name",
+    [
+        "C:\\uploads\\notes.txt",
+        "\\\\server\\share\\notes.txt",
+        "https://example.com/notes.txt",
+    ],
+)
+@pytest.mark.asyncio
+async def test_extract_document_rejects_path_or_uri_file_names(file_name: str):
+    """Document names must be simple basenames on every client platform."""
+    result = await documents.extract_document(
+        file_name, base64.b64encode(b"alpha").decode()
+    )
+
+    assert result["document"] is None
+    assert "file name" in result["error"].lower()
+
+
 @pytest.mark.asyncio
 async def test_extract_document_rejects_invalid_utf8_txt():
     """TXT input must be UTF-8 rather than silently replacing bad bytes."""

@@ -7,6 +7,7 @@ import base64
 import binascii
 from pathlib import PurePath
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..api import mcp_server
 
@@ -41,7 +42,12 @@ def _bounded_text(text: str) -> tuple[str, int, bool]:
 def _extract_document_sync(
     file_name: str, data: bytes, page_range: str | None, max_rows: int
 ) -> dict[str, Any]:
-    if not file_name or PurePath(file_name).name != file_name:
+    if (
+        not file_name
+        or PurePath(file_name).name != file_name
+        or "\\" in file_name
+        or urlsplit(file_name).scheme
+    ):
         raise ValueError("Document file name must be a simple file name.")
 
     extension = PurePath(file_name).suffix.lower()
