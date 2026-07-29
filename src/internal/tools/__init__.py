@@ -39,13 +39,3 @@ from .openapi_schema import ParameterTypeMap as ParameterTypeMap
 from .routing_tools import build_search_routing_tool as build_search_routing_tool
 from .routing_tools import build_rag_routing_tool as build_rag_routing_tool
 from .interface import ChatTool as ChatTool
-
-# Removed in Task 2 — dead re-exports, canonical home is
-# src.internal.chat.tool_models.
-from src.internal.chat.tool_models import (
-    ChatFile as ChatFile,
-    SearchToolUsage as SearchToolUsage,
-    ToolCallInfo as ToolCallInfo,
-    ToolCallKickoff as ToolCallKickoff,
-    ToolResponse as ToolResponse,
-)

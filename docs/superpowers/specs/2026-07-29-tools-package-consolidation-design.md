@@ -102,7 +102,10 @@ Two things fall away as a direct consequence of the move:
   are removed; they remain importable from their canonical home,
   `src.internal.chat.tool_models`.
 
-`__all__` is updated to match the merged surface.
+The merged file uses the explicit `from .x import Y as Y` re-export idiom
+already used by the 33 carried-over lines, and carries no `__all__` — ruff
+treats `Y as Y` as an explicit re-export, so a second list would only be one
+more thing to keep in sync.
 
 ### 3. Repointing consumers
 

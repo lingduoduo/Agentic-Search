@@ -73,3 +73,25 @@ def test_submodule_lives_under_internal_tools(name):
 def test_legacy_src_tools_package_is_gone():
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("src.tools")
+
+
+_CHAT_MODELS = (
+    "ChatFile",
+    "SearchToolUsage",
+    "ToolCallInfo",
+    "ToolCallKickoff",
+    "ToolResponse",
+)
+
+
+@pytest.mark.parametrize("name", _CHAT_MODELS)
+def test_chat_models_not_re_exported_from_tools(name):
+    """These belong to src.internal.chat.tool_models, not the tools package."""
+    mod = importlib.import_module("src.internal.tools")
+    assert not hasattr(mod, name), f"{name} should not be re-exported here"
+
+
+@pytest.mark.parametrize("name", _CHAT_MODELS)
+def test_chat_models_importable_from_canonical_home(name):
+    mod = importlib.import_module("src.internal.chat.tool_models")
+    assert hasattr(mod, name)
