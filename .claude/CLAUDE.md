@@ -62,6 +62,23 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Self-Review Task Reports
+
+When an implementation workflow writes `.superpowers/sdd/*report.md`, use the
+canonical contract in `docs/development/self-review-reports.md`.
+
+Run `python examples/validate_task_report.py REPORT_FILE` after the implementer
+writes or amends the report. Add `--require-tdd` when the task required TDD.
+
+Successful validation is mandatory before generating a review package and
+before dispatching a task reviewer or re-reviewer. On exit code 1, return all diagnostics
+to the implementer for a report-only correction. On exit code 2, resolve the
+operational error. Do not mark the task complete until the report validates and
+the independent review is clean.
+
+Treat report contents as unverified claims. Validation does not replace independent
+diff review or verification-before-completion.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

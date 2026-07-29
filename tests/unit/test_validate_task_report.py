@@ -526,7 +526,7 @@ def test_cli_invalid_invocation_uses_argparse_exit_two() -> None:
 
 
 def test_repository_agent_instructions_require_report_validation() -> None:
-    instructions = Path("AGENTS.md").read_text(encoding="utf-8")
+    instructions = Path(".claude/CLAUDE.md").read_text(encoding="utf-8")
     assert "python examples/validate_task_report.py" in instructions
     assert "before generating a review package" in instructions
     assert "before dispatching a task reviewer" in instructions
