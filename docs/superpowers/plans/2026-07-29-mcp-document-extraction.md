@@ -22,7 +22,7 @@
 - Keep parser inputs memory-backed; if a future parser requires a temporary file, delete it in a `finally` block.
 - Importing the MCP server must succeed without optional document parser libraries.
 - Do not modify or delete the user-supplied reference files `src/internal/document_index/base.py` and `src/internal/document_index/document_processing.py`.
-- Any `.superpowers/sdd/*report.md` produced for TDD implementation work must follow `docs/development/self-review-reports.md` and pass `python scripts/validate_task_report.py --require-tdd REPORT_FILE` before review. A report produced only for Task 6 verification uses normal canonical validation without `--require-tdd`; do not fabricate RED/GREEN evidence for verification-only work.
+- Any `.superpowers/sdd/*report.md` produced for TDD implementation work must follow `docs/development/self-review-reports.md` and pass `python examples/validate_task_report.py --require-tdd REPORT_FILE` before review. A report produced only for Task 6 verification uses normal canonical validation without `--require-tdd`; do not fabricate RED/GREEN evidence for verification-only work.
 
 ---
 

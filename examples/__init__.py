@@ -1,1 +1,1 @@
-"""Runnable examples referenced by the README."""
+"""Runnable entry points — examples and repo tooling."""

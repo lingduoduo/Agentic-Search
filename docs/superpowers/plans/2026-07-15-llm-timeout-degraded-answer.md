@@ -348,5 +348,5 @@ Before claiming completion:
 3. `ruff check`, `ruff format --check`, and `git diff --check` pass over every modified file.
 4. `test_explicit_unsupported_schema_400_is_classified_without_raw_body` passes unmodified — the guard proving the `HTTPError` path is untouched.
 5. `test_plain_connection_error_still_propagates` passes — the guard proving the new handler does not over-catch.
-6. Write the task report per `docs/development/self-review-reports.md` and validate it with `python3 scripts/validate_task_report.py REPORT_FILE --require-tdd` (omit `--require-tdd` for Task 3, which is docs-only).
+6. Write the task report per `docs/development/self-review-reports.md` and validate it with `python3 examples/validate_task_report.py REPORT_FILE --require-tdd` (omit `--require-tdd` for Task 3, which is docs-only).
 7. Perform an independent whole-branch review against the merge base; fix every Critical or Important finding, then re-review.

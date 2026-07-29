@@ -10,8 +10,8 @@ maps 1:1 onto that shape. This script downloads a BEIR dataset (cached under
 --data_dir) and writes the converted corpus.
 
 Usage:
-    python3 scripts/beir_to_corpus.py --dataset nfcorpus
-    python3 scripts/beir_to_corpus.py --dataset scifact --out data/corpus_scifact.jsonl
+    python3 examples/beir_to_corpus.py --dataset nfcorpus
+    python3 examples/beir_to_corpus.py --dataset scifact --out data/corpus_scifact.jsonl
 
 Then point the demo server at it:
     python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus_nfcorpus.jsonl

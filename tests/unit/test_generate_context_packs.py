@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.generate_context_packs import (
+from examples.generate_context_packs import (
     discover_sources,
     generate,
     normalize_source,
