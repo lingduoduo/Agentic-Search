@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from src.tools.base import Tool
-from src.tools.knowledge_base import seed_tools, tool_knowledge_base
-from src.tools.registry import ToolRegistry
-from src.tools.semantic_router import catalog_from_registry
+from src.internal.tools.base import Tool
+from src.internal.tools.knowledge_base import seed_tools, tool_knowledge_base
+from src.internal.tools.registry import ToolRegistry
+from src.internal.tools.semantic_router import catalog_from_registry
 
 BUILTIN_NAMES = {"web_search", "search", "search_routing_tool"}
 

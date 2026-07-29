@@ -1,34 +1,41 @@
-"""Chat loop tool interface and built-in tool stubs."""
+"""Agent tool framework: schemas, registry, parsers, and built-in tools.
 
-from .interface import ChatTool
+Also hosts the chat-loop ``ChatTool`` interface (``interface``) and the
+built-in tool name sets (``built_in_tools``), which consumers import as
+submodules.
+"""
 
-# Backward-compat re-exports (canonical locations noted)
-# Chat models live in src.internal.chat.tool_models
-from src.internal.chat.tool_models import (
-    ChatFile,
-    SearchToolUsage,
-    ToolCallInfo,
-    ToolCallKickoff,
-    ToolResponse,
-)
-
-# OpenAPI schema lives in src.tools.openapi_schema
-from src.tools.openapi_schema import (
-    OpenAPISchema,
-    ParameterIn,
-    ParameterType,
-    ParameterTypeMap,
-)
-
-__all__ = [
-    "ChatFile",
-    "ChatTool",
-    "OpenAPISchema",
-    "ParameterIn",
-    "ParameterType",
-    "ParameterTypeMap",
-    "SearchToolUsage",
-    "ToolCallInfo",
-    "ToolCallKickoff",
-    "ToolResponse",
-]
+from .base import FunctionTool as FunctionTool
+from .base import Tool as Tool
+from .base import ToolSchema as ToolSchema
+from .base import ToolEffect as ToolEffect
+from .parsers import FunctionCall as FunctionCall
+from .parsers import HermesToolParser as HermesToolParser
+from .parsers import JSONToolParser as JSONToolParser
+from .parsers import Llama3ToolParser as Llama3ToolParser
+from .parsers import ToolParser as ToolParser
+from .api import ApiRequestTool as ApiRequestTool
+from .api import ApiToolError as ApiToolError
+from .api import ApiToolNotFoundError as ApiToolNotFoundError
+from .api import ApiToolProviderSpec as ApiToolProviderSpec
+from .api import ApiToolRegistry as ApiToolRegistry
+from .api import ApiToolSpec as ApiToolSpec
+from .search import SearchPage as SearchPage
+from .search import build_search_tool as build_search_tool
+from .search import fetch_pages_concurrently as fetch_pages_concurrently
+from .search import fetch_url as fetch_url
+from .search import format_search_pages as format_search_pages
+from .search import search_tool as search_tool
+from .search import MultiQueryWebSearchTool as MultiQueryWebSearchTool
+from .search import serper_dev_search as serper_dev_search
+from .registry import ToolEntry as ToolEntry
+from .registry import ToolRegistry as ToolRegistry
+from .registry import tool as tool
+from .registry import tool_registry as tool_registry
+from .openapi_schema import OpenAPISchema as OpenAPISchema
+from .openapi_schema import ParameterIn as ParameterIn
+from .openapi_schema import ParameterType as ParameterType
+from .openapi_schema import ParameterTypeMap as ParameterTypeMap
+from .routing_tools import build_search_routing_tool as build_search_routing_tool
+from .routing_tools import build_rag_routing_tool as build_rag_routing_tool
+from .interface import ChatTool as ChatTool

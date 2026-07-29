@@ -61,14 +61,14 @@ from .internal.document_index.retrieval import SparseRetriever as SparseRetrieve
 from .internal.document_index.retrieval import (
     SparseRetrieverConfig as SparseRetrieverConfig,
 )
-from .tools.base import FunctionTool as FunctionTool
-from .tools.base import Tool as Tool
-from .tools.base import ToolSchema as ToolSchema
-from .tools.parsers import FunctionCall as FunctionCall
-from .tools.parsers import HermesToolParser as HermesToolParser
-from .tools.parsers import JSONToolParser as JSONToolParser
-from .tools.parsers import Llama3ToolParser as Llama3ToolParser
-from .tools.parsers import ToolParser as ToolParser
+from .internal.tools.base import FunctionTool as FunctionTool
+from .internal.tools.base import Tool as Tool
+from .internal.tools.base import ToolSchema as ToolSchema
+from .internal.tools.parsers import FunctionCall as FunctionCall
+from .internal.tools.parsers import HermesToolParser as HermesToolParser
+from .internal.tools.parsers import JSONToolParser as JSONToolParser
+from .internal.tools.parsers import Llama3ToolParser as Llama3ToolParser
+from .internal.tools.parsers import ToolParser as ToolParser
 
 # Torch-heavy modules — loaded on first access, never at import time.
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {

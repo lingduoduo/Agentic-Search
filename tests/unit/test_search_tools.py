@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from src.tools import ToolEffect
-from src.tools.search import (
+from src.internal.tools import ToolEffect
+from src.internal.tools.search import (
     MultiQueryWebSearchTool,
     SearchPage,
     build_search_tool,
@@ -174,7 +174,7 @@ def test_google_custom_search_maps_results_and_pagination(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.tools.search.aiohttp.ClientSession",
+        "src.internal.tools.search.aiohttp.ClientSession",
         _session_factory,
     )
 
@@ -210,7 +210,7 @@ def test_serpapi_search_accepts_serp_api_key_env_alias(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "src.tools.search.aiohttp.ClientSession",
+        "src.internal.tools.search.aiohttp.ClientSession",
         _session_factory,
     )
 
@@ -228,7 +228,7 @@ def test_search_for_list_and_tool_string_use_retrieval_client(monkeypatch):
         return [SearchPage(title="FAISS", summary="Vector search", url="https://faiss")]
 
     monkeypatch.setattr(
-        "src.tools.search.retrieval_search",
+        "src.internal.tools.search.retrieval_search",
         lambda query, **kwargs: _fake_retrieval_search(query=query, **kwargs),
     )
 
@@ -249,7 +249,7 @@ def test_build_search_tool_wraps_formatted_search(monkeypatch):
         return "formatted"
 
     monkeypatch.setattr(
-        "src.tools.search.search_for_tool_string",
+        "src.internal.tools.search.search_for_tool_string",
         _fake_search_for_tool_string,
     )
 
@@ -272,8 +272,8 @@ def test_search_for_detail_fetches_pages_concurrently(monkeypatch):
         assert kwargs["max_length"] == 20
         return "content"
 
-    monkeypatch.setattr("src.tools.search.search_tool", _fake_search_tool)
-    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+    monkeypatch.setattr("src.internal.tools.search.search_tool", _fake_search_tool)
+    monkeypatch.setattr("src.internal.tools.search.fetch_url", _fake_fetch_url)
 
     detail = asyncio.run(search_for_detail("query", chunk_size=20))
 
@@ -282,7 +282,7 @@ def test_search_for_detail_fetches_pages_concurrently(monkeypatch):
 
 def test_html_to_text_prefers_article_element():
     """_html_to_text should extract <article> content before falling back to <p> tags."""
-    from src.tools.html_text import _html_to_text
+    from src.internal.tools.html_text import _html_to_text
 
     html = """
     <html><body>
@@ -298,7 +298,7 @@ def test_html_to_text_prefers_article_element():
 
 
 def test_html_to_text_falls_back_to_p_tags_when_no_article():
-    from src.tools.html_text import _html_to_text
+    from src.internal.tools.html_text import _html_to_text
 
     html = (
         "<html><body><div><p>Content here.</p><p>More content.</p></div></body></html>"
@@ -312,7 +312,7 @@ def test_fetch_pages_concurrently_replaces_summary_with_fetched_content(monkeypa
     async def _fake_fetch_url(url, *, max_length, timeout_seconds):
         return f"fetched:{url}"
 
-    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+    monkeypatch.setattr("src.internal.tools.search.fetch_url", _fake_fetch_url)
 
     pages = [
         SearchPage(title="A", summary="short", url="https://a.test"),
@@ -329,7 +329,7 @@ def test_fetch_pages_concurrently_skips_error_and_empty_url_pages(monkeypatch):
     async def _fake_fetch_url(url, **kwargs):
         return "fetched"
 
-    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+    monkeypatch.setattr("src.internal.tools.search.fetch_url", _fake_fetch_url)
 
     pages = [
         SearchPage(error="oops"),
@@ -347,7 +347,7 @@ def test_fetch_pages_concurrently_keeps_original_on_fetch_error(monkeypatch):
     async def _fake_fetch_url(url, **kwargs):
         return "[fetch error] timeout"
 
-    monkeypatch.setattr("src.tools.search.fetch_url", _fake_fetch_url)
+    monkeypatch.setattr("src.internal.tools.search.fetch_url", _fake_fetch_url)
 
     pages = [SearchPage(title="T", summary="original", url="https://t.test")]
     enriched = asyncio.run(fetch_pages_concurrently(pages, max_chars=2000))
@@ -395,7 +395,7 @@ class TestNormalizeQueriesInput:
 
 class TestSerperDevSearch:
     def test_returns_mapped_results(self, monkeypatch):
-        import src.tools.search as mod
+        import src.internal.tools.search as mod
 
         payload = {
             "organic": [
@@ -427,7 +427,7 @@ class TestSerperDevSearch:
         assert pages[0].error is not None
 
     def test_returns_error_page_on_http_failure(self, monkeypatch):
-        import src.tools.search as mod
+        import src.internal.tools.search as mod
 
         monkeypatch.setattr(mod, "aiohttp", _make_fake_aiohttp_error())
 
@@ -508,7 +508,7 @@ class TestMultiQueryWebSearchTool:
 
 def test_search_page_preserves_score_from_result():
     from src.context.search import SearchResult
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
 
     result = SearchResult(contents="FAISS body", score=0.42, title="FAISS", url="u")
     page = SearchPage.from_search_result(result)
@@ -517,7 +517,7 @@ def test_search_page_preserves_score_from_result():
 
 def test_documents_from_search_pages_maps_score():
     from src.internal.servers.web.app import _documents_from_search_pages
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
 
     pages = [SearchPage(title="FAISS", summary="body", url="u", score=0.42)]
     docs = _documents_from_search_pages(

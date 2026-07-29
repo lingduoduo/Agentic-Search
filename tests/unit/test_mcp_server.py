@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.tools.search import SearchPage
+from src.internal.tools.search import SearchPage
 from src.internal.mcp_server.retrieval_client import AuthenticatedDocument
 from src.internal.mcp_server.retrieval_client import AuthenticatedRetrievalError
 
@@ -228,7 +228,9 @@ async def test_search_indexed_documents_authorization_error_has_no_raw_fallback(
             ),
             create=True,
         ),
-        patch("src.tools.search.retrieval_search", new=AsyncMock()) as raw_retrieve,
+        patch(
+            "src.internal.tools.search.retrieval_search", new=AsyncMock()
+        ) as raw_retrieve,
     ):
         result = await search_indexed_documents(query="private")
 

@@ -53,9 +53,9 @@ from src.agents.core.base import (
     simple_timer,
 )
 from src.agents.core.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
-from src.tools.base import Tool, ToolEffect
-from src.tools.parsers import FunctionCall, ToolParser
-from src.tools.registry import ToolRegistry
+from src.internal.tools.base import Tool, ToolEffect
+from src.internal.tools.parsers import FunctionCall, ToolParser
+from src.internal.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))

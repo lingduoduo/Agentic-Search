@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.tools.semantic_router import (
+from src.internal.tools.semantic_router import (
     RoutingConfig,
     SemanticRouter,
     ServerDefinition,

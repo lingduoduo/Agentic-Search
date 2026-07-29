@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.internal.servers.web.debug_router import create_debug_router
-from src.tools.base import FunctionTool
-from src.tools.registry import tool_registry
+from src.internal.tools.base import FunctionTool
+from src.internal.tools.registry import tool_registry
 
 
 def _client() -> TestClient:

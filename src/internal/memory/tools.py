@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.tools.base import Tool, ToolEffect, ToolSchema
-from src.tools.registry import ToolRegistry
+from src.internal.tools.base import Tool, ToolEffect, ToolSchema
+from src.internal.tools.registry import ToolRegistry
 
 
 class _AddMemoryTool(Tool):

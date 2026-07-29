@@ -13,9 +13,9 @@ from dataclasses import field
 
 from fastapi import APIRouter, FastAPI, HTTPException, Response
 
-from src.tools.search import google_custom_search
-from src.tools.search import retrieval_search
-from src.tools.search import serpapi_search
+from src.internal.tools.search import google_custom_search
+from src.internal.tools.search import retrieval_search
+from src.internal.tools.search import serpapi_search
 
 from .models import WebContentProviderConfig
 from .models import WebContentProviderTestRequest
@@ -315,7 +315,7 @@ def create_admin_router(
     def test_content_provider(request: WebContentProviderTestRequest) -> dict[str, str]:
         _resolve_content_api_key(store, request)
         if request.live:
-            from src.tools.search import fetch_url
+            from src.internal.tools.search import fetch_url
 
             body = _run_async(
                 fetch_url(

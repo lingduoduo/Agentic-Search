@@ -109,7 +109,7 @@ async def _run_tool_agent(
     reaches the response/metadata.
     """
     from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
-    from src.tools import build_search_tool, tool_registry
+    from src.internal.tools import build_search_tool, tool_registry
 
     tools = list(tool_registry.list_tools())
     if with_search_tool:

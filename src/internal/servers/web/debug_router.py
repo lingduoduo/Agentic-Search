@@ -122,8 +122,8 @@ def create_debug_router(
         """
         from dataclasses import asdict
 
-        from src.tools.registry import tool_registry
-        from src.tools.semantic_router import catalog_from_registry
+        from src.internal.tools.registry import tool_registry
+        from src.internal.tools.semantic_router import catalog_from_registry
 
         return {
             "registered": tool_registry.all_summaries(),
@@ -133,7 +133,10 @@ def create_debug_router(
     @router.post("/tools/discover")
     def tools_discover(req: DebugToolDiscoverRequest) -> dict:
         """Rank tools for *query* via the semantic router (TF-IDF, no LLM)."""
-        from src.tools.semantic_router import SemanticRouter, default_tool_catalog
+        from src.internal.tools.semantic_router import (
+            SemanticRouter,
+            default_tool_catalog,
+        )
 
         return SemanticRouter(default_tool_catalog()).get_routing_details(req.query)
 

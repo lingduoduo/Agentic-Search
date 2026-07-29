@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Deferred imports to avoid circular dependency:
 # api.py creates mcp_server first, then imports this module.
 from src.internal.mcp_server.api import mcp_server  # noqa: E402
-from src.tools.registry import tool_registry  # noqa: E402
+from src.internal.tools.registry import tool_registry  # noqa: E402
 
 
 def _make_mcp_wrapper(tool_name: str):

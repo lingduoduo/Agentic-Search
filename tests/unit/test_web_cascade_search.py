@@ -1,7 +1,7 @@
 import asyncio
 
 
-from src.tools.search import SearchPage, make_web_cascade_search
+from src.internal.tools.search import SearchPage, make_web_cascade_search
 
 
 def _ok(url):
@@ -72,7 +72,7 @@ def test_no_browser_configured_returns_empty_on_unusable_serp():
 
 
 def test_seeded_web_search_uses_cascade_not_retrieval():
-    from src.tools.knowledge_base import tool_knowledge_base
+    from src.internal.tools.knowledge_base import tool_knowledge_base
 
     tools = {t.name: t for t in tool_knowledge_base(search_url="http://x/retrieve")}
     web = tools["web_search"]

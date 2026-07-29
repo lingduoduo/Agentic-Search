@@ -79,7 +79,7 @@ Dynamic tools registered via `FunctionTool` / `ApiToolRegistry` can be mirrored 
 ## Semantic tool discovery (server-side)
 
 The **`ToolRegistry` is the single source of truth** for the web/agent process's
-runnable tools. `src/tools/knowledge_base.py` provides the built-in seed set, and
+runnable tools. `src/internal/tools/knowledge_base.py` provides the built-in seed set, and
 `seed_tools(tool_registry)` loads it into the registry at web startup; OpenAPI
 tools are added at runtime via `register_from_openapi`. Discovery covers the
 union of both:

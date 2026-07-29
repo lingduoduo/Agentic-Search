@@ -5,8 +5,8 @@ from __future__ import annotations
 from src.context.retrieval.client import SearchClient
 from src.context.retrieval.client import SearchClientConfig
 from src.context.search import SearchResult
-from src.tools.search import google_custom_search
-from src.tools.search import serpapi_search
+from src.internal.tools.search import google_custom_search
+from src.internal.tools.search import serpapi_search
 
 from ..enums import SearchType
 from ..models import SearchRequest
