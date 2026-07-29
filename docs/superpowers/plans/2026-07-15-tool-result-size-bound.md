@@ -421,5 +421,5 @@ Before claiming completion:
 3. `ruff check`, `ruff format --check`, and `git diff --check` all pass over every modified file.
 4. `test_read_only_tools_supply_stable_normalized_evidence` passes unmodified — the guard proving the `iterencode` swap altered no existing output.
 5. `test_bounded_encoding_aborts_before_walking_the_whole_structure` passes — the guard against `_one_shot=True`.
-6. Write the task report per `docs/development/self-review-reports.md` and validate it with `python3 scripts/validate_task_report.py REPORT_FILE --require-tdd`.
+6. Write the task report per `docs/development/self-review-reports.md` and validate it with `python3 examples/validate_task_report.py REPORT_FILE --require-tdd`.
 7. Perform an independent whole-branch review against the merge base; fix every Critical or Important finding, then re-review.

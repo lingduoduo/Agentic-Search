@@ -70,13 +70,14 @@ relocation does not change their runtime behavior.
 
 ### Out of scope
 
-References under `docs/superpowers/archive/`, `docs/superpowers/plans/`,
-`docs/superpowers/specs/`, and `docs/superpowers/context-packs/` are records of
-past work and stay as written. Two current plans
-(`2026-07-29-mcp-document-extraction.md`,
-`2026-07-15-tool-result-size-bound.md`) carry the old command in their
-instructions; `AGENTS.md` is the live mandate, so a reader following current
-process gets the corrected path.
+References under `docs/superpowers/archive/`, `docs/superpowers/specs/`, and
+`docs/superpowers/context-packs/` are records of past work and stay as
+written. `docs/superpowers/plans/` is not: this repo archives completed plans
+to `archive/plans/`, so anything still under `plans/` is a live plan that
+still executes. Three live plans
+(`2026-07-29-mcp-document-extraction.md`, `2026-07-15-tool-result-size-bound.md`,
+`2026-07-15-llm-timeout-degraded-answer.md`) carried the old command in their
+instructions and were repointed to `examples/validate_task_report.py`.
 
 No consolidation of `src/internal/` packages, `bin/`, `cli/`, `src/cli/`, or
 root-level `colab-vllm.py`. Those are separate questions.

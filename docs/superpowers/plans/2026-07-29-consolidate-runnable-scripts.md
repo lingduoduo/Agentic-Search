@@ -14,7 +14,7 @@ Spec: `docs/superpowers/specs/2026-07-29-consolidate-runnable-scripts-design.md`
 
 - Branch is `refactor/consolidate-runnable-scripts`. Never commit to `main`.
 - The contents of `examples/generate_context_packs.py` and `examples/validate_task_report.py` must not change. They are byte-identical to their former `scripts/` versions and must stay that way, so git records pure renames.
-- Do not edit anything under `docs/superpowers/archive/`, `docs/superpowers/plans/` (other than this file), `docs/superpowers/specs/`, or `docs/superpowers/context-packs/`. Those are records of past work.
+- Do not edit anything under `docs/superpowers/archive/`, `docs/superpowers/specs/`, or `docs/superpowers/context-packs/`. Those are records of past work.
 - Do not touch `src/internal/`, `bin/`, `cli/`, `src/cli/`, or root-level `colab-vllm.py` beyond the two file deletions named in Task 3.
 - `AGENTS.md` and the assertion in `tests/unit/test_validate_task_report.py` are coupled: the test reads `AGENTS.md` and greps for a literal command string. They must change in the same commit.
 - Run `ruff check . && ruff format --check .` before the final commit.
