@@ -72,12 +72,17 @@ relocation does not change their runtime behavior.
 
 References under `docs/superpowers/archive/`, `docs/superpowers/specs/`, and
 `docs/superpowers/context-packs/` are records of past work and stay as
-written. `docs/superpowers/plans/` is not: this repo archives completed plans
-to `archive/plans/`, so anything still under `plans/` is a live plan that
-still executes. Three live plans
+written.
+
+`docs/superpowers/plans/` is treated differently. It is a mixed directory —
+archiving to `archive/plans/` lapsed, so it now holds both unstarted plans and
+plans whose work has already merged. Three of them
 (`2026-07-29-mcp-document-extraction.md`, `2026-07-15-tool-result-size-bound.md`,
-`2026-07-15-llm-timeout-degraded-answer.md`) carried the old command in their
-instructions and were repointed to `examples/validate_task_report.py`.
+`2026-07-15-llm-timeout-degraded-answer.md`) instruct an agent to run the
+validator, so they were repointed to `examples/validate_task_report.py`. The
+reason is not that they are known to be live: it is that an instruction naming a
+deleted path is useless either way, and repointing it costs one line. The rest of
+the directory is left alone.
 
 No consolidation of `src/internal/` packages, `bin/`, `cli/`, `src/cli/`, or
 root-level `colab-vllm.py`. Those are separate questions.
