@@ -363,7 +363,13 @@ git commit -m "feat: extract office and CSV documents over MCP"
 
 - [ ] **Step 1: Write failing registration and execution-boundary tests**
 
-Add:
+Add a static startup-wiring test that reads `api.py` and
+`tools/__init__.py`, parses their imports, and requires both modules to import
+`documents`. This is the RED gate: importing `documents` directly in earlier
+tests already executes its decorator, so a runtime-only discovery assertion
+could pass even when production startup never imports the module.
+
+Also retain runtime discovery as a GREEN integration assertion:
 
 ```python
 @pytest.mark.asyncio
@@ -389,8 +395,9 @@ Run:
 pytest -q tests/unit/test_mcp_document_tools.py -k "registered or thread or temporary"
 ```
 
-Expected: the registration test fails until the module is imported through the
-MCP startup path; any missing execution-boundary behavior also fails.
+Expected: the static startup-wiring test fails until both production modules
+explicitly import `documents`; any missing execution-boundary behavior also
+fails.
 
 - [ ] **Step 3: Wire MCP startup imports and finalize cleanup behavior**
 
