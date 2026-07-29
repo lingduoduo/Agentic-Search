@@ -114,8 +114,8 @@ The focused test passed.
 Run validation from the repository worktree:
 
 ```bash
-python scripts/validate_task_report.py REPORT_FILE
-python scripts/validate_task_report.py --require-tdd REPORT_FILE
+python examples/validate_task_report.py REPORT_FILE
+python examples/validate_task_report.py --require-tdd REPORT_FILE
 ```
 
 Exit code `0` means the structure is valid, `1` means contract violations, and

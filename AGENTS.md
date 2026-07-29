@@ -5,7 +5,7 @@
 When an implementation workflow writes `.superpowers/sdd/*report.md`, use the
 canonical contract in `docs/development/self-review-reports.md`.
 
-Run `python scripts/validate_task_report.py REPORT_FILE` after the implementer
+Run `python examples/validate_task_report.py REPORT_FILE` after the implementer
 writes or amends the report. Add `--require-tdd` when the task required TDD.
 
 Successful validation is mandatory before generating a review package and
