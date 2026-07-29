@@ -21,14 +21,14 @@ def _docx_payload() -> str:
     return base64.b64encode(output.getvalue()).decode()
 
 
-def _pptx_payload() -> str:
-    """Create a small two-slide PPTX payload with text on one slide."""
+def _pptx_payload(slide_texts: tuple[str, ...] = ("slide text", "")) -> str:
+    """Create a small PPTX payload with optional text on each slide."""
     pptx = pytest.importorskip("pptx")
     presentation = pptx.Presentation()
-    presentation.slides.add_slide(presentation.slide_layouts[6]).shapes.add_textbox(
-        0, 0, 100, 100
-    ).text = "slide text"
-    presentation.slides.add_slide(presentation.slide_layouts[6])
+    for text in slide_texts:
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        if text:
+            slide.shapes.add_textbox(0, 0, 100, 100).text = text
     output = io.BytesIO()
     presentation.save(output)
     return base64.b64encode(output.getvalue()).decode()
@@ -258,7 +258,8 @@ async def test_extract_document_extracts_pptx_slide_text():
         "file_type": "pptx",
         "slides": [{"slide": 1, "text": "slide text"}],
         "total_slides": 2,
-        "extracted_slides": 1,
+        "nonblank_slides": 1,
+        "returned_slides": 1,
         "truncated": False,
     }
 
@@ -360,6 +361,22 @@ async def test_extract_document_bounds_pptx_slides(monkeypatch):
     result = await documents.extract_document("slides.pptx", _pptx_payload())
 
     assert result["document"]["slides"] == []
+    assert result["document"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_document_reports_complete_pptx_slide_counts_after_truncation(
+    monkeypatch,
+):
+    """PPTX metadata distinguishes all nonblank slides from returned slides."""
+    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 30)
+    result = await documents.extract_document(
+        "slides.pptx", _pptx_payload(("a", "b", ""))
+    )
+
+    assert result["document"]["total_slides"] == 3
+    assert result["document"]["nonblank_slides"] == 2
+    assert result["document"]["returned_slides"] == 1
     assert result["document"]["truncated"] is True
 
 

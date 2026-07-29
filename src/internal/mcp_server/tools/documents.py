@@ -177,9 +177,9 @@ def _extract_pptx(data: bytes, file_name: str) -> dict[str, Any]:
         cost = _serialized_length(extracted_slide)
         if used_chars + cost > MAX_OUTPUT_CHARS:
             truncated = True
-            break
-        slides.append(extracted_slide)
-        used_chars += cost
+        else:
+            slides.append(extracted_slide)
+            used_chars += cost
 
     return {
         "document": {
@@ -187,7 +187,8 @@ def _extract_pptx(data: bytes, file_name: str) -> dict[str, Any]:
             "file_type": "pptx",
             "slides": slides,
             "total_slides": len(presentation.slides),
-            "extracted_slides": nonblank_slides,
+            "nonblank_slides": nonblank_slides,
+            "returned_slides": len(slides),
             "truncated": truncated,
         }
     }
