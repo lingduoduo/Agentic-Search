@@ -1,10 +1,98 @@
 """Tests for MCP document extraction input and TXT handling."""
 
 import base64
+import io
 
 import pytest
 
 from src.internal.mcp_server.tools import documents
+
+
+@pytest.mark.parametrize(
+    ("raw", "total", "expected"),
+    [
+        ("1", 5, [0]),
+        ("1-3,5", 5, [0, 1, 2, 4]),
+        ("3,1,3", 5, [0, 2]),
+        ("1-99", 3, [0, 1, 2]),
+        ("99", 3, []),
+    ],
+)
+def test_parse_page_range(raw: str, total: int, expected: list[int]):
+    """PDF page ranges are one-based, sorted, deduplicated, and bounded."""
+    assert documents.parse_page_range(raw, total) == expected
+
+
+@pytest.mark.parametrize("page_range", ["", "0", "-1", "3-1", "1-", "1--2", "a"])
+def test_parse_page_range_rejects_malformed_ranges(page_range: str):
+    """Malformed PDF page ranges are rejected before extraction."""
+    with pytest.raises(ValueError):
+        documents.parse_page_range(page_range, 3)
+
+
+def test_parse_page_range_rejects_empty_documents():
+    """Page selection is invalid for a PDF with no pages."""
+    with pytest.raises(ValueError):
+        documents.parse_page_range("1", 0)
+
+
+def _two_page_pdf() -> bytes:
+    """Build a small text PDF without a non-PDF test dependency."""
+    pypdf2 = pytest.importorskip("PyPDF2")
+    generic = pypdf2.generic
+    writer = pypdf2.PdfWriter()
+
+    for text in ("alpha", "beta"):
+        writer.add_blank_page(width=200, height=200)
+        page = writer.pages[-1]
+        resources = generic.DictionaryObject()
+        font = generic.DictionaryObject(
+            {
+                generic.NameObject("/Type"): generic.NameObject("/Font"),
+                generic.NameObject("/Subtype"): generic.NameObject("/Type1"),
+                generic.NameObject("/BaseFont"): generic.NameObject("/Helvetica"),
+            }
+        )
+        resources[generic.NameObject("/Font")] = generic.DictionaryObject(
+            {generic.NameObject("/F1"): writer._add_object(font)}
+        )
+        page[generic.NameObject("/Resources")] = resources
+        stream = generic.DecodedStreamObject()
+        stream.set_data(f"BT /F1 12 Tf 20 100 Td ({text}) Tj ET".encode())
+        page[generic.NameObject("/Contents")] = writer._add_object(stream)
+
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def test_extract_pdf_returns_selected_labeled_pages():
+    """PDF extraction returns bounded labeled text and page-count metadata."""
+    result = documents._extract_pdf(_two_page_pdf(), "notes.pdf", "2")
+
+    assert result == {
+        "document": {
+            "file_name": "notes.pdf",
+            "file_type": "pdf",
+            "text": "--- Page 2 ---\nbeta",
+            "text_length": 19,
+            "truncated": False,
+            "total_pages": 2,
+            "extracted_pages": 1,
+        }
+    }
+
+
+def test_extract_pdf_reports_missing_optional_dependency(monkeypatch):
+    """Absent PDF support explains how to install the document extra."""
+
+    def missing_module(module_name: str):
+        raise ImportError(module_name)
+
+    monkeypatch.setattr(documents.importlib, "import_module", missing_module)
+
+    with pytest.raises(ImportError, match=r"agentic-search\[mcp-documents\]"):
+        documents._require_module("PyPDF2", "PyPDF2")
 
 
 @pytest.mark.asyncio
@@ -23,6 +111,17 @@ async def test_extract_document_decodes_txt():
             "truncated": False,
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_extract_document_rejects_page_ranges_for_non_pdf_documents():
+    """Page ranges apply only to PDF documents."""
+    result = await documents.extract_document(
+        "notes.txt", base64.b64encode(b"alpha").decode(), page_range="1"
+    )
+
+    assert result["document"] is None
+    assert "page range" in result["error"].lower()
 
 
 @pytest.mark.parametrize(
