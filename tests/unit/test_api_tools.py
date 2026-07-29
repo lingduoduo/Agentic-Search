@@ -7,15 +7,15 @@ import json
 
 import pytest
 
-from src.tools.api import (
+from src.internal.tools.api import (
     ApiToolError,
     ApiToolNotFoundError,
     ApiToolRegistry,
     parse_openapi_schema,
 )
-from src.tools.base import ToolEffect
-from src.tools.openapi_schema import OpenAPISchema
-from src.tools.registry import ToolRegistry
+from src.internal.tools.base import ToolEffect
+from src.internal.tools.openapi_schema import OpenAPISchema
+from src.internal.tools.registry import ToolRegistry
 
 
 def _schema() -> str:
@@ -214,7 +214,7 @@ def test_api_request_tool_invokes_operation(monkeypatch):
         return _FakeSession(timeout=timeout, request_log=request_log)
 
     monkeypatch.setattr(
-        "src.tools.api.aiohttp.ClientSession",
+        "src.internal.tools.api.aiohttp.ClientSession",
         _session_factory,
     )
 
@@ -334,7 +334,7 @@ def test_api_request_tool_posts_json_body(monkeypatch):
         return _FakeSession(timeout=timeout, request_log=request_log)
 
     monkeypatch.setattr(
-        "src.tools.api.aiohttp.ClientSession",
+        "src.internal.tools.api.aiohttp.ClientSession",
         _session_factory,
     )
 

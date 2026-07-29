@@ -6,7 +6,7 @@ from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
 from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
 from src.agents.core.state import PerformanceMetrics, TaskStatus, ToolExecutionResult
 from src.context.search import SearchResult
-from src.tools.parsers import FunctionCall
+from src.internal.tools.parsers import FunctionCall
 
 
 class _Tok:

@@ -9,7 +9,7 @@ Provides a singleton registry that:
 
 Usage::
 
-    from src.tools.registry import tool, tool_registry
+    from src.internal.tools.registry import tool, tool_registry
 
     @tool(description="Add two numbers")
     def add(a: int, b: int) -> int:
@@ -44,7 +44,7 @@ from .base import FunctionTool, Tool, ToolEffect
 from .validation import validate_arguments
 
 if TYPE_CHECKING:
-    from src.tools.openapi_schema import OpenAPISchema
+    from src.internal.tools.openapi_schema import OpenAPISchema
 
 logger = logging.getLogger(__name__)
 

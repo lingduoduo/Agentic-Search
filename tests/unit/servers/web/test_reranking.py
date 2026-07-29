@@ -11,7 +11,7 @@ from src.context.models import (
     PromptBundle,
     SearchContextBundle,
 )
-from src.tools.search import SearchPage
+from src.internal.tools.search import SearchPage
 from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
 
 

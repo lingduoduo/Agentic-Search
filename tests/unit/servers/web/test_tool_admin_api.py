@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from src.internal.auth import generate_user_jwt_token
 from src.internal.configs import AppSettings, AuthSettings
 from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
-from src.tools.registry import tool_registry
+from src.internal.tools.registry import tool_registry
 
 _ADMIN = "admin"
 
@@ -60,7 +60,7 @@ def _make_app(tmp_path):
 
 def _clear_registry():
     """Snapshot and reset the global registry (both _entries and _api_registry)."""
-    from src.tools.api import ApiToolRegistry
+    from src.internal.tools.api import ApiToolRegistry
 
     snap_entries = dict(tool_registry._entries)
     snap_api = tool_registry._api_registry

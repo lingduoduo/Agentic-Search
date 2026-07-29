@@ -7,10 +7,10 @@ import logging
 import os
 from typing import Any
 
-from src.tools.search import fetch_url
-from src.tools.search import google_custom_search
-from src.tools.search import serper_dev_search
-from src.tools.search import serpapi_search
+from src.internal.tools.search import fetch_url
+from src.internal.tools.search import google_custom_search
+from src.internal.tools.search import serper_dev_search
+from src.internal.tools.search import serpapi_search
 
 from ..api import mcp_server
 from ..retrieval_client import AuthenticatedRetrievalError

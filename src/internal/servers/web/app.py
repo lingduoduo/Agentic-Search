@@ -97,8 +97,8 @@ from src.internal.servers.reporting.api import create_reporting_router
 from src.internal.servers.scim.api import create_scim_router
 from src.internal.servers.scim.api import register_scim_exception_handlers
 from src.internal.servers.web.seeding import seed_db
-from src.tools.knowledge_base import seed_tools, tool_knowledge_base
-from src.tools.registry import tool_registry
+from src.internal.tools.knowledge_base import seed_tools, tool_knowledge_base
+from src.internal.tools.registry import tool_registry
 from src.internal.servers.web.tool_approval import (
     ApprovalConflict,
     ApprovalExpired,
@@ -111,9 +111,9 @@ from src.internal.servers.tenants.api import router as tenants_router
 from src.internal.servers.token_rate_limits.api import create_token_rate_limits_router
 from src.internal.servers.user_group.api import create_user_group_router
 from src.internal.servers.users.api import create_users_router
-from src.tools import SearchPage
-from src.tools import fetch_pages_concurrently
-from src.tools import search_tool
+from src.internal.tools import SearchPage
+from src.internal.tools import fetch_pages_concurrently
+from src.internal.tools import search_tool
 
 from .static import APP_CSS
 from .static import APP_HTML

@@ -6,8 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 from src.agents.core.base import AgentLoopOutput
 from src.internal.servers.web.intent_routing import _infer_intent_from_output
-from src.tools.routing_tools import build_rag_routing_tool, build_search_routing_tool
-from src.tools import ToolEffect
+from src.internal.tools.routing_tools import (
+    build_rag_routing_tool,
+    build_search_routing_tool,
+)
+from src.internal.tools import ToolEffect
 
 
 def _make_output(
@@ -88,13 +91,13 @@ def test_build_rag_routing_tool_schema():
 
 
 def test_search_routing_tool_returns_json():
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
 
     fake_pages = [SearchPage(title="Doc A", summary="Content A", url="http://a.com")]
 
     async def run():
         with patch(
-            "src.tools.routing_tools.search_tool",
+            "src.internal.tools.routing_tools.search_tool",
             new=AsyncMock(return_value=fake_pages),
         ):
             tool = build_search_routing_tool(

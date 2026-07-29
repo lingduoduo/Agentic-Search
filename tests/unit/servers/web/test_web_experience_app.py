@@ -327,7 +327,7 @@ def test_agent_endpoint_runs_query_processing_hook(monkeypatch, tmp_path):
 
 def test_direct_search_enriches_web_provider_content(monkeypatch):
     """Content fetching is called for serpapi/google providers, not for retrieval."""
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
     from src.internal.servers.web.app import _run_direct_search
     import asyncio
 
@@ -365,7 +365,7 @@ def test_direct_search_enriches_web_provider_content(monkeypatch):
 
 def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
     """Content fetching is NOT called for the local retrieval provider."""
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
     from src.internal.servers.web.app import _run_direct_search
     import asyncio
 
@@ -396,7 +396,7 @@ def test_direct_search_skips_fetch_for_retrieval_provider(monkeypatch):
 
 def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
     """Hybrid search fetches full page content for serpapi results."""
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
     from src.internal.servers.web.app import _run_hybrid_search
     import asyncio
 
@@ -434,7 +434,7 @@ def test_hybrid_search_enriches_serpapi_provider_content(monkeypatch):
 def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkeypatch):
     """Temporal variant is added to executed queries for time-sensitive queries."""
     from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
     import asyncio
 
     executed: list[str] = []
@@ -474,7 +474,7 @@ def test_hybrid_search_includes_temporal_variant_for_time_sensitive_query(monkey
 def test_hybrid_search_runs_search_tool_calls_concurrently(monkeypatch):
     """All search tool calls for expanded queries run concurrently (asyncio.gather)."""
     from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
     import asyncio
 
     call_count = []
@@ -975,7 +975,7 @@ def test_hybrid_fanout_merges_real_and_drops_errored_provider(monkeypatch, tmp_p
     """retrieval returns real pages, serpapi errors → only real docs, status ok."""
     import asyncio
     from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools import SearchPage
+    from src.internal.tools import SearchPage
 
     async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
         if provider == "retrieval":
@@ -1004,7 +1004,7 @@ def test_hybrid_fanout_merges_real_and_drops_errored_provider(monkeypatch, tmp_p
 def test_hybrid_fanout_all_errored_is_unreachable(monkeypatch, tmp_path):
     import asyncio
     from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools import SearchPage
+    from src.internal.tools import SearchPage
 
     async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
         return [SearchPage(error="down")]
@@ -1055,7 +1055,7 @@ def test_hybrid_fanout_reachable_but_empty_is_empty(monkeypatch, tmp_path):
 def test_hybrid_fanout_one_provider_raises_does_not_kill_other(monkeypatch, tmp_path):
     import asyncio
     from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools import SearchPage
+    from src.internal.tools import SearchPage
 
     async def fake_search_tool(query, *, provider, search_url, page_size, **kw):
         if provider == "serpapi":
@@ -1084,7 +1084,7 @@ def test_hybrid_auto_applies_filters_only_to_internal_retrieval(monkeypatch):
     import asyncio
 
     from src.internal.servers.web.app import _run_hybrid_search
-    from src.tools import SearchPage
+    from src.internal.tools import SearchPage
 
     provider_filters = {}
     browser_calls = []
@@ -1128,7 +1128,7 @@ def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
     """source_provider='auto' must NOT pull the slow browser sidecar, while
     'all'/'retrieval' still do (regression for the browser-out-of-auto invariant)."""
     import asyncio
-    from src.tools.search import SearchPage
+    from src.internal.tools.search import SearchPage
     from src.internal.servers.web.app import _run_direct_search
 
     browser_calls: list[str] = []

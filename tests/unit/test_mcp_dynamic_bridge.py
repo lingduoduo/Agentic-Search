@@ -13,7 +13,7 @@ from __future__ import annotations
 from src.internal.db.store import AgenticSearchStore
 from src.internal.memory.tools import build_memory_registry
 from src.internal.mcp_server.tools import dynamic
-from src.tools.registry import tool_registry
+from src.internal.tools.registry import tool_registry
 
 
 def test_sync_all_skips_unmirrorable_tool_without_raising():

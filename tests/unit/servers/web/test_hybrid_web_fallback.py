@@ -11,7 +11,7 @@ import pytest
 
 from src.context.models import ContextDocument
 from src.internal.servers.web.app import _run_hybrid_search
-from src.tools.search import SearchPage
+from src.internal.tools.search import SearchPage
 
 
 async def _passthrough_fetch(pages, **_kwargs):

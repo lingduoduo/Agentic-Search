@@ -20,7 +20,7 @@ from src.internal.servers.web.app import (
     _run_browser_search,
     _run_direct_search,
 )
-from src.tools.search import SearchPage
+from src.internal.tools.search import SearchPage
 
 
 # ---------------------------------------------------------------------------

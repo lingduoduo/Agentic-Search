@@ -12,7 +12,7 @@ import asyncio
 import pytest
 
 import src.internal.servers.web.app as web_app
-import src.tools.search as tools_search
+import src.internal.tools.search as tools_search
 from src.agents.search.search import (
     Retriever,
     SearchAgentLoop,

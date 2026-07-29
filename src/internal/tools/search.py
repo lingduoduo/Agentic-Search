@@ -12,8 +12,8 @@ from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
-from ..context.search import SearchResult
-from ..context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
+from ...context.search import SearchResult
+from ...context.retrieval.client import SearchClient, SearchClientConfig, aiohttp
 from .base import FunctionTool, Tool, ToolEffect, ToolSchema
 from .html_text import _html_to_text
 

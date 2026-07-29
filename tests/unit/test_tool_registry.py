@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.tools import FunctionTool, ToolEffect
-from src.tools.registry import (
+from src.internal.tools import FunctionTool, ToolEffect
+from src.internal.tools.registry import (
     ToolRegistry,
     _params_from_signature,
 )
-from src.tools.validation import check_json_type, validate_arguments
+from src.internal.tools.validation import check_json_type, validate_arguments
 
 
 def test_function_tool_defaults_to_unspecified_effect() -> None:

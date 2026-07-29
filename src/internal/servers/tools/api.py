@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from src.internal.auth import AuthenticatedUser
 from src.internal.configs import AppSettings
 from src.internal.servers._auth import make_require_admin
-from src.tools.registry import tool_registry
+from src.internal.tools.registry import tool_registry
 
 logger = logging.getLogger(__name__)
 

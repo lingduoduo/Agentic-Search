@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from src.tools.base import FunctionTool
-from src.tools.registry import ToolRegistry
-from src.tools.search import MultiQueryWebSearchTool, build_search_tool
+from src.internal.tools.base import FunctionTool
+from src.internal.tools.registry import ToolRegistry
+from src.internal.tools.search import MultiQueryWebSearchTool, build_search_tool
 
 
 def test_functiontool_defaults_false():

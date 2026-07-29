@@ -17,7 +17,7 @@ from src import (
     ToolResult,
     UserRequest,
 )
-from src.tools import ToolEffect
+from src.internal.tools import ToolEffect
 
 
 class _CharTokenizer:

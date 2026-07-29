@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from src.agents.core.state import TaskStatus
-from src.tools import FunctionTool, ToolEffect
-from src.tools.validation import validate_arguments
+from src.internal.tools import FunctionTool, ToolEffect
+from src.internal.tools.validation import validate_arguments
 from tests.unit.test_tool_approval import _loop, _trace
 
 _INT_SCHEMA = {
