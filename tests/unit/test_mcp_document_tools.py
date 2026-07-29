@@ -8,6 +8,32 @@ import pytest
 from src.internal.mcp_server.tools import documents
 
 
+def _docx_payload() -> str:
+    """Create a small DOCX payload with paragraph and table content."""
+    docx = pytest.importorskip("docx")
+    document = docx.Document()
+    document.add_paragraph("paragraph text")
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "left"
+    table.cell(0, 1).text = "right"
+    output = io.BytesIO()
+    document.save(output)
+    return base64.b64encode(output.getvalue()).decode()
+
+
+def _pptx_payload() -> str:
+    """Create a small two-slide PPTX payload with text on one slide."""
+    pptx = pytest.importorskip("pptx")
+    presentation = pptx.Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6]).shapes.add_textbox(
+        0, 0, 100, 100
+    ).text = "slide text"
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    output = io.BytesIO()
+    presentation.save(output)
+    return base64.b64encode(output.getvalue()).decode()
+
+
 @pytest.mark.parametrize(
     ("raw", "total", "expected"),
     [
@@ -206,3 +232,159 @@ async def test_extract_document_truncates_text_larger_than_output_limit(monkeypa
             "truncated": True,
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_extract_document_extracts_docx_paragraphs_and_tables():
+    """DOCX output includes nonblank paragraphs and JSON-compatible table cells."""
+    result = await documents.extract_document("notes.docx", _docx_payload())
+
+    assert result["document"] == {
+        "file_name": "notes.docx",
+        "file_type": "docx",
+        "paragraphs": ["paragraph text"],
+        "tables": [[["left", "right"]]],
+        "truncated": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_extract_document_extracts_pptx_slide_text():
+    """PPTX output groups shape text by slide and counts nonblank slides."""
+    result = await documents.extract_document("slides.pptx", _pptx_payload())
+
+    assert result["document"] == {
+        "file_name": "slides.pptx",
+        "file_type": "pptx",
+        "slides": [{"slide": 1, "text": "slide text"}],
+        "total_slides": 2,
+        "extracted_slides": 1,
+        "truncated": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_csv_exact_row_limit_is_not_truncated():
+    """A CSV at the requested row limit is complete rather than truncated."""
+    payload = base64.b64encode(b"name,value\na,1\nb,2\n").decode()
+    result = await documents.extract_document("rows.csv", payload, max_rows=2)
+
+    assert result["document"]["rows"] == 2
+    assert result["document"]["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_csv_over_row_limit_is_truncated():
+    """A CSV with an extra record reports truncation after the requested limit."""
+    payload = base64.b64encode(b"name,value\na,1\nb,2\nc,3\n").decode()
+    result = await documents.extract_document("rows.csv", payload, max_rows=2)
+
+    assert result["document"]["rows"] == 2
+    assert result["document"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_document_extracts_csv_columns_and_records():
+    """CSV records retain headings and values as JSON-compatible dictionaries."""
+    payload = base64.b64encode(b"name,value\na,1\n").decode()
+    result = await documents.extract_document("rows.csv", payload)
+
+    assert result["document"] == {
+        "file_name": "rows.csv",
+        "file_type": "csv",
+        "columns": ["name", "value"],
+        "records": [{"name": "a", "value": "1"}],
+        "rows": 1,
+        "truncated": False,
+    }
+
+
+@pytest.mark.parametrize("max_rows", [0, -1, documents.MAX_CSV_ROWS + 1])
+@pytest.mark.asyncio
+async def test_extract_document_rejects_invalid_csv_row_limits(max_rows: int):
+    """CSV row limits must be positive and within the configured maximum."""
+    payload = base64.b64encode(b"name\na\n").decode()
+    result = await documents.extract_document("rows.csv", payload, max_rows=max_rows)
+
+    assert result["document"] is None
+    assert "row limit" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_extract_document_rejects_invalid_utf8_csv():
+    """CSV input must be valid UTF-8 rather than silently replacing bytes."""
+    result = await documents.extract_document(
+        "rows.csv", base64.b64encode(b"name\n\xff\n").decode()
+    )
+
+    assert result["document"] is None
+    assert "utf-8" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_extract_document_rejects_duplicate_csv_headings():
+    """Duplicate CSV headings cannot safely become dictionary keys."""
+    payload = base64.b64encode(b"name,name\na,b\n").decode()
+    result = await documents.extract_document("rows.csv", payload)
+
+    assert result["document"] is None
+    assert "duplicate" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_extract_document_bounds_csv_records(monkeypatch):
+    """CSV records stop before nested output can exceed the shared character budget."""
+    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 20)
+    payload = base64.b64encode(b"name\nfirst\nsecond\n").decode()
+    result = await documents.extract_document("rows.csv", payload, max_rows=2)
+
+    assert result["document"]["records"] == [{"name": "first"}]
+    assert result["document"]["rows"] == 1
+    assert result["document"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_document_bounds_docx_tables(monkeypatch):
+    """DOCX table cells stop accumulating after the shared character budget."""
+    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 20)
+    result = await documents.extract_document("notes.docx", _docx_payload())
+
+    assert result["document"]["tables"] == []
+    assert result["document"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_document_bounds_pptx_slides(monkeypatch):
+    """PPTX slide objects stop accumulating after the shared character budget."""
+    monkeypatch.setattr(documents, "MAX_OUTPUT_CHARS", 20)
+    result = await documents.extract_document("slides.pptx", _pptx_payload())
+
+    assert result["document"]["slides"] == []
+    assert result["document"]["truncated"] is True
+
+
+@pytest.mark.parametrize(
+    ("extension", "module_name", "distribution_name"),
+    [
+        ("docx", "docx", "python-docx"),
+        ("pptx", "pptx", "python-pptx"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_extract_document_reports_missing_office_dependency(
+    monkeypatch, extension: str, module_name: str, distribution_name: str
+):
+    """Missing optional office parsers return actionable installation errors."""
+
+    def missing_module(name: str):
+        if name == module_name:
+            raise ImportError(name)
+        return __import__(name)
+
+    monkeypatch.setattr(documents.importlib, "import_module", missing_module)
+    result = await documents.extract_document(
+        f"notes.{extension}", base64.b64encode(b"x").decode()
+    )
+
+    assert result["document"] is None
+    assert distribution_name in result["error"]
