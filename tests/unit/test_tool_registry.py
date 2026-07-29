@@ -1,4 +1,4 @@
-"""Unit tests for src/tools/registry.py."""
+"""Unit tests for src/internal/tools/registry.py."""
 
 from __future__ import annotations
 
