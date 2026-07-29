@@ -20,6 +20,14 @@ python-dotenv
 mcp>=1.0.0
 fastmcp>=2.0.0
 pytest-asyncio>=0.23.0
+# Keep all optional document parsers in clean unit-test installs so PDF,
+# DOCX, and PPTX behavior cannot silently disappear behind import skips.
+pypdf>=6.12.2
+psutil>=5.9.0
+python-docx>=1.1.0
+python-pptx>=1.0.0
+# Backport for TOML-based packaging contract tests on Python 3.10.
+tomli>=2.0.0; python_version < "3.11"
 pyarrow>=14
 tqdm==4.66.4
 google-api-python-client
