@@ -124,7 +124,8 @@ def test_framework_surface_re_exported_from_internal_tools():
 
 @pytest.mark.parametrize("name", _SUBMODULES)
 def test_submodule_lives_under_internal_tools(name):
-    importlib.import_module(f"src.internal.tools.{name}")
+    module = importlib.import_module(f"src.internal.tools.{name}")
+    assert module.__name__ == f"src.internal.tools.{name}"
 
 
 def test_legacy_src_tools_package_is_gone():
