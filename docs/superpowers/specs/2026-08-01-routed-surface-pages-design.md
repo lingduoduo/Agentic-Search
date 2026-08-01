@@ -56,10 +56,11 @@ verb-suffixed — `/chat/send-chat-message`, `/search/search-history`,
 src/router.tsx              NEW   useRoute() + navigate() + <NavLink>
 src/App.tsx                 466 → ~110 lines, shell only
 src/pages/AssistPage.tsx    NEW   receives everything App.tsx does today
-src/pages/SearchPage.tsx    NEW   wraps SearchView
-src/pages/ChatPage.tsx      NEW   wraps ChatView
-src/pages/ToolsPage.tsx     NEW   wraps ToolAgentView
 ```
+
+`SearchView`, `ChatView`, and `ToolAgentView` are already page-shaped and
+self-contained, so the router mounts them directly. Wrapping each in a
+four-line `*Page.tsx` would add indirection without adding behavior.
 
 ### Router
 
@@ -79,11 +80,11 @@ deliberately dependency-light.
 
 `App.tsx`'s state divides along the surface boundary.
 
-**Shell keeps (9):** `showTools`, `showQueryHistory`, `showConsole`,
-`adminSummary`, `analyticsByLLM`, `analyticsByPersona`, `analyticsByFlow`.
-These are page-independent and self-fetch at mount.
+**Shell keeps (6):** `showTools`, `showQueryHistory`, `adminSummary`,
+`analyticsByLLM`, `analyticsByPersona`, `analyticsByFlow`. These are
+page-independent and self-fetch at mount.
 
-**AssistPage takes (~23):** `query`, `answer`, `citations`, `documents`,
+**AssistPage takes (~24):** `showConsole`, `query`, `answer`, `citations`, `documents`,
 `messages`, `sessionId`, `intent`, `route`, `routeDegraded`, `isLoading`,
 `streamingAnswer`, `progressSteps`, `completedSteps`, `toolCalls`,
 `controlFlowTrace`, `lastRequestId`, `pendingApprovals`, `error`, `searchUrl`,
@@ -101,10 +102,17 @@ derived from Assistant state, so they move into AssistPage's own action row.
 The shell topbar keeps the brand, the four nav links, **Tools**, and
 **History** — the controls that mean the same thing on every page.
 
+The panels those two buttons toggle, `ToolPanel` and `QueryHistoryPanel`, move
+from between the composer and the results to above the composer. A shell cannot
+interleave with page content, so they render either above or below the page;
+above keeps their position relative to the results unchanged. This is the only
+layout change in the refactor.
+
 ### Dev Console
 
 `DevConsole` moves into AssistPage, and the Console toggle appears only on
-`/assist`.
+`/assist`. The toggle and the panel travel together, so `showConsole` belongs
+to AssistPage rather than the shell.
 
 Three of its seven panels — `RequestInspector`, `RequestTracePanel`,
 `ServerHealthGrid` — are fed by the last Assistant run through the `answer`,
