@@ -208,3 +208,118 @@ async def test_run_tool_agent_exposes_assistant_fallback(monkeypatch):
     assert extra["_assistant_fallback"] == "fallback text"
     assert extra["tool_calls"] == []
     assert extra["num_turns"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tool selection: the agent must see one unambiguous corpus-search tool and no
+# answer-generating tool. Four near-identical retrieval tools made a small local
+# model answer from memory (or narrate the RAG tool) instead of calling one.
+# ---------------------------------------------------------------------------
+
+
+def _capture_tool_agent_loop(monkeypatch):
+    """Patch ToolAgentLoop so the runner's tools/messages can be inspected."""
+    captured: dict = {}
+    output = AgentLoopOutput(
+        prompt_ids=[],
+        response_ids=[],
+        response_mask=[],
+        num_turns=1,
+        final_answer="ok",
+        action_trace="",
+        trajectory_messages=[],
+    )
+
+    class _SpyLoop:
+        def __init__(self, *, tokenizer, server_manager, tools, config):
+            captured["tools"] = list(tools)
+            captured["config"] = config
+
+        async def run(
+            self, messages, sampling_params, *, on_turn=None, on_approval=None
+        ):
+            captured["messages"] = list(messages)
+            return output
+
+    monkeypatch.setattr("src.agents.tool.ToolAgentLoop", _SpyLoop)
+    return captured
+
+
+async def _run(monkeypatch, *, history=None, with_search_tool=True):
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        history=history or [],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        on_turn=None,
+        with_search_tool=with_search_tool,
+    )
+    return captured
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_search_tool", [True, False])
+async def test_tool_agent_sees_exactly_one_corpus_search_tool(
+    monkeypatch, with_search_tool
+):
+    from src.internal.tools.knowledge_base import seed_tools, tool_knowledge_base
+    from src.internal.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    seed_tools(registry, tools=tool_knowledge_base(llm=MagicMock()))
+    monkeypatch.setattr("src.internal.tools.tool_registry", registry)
+
+    captured = await _run(monkeypatch, with_search_tool=with_search_tool)
+    names = [t.name for t in captured["tools"]]
+
+    assert names.count("search_routing_tool") == 1  # the one corpus search
+    assert "search" not in names  # duplicate of search_routing_tool
+    assert "rag_routing_tool" not in names  # answers instead of being a tool
+    assert "web_search" in names  # distinct capability, kept
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_keeps_externally_registered_tools(monkeypatch):
+    from src.internal.tools.base import FunctionTool
+    from src.internal.tools.registry import ToolRegistry
+
+    async def _noop() -> str:
+        return ""
+
+    registry = ToolRegistry()
+    registry.register(
+        FunctionTool(
+            fn=_noop,
+            name="jira_create_issue",
+            description="Create a Jira issue.",
+            parameters={"type": "object", "properties": {}},
+        )
+    )
+    monkeypatch.setattr("src.internal.tools.tool_registry", registry)
+
+    captured = await _run(monkeypatch)
+    assert "jira_create_issue" in [t.name for t in captured["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_prepends_tool_use_system_prompt(monkeypatch):
+    from src.internal.servers.web.tool_agent_runner import TOOL_AGENT_SYSTEM_PROMPT
+
+    captured = await _run(monkeypatch)
+    assert captured["messages"][0] == {
+        "role": "system",
+        "content": TOOL_AGENT_SYSTEM_PROMPT,
+    }
+    assert captured["messages"][-1] == {"role": "user", "content": "q"}
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_does_not_override_an_existing_system_message(monkeypatch):
+    history = [types.SimpleNamespace(role="system", content="caller system prompt")]
+    captured = await _run(monkeypatch, history=history)
+    roles = [m["role"] for m in captured["messages"]]
+    assert roles.count("system") == 1
+    assert captured["messages"][0]["content"] == "caller system prompt"

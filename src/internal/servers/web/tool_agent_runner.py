@@ -18,6 +18,21 @@ NO_LOCAL_MODEL_MESSAGE = (
     "Set SEARCH_AGENT_MODEL or SEARCH_AGENT_SERVER_URL in .env and restart."
 )
 
+TOOL_AGENT_SYSTEM_PROMPT = (
+    "You are a research assistant with tools. When a question asks about facts, "
+    "documents, or anything you cannot verify yourself, call the tool that fits "
+    "and answer only from what it returns — do not answer from memory. Call one "
+    "tool at a time, then use its result. Answer directly only when no tool applies."
+)
+
+# Registry tools the tool agent must not see. ``search`` duplicates
+# ``search_routing_tool`` (same corpus, same arguments), and ``rag_routing_tool``
+# generates a whole answer rather than returning evidence — offered together they
+# make a small model pick none of them and answer from memory instead.
+_SHADOWED_TOOL_NAMES = frozenset({"search", "rag_routing_tool"})
+
+_CORPUS_SEARCH_TOP_K = 5
+
 
 class ToolCallView(BaseModel):
     tool_name: str
@@ -109,13 +124,18 @@ async def _run_tool_agent(
     reaches the response/metadata.
     """
     from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
-    from src.internal.tools import build_search_tool, tool_registry
+    from src.internal.tools import build_search_routing_tool, tool_registry
 
-    tools = list(tool_registry.list_tools())
+    tools = [
+        t for t in tool_registry.list_tools() if t.name not in _SHADOWED_TOOL_NAMES
+    ]
     if with_search_tool:
-        tools = [build_search_tool(search_url=search_url)] + [
-            t for t in tools if t.name != "search"
-        ]
+        # Bind the corpus search to this request's retrieval URL rather than the
+        # one the registry was seeded with.
+        corpus_search = build_search_routing_tool(
+            search_url=search_url, top_k=_CORPUS_SEARCH_TOP_K
+        )
+        tools = [corpus_search] + [t for t in tools if t.name != corpus_search.name]
     loop = ToolAgentLoop(
         tokenizer=tokenizer,
         server_manager=manager,
@@ -130,6 +150,8 @@ async def _run_tool_agent(
     messages = [{"role": m.role, "content": m.content} for m in history] + [
         {"role": "user", "content": query}
     ]
+    if not any(m["role"] == "system" for m in messages):
+        messages.insert(0, {"role": "system", "content": TOOL_AGENT_SYSTEM_PROMPT})
     output = await loop.run(
         messages,
         sampling_params={"temperature": 0.0, "max_tokens": 512},
