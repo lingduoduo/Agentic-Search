@@ -132,7 +132,7 @@ def test_send_tool_message_emits_approval_required(monkeypatch):
         is_anonymous = False
         email = "u@x"
 
-    monkeypatch.setattr(tool_backend, "resolve_request_user", lambda *a, **k: _User())
+    monkeypatch.setattr(tool_backend, "resolve_active_user", lambda *a, **k: _User())
 
     app = _make_app(with_model=True)
     app.state.tool_approval_broker = _Broker()

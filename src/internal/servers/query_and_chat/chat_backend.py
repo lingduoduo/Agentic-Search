@@ -17,7 +17,6 @@ from fastapi.responses import StreamingResponse
 
 from src.context import ChatMessage
 from src.internal.auth import AuthenticatedUser
-from src.internal.auth import user_from_headers
 from src.internal.db import AgenticSearchStore
 from src.internal.servers.query_and_chat.models import ChatFeedbackRequest
 from src.internal.servers.query_and_chat.models import ChatMessageDetail
@@ -29,7 +28,7 @@ from src.internal.servers.query_and_chat.models import ChatSessionDetails
 from src.internal.servers.query_and_chat.models import ChatSessionsResponse
 from src.internal.servers.query_and_chat.models import RenameChatSessionResponse
 from src.internal.servers.query_and_chat.models import SendChatMessageRequest
-from src.internal.servers.users.api import resolve_request_user
+from src.internal.servers.users.api import resolve_active_user
 
 logger = logging.getLogger(__name__)
 _MAX_HISTORY_MESSAGES = 40
@@ -72,7 +71,7 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
     router = APIRouter(prefix="/chat", tags=["chat"])
 
     def _get_user(request: Request) -> AuthenticatedUser | None:
-        return user_from_headers(request.headers)
+        return resolve_active_user(request, store)
 
     @router.get("/get-user-chat-sessions")
     def get_user_chat_sessions(
@@ -173,7 +172,7 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
         if manager is None or tokenizer is None:
             raise HTTPException(status_code=400, detail=NO_LOCAL_MODEL_MESSAGE)
 
-        user = resolve_request_user(http_request)
+        user = _get_user(http_request)
         user_id = user.id if user and not user.is_anonymous else None
         if body.session_id and store.get_chat_session(body.session_id):
             session_id = body.session_id

@@ -99,6 +99,7 @@ def test_search_discards_caller_supplied_acl(tmp_path, monkeypatch):
         fake_run_expanded_search,
     )
     client, store = _client(tmp_path)
+    store.upsert_user(UserRecord(id="alice", email="alice@example.com"))
 
     response = client.post(
         "/search/send-search-message",
@@ -154,6 +155,7 @@ def test_search_uses_current_store_groups_instead_of_stale_token_claims(
         fake_run_expanded_search,
     )
     client, store = _client(tmp_path)
+    store.upsert_user(UserRecord(id="alice", email="alice@example.com"))
     monkeypatch.setattr(
         store,
         "list_group_ids_for_user",

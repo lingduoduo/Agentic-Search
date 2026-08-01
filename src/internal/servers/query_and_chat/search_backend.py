@@ -40,7 +40,7 @@ from src.internal.servers.query_and_chat.models import SendSearchQueryRequest
 from src.internal.servers.query_and_chat.streaming_models import SearchDocsPacket
 from src.internal.servers.query_and_chat.streaming_models import SearchErrorPacket
 from src.internal.servers.query_and_chat.streaming_models import SearchQueriesPacket
-from src.internal.servers.users.api import resolve_request_user
+from src.internal.servers.users.api import resolve_active_user
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,8 @@ def _authenticated_search_filters(
     requested: SearchFilters | None,
     store: AgenticSearchStore,
 ) -> SearchFilters:
-    user = resolve_request_user(request)
-    if user is None or user.is_anonymous:
+    user = resolve_active_user(request, store)
+    if user is None:
         raise HTTPException(status_code=401, detail="Authentication required.")
     acl = build_user_only_filters(
         user.id,
@@ -103,7 +103,7 @@ def create_search_router(
     router = APIRouter(prefix="/search", tags=["search"])
 
     def _get_user(request: Request) -> AuthenticatedUser | None:
-        return resolve_request_user(request)
+        return resolve_active_user(request, store)
 
     @router.post("/search-flow-classification")
     def search_flow_classification(

@@ -80,6 +80,31 @@ def resolve_request_user(request: Request) -> AuthenticatedUser | None:
     return None
 
 
+def resolve_active_user(
+    request: Request, store: AgenticSearchStore
+) -> AuthenticatedUser | None:
+    """Resolve the caller, rejecting a token whose user no longer exists.
+
+    A JWT stays valid until it expires, so it outlives the row it names whenever
+    the users table is rebuilt — which the dev default (`:memory:`) does on every
+    restart. Such a token is worse than no token at all: the id it carries fails
+    the ``chat_sessions.user_id`` foreign key, and re-registering the same email
+    under a fresh id makes any auto-provisioning collide with ``users.email``
+    UNIQUE. Both surface as a 500 on endpoints that persist a user id, while
+    read-only endpoints keep working — the same cookie appearing to succeed and
+    fail at once.
+
+    The store is the source of truth: a token with no matching row is treated as
+    unauthenticated, exactly as if no credential had been sent.
+    """
+    user = resolve_request_user(request)
+    if user is None or user.is_anonymous:
+        return None
+    if store.get_user(user.id) is None:
+        return None
+    return user
+
+
 def _require_auth(request: Request) -> AuthenticatedUser:
     user = resolve_request_user(request)
     if user is None or user.is_anonymous:

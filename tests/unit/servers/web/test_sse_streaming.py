@@ -17,6 +17,8 @@ from src.context.models import (
     PromptBundle,
     SearchContextBundle,
 )
+from src.internal.db import AgenticSearchStore
+from src.internal.db import UserRecord
 from src.internal.servers.web.app import (
     SearchExperienceSettings,
     _request_tool_approval,
@@ -284,7 +286,11 @@ def test_stream_tool_approval_can_resume_same_request(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(ToolAgentLoop, "run", fake_run)
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    store = AgenticSearchStore(tmp_path / "s.sqlite3")
+    store.upsert_user(UserRecord(id="user-1", email="user-1@example.test"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"), store=store
+    )
     token = generate_user_jwt_token(user_id="user-1")
     headers = {"Authorization": f"Bearer {token}"}
     result: dict[str, object] = {}
