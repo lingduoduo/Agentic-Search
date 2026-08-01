@@ -1690,10 +1690,23 @@ option:disabled,
    Transcript/ChatView/SearchView/ToolAgentView.)
    -------------------------------------------------------------------------- */
 
-.surface-switcher {
+.surface-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.surface-nav .icon-button {
+  text-decoration: none;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .icon-button.active {

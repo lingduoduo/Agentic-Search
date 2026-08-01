@@ -26,8 +26,22 @@ export default defineConfig({
       "/me": "http://127.0.0.1:7860",
       "/admin": "http://127.0.0.1:7860",
       "/analytics": "http://127.0.0.1:7860",
-      "/chat": "http://127.0.0.1:7860",
-      "/search": "http://127.0.0.1:7860",
+      "/chat": {
+        target: "http://127.0.0.1:7860",
+        // A page navigation asks for HTML; that is the SPA route, not the API.
+        // API calls from the app send Accept: application/json and still proxy.
+        bypass: (req) => (req.headers.accept?.includes("text/html") ? "/index.html" : undefined),
+      },
+      "/search": {
+        target: "http://127.0.0.1:7860",
+        bypass: (req) => (req.headers.accept?.includes("text/html") ? "/index.html" : undefined),
+      },
+      // Proxy keys match by prefix, so "/tool" below would otherwise swallow the
+      // /tools page too. Listed first because the first matching key wins.
+      "/tools": {
+        target: "http://127.0.0.1:7860",
+        bypass: (req) => (req.headers.accept?.includes("text/html") ? "/index.html" : undefined),
+      },
       "/tool": "http://127.0.0.1:7860",
     },
   },

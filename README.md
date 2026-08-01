@@ -9,7 +9,7 @@ Agentic Search is a retrieval-backed platform for building multi-turn search, RA
 - Dense, sparse, and hybrid retrieval with fusion, reranking, and optimization workflows
 - Connectors, document ingestion, indexing, and background processing
 - Web search through Google Custom Search, SerpAPI, and browser automation
-- A React UI with four surfaces — an auto-routing Assistant plus direct Search, Chat, and Tool Agent tabs — with streaming responses, a running conversation transcript, source inspection, and observability panels
+- A React UI with four surfaces — an auto-routing Assistant plus direct Search, Chat, and Tool pages — with streaming responses, a running conversation transcript, source inspection, and observability panels
 - Supervised, GRPO/PPO, and evaluation workflows for search agents
 - An MCP server that exposes search and retrieval to compatible clients
 
@@ -69,15 +69,15 @@ The offline `index_builder` turns a corpus into the searchable sparse/dense inde
 
 ## Search engine
 
-The search agent classifies each request, tries internal retrieval first, and falls through to web search when evidence is weak. It also exposes a dedicated retrieval-only surface at `POST /search/send-search-message` (the **Search** tab). See [Search engine](docs/search-engine.md) for capabilities and request routing.
+The search agent classifies each request, tries internal retrieval first, and falls through to web search when evidence is weak. It also exposes a dedicated retrieval-only surface at `POST /search/send-search-message` (the **Search** page, `/search`). See [Search engine](docs/search-engine.md) for capabilities and request routing.
 
 ## Chat engine
 
-The chat agent answers conversational requests with retrieval-grounded synthesis and multi-turn memory. A direct `POST /chat/send-chat-message` endpoint (the **Chat** tab) calls the local model with no retrieval, streaming a multi-turn transcript. See [Chat engine](docs/chat-engine.md) for capabilities and routing.
+The chat agent answers conversational requests with retrieval-grounded synthesis and multi-turn memory. A direct `POST /chat/send-chat-message` endpoint (the **Chat** page, `/chat`) calls the local model with no retrieval, streaming a multi-turn transcript. See [Chat engine](docs/chat-engine.md) for capabilities and routing.
 
 ## Tool engine
 
-The tool agent runs multi-turn function calling with structured tool dispatch over a registry of built-in and OpenAPI-backed tools. A dedicated `POST /tool/send-tool-message` surface (the **Tool Agent** tab) streams tool calls, gates tools with approval prompts, and fetches the web via a serpapi→browser cascade. See [Tool engine](docs/tool-engine.md) for capabilities, routing, and the tool registry.
+The tool agent runs multi-turn function calling with structured tool dispatch over a registry of built-in and OpenAPI-backed tools. A dedicated `POST /tool/send-tool-message` surface (the **Tools** page, `/tools`) streams tool calls, gates tools with approval prompts, and fetches the web via a serpapi→browser cascade. See [Tool engine](docs/tool-engine.md) for capabilities, routing, and the tool registry.
 
 ## Run locally
 
@@ -120,7 +120,7 @@ The live Vite development UI runs on port **5173** and proxies backend requests 
 cd web && npm run dev
 ```
 
-Open <http://127.0.0.1:5173>. The header switches between the **Assistant**, **Search**, **Chat**, and **Tool Agent** surfaces.
+Open <http://127.0.0.1:5173>. The header links to the four pages: **Assistant** (`/assist`), **Search** (`/search`), **Chat** (`/chat`), and **Tools** (`/tools`). Each has its own URL, so pages can be linked to and survive a refresh.
 
 ## Verify the stack
 

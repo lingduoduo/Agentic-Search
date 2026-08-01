@@ -6,7 +6,19 @@ This guide covers the React/Vite development workflow and local administration a
 
 ## Development workflow
 
-The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and, in development, Vite proxies the backend routes it calls — `/api/*`, `/health`, `/auth/*`, `/me`, `/admin/*`, `/analytics/*`, `/chat/*`, `/search/*`, `/tool/*` — through to port 7860. A prefix missing from that list is the usual cause of a panel or tab that fails only in dev: the request hits the Vite dev server and 404s instead of reaching FastAPI.
+The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and, in development, Vite proxies the backend routes it calls — `/api/*`, `/health`, `/auth/*`, `/me`, `/admin/*`, `/analytics/*`, `/chat/*`, `/search/*`, `/tool/*` — through to port 7860. A prefix missing from that list is the usual cause of a panel or page that fails only in dev: the request hits the Vite dev server and 404s instead of reaching FastAPI. The `/chat`, `/search` and `/tools` proxies carry a `bypass` so a page navigation (`Accept: text/html`) is served the SPA instead of being forwarded to FastAPI — without it, a refresh on those pages 404s in dev only. `/tools` needs its own entry because proxy keys match by prefix and `/tool` would otherwise swallow it.
+
+### Pages
+
+The four surfaces are routes, not tabs. `web/src/router.tsx` holds the route
+list and a ~70-line history router; `App.tsx` is a shell that renders the
+topbar, the global panels, and whichever page the route selects. Each page owns
+its state, so navigating away discards it.
+
+`ROUTES` in `web/src/router.tsx` is mirrored in two other places, and all three
+must be changed together to add a page: the `bypass` entries in
+`web/vite.config.ts` (only for prefixes the backend also serves) and the
+`spa_page` handler in `src/internal/servers/web/app.py`.
 
 ```bash
 cd web && npm install && npm run dev   # dev server at http://127.0.0.1:5173
@@ -20,9 +32,9 @@ cd web && npm run test -- --run        # Vitest unit tests
 > `:5173` is the live source with hot-reload. If a UI change "doesn't show up",
 > you're probably looking at `:7860` — rebuild, or use `:5173`.
 
-## Logging in (Search / Chat / Tool tabs)
+## Logging in (Search / Chat / Tools pages)
 
-The **Search** tab calls `POST /search/send-search-message`, which resolves the
+The **Search** page calls `POST /search/send-search-message`, which resolves the
 caller with `resolve_request_user` and returns `401 Authentication required` for
 anonymous requests — it needs a user id to build ACL filters. `AGENTIC_SEARCH_DEV_ADMIN`
 does **not** cover this; that bypass applies only to the admin routers.
@@ -35,7 +47,7 @@ http://127.0.0.1:5173/dev-login.html
 
 and click **Log in**. It registers `dev@localhost` / `devpass` (idempotent), logs
 in, and confirms via `/me`. That sets the `fastapiusersauth` cookie on the dev
-server's origin, which is where the tabs need it. Return to the dashboard and
+server's origin, which is where the pages need it. Return to the dashboard and
 Search works.
 
 Two caveats:
@@ -91,7 +103,7 @@ Click **Console** in the top bar to open it. **Retrieval Lab** runs a query agai
 
 ## UI features
 
-**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `answer` / `done` events (full schema in the [SSE event table](architecture.md#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
+**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `answer` / `done` events (full schema in the [SSE event table](architecture.md#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`, on the Assistant page) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
 
 **Markdown rendering** — Answers render via `react-markdown`: headings, bold/italic, inline code, code blocks, and ordered/unordered lists. Citation markers (`[D1]`, `[D2]`, …) become anchor links that scroll the page to the matching source card.
 

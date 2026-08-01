@@ -1297,11 +1297,24 @@ def create_web_app(
     def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/", response_class=HTMLResponse)
-    def index() -> str:
+    def _app_shell() -> str:
         if frontend_dist:
             return (frontend_dist / "index.html").read_text(encoding="utf-8")
         return APP_HTML
+
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        return _app_shell()
+
+    # The frontend routes these client-side. They are listed explicitly rather
+    # than served from a catch-all so a mistyped API path stays a 404 instead of
+    # silently returning HTML. Keep in sync with ROUTES in web/src/router.tsx.
+    @app.get("/assist", response_class=HTMLResponse)
+    @app.get("/search", response_class=HTMLResponse)
+    @app.get("/chat", response_class=HTMLResponse)
+    @app.get("/tools", response_class=HTMLResponse)
+    def spa_page() -> str:
+        return _app_shell()
 
     @app.get("/assets/app.css")
     def stylesheet() -> Response:

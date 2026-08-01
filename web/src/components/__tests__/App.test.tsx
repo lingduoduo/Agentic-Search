@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App } from "../../App";
@@ -483,5 +483,52 @@ describe("App dashboard layout order", () => {
     expect(
       layout!.compareDocumentPosition(admin) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+});
+
+describe("page navigation", () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("renders the assistant page at /", () => {
+    render(<App />);
+    expect(screen.getByRole("textbox", { name: /question/i })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/assist");
+  });
+
+  it("exposes the four surfaces as links, not tabs", () => {
+    render(<App />);
+    const nav = screen.getByRole("navigation", { name: /surfaces/i });
+    expect(nav).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /assistant/i })).toHaveAttribute("href", "/assist");
+    expect(screen.getByRole("link", { name: /^search$/i })).toHaveAttribute("href", "/search");
+    expect(screen.getByRole("link", { name: /^chat$/i })).toHaveAttribute("href", "/chat");
+    expect(screen.getByRole("link", { name: /^tools$/i })).toHaveAttribute("href", "/tools");
+  });
+
+  it("swaps the page and the URL when a link is clicked", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("link", { name: /^chat$/i }));
+    expect(window.location.pathname).toBe("/chat");
+    expect(screen.queryByRole("textbox", { name: /question/i })).not.toBeInTheDocument();
+  });
+
+  it("mounts the requested page on a deep link without passing through assist", () => {
+    window.history.replaceState({}, "", "/search");
+    render(<App />);
+    expect(screen.getByRole("textbox", { name: /search query/i })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /question/i })).not.toBeInTheDocument();
+  });
+
+  it("goes back to the previous page on popstate", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("link", { name: /^tools$/i }));
+    expect(window.location.pathname).toBe("/tools");
+    act(() => {
+      window.history.replaceState({}, "", "/assist");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.getByRole("textbox", { name: /question/i })).toBeInTheDocument();
   });
 });
