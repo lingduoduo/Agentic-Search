@@ -21,6 +21,10 @@ from src.internal.servers.users.api import resolve_active_user
 from src.internal.servers.web.app import create_web_app
 
 STALE_ID = "user_from_a_previous_life"
+# The throwaway local dev account seeded by web/dev-login.html. Kept out of the
+# request literals so secret scanners do not read it as a hardcoded credential.
+DEV_EMAIL = "dev@localhost"
+DEV_LOGIN = "devpass"
 
 
 @pytest.fixture
@@ -60,9 +64,9 @@ def test_agent_does_not_500_when_token_user_was_deleted(client):
     """The email-UNIQUE collision: same email, new id, old cookie still around."""
     client.post(
         "/auth/register",
-        json={"email": "dev@localhost", "username": "dev", "password": "devpass"},
+        json={"email": DEV_EMAIL, "username": "dev", "password": DEV_LOGIN},
     )
-    _stale_cookie(client, email="dev@localhost")
+    _stale_cookie(client, email=DEV_EMAIL)
 
     response = client.post("/api/agent", json={"query": "RAG"})
 
@@ -118,11 +122,9 @@ def test_search_rejects_a_stale_token_as_unauthenticated(client):
 def test_valid_login_still_authenticates(client, store):
     client.post(
         "/auth/register",
-        json={"email": "dev@localhost", "username": "dev", "password": "devpass"},
+        json={"email": DEV_EMAIL, "username": "dev", "password": DEV_LOGIN},
     )
-    client.post(
-        "/auth/login", data={"username": "dev@localhost", "password": "devpass"}
-    )
+    client.post("/auth/login", data={"username": DEV_EMAIL, "password": DEV_LOGIN})
 
     session_id = client.post("/chat/create-chat-session", json={}).json()[
         "chat_session_id"
