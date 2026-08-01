@@ -58,10 +58,23 @@ def sync_tool_to_mcp(name: str) -> bool:
     return True
 
 
+def _exportable_entries(registry=None) -> list:
+    """Registry entries this bridge may mirror out to MCP.
+
+    Tools pulled *in* from a remote MCP server (``source="mcp"``) are excluded:
+    re-exporting them would offer a server its own tools back and duplicate the
+    catalog on every restart.
+    """
+    from src.internal.tools.mcp_client import MCP_SOURCE
+
+    entries = (registry or tool_registry).list()
+    return [e for e in entries if e.source != MCP_SOURCE]
+
+
 def _sync_all() -> int:
     """Register all tools currently in tool_registry with MCP. Called at import time."""
     count = 0
-    for entry in tool_registry.list():
+    for entry in _exportable_entries():
         wrapper = _make_mcp_wrapper(entry.tool.name)
         wrapper.__doc__ = entry.tool.schema.description or entry.tool.name
         try:

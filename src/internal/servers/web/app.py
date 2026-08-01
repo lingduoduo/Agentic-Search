@@ -1200,6 +1200,21 @@ def create_web_app(
                 search_url=resolved.services.retrieval_url, llm=llm
             ),
         )
+        # Pull tools in from configured MCP servers. Off unless
+        # AGENTIC_SEARCH_MCP_SERVERS is set; unreachable servers are skipped.
+        #
+        # Deliberately a background task rather than an await: our own MCP server
+        # authenticates by calling back into this process's /me, which does not
+        # accept connections until lifespan startup finishes. Awaiting here would
+        # make discovery fail against exactly the server we ship.
+        from src.internal.tools.mcp_client import parse_mcp_servers, register_mcp_tools
+
+        mcp_specs = parse_mcp_servers(resolved.mcp_servers, token=resolved.mcp_token)
+        _app.state.mcp_discovery_task = (
+            asyncio.create_task(register_mcp_tools(tool_registry, mcp_specs))
+            if mcp_specs
+            else None
+        )
         check_router_auth(_app, PUBLIC_ENDPOINT_SPECS)
         _app.state.search_agent_manager = None
         _app.state.search_agent_tokenizer = None

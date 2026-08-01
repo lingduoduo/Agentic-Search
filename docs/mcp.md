@@ -101,9 +101,43 @@ client-driven, as described above. Discovery is a ranking aid, not a dispatcher.
 `expand_query`, `search_indexed_documents`) are registered with FastMCP, not the
 `ToolRegistry`, and several are bound to the MCP request's auth context. The
 `dynamic.py` bridge mirrors the `ToolRegistry` **into** the MCP server
-(`sync_tool_to_mcp`), so the registry feeds MCP — not the reverse. Seeding is
-per-process; exposing the built-ins over MCP would require seeding the MCP
-server process's own registry (a separate follow-up).
+(`sync_tool_to_mcp`). Seeding is per-process; exposing the built-ins over MCP
+would require seeding the MCP server process's own registry (a separate
+follow-up). For the opposite direction — MCP tools becoming registry tools —
+see below.
+
+## Pulling MCP tools into the web process
+
+The bridge above runs outward: it publishes our tools to MCP hosts. The web
+process can also run as an MCP **client**, so tools from any MCP server become
+ordinary `ToolRegistry` tools — callable by the tool agent, listed by
+`/admin/tools`, invocable from the Dev Console.
+
+Off by default. Configure servers as `name=url` pairs:
+
+```bash
+AGENTIC_SEARCH_MCP_SERVERS="agentic=http://127.0.0.1:8090/"
+AGENTIC_SEARCH_MCP_TOKEN="<bearer token>"
+```
+
+The token must be one the web backend's `/me` accepts, since the MCP server
+delegates authentication there. Multiple servers are comma separated; each gets
+its own group in the Dev Console catalog. A server that cannot be reached is
+logged and skipped — MCP is additive and never blocks startup.
+
+Three things worth knowing:
+
+- **No export loop.** Tools pulled in register with `source="mcp"`, which the
+  outbound bridge skips, so a server is never offered its own tools back.
+- **No recursion.** `ask_agentic_search` runs an agent, so the tool agent's
+  shadow list excludes it. It stays callable through `/admin/tools`.
+- **Discovery runs after startup, not during it.** Our MCP server authenticates
+  by calling back into this process's `/me`, which does not answer until lifespan
+  startup finishes. Discovery is a background task for that reason.
+
+Remote tools carry `effect=UNSPECIFIED`, so the tool agent's approval gate
+applies to them — only `READ_ONLY` tools are auto-approved. Configure only MCP
+servers you trust: a server controls the tool descriptions the model sees.
 
 ## Resources
 
@@ -145,3 +179,5 @@ Expected response:
 | `API_SERVER_HOST` | `127.0.0.1` | Host of the web backend |
 | `API_SERVER_PROTOCOL` | `http` | Protocol for the web backend URL |
 | `API_SERVER_URL_OVERRIDE_FOR_HTTP_REQUESTS` | — | Override the full web backend URL; takes precedence over protocol and host |
+| `AGENTIC_SEARCH_MCP_SERVERS` | — | MCP servers the **web process** pulls tools from, as `name=url` pairs. Unset disables it |
+| `AGENTIC_SEARCH_MCP_TOKEN` | — | Bearer token sent to those servers |

@@ -30,7 +30,9 @@ TOOL_AGENT_SYSTEM_PROMPT = (
 #
 # ``rag_routing_tool`` generates a whole answer instead of returning evidence,
 # so offering it lets the model delegate its own job.
-_SHADOWED_TOOL_NAMES = frozenset({"rag_routing_tool"})
+# ``ask_agentic_search`` arrives from an MCP server and runs an agent, so giving
+# it to the agent would let the agent call itself.
+_SHADOWED_TOOL_NAMES = frozenset({"rag_routing_tool", "ask_agentic_search"})
 
 # The corpus search the agent is given, and the trace name its results carry.
 _CORPUS_SEARCH_NAME = "search"

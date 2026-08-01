@@ -142,6 +142,10 @@ class AppSettings:
     search_agent_server_url: str | None = None
     tool_agent_parser: str = "json"
     tool_approval_timeout_seconds: float = 60.0
+    # Remote MCP servers to pull tools from, as "name=url, name=url".
+    # Empty (the default) leaves the feature off.
+    mcp_servers: str | None = None
+    mcp_token: str | None = None
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -235,6 +239,8 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         search_agent_server_url=get_env_str(source, "SEARCH_AGENT_SERVER_URL", None),
         tool_agent_parser=get_env_str(source, "TOOL_AGENT_PARSER", "json"),
         tool_approval_timeout_seconds=tool_approval_timeout_seconds,
+        mcp_servers=get_env_str(source, "AGENTIC_SEARCH_MCP_SERVERS", None),
+        mcp_token=get_env_str(source, "AGENTIC_SEARCH_MCP_TOKEN", None),
     )
 
 
