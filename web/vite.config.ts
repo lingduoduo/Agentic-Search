@@ -22,6 +22,8 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:7860",
       "/health": "http://127.0.0.1:7860",
+      "/auth": "http://127.0.0.1:7860",
+      "/me": "http://127.0.0.1:7860",
       "/admin": "http://127.0.0.1:7860",
       "/analytics": "http://127.0.0.1:7860",
       "/chat": "http://127.0.0.1:7860",

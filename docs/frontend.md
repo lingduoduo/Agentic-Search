@@ -6,7 +6,7 @@ This guide covers the React/Vite development workflow and local administration a
 
 ## Development workflow
 
-The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and, in development, Vite proxies the backend routes it calls — `/api/*`, `/admin/*`, `/analytics/*`, `/chat/*` — through to port 7860.
+The `web/` directory contains a React 19 + Vite + TypeScript single-page app. It runs against the FastAPI backend at port 7860 and, in development, Vite proxies the backend routes it calls — `/api/*`, `/health`, `/auth/*`, `/me`, `/admin/*`, `/analytics/*`, `/chat/*`, `/search/*`, `/tool/*` — through to port 7860. A prefix missing from that list is the usual cause of a panel or tab that fails only in dev: the request hits the Vite dev server and 404s instead of reaching FastAPI.
 
 ```bash
 cd web && npm install && npm run dev   # dev server at http://127.0.0.1:5173
@@ -19,6 +19,34 @@ cd web && npm run test -- --run        # Vitest unit tests
 > serves the last `npm run build` bundle from `web/dist` (stale until you rebuild);
 > `:5173` is the live source with hot-reload. If a UI change "doesn't show up",
 > you're probably looking at `:7860` — rebuild, or use `:5173`.
+
+## Logging in (Search / Chat / Tool tabs)
+
+The **Search** tab calls `POST /search/send-search-message`, which resolves the
+caller with `resolve_request_user` and returns `401 Authentication required` for
+anonymous requests — it needs a user id to build ACL filters. `AGENTIC_SEARCH_DEV_ADMIN`
+does **not** cover this; that bypass applies only to the admin routers.
+
+There is no login UI in the app. For local dev, open:
+
+```
+http://127.0.0.1:5173/dev-login.html
+```
+
+and click **Log in**. It registers `dev@localhost` / `devpass` (idempotent), logs
+in, and confirms via `/me`. That sets the `fastapiusersauth` cookie on the dev
+server's origin, which is where the tabs need it. Return to the dashboard and
+Search works.
+
+Two caveats:
+
+- `AGENTIC_SEARCH_WEB_DB_PATH` defaults to `:memory:`, so the user disappears when
+  the backend restarts — click **Log in** again, or start the backend with a file
+  DB (`AGENTIC_SEARCH_WEB_DB_PATH=data/web.db`) to make it stick.
+- `dev-login.html` is served by the Vite dev server only. It is not a build input,
+  so `npm run build` does not emit it into `web/dist/`. Keep it that way: the first
+  registered user becomes an **admin**, so a self-registering page must never be
+  reachable from a real deployment.
 
 ## Admin dashboard
 
