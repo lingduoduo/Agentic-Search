@@ -20,8 +20,6 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from src.internal.auth import AuthenticatedUser
-from src.internal.auth import user_from_headers
-from src.internal.db.models import UserRecord
 from src.internal.configs import AppSettings
 from src.internal.configs import load_app_settings
 from src.internal.llm.interfaces import LLMConfig
@@ -111,6 +109,7 @@ from src.internal.servers.tenants.api import router as tenants_router
 from src.internal.servers.token_rate_limits.api import create_token_rate_limits_router
 from src.internal.servers.user_group.api import create_user_group_router
 from src.internal.servers.users.api import create_users_router
+from src.internal.servers.users.api import resolve_active_user
 from src.internal.tools import SearchPage
 from src.internal.tools import fetch_pages_concurrently
 from src.internal.tools import search_tool
@@ -1366,7 +1365,7 @@ def create_web_app(
             raise HTTPException(status_code=422, detail="query is required")
         hook_metadata: dict[str, object] = {}
 
-        auth_user = _optional_user_from_request(http_request)
+        auth_user = _optional_user_from_request(http_request, db)
         user_id = request.user_id or (auth_user.id if auth_user else None)
         # Memory-augmented generation: inject the user's stored memories into the
         # answer prompt (off unless AGENTIC_SEARCH_MEMORY_INJECTION is set).
@@ -1392,7 +1391,7 @@ def create_web_app(
         normalized_mode = _normalize_agent_mode(mode_str) if mode_str else None
 
         session_request = _copy_agent_request(request, user_id=user_id)
-        session_id = _ensure_session(db, session_request, auth_user=auth_user)
+        session_id = _ensure_session(db, session_request)
         history = _trim_history(
             [
                 ChatMessage(role=message.role, content=message.content)
@@ -1734,7 +1733,7 @@ def create_web_app(
     ) -> ToolApprovalDecisionResponse:
         from src.agents.tool import ApprovalDecision
 
-        auth_user = _optional_user_from_request(http_request)
+        auth_user = _optional_user_from_request(http_request, db)
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Authentication required")
         try:
@@ -1774,7 +1773,7 @@ def create_web_app(
 
         queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
         dropped_trace_events = 0
-        auth_user = _optional_user_from_request(http_request)
+        auth_user = _optional_user_from_request(http_request, db)
         request_id = _uuid.uuid4().hex
 
         async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
@@ -1875,14 +1874,19 @@ def create_web_app(
 def _ensure_session(
     store: AgenticSearchStore,
     request: AgentExperienceRequest,
-    auth_user: AuthenticatedUser | None = None,
 ) -> str:
     if request.session_id and store.get_chat_session(request.session_id):
         return request.session_id
-    if auth_user is not None and request.user_id:
-        store.upsert_user(UserRecord(id=auth_user.id, email=auth_user.email))
+    # Only attribute the session to a user the store actually knows. `user_id`
+    # can arrive from the request body as well as from a token, and a session
+    # row for an unknown user violates the chat_sessions.user_id foreign key.
+    # An unrecognised id degrades to an anonymous session rather than a 500.
+    user_id = request.user_id if request.user_id else None
+    if user_id is not None and store.get_user(user_id) is None:
+        logger.info("Ignoring unknown user_id %r for new session", user_id)
+        user_id = None
     session = store.create_chat_session(
-        user_id=request.user_id,
+        user_id=user_id,
         title=request.query[:80],
         metadata={"source": "web"},
         session_id=request.session_id,
@@ -2484,8 +2488,10 @@ def _document_view(document: ContextDocument) -> SourceDocumentView:
     )
 
 
-def _optional_user_from_request(request: Request) -> AuthenticatedUser | None:
-    return user_from_headers(request.headers)
+def _optional_user_from_request(
+    request: Request, store: AgenticSearchStore
+) -> AuthenticatedUser | None:
+    return resolve_active_user(request, store)
 
 
 def _frontend_dist_path() -> Path | None:

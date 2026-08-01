@@ -9,6 +9,7 @@ from src.context.models import PromptBundle
 from src.context.models import SearchContextBundle
 from src.context.models import SearchFilters
 from src.internal.db import AgenticSearchStore
+from src.internal.db import UserRecord
 from src.internal.hooks import HookConfig
 from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
@@ -941,7 +942,11 @@ def test_tool_approval_decision_requires_authentication(tmp_path):
 def test_tool_approval_decision_returns_not_found_for_unknown_id(tmp_path):
     from src.internal.auth import generate_user_jwt_token
 
-    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
+    store = AgenticSearchStore(tmp_path / "db.sqlite3")
+    store.upsert_user(UserRecord(id="user-1", email="user-1@example.test"))
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"), store=store
+    )
     client = TestClient(app)
     token = generate_user_jwt_token(user_id="user-1")
 

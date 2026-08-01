@@ -23,7 +23,7 @@ from src.internal.servers.query_and_chat.models import (
     ToolHistoryResponse,
     ToolSessionSummary,
 )
-from src.internal.servers.users.api import resolve_request_user
+from src.internal.servers.users.api import resolve_active_user
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def create_tool_router(
         if manager is None or tokenizer is None:
             raise HTTPException(status_code=400, detail=NO_LOCAL_MODEL_MESSAGE)
 
-        user = resolve_request_user(http_request)
+        user = resolve_active_user(http_request, store)
         user_id = user.id if user and not user.is_anonymous else None
         session_id = _ensure_session(body, user_id)
         history = _history(session_id)
@@ -181,7 +181,7 @@ def create_tool_router(
         if filter_days is not None and filter_days <= 0:
             raise HTTPException(status_code=400, detail="filter_days must be > 0")
 
-        user = resolve_request_user(http_request) if http_request else None
+        user = resolve_active_user(http_request, store) if http_request else None
         if user is None or user.is_anonymous:
             return ToolHistoryResponse(sessions=[])
 

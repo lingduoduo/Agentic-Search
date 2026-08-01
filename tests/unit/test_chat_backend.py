@@ -28,8 +28,8 @@ def store() -> AgenticSearchStore:
 def client(store: AgenticSearchStore, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """TestClient with a real store and a patched-in authenticated user."""
     monkeypatch.setattr(
-        "src.internal.servers.query_and_chat.chat_backend.user_from_headers",
-        lambda _headers: _USER,
+        "src.internal.servers.query_and_chat.chat_backend.resolve_active_user",
+        lambda _request, _store: _USER,
     )
     app = FastAPI()
     app.include_router(create_chat_router(store))
@@ -42,8 +42,8 @@ def anon_client(
 ) -> TestClient:
     """TestClient where every request appears anonymous."""
     monkeypatch.setattr(
-        "src.internal.servers.query_and_chat.chat_backend.user_from_headers",
-        lambda _headers: _ANON,
+        "src.internal.servers.query_and_chat.chat_backend.resolve_active_user",
+        lambda _request, _store: _ANON,
     )
     app = FastAPI()
     app.include_router(create_chat_router(store))
