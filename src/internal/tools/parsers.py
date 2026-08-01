@@ -90,9 +90,22 @@ class ToolParser(ABC):
     # Shared helpers
     # ------------------------------------------------------------------
 
-    async def _decode(self, response_ids: list[int]) -> str:
+    async def _decode(
+        self, response_ids: list[int], *, skip_special_tokens: bool = True
+    ) -> str:
+        """Decode *response_ids*, dropping special tokens by default.
+
+        The decoded text doubles as the user-visible answer, so the template's
+        EOS marker (``<|im_end|>``, ``<|eot_id|>``) must not survive into it.
+        Parsers whose call markers are themselves special tokens opt out.
+        """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.tokenizer.decode, response_ids)
+        return await loop.run_in_executor(
+            None,
+            lambda: self.tokenizer.decode(
+                response_ids, skip_special_tokens=skip_special_tokens
+            ),
+        )
 
     @staticmethod
     def _normalise(data: dict[str, Any]) -> FunctionCall | None:
@@ -167,7 +180,9 @@ class Llama3ToolParser(ToolParser):
     async def extract_tool_calls(
         self, response_ids: list[int]
     ) -> tuple[str, list[FunctionCall]]:
-        text = await self._decode(response_ids)
+        # <|python_tag|> and <|eom_id|> are special tokens in the Llama 3
+        # tokenizer, so this parser must decode with them intact.
+        text = await self._decode(response_ids, skip_special_tokens=False)
 
         # Variant A: <|python_tag|> blocks
         python_blocks = self._PYTHON_TAG_RE.findall(text)
