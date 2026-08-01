@@ -852,9 +852,9 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
         "src.internal.servers.web.app.route_query",
         lambda *a, **k: RouteStrategy.TOOL,
     )
-    # A trace that says search_routing_tool was called
+    # A trace that says the corpus search tool was called
     fake_trace = json.dumps(
-        {"tool_name": "search_routing_tool", "status": "completed", "result": "[]"}
+        {"tool_name": "search", "status": "completed", "result": "[]"}
     )
     fake_output = AgentLoopOutput(
         prompt_ids=[],

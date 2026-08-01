@@ -275,8 +275,8 @@ async def test_tool_agent_sees_exactly_one_corpus_search_tool(
     captured = await _run(monkeypatch, with_search_tool=with_search_tool)
     names = [t.name for t in captured["tools"]]
 
-    assert names.count("search_routing_tool") == 1  # the one corpus search
-    assert "search" not in names  # duplicate of search_routing_tool
+    assert names.count("search") == 1  # the one corpus search
+    assert "search_routing_tool" not in names  # renamed to plain `search`
     assert "rag_routing_tool" not in names  # answers instead of being a tool
     assert "web_search" in names  # distinct capability, kept
 

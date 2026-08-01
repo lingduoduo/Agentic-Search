@@ -44,8 +44,8 @@ def _trace(tool_name: str) -> str:
     )
 
 
-def test_infer_intent_search_routing_tool():
-    output = _make_output(action_trace=_trace("search_routing_tool"))
+def test_infer_intent_corpus_search_tool():
+    output = _make_output(action_trace=_trace("search"))
     assert _infer_intent_from_output(output) == "search"
 
 
@@ -76,7 +76,7 @@ def test_build_search_routing_tool_schema():
     tool = build_search_routing_tool(
         search_url="http://localhost:8001/retrieve", top_k=3
     )
-    assert tool.schema.name == "search_routing_tool"
+    assert tool.schema.name == "search"
     assert tool.effect is ToolEffect.READ_ONLY
     assert "query" in tool.schema.parameters.get("properties", {})
 

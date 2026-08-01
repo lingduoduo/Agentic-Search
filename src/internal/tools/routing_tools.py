@@ -30,8 +30,14 @@ _RAG_TOOL_PARAMS = {
 }
 
 
-def build_search_routing_tool(*, search_url: str, top_k: int) -> FunctionTool:
-    """FunctionTool that retrieves documents from the corpus."""
+def build_search_routing_tool(
+    *, search_url: str, top_k: int, name: str = "search"
+) -> FunctionTool:
+    """FunctionTool that retrieves documents from the corpus.
+
+    Named ``search`` by default: it *is* the corpus search a model should reach
+    for, and an opaque name costs tool-selection accuracy on small models.
+    """
 
     async def _execute(query: str) -> str:
         pages = await search_tool(
@@ -52,10 +58,11 @@ def build_search_routing_tool(*, search_url: str, top_k: int) -> FunctionTool:
 
     return FunctionTool(
         fn=_execute,
-        name="search_routing_tool",
+        name=name,
         description="Retrieve relevant documents from the corpus given a search query.",
         parameters=_SEARCH_TOOL_PARAMS,
         effect=ToolEffect.READ_ONLY,
+        citeable=True,
     )
 
 

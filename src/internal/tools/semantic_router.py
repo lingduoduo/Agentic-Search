@@ -45,13 +45,13 @@ def default_tool_catalog() -> list[ServerDefinition]:
 def catalog_from_registry(registry) -> list[ServerDefinition]:
     """Group live ToolRegistry entries into servers.
 
-    OpenAPI tools group by ``provider_id``; function tools go to a ``local``
-    server. Preserves registry order within each server. Servers with no tools
-    are omitted.
+    OpenAPI and MCP tools group by ``provider_id`` (the provider or the MCP
+    server they came from); function tools go to a ``local`` server. Preserves
+    registry order within each server. Servers with no tools are omitted.
     """
     servers: dict[str, ServerDefinition] = {}
     for entry in registry.list():
-        if entry.source == "openapi" and entry.provider_id:
+        if entry.source in ("openapi", "mcp") and entry.provider_id:
             server_name = entry.provider_id
         else:
             server_name = "local"
