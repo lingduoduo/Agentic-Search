@@ -5,10 +5,11 @@ from src.internal.tools.knowledge_base import seed_tools, tool_knowledge_base
 from src.internal.tools.registry import ToolRegistry
 from src.internal.tools.semantic_router import catalog_from_registry
 
-BUILTIN_NAMES = {"web_search", "search", "search_routing_tool"}
+# One corpus search (`search`), not two over the same corpus.
+BUILTIN_NAMES = {"web_search", "search"}
 
 
-def test_knowledge_base_default_has_three_builtin_tools():
+def test_knowledge_base_default_has_two_builtin_tools():
     tools = tool_knowledge_base()
     assert all(isinstance(t, Tool) for t in tools)
     assert {t.name for t in tools} == BUILTIN_NAMES
@@ -22,7 +23,7 @@ def test_knowledge_base_adds_rag_tool_when_llm_present():
 def test_seed_tools_registers_into_fresh_registry():
     reg = ToolRegistry()
     count = seed_tools(reg)
-    assert count == 3
+    assert count == 2
     assert reg.get("web_search") is not None
     # Built-ins register under source="function".
     assert all(e.source == "function" for e in reg.list())
@@ -41,5 +42,5 @@ def test_seeded_registry_surfaces_in_catalog_from_registry():
 def test_seed_tools_accepts_explicit_tools():
     reg = ToolRegistry()
     tools = tool_knowledge_base(llm=object())
-    assert seed_tools(reg, tools=tools) == 4
+    assert seed_tools(reg, tools=tools) == 3
     assert reg.get("rag_routing_tool") is not None

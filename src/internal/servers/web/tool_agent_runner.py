@@ -25,12 +25,15 @@ TOOL_AGENT_SYSTEM_PROMPT = (
     "tool at a time, then use its result. Answer directly only when no tool applies."
 )
 
-# Registry tools the tool agent must not see. ``search`` duplicates
-# ``search_routing_tool`` (same corpus, same arguments), and ``rag_routing_tool``
-# generates a whole answer rather than returning evidence — offered together they
-# make a small model pick none of them and answer from memory instead.
-_SHADOWED_TOOL_NAMES = frozenset({"search", "rag_routing_tool"})
+# Registry tools the tool agent must not see. They stay registered and remain
+# callable through /admin/tools; only the agent's own tool list is narrowed.
+#
+# ``rag_routing_tool`` generates a whole answer instead of returning evidence,
+# so offering it lets the model delegate its own job.
+_SHADOWED_TOOL_NAMES = frozenset({"rag_routing_tool"})
 
+# The corpus search the agent is given, and the trace name its results carry.
+_CORPUS_SEARCH_NAME = "search"
 _CORPUS_SEARCH_TOP_K = 5
 
 
@@ -84,7 +87,7 @@ def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
                     error=rec.get("error_message"),
                 )
             )
-            if tool_name == "search_routing_tool" and result:
+            if tool_name == _CORPUS_SEARCH_NAME and result:
                 raw = _json.loads(result) if isinstance(result, str) else result
                 if isinstance(raw, list):
                     for i, item in enumerate(raw, 1):
@@ -95,7 +98,7 @@ def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
                                 content=item.get("content", ""),
                                 url=item.get("url"),
                                 score=0.0,
-                                metadata={"source": "search_routing_tool"},
+                                metadata={"source": _CORPUS_SEARCH_NAME},
                             )
                         )
         except Exception:
@@ -133,7 +136,7 @@ async def _run_tool_agent(
         # Bind the corpus search to this request's retrieval URL rather than the
         # one the registry was seeded with.
         corpus_search = build_search_routing_tool(
-            search_url=search_url, top_k=_CORPUS_SEARCH_TOP_K
+            search_url=search_url, top_k=_CORPUS_SEARCH_TOP_K, name=_CORPUS_SEARCH_NAME
         )
         tools = [corpus_search] + [t for t in tools if t.name != corpus_search.name]
     loop = ToolAgentLoop(

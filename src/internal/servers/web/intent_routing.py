@@ -49,7 +49,7 @@ def _infer_intent_from_output(output: "AgentLoopOutput") -> str:
     try:
         record = json.loads(first_line)
         tool_name = record.get("tool_name", "")
-        if tool_name == "search_routing_tool":
+        if tool_name == "search":
             return "search"
         if tool_name == "rag_routing_tool":
             return "chat"

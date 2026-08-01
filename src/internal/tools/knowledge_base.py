@@ -14,7 +14,7 @@ import os
 from .base import Tool
 from .registry import ToolRegistry
 from .routing_tools import build_rag_routing_tool, build_search_routing_tool
-from .search import MultiQueryWebSearchTool, build_search_tool, make_web_cascade_search
+from .search import MultiQueryWebSearchTool, make_web_cascade_search
 
 DEFAULT_SEARCH_URL = "http://localhost:8000/retrieve"
 
@@ -30,6 +30,11 @@ def tool_knowledge_base(
     ``rag_routing_tool`` is included only when an ``llm`` is supplied (it needs
     a live LLM client).
     """
+    # One corpus search, named `search`. It used to be seeded twice — once as a
+    # text-returning `search` and once as a JSON-returning `search_routing_tool`
+    # — over the same corpus behind the same argument, which left a small model
+    # unable to choose between them. The JSON one survives because its result is
+    # what becomes source cards.
     tools: list[Tool] = [
         MultiQueryWebSearchTool(
             search_fn=make_web_cascade_search(
@@ -37,7 +42,6 @@ def tool_knowledge_base(
             ),
             page_size=top_k,
         ),
-        build_search_tool(provider="retrieval", search_url=search_url, page_size=top_k),
         build_search_routing_tool(search_url=search_url, top_k=top_k),
     ]
     if llm is not None:
