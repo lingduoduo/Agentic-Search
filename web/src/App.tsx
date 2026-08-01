@@ -14,6 +14,7 @@ import { SearchView } from "./components/SearchView";
 import { ToolAgentView } from "./components/ToolAgentView";
 import { ToolPanel } from "./components/ToolPanel";
 import { AssistPage } from "./pages/AssistPage";
+import { NavLink, useCanonicalRoute } from "./router";
 import type { AdminSurfaceSummary, BreakdownAnalytics } from "./types";
 
 export function App() {
@@ -23,7 +24,7 @@ export function App() {
   const [analyticsByFlow, setAnalyticsByFlow] = useState<BreakdownAnalytics | null>(null);
   const [showQueryHistory, setShowQueryHistory] = useState(false);
   const [showTools, setShowTools] = useState(false);
-  const [surface, setSurface] = useState<"assistant" | "search" | "chat" | "tool">("assistant");
+  const route = useCanonicalRoute();
 
   useEffect(() => {
     getAdminSummary().then(setAdminSummary).catch(() => undefined);
@@ -46,40 +47,12 @@ export function App() {
             </div>
           </div>
           <div className="topbar-actions">
-            <div className="surface-switcher" role="tablist" aria-label="Surface">
-              <button
-                role="tab"
-                aria-selected={surface === "assistant"}
-                className={`icon-button${surface === "assistant" ? " active" : ""}`}
-                onClick={() => setSurface("assistant")}
-              >
-                Assistant
-              </button>
-              <button
-                role="tab"
-                aria-selected={surface === "search"}
-                className={`icon-button${surface === "search" ? " active" : ""}`}
-                onClick={() => setSurface("search")}
-              >
-                Search
-              </button>
-              <button
-                role="tab"
-                aria-selected={surface === "chat"}
-                className={`icon-button${surface === "chat" ? " active" : ""}`}
-                onClick={() => setSurface("chat")}
-              >
-                Chat
-              </button>
-              <button
-                role="tab"
-                aria-selected={surface === "tool"}
-                className={`icon-button${surface === "tool" ? " active" : ""}`}
-                onClick={() => setSurface("tool")}
-              >
-                Tool Agent
-              </button>
-            </div>
+            <nav className="surface-nav" aria-label="Surfaces">
+              <NavLink to="/assist" className="icon-button">Assistant</NavLink>
+              <NavLink to="/search" className="icon-button">Search</NavLink>
+              <NavLink to="/chat" className="icon-button">Chat</NavLink>
+              <NavLink to="/tools" className="icon-button">Tools</NavLink>
+            </nav>
             <button
               className={`icon-button${showTools ? " active" : ""}`}
               type="button"
@@ -105,11 +78,11 @@ export function App() {
 
         {showQueryHistory && <QueryHistoryPanel />}
 
-        {surface === "assistant" ? (
+        {route === "/assist" ? (
           <AssistPage />
-        ) : surface === "search" ? (
+        ) : route === "/search" ? (
           <SearchView />
-        ) : surface === "chat" ? (
+        ) : route === "/chat" ? (
           <ChatView />
         ) : (
           <ToolAgentView />
