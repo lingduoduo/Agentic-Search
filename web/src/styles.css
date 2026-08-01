@@ -1696,6 +1696,15 @@ option:disabled,
   gap: 6px;
 }
 
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .icon-button.active {
   background: var(--accent);
   border-color: var(--accent-strong);
