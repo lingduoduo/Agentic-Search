@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -59,6 +60,18 @@ from src.internal.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("AGENTIC_SEARCH_LOG_LEVEL", "WARN"))
+
+
+def _as_token_ids(templated: Any) -> list[int]:
+    """Normalise an ``apply_chat_template(tokenize=True)`` result to token ids.
+
+    transformers 5.x returns a ``BatchEncoding`` (a Mapping) where 4.x returned
+    a flat list of ints. Iterating the Mapping yields its keys, so without this
+    the loop passes ``["input_ids", "attention_mask"]`` to the model backend.
+    """
+    if isinstance(templated, Mapping):
+        return list(templated["input_ids"])
+    return list(templated)
 
 
 class ApprovalDecision(str, Enum):
@@ -157,7 +170,7 @@ class ToolAgentLoop(AgentLoopBase):
                 add_generation_prompt=False,
                 tokenize=True,
             )
-            return len(ids)
+            return len(_as_token_ids(ids))
         except Exception as exc:
             logger.debug("Could not measure template prefix length: %s", exc)
             return 0
@@ -173,7 +186,7 @@ class ToolAgentLoop(AgentLoopBase):
                 add_generation_prompt=True,
                 tokenize=True,
             )
-            return list(ids)[-self.prompt_length :]
+            return _as_token_ids(ids)[-self.prompt_length :]
         # Fallback: no tool schema injection
         return self._build_prompt_ids_sync(messages)
 
@@ -428,8 +441,10 @@ class ToolAgentLoop(AgentLoopBase):
             # ── re-tokenise tool responses and append ─────────────────────
             tool_response_ids: list[int] = await event_loop.run_in_executor(
                 None,
-                lambda: self.tokenizer.apply_chat_template(
-                    list(tool_responses), add_generation_prompt=True, tokenize=True
+                lambda: _as_token_ids(
+                    self.tokenizer.apply_chat_template(
+                        list(tool_responses), add_generation_prompt=True, tokenize=True
+                    )
                 ),
             )
             # Strip the template prefix to avoid re-including the system prompt tokens.
