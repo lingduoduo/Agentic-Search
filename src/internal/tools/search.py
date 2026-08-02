@@ -323,11 +323,19 @@ def make_web_cascade_search(
         timeout_seconds: int = 15,
     ) -> list[SearchPage]:
         del provider, search_url  # cascade owns provider selection
+        # Why each leg failed, kept so an unusable cascade can say so. Returning
+        # [] renders as "No results found.", which is indistinguishable from a
+        # working search over a topic with no hits — it hid a missing key, an
+        # exhausted quota, and an unconfigured fallback alike.
+        failures: list[SearchPage] = []
+
         serp_pages = await serpapi_fn(
             query, page=page, page_size=page_size, timeout_seconds=timeout_seconds
         )
         if _pages_are_usable(serp_pages):
             return serp_pages
+        failures.extend(p for p in serp_pages if p.error)
+
         if browser_search_url:
             try:
                 browser_pages = await browser_fn(
@@ -339,10 +347,24 @@ def make_web_cascade_search(
                 )
                 if _pages_are_usable(browser_pages):
                     return browser_pages
+                failures.extend(p for p in browser_pages if p.error)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("browser cascade leg failed for %r: %s", query, exc)
+                failures.append(SearchPage(error=f"Browser search failed: {exc}"))
+        elif failures:
+            # Only when a leg actually errored — a genuinely empty result set is
+            # not a configuration problem.
+            failures.append(
+                SearchPage(
+                    error=(
+                        "No browser fallback is configured; set "
+                        "AGENTIC_SEARCH_BROWSER_SEARCH_URL to add one."
+                    )
+                )
+            )
+
         logger.warning("web cascade produced no usable results for %r", query)
-        return []
+        return failures
 
     return _cascade
 
