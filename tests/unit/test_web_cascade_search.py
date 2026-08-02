@@ -62,13 +62,61 @@ def test_serpapi_error_falls_back_to_browser():
     assert [p.url for p in pages] == ["http://browser/2"]
 
 
-def test_no_browser_configured_returns_empty_on_unusable_serp():
+def test_failed_legs_report_why_instead_of_looking_empty():
+    # "No results found." is indistinguishable from a working search over a
+    # topic with no hits, so a rate-limited key or an unconfigured fallback
+    # looked like the tool ran fine and the web had nothing.
     async def fake_serp(query, **kw):
-        return [_err()]
+        return [SearchPage(error="429, message='Too Many Requests'")]
 
     fn = make_web_cascade_search(browser_search_url=None, serpapi_fn=fake_serp)
     pages = asyncio.run(fn("q"))
-    assert pages == []
+
+    errors = " ".join(p.error or "" for p in pages)
+    assert "Too Many Requests" in errors
+    assert "AGENTIC_SEARCH_BROWSER_SEARCH_URL" in errors  # names the missing fallback
+    assert all(not p.url for p in pages)  # error pages carry no result
+
+
+def test_both_legs_failing_reports_both():
+    async def fake_serp(query, **kw):
+        return [SearchPage(error="serp down")]
+
+    async def fake_browser(query, **kw):
+        return [SearchPage(error="browser down")]
+
+    fn = make_web_cascade_search(
+        browser_search_url="http://browser/retrieve",
+        serpapi_fn=fake_serp,
+        browser_fn=fake_browser,
+    )
+    errors = " ".join(p.error or "" for p in asyncio.run(fn("q")))
+    assert "serp down" in errors and "browser down" in errors
+
+
+def test_a_browser_exception_is_reported_not_swallowed():
+    async def fake_serp(query, **kw):
+        return [SearchPage(error="serp down")]
+
+    async def fake_browser(query, **kw):
+        raise ConnectionError("no route to host")
+
+    fn = make_web_cascade_search(
+        browser_search_url="http://browser/retrieve",
+        serpapi_fn=fake_serp,
+        browser_fn=fake_browser,
+    )
+    errors = " ".join(p.error or "" for p in asyncio.run(fn("q")))
+    assert "no route to host" in errors
+
+
+def test_a_genuinely_empty_search_stays_empty():
+    # No error anywhere: the web really had nothing. Do not invent a failure.
+    async def fake_serp(query, **kw):
+        return []
+
+    fn = make_web_cascade_search(browser_search_url=None, serpapi_fn=fake_serp)
+    assert asyncio.run(fn("q")) == []
 
 
 def test_seeded_web_search_uses_cascade_not_retrieval():
