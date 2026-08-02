@@ -146,6 +146,15 @@ class AppSettings:
     # Empty (the default) leaves the feature off.
     mcp_servers: str | None = None
     mcp_token: str | None = None
+    # Remote tool names no agent loop may be offered (they re-enter an agent).
+    # Unset uses mcp_client.DEFAULT_AGENT_EXCLUDE.
+    mcp_agent_exclude: str | None = None
+    # Token budget for one tool-agent run; caps a generation and the run total.
+    tool_agent_max_tokens: int = 1024
+    # Wall-clock cap on one local generation. The binding limit on slow local
+    # hardware: MPS runs a 1.5B model at a few tokens/sec, so 120s cuts a long
+    # answer mid-word long before the token budget is reached. 0 disables it.
+    generation_timeout_seconds: float = 120.0
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -241,6 +250,11 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         tool_approval_timeout_seconds=tool_approval_timeout_seconds,
         mcp_servers=get_env_str(source, "AGENTIC_SEARCH_MCP_SERVERS", None),
         mcp_token=get_env_str(source, "AGENTIC_SEARCH_MCP_TOKEN", None),
+        mcp_agent_exclude=get_env_str(source, "AGENTIC_SEARCH_MCP_AGENT_EXCLUDE", None),
+        tool_agent_max_tokens=get_env_int(source, "TOOL_AGENT_MAX_TOKENS", 1024),
+        generation_timeout_seconds=get_env_float(
+            source, "AGENTIC_SEARCH_GENERATION_TIMEOUT", 120.0
+        ),
     )
 
 

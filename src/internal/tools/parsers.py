@@ -243,6 +243,10 @@ class JSONToolParser(ToolParser):
 
     # Matches JSON objects up to one level of nesting.
     _OBJ_RE = re.compile(r"\{(?:[^{}]|\{[^{}]*\})*\}", re.DOTALL)
+    # Models that wrap calls Hermes-style still route through this parser when
+    # it is the configured one. Removing the JSON object alone leaves the empty
+    # <tool_call></tool_call> shell behind, which then reads as the answer.
+    _WRAPPER_RE = re.compile(r"</?tool_call>", re.IGNORECASE)
 
     async def extract_tool_calls(
         self, response_ids: list[int]
@@ -268,5 +272,8 @@ class JSONToolParser(ToolParser):
         content = text
         for start, end in reversed(consumed_spans):
             content = content[:start] + content[end:]
+
+        if calls:
+            content = self._WRAPPER_RE.sub("", content)
 
         return content.strip(), calls

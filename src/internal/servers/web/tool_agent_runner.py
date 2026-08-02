@@ -25,14 +25,19 @@ TOOL_AGENT_SYSTEM_PROMPT = (
     "tool at a time, then use its result. Answer directly only when no tool applies."
 )
 
-# Registry tools the tool agent must not see. They stay registered and remain
-# callable through /admin/tools; only the agent's own tool list is narrowed.
-#
-# ``rag_routing_tool`` generates a whole answer instead of returning evidence,
-# so offering it lets the model delegate its own job.
-# ``ask_agentic_search`` arrives from an MCP server and runs an agent, so giving
-# it to the agent would let the agent call itself.
-_SHADOWED_TOOL_NAMES = frozenset({"rag_routing_tool", "ask_agentic_search"})
+
+# Answers were being cut mid-word at 512 tokens. Two caps govern that, and they
+# are not the same budget:
+#   max_tokens       — caps ONE generation, so it bounds the answer itself.
+#   response_length  — caps the whole rollout AND truncates each response. Tool
+#                      results are fed back in and counted here too (they enter
+#                      response_mask as zeros), so sizing it to max_tokens alone
+#                      lets a few large tool results exhaust the budget before
+#                      the model ever writes an answer — the run then ends on
+#                      the tool-calling turn and "answers" with <tool_call>
+#                      markup. Leave room for the tool traffic.
+TOOL_AGENT_MAX_TOKENS = 1024
+_ROLLOUT_BUDGET_MULTIPLIER = 4
 
 # The corpus search the agent is given, and the trace name its results carry.
 _CORPUS_SEARCH_NAME = "search"
@@ -131,9 +136,15 @@ async def _run_tool_agent(
     from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
     from src.internal.tools import build_search_routing_tool, tool_registry
 
-    tools = [
-        t for t in tool_registry.list_tools() if t.name not in _SHADOWED_TOOL_NAMES
-    ]
+    max_tokens = (
+        getattr(resolved, "tool_agent_max_tokens", None) or TOOL_AGENT_MAX_TOKENS
+    )
+
+    # agent_tools() excludes anything registered as not agent-callable: tools
+    # that answer instead of returning evidence, and remote tools that re-enter
+    # an agent. The decision travels with registration rather than being matched
+    # by name here, where a rename would silently disable it.
+    tools = list(tool_registry.agent_tools())
     if with_search_tool:
         # Bind the corpus search to this request's retrieval URL rather than the
         # one the registry was seeded with.
@@ -146,6 +157,7 @@ async def _run_tool_agent(
         server_manager=manager,
         tools=tools,
         config=ToolAgentLoopConfig(
+            response_length=max_tokens * _ROLLOUT_BUDGET_MULTIPLIER,
             tool_parser_format=resolved.tool_agent_parser,
             approval_timeout_seconds=getattr(
                 resolved, "tool_approval_timeout_seconds", 60.0
@@ -159,7 +171,7 @@ async def _run_tool_agent(
         messages.insert(0, {"role": "system", "content": TOOL_AGENT_SYSTEM_PROMPT})
     output = await loop.run(
         messages,
-        sampling_params={"temperature": 0.0, "max_tokens": 512},
+        sampling_params={"temperature": 0.0, "max_tokens": max_tokens},
         on_turn=on_turn,
         on_approval=on_approval,
     )

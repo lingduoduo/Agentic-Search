@@ -47,3 +47,33 @@ async def test_llama3_parser_keeps_special_tokens():
     assert tokenizer.calls == [{"skip_special_tokens": False}]
     assert [c.name for c in calls] == ["search"]
     assert content == ""
+
+
+@pytest.mark.asyncio
+async def test_json_parser_strips_leftover_tool_call_markup():
+    # Qwen emits Hermes-style <tool_call> wrappers around the JSON. The generic
+    # JSON parser removes the object but used to leave the tags behind, so a run
+    # that ended on a tool-calling turn surfaced "<tool_call></tool_call>" as
+    # its answer.
+    tokenizer = _RecordingTokenizer(
+        '<tool_call>\n{"name": "search", "arguments": {"query": "x"}}\n</tool_call>'
+    )
+    parser = ToolParser.get_tool_parser("json", tokenizer)
+
+    content, calls = await parser.extract_tool_calls([1, 2, 3])
+
+    assert [c.name for c in calls] == ["search"]
+    assert content == ""
+
+
+@pytest.mark.asyncio
+async def test_json_parser_keeps_prose_around_a_tool_call():
+    tokenizer = _RecordingTokenizer(
+        'Let me look that up.\n<tool_call>{"name": "search", "arguments": {}}</tool_call>'
+    )
+    parser = ToolParser.get_tool_parser("json", tokenizer)
+
+    content, calls = await parser.extract_tool_calls([1])
+
+    assert [c.name for c in calls] == ["search"]
+    assert content == "Let me look that up."

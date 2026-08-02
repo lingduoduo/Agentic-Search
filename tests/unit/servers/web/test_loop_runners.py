@@ -239,6 +239,7 @@ def _capture_tool_agent_loop(monkeypatch):
             self, messages, sampling_params, *, on_turn=None, on_approval=None
         ):
             captured["messages"] = list(messages)
+            captured["sampling_params"] = dict(sampling_params)
             return output
 
     monkeypatch.setattr("src.agents.tool.ToolAgentLoop", _SpyLoop)
@@ -323,3 +324,85 @@ async def test_tool_agent_does_not_override_an_existing_system_message(monkeypat
     roles = [m["role"] for m in captured["messages"]]
     assert roles.count("system") == 1
     assert captured["messages"][0]["content"] == "caller system prompt"
+
+
+# ---------------------------------------------------------------------------
+# Answer budget: a 512-token cap cut answers mid-word. The cap is shared across
+# turns, so a tool call spends part of the same budget the answer needs.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_answer_budget_is_configurable_and_applied_to_both_caps(monkeypatch):
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(
+            tool_agent_parser="json", tool_agent_max_tokens=1536
+        ),
+        on_turn=None,
+        with_search_tool=True,
+    )
+    # max_tokens caps one generation; response_length caps the whole rollout and
+    # truncates each response. Both scale with the configured budget, but they
+    # are not equal — see test_rollout_budget_leaves_room_for_tool_responses.
+    assert captured["sampling_params"]["max_tokens"] == 1536
+    assert captured["config"].response_length >= 1536
+
+
+@pytest.mark.asyncio
+async def test_answer_budget_falls_back_when_config_lacks_the_field(monkeypatch):
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        on_turn=None,
+        with_search_tool=True,
+    )
+    from src.internal.servers.web.tool_agent_runner import TOOL_AGENT_MAX_TOKENS
+
+    assert captured["sampling_params"]["max_tokens"] == TOOL_AGENT_MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_rollout_budget_leaves_room_for_tool_responses(monkeypatch):
+    # response_length budgets model output AND the tool responses fed back in.
+    # Sizing it to max_tokens alone let a few large tool results exhaust it
+    # before the model wrote its answer, ending the run on <tool_call> markup.
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(
+            tool_agent_parser="json", tool_agent_max_tokens=1024
+        ),
+        on_turn=None,
+        with_search_tool=True,
+    )
+    assert captured["sampling_params"]["max_tokens"] == 1024
+    assert captured["config"].response_length > 1024
+
+
+def test_generation_timeout_is_configurable():
+    # The wall-clock stop, not the token budget, is what cuts long answers on
+    # slow local hardware. It was hardcoded at 120s inside the server manager.
+    from src.internal.configs.app_configs import load_app_settings
+
+    assert load_app_settings({}).generation_timeout_seconds == 120.0
+    assert (
+        load_app_settings(
+            {"AGENTIC_SEARCH_GENERATION_TIMEOUT": "600"}
+        ).generation_timeout_seconds
+        == 600.0
+    )

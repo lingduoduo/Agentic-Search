@@ -102,8 +102,12 @@ class ToolEntry:
     """Metadata stored alongside each registered tool."""
 
     tool: Tool
-    source: str  # "function" | "openapi"
-    provider_id: str | None  # set for OpenAPI-registered tools
+    source: str  # "function" | "openapi" | "mcp"
+    provider_id: str | None  # set for OpenAPI- and MCP-registered tools
+    # May an agent loop be offered this tool? False for tools that generate a
+    # whole answer, or that re-enter an agent (which would let it call itself).
+    # They stay registered and directly invocable; only agents are denied them.
+    agent_callable: bool = True
 
 
 class ToolRegistry:
@@ -118,11 +122,19 @@ class ToolRegistry:
     # ------------------------------------------------------------------
 
     def register(
-        self, tool: Tool, *, source: str = "function", provider_id: str | None = None
+        self,
+        tool: Tool,
+        *,
+        source: str = "function",
+        provider_id: str | None = None,
+        agent_callable: bool = True,
     ) -> None:
         """Add a tool to the registry (replaces any existing tool with the same name)."""
         self._entries[tool.name] = ToolEntry(
-            tool=tool, source=source, provider_id=provider_id
+            tool=tool,
+            source=source,
+            provider_id=provider_id,
+            agent_callable=agent_callable,
         )
         logger.debug("Tool registered: %s (source=%s)", tool.name, source)
 
@@ -256,6 +268,10 @@ class ToolRegistry:
     def list_tools(self) -> list[Tool]:
         return [e.tool for e in self._entries.values()]
 
+    def agent_tools(self) -> list[Tool]:
+        """Tools an agent loop may be offered. See ``ToolEntry.agent_callable``."""
+        return [e.tool for e in self._entries.values() if e.agent_callable]
+
     async def invoke(
         self,
         name: str,
@@ -303,6 +319,7 @@ class ToolRegistry:
             "parameters": t.schema.parameters,
             "source": entry.source,
             "provider_id": entry.provider_id,
+            "agent_callable": entry.agent_callable,
         }
 
     def all_summaries(self) -> list[dict[str, Any]]:
@@ -313,6 +330,7 @@ class ToolRegistry:
                 "parameters": e.tool.schema.parameters,
                 "source": e.source,
                 "provider_id": e.provider_id,
+                "agent_callable": e.agent_callable,
             }
             for e in self._entries.values()
         ]
