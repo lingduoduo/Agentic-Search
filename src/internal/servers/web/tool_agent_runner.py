@@ -187,6 +187,9 @@ async def _run_tool_agent(
     extra = {
         "tool_calls": tool_calls,
         "num_turns": output.num_turns,
+        # The wall clock can cut a long local answer mid-word. Say so rather
+        # than handing back a fragment that looks complete.
+        "truncated": bool(getattr(output, "truncated", False)),
         "_assistant_fallback": fallback,
     }
     return (

@@ -361,7 +361,14 @@ export type ToolStreamEvent =
   | ({ type: "tool_call" } & ToolCallTraceView)
   | { type: "answer"; text: string }
   | { type: "approval_required"; approval: ToolApprovalView }
-  | { type: "done"; session_id: string; tool_calls: ToolCallTraceView[]; num_turns: number }
+  | {
+      type: "done";
+      session_id: string;
+      tool_calls: ToolCallTraceView[];
+      num_turns: number;
+      // The answer is a fragment: a generation hit the wall-clock stop.
+      truncated?: boolean;
+    }
   | { type: "error"; detail: string };
 
 export interface SendToolMessageBody {

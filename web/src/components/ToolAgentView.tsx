@@ -10,6 +10,7 @@ export function ToolAgentView() {
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<ToolApprovalView[]>([]);
   const [noModel, setNoModel] = useState(false);
+  const [truncated, setTruncated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +33,7 @@ export function ToolAgentView() {
     setBusy(true);
     setError(null);
     setNoModel(false);
+    setTruncated(false);
     setPendingApprovals([]);
     setTurns((prev) => [
       ...prev,
@@ -50,6 +52,7 @@ export function ToolAgentView() {
           setPendingApprovals((a) => [...a, e.approval]);
         else if (e.type === "done") {
           setSessionId(e.session_id);
+          setTruncated(Boolean(e.truncated));
           setPendingApprovals([]);
           patchLastAssistant((t) => ({ ...t, pending: false }));
         } else if (e.type === "error") {
@@ -76,6 +79,13 @@ export function ToolAgentView() {
           Tool Agent needs a local model — set <code>SEARCH_AGENT_MODEL</code> (or{" "}
           <code>SEARCH_AGENT_SERVER_URL</code>) in <code>.env</code> and restart the backend.
         </div>
+      )}
+      {truncated && (
+        <p className="truncation-notice" role="status">
+          This answer was cut short — generation hit the time limit. Raise{" "}
+          <code>AGENTIC_SEARCH_GENERATION_TIMEOUT</code> (seconds, <code>0</code>{" "}
+          disables) and restart the backend for longer answers.
+        </p>
       )}
       <Transcript turns={turns} />
       {pendingApprovals.map((approval) => (

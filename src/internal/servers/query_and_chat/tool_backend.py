@@ -96,17 +96,23 @@ def create_tool_router(
             )
             answer = answer or extra.pop("_assistant_fallback", "")
             tool_calls = extra.get("tool_calls", [])
-            return answer, tool_calls, extra.get("num_turns", 0)
+            return (
+                answer,
+                tool_calls,
+                extra.get("num_turns", 0),
+                bool(extra.get("truncated", False)),
+            )
 
         if not body.stream:
             try:
-                answer, tool_calls, num_turns = await _run()
+                answer, tool_calls, num_turns, truncated = await _run()
                 store.add_chat_message(session_id, role="assistant", content=answer)
                 return ToolAgentMessageResponse(
                     session_id=session_id,
                     answer=answer,
                     tool_calls=[tc.model_dump() for tc in tool_calls],
                     num_turns=num_turns,
+                    truncated=truncated,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Tool agent failed for: %r", body.message)
@@ -149,7 +155,7 @@ def create_tool_router(
                 while not queue.empty():
                     yield _sse(queue.get_nowait())
 
-                answer, tool_calls, num_turns = task.result()
+                answer, tool_calls, num_turns, truncated = task.result()
                 store.add_chat_message(session_id, role="assistant", content=answer)
                 for tc in tool_calls:
                     yield _sse({"type": "tool_call", **tc.model_dump()})
@@ -160,6 +166,7 @@ def create_tool_router(
                         "session_id": session_id,
                         "tool_calls": [tc.model_dump() for tc in tool_calls],
                         "num_turns": num_turns,
+                        "truncated": truncated,
                     }
                 )
             except Exception as exc:  # noqa: BLE001

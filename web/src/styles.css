@@ -491,6 +491,21 @@ option:disabled,
   font-weight: 700;
 }
 
+/* Advisory, not an error: the answer is real, just incomplete. */
+.truncation-notice {
+  border: 1px solid rgb(191 138 12 / 35%);
+  border-radius: 8px;
+  background: rgb(191 138 12 / 8%);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.truncation-notice code {
+  font-size: 0.85em;
+}
+
 .spin {
   animation: spin 0.9s linear infinite;
 }

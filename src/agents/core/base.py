@@ -150,6 +150,9 @@ class AgentLoopOutput:
     action_trace: str | None = None
     final_answer: str | None = None  # Content of the last <answer> tag, if any
     control_flow_trace: list[ControlFlowEvent] = field(default_factory=list)
+    # True when a generation was cut short by the wall-clock stop rather than
+    # finishing. The answer is a fragment; callers should say so.
+    truncated: bool = False
 
 
 @contextmanager
@@ -179,6 +182,8 @@ class AgentLoopBase:
         self.loop = loop
         self.prompt_length = self.config.prompt_length
         self.response_length = self.config.response_length
+        # Set when any generation in this run was cut short by the wall clock.
+        self.generation_truncated = False
 
     async def get_loop(self) -> asyncio.AbstractEventLoop:
         if self.loop is None:
@@ -244,6 +249,11 @@ class AgentLoopBase:
             if inspect.isawaitable(generate_result)
             else generate_result
         )
+        # Managers that can cut a generation short report it here; those that
+        # cannot (OpenAI-compatible, test doubles) simply lack the hook.
+        pop_truncated = getattr(self.server_manager, "pop_truncated", None)
+        if pop_truncated is not None and pop_truncated(request_id):
+            self.generation_truncated = True
         return list(response_ids)[: self.response_length]
 
     def _record_tool_stage(self, name: str, args: dict[str, Any], result: Any) -> None:

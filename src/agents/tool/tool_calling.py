@@ -475,4 +475,5 @@ class ToolAgentLoop(AgentLoopBase):
             )
             or None,
             final_answer=final_answer,
+            truncated=self.generation_truncated,
         )
