@@ -1209,7 +1209,11 @@ def create_web_app(
         # make discovery fail against exactly the server we ship.
         from src.internal.tools.mcp_client import parse_mcp_servers, register_mcp_tools
 
-        mcp_specs = parse_mcp_servers(resolved.mcp_servers, token=resolved.mcp_token)
+        mcp_specs = parse_mcp_servers(
+            resolved.mcp_servers,
+            token=resolved.mcp_token,
+            agent_exclude=resolved.mcp_agent_exclude,
+        )
         _app.state.mcp_discovery_task = (
             asyncio.create_task(register_mcp_tools(tool_registry, mcp_specs))
             if mcp_specs
@@ -1261,6 +1265,7 @@ def create_web_app(
                     device=resolved.search_agent_device,
                     allow_unsafe_mps=True,
                     local_files_only=True,
+                    generation_timeout_seconds=resolved.generation_timeout_seconds,
                 )
                 _app.state.search_agent_tokenizer = tokenizer
                 _app.state.search_agent_manager = manager

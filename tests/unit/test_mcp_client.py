@@ -187,10 +187,23 @@ async def test_mcp_tools_are_not_mirrored_back_out_to_mcp(fake_session):
 
 @pytest.mark.asyncio
 async def test_agent_never_sees_the_recursive_mcp_tool(fake_session):
-    # ask_agentic_search runs the agent; offering it to the agent lets it call itself.
-    from src.internal.servers.web.tool_agent_runner import _SHADOWED_TOOL_NAMES
+    # ask_agentic_search runs an agent; offering it to the agent lets it call
+    # itself. The exclusion is a registration property, not a downstream name
+    # match, so a rename cannot silently disable it.
+    registry = ToolRegistry()
+    await register_mcp_tools(
+        registry,
+        [
+            McpServerSpec(
+                name="local",
+                url="http://x/",
+                agent_exclude=frozenset({"ask_agentic_search"}),
+            )
+        ],
+    )
 
-    assert "ask_agentic_search" in _SHADOWED_TOOL_NAMES
+    assert "ask_agentic_search" not in [t.name for t in registry.agent_tools()]
+    assert registry.get("ask_agentic_search") is not None
 
 
 @pytest.mark.asyncio

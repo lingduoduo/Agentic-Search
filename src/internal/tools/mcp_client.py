@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 MCP_SOURCE = "mcp"
 
+# Remote tools that re-enter an agent. Offering one to the agent lets the agent
+# call itself, and the protocol exposes no signal for "this runs an agent", so
+# the names have to be configured. Override with AGENTIC_SEARCH_MCP_AGENT_EXCLUDE.
+DEFAULT_AGENT_EXCLUDE: frozenset[str] = frozenset({"ask_agentic_search"})
+
 
 @dataclass(frozen=True)
 class McpServerSpec:
@@ -47,10 +52,15 @@ class McpServerSpec:
     name: str
     url: str
     headers: dict[str, str] = field(default_factory=dict)
+    # Tool names this server exposes that no agent loop may be offered.
+    agent_exclude: frozenset[str] = frozenset()
 
 
 def parse_mcp_servers(
-    raw: str | None, *, token: str | None = None
+    raw: str | None,
+    *,
+    token: str | None = None,
+    agent_exclude: str | None = None,
 ) -> list[McpServerSpec]:
     """Parse ``"name=url, name=url"`` into specs. Empty or unset means disabled.
 
@@ -60,6 +70,11 @@ def parse_mcp_servers(
     if not raw or not raw.strip():
         return []
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    excluded = (
+        frozenset(n.strip() for n in agent_exclude.split(",") if n.strip())
+        if agent_exclude is not None
+        else DEFAULT_AGENT_EXCLUDE
+    )
     specs: list[McpServerSpec] = []
     for chunk in raw.split(","):
         entry = chunk.strip()
@@ -72,7 +87,12 @@ def parse_mcp_servers(
             )
             continue
         specs.append(
-            McpServerSpec(name=name.strip(), url=url.strip(), headers=dict(headers))
+            McpServerSpec(
+                name=name.strip(),
+                url=url.strip(),
+                headers=dict(headers),
+                agent_exclude=excluded,
+            )
         )
     return specs
 
@@ -146,7 +166,10 @@ async def register_mcp_tools(registry: ToolRegistry, specs: list[McpServerSpec])
             continue
         for remote in remote_tools:
             registry.register(
-                _build_tool(spec, remote), source=MCP_SOURCE, provider_id=spec.name
+                _build_tool(spec, remote),
+                source=MCP_SOURCE,
+                provider_id=spec.name,
+                agent_callable=remote.name not in spec.agent_exclude,
             )
             registered += 1
         logger.info(
