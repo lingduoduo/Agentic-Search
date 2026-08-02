@@ -110,3 +110,52 @@ describe("ToolAgentView", () => {
     );
   });
 });
+
+describe("ToolAgentView truncation notice", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("tells the user when the answer was cut short", async () => {
+    async function* fake() {
+      yield { type: "answer", text: "Hybrid retrieval combines dense and" } as const;
+      yield {
+        type: "done",
+        session_id: "s1",
+        tool_calls: [],
+        num_turns: 2,
+        truncated: true,
+      } as const;
+    }
+    vi.spyOn(api, "sendToolMessage").mockImplementation(fake as never);
+
+    render(<ToolAgentView />);
+    fireEvent.change(screen.getByLabelText("Tool agent message"), {
+      target: { value: "explain retrieval" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/cut short/i);
+  });
+
+  it("shows no notice when the answer completed", async () => {
+    async function* fake() {
+      yield { type: "answer", text: "All done." } as const;
+      yield {
+        type: "done",
+        session_id: "s1",
+        tool_calls: [],
+        num_turns: 2,
+        truncated: false,
+      } as const;
+    }
+    vi.spyOn(api, "sendToolMessage").mockImplementation(fake as never);
+
+    render(<ToolAgentView />);
+    fireEvent.change(screen.getByLabelText("Tool agent message"), {
+      target: { value: "hi" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+
+    await screen.findByText("All done.");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});

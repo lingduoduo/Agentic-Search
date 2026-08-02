@@ -197,6 +197,8 @@ class ToolAgentMessageResponse(BaseModel):
     answer: str
     tool_calls: list[dict] = Field(default_factory=list)
     num_turns: int = 0
+    # The answer is a fragment: a generation hit the wall-clock stop.
+    truncated: bool = False
     error: str | None = None
 
 

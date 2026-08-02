@@ -16,6 +16,9 @@ from src.internal.servers.web import request_capture as _capture
 
 logger = logging.getLogger(__name__)
 
+# Cap on remembered truncations, so a caller that never pops cannot leak.
+_TRUNCATION_RECORD_LIMIT = 256
+
 
 @runtime_checkable
 class ServerManager(Protocol):
@@ -310,6 +313,8 @@ class LocalServerManager:
         self.allow_unsafe_mps = allow_unsafe_mps
         self.local_files_only = local_files_only
         self.generation_timeout_seconds = generation_timeout_seconds
+        # request_id -> True for generations the wall clock cut short.
+        self._truncated: dict[str, bool] = {}
         self.generation_heartbeat_seconds = generation_heartbeat_seconds
         self._model: Any = None
         self._tokenizer: Any = None
@@ -466,7 +471,7 @@ class LocalServerManager:
         # emit back on the event loop thread — record_stage relies on a
         # ContextVar that run_in_executor's thread pool does not propagate.
         response_ids = await loop.run_in_executor(
-            None, self._generate_sync, prompt_ids, sampling_params
+            None, self._generate_sync, prompt_ids, sampling_params, request_id
         )
         if _capture.active() is not None:
             _capture.record_stage(
@@ -484,8 +489,27 @@ class LocalServerManager:
             )
         return response_ids
 
+    def _record_truncation(self, request_id: str | None) -> None:
+        """Note that *request_id*'s generation was cut short by the wall clock.
+
+        Bounded: a caller that never pops (training scripts call generate()
+        directly) must not grow this without limit.
+        """
+        if request_id is None:
+            return
+        if len(self._truncated) >= _TRUNCATION_RECORD_LIMIT:
+            self._truncated.pop(next(iter(self._truncated)), None)
+        self._truncated[request_id] = True
+
+    def pop_truncated(self, request_id: str) -> bool:
+        """Whether *request_id* was truncated. Consumes the record."""
+        return self._truncated.pop(request_id, False)
+
     def _generate_sync(
-        self, prompt_ids: list[int], sampling_params: dict[str, Any]
+        self,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        request_id: str | None = None,
     ) -> list[int]:
         import torch
 
@@ -513,6 +537,7 @@ class LocalServerManager:
             and elapsed >= float(self.generation_timeout_seconds)
             and len(response_ids) < max_new
         ):
+            self._record_truncation(request_id)
             print(
                 "Warning : generation stopped by "
                 f"--generation_timeout_seconds={self.generation_timeout_seconds} "
