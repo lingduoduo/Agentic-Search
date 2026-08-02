@@ -110,6 +110,15 @@ python3 -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl
 python3 -m src.internal.servers.retrieval.rerank --port 8002
 # web backend env: AGENTIC_SEARCH_RERANK_URL=http://localhost:8002/rerank
 
+# Optional — browser web search (Terminal 1c). `web_search` tries SerpAPI first
+# and falls back to this; without it, an expired or rate-limited SERP_API_KEY
+# leaves web_search with no usable provider. No API key needed, but slow
+# (~30-50s/query) and lower quality than SerpAPI.
+python3 -m src.internal.servers.web_search.browser --port 8003
+# web backend env: AGENTIC_SEARCH_BROWSER_SEARCH_URL=http://localhost:8003/retrieve
+# Port 8003, not its 8000 default: 8000/8001 are the retrieval servers and 8002
+# is the reranker above.
+
 # Terminal 2 — web backend (port 7860)
 PYTHONPATH=src:. uvicorn src.internal.servers.web.app:app --host 127.0.0.1 --port 7860
 

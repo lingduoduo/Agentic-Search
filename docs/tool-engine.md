@@ -72,9 +72,26 @@ dispatcher.
 The seeded `web_search` tool uses a sequential cascade: SerpAPI first
 (`SERP_API_KEY`), falling back to the browser search server
 (`AGENTIC_SEARCH_BROWSER_SEARCH_URL`, a `/retrieve`-shaped playwright server)
-when SerpAPI is empty or unavailable. With neither configured it returns no
-results and the agent answers without web context. This applies to both the
-Tool Agent tab and the `/api/agent` tool path.
+when SerpAPI is empty or unavailable. This applies to both the Tool Agent tab
+and the `/api/agent` tool path.
+
+When no leg is usable the tool returns each leg's error rather than an empty
+result, because "No results found." is indistinguishable from a working search
+over a topic with no hits — a missing key, an exhausted quota (SerpAPI's free
+tier is 100 searches/month, after which it returns `429`) and an unreachable
+browser server all used to look identical.
+
+To run the fallback leg:
+
+```bash
+python3 -m src.internal.servers.web_search.browser --port 8003
+# then, on the web backend:
+AGENTIC_SEARCH_BROWSER_SEARCH_URL=http://localhost:8003/retrieve
+```
+
+It needs no API key and drives a real browser, so expect ~30-50s per query and
+weaker relevance than SerpAPI. Use 8003 rather than its 8000 default: 8000 and
+8001 are the retrieval servers, 8002 the reranker.
 
 ## Inspecting the registry
 

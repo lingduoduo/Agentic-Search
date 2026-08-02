@@ -159,6 +159,9 @@ activemq-data/
 
 # Environments
 .env
+# Backups and per-environment variants hold the same secrets as .env itself.
+.env.*
+!.env.example
 .envrc
 .venv
 env/
