@@ -187,3 +187,38 @@ def test_agent_callable_still_wins_over_user_presence():
     registry = ToolRegistry()
     registry.register(_tool("runs_an_agent"), agent_callable=False, user_scoped=True)
     assert registry.agent_tools(user_present=True) == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_memory_tools_register_as_user_scoped(fake_mcp):
+    from src.internal.tools.mcp_client import DEFAULT_USER_SCOPED
+
+    registry = ToolRegistry()
+    await register_mcp_tools(
+        registry,
+        [
+            McpServerSpec(
+                name="agentic", url="http://x/", user_scoped=DEFAULT_USER_SCOPED
+            )
+        ],
+    )
+
+    assert registry._entries["save_memory"].user_scoped is True
+    assert [t.name for t in registry.agent_tools(user_present=False)] == [
+        "ask_agentic_search"
+    ]
+
+
+def test_parse_mcp_servers_applies_the_default_user_scope():
+    from src.internal.tools.mcp_client import parse_mcp_servers
+
+    spec = parse_mcp_servers("agentic=http://x/")[0]
+    assert "save_memory" in spec.user_scoped
+    assert "search_memories" in spec.user_scoped
+
+
+def test_parse_mcp_servers_accepts_an_explicit_user_scope():
+    from src.internal.tools.mcp_client import parse_mcp_servers
+
+    spec = parse_mcp_servers("a=http://x/", user_scoped="foo, bar")[0]
+    assert spec.user_scoped == frozenset({"foo", "bar"})

@@ -44,6 +44,19 @@ MCP_SOURCE = "mcp"
 # the names have to be configured. Override with AGENTIC_SEARCH_MCP_AGENT_EXCLUDE.
 DEFAULT_AGENT_EXCLUDE: frozenset[str] = frozenset({"ask_agentic_search"})
 
+# Remote tools backed by per-user storage. Offered only when a caller has an
+# identity to scope them to; anonymously they would write to a shared bucket.
+DEFAULT_USER_SCOPED: frozenset[str] = frozenset(
+    {
+        "save_memory",
+        "update_memory_from_conversation",
+        "generate_user_profile",
+        "get_user_profile",
+        "search_memories",
+        "consolidate_memories",
+    }
+)
+
 
 @dataclass(frozen=True)
 class McpServerSpec:
@@ -54,6 +67,8 @@ class McpServerSpec:
     headers: dict[str, str] = field(default_factory=dict)
     # Tool names this server exposes that no agent loop may be offered.
     agent_exclude: frozenset[str] = frozenset()
+    # Tool names this server exposes that are backed by per-user storage.
+    user_scoped: frozenset[str] = frozenset()
 
 
 def parse_mcp_servers(
@@ -61,6 +76,7 @@ def parse_mcp_servers(
     *,
     token: str | None = None,
     agent_exclude: str | None = None,
+    user_scoped: str | None = None,
 ) -> list[McpServerSpec]:
     """Parse ``"name=url, name=url"`` into specs. Empty or unset means disabled.
 
@@ -74,6 +90,11 @@ def parse_mcp_servers(
         frozenset(n.strip() for n in agent_exclude.split(",") if n.strip())
         if agent_exclude is not None
         else DEFAULT_AGENT_EXCLUDE
+    )
+    scoped = (
+        frozenset(n.strip() for n in user_scoped.split(",") if n.strip())
+        if user_scoped is not None
+        else DEFAULT_USER_SCOPED
     )
     specs: list[McpServerSpec] = []
     for chunk in raw.split(","):
@@ -92,6 +113,7 @@ def parse_mcp_servers(
                 url=url.strip(),
                 headers=dict(headers),
                 agent_exclude=excluded,
+                user_scoped=scoped,
             )
         )
     return specs
@@ -170,6 +192,7 @@ async def register_mcp_tools(registry: ToolRegistry, specs: list[McpServerSpec])
                 source=MCP_SOURCE,
                 provider_id=spec.name,
                 agent_callable=remote.name not in spec.agent_exclude,
+                user_scoped=remote.name in spec.user_scoped,
             )
             registered += 1
         logger.info(
@@ -179,6 +202,8 @@ async def register_mcp_tools(registry: ToolRegistry, specs: list[McpServerSpec])
 
 
 __all__ = [
+    "DEFAULT_AGENT_EXCLUDE",
+    "DEFAULT_USER_SCOPED",
     "MCP_SOURCE",
     "McpServerSpec",
     "parse_mcp_servers",
