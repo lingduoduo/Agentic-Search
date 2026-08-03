@@ -47,8 +47,10 @@ Underneath all three: identity is derived independently at each site. That is ho
   `search_tool` with no filters and applies no post-filter, so the `search`
   offered by `ToolAgentLoop` reads the whole corpus regardless of who is asking.
   The ACL guarantee in this spec covers the `/api/agent` retrieval routes
-  (`search_tool`, `hybrid_search`, `search_agent`, `chat_loop`, the auto route)
-  — it does not cover tools the agent chooses to call. Closing this needs
+  (`search_tool`, `hybrid_search`, `search_agent`, `chat_loop`, and the auto
+  route's retrieval strategies) — it does not cover tools the agent chooses to
+  call, and that exception includes the auto route's own `RouteStrategy.TOOL`
+  branch, which runs `ToolAgentLoop` against the seeded tool. Closing this needs
   per-request tool construction: the leaking instance is seeded into the global
   `ToolRegistry` at process start (`knowledge_base.tool_knowledge_base`), where
   no request identity exists, and `tool_agent_runner` only rebinds it when
