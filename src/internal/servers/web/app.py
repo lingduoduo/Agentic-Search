@@ -782,6 +782,23 @@ def _direct_gate_decision(
     return False, "weak", top_score, cosine
 
 
+def _enforce_access(documents: list, filters) -> list:
+    """Drop documents the caller may not see.
+
+    Filters are sent to the retrieval server, but only the full RetrievalService
+    honours them — `demo.py` and `hybrid.py` ignore the field entirely. Passing
+    filters down is therefore not enforcement, so this route checks the returned
+    documents itself. Documents that declare no ACL are public (see
+    ``SearchFilters.matches``).
+    """
+    if filters is None or not documents:
+        return documents
+    matches = getattr(filters, "matches", None)
+    if matches is None:
+        return documents
+    return [d for d in documents if matches(getattr(d, "metadata", None) or {})]
+
+
 async def _run_search_direct_or_escalate(
     query: str,
     *,
@@ -806,29 +823,12 @@ async def _run_search_direct_or_escalate(
     (local model) or the degraded pipeline, preserving today's behavior.
     """
 
-    # Access-control safety: the direct-retrieval short-circuit
-    # (`_run_direct_search`) and the SearchAgentLoop escalation
-    # (`_run_search_agent`) do not thread per-user access filters into
-    # retrieval — `search_tool` and the loop take no `filters`. When filters are
-    # present (authenticated / multi-tenant), those paths would retrieve across
-    # every user's documents. Route such queries through the filter-aware
-    # retrieval pipeline instead, which passes `filters` down to retrieval.
-    if filters:
-        return await _auto_search_pipeline(
-            query,
-            llm=llm,
-            search_url=search_url,
-            browser_search_url=browser_search_url,
-            rerank_url=rerank_url,
-            top_k=top_k,
-            filters=filters,
-            history=history,
-            source_provider=source_provider,
-            extra={
-                "search_mode": "filtered_pipeline",
-                "route_reason": "access_filters_present",
-            },
-        )
+    # Signing in narrows results; it does not change which route runs. Filters
+    # used to divert the whole query to `_auto_search_pipeline` because the
+    # direct and agent paths took no `filters` and would have retrieved across
+    # every user's documents. Both thread them end-to-end now (#407) and every
+    # call below passes `filters`, so that diversion only made an authenticated
+    # query slower and differently-answered than the same query anonymously.
 
     async def _escalate(top_score: float, reason: str) -> tuple:
         escalate_extra = {
@@ -851,7 +851,14 @@ async def _run_search_direct_or_escalate(
                 on_trace=None,
             )
             run_extra.update(escalate_extra)
-            return answer, citations, docs, intent, run_extra
+            docs = _enforce_access(docs, filters)
+            return (
+                answer,
+                [d.citation for d in docs] if filters else citations,
+                docs,
+                intent,
+                run_extra,
+            )
 
         escalate_extra["route_degraded"] = "no_local_model"
         return await _auto_search_pipeline(
@@ -885,6 +892,7 @@ async def _run_search_direct_or_escalate(
     except Exception:
         internal_unreachable = True
         documents = []
+    documents = _enforce_access(documents, filters)
     real = [d for d in documents if not d.metadata.get("error")]
     if documents and not real:
         internal_unreachable = True
@@ -2418,6 +2426,9 @@ def _documents_from_search_pages(
                 url=page.url or None,
                 score=page.score,
                 metadata={
+                    # Retrieval metadata first so the labels below win on a
+                    # key clash, but the document's own acl survives.
+                    **(page.metadata or {}),
                     "entry_point": entry_point,
                     "source": _source_label(source_provider),
                     "source_provider": source_provider,
