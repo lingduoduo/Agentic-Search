@@ -45,16 +45,48 @@ curl -s -X POST http://127.0.0.1:7860/auth/register -H 'Content-Type: applicatio
 curl -s -c "$WORK/ck.txt" -X POST http://127.0.0.1:7860/auth/login \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=dev@localhost&password=devpass' >/dev/null
+me_status=$(curl -s -o "$WORK/me.json" -w '%{http_code}' -b "$WORK/ck.txt" http://127.0.0.1:7860/me)
 ask "$WORK/auth.json" -b "$WORK/ck.txt"
 
-python3 - "$WORK/anon.json" "$WORK/auth.json" <<'PY'
+python3 - "$WORK/anon.json" "$WORK/auth.json" "$WORK/me.json" "$me_status" <<'PY'
 import json, sys
+
+anon_path, auth_path, me_path, me_status = sys.argv[1:5]
 
 def leaked(path):
     docs = json.load(open(path)).get("documents") or []
     return any("confidential" in (d.get("content") or "").lower() for d in docs)
 
-anon, auth = (leaked(p) for p in sys.argv[1:3])
+def reached_internal_corpus(path):
+    docs = json.load(open(path)).get("documents") or []
+    return any("migration" in (d.get("content") or "").lower() for d in docs)
+
+# Positive control 1: the internal corpus (not an empty result set, and not
+# an external-search fallback) actually answered the query. Without this, the
+# leak check below passes vacuously whenever nothing reached the corpus at
+# all -- which is exactly the failure mode this script exists to catch.
+if not reached_internal_corpus(anon_path):
+    raise SystemExit(
+        "FAIL: internal-search control failed -- no document from the local "
+        "corpus (expected content containing 'migration') was returned for "
+        "the anonymous request; the leak check would be meaningless if the "
+        "query never reached internal retrieval."
+    )
+
+# Positive control 2: the "signed-in" request is genuinely authenticated. If
+# login silently failed, `ask ... -b ck.txt` is just a second anonymous
+# request and the anon-vs-signed-in comparison proves nothing.
+if me_status != "200":
+    raise SystemExit(
+        f"FAIL: auth control failed -- GET /me returned {me_status}, not "
+        "200; login did not succeed."
+    )
+if not json.load(open(me_path)).get("id"):
+    raise SystemExit(
+        "FAIL: auth control failed -- GET /me returned 200 but no user id."
+    )
+
+anon, auth = (leaked(p) for p in (anon_path, auth_path))
 print(f"anonymous sees the restricted document: {anon}")
 print(f"signed-in  sees the restricted document: {auth}")
 if anon or auth:
