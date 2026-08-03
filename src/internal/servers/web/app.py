@@ -795,6 +795,16 @@ def _enforce_access(documents: list, filters) -> list:
     return [d for d in documents if matches(getattr(d, "metadata", None) or {})]
 
 
+def _filters_payload(filters):
+    """Downstream retrieval helpers (search_tool, SearchAgentLoopConfig) send
+    ``filters`` straight over the wire as JSON, so they need a plain dict —
+    not the ``SearchFilters`` object ``_enforce_access`` uses for its
+    ``.matches()`` check. Convert when given the object; pass a dict through
+    unchanged."""
+    to_payload = getattr(filters, "to_payload", None)
+    return to_payload() if to_payload else filters
+
+
 async def _run_search_direct_or_escalate(
     query: str,
     *,
@@ -841,7 +851,7 @@ async def _run_search_direct_or_escalate(
                 search_url=search_url,
                 top_k=top_k,
                 history=history,
-                filters=filters,
+                filters=_filters_payload(filters),
                 allow_internal_knowledge_answer=False,
                 on_turn=on_turn,
                 on_trace=None,
@@ -883,7 +893,7 @@ async def _run_search_direct_or_escalate(
             search_url=search_url,
             rerank_url=rerank_url,
             top_k=top_k,
-            filters=filters,
+            filters=_filters_payload(filters),
         )
     except Exception:
         internal_unreachable = True
