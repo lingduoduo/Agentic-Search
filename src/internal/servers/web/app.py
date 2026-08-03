@@ -844,7 +844,7 @@ async def _run_search_direct_or_escalate(
         }
         has_local_model = manager is not None and tokenizer is not None
         if has_local_model:
-            answer, citations, docs, intent, run_extra = await _run_search_agent(
+            answer, _citations, docs, intent, run_extra = await _run_search_agent(
                 query,
                 manager=manager,
                 tokenizer=tokenizer,
@@ -858,9 +858,11 @@ async def _run_search_direct_or_escalate(
             )
             run_extra.update(escalate_extra)
             docs = _enforce_access(docs, filters)
+            # Citations are rebuilt from the surviving documents: `citations`
+            # as returned still names anything `_enforce_access` just dropped.
             return (
                 answer,
-                [d.citation for d in docs] if filters else citations,
+                [d.citation for d in docs],
                 docs,
                 intent,
                 run_extra,
@@ -1504,8 +1506,7 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                         user_memory=user_memory,
-                        user_present=auth_user is not None
-                        and not auth_user.is_anonymous,
+                        user_present=capabilities.user_present,
                     )
                     _cap = _capture.active()
                     if _cap is not None:
@@ -1538,8 +1539,12 @@ def create_web_app(
                         browser_search_url=settings.browser_search_url,
                         rerank_url=settings.rerank_url,
                         top_k=top_k,
-                        filters=filters,
+                        filters=_filters_payload(filters),
                     )
+                    # Serializing the filters for the wire and enforcing on the
+                    # result are one change: the server may ignore what it was
+                    # sent, so sending without checking is a silent leak.
+                    documents = _enforce_access(documents, filters)
                     answer = _search_only_answer(
                         "Direct search tool",
                         queries=[query],
@@ -1660,10 +1665,15 @@ def create_web_app(
                         search_url=search_url,
                         top_k=top_k,
                         history=history,
-                        filters=filters,
+                        filters=_filters_payload(filters),
                         on_turn=on_turn,
                         on_trace=on_trace,
                     )
+                    # Same pairing as above: the loop's retrieval went out with
+                    # a filters payload the server is free to ignore, so the
+                    # documents it came back with are checked here.
+                    documents = _enforce_access(documents, filters)
+                    citations = [doc.citation for doc in documents]
                     return _finalize_response(
                         db,
                         session_id,
@@ -1693,8 +1703,7 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                         with_search_tool=True,
-                        user_present=auth_user is not None
-                        and not auth_user.is_anonymous,
+                        user_present=capabilities.user_present,
                     )
                     # Explicit mode falls back to the last assistant message on an
                     # empty final answer (the auto-route instead degrades to RAG).
@@ -2354,6 +2363,12 @@ async def _run_hybrid_search(
                     entry_point="hybrid_search",
                 )
             )
+        if provider == "retrieval":
+            # Paired with the `_filters_payload` sent above: the retrieval
+            # server may ignore the `filters` field (demo.py and hybrid.py do),
+            # so what it returned is checked here rather than by each caller of
+            # `_run_hybrid_search` — one of which was missed and leaked.
+            docs = _enforce_access(docs, filters)
         return docs
 
     async def _fetch_provider_guarded(provider: str) -> list[ContextDocument]:

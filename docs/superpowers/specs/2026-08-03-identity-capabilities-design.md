@@ -42,6 +42,18 @@ Underneath all three: identity is derived independently at each site. That is ho
 - No new authentication mechanism, login UI, or token format.
 - No per-document sharing UI. ACLs are whatever retrieval already returns.
 - No anonymous memory. Logged-out callers get none rather than a session bucket.
+- **The tool agent's corpus `search` tool stays unfiltered.**
+  `build_search_routing_tool` (`src/internal/tools/routing_tools.py`) calls
+  `search_tool` with no filters and applies no post-filter, so the `search`
+  offered by `ToolAgentLoop` reads the whole corpus regardless of who is asking.
+  The ACL guarantee in this spec covers the `/api/agent` retrieval routes
+  (`search_tool`, `hybrid_search`, `search_agent`, `chat_loop`, the auto route)
+  — it does not cover tools the agent chooses to call. Closing this needs
+  per-request tool construction: the leaking instance is seeded into the global
+  `ToolRegistry` at process start (`knowledge_base.tool_knowledge_base`), where
+  no request identity exists, and `tool_agent_runner` only rebinds it when
+  `with_search_tool=True`. Threading identity through the registry is a change
+  of its own and is tracked separately.
 
 ## Design
 
