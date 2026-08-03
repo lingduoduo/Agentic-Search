@@ -78,7 +78,10 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         filters=None,
         user_memory=None,
     ) -> AnswerGenerationResult:
-        assert filters is None
+        # Anonymous (no auth) now carries ["public"], not "unfiltered" — a
+        # document restricted to another user must not leak to a logged-out
+        # caller.
+        assert filters == SearchFilters(access_acl=["public"])
         assert question == "How do I deploy?"
         assert chat_history == []
         # The client-supplied search_url below is ignored; the server resolves
@@ -562,7 +565,12 @@ def test_run_agent_search_tool_mode_returns_documents(monkeypatch, tmp_path):
             content="FAISS is a similarity search library.",
             url="https://example.test/faiss",
             score=0.95,
-            metadata={},
+            # Real `_run_direct_search` documents always carry the metadata
+            # `_documents_from_search_pages` attaches (source, provider, the
+            # document's own acl). An empty dict is not a shape this route can
+            # produce, and `SearchFilters.matches` reads it as "nothing matched"
+            # rather than "unrestricted", so the route's access check drops it.
+            metadata={"source_provider": "retrieval", "entry_point": "search_tool"},
         )
     ]
 

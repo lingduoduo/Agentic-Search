@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 from urllib.parse import parse_qsl
 from urllib.parse import urlencode
@@ -67,6 +67,10 @@ class SearchPage:
     url: str = ""
     error: str | None = None
     score: float = 0.0
+    # Retrieval-side metadata, carried so downstream consumers can enforce the
+    # document's ACL. Dropping it here made access control impossible on any
+    # path that goes through SearchPage.
+    metadata: dict = field(default_factory=dict)
 
     @classmethod
     def from_search_result(cls, result: SearchResult) -> "SearchPage":
@@ -74,6 +78,7 @@ class SearchPage:
             title=result.title or "",
             summary=_compact_contents(result.contents),
             url=result.url or "",
+            metadata=dict(result.metadata or {}),
             score=result.score,
         )
 
