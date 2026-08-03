@@ -193,3 +193,29 @@ def test_escalated_documents_are_enforced_too(monkeypatch):
         )
     )
     assert {d.id for d in documents} == {"mine"}
+
+
+def test_anonymous_callers_are_public_only():
+    # Anonymous used to carry no ACL at all, so a document restricted to
+    # another user was readable by anyone logged out.
+    from src.internal.access.capabilities import resolve_capabilities
+
+    class _Store:
+        def get_user_memories(self, user_id):
+            return []
+
+    caps = resolve_capabilities(None, _Store())
+    assert caps.access_acl == ["public"]
+
+
+def test_a_restricted_document_is_hidden_from_anonymous(monkeypatch):
+    from src.context.models import SearchFilters
+
+    restricted = _doc("theirs", ["user:someone_else"])
+    public = _doc("public", ["public"])
+    _seen, (_a, _c, documents, _i, _e) = _call(
+        monkeypatch,
+        filters=SearchFilters(access_acl=["public"]),
+        direct_documents=[restricted, public],
+    )
+    assert {d.id for d in documents} == {"public"}

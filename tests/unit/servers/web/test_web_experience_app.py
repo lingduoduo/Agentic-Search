@@ -78,7 +78,10 @@ def test_agent_endpoint_runs_pipeline_and_persists_chat(monkeypatch, tmp_path):
         filters=None,
         user_memory=None,
     ) -> AnswerGenerationResult:
-        assert filters is None
+        # Anonymous (no auth) now carries ["public"], not "unfiltered" — a
+        # document restricted to another user must not leak to a logged-out
+        # caller.
+        assert filters == SearchFilters(access_acl=["public"])
         assert question == "How do I deploy?"
         assert chat_history == []
         # The client-supplied search_url below is ignored; the server resolves

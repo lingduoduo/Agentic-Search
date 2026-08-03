@@ -50,9 +50,8 @@ from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.models import SearchFilters
 from src.context.search import SearchResult, citation_key
-from src.context.preprocessing.access_filters import build_user_only_filters
+from src.internal.access.capabilities import resolve_capabilities
 from src.internal.db import AgenticSearchStore
-from src.internal.memory.service import memory_preamble
 from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
@@ -146,8 +145,6 @@ class SearchExperienceSettings:
     allow_client_search_url: bool = False
     # Dev-only observability console. Off by default; never enable in prod.
     debug_panels: bool = False
-    # Inject the user's stored memories into the answer prompt. Off by default.
-    memory_injection: bool = False
 
     @classmethod
     def from_app_settings(
@@ -167,7 +164,6 @@ class SearchExperienceSettings:
             db_path=app_settings.services.web_db_path,
             allow_client_search_url=_flag("AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL"),
             debug_panels=_flag("AGENTIC_SEARCH_DEBUG_PANELS"),
-            memory_injection=_flag("AGENTIC_SEARCH_MEMORY_INJECTION"),
         )
 
 
@@ -1409,14 +1405,17 @@ def create_web_app(
         hook_metadata: dict[str, object] = {}
 
         auth_user = _optional_user_from_request(http_request, db)
+        capabilities = resolve_capabilities(auth_user, db)
+        # `user_id` is bookkeeping only (session attribution, hook payloads) —
+        # a client-supplied request.user_id names a session, nothing more.
+        # Entitlement (the ACL, the memory preamble, user-scoped tools) comes
+        # only from `capabilities`, which is derived from the authenticated
+        # caller. Letting request.user_id decide entitlement would let an
+        # unauthenticated caller name any user and receive that user's access.
         user_id = request.user_id or (auth_user.id if auth_user else None)
-        # Memory-augmented generation: inject the user's stored memories into the
-        # answer prompt (off unless AGENTIC_SEARCH_MEMORY_INJECTION is set).
-        user_memory = (
-            memory_preamble(db, user_id)
-            if settings.memory_injection and user_id
-            else None
-        )
+        # Memory-augmented generation: a signed-in caller's stored memories are
+        # injected because they are signed in. Anonymous callers have none.
+        user_memory = capabilities.memory_preamble or None
         hook_result = execute_hook(
             hook_point=HookPoint.QUERY_PROCESSING,
             payload={"query": query, "user_id": user_id},
@@ -1452,15 +1451,8 @@ def create_web_app(
             else settings.search_url
         )
         top_k = request.top_k or settings.top_k
-        filters = (
-            build_user_only_filters(
-                auth_user.id,
-                email=auth_user.email,
-                group_ids=auth_user.group_ids,
-            )
-            if auth_user
-            else (build_user_only_filters(user_id) if user_id else None)
-        )
+        # Always filtered: anonymous means ["public"], not "unfiltered".
+        filters = SearchFilters(access_acl=capabilities.access_acl)
 
         manager = getattr(http_request.app.state, "search_agent_manager", None)
         tokenizer = getattr(http_request.app.state, "search_agent_tokenizer", None)
