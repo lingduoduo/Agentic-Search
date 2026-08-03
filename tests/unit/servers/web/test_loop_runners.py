@@ -406,3 +406,38 @@ def test_generation_timeout_is_configurable():
         ).generation_timeout_seconds
         == 600.0
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_withholds_user_scoped_tools_without_a_user(monkeypatch):
+    from src.internal.tools.base import FunctionTool
+    from src.internal.tools.registry import ToolRegistry
+
+    async def _noop() -> str:
+        return ""
+
+    registry = ToolRegistry()
+    registry.register(
+        FunctionTool(
+            _noop,
+            name="save_memory",
+            description="Save a memory.",
+            parameters={"type": "object"},
+        ),
+        user_scoped=True,
+    )
+    monkeypatch.setattr("src.internal.tools.tool_registry", registry)
+
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        on_turn=None,
+        with_search_tool=False,
+        user_present=False,
+    )
+    assert "save_memory" not in [t.name for t in captured["tools"]]

@@ -93,6 +93,7 @@ def create_tool_router(
                 on_turn=on_turn,
                 on_approval=on_approval,
                 with_search_tool=body.run_search_tool,
+                user_present=user is not None and not user.is_anonymous,
             )
             answer = answer or extra.pop("_assistant_fallback", "")
             tool_calls = extra.get("tool_calls", [])
