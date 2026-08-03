@@ -1055,7 +1055,7 @@ async def _run_auto_routed(
     on_turn=None,
     on_approval=None,
     user_memory: str | None = None,
-    user_id: str | None = None,
+    user_present: bool = False,
 ) -> tuple:
     """3-way agentic routing. Returns (answer, citations, documents, intent, extra).
 
@@ -1090,7 +1090,7 @@ async def _run_auto_routed(
                     on_turn=on_turn,
                     on_approval=on_approval,
                     with_search_tool=False,
-                    user_present=user_id is not None,
+                    user_present=user_present,
                 )
             except Exception as exc:
                 logger.warning("ToolAgentLoop failed, degrading to RAG: %s", exc)
@@ -1502,7 +1502,8 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                         user_memory=user_memory,
-                        user_id=user_id,
+                        user_present=auth_user is not None
+                        and not auth_user.is_anonymous,
                     )
                     _cap = _capture.active()
                     if _cap is not None:
@@ -1690,7 +1691,8 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                         with_search_tool=True,
-                        user_present=user_id is not None,
+                        user_present=auth_user is not None
+                        and not auth_user.is_anonymous,
                     )
                     # Explicit mode falls back to the last assistant message on an
                     # empty final answer (the auto-route instead degrades to RAG).
