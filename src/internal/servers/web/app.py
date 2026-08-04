@@ -1099,6 +1099,7 @@ async def _run_auto_routed(
                     on_approval=on_approval,
                     with_search_tool=False,
                     user_present=user_present,
+                    filters=filters,
                 )
             except Exception as exc:
                 logger.warning("ToolAgentLoop failed, degrading to RAG: %s", exc)
@@ -1704,6 +1705,7 @@ def create_web_app(
                         on_approval=on_approval,
                         with_search_tool=True,
                         user_present=capabilities.user_present,
+                        filters=filters,
                     )
                     # Explicit mode falls back to the last assistant message on an
                     # empty final answer (the auto-route instead degrades to RAG).

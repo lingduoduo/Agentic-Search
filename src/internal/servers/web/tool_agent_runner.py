@@ -125,6 +125,7 @@ async def _run_tool_agent(
     on_approval=None,
     with_search_tool: bool,
     user_present: bool = True,
+    filters=None,
 ) -> tuple:
     """Run the ToolAgentLoop. Assumes a local model is configured.
 
@@ -135,7 +136,8 @@ async def _run_tool_agent(
     reaches the response/metadata.
     """
     from src.agents.tool import ToolAgentLoop, ToolAgentLoopConfig
-    from src.internal.tools import build_search_routing_tool, tool_registry
+    from src.internal.tools import tool_registry
+    from src.internal.tools.routing_tools import build_search_routing_tool
 
     max_tokens = (
         getattr(resolved, "tool_agent_max_tokens", None) or TOOL_AGENT_MAX_TOKENS
@@ -146,14 +148,22 @@ async def _run_tool_agent(
     # an agent. The decision travels with registration rather than being matched
     # by name here, where a rename would silently disable it. Without a user,
     # it also withholds anything backed by per-user storage.
-    tools = list(tool_registry.agent_tools(user_present=user_present))
+    tools = [
+        t
+        for t in tool_registry.agent_tools(user_present=user_present)
+        # Never the globally-seeded corpus search: it is built at process start
+        # where no request identity exists, so it is unfiltered. The only
+        # acceptable corpus search is the request-bound one built below.
+        if t.name != _CORPUS_SEARCH_NAME
+    ]
     if with_search_tool:
-        # Bind the corpus search to this request's retrieval URL rather than the
-        # one the registry was seeded with.
         corpus_search = build_search_routing_tool(
-            search_url=search_url, top_k=_CORPUS_SEARCH_TOP_K, name=_CORPUS_SEARCH_NAME
+            search_url=search_url,
+            top_k=_CORPUS_SEARCH_TOP_K,
+            name=_CORPUS_SEARCH_NAME,
+            filters=filters,
         )
-        tools = [corpus_search] + [t for t in tools if t.name != corpus_search.name]
+        tools = [corpus_search] + tools
     loop = ToolAgentLoop(
         tokenizer=tokenizer,
         server_manager=manager,
