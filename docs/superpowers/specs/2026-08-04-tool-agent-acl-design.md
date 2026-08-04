@@ -24,8 +24,8 @@ It reaches an agent by two paths:
 | Seeded at process start into the global registry (`knowledge_base.py:45`) | shared, built where no request identity exists | no |
 | Rebuilt per request in `_run_tool_agent` when `with_search_tool=True` | request-bound | no — but could be |
 
-The auto route passes `with_search_tool=False` (`app.py:1100`), so the **default
-path receives the shared, unfiltered instance**. #488 recorded this as a
+The auto route passed `with_search_tool=False` (`app.py:1100`), so the **default
+path received the shared, unfiltered instance**. #488 recorded this as a
 Non-goal; this spec closes it.
 
 The per-request rebuild already exists. It rebinds the retrieval URL, not the
@@ -134,15 +134,14 @@ outside this repo remains free to ignore them.
   adds a new agent surface gets no corpus search rather than an unfiltered one.
   Failing closed is the intent; the failure mode is a missing capability, which
   is visible, rather than a silent leak, which is not.
-- **The auto route's tool agent loses corpus search entirely.** It passes
-  `with_search_tool=False` (`app.py:1100`), and step 2 now drops the seeded
-  `_CORPUS_SEARCH_NAME` unconditionally rather than only when a request-bound
-  tool replaces it. Net effect: on the default `/api/agent` path the tool
-  agent has no corpus search at all, where before this change it silently had
-  the unfiltered one. The `filters=filters` argument passed at that call site
-  is consequently dead — nothing reads it while `with_search_tool=False`. This
-  is a real capability loss on the default path, not just a hardening; the
-  tradeoff accepted here is that losing the capability is preferable to
-  handing that path an unfiltered tool, and it is left in place rather than
-  wired up because doing so is a separate decision about what the auto route
-  should be allowed to do.
+- **The auto route's tool agent briefly lost corpus search, and now has it
+  back — filtered.** Step 2 drops the seeded `_CORPUS_SEARCH_NAME`
+  unconditionally, so while that call site still passed `with_search_tool=False`
+  the default `/api/agent` path had no corpus search at all, where before it
+  silently had the unfiltered one. That flag is now `True`, so the branch gets a
+  request-bound instance carrying the caller's ACL. Its comment always said
+  "run ToolAgentLoop with the real registered tools"; `False` meant "use what
+  the registry holds rather than synthesising one", which stopped being true
+  once the seeded instance became non-agent-callable. The capability is
+  restored on the terms this spec exists to establish: filtered, per request,
+  never the shared instance.
