@@ -570,7 +570,10 @@ async def _run_search_agent(
     search_url: str,
     top_k: int,
     history: list | None = None,
-    filters: dict | None = None,
+    # A SearchFilters, not the wire dict: SearchAgentLoop serialises it for the
+    # request and enforces it on the results, so a backend that ignores the
+    # field cannot put an unreadable document into the model's context.
+    filters=None,
     allow_internal_knowledge_answer: bool = True,
     on_turn=None,
     on_trace=None,
@@ -851,7 +854,10 @@ async def _run_search_direct_or_escalate(
                 search_url=search_url,
                 top_k=top_k,
                 history=history,
-                filters=_filters_payload(filters),
+                # The object, not the payload: the loop serialises it for the
+                # request and enforces it on the results, before the documents
+                # reach the model's context.
+                filters=filters,
                 allow_internal_knowledge_answer=False,
                 on_turn=on_turn,
                 on_trace=None,
@@ -1666,7 +1672,10 @@ def create_web_app(
                         search_url=search_url,
                         top_k=top_k,
                         history=history,
-                        filters=_filters_payload(filters),
+                        # The object, not the payload: the loop serialises it for the
+                        # request and enforces it on the results, before the documents
+                        # reach the model's context.
+                        filters=filters,
                         on_turn=on_turn,
                         on_trace=on_trace,
                     )

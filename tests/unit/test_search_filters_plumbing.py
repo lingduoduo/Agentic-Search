@@ -74,10 +74,16 @@ def _loop_with_fake_clients(filters):
 
 
 def test_loop_threads_filters_to_vector_db_not_web():
-    loop, captured = _loop_with_fake_clients(_FILTERS)
+    # The loop holds a SearchFilters and serialises it at the wire, so the
+    # client sees the payload rather than the object. Passing the object to
+    # the client is what crashed every internal retrieval call in #487.
+    from src.context.models import SearchFilters
+
+    filters = SearchFilters(access_acl=["public", "user:user-A"])
+    loop, captured = _loop_with_fake_clients(filters)
 
     asyncio.run(loop._retrieve_many(["q"], Retriever.VECTOR_DB))
-    assert captured["filters"] == _FILTERS
+    assert captured["filters"] == filters.to_payload()
 
     asyncio.run(loop._retrieve_many(["q"], Retriever.WEB))
     assert captured["filters"] is None

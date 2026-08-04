@@ -100,7 +100,8 @@ def test_search_tool_mode_sends_serializable_filters_and_enforces(
     )
 
     # Anonymous is ["public"], never absent: an empty ACL would read as
-    # "unfiltered" to the retrieval server.
+    # "unfiltered" to the retrieval server. This mode goes through
+    # _run_direct_search, which still takes the wire dict.
     assert seen == [json.dumps({"access_acl": ["public"]})]
     contents = " ".join(d["content"] for d in documents).lower()
     assert "migration" in contents  # the public document did come back
@@ -160,8 +161,13 @@ def test_hybrid_search_enforces_on_the_auto_fan_out_too(monkeypatch, tmp_path):
 def test_search_agent_mode_sends_serializable_filters_and_enforces(
     monkeypatch, tmp_path
 ):
-    """The agent loop puts `filters` straight into `SearchAgentLoopConfig`, which
-    posts it as JSON, so the route must hand it a dict — and check what returns."""
+    """The route hands the loop a ``SearchFilters``; the loop serialises it.
+
+    Enforcement moved inside ``SearchAgentLoop`` so documents are dropped before
+    they reach the model's context rather than after its answer. The wire-level
+    guarantee — that what reaches the client is JSON-serialisable — is asserted
+    at that boundary in ``tests/unit/test_search_agent_inline_acl.py``.
+    """
     from src.context.models import ContextDocument
 
     seen: list[str] = []
@@ -177,7 +183,7 @@ def test_search_agent_mode_sends_serializable_filters_and_enforces(
         )
 
     async def _fake_agent(query, **kwargs):
-        seen.append(json.dumps(kwargs.get("filters")))
+        seen.append(kwargs.get("filters"))
         docs = [_doc("theirs", ["user:someone_else"]), _doc("mine", ["public"])]
         return ("agent answer", [d.citation for d in docs], docs, "search", {})
 
@@ -192,7 +198,10 @@ def test_search_agent_mode_sends_serializable_filters_and_enforces(
     )
     documents = _documents(response)
 
-    assert seen == [json.dumps({"access_acl": ["public"]})]
+    # The object reaches the loop, and it is the caller's ACL — not a dict,
+    # and not None (which would mean unfiltered).
+    assert [f.access_acl for f in seen] == [["public"]]
+    assert seen[0].to_payload() == {"access_acl": ["public"]}
     contents = " ".join(d["content"] for d in documents).lower()
     assert "confidential" not in contents
     # Citations name only what survived; the loop's own list still named the
