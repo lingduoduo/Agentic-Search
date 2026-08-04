@@ -181,9 +181,24 @@ _CURATION_USER = (
 )
 
 
+def _readable(session, user_id: str) -> bool:
+    """Whether *user_id* may read *session*.
+
+    A session with no owner is public, the rule ``SearchFilters.matches`` already
+    applies to documents that declare no ACL: anonymous callers share the
+    ``default_user`` bucket and their sessions are stored with a NULL user id, so
+    requiring equality would remove ``curate --session-id`` for all of them.
+    """
+    return session is not None and session.user_id in (None, user_id)
+
+
 def _gather_sources(store, user_id: str, session_id: str | None) -> str:
+    # The by-id branch is the only way into a session the caller did not ask for
+    # by identity -- `list_sessions_for_user` is scoped by `WHERE user_id = ?`.
+    # Unchecked, naming someone else's session put their transcript in the
+    # prompt and filed the result under the caller's memories.
     sessions = (
-        [store.get_chat_session(session_id)]
+        [s for s in [store.get_chat_session(session_id)] if _readable(s, user_id)]
         if session_id
         else store.list_sessions_for_user(user_id)
     )
