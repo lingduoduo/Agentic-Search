@@ -1084,6 +1084,12 @@ async def _run_auto_routed(
     extra["route"] = strategy.value
 
     # ---- TOOL: run ToolAgentLoop with the real registered tools ----
+    # ``with_search_tool=True`` so this branch gets a corpus search bound to
+    # this request, carrying the caller's ACL. It used to pass False, meaning
+    # "use whatever the registry holds rather than synthesising one" — but the
+    # seeded corpus search is built at process start with no identity, so it is
+    # now registered non-agent-callable and this branch would otherwise get no
+    # corpus search at all.
     if strategy is RouteStrategy.TOOL:
         if has_local_model:
             result = None
@@ -1097,7 +1103,7 @@ async def _run_auto_routed(
                     resolved=resolved,
                     on_turn=on_turn,
                     on_approval=on_approval,
-                    with_search_tool=False,
+                    with_search_tool=True,
                     user_present=user_present,
                     filters=filters,
                 )

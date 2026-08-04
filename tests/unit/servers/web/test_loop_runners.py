@@ -554,3 +554,54 @@ async def test_the_request_bound_corpus_search_carries_the_filters(monkeypatch):
     assert built["filters"] is filters
     assert built["search_url"] == "http://request/retrieve"
     assert "search" in [t.name for t in captured["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_auto_routed_tool_strategy_gets_a_filtered_corpus_search(monkeypatch):
+    """The auto route's TOOL branch gets a corpus search bound to this request.
+
+    Its comment has always said "run ToolAgentLoop with the real registered
+    tools", and it passed ``with_search_tool=False`` to mean "use what the
+    registry holds rather than synthesising one". That stopped being true when
+    the seeded corpus search became non-agent-callable: the branch then got no
+    corpus search at all. Passing the flag restores the capability with a
+    request-bound, ACL-filtered instance rather than the unfiltered seeded one.
+    """
+    from src.context.models import SearchFilters
+    from src.internal.servers.web.intent_routing import RouteStrategy
+
+    built = {}
+    real_builder = web_app_routing_tools.build_search_routing_tool
+
+    def _spy(**kwargs):
+        built.update(kwargs)
+        return real_builder(**kwargs)
+
+    monkeypatch.setattr(web_app_routing_tools, "build_search_routing_tool", _spy)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.TOOL,
+    )
+
+    filters = SearchFilters(access_acl=["public", "user:userA"])
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_auto_routed(
+        "q",
+        llm=MagicMock(),
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://request/retrieve",
+        browser_search_url=None,
+        rerank_url=None,
+        top_k=5,
+        filters=filters,
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        user_present=True,
+    )
+
+    assert "search" in [t.name for t in captured["tools"]]
+    # The instance offered is the request-bound one, carrying this caller's ACL
+    # — not the globally-seeded instance, which has neither.
+    assert built["filters"] is filters
+    assert built["search_url"] == "http://request/retrieve"
