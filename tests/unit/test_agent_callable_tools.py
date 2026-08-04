@@ -65,6 +65,8 @@ def test_summaries_expose_agent_callable():
 def test_rag_routing_tool_is_seeded_as_not_agent_callable():
     # It generates a whole answer instead of returning evidence, so offering it
     # to the agent lets the model delegate its own job.
+    # The seeded corpus search (``search``) is also not agent-callable: it's built
+    # at process start with no request identity, so it cannot carry an ACL.
     from src.internal.tools.knowledge_base import seed_tools, tool_knowledge_base
     from unittest.mock import MagicMock
 
@@ -73,7 +75,9 @@ def test_rag_routing_tool_is_seeded_as_not_agent_callable():
 
     assert registry.get("rag_routing_tool") is not None
     assert "rag_routing_tool" not in [t.name for t in registry.agent_tools()]
-    assert "search" in [t.name for t in registry.agent_tools()]
+    assert registry.get("search") is not None  # still listed and invocable
+    assert "search" not in [t.name for t in registry.agent_tools()]
+    assert "web_search" in [t.name for t in registry.agent_tools()]
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,7 @@ from src.internal.servers.retrieval.demo import (
     DEFAULT_TOPK,
     RetrieveRequest,
     TfidfRetriever,
+    _allowed_by_acl,
 )
 
 
@@ -125,6 +126,10 @@ def create_app(*, dense: object | None, sparse: object):
         else:
             dense_rows = [[] for _ in queries]
         rows = _fuse_rows(dense_rows, sparse_rows, body.topk)
+        rows = [
+            [item for item in row if _allowed_by_acl(item["document"], body.filters)]
+            for row in rows
+        ]
         if not body.return_scores:
             rows = [[item["document"] for item in row] for row in rows]
         if body.query is not None:

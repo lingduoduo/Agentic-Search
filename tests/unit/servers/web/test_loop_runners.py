@@ -17,6 +17,7 @@ from src.agents.core.base import AgentLoopOutput
 from src.context.models import ContextDocument, SearchContextBundle, SearchFilters
 from src.context.search import SearchResult
 from src.internal.servers.web import app as web_app
+from src.internal.tools import routing_tools as web_app_routing_tools
 
 
 def _search_output(
@@ -276,7 +277,10 @@ async def test_tool_agent_sees_exactly_one_corpus_search_tool(
     captured = await _run(monkeypatch, with_search_tool=with_search_tool)
     names = [t.name for t in captured["tools"]]
 
-    assert names.count("search") == 1  # the one corpus search
+    # The globally-seeded corpus search is unfiltered (built at process start,
+    # no request identity), so it never reaches the agent. with_search_tool
+    # controls whether a request-bound replacement is added instead.
+    assert names.count("search") == (1 if with_search_tool else 0)
     assert "search_routing_tool" not in names  # renamed to plain `search`
     assert "rag_routing_tool" not in names  # answers instead of being a tool
     assert "web_search" in names  # distinct capability, kept
@@ -493,3 +497,60 @@ async def test_auto_routed_tool_strategy_defaults_to_no_user_scoped_tools(
         # user" path a client-supplied request.user_id must not bypass.
     )
     assert "save_memory" not in [t.name for t in captured["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_the_seeded_corpus_search_never_reaches_the_agent(monkeypatch):
+    # The globally-seeded instance is built where no request identity exists,
+    # so it is unfiltered. With with_search_tool=False the agent must get no
+    # corpus search at all rather than that one.
+    from src.internal.tools.registry import ToolRegistry
+    from src.internal.tools.routing_tools import build_search_routing_tool
+
+    registry = ToolRegistry()
+    registry.register(build_search_routing_tool(search_url="http://seeded/", top_k=5))
+    monkeypatch.setattr("src.internal.tools.tool_registry", registry)
+
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://request/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        on_turn=None,
+        with_search_tool=False,
+    )
+    assert "search" not in [t.name for t in captured["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_the_request_bound_corpus_search_carries_the_filters(monkeypatch):
+    from src.context.models import SearchFilters
+
+    built = {}
+    real_builder = web_app_routing_tools.build_search_routing_tool
+
+    def _spy(**kwargs):
+        built.update(kwargs)
+        return real_builder(**kwargs)
+
+    monkeypatch.setattr(web_app_routing_tools, "build_search_routing_tool", _spy)
+
+    filters = SearchFilters(access_acl=["public", "user:userA"])
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://request/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        on_turn=None,
+        with_search_tool=True,
+        filters=filters,
+    )
+    assert built["filters"] is filters
+    assert built["search_url"] == "http://request/retrieve"
+    assert "search" in [t.name for t in captured["tools"]]

@@ -54,7 +54,10 @@ def tool_knowledge_base(
 # Tools no agent loop should be offered, keyed by name at seed time so the
 # decision travels with registration instead of being re-derived downstream.
 # ``rag_routing_tool`` generates a whole answer rather than returning evidence.
-NOT_AGENT_CALLABLE: frozenset[str] = frozenset({"rag_routing_tool"})
+# ``search`` is seeded at process start, where no request identity exists, so
+# this instance can carry no ACL; the tool agent builds its own request-bound
+# one. This instance stays listed and invocable through /admin/tools.
+NOT_AGENT_CALLABLE: frozenset[str] = frozenset({"rag_routing_tool", "search"})
 
 
 def seed_tools(registry: ToolRegistry, *, tools: list[Tool] | None = None) -> int:

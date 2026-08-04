@@ -44,3 +44,18 @@ def test_seed_tools_accepts_explicit_tools():
     tools = tool_knowledge_base(llm=object())
     assert seed_tools(reg, tools=tools) == 3
     assert reg.get("rag_routing_tool") is not None
+
+
+def test_the_seeded_corpus_search_is_not_agent_callable():
+    # It is built at process start with no request identity, so it cannot carry
+    # an ACL. Keeping it out of every agent's tool list makes that structural
+    # rather than something each call site has to remember.
+    from src.internal.tools.knowledge_base import seed_tools, tool_knowledge_base
+    from src.internal.tools.registry import ToolRegistry
+
+    reg = ToolRegistry()
+    seed_tools(reg, tools=tool_knowledge_base())
+
+    assert reg.get("search") is not None  # still listed and invocable
+    assert "search" not in [t.name for t in reg.agent_tools()]
+    assert "web_search" in [t.name for t in reg.agent_tools()]

@@ -22,7 +22,14 @@ JSON
 
 PYTHONPATH=src:. python3 -m src.internal.servers.retrieval.demo \
   --corpus_path "$WORK/corpus.jsonl" --port 8001 >"$WORK/retrieval.log" 2>&1 &
-env -u SEARCH_AGENT_MODEL PYTHONPATH=src:. \
+# SEARCH_AGENT_MODEL= (explicit empty), not `env -u SEARCH_AGENT_MODEL`: the
+# web app calls dotenv's load_dotenv() with its override=False default, which
+# skips any key already present in os.environ but repopulates one that is
+# merely absent. `env -u` makes it absent, so a developer .env that sets
+# SEARCH_AGENT_MODEL silently wins anyway and the tool-agent leg below tries
+# to load a real model. An explicit empty value counts as "already present"
+# and survives.
+SEARCH_AGENT_MODEL= PYTHONPATH=src:. \
   AGENTIC_SEARCH_WEB_DB_PATH="$WORK/web.db" \
   python3 -m uvicorn src.internal.servers.web.app:app \
   --host 127.0.0.1 --port 7860 >"$WORK/web.log" 2>&1 &
@@ -37,6 +44,23 @@ ask() {  # $1 = output file, $2... = extra curl args
   curl -s -m 120 "$@" -X POST http://127.0.0.1:7860/api/agent \
     -H 'Content-Type: application/json' \
     -d '{"query":"Zebra Handbook"}' -o "$out"
+}
+
+# This leg is weaker than the retrieval-route check above and cannot be made
+# as strong without an API-response change out of scope here: it inspects
+# `answer` (free text the model wrote) and `tool_calls[].result_summary`, but
+# result_summary collapses any list-shaped tool result (which is what the
+# corpus search returns) down to a bare "<N> items" count -- it structurally
+# never contains document content. So this leg can only catch a leak that the
+# model chooses to quote into its own `answer`. Unlike the retrieval leg,
+# which reads structured documents and cannot miss a leak that's present, a
+# PASS here is model-dependent, not a deterministic guarantee.
+tool_leg() {  # $1 = output file, $2... = extra curl args; prints the HTTP status
+  local out="$1"; shift
+  curl -s -m 180 -o "$out" -w '%{http_code}' "$@" \
+    -X POST http://127.0.0.1:7860/tool/send-tool-message \
+    -H 'Content-Type: application/json' \
+    -d '{"message":"Search the corpus for Zebra Handbook","stream":false}'
 }
 
 ask "$WORK/anon.json"
@@ -92,4 +116,43 @@ print(f"signed-in  sees the restricted document: {auth}")
 if anon or auth:
     raise SystemExit("FAIL: a restricted document leaked")
 print("PASS: neither identity can read another user's document")
+PY
+
+tool_anon_status=$(tool_leg "$WORK/tool_anon.json")
+tool_auth_status=$(tool_leg "$WORK/tool_auth.json" -b "$WORK/ck.txt")
+
+python3 - "$WORK/tool_anon.json" "$WORK/tool_auth.json" "$tool_anon_status" "$tool_auth_status" <<'PY'
+import json, sys
+
+anon_path, auth_path, anon_status, auth_status = sys.argv[1:5]
+
+def tool_leaked(path):
+    data = json.load(open(path))
+    text = data.get("answer") or ""
+    for call in data.get("tool_calls") or []:
+        text += " " + (call.get("result_summary") or "")
+    return "confidential" in text.lower()
+
+if anon_status == "400" and auth_status == "400":
+    print("SKIP: tool-agent leg needs SEARCH_AGENT_MODEL")
+elif anon_status == "400" or auth_status == "400":
+    raise SystemExit(
+        "FAIL: tool-agent leg got inconsistent responses -- one request was "
+        f"400 (no local model configured) and the other was not "
+        f"(anon={anon_status}, auth={auth_status}); a single server process "
+        "should answer both the same way."
+    )
+else:
+    anon_leak = tool_leaked(anon_path)
+    auth_leak = tool_leaked(auth_path)
+    print(f"tool-agent anonymous sees the restricted document: {anon_leak}")
+    print(f"tool-agent signed-in  sees the restricted document: {auth_leak}")
+    if anon_leak or auth_leak:
+        raise SystemExit(
+            "FAIL: a restricted document leaked via the tool-agent surface"
+        )
+    print(
+        "PASS (model-dependent): the tool agent did not surface another "
+        "user's document"
+    )
 PY

@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from src.context import ChatMessage
+from src.context.models import SearchFilters
 from src.internal.access.capabilities import resolve_capabilities
 from src.internal.db import AgenticSearchStore
 from src.internal.servers.query_and_chat.models import (
@@ -99,6 +100,7 @@ def create_tool_router(
                 on_approval=on_approval,
                 with_search_tool=body.run_search_tool,
                 user_present=capabilities.user_present,
+                filters=SearchFilters(access_acl=capabilities.access_acl),
             )
             answer = answer or extra.pop("_assistant_fallback", "")
             tool_calls = extra.get("tool_calls", [])
