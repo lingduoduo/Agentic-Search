@@ -145,6 +145,10 @@ class SearchExperienceSettings:
     allow_client_search_url: bool = False
     # Dev-only observability console. Off by default; never enable in prod.
     debug_panels: bool = False
+    # Refuse anonymous /api/memory callers instead of pooling them into the
+    # shared default_user bucket. Off by default: the CLI is documented as
+    # working unauthenticated for local research use.
+    memory_require_auth: bool = False
 
     @classmethod
     def from_app_settings(
@@ -164,6 +168,7 @@ class SearchExperienceSettings:
             db_path=app_settings.services.web_db_path,
             allow_client_search_url=_flag("AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL"),
             debug_panels=_flag("AGENTIC_SEARCH_DEBUG_PANELS"),
+            memory_require_auth=_flag("AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH"),
         )
 
 
@@ -344,6 +349,7 @@ def _register_routers(
     search_url: str,
     debug_panels: bool = False,
     llm: LLMClient | None = None,
+    memory_require_auth: bool = False,
 ) -> None:
     """Attach all API routers and exception handlers to *app*."""
 
@@ -400,7 +406,7 @@ def _register_routers(
     # --- Memory ---
     from src.internal.memory.router import create_memory_router
 
-    app.include_router(create_memory_router(db, llm))
+    app.include_router(create_memory_router(db, llm, require_auth=memory_require_auth))
 
     # --- Dev console (gated; dev-only observability) ---
     if debug_panels:
@@ -1346,6 +1352,7 @@ def create_web_app(
         search_url=settings.search_url,
         debug_panels=settings.debug_panels,
         llm=llm,
+        memory_require_auth=settings.memory_require_auth,
     )
 
     frontend_dist = _frontend_dist_path()

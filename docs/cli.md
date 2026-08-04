@@ -111,7 +111,12 @@ environment variables, overridden by flags:
 | JWT signing secret | `AGENTIC_SEARCH_AUTH_SECRET` (then `AUTH_SECRET`) | `-secret` | — |
 
 - **Unauthenticated is fine for local/research use** — with no token the backend
-  treats the caller as the default user (`default_user`).
+  treats the caller as the default user (`default_user`). That bucket is
+  **shared**: every anonymous caller reads and writes the same memories, which is
+  what makes the single-operator local flow work and what makes it wrong for a
+  deployment with more than one person. Set
+  `AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH=1` on the backend to refuse anonymous
+  memory callers instead; the CLI then needs `-token` or `-user-id`.
 - To act as a specific user without a pre-issued token, pass `-user-id alice`;
   the CLI mints an HS256 JWT signed with `AGENTIC_SEARCH_AUTH_SECRET` (falling
   back to `AUTH_SECRET`). That secret **must match** the backend's
