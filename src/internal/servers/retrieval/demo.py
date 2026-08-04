@@ -97,6 +97,7 @@ class RetrieveRequest(BaseModel):
     query: str | None = None
     topk: int = DEFAULT_TOPK
     return_scores: bool = False
+    filters: dict | None = None
 
     def resolved_queries(self) -> list[str]:
         if self.queries:
@@ -106,6 +107,26 @@ class RetrieveRequest(BaseModel):
         return []
 
 
+def _allowed_by_acl(document: dict, filters: dict | None) -> bool:
+    """Whether *document* is readable under *filters*.
+
+    A document that declares no ACL is public, matching
+    ``SearchFilters.matches``. Kept local so the retrieval servers stay free of
+    web-layer imports.
+    """
+    if not filters:
+        return True
+    allowed = filters.get("access_acl")
+    if not allowed:
+        return True
+    declared = (document.get("metadata") or {}).get("acl")
+    if not declared:
+        return True
+    if isinstance(declared, str):
+        declared = [declared]
+    return bool(set(declared) & set(allowed))
+
+
 def create_app(retriever: TfidfRetriever):
     app = create_base_app("Demo Retrieval Server")
 
@@ -113,6 +134,10 @@ def create_app(retriever: TfidfRetriever):
     def retrieve_endpoint(body: RetrieveRequest):
         queries = body.resolved_queries()
         rows = retriever.retrieve(queries, topk=body.topk)
+        rows = [
+            [item for item in row if _allowed_by_acl(item["document"], body.filters)]
+            for row in rows
+        ]
         if not body.return_scores:
             rows = [[item["document"] for item in row] for row in rows]
         if body.query is not None:
