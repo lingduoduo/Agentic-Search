@@ -127,15 +127,16 @@ def _allowed_by_acl(document: dict, filters: dict | None) -> bool:
     return bool(set(declared) & set(allowed))
 
 
-def create_app(retriever: TfidfRetriever):
+def create_app(retriever: TfidfRetriever, *, ignore_acl: bool = False):
     app = create_base_app("Demo Retrieval Server")
 
     @app.post("/retrieve")
     def retrieve_endpoint(body: RetrieveRequest):
         queries = body.resolved_queries()
         rows = retriever.retrieve(queries, topk=body.topk)
+        filters = None if ignore_acl else body.filters
         rows = [
-            [item for item in row if _allowed_by_acl(item["document"], body.filters)]
+            [item for item in row if _allowed_by_acl(item["document"], filters)]
             for row in rows
         ]
         if not body.return_scores:
@@ -157,6 +158,14 @@ def parse_args() -> argparse.Namespace:
         help="Registered corpus name, comma-list, or 'all' (see data/corpora.json)",
     )
     parser.add_argument("--topk", type=int, default=DEFAULT_TOPK)
+    parser.add_argument(
+        "--ignore-acl",
+        action="store_true",
+        help=(
+            "Serve documents regardless of the request's access_acl, so a "
+            "client's own enforcement can be tested with nothing behind it."
+        ),
+    )
     add_host_port_args(
         parser,
         "DEMO_RETRIEVAL_HOST",
@@ -176,7 +185,7 @@ def main() -> None:
 
     docs = resolve_corpus_docs(args.corpus or args.corpus_path)
     retriever = TfidfRetriever.from_docs(docs)
-    app = create_app(retriever)
+    app = create_app(retriever, ignore_acl=args.ignore_acl)
     run_uvicorn_app(app, host=args.host, port=args.port)
 
 
