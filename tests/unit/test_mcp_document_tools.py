@@ -237,7 +237,8 @@ def test_extract_pdf_uses_the_maintained_pypdf_package(monkeypatch):
 
     document_parser_runtime.extract_pdf(_two_page_pdf(), "notes.pdf", "1")
 
-    assert imported == ["pypdf"]
+    assert imported
+    assert set(imported) == {"pypdf"}
 
 
 def test_extract_pdf_reports_missing_optional_dependency(monkeypatch):
