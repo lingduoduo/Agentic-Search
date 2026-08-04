@@ -5,8 +5,13 @@
 
 ## Problem
 
-Every `/api/agent` retrieval route now enforces the caller's ACL (#487, #488).
-The tool agent does not. `build_search_routing_tool`
+Every `/api/agent` retrieval route now enforces the caller's ACL on what it
+returns (#487, #488) — though for `search_agent` mode that enforcement is
+post-generation: `app.py` filters the documents the loop returns only after
+the model has already generated an answer from them, so a third-party backend
+that ignores `filters` can still let the model read documents outside the
+caller's ACL before they are stripped from the response. The tool agent does
+not enforce at all. `build_search_routing_tool`
 (`src/internal/tools/routing_tools.py`) closes over `search_url` and `top_k`
 only; its body calls `search_tool(provider="retrieval")` with **no filters and
 no post-filter**, so the `search` tool offered to `ToolAgentLoop` returns
@@ -129,3 +134,15 @@ outside this repo remains free to ignore them.
   adds a new agent surface gets no corpus search rather than an unfiltered one.
   Failing closed is the intent; the failure mode is a missing capability, which
   is visible, rather than a silent leak, which is not.
+- **The auto route's tool agent loses corpus search entirely.** It passes
+  `with_search_tool=False` (`app.py:1100`), and step 2 now drops the seeded
+  `_CORPUS_SEARCH_NAME` unconditionally rather than only when a request-bound
+  tool replaces it. Net effect: on the default `/api/agent` path the tool
+  agent has no corpus search at all, where before this change it silently had
+  the unfiltered one. The `filters=filters` argument passed at that call site
+  is consequently dead — nothing reads it while `with_search_tool=False`. This
+  is a real capability loss on the default path, not just a hardening; the
+  tradeoff accepted here is that losing the capability is preferable to
+  handing that path an unfiltered tool, and it is left in place rather than
+  wired up because doing so is a separate decision about what the auto route
+  should be allowed to do.
