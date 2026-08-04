@@ -31,12 +31,18 @@ _RAG_TOOL_PARAMS = {
 
 
 def build_search_routing_tool(
-    *, search_url: str, top_k: int, name: str = "search"
+    *, search_url: str, top_k: int, name: str = "search", filters=None
 ) -> FunctionTool:
     """FunctionTool that retrieves documents from the corpus.
 
     Named ``search`` by default: it *is* the corpus search a model should reach
     for, and an opaque name costs tool-selection accuracy on small models.
+
+    ``filters`` are both sent to retrieval and enforced on what comes back.
+    Sending alone is not enforcement: ``demo.py`` and ``hybrid.py`` accept the
+    field and ignore it, so an unpaired send would hand the model documents the
+    caller may not read. ``None`` keeps the tool unfiltered for callers that
+    have no identity (training scripts, evals).
     """
 
     async def _execute(query: str) -> str:
@@ -45,15 +51,18 @@ def build_search_routing_tool(
             provider="retrieval",
             search_url=search_url,
             page_size=top_k,
+            filters=filters.to_payload() if filters is not None else None,
         )
+        if filters is not None:
+            pages = [p for p in pages if p.error or filters.matches(p.metadata or {})]
         results = [
             {"title": p.title or "", "content": p.summary or "", "url": p.url}
             for p in pages
             if not p.error
         ]
-        if not results and pages:
+        if not results and any(p.error for p in pages):
             errors = [p.error for p in pages if p.error]
-            return json.dumps({"error": errors[0] if errors else "No results returned"})
+            return json.dumps({"error": errors[0]})
         return json.dumps(results)
 
     return FunctionTool(
