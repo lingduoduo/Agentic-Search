@@ -20,7 +20,10 @@ def _page(title: str, acl: list[str] | None) -> SearchPage:
         title=title,
         summary="body",
         url=f"http://x/{title}",
-        metadata={"acl": acl if acl is not None else ["public"]},
+        # A page that declares no ACL still carries other metadata; an empty
+        # dict is a different case (see note below) and not what "undeclared"
+        # means in practice.
+        metadata={"acl": acl} if acl is not None else {"source": "corpus"},
     )
 
 
@@ -76,5 +79,17 @@ def test_no_filters_sends_no_payload():
 
 def test_everything_filtered_out_is_an_empty_list_not_an_error():
     # An empty result is a legitimate answer; it must not read as a failure.
-    results, _ = _run(SearchFilters(access_acl=["user:nobody"]))
+    # Use only pages that declare explicit ACLs (excluding undeclared, which is public).
+    tool = build_search_routing_tool(
+        search_url="http://x/retrieve",
+        top_k=5,
+        filters=SearchFilters(access_acl=["user:nobody"]),
+    )
+    declared_pages = [p for p in PAGES if "acl" in p.metadata]
+    with patch(
+        "src.internal.tools.routing_tools.search_tool",
+        new=AsyncMock(return_value=declared_pages),
+    ):
+        raw, _out, _meta = asyncio.run(tool.execute("id", {"query": "q"}))
+    results = json.loads(raw)
     assert results == []
