@@ -36,6 +36,11 @@ surface, parallel to `/search/*` and `/chat/*`:
   and a final `done`. Requires a local model (`SEARCH_AGENT_MODEL` /
   `SEARCH_AGENT_SERVER_URL`); returns **400** otherwise. Pass `stream:false` for
   a single JSON response.
+
+  The response and the `done` event carry `truncated`. It is `true` when a
+  generation hit the wall-clock stop (`AGENTIC_SEARCH_GENERATION_TIMEOUT`) and
+  the answer is a fragment — otherwise a cut-off answer is indistinguishable
+  from a complete one.
 - `GET /tool/tool-history` — past sessions for the caller (session proxy, like
   `/search/search-history`).
 
@@ -66,6 +71,28 @@ runtime via `register_from_openapi`.
 Built-in seed tools: `web_search`, `search`, `search_routing_tool` (and
 `rag_routing_tool` when an LLM is configured). Discovery is a ranking aid, not a
 dispatcher.
+
+### Not every registered tool is offered to an agent
+
+`ToolEntry` carries two registration properties that decide who may call a tool,
+so the decision travels with registration instead of being re-derived at each
+call site:
+
+- **`agent_callable=False`** — listed and invocable through `/admin/tools` and
+  the Dev Console, but never handed to an agent loop. The seeded `search` is
+  registered this way: it is built at process start, where no request identity
+  exists, so it could only ever hold an unfiltered view of the corpus.
+  `rag_routing_tool` is excluded too, because it generates a whole answer rather
+  than returning evidence.
+- **`user_scoped=True`** — withheld when the request has no user, so an
+  anonymous caller cannot write into a shared bucket. Set at MCP registration
+  from `AGENTIC_SEARCH_MCP_USER_SCOPED`.
+
+The tool agent therefore builds its **own** corpus `search` per request, bound to
+that caller's ACL — it sends the filters to retrieval *and* drops anything that
+fails them on the way back, because a backend may ignore the field. An agent loop
+can never receive the unfiltered seeded instance, by construction rather than by
+each call site remembering.
 
 ### `web_search` fetches the real web
 
@@ -109,6 +136,11 @@ the live registry without running the agent:
 The [MCP server](mcp.md) exposes a set of tools to external MCP clients (Claude
 Desktop, Cursor, etc.). That selection is client-driven and independent of this
 auto-router: an MCP client invokes an exposed tool by its own policy and does not
-pass through the web backend's routing. The `dynamic.py` bridge mirrors registry
-tools **into** MCP via `sync_tool_to_mcp(name)`; the registry feeds MCP, not the
-reverse.
+pass through the web backend's routing.
+
+Both directions exist. The `dynamic.py` bridge mirrors registry tools **into**
+MCP via `sync_tool_to_mcp(name)`. In the other direction, this process can run as
+an MCP **client**, so tools from a configured MCP server become ordinary
+`ToolRegistry` tools — callable by the tool agent and listed by
+`default_tool_catalog()`. See [MCP](mcp.md) for the client configuration and the
+guards that keep a server from being offered its own tools back.

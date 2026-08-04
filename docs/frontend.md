@@ -35,8 +35,9 @@ cd web && npm run test -- --run        # Vitest unit tests
 ## Logging in (Search / Chat / Tools pages)
 
 The **Search** page calls `POST /search/send-search-message`, which resolves the
-caller with `resolve_request_user` and returns `401 Authentication required` for
-anonymous requests — it needs a user id to build ACL filters. `AGENTIC_SEARCH_DEV_ADMIN`
+caller with `resolve_active_user` and returns `401 Authentication required` for
+anonymous requests — unlike `/api/agent`, this surface requires a real user
+rather than falling back to the anonymous `["public"]` identity. `AGENTIC_SEARCH_DEV_ADMIN`
 does **not** cover this; that bypass applies only to the admin routers.
 
 There is no login UI in the app. For local dev, open:
@@ -99,7 +100,7 @@ AGENTIC_SEARCH_DEBUG_PANELS=1 PYTHONPATH=src:. \
 cd web && VITE_DEBUG_PANELS=1 npm run dev
 ```
 
-Click **Console** in the top bar to open it. **Retrieval Lab** runs a query against each per-mode endpoint (`sparse` / `dense` / `hybrid` / `graph`) via the `POST /api/debug/retrieval/{mode}` proxy and shows results side by side, surfacing **503** (dense not configured → hybrid collapses to sparse) and **404** (endpoint not mounted, e.g. against `demo.py`) explicitly instead of as a generic error. (Health/workers/chat-trace panels land in later phases — see [the plan](superpowers/plans/2026-06-29-backend-observability-uis.md).)
+Click **Console** in the top bar to open it. **Retrieval Lab** runs a query against each per-mode endpoint (`sparse` / `dense` / `hybrid` / `graph`) via the `POST /api/debug/retrieval/{mode}` proxy and shows results side by side, surfacing **503** (dense not configured → hybrid collapses to sparse) and **404** (endpoint not mounted, e.g. against `demo.py`) explicitly instead of as a generic error. (Health/workers/chat-trace panels land in later phases — see [the plan](superpowers/archive/plans/2026-06-29-backend-observability-uis.md).)
 
 ## UI features
 

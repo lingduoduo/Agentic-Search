@@ -13,7 +13,6 @@ src/
 ├── context/                     # Retrieval-grounded context & prompt builders
 ├── model/                       # LLM generation, intent classifier, tensor helpers
 ├── shared_configs/              # Shared configuration dataclasses
-├── tools/                       # Tool schemas, search tools, OpenAPI tool registry
 ├── training/
 │   ├── eval/                    # Benchmark evaluation (Bamboogle, …)
 │   ├── ppo/                     # PPO core, LLMGRPOTrainer, SearchAgentGRPOTrainer
@@ -49,7 +48,6 @@ src/
         ├── analytics/           # Usage analytics API
         ├── billing/             # Stripe billing proxy
         ├── connectors/          # Connector management endpoints
-        ├── documents/           # Connector-credential pair management
         ├── enterprise_settings/ # Enterprise configuration endpoints
         ├── evals/               # Evaluation endpoints
         ├── features/            # Feature-flag endpoints
@@ -92,9 +90,9 @@ The repo has **two parallel agent designs**; "the agent framework" is the first,
 
 **Tool agents and search agents are members of the framework** — siblings under `AgentLoopBase`, sharing the registry, the `LoopController` + components, and the `server_manager` model boundary. **Agentic RAG sits *beside* the framework, not inside it:** its constructor, `run()` signature, and return type diverge from `AgentLoopBase`, so registering it would break the `dict[str, type[AgentLoopBase]]` contract — it stays a deliberate non-registry loop. A dispatch layer (registry + `resolve_agent_name` + the web intent router) picks one target per request, treating all three families as interchangeable.
 
-**Why they're kept separate (by design).** The framework loops are *token-level* because they're built for GRPO RL training (policy gradients need `prompt_ids`/`response_ids`). `AgenticRAGLoop` is a lighter *chat-level* serving pipeline (`LLMClient`, no tokenizer/`server_manager`) doing query decomposition + HyDE + grounded synthesis. Two simple designs for two purposes beat one contract forced onto both; the boundary is enforced (the registry rejects non-conforming loops) and documented in the [agent invocation consolidation design](superpowers/specs/2026-06-25-agent-invocation-consolidation-design.md) so the families don't quietly drift together. Consolidation *is* feasible — `SearchAgentLoop` already does most of what `AgenticRAGLoop` does (sub-questions, iterative retrieval, evidence gating, citations); express agentic-RAG as a `SearchAgentLoop` config + a HyDE query-transform, bridged via the `ServerManager` protocol, and retire `AgenticRAGLoop`. It's deferred architectural-debt work, not a feature, so the families stay separate for now.
+**Why they're kept separate (by design).** The framework loops are *token-level* because they're built for GRPO RL training (policy gradients need `prompt_ids`/`response_ids`). `AgenticRAGLoop` is a lighter *chat-level* serving pipeline (`LLMClient`, no tokenizer/`server_manager`) doing query decomposition + HyDE + grounded synthesis. Two simple designs for two purposes beat one contract forced onto both; the boundary is enforced (the registry rejects non-conforming loops) and documented in the [agent invocation consolidation design](superpowers/archive/specs/2026-06-25-agent-invocation-consolidation-design.md) so the families don't quietly drift together. Consolidation *is* feasible — `SearchAgentLoop` already does most of what `AgenticRAGLoop` does (sub-questions, iterative retrieval, evidence gating, citations); express agentic-RAG as a `SearchAgentLoop` config + a HyDE query-transform, bridged via the `ServerManager` protocol, and retire `AgenticRAGLoop`. It's deferred architectural-debt work, not a feature, so the families stay separate for now.
 
-**Loop registry — one source of truth.** Agent loops register by name (`@register`) and are resolved through `get_registered_agent_loop(name)`; `resolve_agent_name` maps CLI/web aliases to the canonical loop. The registry covers the four `AgentLoopBase` loops below. `AgenticRAGLoop` (constructor + `run()` signature diverge from `AgentLoopBase`) and the retrieval pipelines (`search_tool` / `hybrid_search` / `chat_once`) are a distinct, non-registry category — see the [agent invocation consolidation design](superpowers/specs/2026-06-25-agent-invocation-consolidation-design.md).
+**Loop registry — one source of truth.** Agent loops register by name (`@register`) and are resolved through `get_registered_agent_loop(name)`; `resolve_agent_name` maps CLI/web aliases to the canonical loop. The registry covers the four `AgentLoopBase` loops below. `AgenticRAGLoop` (constructor + `run()` signature diverge from `AgentLoopBase`) and the retrieval pipelines (`search_tool` / `hybrid_search` / `chat_once`) are a distinct, non-registry category — see the [agent invocation consolidation design](superpowers/archive/specs/2026-06-25-agent-invocation-consolidation-design.md).
 
 | Canonical loop | CLI `--mode` | Web `mode` | Purpose |
 |---|---|---|---|
@@ -167,17 +165,17 @@ offline index_builder (corpus.jsonl)
 /api/agent or /api/agent/stream
   → query hook + session/history + access filters
   → explicit mode, or route_query(chat | search | tool)
-      → chat: AgenticRAGLoop, or filter-aware pipeline without an LLM
+      → chat: AgenticRAGLoop, or the SearchPipeline composition without an LLM
       → tool: ToolAgentLoop, then grounded chat if tools/model are unavailable
-      → search:
-          filters? → filter-aware pipeline:
-                     follow-up-aware retrieval query
-                     → candidate retrieval with ACL filters
-                     → deduplicate + optional rerank + MMR
-                     → grounded inference only with evidence
-          otherwise → internal retrieval → sufficiency gate
-                       → SerpAPI → browser-search service
-                       → deterministic no-evidence response
+      → search: internal retrieval → sufficiency gate
+                → SerpAPI → browser-search service
+                → deterministic no-evidence response
+          escalation without a local model falls back to the same
+          SearchPipeline composition:
+              follow-up-aware retrieval query
+              → candidate retrieval with ACL filters
+              → deduplicate + optional rerank + MMR
+              → grounded inference only with evidence
   → shared response finalization + persistence + hooks
   → JSON response or SSE answer/done events
 ```
