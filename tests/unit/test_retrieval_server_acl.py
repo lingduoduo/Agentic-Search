@@ -6,10 +6,13 @@ backend is free to ignore the field — but the servers we ship should not.
 
 from __future__ import annotations
 
+import sys
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from src.internal.servers.retrieval import hybrid
-from src.internal.servers.retrieval.demo import TfidfRetriever, create_app
+from src.internal.servers.retrieval.demo import TfidfRetriever, create_app, parse_args
 
 DOCS = [
     {
@@ -80,6 +83,37 @@ def test_the_matching_user_sees_their_own_document():
         },
     )
     assert "theirs" in _ids(r.json())
+
+
+def test_ignore_acl_serves_restricted_documents_anyway():
+    """The opt-out that lets a client's own enforcement be tested in isolation.
+
+    ``examples/verify_identity_capabilities.sh`` exists to prove the *web layer*
+    withholds documents. Once this server enforces too, a passing run no longer
+    distinguishes the two layers — the script starts the server with this flag
+    so the only thing left standing between the corpus and the caller is the
+    web layer.
+    """
+    app = create_app(TfidfRetriever.from_docs(list(DOCS)), ignore_acl=True)
+    r = TestClient(app).post(
+        "/retrieve",
+        json={
+            "queries": ["zebra migration"],
+            "topk": 5,
+            "filters": {"access_acl": ["public"]},
+        },
+    )
+    assert r.status_code == 200
+    assert "theirs" in _ids(r.json())
+
+
+def test_ignore_acl_is_reachable_from_the_command_line():
+    """Wiring, not behaviour: the script passes ``--ignore-acl`` to the CLI."""
+    argv = ["--corpus_path", "corpus.jsonl", "--ignore-acl"]
+    with patch.object(sys, "argv", ["demo", *argv]):
+        assert parse_args().ignore_acl is True
+    with patch.object(sys, "argv", ["demo", "--corpus_path", "corpus.jsonl"]):
+        assert parse_args().ignore_acl is False
 
 
 def _hybrid_client():

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Proves identity shapes results against a retrieval server that ignores
-# filters (demo.py does), so enforcement is the web layer's, not the server's.
+# filters, so enforcement is the web layer's, not the server's.
+#
+# demo.py honours access_acl on its own since #490, which would make a pass
+# here prove only that *something* in the stack enforces -- the run would stay
+# green with the web layer's enforcement deleted. --ignore-acl turns that
+# second layer off so this script keeps testing the one it names.
 #
 # Usage: examples/verify_identity_capabilities.sh
 set -euo pipefail
@@ -21,7 +26,8 @@ cat > "$WORK/corpus.jsonl" <<'JSON'
 JSON
 
 PYTHONPATH=src:. python3 -m src.internal.servers.retrieval.demo \
-  --corpus_path "$WORK/corpus.jsonl" --port 8001 >"$WORK/retrieval.log" 2>&1 &
+  --corpus_path "$WORK/corpus.jsonl" --port 8001 --ignore-acl \
+  >"$WORK/retrieval.log" 2>&1 &
 # SEARCH_AGENT_MODEL= (explicit empty), not `env -u SEARCH_AGENT_MODEL`: the
 # web app calls dotenv's load_dotenv() with its override=False default, which
 # skips any key already present in os.environ but repopulates one that is
@@ -29,7 +35,12 @@ PYTHONPATH=src:. python3 -m src.internal.servers.retrieval.demo \
 # SEARCH_AGENT_MODEL silently wins anyway and the tool-agent leg below tries
 # to load a real model. An explicit empty value counts as "already present"
 # and survives.
-SEARCH_AGENT_MODEL= PYTHONPATH=src:. \
+#
+# `${SEARCH_AGENT_MODEL-}` keeps that property (the key is always present, so
+# .env never wins) while letting a caller who exports one opt into the
+# tool-agent leg below, which otherwise SKIPs:
+#   SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct examples/verify_identity_capabilities.sh
+SEARCH_AGENT_MODEL="${SEARCH_AGENT_MODEL-}" PYTHONPATH=src:. \
   AGENTIC_SEARCH_WEB_DB_PATH="$WORK/web.db" \
   python3 -m uvicorn src.internal.servers.web.app:app \
   --host 127.0.0.1 --port 7860 >"$WORK/web.log" 2>&1 &
@@ -57,10 +68,16 @@ ask() {  # $1 = output file, $2... = extra curl args
 # PASS here is model-dependent, not a deterministic guarantee.
 tool_leg() {  # $1 = output file, $2... = extra curl args; prints the HTTP status
   local out="$1"; shift
+  # `|| true`, because this runs inside `$(...)`: a curl failure (most likely
+  # the 180s timeout, since the first request also pays for loading the model)
+  # exits non-zero, and `set -e` then kills the whole script from inside the
+  # substitution having printed nothing at all -- which reads exactly like a
+  # clean run to anyone looking at the tail. Report curl's 000 instead and let
+  # the check below say so out loud.
   curl -s -m 180 -o "$out" -w '%{http_code}' "$@" \
     -X POST http://127.0.0.1:7860/tool/send-tool-message \
     -H 'Content-Type: application/json' \
-    -d '{"message":"Search the corpus for Zebra Handbook","stream":false}'
+    -d '{"message":"Search the corpus for Zebra Handbook","stream":false}' || true
 }
 
 ask "$WORK/anon.json"
@@ -133,6 +150,13 @@ def tool_leaked(path):
         text += " " + (call.get("result_summary") or "")
     return "confidential" in text.lower()
 
+if "000" in (anon_status, auth_status):
+    raise SystemExit(
+        "FAIL: tool-agent leg did not complete -- curl got no HTTP response "
+        f"(anon={anon_status}, auth={auth_status}). The local model is "
+        "probably slower than the 180s timeout; this is a broken check, not "
+        "a passing one."
+    )
 if anon_status == "400" and auth_status == "400":
     print("SKIP: tool-agent leg needs SEARCH_AGENT_MODEL")
 elif anon_status == "400" or auth_status == "400":
