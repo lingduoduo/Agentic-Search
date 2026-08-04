@@ -41,7 +41,7 @@ from src.agents.components.reranker_tool import RerankFn
 from src.agents.core.control_flow_trace import ControlFlowRecorder, EventSink
 from src.agents.core.state import AgentState, Retriever, UserRequest
 
-if TYPE_CHECKING:  # import for typing only — src.context imports agents at runtime
+if TYPE_CHECKING:  # annotation only; keeps this module's runtime imports as they were
     from src.context.models import SearchFilters
 
 # ---------------------------------------------------------------------------
@@ -598,11 +598,18 @@ class SearchAgentLoop(AgentLoopBase):
         return [[r for r in row if filters.matches(r.metadata)] for row in results]
 
     async def _fetch_pages(self, urls: list[str]) -> list[SearchResult]:
+        # Fetched pages land in the loop's messages exactly as retrieved ones do,
+        # so they need the same gate. No retrieval server in this repo exposes
+        # /fetch today, but the guarantee is meant to hold for backends that do.
+        filters = self.search_config.filters
         try:
-            return await self._search_client.fetch_urls(urls)
+            pages = await self._search_client.fetch_urls(urls)
         except Exception as exc:
             logger.warning("Page fetch failed for urls %r: %s", urls, exc)
             return []
+        if filters is None:
+            return pages
+        return [p for p in pages if filters.matches(p.metadata)]
 
     @staticmethod
     def _cache_key(query: str, retriever: Retriever) -> str:

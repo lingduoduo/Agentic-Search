@@ -71,6 +71,12 @@ This upholds the project invariant — a serialization paired with an enforcemen
 in the same place — and moves the enforcement point before the model's context
 rather than after its answer.
 
+`_fetch_pages` is the loop's **second ingress**: fetched pages are appended to
+the same working messages as retrieved ones, so it gets the same gate. No
+retrieval server in this repo exposes `/fetch`, so today it returns `[]` either
+way — but the guarantee is stated as holding whatever the backend does, and a
+backend that serves `/fetch` would otherwise walk straight past it.
+
 **The type change has exactly one producer.** Every `SearchAgentLoopConfig(...)`
 construction in the tree was checked: only `app.py`'s `_run_search_agent` passes
 `filters=`, and it currently wraps the value in `_filters_payload(...)`. That
@@ -82,6 +88,7 @@ wrapping is dropped; the object is passed through. The training and eval scripts
 
 ## Verification
 
+- Fetched pages are gated too, not just retrieved ones.
 - A retrieval server that returns a document outside the caller's ACL: the
   document must be absent from what the loop puts in the model's context, not
   merely absent from the returned list. Assert on what the *client mock was

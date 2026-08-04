@@ -104,3 +104,33 @@ def test_a_retrieval_failure_still_degrades_to_empty():
     loop, client = _loop(SearchFilters(access_acl=["public"]))
     client.retrieve = AsyncMock(side_effect=ConnectionError("no route"))
     assert asyncio.run(loop._retrieve_many(["q", "q2"])) == [[], []]
+
+
+# ---------------------------------------------------------------------------
+# The second ingress. Fetched pages land in the loop's messages the same way
+# retrieved ones do, so they need the same gate — no in-tree retrieval server
+# exposes /fetch today, but the guarantee is meant to hold for backends that do.
+# ---------------------------------------------------------------------------
+
+
+def test_fetched_pages_outside_the_acl_never_enter_the_loop():
+    loop, _client = _loop(SearchFilters(access_acl=["public", "user:userA"]))
+    loop._search_client.fetch_urls = AsyncMock(return_value=list(ROW))
+
+    pages = asyncio.run(loop._fetch_pages(["http://x/mine", "http://x/theirs"]))
+
+    titles = {p.title for p in pages}
+    assert "theirs" not in titles
+    assert {"mine", "open", "undeclared"} <= titles
+
+
+def test_fetched_pages_are_unfiltered_without_filters():
+    loop, _client = _loop(None)
+    loop._search_client.fetch_urls = AsyncMock(return_value=list(ROW))
+    assert len(asyncio.run(loop._fetch_pages(["http://x/a"]))) == len(ROW)
+
+
+def test_a_fetch_failure_still_degrades_to_empty():
+    loop, _client = _loop(SearchFilters(access_acl=["public"]))
+    loop._search_client.fetch_urls = AsyncMock(side_effect=ConnectionError("no route"))
+    assert asyncio.run(loop._fetch_pages(["http://x/a"])) == []
