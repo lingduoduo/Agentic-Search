@@ -306,7 +306,7 @@ For complete request and response payloads, see the [HTTP API reference](api-ref
 
 ## Retrieval in auto-routed API requests
 
-The web API has an evidence-first search path above the retrieval services. For an unfiltered `/api/agent` request that routes to `search` with `source_provider=auto`, the backend:
+The web API has an evidence-first search path above the retrieval services. For an `/api/agent` request that routes to `search` with `source_provider=auto`, the backend:
 
 1. queries internal retrieval;
 2. accepts an exact-title, fuzzy-plus-semantic, or semantic match that clears the direct sufficiency gate;
@@ -316,7 +316,7 @@ The web API has an evidence-first search path above the retrieval services. For 
 
 This sequence is different from explicit `mode=hybrid_search`, whose helper can query internal retrieval in parallel with a cascading web leg and then merge/rerank results. It is also different from the internal retrieval router described below.
 
-Authenticated requests carry document-access filters and use the filter-aware pipeline rather than the unfiltered direct-first shortcut. Internal retrieval receives the ACL filters; external web providers do not receive internal document ACL objects. See [API request routing](request-routing.md) for exact modes, metadata, and fallbacks.
+Identity does not change which path a request takes. Every caller carries an ACL — anonymous carries `["public"]` — and it narrows what the path returns. Internal retrieval receives the ACL filters and the web layer enforces them on what comes back; external web providers receive no internal document ACL object. See [Access control](request-routing.md#access-control) for where each path applies them.
 
 > **`LocalBackend` filter caveat.** Internal retrieval applies filters *after*
 > top-k retrieval as an exact-match over document metadata, and only over
@@ -329,7 +329,7 @@ Authenticated requests carry document-access filters and use the filter-aware pi
 > `src/internal/document_index/FILTER_SEMANTICS.md` — which the local stack does
 > not use.)
 
-The filter-aware path uses the same internal stage sequence throughout the web backend:
+That pipeline composition uses the same internal stage sequence throughout the web backend:
 
 1. bounded session history resolves continuation-style queries into a retrieval query while retaining the original user question;
 2. the selected existing provider returns a normalized candidate set and receives ACL filters when it is internal retrieval;
@@ -341,7 +341,7 @@ These stages are internal adapters. Existing `/retrieve`, `/search`, and `/reran
 
 ### The direct-first sufficiency gate
 
-For an unfiltered `auto`/`retrieval` request, the backend runs internal retrieval
+For an `auto`/`retrieval` request, the backend runs internal retrieval
 and compares the query to the **rank-1 result only** through a
 backend-independent tiered gate (`_direct_gate_decision`):
 
@@ -361,7 +361,7 @@ direct and everything else escalates.
 
 Escalation hands off to `SearchAgentLoop` (`src/agents/search/search.py`) — the
 "agentic" core, a multi-turn retrieval-grounded agent. (It only runs when a local
-model is loaded; without one, the request degrades to the filter-aware pipeline
+model is loaded; without one, the request degrades to the pipeline composition
 above.) Unlike `ToolAgentLoop`'s JSON tool calls, this loop is **XML-tag driven**:
 the system prompt teaches the model a fixed action vocabulary, and the
 environment answers back in the same language by injecting result blocks.

@@ -103,4 +103,4 @@ pytest -q \
   tests/unit/servers/web/test_web_experience_app.py
 ```
 
-The fallback tests assert that unfiltered auto-search tries internal retrieval, then SerpAPI, then the configured browser service, and never substitutes a local-model answer when all providers are empty. Access-filter tests separately protect the filter-aware path. The expected contract is documented in [API request routing](request-routing.md).
+The fallback tests assert that auto-search tries internal retrieval, then SerpAPI, then the configured browser service, and never substitutes a local-model answer when all providers are empty. Access-filter tests separately protect ACL enforcement on each path that reads documents. The expected contract is documented in [API request routing](request-routing.md).

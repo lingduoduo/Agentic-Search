@@ -11,7 +11,8 @@ Agentic Search is a retrieval-backed platform for building multi-turn search, RA
 - Web search through Google Custom Search, SerpAPI, and browser automation
 - A React UI with four surfaces — an auto-routing Assistant plus direct Search, Chat, and Tool pages — with streaming responses, a running conversation transcript, source inspection, and observability panels
 - Supervised, GRPO/PPO, and evaluation workflows for search agents
-- An MCP server that exposes search and retrieval to compatible clients
+- Identity-aware access: signing in narrows results to what you may read and unlocks user-scoped tools and memory, without changing which engine runs
+- MCP in both directions — a server exposing search and retrieval to compatible clients, and a client that turns another server's tools into ordinary registry tools
 
 ## Architecture
 

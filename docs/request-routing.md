@@ -17,14 +17,16 @@ request
                                    ├─ chat → grounded AgenticRAGLoop
                                    ├─ tool → ToolAgentLoop, or grounded chat fallback
                                    └─ search
-                                        ├─ access filters present → filter-aware pipeline
-                                        └─ no access filters
-                                             1. internal retrieval
-                                             2. sufficiency gate
-                                             3. SerpAPI
-                                             4. browser-search service
-                                             5. deterministic no-evidence response
+                                        1. internal retrieval
+                                        2. sufficiency gate
+                                        3. SerpAPI
+                                        4. browser-search service
+                                        5. deterministic no-evidence response
 ```
+
+Identity does not select a branch here. Every caller — anonymous included —
+carries an ACL, and it narrows what each branch may return rather than diverting
+the request to a different pipeline. See [Access control](#access-control).
 
 Three separate decisions are involved:
 
@@ -47,7 +49,7 @@ bounded session history
 
 The original query remains the answer question; only retrieval uses the resolved follow-up query. Internal access filters are preserved. If optional reranking fails, the pre-rerank candidate order is retained. If retrieval yields no evidence, model inference is skipped and a deterministic status is returned.
 
-Strong unfiltered auto-search does not necessarily enter that composition or rewrite its retrieval query. Its existing direct-first path queries internal retrieval with the original request, applies direct ranking plus the sufficiency gate, and then tries SerpAPI and the browser-search service when internal evidence is weak or empty. The provider order below describes that distinct path.
+Strong auto-search does not necessarily enter that composition or rewrite its retrieval query. Its existing direct-first path queries internal retrieval with the original request, applies direct ranking plus the sufficiency gate, and then tries SerpAPI and the browser-search service when internal evidence is weak or empty. The provider order below describes that distinct path.
 
 ## Request fields
 
@@ -57,7 +59,7 @@ The JSON body uses `AgentExperienceRequest`:
 |---|---:|---|
 | `query` | required | Non-empty user request. Query-processing hooks may rewrite it before routing. |
 | `session_id` | new session | Existing conversation whose prior messages become bounded history. |
-| `user_id` | authenticated user | Development-only identity fallback when no authenticated user is present. A user identity produces access filters. |
+| `user_id` | authenticated user | Development-only identity fallback when no authenticated user is present. It selects which ACL the request carries, not whether it carries one. |
 | `search_url` | server setting | Retrieval URL override. Honored only when `AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL=true`. |
 | `top_k` | `5` | Requested result count, from 1 through 20. |
 | `source_provider` | `auto` | Source policy: `auto`, `retrieval`, `serpapi`, `google`, `browser`, or `all`. |
@@ -98,7 +100,7 @@ The selected strategy is recorded as `hook_metadata.route`. Capability fallback 
 
 ## Auto-routed search provider order
 
-For an unfiltered request with `source_provider=auto`, search is evidence-first and sequential:
+For a request with `source_provider=auto`, search is evidence-first and sequential:
 
 ### 1. Internal retrieval
 
@@ -138,22 +140,44 @@ No sources are reachable right now. Please try again shortly.
 
 Both cases use `intent="search"`, `search_mode="external_empty"`, and empty `citations` and `documents`. The local model does not replace missing evidence with an internal-knowledge answer.
 
-## Access-filtered requests
+## Access control
 
-Authenticated requests and requests with a `user_id` carry access filters. The direct search tool and `SearchAgentLoop` do not thread those filters through every retrieval operation, so the dispatcher does not use the unfiltered direct-first shortcut. It sends the request to the filter-aware search pipeline instead and records:
+**Signing in narrows results; it does not change the engine.** Anonymous and
+authenticated callers take the same route, run the same stages, and differ only
+in which documents survive. Requests no longer divert to a separate filter-aware
+pipeline when an identity is present — that divert fired on *every* signed-in
+request, because an authenticated ACL is never empty, and it silently swapped
+one query for an expanded five-query fan-out.
 
-```json
-{
-  "search_mode": "filtered_pipeline",
-  "route_reason": "access_filters_present"
-}
-```
+`resolve_capabilities(user, store)` maps the caller to a `RequestCapabilities`
+carrying `access_acl`, the memory preamble, and whether user-scoped tools are
+offered. **Anonymous is an identity, not the absence of one:** it carries
+`["public"]`, so no caller can express "unfiltered" by presenting nothing.
 
-That pipeline preserves document access controls while applying the selected source policy. External providers receive no internal ACL filter object; internal retrieval does.
+Enforcement is applied where documents are read, not left to the retrieval
+backend:
+
+| Path | Where the ACL is applied |
+|---|---|
+| Direct / degraded search | `_enforce_access` on the returned documents |
+| `SearchAgentLoop` | inside the loop, before the documents enter the model's context |
+| Tool agent's corpus `search` | in the tool, which is built per request and carries the caller's filters |
+
+Filters are also sent to the retrieval server, and the bundled `demo.py` and
+`hybrid.py` honour them — but that is defense in depth. A third-party backend may
+ignore the field, so the web layer enforces regardless. Documents that declare no
+ACL are public. External web providers receive no internal ACL object; web results
+carry no ACL to filter on.
+
+Enforcement is a post-filter: a restricted document still consumes retrieval
+bandwidth and can displace an accessible one from `top_k` before being dropped.
+
+> Anonymous callers read every document that declares no ACL. A corpus whose
+> documents carry no ACL metadata is therefore fully readable anonymously.
 
 ## Other source-provider values
 
-The sequential internal → SerpAPI → browser contract above applies specifically to unfiltered, auto-routed search with `source_provider=auto`.
+The sequential internal → SerpAPI → browser contract above applies specifically to auto-routed search with `source_provider=auto`.
 
 - `retrieval` limits source selection to the internal retrieval service.
 - `serpapi`, `google`, and `browser` request an explicit web source and force the `search` strategy.
@@ -185,7 +209,7 @@ Common routing metadata in `hook_metadata`:
 | `mode` | `auto` | Dispatcher mode used for the request. |
 | `route` | `search` | Strategy selected by the auto-router. |
 | `route_degraded` | `no_llm` | Required capability was absent and dispatch used a fallback. |
-| `search_mode` | `direct`, `external_fallback`, `external_empty`, `filtered_pipeline`, `escalated` | Search execution branch. |
+| `search_mode` | `direct`, `external_fallback`, `external_empty`, `escalated` | Search execution branch. |
 | `external_provider` | `serpapi`, `browser` | External provider that supplied evidence. |
 | `tier` | `exact`, `fuzzy`, `semantic` | Internal sufficiency tier. |
 

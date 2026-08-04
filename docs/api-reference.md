@@ -4,7 +4,7 @@
 
 This guide documents the local retrieval, web, chat/session, and health endpoints.
 
-The retrieve → rank/rerank → grounded-inference composition is an internal implementation used by the filter-aware and degraded branches of the endpoints documented here. Strong unfiltered auto-search keeps its direct-first ranking, sufficiency gate, and provider fallback. These internals add no public endpoint and change no request or response schema. The offline `index_builder` populates the corpus before requests arrive; indexing is not performed by `/api/agent`.
+The retrieve → rank/rerank → grounded-inference composition is an internal implementation used by the chat and degraded branches of the endpoints documented here. Strong auto-search keeps its direct-first ranking, sufficiency gate, and provider fallback. These internals add no public endpoint and change no request or response schema. The offline `index_builder` populates the corpus before requests arrive; indexing is not performed by `/api/agent`.
 
 ## Retrieval server API
 
@@ -156,8 +156,9 @@ retrieval → sufficiency gate → SerpAPI → configured browser-search service
 The first provider with sufficient evidence wins. If none returns evidence, the
 response keeps `intent="search"`, has empty citations/documents, and reports
 `No results found for: <query>` or that every source is unreachable. It does not
-substitute a local-model answer. Authenticated/access-filtered requests use the
-filter-aware pipeline instead of this unfiltered shortcut.
+substitute a local-model answer. Signing in does not change this sequence — it
+narrows what each provider may return. See
+[Access control](request-routing.md#access-control).
 
 `hook_metadata` carries `mode`, `route`, optional `route_degraded`, and search
 details such as `search_mode`, `external_provider`, `tier`, and `top_score`.

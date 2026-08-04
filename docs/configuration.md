@@ -55,7 +55,7 @@ Routing configuration spans separate capabilities:
 | `SEARCH_DIRECT_COS_MIN` | Semantic threshold for accepting internal evidence without external fallback |
 | `AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL` | Allows a request body to override the server-owned retrieval URL; development only |
 
-`source_provider=auto` applies the sequential provider order only to unfiltered auto-routed search. Authenticated requests carry ACL filters and use the filter-aware pipeline. Explicit modes and explicit providers retain their own execution contracts. See [API request routing](request-routing.md).
+`source_provider=auto` applies the sequential provider order to auto-routed search. Signing in narrows what that search returns rather than selecting a different path. Explicit modes and explicit providers retain their own execution contracts. See [API request routing](request-routing.md).
 
 ## Application and authentication
 
@@ -64,6 +64,7 @@ Routing configuration spans separate capabilities:
 | `AGENTIC_SEARCH_AUTH_SECRET` | `agentic-search-dev-secret` | JWT signing secret |
 | `AGENTIC_SEARCH_SUPER_USERS` | `[]` | JSON list of admin user IDs or emails |
 | `AGENTIC_SEARCH_WEB_DB_PATH` | `:memory:` | SQLite path (`:memory:` for ephemeral) |
+| `AGENTIC_SEARCH_MCP_USER_SCOPED` | — | Comma-separated MCP tool names to mark `user_scoped`, so they are withheld from callers with no user |
 | `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8001/retrieve` | Retrieval server URL |
 | `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL` | — | Cloud data plane for billing proxy |
 | `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
