@@ -22,7 +22,14 @@ JSON
 
 PYTHONPATH=src:. python3 -m src.internal.servers.retrieval.demo \
   --corpus_path "$WORK/corpus.jsonl" --port 8001 >"$WORK/retrieval.log" 2>&1 &
-env -u SEARCH_AGENT_MODEL PYTHONPATH=src:. \
+# SEARCH_AGENT_MODEL= (explicit empty), not `env -u SEARCH_AGENT_MODEL`: the
+# web app calls dotenv's load_dotenv() with its override=False default, which
+# skips any key already present in os.environ but repopulates one that is
+# merely absent. `env -u` makes it absent, so a developer .env that sets
+# SEARCH_AGENT_MODEL silently wins anyway and the tool-agent leg below tries
+# to load a real model. An explicit empty value counts as "already present"
+# and survives.
+SEARCH_AGENT_MODEL= PYTHONPATH=src:. \
   AGENTIC_SEARCH_WEB_DB_PATH="$WORK/web.db" \
   python3 -m uvicorn src.internal.servers.web.app:app \
   --host 127.0.0.1 --port 7860 >"$WORK/web.log" 2>&1 &
@@ -39,6 +46,15 @@ ask() {  # $1 = output file, $2... = extra curl args
     -d '{"query":"Zebra Handbook"}' -o "$out"
 }
 
+# This leg is weaker than the retrieval-route check above and cannot be made
+# as strong without an API-response change out of scope here: it inspects
+# `answer` (free text the model wrote) and `tool_calls[].result_summary`, but
+# result_summary collapses any list-shaped tool result (which is what the
+# corpus search returns) down to a bare "<N> items" count -- it structurally
+# never contains document content. So this leg can only catch a leak that the
+# model chooses to quote into its own `answer`. Unlike the retrieval leg,
+# which reads structured documents and cannot miss a leak that's present, a
+# PASS here is model-dependent, not a deterministic guarantee.
 tool_leg() {  # $1 = output file, $2... = extra curl args; prints the HTTP status
   local out="$1"; shift
   curl -s -m 180 -o "$out" -w '%{http_code}' "$@" \
@@ -135,5 +151,8 @@ else:
         raise SystemExit(
             "FAIL: a restricted document leaked via the tool-agent surface"
         )
-    print("PASS: tool-agent surface does not leak the restricted document")
+    print(
+        "PASS (model-dependent): the tool agent did not surface another "
+        "user's document"
+    )
 PY
