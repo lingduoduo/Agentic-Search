@@ -570,7 +570,10 @@ async def _run_search_agent(
     search_url: str,
     top_k: int,
     history: list | None = None,
-    filters: dict | None = None,
+    # A SearchFilters, not the wire dict: SearchAgentLoop serialises it for the
+    # request and enforces it on the results, so a backend that ignores the
+    # field cannot put an unreadable document into the model's context.
+    filters: "SearchFilters | None" = None,
     allow_internal_knowledge_answer: bool = True,
     on_turn=None,
     on_trace=None,
@@ -781,10 +784,10 @@ def _direct_gate_decision(
 def _enforce_access(documents: list, filters) -> list:
     """Drop documents the caller may not see.
 
-    Filters are sent to the retrieval server, but only the full RetrievalService
-    honours them — `demo.py` and `hybrid.py` ignore the field entirely. Passing
-    filters down is therefore not enforcement, so this route checks the returned
-    documents itself. Documents that declare no ACL are public (see
+    Filters are sent to the retrieval server, and `demo.py`, `hybrid.py` and the
+    full RetrievalService all honour them — but a third-party backend need not,
+    so passing filters down is not enforcement on its own and this route checks
+    the returned documents itself. Documents that declare no ACL are public (see
     ``SearchFilters.matches``).
     """
     if filters is None or not documents:
@@ -796,11 +799,17 @@ def _enforce_access(documents: list, filters) -> list:
 
 
 def _filters_payload(filters):
-    """Downstream retrieval helpers (search_tool, SearchAgentLoopConfig) send
-    ``filters`` straight over the wire as JSON, so they need a plain dict —
-    not the ``SearchFilters`` object ``_enforce_access`` uses for its
-    ``.matches()`` check. Convert when given the object; pass a dict through
-    unchanged."""
+    """Serialise ``filters`` for a helper that posts them straight over the wire.
+
+    ``search_tool`` and the hybrid leg need a plain dict, not the
+    ``SearchFilters`` object ``_enforce_access`` uses for its ``.matches()``
+    check. Convert when given the object; pass a dict through unchanged.
+
+    **Do not wrap the value handed to ``SearchAgentLoopConfig``.** That loop
+    holds the object on purpose: it serialises for its own request *and*
+    enforces on the results, before the documents reach the model's context.
+    Passing it a payload here would silently disable that enforcement — the
+    unpaired-serialisation shape this repo has already been burned by twice."""
     to_payload = getattr(filters, "to_payload", None)
     return to_payload() if to_payload else filters
 
@@ -851,7 +860,10 @@ async def _run_search_direct_or_escalate(
                 search_url=search_url,
                 top_k=top_k,
                 history=history,
-                filters=_filters_payload(filters),
+                # The object, not the payload: the loop serialises it for the
+                # request and enforces it on the results, before the documents
+                # reach the model's context.
+                filters=filters,
                 allow_internal_knowledge_answer=False,
                 on_turn=on_turn,
                 on_trace=None,
@@ -1666,7 +1678,10 @@ def create_web_app(
                         search_url=search_url,
                         top_k=top_k,
                         history=history,
-                        filters=_filters_payload(filters),
+                        # The object, not the payload: the loop serialises it for the
+                        # request and enforces it on the results, before the documents
+                        # reach the model's context.
+                        filters=filters,
                         on_turn=on_turn,
                         on_trace=on_trace,
                     )

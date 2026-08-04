@@ -10,7 +10,7 @@ import re
 import time
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from src.agents.core.base import (
@@ -40,6 +40,9 @@ from src.agents.components.planner import Planner
 from src.agents.components.reranker_tool import RerankFn
 from src.agents.core.control_flow_trace import ControlFlowRecorder, EventSink
 from src.agents.core.state import AgentState, Retriever, UserRequest
+
+if TYPE_CHECKING:  # annotation only; keeps this module's runtime imports as they were
+    from src.context.models import SearchFilters
 
 # ---------------------------------------------------------------------------
 # Turn control
@@ -242,9 +245,12 @@ class SearchAgentLoopConfig(AgentLoopConfig):
     # Optional second retriever the policy can target via <search retriever="web">.
     # When None, web requests degrade to the vector-DB (search_url) backend.
     web_search_url: str | None = None
-    # Per-user access filters forwarded to the vector-DB retriever (not the web
-    # retriever, which has no ACL metadata). None → unfiltered, as before.
-    filters: dict | None = None
+    # Per-user access filters for the vector-DB retriever (not the web
+    # retriever, which has no ACL metadata). A ``SearchFilters`` rather than the
+    # wire dict: the loop serialises it for the request AND enforces it on the
+    # results, so a backend that ignores the field cannot put a document the
+    # caller may not read into the model's context. None → unfiltered, as before.
+    filters: "SearchFilters | None" = None
     topk: int = 5
     search_timeout_seconds: int = 10
     search_max_retries: int = 3
@@ -572,18 +578,38 @@ class SearchAgentLoop(AgentLoopBase):
         # Access filters apply to the internal corpus only; the web retriever
         # has no per-user ACL metadata.
         filters = self.search_config.filters if retriever is not Retriever.WEB else None
+        # Built outside the try: that except degrades any failure to an empty
+        # result set, so a mis-typed filter in here would read as "the corpus had
+        # nothing" with only a log line — the silent shape that hid #487's broken
+        # enforcement. Let it raise instead.
+        payload = filters.to_payload() if filters is not None else None
         try:
-            return await self._client_for(retriever).retrieve(queries, filters=filters)
+            results = await self._client_for(retriever).retrieve(
+                queries, filters=payload
+            )
         except Exception as exc:
             logger.warning("Search failed for queries %r: %s", queries, exc)
             return [[] for _ in queries]
+        if filters is None:
+            return results
+        # Enforce, don't just forward: demo.py and hybrid.py honour access_acl
+        # but a third-party backend need not, and anything that reaches here
+        # goes into the model's context — after which filtering is too late.
+        return [[r for r in row if filters.matches(r.metadata)] for row in results]
 
     async def _fetch_pages(self, urls: list[str]) -> list[SearchResult]:
+        # Fetched pages land in the loop's messages exactly as retrieved ones do,
+        # so they need the same gate. No retrieval server in this repo exposes
+        # /fetch today, but the guarantee is meant to hold for backends that do.
+        filters = self.search_config.filters
         try:
-            return await self._search_client.fetch_urls(urls)
+            pages = await self._search_client.fetch_urls(urls)
         except Exception as exc:
             logger.warning("Page fetch failed for urls %r: %s", urls, exc)
             return []
+        if filters is None:
+            return pages
+        return [p for p in pages if filters.matches(p.metadata)]
 
     @staticmethod
     def _cache_key(query: str, retriever: Retriever) -> str:
