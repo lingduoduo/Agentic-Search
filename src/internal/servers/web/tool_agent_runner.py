@@ -124,6 +124,7 @@ async def _run_tool_agent(
     on_turn=None,
     on_approval=None,
     with_search_tool: bool,
+    user_present: bool = True,
 ) -> tuple:
     """Run the ToolAgentLoop. Assumes a local model is configured.
 
@@ -143,8 +144,9 @@ async def _run_tool_agent(
     # agent_tools() excludes anything registered as not agent-callable: tools
     # that answer instead of returning evidence, and remote tools that re-enter
     # an agent. The decision travels with registration rather than being matched
-    # by name here, where a rename would silently disable it.
-    tools = list(tool_registry.agent_tools())
+    # by name here, where a rename would silently disable it. Without a user,
+    # it also withholds anything backed by per-user storage.
+    tools = list(tool_registry.agent_tools(user_present=user_present))
     if with_search_tool:
         # Bind the corpus search to this request's retrieval URL rather than the
         # one the registry was seeded with.

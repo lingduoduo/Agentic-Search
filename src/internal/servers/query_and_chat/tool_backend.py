@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from src.context import ChatMessage
+from src.internal.access.capabilities import resolve_capabilities
 from src.internal.db import AgenticSearchStore
 from src.internal.servers.query_and_chat.models import (
     SendToolMessageRequest,
@@ -76,8 +77,12 @@ def create_tool_router(
         if manager is None or tokenizer is None:
             raise HTTPException(status_code=400, detail=NO_LOCAL_MODEL_MESSAGE)
 
+        # Entitlement comes from the resolved user, never from the request
+        # body. `capabilities` is the one place that mapping happens; deriving
+        # "is there a user?" by hand here is how the two spellings drift.
         user = resolve_active_user(http_request, store)
-        user_id = user.id if user and not user.is_anonymous else None
+        capabilities = resolve_capabilities(user, store)
+        user_id = capabilities.user_id
         session_id = _ensure_session(body, user_id)
         history = _history(session_id)
         store.add_chat_message(session_id, role="user", content=body.message)
@@ -93,6 +98,7 @@ def create_tool_router(
                 on_turn=on_turn,
                 on_approval=on_approval,
                 with_search_tool=body.run_search_tool,
+                user_present=capabilities.user_present,
             )
             answer = answer or extra.pop("_assistant_fallback", "")
             tool_calls = extra.get("tool_calls", [])

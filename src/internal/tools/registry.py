@@ -108,6 +108,10 @@ class ToolEntry:
     # whole answer, or that re-enter an agent (which would let it call itself).
     # They stay registered and directly invocable; only agents are denied them.
     agent_callable: bool = True
+    # Scoped to a specific user (per-user storage such as memory). Offered only
+    # when a user is present; with none, an anonymous write would land in a
+    # shared bucket and pool unrelated people's data.
+    user_scoped: bool = False
 
 
 class ToolRegistry:
@@ -128,6 +132,7 @@ class ToolRegistry:
         source: str = "function",
         provider_id: str | None = None,
         agent_callable: bool = True,
+        user_scoped: bool = False,
     ) -> None:
         """Add a tool to the registry (replaces any existing tool with the same name)."""
         self._entries[tool.name] = ToolEntry(
@@ -135,6 +140,7 @@ class ToolRegistry:
             source=source,
             provider_id=provider_id,
             agent_callable=agent_callable,
+            user_scoped=user_scoped,
         )
         logger.debug("Tool registered: %s (source=%s)", tool.name, source)
 
@@ -268,9 +274,17 @@ class ToolRegistry:
     def list_tools(self) -> list[Tool]:
         return [e.tool for e in self._entries.values()]
 
-    def agent_tools(self) -> list[Tool]:
-        """Tools an agent loop may be offered. See ``ToolEntry.agent_callable``."""
-        return [e.tool for e in self._entries.values() if e.agent_callable]
+    def agent_tools(self, *, user_present: bool = True) -> list[Tool]:
+        """Tools an agent loop may be offered for this caller.
+
+        ``user_present=False`` also withholds user-scoped tools; see
+        ``ToolEntry.user_scoped``.
+        """
+        return [
+            e.tool
+            for e in self._entries.values()
+            if e.agent_callable and (user_present or not e.user_scoped)
+        ]
 
     async def invoke(
         self,
@@ -320,6 +334,7 @@ class ToolRegistry:
             "source": entry.source,
             "provider_id": entry.provider_id,
             "agent_callable": entry.agent_callable,
+            "user_scoped": entry.user_scoped,
         }
 
     def all_summaries(self) -> list[dict[str, Any]]:
@@ -331,6 +346,7 @@ class ToolRegistry:
                 "source": e.source,
                 "provider_id": e.provider_id,
                 "agent_callable": e.agent_callable,
+                "user_scoped": e.user_scoped,
             }
             for e in self._entries.values()
         ]

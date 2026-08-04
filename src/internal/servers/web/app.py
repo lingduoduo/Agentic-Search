@@ -50,9 +50,8 @@ from src.context.models import AnswerGenerationResult
 from src.context.models import ContextDocument
 from src.context.models import SearchFilters
 from src.context.search import SearchResult, citation_key
-from src.context.preprocessing.access_filters import build_user_only_filters
+from src.internal.access.capabilities import resolve_capabilities
 from src.internal.db import AgenticSearchStore
-from src.internal.memory.service import memory_preamble
 from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
@@ -146,8 +145,6 @@ class SearchExperienceSettings:
     allow_client_search_url: bool = False
     # Dev-only observability console. Off by default; never enable in prod.
     debug_panels: bool = False
-    # Inject the user's stored memories into the answer prompt. Off by default.
-    memory_injection: bool = False
 
     @classmethod
     def from_app_settings(
@@ -167,7 +164,6 @@ class SearchExperienceSettings:
             db_path=app_settings.services.web_db_path,
             allow_client_search_url=_flag("AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL"),
             debug_panels=_flag("AGENTIC_SEARCH_DEBUG_PANELS"),
-            memory_injection=_flag("AGENTIC_SEARCH_MEMORY_INJECTION"),
         )
 
 
@@ -799,6 +795,16 @@ def _enforce_access(documents: list, filters) -> list:
     return [d for d in documents if matches(getattr(d, "metadata", None) or {})]
 
 
+def _filters_payload(filters):
+    """Downstream retrieval helpers (search_tool, SearchAgentLoopConfig) send
+    ``filters`` straight over the wire as JSON, so they need a plain dict —
+    not the ``SearchFilters`` object ``_enforce_access`` uses for its
+    ``.matches()`` check. Convert when given the object; pass a dict through
+    unchanged."""
+    to_payload = getattr(filters, "to_payload", None)
+    return to_payload() if to_payload else filters
+
+
 async def _run_search_direct_or_escalate(
     query: str,
     *,
@@ -838,23 +844,25 @@ async def _run_search_direct_or_escalate(
         }
         has_local_model = manager is not None and tokenizer is not None
         if has_local_model:
-            answer, citations, docs, intent, run_extra = await _run_search_agent(
+            answer, _citations, docs, intent, run_extra = await _run_search_agent(
                 query,
                 manager=manager,
                 tokenizer=tokenizer,
                 search_url=search_url,
                 top_k=top_k,
                 history=history,
-                filters=filters,
+                filters=_filters_payload(filters),
                 allow_internal_knowledge_answer=False,
                 on_turn=on_turn,
                 on_trace=None,
             )
             run_extra.update(escalate_extra)
             docs = _enforce_access(docs, filters)
+            # Citations are rebuilt from the surviving documents: `citations`
+            # as returned still names anything `_enforce_access` just dropped.
             return (
                 answer,
-                [d.citation for d in docs] if filters else citations,
+                [d.citation for d in docs],
                 docs,
                 intent,
                 run_extra,
@@ -887,7 +895,7 @@ async def _run_search_direct_or_escalate(
             search_url=search_url,
             rerank_url=rerank_url,
             top_k=top_k,
-            filters=filters,
+            filters=_filters_payload(filters),
         )
     except Exception:
         internal_unreachable = True
@@ -1055,6 +1063,7 @@ async def _run_auto_routed(
     on_turn=None,
     on_approval=None,
     user_memory: str | None = None,
+    user_present: bool = False,
 ) -> tuple:
     """3-way agentic routing. Returns (answer, citations, documents, intent, extra).
 
@@ -1089,6 +1098,7 @@ async def _run_auto_routed(
                     on_turn=on_turn,
                     on_approval=on_approval,
                     with_search_tool=False,
+                    user_present=user_present,
                 )
             except Exception as exc:
                 logger.warning("ToolAgentLoop failed, degrading to RAG: %s", exc)
@@ -1407,14 +1417,17 @@ def create_web_app(
         hook_metadata: dict[str, object] = {}
 
         auth_user = _optional_user_from_request(http_request, db)
+        capabilities = resolve_capabilities(auth_user, db)
+        # `user_id` is bookkeeping only (session attribution, hook payloads) —
+        # a client-supplied request.user_id names a session, nothing more.
+        # Entitlement (the ACL, the memory preamble, user-scoped tools) comes
+        # only from `capabilities`, which is derived from the authenticated
+        # caller. Letting request.user_id decide entitlement would let an
+        # unauthenticated caller name any user and receive that user's access.
         user_id = request.user_id or (auth_user.id if auth_user else None)
-        # Memory-augmented generation: inject the user's stored memories into the
-        # answer prompt (off unless AGENTIC_SEARCH_MEMORY_INJECTION is set).
-        user_memory = (
-            memory_preamble(db, user_id)
-            if settings.memory_injection and user_id
-            else None
-        )
+        # Memory-augmented generation: a signed-in caller's stored memories are
+        # injected because they are signed in. Anonymous callers have none.
+        user_memory = capabilities.memory_preamble or None
         hook_result = execute_hook(
             hook_point=HookPoint.QUERY_PROCESSING,
             payload={"query": query, "user_id": user_id},
@@ -1450,15 +1463,8 @@ def create_web_app(
             else settings.search_url
         )
         top_k = request.top_k or settings.top_k
-        filters = (
-            build_user_only_filters(
-                auth_user.id,
-                email=auth_user.email,
-                group_ids=auth_user.group_ids,
-            )
-            if auth_user
-            else (build_user_only_filters(user_id) if user_id else None)
-        )
+        # Always filtered: anonymous means ["public"], not "unfiltered".
+        filters = SearchFilters(access_acl=capabilities.access_acl)
 
         manager = getattr(http_request.app.state, "search_agent_manager", None)
         tokenizer = getattr(http_request.app.state, "search_agent_tokenizer", None)
@@ -1500,6 +1506,7 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                         user_memory=user_memory,
+                        user_present=capabilities.user_present,
                     )
                     _cap = _capture.active()
                     if _cap is not None:
@@ -1532,8 +1539,12 @@ def create_web_app(
                         browser_search_url=settings.browser_search_url,
                         rerank_url=settings.rerank_url,
                         top_k=top_k,
-                        filters=filters,
+                        filters=_filters_payload(filters),
                     )
+                    # Serializing the filters for the wire and enforcing on the
+                    # result are one change: the server may ignore what it was
+                    # sent, so sending without checking is a silent leak.
+                    documents = _enforce_access(documents, filters)
                     answer = _search_only_answer(
                         "Direct search tool",
                         queries=[query],
@@ -1654,10 +1665,15 @@ def create_web_app(
                         search_url=search_url,
                         top_k=top_k,
                         history=history,
-                        filters=filters,
+                        filters=_filters_payload(filters),
                         on_turn=on_turn,
                         on_trace=on_trace,
                     )
+                    # Same pairing as above: the loop's retrieval went out with
+                    # a filters payload the server is free to ignore, so the
+                    # documents it came back with are checked here.
+                    documents = _enforce_access(documents, filters)
+                    citations = [doc.citation for doc in documents]
                     return _finalize_response(
                         db,
                         session_id,
@@ -1687,6 +1703,7 @@ def create_web_app(
                         on_turn=on_turn,
                         on_approval=on_approval,
                         with_search_tool=True,
+                        user_present=capabilities.user_present,
                     )
                     # Explicit mode falls back to the last assistant message on an
                     # empty final answer (the auto-route instead degrades to RAG).
@@ -2320,7 +2337,11 @@ async def _run_hybrid_search(
                         page_size=top_k,
                         timeout_seconds=5,
                         max_retries=1,
-                        **({"filters": filters} if provider == "retrieval" else {}),
+                        **(
+                            {"filters": _filters_payload(filters)}
+                            if provider == "retrieval"
+                            else {}
+                        ),
                     )
                     for expanded_query in executed_queries
                 ]
@@ -2342,6 +2363,12 @@ async def _run_hybrid_search(
                     entry_point="hybrid_search",
                 )
             )
+        if provider == "retrieval":
+            # Paired with the `_filters_payload` sent above: the retrieval
+            # server may ignore the `filters` field (demo.py and hybrid.py do),
+            # so what it returned is checked here rather than by each caller of
+            # `_run_hybrid_search` — one of which was missed and leaked.
+            docs = _enforce_access(docs, filters)
         return docs
 
     async def _fetch_provider_guarded(provider: str) -> list[ContextDocument]:

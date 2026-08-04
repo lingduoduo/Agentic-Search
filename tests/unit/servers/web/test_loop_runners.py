@@ -406,3 +406,90 @@ def test_generation_timeout_is_configurable():
         ).generation_timeout_seconds
         == 600.0
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_withholds_user_scoped_tools_without_a_user(monkeypatch):
+    from src.internal.tools.base import FunctionTool
+    from src.internal.tools.registry import ToolRegistry
+
+    async def _noop() -> str:
+        return ""
+
+    registry = ToolRegistry()
+    registry.register(
+        FunctionTool(
+            _noop,
+            name="save_memory",
+            description="Save a memory.",
+            parameters={"type": "object"},
+        ),
+        user_scoped=True,
+    )
+    monkeypatch.setattr("src.internal.tools.tool_registry", registry)
+
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_tool_agent(
+        "q",
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        on_turn=None,
+        with_search_tool=False,
+        user_present=False,
+    )
+    assert "save_memory" not in [t.name for t in captured["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_auto_routed_tool_strategy_defaults_to_no_user_scoped_tools(
+    monkeypatch,
+):
+    """Closes a hole where a client-supplied ``request.user_id`` (unauthenticated)
+    could reach ``_run_tool_agent`` as ``user_present=True``. ``_run_auto_routed``
+    now takes ``user_present`` directly (not a user id) and defaults it to
+    ``False``, so a caller that omits it — e.g. one that never resolved an
+    authenticated user — fails closed instead of leaking user-scoped tools.
+    """
+    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.tools.base import FunctionTool
+    from src.internal.tools.registry import ToolRegistry
+
+    async def _noop() -> str:
+        return ""
+
+    registry = ToolRegistry()
+    registry.register(
+        FunctionTool(
+            _noop,
+            name="save_memory",
+            description="Save a memory.",
+            parameters={"type": "object"},
+        ),
+        user_scoped=True,
+    )
+    monkeypatch.setattr("src.internal.tools.tool_registry", registry)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_query",
+        lambda *a, **k: RouteStrategy.TOOL,
+    )
+
+    captured = _capture_tool_agent_loop(monkeypatch)
+    await web_app._run_auto_routed(
+        "q",
+        llm=MagicMock(),
+        manager=MagicMock(),
+        tokenizer=MagicMock(),
+        search_url="http://x/retrieve",
+        browser_search_url=None,
+        rerank_url=None,
+        top_k=5,
+        filters=None,
+        history=[],
+        resolved=types.SimpleNamespace(tool_agent_parser="json"),
+        # user_present intentionally omitted: this is the "no authenticated
+        # user" path a client-supplied request.user_id must not bypass.
+    )
+    assert "save_memory" not in [t.name for t in captured["tools"]]

@@ -149,3 +149,76 @@ def test_parse_mcp_servers_accepts_an_explicit_exclusion():
 
     spec = parse_mcp_servers("a=http://x/", agent_exclude="foo, bar")[0]
     assert spec.agent_exclude == frozenset({"foo", "bar"})
+
+
+# ---------------------------------------------------------------------------
+# User-scoped tools. Memory tools write per user; offering them with no user
+# pools everyone's memories into one shared bucket.
+# ---------------------------------------------------------------------------
+
+
+def test_tools_are_not_user_scoped_by_default():
+    registry = ToolRegistry()
+    registry.register(_tool("weather"))
+    assert registry.list()[0].user_scoped is False
+
+
+def test_user_scoped_tools_are_withheld_when_there_is_no_user():
+    registry = ToolRegistry()
+    registry.register(_tool("weather"))
+    registry.register(_tool("save_memory"), user_scoped=True)
+
+    assert [t.name for t in registry.agent_tools(user_present=False)] == ["weather"]
+    assert {t.name for t in registry.agent_tools(user_present=True)} == {
+        "weather",
+        "save_memory",
+    }
+
+
+def test_user_scoped_tools_stay_registered_and_invocable():
+    registry = ToolRegistry()
+    registry.register(_tool("save_memory"), user_scoped=True)
+    # Withheld from the agent, still reachable through /admin/tools.
+    assert registry.get("save_memory") is not None
+    assert registry.tool_summary("save_memory")["user_scoped"] is True
+
+
+def test_agent_callable_still_wins_over_user_presence():
+    registry = ToolRegistry()
+    registry.register(_tool("runs_an_agent"), agent_callable=False, user_scoped=True)
+    assert registry.agent_tools(user_present=True) == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_memory_tools_register_as_user_scoped(fake_mcp):
+    from src.internal.tools.mcp_client import DEFAULT_USER_SCOPED
+
+    registry = ToolRegistry()
+    await register_mcp_tools(
+        registry,
+        [
+            McpServerSpec(
+                name="agentic", url="http://x/", user_scoped=DEFAULT_USER_SCOPED
+            )
+        ],
+    )
+
+    assert registry._entries["save_memory"].user_scoped is True
+    assert [t.name for t in registry.agent_tools(user_present=False)] == [
+        "ask_agentic_search"
+    ]
+
+
+def test_parse_mcp_servers_applies_the_default_user_scope():
+    from src.internal.tools.mcp_client import parse_mcp_servers
+
+    spec = parse_mcp_servers("agentic=http://x/")[0]
+    assert "save_memory" in spec.user_scoped
+    assert "search_memories" in spec.user_scoped
+
+
+def test_parse_mcp_servers_accepts_an_explicit_user_scope():
+    from src.internal.tools.mcp_client import parse_mcp_servers
+
+    spec = parse_mcp_servers("a=http://x/", user_scoped="foo, bar")[0]
+    assert spec.user_scoped == frozenset({"foo", "bar"})
