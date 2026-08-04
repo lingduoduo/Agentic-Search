@@ -88,6 +88,11 @@ Each subcommand maps to an `/api/memory/*` endpoint (see
 require the backend to have an LLM configured (else they return a 503, surfaced
 as a non-zero exit).
 
+`-session-id` may only name a session you can already read: one you own, or one
+with no owner. A session belonging to someone else is skipped rather than
+refused, so `curate` reports `empty` — the same answer it gives for a session id
+that does not exist.
+
 ### JSON output (scripting)
 
 Add `-json` to any `memory` subcommand to print the raw response as JSON instead

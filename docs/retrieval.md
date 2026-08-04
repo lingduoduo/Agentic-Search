@@ -273,6 +273,13 @@ python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
 python3 -m src.internal.servers.retrieval.hybrid --corpus_path data/corpus.jsonl
 ```
 
+`demo.py` also takes `--ignore-acl`, which serves documents regardless of the
+request's `access_acl`. It exists so a client's own enforcement can be tested
+with nothing behind it — `examples/verify_identity_capabilities.sh` starts the
+server this way, because both bundled servers honouring `access_acl` would
+otherwise make that script pass even with the web layer's enforcement removed.
+Default off; no shipped entry point sets it.
+
 **Build indexes:**
 
 ```bash
