@@ -2596,7 +2596,12 @@ def _optional_user_from_request(
 
 
 def _frontend_dist_path() -> Path | None:
-    dist = Path(__file__).resolve().parents[3] / "web" / "dist"
+    # parents[4], counting up from src/internal/servers/web/app.py: web →
+    # servers → internal → src → the repository root, where `npm run build`
+    # writes web/dist. parents[3] is `src/`, whose web/dist nothing creates, so
+    # this returned None for every build and the backend quietly served the
+    # inline fallback shell instead of the app.
+    dist = Path(__file__).resolve().parents[4] / "web" / "dist"
     if (dist / "index.html").exists() and (dist / "assets").is_dir():
         return dist
     return None
