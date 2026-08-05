@@ -1,6 +1,7 @@
 """Local metadata persistence for Agentic Search."""
 
 from .models import (
+    ANONYMOUS_USER_ID,
     ChatMessageRecord,
     ChatSessionRecord,
     GroupRecord,
@@ -12,6 +13,7 @@ from .models import (
 from .store import AgenticSearchStore
 
 __all__ = [
+    "ANONYMOUS_USER_ID",
     "AgenticSearchStore",
     "ChatMessageRecord",
     "ChatSessionRecord",

@@ -9,12 +9,16 @@ import os
 import re
 from typing import Any, Callable
 
-from src.internal.db.models import UserMemoryRecord, UserProfileEntryRecord
+from src.internal.db.models import (
+    ANONYMOUS_USER_ID,
+    UserMemoryRecord,
+    UserProfileEntryRecord,
+)
 from src.internal.memory.tools import build_memory_registry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MEMORY_USER_ID = "default_user"
+DEFAULT_MEMORY_USER_ID = ANONYMOUS_USER_ID  # kept as the name callers import
 MAX_CURATION_TURNS = 6
 MEMORY_GATHER_CHAR_BUDGET = 12000
 MEMORY_INJECTION_MAX = 20

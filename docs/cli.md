@@ -93,13 +93,18 @@ else's, or one with no owner — yields `session not found, or not readable by
 you`. One message covers both causes, so it confirms nothing about another
 user's sessions.
 
-> **Curating from conversations now requires signing in.** Sessions started
-> without a token are stored with **no owner**, and the no-flag path is scoped by
-> `WHERE user_id = ?`, which never matches NULL. So neither `memory curate` nor
-> `memory curate -session-id <id>` can reach an unauthenticated caller's own
-> conversations — the flag was previously the only route to them, and it is now
-> closed too. Pass `-token` or `-user-id` to curate. `memory add` and the other
-> subcommands are unaffected.
+Unauthenticated callers still own their sessions: those are recorded under the
+shared anonymous identity (`default_user`), the same id their memories use, so
+both `memory curate` and `memory curate -session-id` keep working with no token.
+Because that identity is shared, one signed-out caller's sessions are reachable
+by any other — the same pooling the anonymous memory bucket has, and
+`AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH=1` refuses anonymous memory callers outright.
+
+Sessions recorded *before* this behaviour, and sessions whose owner was deleted,
+have a NULL owner and are not curateable by anyone. They are left that way on
+purpose: the two cases are indistinguishable in the data, so adopting them into
+the anonymous pool would hand a deleted user's conversations to every signed-out
+caller.
 
 ### JSON output (scripting)
 

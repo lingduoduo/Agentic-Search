@@ -73,10 +73,57 @@ prompt rather than what comes back.
 
 ## Risks
 
-- **Anonymous conversation-curation is gone.** Deliberate and the point of the
-  change, but it is a capability removal on a documented workflow, not a
-  hardening no one can feel. `docs/cli.md` says so in a callout.
+- ~~**Anonymous conversation-curation is gone.**~~ This was the cost of strict
+  ownership on its own, and the reason for the Addendum below: anonymous
+  sessions now carry the anonymous identity, so signed-out callers curate their
+  own conversations again. Strict ownership stands; only NULL-owned rows are
+  unreachable.
 - Existing NULL-owned sessions become permanently uncurateable. They remain
   readable through the chat surfaces; only memory curation loses them.
 - A user who curated an ownerless session before this change keeps the memories
   already derived from it. Nothing is retracted.
+
+---
+
+## Addendum: anonymous sessions gain the anonymous identity
+
+Strict ownership left signed-out callers with nothing to curate, because their
+sessions were stored with `user_id = NULL` and both routes into a session are
+keyed by owner. Rather than accept that, sessions now carry the same identity
+their memories already use.
+
+**Why sessions were NULL in the first place.** `chat_sessions.user_id` is a
+foreign key to `users(id)`; `user_memories.user_id` is not. So the anonymous
+memory bucket worked with an id nothing had provisioned, while a session could
+not. `AgenticSearchStore` now provisions a `default_user` row at schema init, and
+`create_chat_session` defaults a missing owner to `ANONYMOUS_USER_ID`.
+
+`ANONYMOUS_USER_ID` lives in `db/models.py` and `DEFAULT_MEMORY_USER_ID` aliases
+it, so the session owner and the memory bucket cannot drift apart — if they did,
+curate would read a different bucket than it writes and silently find nothing.
+
+### What provisioning that row broke
+
+A row in `users` is visible to everything that reads `users`, and three of those
+were counting or listing *accounts*:
+
+| Surface | Effect | Resolution |
+| --- | --- | --- |
+| `/auth/register` | `role = "admin" if not all_users` — the list is never empty, so **no first user ever became admin**, silently, on a fresh deployment | excluded from `list_users()` |
+| Daily-active-users analytics | one phantom user per day; the old `user_id IS NOT NULL` filter *was* the anonymous exclusion, and giving anonymous an id defeated it | explicit `user_id != ANONYMOUS_USER_ID` |
+| Admin "Users/groups" metric and the admin user list | counted and displayed a synthetic account | excluded from `list_users()` |
+
+The register regression is the reason `list_users()` excludes the row rather than
+each call site filtering: three of four callers manage accounts, and the fourth
+(integration-test reset) must not delete it. `get_user(ANONYMOUS_USER_ID)`
+reaches it deliberately.
+
+**The whole suite passed while first-user-becomes-admin was broken.** Nothing
+covered it. A test does now.
+
+### Not migrated
+
+Existing NULL rows stay NULL. `chat_sessions.user_id` is `ON DELETE SET NULL`, so
+a NULL row is either a legacy anonymous session *or* an orphaned session whose
+owner was deleted — indistinguishable in the data. Adopting them would hand a
+deleted user's conversations to every anonymous caller.

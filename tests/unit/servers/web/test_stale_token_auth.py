@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.internal.auth import generate_user_jwt_token
+from src.internal.db import ANONYMOUS_USER_ID
 from src.internal.db import AgenticSearchStore
 from src.internal.db import UserRecord
 from src.internal.servers.users.api import resolve_active_user
@@ -89,8 +90,10 @@ def test_stale_token_creates_an_anonymous_session_not_an_orphan(client, store):
         "chat_session_id"
     ]
 
-    # Attributed to nobody rather than to a user the store does not have.
-    assert store.get_chat_session(session_id).user_id is None
+    # Attributed to the anonymous identity rather than to a user the store does
+    # not have. The point stands -- it is not an orphaned reference to the id in
+    # the stale token -- but "anonymous" is now an id, not a NULL.
+    assert store.get_chat_session(session_id).user_id == ANONYMOUS_USER_ID
 
 
 def test_stale_token_is_treated_exactly_like_no_credential(client):
