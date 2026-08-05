@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.internal.auth import AuthenticatedUser
-from src.internal.db import AgenticSearchStore, UserRecord
+from src.internal.db import ANONYMOUS_USER_ID, AgenticSearchStore, UserRecord
 from src.internal.servers.query_and_chat.chat_backend import create_chat_router
 
 _USER_ID = "u-test-1"
@@ -152,7 +152,9 @@ def test_create_session_anonymous_user(
     session_id = resp.json()["chat_session_id"]
     session = store.get_chat_session(session_id)
     assert session is not None
-    assert session.user_id is None  # anonymous → no user_id stored
+    # Anonymous is an identity, not a NULL owner: the session is attributed to
+    # the shared anonymous id, which is also the memory bucket that caller uses.
+    assert session.user_id == ANONYMOUS_USER_ID
 
 
 # ---------------------------------------------------------------------------

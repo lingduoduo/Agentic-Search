@@ -9,12 +9,16 @@ import os
 import re
 from typing import Any, Callable
 
-from src.internal.db.models import UserMemoryRecord, UserProfileEntryRecord
+from src.internal.db.models import (
+    ANONYMOUS_USER_ID,
+    UserMemoryRecord,
+    UserProfileEntryRecord,
+)
 from src.internal.memory.tools import build_memory_registry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MEMORY_USER_ID = "default_user"
+DEFAULT_MEMORY_USER_ID = ANONYMOUS_USER_ID  # kept as the name callers import
 MAX_CURATION_TURNS = 6
 MEMORY_GATHER_CHAR_BUDGET = 12000
 MEMORY_INJECTION_MAX = 20
@@ -182,14 +186,18 @@ _CURATION_USER = (
 
 
 def _readable(session, user_id: str) -> bool:
-    """Whether *user_id* may read *session*.
+    """Whether *user_id* may read *session*. Ownership is strict.
 
-    A session with no owner is public, the rule ``SearchFilters.matches`` already
-    applies to documents that declare no ACL: anonymous callers share the
-    ``default_user`` bucket and their sessions are stored with a NULL user id, so
-    requiring equality would remove ``curate --session-id`` for all of them.
+    An ownerless session used to be readable by anyone holding the id, on the
+    "declares no ACL means public" rule this codebase applies to documents. A
+    session is not a document: an ownerless one is still somebody's actual
+    conversation, recorded before they signed in, so the analogy does not carry.
+
+    The cost is real and deliberate: anonymous callers' sessions are stored with
+    a NULL ``user_id``, so ``curate --session-id`` no longer works for them at
+    all. ``curate`` says so rather than reporting a bare "empty".
     """
-    return session is not None and session.user_id in (None, user_id)
+    return session is not None and session.user_id == user_id
 
 
 def _gather_sources(store, user_id: str, session_id: str | None) -> str:
@@ -250,9 +258,17 @@ async def curate_from_conversation(
 ) -> dict[str, Any]:
     sources = _gather_sources(store, user_id, session_id)
     if not sources.strip():
+        # A named session that yielded nothing is reported distinctly, so
+        # losing access does not read as "nothing to do". One message covers
+        # both causes -- not yours, and does not exist -- so it still confirms
+        # nothing about anyone else's session.
         return {
             "status": "empty",
-            "message": "no conversations or notes yet",
+            "message": (
+                "session not found, or not readable by you"
+                if session_id
+                else "no conversations or notes yet"
+            ),
             "counts": {},
         }
 

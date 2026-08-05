@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .models import (
+    ANONYMOUS_USER_ID,
     ChatMessageRecord,
     ChatSessionRecord,
     GroupRecord,
@@ -311,6 +312,21 @@ class AgenticSearchStore:
         )
         self._conn.commit()
         self._migrate_schema()
+        self._ensure_anonymous_user()
+
+    def _ensure_anonymous_user(self) -> None:
+        """Provision the anonymous identity so sessions can reference it.
+
+        ``chat_sessions.user_id`` is foreign-keyed to ``users(id)``, so owning a
+        session anonymously needs a real row; ``user_memories`` has no such
+        constraint, which is why the anonymous memory bucket worked without one.
+        """
+        self._conn.execute(
+            "INSERT OR IGNORE INTO users (id, email, name, metadata_json, "
+            "created_at, updated_at) VALUES (?, NULL, ?, '{}', ?, ?)",
+            (ANONYMOUS_USER_ID, "Anonymous", _now(), _now()),
+        )
+        self._conn.commit()
 
     def _migrate_schema(self) -> None:
         """Idempotent migrations for databases created before column additions."""
@@ -425,7 +441,19 @@ class AgenticSearchStore:
         return self._row_to_user(row) if row else None
 
     def list_users(self) -> list[UserRecord]:
-        rows = self._conn.execute("SELECT * FROM users ORDER BY created_at").fetchall()
+        """List real accounts, omitting the anonymous identity.
+
+        That row exists only so ``chat_sessions.user_id`` has something to point
+        at; it is not an account. Callers here count users, list them for admins,
+        and decide who is the first registrant — and ``/auth/register`` grants
+        admin with ``role = "admin" if not all_users``, so leaking it in would
+        leave a fresh deployment with no admin at all, silently. Use
+        ``get_user(ANONYMOUS_USER_ID)`` to reach it deliberately.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM users WHERE id != ? ORDER BY created_at",
+            (ANONYMOUS_USER_ID,),
+        ).fetchall()
         return [self._row_to_user(row) for row in rows]
 
     def delete_user(self, user_id: str) -> bool:
@@ -535,7 +563,10 @@ class AgenticSearchStore:
         now = _now()
         record = ChatSessionRecord(
             id=session_id or _new_id("session"),
-            user_id=user_id,
+            # Anonymous is an identity, not a NULL owner. Storing NULL split a
+            # caller's sessions from their memories, which use this same id and
+            # are not foreign-keyed, so nothing tied the two together.
+            user_id=user_id or ANONYMOUS_USER_ID,
             title=title,
             metadata=dict(metadata or {}),
             created_at=now,
@@ -718,7 +749,11 @@ class AgenticSearchStore:
     ) -> list[tuple[str, int]]:
         """Return ``(day, unique_active_users)`` rows between start and end.
 
-        Only sessions with a non-NULL ``user_id`` are counted.
+        Counts real people only. Sessions with no ``user_id`` are excluded, and
+        so is the shared anonymous identity: it is one row standing for every
+        signed-out caller, so counting it would add exactly one phantom user per
+        day. The NULL check alone used to cover both, before anonymous sessions
+        gained an owner.
         """
         rows = self._conn.execute(
             """
@@ -728,10 +763,11 @@ class AgenticSearchStore:
             FROM chat_sessions
             WHERE created_at >= ? AND created_at < ?
               AND user_id IS NOT NULL
+              AND user_id != ?
             GROUP BY day
             ORDER BY day
             """,
-            (start, end),
+            (start, end, ANONYMOUS_USER_ID),
         ).fetchall()
         return [(row["day"], row["active_users"]) for row in rows]
 

@@ -27,10 +27,21 @@ class _ExplodingLLM:
 
 
 def _store_with_session(owner: str | None) -> tuple[AgenticSearchStore, str]:
+    """*owner* of None means a legacy NULL row, which the API no longer creates.
+
+    Anonymous sessions carry ANONYMOUS_USER_ID now, so a genuinely ownerless row
+    only arises from data written before that or from ON DELETE SET NULL. It is
+    forced here with SQL for exactly that reason.
+    """
     store = AgenticSearchStore(":memory:")
     for uid in {"u1", owner} - {None}:
         store.upsert_user(UserRecord(id=uid))
     session = store.create_chat_session(user_id=owner)
+    if owner is None:
+        store._conn.execute(
+            "UPDATE chat_sessions SET user_id = NULL WHERE id = ?", (session.id,)
+        )
+        store._conn.commit()
     store.add_chat_message(session.id, role="user", content=SECRET)
     return store, session.id
 
@@ -58,13 +69,42 @@ def test_the_callers_own_session_is_still_read():
     store.close()
 
 
-def test_a_session_with_no_owner_stays_readable():
-    """Ownerless is public, the same rule documented in ``SearchFilters.matches``.
+def test_a_session_with_no_owner_is_not_read_either():
+    """Ownership is strict: only a session whose ``user_id`` matches is read.
 
-    Anonymous callers share the ``default_user`` bucket and their sessions are
-    stored with a NULL ``user_id``, so requiring equality here would silently
-    remove ``curate --session-id`` for every anonymous caller.
+    Ownerless sessions were readable by anyone who knew the id, on the same
+    "declares no ACL means public" rule documents follow. Sessions are not
+    documents — an ownerless one is somebody's actual conversation, just one
+    recorded before they signed in — so the rule no longer carries over.
     """
     store, ownerless = _store_with_session(None)
-    assert SECRET in service._gather_sources(store, "default_user", ownerless)
+    assert service._gather_sources(store, "default_user", ownerless) == ""
+    store.close()
+
+
+def test_an_unreadable_session_id_says_so_instead_of_looking_empty():
+    """The capability loss must be visible, not silent.
+
+    Anonymous callers' sessions are stored with a NULL ``user_id``, so strict
+    ownership removes ``curate --session-id`` for all of them. Reusing the
+    generic "no conversations or notes yet" would make that read as "nothing to
+    do" -- the invisible-loss shape that #490 shipped and #491 had to undo.
+
+    One message covers both causes (not yours, does not exist), so it still
+    confirms nothing about anyone else's session.
+    """
+    store, ownerless = _store_with_session(None)
+    summary = _curate(store, "default_user", ownerless)
+    assert summary["status"] == "empty"
+    assert summary["message"] == "session not found, or not readable by you"
+    store.close()
+
+
+def test_no_session_id_keeps_the_generic_empty_message():
+    """The control: the new message is scoped to an explicit session id."""
+    store = AgenticSearchStore(":memory:")
+    summary = asyncio.run(
+        service.curate_from_conversation(store, "nobody", _ExplodingLLM())
+    )
+    assert summary["message"] == "no conversations or notes yet"
     store.close()

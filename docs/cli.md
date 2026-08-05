@@ -88,10 +88,23 @@ Each subcommand maps to an `/api/memory/*` endpoint (see
 require the backend to have an LLM configured (else they return a 503, surfaced
 as a non-zero exit).
 
-`-session-id` may only name a session you can already read: one you own, or one
-with no owner. A session belonging to someone else is skipped rather than
-refused, so `curate` reports `empty` — the same answer it gives for a session id
-that does not exist.
+`-session-id` may only name a session **you own**. Anything else — someone
+else's, or one with no owner — yields `session not found, or not readable by
+you`. One message covers both causes, so it confirms nothing about another
+user's sessions.
+
+Unauthenticated callers still own their sessions: those are recorded under the
+shared anonymous identity (`default_user`), the same id their memories use, so
+both `memory curate` and `memory curate -session-id` keep working with no token.
+Because that identity is shared, one signed-out caller's sessions are reachable
+by any other — the same pooling the anonymous memory bucket has, and
+`AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH=1` refuses anonymous memory callers outright.
+
+Sessions recorded *before* this behaviour, and sessions whose owner was deleted,
+have a NULL owner and are not curateable by anyone. They are left that way on
+purpose: the two cases are indistinguishable in the data, so adopting them into
+the anonymous pool would hand a deleted user's conversations to every signed-out
+caller.
 
 ### JSON output (scripting)
 
