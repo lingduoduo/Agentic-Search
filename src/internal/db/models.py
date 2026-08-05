@@ -9,12 +9,6 @@ from src.shared_configs.enums import EmbeddingProvider
 
 JsonObject = dict[str, Any]
 
-# The identity a request carries when nobody signed in. #488 settled that
-# anonymous is an identity rather than the absence of one; this is its id, used
-# for both session ownership and the memory bucket. They must stay the same
-# value or curate reads a different bucket than it writes.
-ANONYMOUS_USER_ID = "default_user"
-
 
 @dataclass(slots=True)
 class UserRecord:

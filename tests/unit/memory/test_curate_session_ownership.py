@@ -27,21 +27,10 @@ class _ExplodingLLM:
 
 
 def _store_with_session(owner: str | None) -> tuple[AgenticSearchStore, str]:
-    """*owner* of None means a legacy NULL row, which the API no longer creates.
-
-    Anonymous sessions carry ANONYMOUS_USER_ID now, so a genuinely ownerless row
-    only arises from data written before that or from ON DELETE SET NULL. It is
-    forced here with SQL for exactly that reason.
-    """
     store = AgenticSearchStore(":memory:")
     for uid in {"u1", owner} - {None}:
         store.upsert_user(UserRecord(id=uid))
     session = store.create_chat_session(user_id=owner)
-    if owner is None:
-        store._conn.execute(
-            "UPDATE chat_sessions SET user_id = NULL WHERE id = ?", (session.id,)
-        )
-        store._conn.commit()
     store.add_chat_message(session.id, role="user", content=SECRET)
     return store, session.id
 
@@ -107,4 +96,44 @@ def test_no_session_id_keeps_the_generic_empty_message():
         service.curate_from_conversation(store, "nobody", _ExplodingLLM())
     )
     assert summary["message"] == "no conversations or notes yet"
+    store.close()
+
+
+def test_an_anonymous_caller_can_no_longer_curate_from_conversations():
+    """The full cost of strict ownership, pinned so it is not rediscovered.
+
+    Anonymous sessions carry ``user_id = NULL``. The no-flag path is scoped by
+    ``WHERE user_id = ?``, which never matches NULL, so ``-session-id`` was an
+    unauthenticated caller's only route to their own conversations. Strict
+    ownership closes it, leaving them none.
+    """
+    store, ownerless = _store_with_session(None)
+
+    # The no-flag path never reached these sessions, before this change or after.
+    assert store.list_sessions_for_user("default_user") == []
+    # ...and the by-id route is now closed as well.
+    assert _curate(store, "default_user", ownerless)["status"] == "empty"
+    store.close()
+
+
+def test_one_signed_out_caller_cannot_read_anothers_conversations():
+    """The regression that shipped in #499 and was reverted here.
+
+    Giving anonymous sessions a *shared* owner made every signed-out caller's
+    conversation visible to every other one through the no-flag path -- no
+    session id needed, nothing to guess: `memory curate` with no arguments swept
+    the lot into the caller's own memories.
+
+    Anonymous sessions therefore stay NULL-owned until anonymous callers can be
+    told apart. Nothing here asserts NULL directly: it asserts the property that
+    matters, so any future scheme that isolates them properly still passes.
+    """
+    store = AgenticSearchStore(":memory:")
+    alice = store.create_chat_session()
+    store.add_chat_message(alice.id, role="user", content=SECRET)
+    bob = store.create_chat_session()
+    store.add_chat_message(bob.id, role="user", content="Bob's own message")
+
+    # Bob, signed out, curating everything he is entitled to.
+    assert SECRET not in service._gather_sources(store, "default_user", None)
     store.close()
