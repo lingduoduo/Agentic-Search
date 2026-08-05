@@ -104,3 +104,27 @@ pytest -q \
 ```
 
 The fallback tests assert that auto-search tries internal retrieval, then SerpAPI, then the configured browser service, and never substitutes a local-model answer when all providers are empty. Access-filter tests separately protect ACL enforcement on each path that reads documents. The expected contract is documented in [API request routing](request-routing.md).
+
+### End-to-end identity check
+
+`examples/verify_identity_capabilities.sh` runs the access-control property
+against a live stack: it starts `demo.py --ignore-acl` and the web backend over a
+two-document corpus, one public and one ACL'd to another user, then asserts that
+neither an anonymous nor a signed-in caller can read the restricted one.
+
+The `--ignore-acl` is the point. Both bundled retrieval servers honour
+`access_acl`, so without it the script would pass even with the web layer's
+enforcement deleted — it would be testing the server, not the layer it names.
+
+It asserts positive controls too (the corpus was really searched; the second
+request really authenticated), because the first version passed for the wrong
+reason. The tool-agent leg needs a local model and SKIPs without one:
+
+```bash
+examples/verify_identity_capabilities.sh                              # SKIPs the tool leg
+SEARCH_AGENT_MODEL=Qwen/Qwen2.5-1.5B-Instruct \
+  examples/verify_identity_capabilities.sh                            # runs it (~40-50s/request)
+```
+
+That leg is weaker than the retrieval one and says so: it can only catch a leak
+the model quotes into its own answer.
