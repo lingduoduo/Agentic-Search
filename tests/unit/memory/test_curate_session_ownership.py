@@ -58,13 +58,59 @@ def test_the_callers_own_session_is_still_read():
     store.close()
 
 
-def test_a_session_with_no_owner_stays_readable():
-    """Ownerless is public, the same rule documented in ``SearchFilters.matches``.
+def test_a_session_with_no_owner_is_not_read_either():
+    """Ownership is strict: only a session whose ``user_id`` matches is read.
 
-    Anonymous callers share the ``default_user`` bucket and their sessions are
-    stored with a NULL ``user_id``, so requiring equality here would silently
-    remove ``curate --session-id`` for every anonymous caller.
+    Ownerless sessions were readable by anyone who knew the id, on the same
+    "declares no ACL means public" rule documents follow. Sessions are not
+    documents — an ownerless one is somebody's actual conversation, just one
+    recorded before they signed in — so the rule no longer carries over.
     """
     store, ownerless = _store_with_session(None)
-    assert SECRET in service._gather_sources(store, "default_user", ownerless)
+    assert service._gather_sources(store, "default_user", ownerless) == ""
+    store.close()
+
+
+def test_an_unreadable_session_id_says_so_instead_of_looking_empty():
+    """The capability loss must be visible, not silent.
+
+    Anonymous callers' sessions are stored with a NULL ``user_id``, so strict
+    ownership removes ``curate --session-id`` for all of them. Reusing the
+    generic "no conversations or notes yet" would make that read as "nothing to
+    do" -- the invisible-loss shape that #490 shipped and #491 had to undo.
+
+    One message covers both causes (not yours, does not exist), so it still
+    confirms nothing about anyone else's session.
+    """
+    store, ownerless = _store_with_session(None)
+    summary = _curate(store, "default_user", ownerless)
+    assert summary["status"] == "empty"
+    assert summary["message"] == "session not found, or not readable by you"
+    store.close()
+
+
+def test_no_session_id_keeps_the_generic_empty_message():
+    """The control: the new message is scoped to an explicit session id."""
+    store = AgenticSearchStore(":memory:")
+    summary = asyncio.run(
+        service.curate_from_conversation(store, "nobody", _ExplodingLLM())
+    )
+    assert summary["message"] == "no conversations or notes yet"
+    store.close()
+
+
+def test_an_anonymous_caller_can_no_longer_curate_from_conversations():
+    """The full cost of strict ownership, pinned so it is not rediscovered.
+
+    Anonymous sessions carry ``user_id = NULL``. The no-flag path is scoped by
+    ``WHERE user_id = ?``, which never matches NULL, so ``-session-id`` was an
+    unauthenticated caller's only route to their own conversations. Strict
+    ownership closes it, leaving them none.
+    """
+    store, ownerless = _store_with_session(None)
+
+    # The no-flag path never reached these sessions, before this change or after.
+    assert store.list_sessions_for_user("default_user") == []
+    # ...and the by-id route is now closed as well.
+    assert _curate(store, "default_user", ownerless)["status"] == "empty"
     store.close()

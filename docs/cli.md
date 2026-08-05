@@ -88,10 +88,18 @@ Each subcommand maps to an `/api/memory/*` endpoint (see
 require the backend to have an LLM configured (else they return a 503, surfaced
 as a non-zero exit).
 
-`-session-id` may only name a session you can already read: one you own, or one
-with no owner. A session belonging to someone else is skipped rather than
-refused, so `curate` reports `empty` — the same answer it gives for a session id
-that does not exist.
+`-session-id` may only name a session **you own**. Anything else — someone
+else's, or one with no owner — yields `session not found, or not readable by
+you`. One message covers both causes, so it confirms nothing about another
+user's sessions.
+
+> **Curating from conversations now requires signing in.** Sessions started
+> without a token are stored with **no owner**, and the no-flag path is scoped by
+> `WHERE user_id = ?`, which never matches NULL. So neither `memory curate` nor
+> `memory curate -session-id <id>` can reach an unauthenticated caller's own
+> conversations — the flag was previously the only route to them, and it is now
+> closed too. Pass `-token` or `-user-id` to curate. `memory add` and the other
+> subcommands are unaffected.
 
 ### JSON output (scripting)
 
