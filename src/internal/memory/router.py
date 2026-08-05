@@ -30,13 +30,29 @@ class _CurateRequest(BaseModel):
 
 
 def create_memory_router(
-    db, llm=None, *, default_user_id: str = DEFAULT_MEMORY_USER_ID
+    db,
+    llm=None,
+    *,
+    default_user_id: str = DEFAULT_MEMORY_USER_ID,
+    require_auth: bool = False,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/memory", tags=["memory"])
 
     def _uid(request: Request) -> str:
+        """Resolve the caller's memory bucket.
+
+        Without ``require_auth`` an anonymous caller falls back to a *shared*
+        ``default_user`` bucket — deliberate for local research use, where the
+        CLI is documented as working with no token, but it means every
+        anonymous caller on a deployment reads and writes the same memories.
+        ``require_auth`` refuses them instead.
+        """
         user = user_from_headers(request.headers)
-        return user.id if user is not None else default_user_id
+        if user is not None:
+            return user.id
+        if require_auth:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        return default_user_id
 
     @router.post("/save")
     def save(body: _SaveRequest, request: Request) -> dict:

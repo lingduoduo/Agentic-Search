@@ -70,6 +70,15 @@ For a remote deployment, replace the URL with `https://[YOUR_DOMAIN]:8090/`. Oth
 | `retrieve_documents` | Returns authenticated document content and relevance scores without answer synthesis |
 | `expand_query` | LLM-backed keyword expansion for improved recall |
 
+The memory tools (`save_memory`, `search_memories`,
+`update_memory_from_conversation`, …) resolve the caller from the bearer token's
+`sub`. Without one they fall back to a **shared** `default_user` bucket — fine
+for a single-operator local setup, wrong for a shared deployment. Setting
+`AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH=1` makes them refuse an unauthenticated
+caller instead. The same variable governs the web backend's `/api/memory/*`
+routes; MCP is a second door to the same store, so honouring it in only one
+place would leave the other unguarded.
+
 MCP tool selection is independent of the web UI's `/api/agent` auto-router. An MCP client explicitly invokes an exposed tool according to its own model and client policy; it does not pass through the web backend's internal → SerpAPI → browser fallback sequence. For the web API contract, see [API request routing](request-routing.md).
 
 Grounding verification checks citation labels and lexical overlap with retrieved evidence. It reduces unsupported output but is not a hard guarantee that an answer contains no hallucinations.

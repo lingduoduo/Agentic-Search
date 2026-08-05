@@ -48,6 +48,18 @@ def _resolve_user_id() -> str:
             return sub.strip()
     except Exception:  # noqa: BLE001 — unauthenticated/local falls back
         pass
+    # Read at call time, not import time, so the same env var governs this
+    # separate process as governs the web router. Enforcing only there would
+    # leave MCP as an unguarded second door to the same shared bucket.
+    if os.getenv("AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        raise PermissionError(
+            "AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH is set: memory tools need an "
+            "authenticated caller."
+        )
     return DEFAULT_MEMORY_USER_ID
 
 

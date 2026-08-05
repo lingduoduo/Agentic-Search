@@ -65,6 +65,7 @@ Routing configuration spans separate capabilities:
 | `AGENTIC_SEARCH_SUPER_USERS` | `[]` | JSON list of admin user IDs or emails |
 | `AGENTIC_SEARCH_WEB_DB_PATH` | `:memory:` | SQLite path (`:memory:` for ephemeral) |
 | `AGENTIC_SEARCH_MCP_USER_SCOPED` | — | Comma-separated MCP tool names to mark `user_scoped`, so they are withheld from callers with no user |
+| `AGENTIC_SEARCH_MEMORY_REQUIRE_AUTH` | `false` | Refuse anonymous memory callers (`401`) instead of pooling them into the shared `default_user` bucket. Governs both `/api/memory/*` and the MCP memory tools |
 | `AGENTIC_SEARCH_RETRIEVAL_URL` | `http://localhost:8001/retrieve` | Retrieval server URL |
 | `AGENTIC_SEARCH_CLOUD_DATA_PLANE_URL` | — | Cloud data plane for billing proxy |
 | `AGENTIC_SEARCH_LICENSE_ENFORCEMENT_ENABLED` | `false` | Enable license gating |
