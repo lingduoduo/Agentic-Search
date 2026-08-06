@@ -1,5 +1,16 @@
 # CLI simplification — design
 
+> **Superseded in part, 2026-08-06.** The deletion this spec designed was
+> implemented and then **reverted at the author's request**: the CLI tooling is
+> kept. What shipped is the *audit* plus the two bug fixes — `cli/` now builds
+> from a clone for the first time, because `models/events.go` was reconstructed
+> and committed, and `src/cli/` (the Python duplicate) is gone. Every Go package
+> below is still present; the reachability findings still describe it accurately,
+> and `docs/cli.md` records them as "built, tested, not wired up".
+>
+> The deletion is preserved in this branch's history if it is ever wanted:
+> commit `bc095a0`.
+
 **Date:** 2026-08-06
 **Scope:** `cli/` (Go) and `src/cli/` (Python)
 

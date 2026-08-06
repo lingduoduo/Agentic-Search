@@ -16,9 +16,14 @@ There are exactly **two** binaries today:
 > Note: things like **connectors** and **evals** are *not* CLI tools — they live
 > in the Web UI and the backend REST API. See [Extending the CLI](#extending-the-cli).
 
-There is also no Python CLI. `src/cli/` used to hold one, but it was a
-duplicate of the Go `query` binary — same flags, same `POST /api/agent`, same
-output — so it was removed. See [What `cli/` is not](#what-cli-is-not).
+There is also no Python CLI. `src/cli/` used to hold one, but it was a duplicate
+of the Go `query` binary — same flags, same `POST /api/agent`, same output — so it
+was removed.
+
+`cli/` contains considerably more than these two binaries — including a complete
+chat TUI — but none of it has an entry point today. See
+[The rest of `cli/`](#the-rest-of-cli-built-tested-not-wired-up) before assuming a
+package there is live.
 
 ## Three doors to the same backend
 
@@ -172,49 +177,74 @@ The `memory` binary maps failures to the semantic codes in
 | 3 | not configured | 8 | server error (5xx) |
 | 4 | auth failure (401/403) | 9 | not available (404) |
 
-## What `cli/` is not
+## The rest of `cli/`: built, tested, not wired up
 
-`cli/` was originally lifted from a larger upstream Go CLI, and for a long time
-it carried that CLI's whole feature set even though only `query` and `memory`
-were ever wired up. A 2026-08-06 reachability audit found **4,358 of 6,676 LOC
-unreachable from either binary**, and it was removed
-([spec](superpowers/specs/2026-08-06-cli-simplification-design.md)). So if you
-are looking for one of these, it is gone and was never usable here:
+`cli/` was lifted from a larger upstream Go CLI and still carries that CLI's whole
+feature set, even though only `query` and `memory` have entry points. A
+2026-08-06 audit ([spec](superpowers/specs/2026-08-06-cli-simplification-design.md))
+found **4,358 of 6,676 LOC unreachable from either binary**. It is deliberately
+kept — it compiles, it is test-covered, and it is the starting point for a richer
+client — but **nothing runs it today**, so do not assume a package here is live
+just because it exists:
 
-| Removed | What it was |
-|---|---|
-| `tui/` (~2,140 LOC) | A full bubbletea chat TUI — splash screen, SSH auth, status bar, scrollback viewport, `/configure` flow. No `main` package ever launched it. |
-| `parser/`, `api/stream.go`, `models/events.go` | SSE stream-event parsing for `POST /chat/send-chat-message`. Only the TUI consumed it. |
-| `starprompt/` | A one-time "star us on GitHub" prompt, documented as shown *before the TUI*. |
-| `embedded/` + `SKILL.md` | An agent skill compiled into a binary named `agentic-search`, which this repo does not build. |
-| `version/` | A gate requiring "backend ≥ 3.0.0" via `GET /api/version` — an endpoint the backend does not serve. |
-| `overflow/`, `fsutil/`, `browser/` | Pager writer, skill-file installer, and browser-opener — all TUI support code. |
-| `config/experiments.go` | A feature-flag registry whose only flag (`stream_markdown`) only the TUI read. |
-| 10 of 18 `ClientAPI` methods | Chat-session, persona, file-upload, version, and generic `/search` calls. Three targeted endpoints the backend never implemented. |
+| Package | LOC | Status |
+|---|---|---|
+| `tui/` (13 files) | ~2,140 | A full bubbletea chat TUI — splash, SSH auth, status bar, scrollback viewport, `/configure`. Complete and tested; **no `main` package launches it.** Needs an entry point (a `cmd/tui` binary, or bare `query` with no args). |
+| `parser/`, `api/stream.go`, `models/events.go` | 976 | NDJSON stream-event parsing for `POST /api/chat/send-chat-message`. Reached only from `tui/`. That endpoint **does** exist. |
+| `overflow/`, `fsutil/`, `browser/` | 458 | Pager writer, skill-file installer, browser opener — TUI support code. |
+| `starprompt/` | 83 | One-time "star us on GitHub" prompt, shown before the TUI. |
+| `embedded/` + `SKILL.md` | 7 + doc | An agent skill embedded into a binary named `agentic-search`, which this repo does not build. |
+| `version/` | 168 | Gates on "backend >= 3.0.0" via `GET /api/version` — **the backend does not serve that endpoint**, so this cannot pass as written. |
+| `config/experiments.go` | 46 | Feature-flag registry; its only flag (`stream_markdown`) is read only by `tui/`. |
 
-**Do not restore any of it by reflex.** If you want a TUI or a streaming client,
-build it against the current 8-method client rather than reviving 4,000 lines
-that were never reachable — most of it targets an API shape this backend does
-not have.
+`ClientAPI` has 18 methods; the two binaries call 8 (`QueryAgent` plus the seven
+`/api/memory/*` calls). Of the other 10, most back the TUI, but three target
+endpoints that **do not exist** on this backend — `GET /api/version`,
+`POST /api/chat/stop-chat-session/`, `POST /api/user/projects/file/upload` — and
+two (`GetBackendVersion`, `Search`) have no caller at all, not even in `tui/`.
+Anything you wire up will need those three either implemented server-side or
+pointed elsewhere.
 
-Two bugs fell out of that audit and are fixed:
+### `cli/models/events.go` was reconstructed
 
-- **`cli/` did not build from a fresh clone.** `.gitignore` had a bare `models/`
-  rule (meant for ML checkpoints, which do live in `src/model/models/`) that
-  matches *any* directory named `models` at any depth, so `cli/models/events.go`
-  was never committed. `git archive HEAD cli && go build ./...` failed with
-  `undefined: models.StreamEvent`. Neither CI workflow has a `setup-go` step, so
-  nothing caught it. There is now a `!cli/models/` negation right after the rule.
-- **`src/cli/` duplicated the `query` binary** and has been deleted, along with
-  its four unit tests.
+This file **was not in git history**. The bare `models/` rule in `.gitignore`
+(meant for the ML checkpoints in `src/model/models/`) matches *any* directory
+named `models` at any depth, so it silently excluded `cli/models/events.go`. The
+file existed in exactly one working copy and nowhere else — not on any branch,
+not in any worktree. Two consequences:
 
-The audit also turned up two behavior quirks that are **documented rather than
-changed**, since fixing either alters what a working command does today:
+- **`cli/` had never built from a clone.** `git archive HEAD cli && go build ./...`
+  failed with `undefined: models.StreamEvent` and ten more. Neither CI workflow
+  has a `setup-go` step, so nothing caught it.
+- It was rebuilt from its consumers — `parser/parser.go`'s constructors, the
+  assertions in `parser/parser_test.go`, and the field reads in `tui/app.go` —
+  which pin every struct field and the `StreamEvent` interface by compilation plus
+  a 419-LOC test suite. The `EventType()` constant *values* are **not** pinned,
+  because nothing reads them today; they mirror the wire `type` strings. If you
+  wire up the TUI and hit an event-name mismatch, that is the one place to look.
 
-- `memory`'s flags must precede the positional query, or they are silently
-  swallowed into it — see [the note under `memory`](#memory--manage-user-memory).
-- `query` requires a token while `memory` does not — see
-  [the note under Authentication](#authentication).
+`.gitignore` now carries a `!cli/models/` negation, so the next file added under
+`cli/models/` cannot vanish the same way.
+
+### Other findings from the audit
+
+- **`src/cli/` was deleted.** It was a duplicate of the `query` binary — same
+  flags, same `POST /api/agent`, same output — referenced nowhere and documented
+  nowhere. Its four unit tests went with it.
+- **Nine files were gofmt-misformatted** on `main`, all from an
+  `Assistant`->`Agent` rename that never re-ran `gofmt`. Now formatted. The
+  leftover alignment is what revealed that `MessageIDEvent`'s field had been
+  `ReservedAssistantMessageID` before that rename.
+- **`cli/_version.py`** is an orphan: it derives a version from `GITHUB_REF_NAME`
+  for a `[tool.hatch.build.targets.wheel.hooks.custom]` config that does not
+  exist, since `pyproject.toml` uses setuptools. Nothing imports it. Left in
+  place, flagged here.
+- Two behavior quirks are **documented rather than changed**, since fixing either
+  alters what a working command does today: `memory`'s flags must precede the
+  positional query or they are silently swallowed into it (see
+  [the note under `memory`](#memory--manage-user-memory)), and `query` requires a
+  token while `memory` does not (see
+  [the note under Authentication](#authentication)).
 
 ## Extending the CLI
 
@@ -227,10 +257,10 @@ health, workers, …) is mechanical and self-contained:
 2. add request/response structs to [cli/models](../cli/models/models.go),
 3. add a subcommand (a new `cli/cmd/<name>` binary, following `cli/cmd/memory`).
 
-`ClientAPI` is deliberately kept to exactly what the binaries call — today
-`QueryAgent` plus the seven `/api/memory/*` methods. A method with no caller is
-dead weight that reads as a supported capability; delete it rather than leaving
-it for a future command.
+`ClientAPI` carries 18 methods but the binaries call only 8, so check
+[The rest of `cli/`](#the-rest-of-cli-built-tested-not-wired-up) before adding
+one — the method you need may already be there. Note which endpoints do not
+exist server-side; a method's presence is not evidence that its endpoint works.
 
 Keep every command a **thin translator** (parse flags → call `/api` → print) —
 never let logic or local state live in the CLI; that belongs in the backend

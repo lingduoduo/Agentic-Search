@@ -1,5 +1,12 @@
 # CLI simplification — implementation plan
 
+> **Outcome, 2026-08-06:** Tasks 1–9 were executed, then the `cli/` deletion
+> (Tasks 2–4) was **reverted** — the tooling is kept. What remains landed:
+> Task 5 (the `.gitignore` fix), Task 6 (`src/cli/` deletion), Task 7 (docs), and
+> a task this plan did not anticipate: **reconstructing `cli/models/events.go`**,
+> which was never in git history and without which `cli/` cannot compile. See the
+> spec's superseding note.
+
 Spec: [2026-08-06-cli-simplification-design.md](../specs/2026-08-06-cli-simplification-design.md)
 
 Baseline before starting: `cd cli && go vet ./... && go test ./...` is green
