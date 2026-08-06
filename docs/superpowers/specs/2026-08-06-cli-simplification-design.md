@@ -87,19 +87,34 @@ would invite the next TUI to grow against it, so it goes too.
 - **`models/models.go`** — drop the chat / persona / file / search types that
   only the removed methods reached.
 - **`config/config.go`** — drop `Features`, `StreamMarkdownEnabled`,
-  `EnvStreamMarkdown`, `AgentID` / `EnvAgentID`, and
-  `Save` / `ConfigExists` / `IsConfigured` / `DefaultConfig`; `tui/configure.go`
-  was their only caller. The live surface is `Load`, `APIURL`, and
-  `Config{ServerURL, APIKey}`. The three `config_test.go` feature-flag tests go
-  with the flag.
-- **`testutil/testutil.go`** — drop the `/api/version` and `/api/me` handlers in
-  `AgentSearchServer` if no surviving test hits them.
+  `EnvStreamMarkdown`, `EnvSSHHostKey`, `DefaultAgentID` / `EnvAgentID`, and
+  `Save` / `ConfigExists` / `IsConfigured`; `tui/configure.go` and
+  `tui/sshauth.go` were their only callers. `LoadFromDisk` is inlined into
+  `Load` — its documented reason to exist ("preserve persisted values during a
+  save") dies with `Save`. `DefaultConfig` **stays**: it is live, supplying
+  `Load`'s default server URL. The live surface is `Load`, `DefaultConfig`,
+  `APIURL`, `ConfigDir`, `ConfigFilePath`, and `Config{ServerURL, APIKey}`.
+- **`config_test.go`** — drop the tests whose subject was removed
+  (`TestIsConfigured`, the two agent-ID overrides, the two `Save` tests, and the
+  three feature-flag tests). Every test of surviving behavior is kept.
+- **`testutil/testutil.go`** — drop `AgentSearchServer`, `IsolateConfig`, and
+  `TestIOStreams`. All three were already unreferenced *before* this change —
+  pre-existing dead test helpers.
+- **`api/errors.go`** — drop `AuthError`. `TestConnection` was its only producer.
+- **`cli/_version.py`** — delete. It pins a version from `GITHUB_REF_NAME` for a
+  `[tool.hatch.build.targets.wheel.hooks.custom]` config that does not exist
+  (`pyproject.toml` uses setuptools), and nothing imports it.
 - **`go mod tidy`** — drops `bubbletea`, `bubbles`, `lipgloss`, `logrus`, and
   `x/text` plus ~25 indirect deps. Kept: `glamour` (render), `golang-jwt`
   (clientauth), `x/term`.
 
-**Result:** `cli/` goes 6,676 → ~2,300 LOC; eight packages behind two binaries,
-every one reachable.
+**Result (measured):** `cli/` goes 6,676 → **1,693 LOC** (−75%); eight packages
+behind two binaries, every one reachable. Direct dependencies drop 8 → 3.
+
+Deeper than the 4,358 LOC of whole-package deletion because the surface pruning
+also shrank the files that stayed: `api/client.go` 447 → 228,
+`models/models.go` 252 → 120, `config/config.go` 152 → 80,
+`config_test.go` 290 → 166, `testutil.go` 68 → 29.
 
 #### Tradeoff: the `stream_markdown` config key
 
@@ -157,5 +172,30 @@ The doc's current shape is accurate for what survives. Three changes:
 3. `pytest tests/unit tests/regression` → green, 4 fewer files collected
 4. `grep -rn "src\.cli\|src/cli" --include='*.py' --include='*.md' .` → only
    historical spec/plan mentions remain
-5. Smoke: build `query` and `memory` against a live backend on :7860 and confirm
-   output identical to pre-change
+5. Smoke: build both binaries and run them against a stub backend, confirming
+   the source-card table, progressive markdown, `session_id`, `memory list`, and
+   `memory list -json` all render as before.
+
+   A byte-for-byte diff against binaries built from `main` is **not possible**:
+   `main` cannot be built in a fresh worktree (Bug 1), and `events.go` existed
+   only in one machine's working copy, so it is unrecoverable once deleted.
+   Equivalence rests instead on `git diff main -- cli/cmd cli/render
+   cli/iostreams cli/clientauth cli/exitcodes` being **empty** — every
+   output-producing package is untouched — plus the client's parsing staying
+   under test.
+
+## Findings documented but not changed
+
+Two quirks surfaced during smoke testing. Both are pre-existing, and fixing
+either would change what a working command does, so they are recorded in
+`docs/cli.md` instead:
+
+1. **`memory` flags must precede the positional query.** Go's `flag` package
+   stops at the first non-flag argument and `add`/`search` join the remainder
+   into the text. `memory search "seating" -top-k 5` therefore searches for the
+   literal `seating -top-k 5` with the default top-k, silently. `docs/cli.md`
+   demonstrated exactly this broken form in two places; both examples are fixed.
+2. **The binaries disagree about optional auth.** `cmd/memory/main.go:80`
+   deliberately ignores a token-resolution failure and proceeds anonymously;
+   `cmd/query` exits 1 before contacting the backend. `docs/cli.md` claimed
+   unauthenticated use was fine without noting it only holds for `memory`.

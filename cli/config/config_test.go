@@ -9,7 +9,7 @@ import (
 
 func clearEnvVars(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{EnvServerURL, EnvAPIKey, EnvAgentID, EnvStreamMarkdown} {
+	for _, key := range []string{EnvServerURL, EnvAPIKey} {
 		t.Setenv(key, "")
 	}
 }
@@ -33,20 +33,6 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.APIKey != "" {
 		t.Errorf("expected empty API key, got %s", cfg.APIKey)
 	}
-	if cfg.DefaultAgentID != 0 {
-		t.Errorf("expected default agent ID 0, got %d", cfg.DefaultAgentID)
-	}
-}
-
-func TestIsConfigured(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.IsConfigured() {
-		t.Error("empty config should not be configured")
-	}
-	cfg.APIKey = "some-key"
-	if !cfg.IsConfigured() {
-		t.Error("config with API key should be configured")
-	}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -69,9 +55,8 @@ func TestLoadFromFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	data, _ := json.Marshal(map[string]interface{}{
-		"server_url":         "https://my-agentic-search.example.com",
-		"api_key":            "test-key-123",
-		"default_persona_id": 5,
+		"server_url": "https://my-agentic-search.example.com",
+		"api_key":    "test-key-123",
 	})
 	writeConfig(t, dir, data)
 
@@ -81,9 +66,6 @@ func TestLoadFromFile(t *testing.T) {
 	}
 	if cfg.APIKey != "test-key-123" {
 		t.Errorf("got %s", cfg.APIKey)
-	}
-	if cfg.DefaultAgentID != 5 {
-		t.Errorf("got %d", cfg.DefaultAgentID)
 	}
 }
 
@@ -124,30 +106,6 @@ func TestEnvOverrideAPIKey(t *testing.T) {
 	}
 }
 
-func TestEnvOverrideAgentID(t *testing.T) {
-	clearEnvVars(t)
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv(EnvAgentID, "42")
-
-	cfg := Load()
-	if cfg.DefaultAgentID != 42 {
-		t.Errorf("got %d", cfg.DefaultAgentID)
-	}
-}
-
-func TestEnvOverrideInvalidAgentID(t *testing.T) {
-	clearEnvVars(t)
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv(EnvAgentID, "not-a-number")
-
-	cfg := Load()
-	if cfg.DefaultAgentID != 0 {
-		t.Errorf("got %d", cfg.DefaultAgentID)
-	}
-}
-
 func TestEnvOverridesFileValues(t *testing.T) {
 	clearEnvVars(t)
 	dir := t.TempDir()
@@ -167,89 +125,6 @@ func TestEnvOverridesFileValues(t *testing.T) {
 	}
 	if cfg.APIKey != "file-key" {
 		t.Errorf("file value should be kept, got %s", cfg.APIKey)
-	}
-}
-
-func TestSaveAndReload(t *testing.T) {
-	clearEnvVars(t)
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	cfg := Config{
-		ServerURL:      "https://saved.example.com",
-		APIKey:         "saved-key",
-		DefaultAgentID: 10,
-	}
-	if err := Save(cfg); err != nil {
-		t.Fatal(err)
-	}
-
-	loaded := Load()
-	if loaded.ServerURL != "https://saved.example.com" {
-		t.Errorf("got %s", loaded.ServerURL)
-	}
-	if loaded.APIKey != "saved-key" {
-		t.Errorf("got %s", loaded.APIKey)
-	}
-	if loaded.DefaultAgentID != 10 {
-		t.Errorf("got %d", loaded.DefaultAgentID)
-	}
-}
-
-func TestDefaultFeaturesStreamMarkdownNil(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.Features.StreamMarkdown != nil {
-		t.Error("expected StreamMarkdown to be nil by default")
-	}
-	if !cfg.Features.StreamMarkdownEnabled() {
-		t.Error("expected StreamMarkdownEnabled() to return true when nil")
-	}
-}
-
-func TestEnvOverrideStreamMarkdownFalse(t *testing.T) {
-	clearEnvVars(t)
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv(EnvStreamMarkdown, "false")
-
-	cfg := Load()
-	if cfg.Features.StreamMarkdown == nil || *cfg.Features.StreamMarkdown {
-		t.Error("expected StreamMarkdown=false from env override")
-	}
-}
-
-func TestLoadFeaturesFromFile(t *testing.T) {
-	clearEnvVars(t)
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	data, _ := json.Marshal(map[string]interface{}{
-		"server_url": "https://example.com",
-		"api_key":    "key",
-		"features": map[string]interface{}{
-			"stream_markdown": true,
-		},
-	})
-	writeConfig(t, dir, data)
-
-	cfg := Load()
-	if cfg.Features.StreamMarkdown == nil || !*cfg.Features.StreamMarkdown {
-		t.Error("expected StreamMarkdown=true from config file")
-	}
-}
-
-func TestSaveCreatesParentDirs(t *testing.T) {
-	clearEnvVars(t)
-	dir := t.TempDir()
-	nested := filepath.Join(dir, "deep", "nested")
-	t.Setenv("XDG_CONFIG_HOME", nested)
-
-	if err := Save(Config{APIKey: "test"}); err != nil {
-		t.Fatal(err)
-	}
-
-	if !ConfigExists() {
-		t.Error("config file should exist after save")
 	}
 }
 

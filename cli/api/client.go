@@ -8,11 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,16 +19,14 @@ import (
 
 // Client is the Agentic Search API client.
 //
-// Three http.Clients are kept so each call site can pick a timeout matched to
-// its expected work: 3min for quick JSON endpoints, 5min for /search (which
-// runs LLM query expansion + relevance selection), and 5min for streaming
-// chat responses and uploads.
+// Two http.Clients are kept so each call site can pick a timeout matched to its
+// expected work: 3min for quick JSON endpoints, and 5min for the LLM-backed ones
+// (/agent, /memory/profile/generate, /memory/curate).
 type Client struct {
-	baseURL             string
-	apiKey              string
-	httpClient          *http.Client
-	searchHTTPClient    *http.Client
-	streamingHTTPClient *http.Client
+	baseURL          string
+	apiKey           string
+	httpClient       *http.Client
+	searchHTTPClient *http.Client
 }
 
 // NewClient creates a new API client from config.
@@ -52,10 +47,6 @@ func NewClient(cfg config.Config) *Client {
 			Transport: transport,
 		},
 		searchHTTPClient: &http.Client{
-			Timeout:   5 * time.Minute,
-			Transport: transport,
-		},
-		streamingHTTPClient: &http.Client{
 			Timeout:   5 * time.Minute,
 			Transport: transport,
 		},
@@ -142,15 +133,6 @@ func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any, r
 	return c.doJSONWith(ctx, c.httpClient, method, path, reqBody, result)
 }
 
-// Search calls POST /api/search and returns the response.
-func (c *Client) Search(ctx context.Context, req models.SearchRequest) (*models.SearchResponse, error) {
-	var resp models.SearchResponse
-	if err := c.doJSONWith(ctx, c.searchHTTPClient, "POST", "/search", req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
 // QueryAgent calls POST /api/agent and returns the parsed result.
 func (c *Client) QueryAgent(ctx context.Context, query string, topK int, sessionID *string) (*models.AgentResult, error) {
 	req := models.AgentRequest{
@@ -163,197 +145,6 @@ func (c *Client) QueryAgent(ctx context.Context, query string, topK int, session
 		return nil, err
 	}
 	return &result, nil
-}
-
-// TestConnection checks if the server is reachable and credentials are valid.
-// Returns nil on success, or an error with a descriptive message on failure.
-func (c *Client) TestConnection(ctx context.Context) error {
-	// Step 1: Basic reachability
-	req, err := c.newRequest(ctx, "GET", "/", nil)
-	if err != nil {
-		return fmt.Errorf("cannot connect to %s: %w", c.baseURL, err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to %s — is the server running?", c.baseURL)
-	}
-	_ = resp.Body.Close()
-
-	serverHeader := strings.ToLower(resp.Header.Get("Server"))
-
-	if resp.StatusCode == 403 {
-		if strings.Contains(serverHeader, "awselb") || strings.Contains(serverHeader, "amazons3") {
-			return &AuthError{Message: "blocked by AWS load balancer (HTTP 403 on all requests).\n  Your IP address may not be in the ALB's security group or WAF allowlist"}
-		}
-		return &AuthError{Message: "HTTP 403 on base URL — the server is blocking all traffic.\n  This is likely a firewall, WAF, or IP allowlist restriction"}
-	}
-
-	// Step 2: Authenticated check
-	req2, err := c.newRequest(ctx, "GET", "/health", nil)
-	if err != nil {
-		return fmt.Errorf("server reachable but API error: %w", err)
-	}
-
-	resp2, err := c.httpClient.Do(req2)
-	if err != nil {
-		return fmt.Errorf("server reachable but API error: %w", err)
-	}
-	defer func() { _ = resp2.Body.Close() }()
-
-	if resp2.StatusCode == 200 {
-		return nil
-	}
-
-	bodyBytes, _ := io.ReadAll(io.LimitReader(resp2.Body, 300))
-	body := string(bodyBytes)
-	isHTML := strings.HasPrefix(strings.TrimSpace(body), "<")
-	respServer := strings.ToLower(resp2.Header.Get("Server"))
-
-	if resp2.StatusCode == 401 || resp2.StatusCode == 403 {
-		if isHTML || strings.Contains(respServer, "awselb") {
-			return &AuthError{Message: fmt.Sprintf("HTTP %d from a reverse proxy (not the Agentic Search backend).\n  Check your deployment's ingress / proxy configuration", resp2.StatusCode)}
-		}
-		if resp2.StatusCode == 401 {
-			return &AuthError{Message: fmt.Sprintf("invalid personal access token.\n  %s", body)}
-		}
-		return &AuthError{Message: fmt.Sprintf("access denied — check that the personal access token is valid.\n  %s", body)}
-	}
-
-	detail := fmt.Sprintf("HTTP %d", resp2.StatusCode)
-	if body != "" {
-		detail += fmt.Sprintf("\n  Response: %s", body)
-	}
-	return &APIError{StatusCode: resp2.StatusCode, Detail: detail}
-}
-
-// ListAgents returns visible agents.
-func (c *Client) ListAgents(ctx context.Context) ([]models.AgentSummary, error) {
-	var raw []models.AgentSummary
-	if err := c.doJSON(ctx, "GET", "/persona", nil, &raw); err != nil {
-		return nil, err
-	}
-	var result []models.AgentSummary
-	for _, p := range raw {
-		if p.IsVisible {
-			result = append(result, p)
-		}
-	}
-	return result, nil
-}
-
-// ListChatSessions returns recent chat sessions.
-func (c *Client) ListChatSessions(ctx context.Context) ([]models.ChatSessionDetails, error) {
-	var resp struct {
-		Sessions []models.ChatSessionDetails `json:"sessions"`
-	}
-	if err := c.doJSON(ctx, "GET", "/chat/get-user-chat-sessions", nil, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Sessions, nil
-}
-
-// GetChatSession returns full details for a session.
-func (c *Client) GetChatSession(ctx context.Context, sessionID string) (*models.ChatSessionDetailResponse, error) {
-	var resp models.ChatSessionDetailResponse
-	if err := c.doJSON(ctx, "GET", "/chat/get-chat-session/"+sessionID, nil, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// RenameChatSession renames a session. If name is empty, the backend auto-generates one.
-func (c *Client) RenameChatSession(ctx context.Context, sessionID string, name *string) (string, error) {
-	payload := map[string]any{
-		"chat_session_id": sessionID,
-	}
-	if name != nil {
-		payload["name"] = *name
-	}
-	var resp struct {
-		NewName string `json:"new_name"`
-	}
-	if err := c.doJSON(ctx, "PUT", "/chat/rename-chat-session", payload, &resp); err != nil {
-		return "", err
-	}
-	return resp.NewName, nil
-}
-
-// UploadFile uploads a file and returns a file descriptor.
-func (c *Client) UploadFile(ctx context.Context, filePath string) (*models.FileDescriptorPayload, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = file.Close() }()
-
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-
-	part, err := writer.CreateFormFile("files", filepath.Base(filePath))
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, err
-	}
-	_ = writer.Close()
-
-	req, err := c.newRequest(ctx, "POST", "/user/projects/file/upload", &buf)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	resp, err := c.streamingHTTPClient.Do(req)
-	if err != nil {
-		return nil, wrapTimeoutError(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if err := checkResponse(resp); err != nil {
-		return nil, err
-	}
-
-	var snapshot models.CategorizedFilesSnapshot
-	if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
-		return nil, err
-	}
-
-	if len(snapshot.UserFiles) == 0 {
-		return nil, &APIError{StatusCode: 400, Detail: "File upload returned no files"}
-	}
-
-	uf := snapshot.UserFiles[0]
-	return &models.FileDescriptorPayload{
-		ID:   uf.FileID,
-		Type: uf.ChatFileType,
-		Name: filepath.Base(filePath),
-	}, nil
-}
-
-// GetBackendVersion fetches the backend version string.
-func (c *Client) GetBackendVersion(ctx context.Context) (string, error) {
-	var resp struct {
-		BackendVersion string `json:"backend_version"`
-	}
-	if err := c.doJSON(ctx, "GET", "/version", nil, &resp); err != nil {
-		return "", err
-	}
-	return resp.BackendVersion, nil
-}
-
-// StopChatSession sends a stop signal for a streaming session (best-effort).
-func (c *Client) StopChatSession(ctx context.Context, sessionID string) {
-	req, err := c.newRequest(ctx, "POST", "/chat/stop-chat-session/"+sessionID, nil)
-	if err != nil {
-		return
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return
-	}
-	_ = resp.Body.Close()
 }
 
 // SaveMemory calls POST /api/memory/save.
@@ -424,16 +215,6 @@ func (c *Client) CurateMemory(ctx context.Context, sessionID *string) (*models.M
 
 // ClientAPI is the interface satisfied by Client.
 type ClientAPI interface {
-	TestConnection(ctx context.Context) error
-	ListAgents(ctx context.Context) ([]models.AgentSummary, error)
-	ListChatSessions(ctx context.Context) ([]models.ChatSessionDetails, error)
-	GetChatSession(ctx context.Context, sessionID string) (*models.ChatSessionDetailResponse, error)
-	RenameChatSession(ctx context.Context, sessionID string, name *string) (string, error)
-	UploadFile(ctx context.Context, filePath string) (*models.FileDescriptorPayload, error)
-	GetBackendVersion(ctx context.Context) (string, error)
-	StopChatSession(ctx context.Context, sessionID string)
-	SendMessageStream(ctx context.Context, message string, chatSessionID *string, agentID int, parentMessageID *int, fileDescriptors []models.FileDescriptorPayload) <-chan models.StreamEvent
-	Search(ctx context.Context, req models.SearchRequest) (*models.SearchResponse, error)
 	QueryAgent(ctx context.Context, query string, topK int, sessionID *string) (*models.AgentResult, error)
 	SaveMemory(ctx context.Context, text string) (*models.MemorySaveResponse, error)
 	ListMemories(ctx context.Context) (*models.MemoryListResponse, error)

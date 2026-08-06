@@ -16,6 +16,10 @@ There are exactly **two** binaries today:
 > Note: things like **connectors** and **evals** are *not* CLI tools — they live
 > in the Web UI and the backend REST API. See [Extending the CLI](#extending-the-cli).
 
+There is also no Python CLI. `src/cli/` used to hold one, but it was a
+duplicate of the Go `query` binary — same flags, same `POST /api/agent`, same
+output — so it was removed. See [What `cli/` is not](#what-cli-is-not).
+
 ## Three doors to the same backend
 
 The CLI is one of three independent front ends over the same backend and
@@ -54,6 +58,8 @@ go build -o ../bin/memory ./cmd/memory
 ```
 
 Go tooling: `go test ./...`, `go vet ./...`, `go build ./...` (run from `cli/`).
+Neither CI workflow has a `setup-go` step, so **nothing runs these for you** —
+run them yourself before pushing Go changes.
 
 ## `query` — search + answer
 
@@ -75,7 +81,7 @@ It hits `POST /api/agent` and renders the source cards, the answer, and the
 ```bash
 memory add "User prefers window seats"
 memory list
-memory search "seating" -top-k 5
+memory search -top-k 5 "seating"   # flags BEFORE the query — see the note below
 memory consolidate                 # dedup + resolve tagged conflicts (-no-conflict to dedup only)
 memory profile                     # show the stored profile
 memory profile -generate           # (re)build the profile via the LLM
@@ -87,6 +93,14 @@ Each subcommand maps to an `/api/memory/*` endpoint (see
 [docs/api-reference.md](api-reference.md)). `profile -generate` and `curate`
 require the backend to have an LLM configured (else they return a 503, surfaced
 as a non-zero exit).
+
+> **Flags must come before the positional text.** Go's `flag` package stops
+> parsing at the first non-flag argument, and `add`/`search` join everything left
+> over into the text or query. So `memory search "seating" -top-k 5` does **not**
+> set `-top-k` — it searches for the literal string `seating -top-k 5` and
+> silently uses the default. Write `memory search -top-k 5 "seating"`. Same for
+> `memory search -json "seat"`. This bites quietly: there is no error, just a
+> query with your flags glued onto it.
 
 `-session-id` may only name a session **you own**. Anything else — someone
 else's, or one with no owner — yields `session not found, or not readable by
@@ -108,7 +122,7 @@ of the human-formatted lines — for pipelines and CI:
 
 ```bash
 memory list -json | jq -r '.memories[].text'
-memory search "seat" -json | jq '.results[] | {id, score}'
+memory search -json "seat" | jq '.results[] | {id, score}'
 ```
 
 ## Authentication
@@ -122,6 +136,16 @@ environment variables, overridden by flags:
 | Bearer token (PAT/JWT) | `AGENTIC_SEARCH_PAT` | `-token` | — |
 | Mint a JWT for a user | — | `-user-id` (+ `-email`) | — |
 | JWT signing secret | `AGENTIC_SEARCH_AUTH_SECRET` (then `AUTH_SECRET`) | `-secret` | — |
+
+> **The two binaries disagree about whether auth is optional.** `memory` treats
+> a missing token as fine and sends the request anyway
+> ([main.go:80](../cli/cmd/memory/main.go#L80) deliberately ignores the resolve
+> error). `query` treats it as fatal and exits 1 with
+> `provide -token, set AGENTIC_SEARCH_PAT, or pass -user-id to authenticate`
+> before contacting the backend at all. So the "unauthenticated is fine" note
+> below holds for `memory` but **not** for `query` — run `query` with `-token`,
+> `AGENTIC_SEARCH_PAT`, or `-user-id` even against a local backend that would
+> have accepted an anonymous caller.
 
 - **Unauthenticated is fine for local/research use** — with no token the backend
   treats the caller as the default user (`default_user`). That bucket is
@@ -148,6 +172,50 @@ The `memory` binary maps failures to the semantic codes in
 | 3 | not configured | 8 | server error (5xx) |
 | 4 | auth failure (401/403) | 9 | not available (404) |
 
+## What `cli/` is not
+
+`cli/` was originally lifted from a larger upstream Go CLI, and for a long time
+it carried that CLI's whole feature set even though only `query` and `memory`
+were ever wired up. A 2026-08-06 reachability audit found **4,358 of 6,676 LOC
+unreachable from either binary**, and it was removed
+([spec](superpowers/specs/2026-08-06-cli-simplification-design.md)). So if you
+are looking for one of these, it is gone and was never usable here:
+
+| Removed | What it was |
+|---|---|
+| `tui/` (~2,140 LOC) | A full bubbletea chat TUI — splash screen, SSH auth, status bar, scrollback viewport, `/configure` flow. No `main` package ever launched it. |
+| `parser/`, `api/stream.go`, `models/events.go` | SSE stream-event parsing for `POST /chat/send-chat-message`. Only the TUI consumed it. |
+| `starprompt/` | A one-time "star us on GitHub" prompt, documented as shown *before the TUI*. |
+| `embedded/` + `SKILL.md` | An agent skill compiled into a binary named `agentic-search`, which this repo does not build. |
+| `version/` | A gate requiring "backend ≥ 3.0.0" via `GET /api/version` — an endpoint the backend does not serve. |
+| `overflow/`, `fsutil/`, `browser/` | Pager writer, skill-file installer, and browser-opener — all TUI support code. |
+| `config/experiments.go` | A feature-flag registry whose only flag (`stream_markdown`) only the TUI read. |
+| 10 of 18 `ClientAPI` methods | Chat-session, persona, file-upload, version, and generic `/search` calls. Three targeted endpoints the backend never implemented. |
+
+**Do not restore any of it by reflex.** If you want a TUI or a streaming client,
+build it against the current 8-method client rather than reviving 4,000 lines
+that were never reachable — most of it targets an API shape this backend does
+not have.
+
+Two bugs fell out of that audit and are fixed:
+
+- **`cli/` did not build from a fresh clone.** `.gitignore` had a bare `models/`
+  rule (meant for ML checkpoints, which do live in `src/model/models/`) that
+  matches *any* directory named `models` at any depth, so `cli/models/events.go`
+  was never committed. `git archive HEAD cli && go build ./...` failed with
+  `undefined: models.StreamEvent`. Neither CI workflow has a `setup-go` step, so
+  nothing caught it. There is now a `!cli/models/` negation right after the rule.
+- **`src/cli/` duplicated the `query` binary** and has been deleted, along with
+  its four unit tests.
+
+The audit also turned up two behavior quirks that are **documented rather than
+changed**, since fixing either alters what a working command does today:
+
+- `memory`'s flags must precede the positional query, or they are silently
+  swallowed into it — see [the note under `memory`](#memory--manage-user-memory).
+- `query` requires a token while `memory` does not — see
+  [the note under Authentication](#authentication).
+
 ## Extending the CLI
 
 The CLI covers only `query` + `memory` today. Because it is a thin client over
@@ -158,6 +226,11 @@ health, workers, …) is mechanical and self-contained:
    endpoint (and to the `ClientAPI` interface),
 2. add request/response structs to [cli/models](../cli/models/models.go),
 3. add a subcommand (a new `cli/cmd/<name>` binary, following `cli/cmd/memory`).
+
+`ClientAPI` is deliberately kept to exactly what the binaries call — today
+`QueryAgent` plus the seven `/api/memory/*` methods. A method with no caller is
+dead weight that reads as a supported capability; delete it rather than leaving
+it for a future command.
 
 Keep every command a **thin translator** (parse flags → call `/api` → print) —
 never let logic or local state live in the CLI; that belongs in the backend

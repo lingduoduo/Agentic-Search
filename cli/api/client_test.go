@@ -14,52 +14,26 @@ import (
 	"github.com/lingduoduo/Agentic-Search/cli/testutil"
 )
 
-// TestListAgents_Timeout verifies that the wrapTimeoutError helper correctly
-// wraps network timeouts as APIError{408}. Integration tests cover the
-// happy path and HTTP error cases against a real server.
-func TestListAgents_Timeout(t *testing.T) {
+// TestQueryAgent_Timeout verifies that the wrapTimeoutError helper correctly
+// wraps network failures. Integration tests cover the happy path and HTTP
+// error cases against a real server.
+func TestQueryAgent_Timeout(t *testing.T) {
 	url := testutil.DeadServerURL()
 	client := testutil.NewClient(url)
-	_, err := client.ListAgents(t.Context())
+	_, err := client.QueryAgent(t.Context(), "test", 5, nil)
 	if err == nil {
 		t.Fatal("expected error for dead server")
 	}
 }
 
-func TestSearch_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			t.Errorf("method = %s, want POST", r.Method)
-		}
-		if !strings.HasSuffix(r.URL.Path, "/search") {
-			t.Errorf("path = %s, want /api/search", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"results": [{"citation_id": 1, "title": "Test", "content": "full chunk text", "link": null, "source_type": "web", "updated_at": null}]
-		}`))
-	}))
-	defer srv.Close()
-
-	client := testutil.NewClient(srv.URL)
-	resp, err := client.Search(t.Context(), models.SearchRequest{Query: "test"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(resp.Results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(resp.Results))
-	}
-	if resp.Results[0].Content != "full chunk text" {
-		t.Errorf("content = %q, want %q", resp.Results[0].Content, "full chunk text")
-	}
-}
-
-func TestSearch_401(t *testing.T) {
+// TestQueryAgent_401 pins the APIError status mapping that cmd/memory's exit
+// codes branch on.
+func TestQueryAgent_401(t *testing.T) {
 	srv := testutil.StatusServer(401)
 	defer srv.Close()
 
 	client := testutil.NewClient(srv.URL)
-	_, err := client.Search(t.Context(), models.SearchRequest{Query: "test"})
+	_, err := client.QueryAgent(t.Context(), "test", 5, nil)
 	if err == nil {
 		t.Fatal("expected error for 401")
 	}
@@ -72,28 +46,25 @@ func TestSearch_401(t *testing.T) {
 	}
 }
 
-// TestTestConnection_AWSELB403 verifies that TestConnection detects an AWS
-// ALB/ELB 403 by inspecting the Server response header. This header-sniffing
-// logic cannot be exercised by integration tests since it requires a specific
-// proxy behavior.
-func TestTestConnection_AWSELB403(t *testing.T) {
+// TestQueryAgent_HTMLResponse covers the isHTMLResponse guard: a proxy or the
+// SPA shell answering instead of the API should produce a pointed message
+// rather than a JSON decode error.
+func TestQueryAgent_HTMLResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Server", "awselb/2.0")
-		w.WriteHeader(403)
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(502)
+		_, _ = w.Write([]byte("<!doctype html><html><body>bad gateway</body></html>"))
 	}))
 	defer srv.Close()
 
 	client := testutil.NewClient(srv.URL)
-	err := client.TestConnection(t.Context())
-	if err == nil {
-		t.Fatal("expected error")
+	_, err := client.QueryAgent(t.Context(), "test", 5, nil)
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("want *APIError, got %T: %v", err, err)
 	}
-	var authErr *api.AuthError
-	if !errors.As(err, &authErr) {
-		t.Fatalf("expected AuthError for AWS ELB 403, got %T: %v", err, err)
-	}
-	if !strings.Contains(authErr.Error(), "AWS load balancer") {
-		t.Fatalf("expected AWS load balancer message, got: %s", authErr.Error())
+	if !strings.Contains(apiErr.Detail, "HTML instead of JSON") {
+		t.Errorf("detail = %q, want the HTML-response hint", apiErr.Detail)
 	}
 }
 

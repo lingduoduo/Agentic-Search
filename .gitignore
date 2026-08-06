@@ -3,6 +3,9 @@
 data/
 indexes/
 models/
+# ...but cli/models/ is Go source, not model checkpoints. Without this the Go CLI
+# does not build from a fresh clone.
+!cli/models/
 
 # Eval output files
 *_results.jsonl
