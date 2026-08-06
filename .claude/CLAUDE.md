@@ -202,6 +202,9 @@ React 19 + Vite + TypeScript. No component library — custom components only. P
 - `search/agentic_rag.py` — `AgenticRAGLoop` (iterative hybrid retrieval + sufficiency check)
 - `tool/tool_calling.py` — `ToolAgentLoop` (generic function calling)
 - Agent loops are selected via the registry (`get_registered_agent_loop` + `resolve_agent_name` in `src/agents/core/base.py`).
+- `src/internal/tools/public_data/` — nine keyless public data-source tools
+  (Wikipedia, ArXiv, Wayback, weather, stocks, crypto, currency, geocoding,
+  nearby places), seeded into the registry by `tool_knowledge_base()`
 
 **Context pipeline** (`src/context/`)
 `answer_with_retrieval` wires retrieval → context-building → prompting → LLM call. `preprocessing/` holds access filters applied before retrieval.

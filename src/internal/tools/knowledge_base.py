@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 
 from .base import Tool
+from .public_data import public_data_tools
 from .registry import ToolRegistry
 from .routing_tools import build_rag_routing_tool, build_search_routing_tool
 from .search import MultiQueryWebSearchTool, make_web_cascade_search
@@ -43,6 +44,10 @@ def tool_knowledge_base(
             page_size=top_k,
         ),
         build_search_routing_tool(search_url=search_url, top_k=top_k),
+        # Keyless public data sources. They need no configuration, so they are
+        # on by default: without them the tool agent has one usable tool and
+        # nothing to choose between.
+        *public_data_tools(),
     ]
     if llm is not None:
         tools.append(

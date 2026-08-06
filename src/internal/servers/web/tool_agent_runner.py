@@ -53,8 +53,17 @@ class ToolCallView(BaseModel):
     error: str | None = None
 
 
-def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
-    """Parse a ToolAgentLoop action_trace into ToolCallView + ContextDocument lists."""
+def _extract_tool_calls_and_docs(
+    output,
+    citeable_tools: frozenset[str] = frozenset({_CORPUS_SEARCH_NAME}),
+) -> tuple[list, list]:
+    """Parse a ToolAgentLoop action_trace into ToolCallView + ContextDocument lists.
+
+    *citeable_tools* names the tools whose results become source cards. The
+    caller derives it from ``tool.citeable`` on the tools it passed to the loop,
+    so renaming a tool cannot silently drop its citations. The default keeps the
+    corpus-search-only behavior for callers that do not pass a set.
+    """
     tool_calls: list[ToolCallView] = []
     documents: list = []
     if not output.action_trace:
@@ -94,18 +103,27 @@ def _extract_tool_calls_and_docs(output) -> tuple[list, list]:
                     error=rec.get("error_message"),
                 )
             )
-            if tool_name == _CORPUS_SEARCH_NAME and result:
-                raw = _json.loads(result) if isinstance(result, str) else result
+            if tool_name in citeable_tools and result:
+                # Citeable tools answer with a JSON array of
+                # {title, content, url}. A citeable tool that answers some
+                # other way (web_search returns prose) simply contributes no
+                # cards rather than failing the turn.
+                raw = decoded_result
                 if isinstance(raw, list):
-                    for i, item in enumerate(raw, 1):
+                    for item in raw:
+                        if not isinstance(item, dict):
+                            continue
                         documents.append(
                             ContextDocument(
-                                id=f"D{i}",
+                                # Numbered across the whole trace: several
+                                # citeable tools can run in one turn, and
+                                # restarting per tool would emit two D1s.
+                                id=f"D{len(documents) + 1}",
                                 title=item.get("title", ""),
                                 content=item.get("content", ""),
                                 url=item.get("url"),
                                 score=0.0,
-                                metadata={"source": _CORPUS_SEARCH_NAME},
+                                metadata={"source": tool_name},
                             )
                         )
         except Exception:
@@ -164,6 +182,9 @@ async def _run_tool_agent(
             filters=filters,
         )
         tools = [corpus_search] + tools
+    # Derived from the tools actually offered this turn, so a rename or a
+    # withheld tool cannot leave a stale name behind.
+    citeable_tool_names = frozenset(t.name for t in tools if t.citeable)
     loop = ToolAgentLoop(
         tokenizer=tokenizer,
         server_manager=manager,
@@ -187,7 +208,7 @@ async def _run_tool_agent(
         on_turn=on_turn,
         on_approval=on_approval,
     )
-    tool_calls, documents = _extract_tool_calls_and_docs(output)
+    tool_calls, documents = _extract_tool_calls_and_docs(output, citeable_tool_names)
     fallback = next(
         (
             m["content"]

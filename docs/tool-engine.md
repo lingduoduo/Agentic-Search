@@ -68,9 +68,10 @@ runtime via `register_from_openapi`.
   whatever is registered. Built-in tools group into a `local` server; each OpenAPI
   provider gets its own server.
 
-Built-in seed tools: `web_search`, `search`, `search_routing_tool` (and
-`rag_routing_tool` when an LLM is configured). Discovery is a ranking aid, not a
-dispatcher.
+Built-in seed tools: `web_search`, `search`, the nine keyless public
+data-source tools (see [README.md](../README.md#built-in-public-data-tools)),
+and `rag_routing_tool` when an LLM is configured. Discovery is a ranking aid,
+not a dispatcher.
 
 ### Not every registered tool is offered to an agent
 
