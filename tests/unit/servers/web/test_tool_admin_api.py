@@ -254,3 +254,116 @@ def test_delete_openapi_provider(tmp_path):
         )
     finally:
         _restore_registry(snap)
+
+
+# ---------------------------------------------------------------------------
+# Registration flags on the list payload
+# ---------------------------------------------------------------------------
+
+
+def test_list_tools_exposes_agent_callable_and_user_scoped(tmp_path):
+    """The two ToolEntry flags must survive the response model.
+
+    They were being dropped: all_summaries() returns them but ToolView did not
+    declare them, so a field absent from the model was silently discarded and no
+    caller could tell an agent-callable tool from one withheld from agents.
+    """
+    from src.internal.tools.base import FunctionTool
+
+    snap = _clear_registry()
+    try:
+
+        def _plain() -> str:
+            return "ok"
+
+        def _hidden() -> str:
+            return "ok"
+
+        def _scoped() -> str:
+            return "ok"
+
+        tool_registry.register(FunctionTool(_plain, name="plain", description="d"))
+        tool_registry.register(
+            FunctionTool(_hidden, name="hidden", description="d"),
+            agent_callable=False,
+        )
+        tool_registry.register(
+            FunctionTool(_scoped, name="scoped", description="d"),
+            user_scoped=True,
+        )
+
+        client = TestClient(_make_app(tmp_path))
+        by_name = {
+            t["name"]: t
+            for t in client.get("/admin/tools", headers=_admin_headers()).json()
+        }
+
+        assert by_name["plain"]["agent_callable"] is True
+        assert by_name["plain"]["user_scoped"] is False
+        assert by_name["hidden"]["agent_callable"] is False
+        assert by_name["scoped"]["user_scoped"] is True
+    finally:
+        _restore_registry(snap)
+
+
+# ---------------------------------------------------------------------------
+# Discover
+# ---------------------------------------------------------------------------
+
+
+def test_discover_requires_auth(tmp_path):
+    client = TestClient(_make_app(tmp_path))
+    assert (
+        client.post("/admin/tools/discover", json={"query": "anything"}).status_code
+        == 401
+    )
+
+
+def test_discover_ranks_registered_tools(tmp_path):
+    snap = _clear_registry()
+    try:
+        from src.internal.tools.base import FunctionTool
+
+        def _weather() -> str:
+            return "sunny"
+
+        def _payroll() -> str:
+            return "paid"
+
+        tool_registry.register(
+            FunctionTool(
+                _weather, name="weather_lookup", description="Look up the weather"
+            )
+        )
+        tool_registry.register(
+            FunctionTool(
+                _payroll, name="payroll_export", description="Export payroll records"
+            )
+        )
+
+        client = TestClient(_make_app(tmp_path))
+        resp = client.post(
+            "/admin/tools/discover",
+            json={"query": "what is the weather"},
+            headers=_admin_headers(),
+        )
+        assert resp.status_code == 200
+        names = [t["name"] for t in resp.json()["final_tools"]]
+        assert "weather_lookup" in names
+    finally:
+        _restore_registry(snap)
+
+
+def test_discover_is_not_shadowed_by_the_name_route(tmp_path):
+    """POST /admin/tools/discover must not be read as tool name "discover"."""
+    snap = _clear_registry()
+    try:
+        client = TestClient(_make_app(tmp_path))
+        resp = client.post(
+            "/admin/tools/discover", json={"query": "x"}, headers=_admin_headers()
+        )
+        # Empty registry still routes to discover (200), not 404-from-get_tool.
+        assert resp.status_code == 200
+        assert "final_tools" in resp.json()
+    finally:
+        _restore_registry(snap)

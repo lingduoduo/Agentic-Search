@@ -437,7 +437,7 @@ function ToolRow({ tool, onInvoke, onDeleteProvider }: ToolRowProps) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function ToolPanel() {
+export function ToolAdminPanel() {
   const [tools, setTools] = useState<ToolView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

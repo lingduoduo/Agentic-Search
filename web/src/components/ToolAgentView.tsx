@@ -1,7 +1,20 @@
-import { useState } from "react";
-import { sendToolMessage, submitToolApproval } from "../api";
-import type { ConversationTurn, ToolApprovalView } from "../types";
+import { useEffect, useState } from "react";
+import {
+  discoverAdminTools,
+  errorStatus,
+  listTools,
+  sendToolMessage,
+  submitToolApproval,
+} from "../api";
+import { groupToolsByServer } from "../toolCatalog";
+import type {
+  CatalogServer,
+  ConversationTurn,
+  ToolApprovalView,
+  ToolDiscoverResult,
+} from "../types";
 import { ToolApprovalCard } from "./ToolApprovalCard";
+import { ToolCatalog } from "./ToolCatalog";
 import { Transcript } from "./Transcript";
 
 export function ToolAgentView() {
@@ -13,6 +26,37 @@ export function ToolAgentView() {
   const [truncated, setTruncated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [servers, setServers] = useState<CatalogServer[] | null>(null);
+  const [registeredCount, setRegisteredCount] = useState(0);
+  const [discovery, setDiscovery] = useState<ToolDiscoverResult | null>(null);
+  const [catalogNote, setCatalogNote] = useState<string | undefined>(undefined);
+
+  // The inventory the agent is choosing from. /admin/tools is require_admin, so
+  // a non-admin gets a note rather than an error banner — using the agent
+  // without being able to list its tools is a normal state, not a failure.
+  useEffect(() => {
+    let alive = true;
+    listTools().then(
+      (tools) => {
+        if (!alive) return;
+        setServers(groupToolsByServer(tools));
+        setRegisteredCount(tools.length);
+      },
+      (err) => {
+        if (!alive) return;
+        const status = errorStatus(err);
+        setServers([]);
+        setCatalogNote(
+          status === 401 || status === 403
+            ? "Tool inventory needs an admin session."
+            : "Tool inventory is unavailable right now.",
+        );
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function patchLastAssistant(fn: (t: ConversationTurn) => ConversationTurn) {
     setTurns((prev) => {
@@ -113,6 +157,15 @@ export function ToolAgentView() {
           {busy ? "Running…" : "Send"}
         </button>
       </div>
+      <ToolCatalog
+        servers={servers}
+        registeredCount={registeredCount}
+        discovery={discovery}
+        onDiscover={(q) =>
+          discoverAdminTools(q).then(setDiscovery, () => setDiscovery(null))
+        }
+        note={catalogNote}
+      />
     </section>
   );
 }

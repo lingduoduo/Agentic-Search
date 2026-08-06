@@ -122,14 +122,47 @@ weaker relevance than SerpAPI. Use 8003 rather than its 8000 default: 8000 and
 
 ## Inspecting the registry
 
-Two read-only debug endpoints (backing the Dev Console **Tools** panel) expose
-the live registry without running the agent:
+Three UI surfaces read the registry, and it is worth knowing which is which —
+they were all once called "Tools":
 
-- `GET /api/debug/tools` — returns `registered` (every registered tool) plus the
-  `catalog` grouped by server, read from the process-wide `tool_registry`
-  singleton. An empty registry yields empty lists, never a 500.
-- `POST /api/debug/tools/discover` — ranks tools for a `query` via the same
-  TF-IDF `SemanticRouter`, returning the per-stage routing details (no LLM).
+| Surface | Component | Reads | For |
+|---|---|---|---|
+| `/tools` page | `ToolAgentView` → `ToolCatalog` | `/admin/tools` | The agent, plus the inventory it chooses from |
+| Header **Manage tools** (wrench) | `ToolAdminPanel` | `/admin/tools` | Register/delete OpenAPI providers, test-invoke a tool |
+| `/assist` → Dev Console | `debug/ToolCatalogPanel` → `ToolCatalog` | `/api/debug/tools` | Dev observability |
+
+`ToolCatalog` is shared by the first and third: one renderer, two data sources.
+It badges `agent_callable: false` as "not offered to agents" and
+`user_scoped: true` as "needs sign-in" — usually the answer to "the tool is
+registered, so why did the agent ignore it".
+
+### Endpoints
+
+Admin-gated (`require_admin`), always mounted:
+
+- `GET /admin/tools` — every registered tool with `parameters`, `source`,
+  `provider_id`, `agent_callable`, and `user_scoped`. Group by
+  `source`/`provider_id` to get the catalog shape.
+- `POST /admin/tools/discover` — ranks tools for a `query` via the TF-IDF
+  `SemanticRouter`, returning the per-stage routing details. No LLM.
+- `POST /admin/tools/{name}/invoke` — run one tool directly with arguments.
+  Note it invokes the registry, so test-invoking `search` uses the seeded
+  unfiltered instance and can return more than an agent run would.
+
+Dev-only, **mounted only when `AGENTIC_SEARCH_DEBUG_PANELS` is set** — these do
+not exist in a normal deployment, which is why the `/tools` page uses the admin
+endpoints instead:
+
+- `GET /api/debug/tools` — `registered` plus the `catalog` already grouped by
+  server. An empty registry yields empty lists, never a 500.
+- `POST /api/debug/tools/discover` — the same ranking as the admin twin.
+
+### Ranking is not how the agent chooses
+
+`SemanticRouter` is only reachable through those two discover endpoints; nothing
+in the agent path calls it. `ToolAgentLoop` is handed every agent-callable tool
+and the model picks one itself, so a tool ranking first here is not evidence the
+agent will call it. Both discover endpoints are diagnostics.
 
 ## Relationship to MCP
 
