@@ -46,6 +46,12 @@ class ToolView(BaseModel):
     parameters: dict[str, Any]
     source: str
     provider_id: str | None
+    # Both come from ToolEntry and were being dropped here: all_summaries()
+    # returns them, but a field absent from the model is silently discarded, so
+    # no caller could tell a registered-but-not-agent-offered tool from a normal
+    # one. That distinction is the usual answer to "why did the agent ignore it".
+    agent_callable: bool = True
+    user_scoped: bool = False
 
 
 class OpenAPIRegisterRequest(BaseModel):
@@ -60,6 +66,10 @@ class OpenAPIRegisterRequest(BaseModel):
 class OpenAPIRegisterResponse(BaseModel):
     provider_id: str
     tool_names: list[str]
+
+
+class DiscoverRequest(BaseModel):
+    query: str = Field(..., description="Query to rank the registered tools against")
 
 
 class InvokeRequest(BaseModel):
@@ -136,6 +146,27 @@ def create_tools_router(settings: AppSettings) -> APIRouter:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Provider {provider_id!r} not found.",
             )
+
+    # Also before /{name}, or "discover" is matched as a tool name.
+    @router.post("/discover")
+    async def discover(
+        req: DiscoverRequest,
+        _: AuthenticatedUser = Depends(require_admin),
+    ) -> dict:
+        """Rank the registered tools against *query* (TF-IDF, no LLM).
+
+        The same ranking as ``POST /api/debug/tools/discover``, but reachable
+        without the debug router — that one is only mounted when
+        AGENTIC_SEARCH_DEBUG_PANELS is set, so it does not exist in a normal
+        deployment. Imported in-handler to keep the semantic router off this
+        module's import path.
+        """
+        from src.internal.tools.semantic_router import (
+            SemanticRouter,
+            default_tool_catalog,
+        )
+
+        return SemanticRouter(default_tool_catalog()).get_routing_details(req.query)
 
     @router.get("/{name}", response_model=ToolView)
     async def get_tool(

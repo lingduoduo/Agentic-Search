@@ -150,8 +150,12 @@ export interface ToolView {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  source: "function" | "openapi" | string;
+  source: "function" | "openapi" | "mcp" | string;
   provider_id: string | null;
+  /** False when no agent loop may be offered this tool (still directly invocable). */
+  agent_callable: boolean;
+  /** True when the tool is backed by per-user storage and needs a signed-in caller. */
+  user_scoped: boolean;
 }
 
 export interface CatalogTool {
@@ -159,6 +163,13 @@ export interface CatalogTool {
   description: string;
   source: string;
   server: string;
+  /**
+   * Optional: the /admin/tools payload carries these, the /api/debug/tools
+   * catalog does not (its ToolDefinition has no such fields). Undefined means
+   * "unknown", so the badges are simply not rendered.
+   */
+  agent_callable?: boolean;
+  user_scoped?: boolean;
 }
 
 export interface CatalogServer {

@@ -122,9 +122,18 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
       data && typeof data === "object" && "detail" in data
         ? String(data.detail)
         : `Request failed with ${response.status}`;
-    throw new Error(detail);
+    // Carry the status so callers can tell "you lack the role" from "it broke".
+    // Additive: the message is unchanged, so existing handlers are unaffected.
+    throw Object.assign(new Error(detail), { status: response.status });
   }
   return data as T;
+}
+
+/** HTTP status attached to a `requestJson` rejection, when there was one. */
+export function errorStatus(err: unknown): number | undefined {
+  return typeof err === "object" && err !== null && "status" in err
+    ? (err as { status?: number }).status
+    : undefined;
 }
 
 export function createSession(
@@ -285,6 +294,24 @@ export function listTools(
   init?: Pick<RequestInit, "signal">,
 ): Promise<ToolView[]> {
   return requestJson<ToolView[]>("/admin/tools", { signal: init?.signal });
+}
+
+/**
+ * Rank the registered tools against a query (TF-IDF, no LLM).
+ *
+ * The admin-gated twin of `discoverTools`, which hits the debug router — that
+ * router is only mounted when AGENTIC_SEARCH_DEBUG_PANELS is set, so it does not
+ * exist in a normal deployment. Use this one outside the dev console.
+ */
+export function discoverAdminTools(
+  query: string,
+  init?: Pick<RequestInit, "signal">,
+): Promise<ToolDiscoverResult> {
+  return requestJson<ToolDiscoverResult>("/admin/tools/discover", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+    signal: init?.signal,
+  });
 }
 
 

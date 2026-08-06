@@ -63,8 +63,10 @@ Two caveats:
 
 ## Admin dashboard
 
-The web UI includes admin panels — **Connectors, Tools, History, Admin overview,
-Analytics** (top-bar buttons + the observability panels). They call the
+The web UI includes admin panels — **Connectors, Manage tools, History, Admin
+overview, Analytics** (top-bar buttons + the observability panels). The tools
+button is labelled *Manage tools*, not *Tools*: the `/tools` nav link goes to the
+tool-agent page instead, and the two used to share a label. They call the
 `/admin/*` and `/analytics/*` routers, which are **admin-authenticated**. Two
 things make them work locally:
 
@@ -85,7 +87,7 @@ you'd need an admin JWT in the `fastapiusersauth` cookie instead.
 
 Clicking a top-bar button toggles its panel below the observability panels
 (scroll down to see it). Empty panels — e.g. **Connectors** showing "No connectors
-configured", **Tools** empty — are expected when nothing is configured locally,
+configured", **Manage tools** empty — are expected when nothing is configured locally,
 not an error.
 
 ## Dev console

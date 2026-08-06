@@ -5,7 +5,7 @@ import { RequestInspector } from "./RequestInspector";
 import { RequestTracePanel } from "./RequestTracePanel";
 import { RetrievalLab } from "./RetrievalLab";
 import { ServerHealthGrid } from "./ServerHealthGrid";
-import { ToolsPanel } from "./ToolsPanel";
+import { ToolCatalogPanel } from "./ToolCatalogPanel";
 
 interface Props {
   /** Last agent run — feeds the grounding debug ("sources but empty answer"). */
@@ -30,7 +30,7 @@ export function DevConsole({ answer, citations, controlFlowTrace, selectedReques
       <QueryTransformInspector />
       <RetrievalLab />
       <EvalResultsPanel />
-      <ToolsPanel />
+      <ToolCatalogPanel />
     </section>
   );
 }

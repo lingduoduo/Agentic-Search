@@ -12,6 +12,10 @@ vi.mock("../../api", () => ({
   getAnalyticsByLLM: vi.fn().mockRejectedValue(new Error()),
   getAnalyticsByPersona: vi.fn().mockRejectedValue(new Error()),
   getAnalyticsByFlow: vi.fn().mockRejectedValue(new Error()),
+  // The /tools page lists the tool inventory on mount.
+  listTools: vi.fn().mockResolvedValue([]),
+  discoverAdminTools: vi.fn(),
+  errorStatus: vi.fn().mockReturnValue(undefined),
 }));
 
 import * as api from "../../api";
@@ -505,6 +509,18 @@ describe("page navigation", () => {
     expect(screen.getByRole("link", { name: /^search$/i })).toHaveAttribute("href", "/search");
     expect(screen.getByRole("link", { name: /^chat$/i })).toHaveAttribute("href", "/chat");
     expect(screen.getByRole("link", { name: /^tools$/i })).toHaveAttribute("href", "/tools");
+  });
+
+  it("names the registry button 'Manage tools' so only the nav link is 'Tools'", async () => {
+    // The header used to carry two controls both labelled "Tools": this nav link
+    // (the agent surface) and the wrench button (the admin registry panel).
+    render(<App />);
+    expect(
+      screen.getByRole("button", { name: /manage tools/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^tools$/i })).not.toBeInTheDocument();
+    // Exactly one control is named exactly "Tools", and it is the link.
+    expect(screen.getAllByRole("link", { name: /^tools$/i })).toHaveLength(1);
   });
 
   it("swaps the page and the URL when a link is clicked", async () => {

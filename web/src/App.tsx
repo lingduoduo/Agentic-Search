@@ -12,7 +12,7 @@ import { ChatView } from "./components/ChatView";
 import { QueryHistoryPanel } from "./components/QueryHistoryPanel";
 import { SearchView } from "./components/SearchView";
 import { ToolAgentView } from "./components/ToolAgentView";
-import { ToolPanel } from "./components/ToolPanel";
+import { ToolAdminPanel } from "./components/ToolAdminPanel";
 import { AssistPage } from "./pages/AssistPage";
 import { NavLink, useCanonicalRoute } from "./router";
 import type { AdminSurfaceSummary, BreakdownAnalytics } from "./types";
@@ -60,7 +60,9 @@ export function App() {
               title="Manage tools"
             >
               <Wrench size={18} />
-              <span>Tools</span>
+              {/* Not "Tools": the nav link above already owns that label and
+                  goes somewhere else entirely (the agent surface). */}
+              <span>Manage tools</span>
             </button>
             <button
               className={`icon-button${showQueryHistory ? " active" : ""}`}
@@ -74,7 +76,7 @@ export function App() {
           </div>
         </header>
 
-        {showTools && <ToolPanel />}
+        {showTools && <ToolAdminPanel />}
 
         {showQueryHistory && <QueryHistoryPanel />}
 

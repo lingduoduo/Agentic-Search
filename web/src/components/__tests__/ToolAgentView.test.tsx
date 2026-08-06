@@ -159,3 +159,89 @@ describe("ToolAgentView truncation notice", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+describe("ToolAgentView tool catalog", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("lists the tool inventory the agent is choosing from", async () => {
+    vi.spyOn(api, "listTools").mockResolvedValue([
+      {
+        name: "web_search",
+        description: "Search the web",
+        parameters: {},
+        source: "function",
+        provider_id: null,
+        agent_callable: true,
+        user_scoped: false,
+      },
+      {
+        name: "search",
+        description: "Search the corpus",
+        parameters: {},
+        source: "function",
+        provider_id: null,
+        agent_callable: false,
+        user_scoped: false,
+      },
+    ]);
+
+    render(<ToolAgentView />);
+
+    expect(await screen.findByText(/2 registered across 1 server/)).toBeInTheDocument();
+    expect(screen.getByText("Search the web")).toBeInTheDocument();
+    // The flag that explains why the agent cannot call this one.
+    expect(screen.getByText("not offered to agents")).toBeInTheDocument();
+  });
+
+  it("asks for an admin session rather than erroring when listing is forbidden", async () => {
+    vi.spyOn(api, "listTools").mockRejectedValue(
+      Object.assign(new Error("Forbidden"), { status: 403 }),
+    );
+
+    render(<ToolAgentView />);
+
+    expect(
+      await screen.findByText("Tool inventory needs an admin session."),
+    ).toBeInTheDocument();
+    // Not an error banner: using the agent without admin is a normal state.
+    expect(document.querySelector(".error-banner")).toBeNull();
+    // And the agent itself still works.
+    expect(screen.getByLabelText("Tool agent message")).toBeInTheDocument();
+  });
+
+  it("reports an unavailable inventory distinctly from a permission problem", async () => {
+    vi.spyOn(api, "listTools").mockRejectedValue(
+      Object.assign(new Error("boom"), { status: 500 }),
+    );
+
+    render(<ToolAgentView />);
+
+    expect(
+      await screen.findByText("Tool inventory is unavailable right now."),
+    ).toBeInTheDocument();
+  });
+
+  it("ranks tools for a query without involving the model", async () => {
+    vi.spyOn(api, "listTools").mockResolvedValue([]);
+    const discover = vi.spyOn(api, "discoverAdminTools").mockResolvedValue({
+      request: "weather",
+      stage1_servers: [],
+      stage2_tools: {},
+      final_tools: [{ name: "web_search", server: "local", score: 0.91 }],
+    });
+    const send = vi.spyOn(api, "sendToolMessage");
+
+    render(<ToolAgentView />);
+    await screen.findByText(/0 registered across 0 servers/);
+
+    fireEvent.change(screen.getByLabelText("Discovery query"), {
+      target: { value: "weather" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    await waitFor(() => expect(discover).toHaveBeenCalledWith("weather"));
+    expect(await screen.findByText(/\(local, 0\.910\)/)).toBeInTheDocument();
+    // Discovery must not go through the agent.
+    expect(send).not.toHaveBeenCalled();
+  });
+});
