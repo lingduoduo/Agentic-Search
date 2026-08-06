@@ -32,17 +32,17 @@ type Model struct {
 
 	// Chat state
 	chatSessionID   *string
-	agentID       int
-	agentName     string
-	agents        []models.AgentSummary
+	agentID         int
+	agentName       string
+	agents          []models.AgentSummary
 	parentMessageID *int
-	isStreaming      bool
+	isStreaming     bool
 	streamCancel    context.CancelFunc
 	streamCh        <-chan models.StreamEvent
 	citations       map[int]string
 	attachedFiles   []models.FileDescriptorPayload
 	needsRename     bool
-	agentStarted bool
+	agentStarted    bool
 
 	// Configure state
 	configState *configState
@@ -63,8 +63,8 @@ func NewModel(cfg config.Config, client api.ClientAPI) Model {
 		viewport:        newViewport(80, cfg.Features.StreamMarkdownEnabled()),
 		input:           newInputModel(),
 		status:          newStatusBar(),
-		agentID:       cfg.DefaultAgentID,
-		agentName:     "Default",
+		agentID:         cfg.DefaultAgentID,
+		agentName:       "Default",
 		parentMessageID: &parentID,
 		citations:       make(map[int]string),
 	}

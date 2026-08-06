@@ -41,7 +41,7 @@ func ParseStreamLine(line string) models.StreamEvent {
 			userMsgID = &id
 		}
 		return models.MessageIDEvent{
-			UserMessageID:              userMsgID,
+			UserMessageID:          userMsgID,
 			ReservedAgentMessageID: reservedID,
 		}
 	}

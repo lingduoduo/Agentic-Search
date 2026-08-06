@@ -25,7 +25,7 @@ const (
 
 // chatEntry is a single rendered entry in the chat history.
 type chatEntry struct {
-	kind      entryKind
+	kind     entryKind
 	content  string // raw content (for agent: the markdown source)
 	rendered string // pre-rendered output
 }

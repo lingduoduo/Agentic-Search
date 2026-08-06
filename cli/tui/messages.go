@@ -7,7 +7,7 @@ import (
 // InitDoneMsg signals that async initialization is complete.
 type InitDoneMsg struct {
 	Agents []models.AgentSummary
-	Err      error
+	Err    error
 }
 
 // SessionsLoadedMsg carries loaded chat sessions.

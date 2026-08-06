@@ -12,11 +12,11 @@ type AgentSummary struct {
 
 // ChatSessionDetails is a session with timestamps as strings.
 type ChatSessionDetails struct {
-	ID        string  `json:"id"`
-	Name      *string `json:"name"`
+	ID      string  `json:"id"`
+	Name    *string `json:"name"`
 	AgentID *int    `json:"persona_id"`
-	Created   string  `json:"time_created"`
-	Updated   string  `json:"time_updated"`
+	Created string  `json:"time_created"`
+	Updated string  `json:"time_updated"`
 }
 
 // ChatMessageDetail is a single message in a session.
@@ -34,8 +34,8 @@ type ChatMessageDetail struct {
 type ChatSessionDetailResponse struct {
 	ChatSessionID string              `json:"chat_session_id"`
 	Description   *string             `json:"description"`
-	AgentID     *int                `json:"persona_id"`
-	AgentName   *string             `json:"persona_name"`
+	AgentID       *int                `json:"persona_id"`
+	AgentName     *string             `json:"persona_name"`
 	Messages      []ChatMessageDetail `json:"messages"`
 }
 
@@ -80,7 +80,7 @@ type SendMessagePayload struct {
 	ChatSessionID    *string                  `json:"chat_session_id,omitempty"`
 	ChatSessionInfo  *ChatSessionCreationInfo `json:"chat_session_info,omitempty"`
 	ParentMessageID  *int                     `json:"parent_message_id"`
-	FileDescriptors  []FileDescriptorPayload `json:"file_descriptors"`
+	FileDescriptors  []FileDescriptorPayload  `json:"file_descriptors"`
 	Origin           string                   `json:"origin"`
 	IncludeCitations bool                     `json:"include_citations"`
 	Stream           bool                     `json:"stream"`

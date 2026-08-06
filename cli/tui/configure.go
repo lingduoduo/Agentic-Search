@@ -16,7 +16,7 @@ import (
 type startMode int
 
 const (
-	startNormal   startMode = iota
+	startNormal startMode = iota
 	startFirstRun
 )
 

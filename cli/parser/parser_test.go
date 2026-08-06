@@ -44,7 +44,7 @@ func TestSessionCreated(t *testing.T) {
 
 func TestMessageIDInfo(t *testing.T) {
 	line := mustJSON(map[string]interface{}{
-		"user_message_id":              1,
+		"user_message_id":               1,
 		"reserved_assistant_message_id": 2,
 	})
 	event := ParseStreamLine(line)
@@ -62,7 +62,7 @@ func TestMessageIDInfo(t *testing.T) {
 
 func TestMessageIDInfoNullUserID(t *testing.T) {
 	line := mustJSON(map[string]interface{}{
-		"user_message_id":              nil,
+		"user_message_id":               nil,
 		"reserved_assistant_message_id": 5,
 	})
 	event := ParseStreamLine(line)
