@@ -71,7 +71,7 @@ upstream response onto that shape:
 | --- | --- | --- | --- |
 | `search_wikipedia` | page title | intro extract | article URL |
 | `search_arxiv` | paper title | abstract (truncated) | `entry_id` |
-| `search_wayback` | ISO timestamp of the snapshot | original URL + MIME type | `web.archive.org` snapshot URL |
+| `search_wayback` | `Snapshot of <original> at <ISO time>` | HTTP status + MIME type | `web.archive.org` snapshot URL |
 
 **Non-citeable tools return a JSON object of facts** — a flat mapping such as
 `{"location": ..., "temperature": ..., "description": ...}`. They answer; they
@@ -88,14 +88,28 @@ All nine declare `effect=ToolEffect.READ_ONLY`.
 
 `_extract_tool_calls_and_docs` currently builds `ContextDocument`s only when
 `tool_name == _CORPUS_SEARCH_NAME` (`tool_agent_runner.py:97`), so the
-`citeable` flag that already exists on `Tool` is never read on this path, and
-even `web_search` results go unsurfaced.
+`citeable` flag that already exists on `Tool` is never read on this path.
 
 Because citeable tools now share the corpus-search shape, this generalizes to a
 membership test against the set of citeable tool names, with the existing
-`ContextDocument` loop unchanged. The caller resolves that set from the tools it
-passed to the loop, so a rename cannot silently disable citation. Documents
-carry `metadata={"source": <tool_name>}` so a card shows which tool produced it.
+`ContextDocument` loop otherwise unchanged. The caller resolves that set from
+the tools it passed to the loop, so a rename cannot silently disable citation.
+Documents carry `metadata={"source": <tool_name>}` so a card shows which tool
+produced it.
+
+Two consequences:
+
+- **Document ids must count across the whole trace.** Today `D{i}` restarts at
+  `D1` inside one tool's result because only one tool could ever cite. With
+  several citeable tools able to fire in a turn, the counter continues from
+  `len(documents)`, otherwise two tools both emit `D1`.
+- **`web_search` still produces no cards, and that is correct here.** It is
+  flagged `citeable=True`, but its response text is `format_search_pages()`
+  prose rather than the JSON contract (`search.py:599`), so the shape check
+  skips it. Making it conform would change the text the model reads on every
+  web search — a separate change with its own risk, out of scope for this spec.
+  The doc-building branch therefore requires a decoded list, and a
+  non-conforming citeable tool degrades to "no cards" rather than an error.
 
 ## Deviations from the borrowed reference
 
