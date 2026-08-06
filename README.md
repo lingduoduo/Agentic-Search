@@ -80,6 +80,28 @@ The chat agent answers conversational requests with retrieval-grounded synthesis
 
 The tool agent runs multi-turn function calling with structured tool dispatch over a registry of built-in and OpenAPI-backed tools. A dedicated `POST /tool/send-tool-message` surface (the **Tools** page, `/tools`) streams tool calls, gates tools with approval prompts, and fetches the web via a serpapi→browser cascade. See [Tool engine](docs/tool-engine.md) for capabilities, routing, and the tool registry.
 
+#### Built-in public data tools
+
+The tool agent ships nine keyless public data-source tools, seeded by
+`src/internal/tools/public_data/`. They need no API keys or configuration:
+
+| Tool | Source |
+| --- | --- |
+| `search_wikipedia` | Wikipedia action API |
+| `search_arxiv` | ArXiv export API |
+| `search_wayback` | Internet Archive CDX API |
+| `get_weather` | Open-Meteo |
+| `get_stock_quote` | Yahoo Finance chart API |
+| `get_crypto_price` | CoinGecko |
+| `convert_currency` | exchangerate-api.com |
+| `search_location` | Nominatim (OpenStreetMap) |
+| `search_nearby_places` | Overpass (OpenStreetMap) |
+
+The first three are citeable: they answer with `{title, content, url}` records,
+so their results appear as source cards on `/tools`. The rest answer with a
+JSON object of facts. Any upstream failure returns `{"error": ...}` from that
+one tool and leaves the turn intact.
+
 ## Run locally
 
 Start each service in a separate terminal from the repository root.
