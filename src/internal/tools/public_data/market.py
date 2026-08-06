@@ -6,14 +6,11 @@ none of them is citeable.
 
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime, timezone
 
 from ..base import FunctionTool, ToolEffect
 from ._http import PublicDataError, get_json, guarded
-
-logger = logging.getLogger(__name__)
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 COINGECKO_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
@@ -22,8 +19,12 @@ EXCHANGE_RATE_URL = "https://api.exchangerate-api.com/v4/latest/{base}"
 # Yahoo 4xxs anything that does not look like a browser.
 _YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-# Both of these are interpolated into a URL path, so they are validated rather
-# than escaped — a stray "../" would otherwise retarget the request.
+# _SYMBOL_RE's match is interpolated into a URL path, so it is validated
+# rather than escaped — a stray "../" would otherwise retarget the request.
+# _CURRENCY_RE guards both currency codes: `from_currency` is interpolated into
+# the URL path the same way, while `to_currency` never reaches a URL — it is
+# used only as a dict key against the response's `rates`, where the same shape
+# check keeps a malformed code from failing silently as a missing-key lookup.
 _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.^=-]{1,15}$")
 _CURRENCY_RE = re.compile(r"^[A-Za-z]{3}$")
 

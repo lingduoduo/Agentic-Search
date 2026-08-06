@@ -7,15 +7,12 @@ their results become source cards.
 
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime
 from xml.etree import ElementTree
 
 from ..base import FunctionTool, ToolEffect
 from ._http import MAX_CONTENT_CHARS, PublicDataError, get_json, get_text, guarded
-
-logger = logging.getLogger(__name__)
 
 WIKIPEDIA_API = "https://{language}.wikipedia.org/w/api.php"
 ARXIV_API = "https://export.arxiv.org/api/query"
@@ -88,9 +85,14 @@ async def _search_wikipedia(
     results = []
     for page_id in page_ids:
         page = pages.get(page_id) or {}
+        title = page.get("title", "")
+        if not title:
+            # A page id missing from the extracts response has nothing worth
+            # showing — skip it rather than emit a blank source card.
+            continue
         results.append(
             {
-                "title": page.get("title", ""),
+                "title": title,
                 "content": (page.get("extract") or "")[:MAX_CONTENT_CHARS],
                 # ?curid= is the stable per-page URL and needs no title escaping.
                 "url": f"https://{language}.wikipedia.org/?curid={page_id}",
@@ -122,7 +124,7 @@ _ARXIV_PARAMS = {
         "max_results": {
             "type": "integer",
             "description": "How many papers to return (1-25).",
-            "default": 5,
+            "default": 3,
         },
         "sort_by": {
             "type": "string",
@@ -135,7 +137,7 @@ _ARXIV_PARAMS = {
 
 
 async def _search_arxiv(
-    query: str, max_results: int = 5, sort_by: str = "relevance"
+    query: str, max_results: int = 3, sort_by: str = "relevance"
 ) -> list[dict]:
     body = await get_text(
         ARXIV_API,

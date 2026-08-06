@@ -27,7 +27,15 @@ DEFAULT_TIMEOUT_SECONDS = 10.0
 
 # Upper bound on any single document body handed back to the model. Abstracts
 # and article intros are otherwise long enough to crowd out the rollout budget.
-MAX_CONTENT_CHARS = 1500
+#
+# This is bounded by the consumer, not just the rollout budget: ToolAgentLoop
+# caps a whole tool message at `ToolAgentLoopConfig.max_tool_response_length`
+# (src/agents/tool/tool_calling.py) and truncates with
+# `tool_response_truncate_side="right"`, which keeps the tail and discards the
+# head — so an oversized array of documents silently drops the highest-ranked
+# ones instead of the lowest. Do not raise this number without checking that a
+# default-argument call still fits under that cap.
+MAX_CONTENT_CHARS = 400
 
 
 class PublicDataError(Exception):

@@ -7,6 +7,7 @@ import json
 
 import pytest
 
+from src.agents.tool.tool_calling import ToolAgentLoopConfig
 from src.internal.tools.public_data import knowledge
 from src.internal.tools.public_data._http import PublicDataError
 
@@ -187,3 +188,94 @@ def test_knowledge_tools_are_citeable_and_read_only(factory):
     assert tool.citeable is True
     assert tool.effect is ToolEffect.READ_ONLY
     assert tool.schema.description
+
+
+def test_wikipedia_skips_entries_missing_from_extracts(monkeypatch):
+    # A page id present in the search hits but absent from the extracts
+    # response must not surface as a blank {"title": "", ...} source card.
+    async def _fake_get_json(url, *, params=None, **kwargs):
+        if params.get("list") == "search":
+            return {
+                "query": {
+                    "search": [
+                        {"pageid": 1, "title": "Has extract"},
+                        {"pageid": 2, "title": "Missing from extracts"},
+                    ]
+                }
+            }
+        return {"query": {"pages": {"1": {"title": "Has extract", "extract": "Text."}}}}
+
+    monkeypatch.setattr(knowledge, "get_json", _fake_get_json)
+
+    result = _run(knowledge.build_wikipedia_tool(), query="x")
+
+    assert result == [
+        {
+            "title": "Has extract",
+            "content": "Text.",
+            "url": "https://en.wikipedia.org/?curid=1",
+        }
+    ]
+
+
+# Regression test for the tool-message truncation coupling: ToolAgentLoop caps
+# a whole tool response at ``max_tool_response_length`` and truncates by
+# keeping the tail (see MAX_CONTENT_CHARS's docstring in ``_http.py``), so a
+# default-argument call to a citeable tool must fit under that cap or the
+# model silently loses its highest-ranked results.
+_TOOL_RESPONSE_CAP = ToolAgentLoopConfig.max_tool_response_length
+
+_LONG_ABSTRACT = "word " * 300  # ~1500 chars, well over MAX_CONTENT_CHARS
+
+
+def test_arxiv_default_call_fits_tool_response_cap(monkeypatch):
+    entries = "\n".join(
+        f"""
+  <entry>
+    <id>http://arxiv.org/abs/{i}</id>
+    <title>Paper {i}</title>
+    <summary>{_LONG_ABSTRACT}</summary>
+  </entry>"""
+        for i in range(3)
+    )
+    feed = f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">{entries}
+</feed>
+"""
+
+    async def _fake_get_text(url, *, params=None, **kwargs):
+        return feed
+
+    monkeypatch.setattr(knowledge, "get_text", _fake_get_text)
+
+    response, _raw, _meta = asyncio.run(
+        knowledge.build_arxiv_tool().execute("default", {"query": "retrieval"})
+    )
+
+    assert len(response) <= _TOOL_RESPONSE_CAP
+
+
+def test_wikipedia_default_call_fits_tool_response_cap(monkeypatch):
+    async def _fake_get_json(url, *, params=None, **kwargs):
+        if params.get("list") == "search":
+            return {
+                "query": {
+                    "search": [{"pageid": i, "title": f"Page {i}"} for i in range(3)]
+                }
+            }
+        return {
+            "query": {
+                "pages": {
+                    str(i): {"title": f"Page {i}", "extract": _LONG_ABSTRACT}
+                    for i in range(3)
+                }
+            }
+        }
+
+    monkeypatch.setattr(knowledge, "get_json", _fake_get_json)
+
+    response, _raw, _meta = asyncio.run(
+        knowledge.build_wikipedia_tool().execute("default", {"query": "x"})
+    )
+
+    assert len(response) <= _TOOL_RESPONSE_CAP

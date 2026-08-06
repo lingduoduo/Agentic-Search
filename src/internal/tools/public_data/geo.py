@@ -5,13 +5,10 @@ All three answer with a flat JSON object of facts, so none is citeable.
 
 from __future__ import annotations
 
-import logging
 import re
 
 from ..base import FunctionTool, ToolEffect
 from ._http import PublicDataError, get_json, guarded, post_json
-
-logger = logging.getLogger(__name__)
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -251,7 +248,7 @@ async def _search_nearby_places(
     if not _PLACE_TYPE_RE.match(place_type):
         raise PublicDataError(
             "place type must be 1-40 characters of letters, digits, spaces, "
-            "hyphens, or underscores (for example 'cafe' or 'fire station')"
+            "hyphens, or underscores (for example 'cafe' or 'fire_station')"
         )
     lat = float(latitude)
     lon = float(longitude)
