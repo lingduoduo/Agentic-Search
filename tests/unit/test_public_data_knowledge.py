@@ -218,11 +218,11 @@ def test_wikipedia_skips_entries_missing_from_extracts(monkeypatch):
     ]
 
 
-# Regression test for the tool-message truncation coupling: ToolAgentLoop caps
-# a whole tool response at ``max_tool_response_length`` and truncates by
-# keeping the tail (see MAX_CONTENT_CHARS's docstring in ``_http.py``), so a
-# default-argument call to a citeable tool must fit under that cap or the
-# model silently loses its highest-ranked results.
+# Regression tests for the tool-message truncation coupling: ToolAgentLoop caps
+# a whole tool response at ``max_tool_response_length``. When an array of JSON
+# results exceeds that cap, it is trimmed by whole items keeping the leading
+# (best-ranked) ones. A default-argument call to a citeable tool must fit
+# under that cap, and the truncated response must retain its top-ranked items.
 _TOOL_RESPONSE_CAP = ToolAgentLoopConfig.max_tool_response_length
 
 _LONG_ABSTRACT = "word " * 300  # ~1500 chars, well over MAX_CONTENT_CHARS
@@ -279,3 +279,80 @@ def test_wikipedia_default_call_fits_tool_response_cap(monkeypatch):
     )
 
     assert len(response) <= _TOOL_RESPONSE_CAP
+
+
+def test_arxiv_truncation_keeps_the_leading_ranked_items(monkeypatch):
+    """Verify that oversized arxiv responses keep the top-ranked (first) papers when truncated."""
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    entries = "\n".join(
+        f"""
+  <entry>
+    <id>http://arxiv.org/abs/202{i}.</id>
+    <title>Paper {i}</title>
+    <summary>{_LONG_ABSTRACT}</summary>
+  </entry>"""
+        for i in range(5)  # 5 papers with long abstracts
+    )
+    feed = f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">{entries}
+</feed>
+"""
+
+    async def _fake_get_text(url, *, params=None, **kwargs):
+        return feed
+
+    monkeypatch.setattr(knowledge, "get_text", _fake_get_text)
+
+    response, _raw, _meta = asyncio.run(
+        knowledge.build_arxiv_tool().execute("default", {"query": "dense"})
+    )
+
+    # The raw response may exceed the cap; apply the same truncation logic
+    # that ToolAgentLoop._call_tool would apply.
+    truncated = _truncate_tool_text(response, _TOOL_RESPONSE_CAP, "left")
+
+    assert len(truncated) <= _TOOL_RESPONSE_CAP
+    # Parse the truncated result (handle footer if present)
+    body = truncated.split("\n...")[0] if "\n..." in truncated else truncated
+    result = json.loads(body)
+    assert isinstance(result, list)
+    # Extract titles; they should start with Paper 0, not skip the head
+    titles = [item.get("title") for item in result]
+    assert titles[0] == "Paper 0", (
+        f"Expected first paper to be 'Paper 0' (top-ranked), "
+        f"got {titles[0]}. Truncation must keep leading items."
+    )
+
+
+def test_wikipedia_truncation_keeps_the_leading_ranked_items(monkeypatch):
+    """Verify that oversized JSON arrays keep top-ranked items when truncated."""
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    # Create a JSON array that will be truncated: 4 pages with long extracts
+    oversized_response = json.dumps(
+        [
+            {
+                "title": f"Page {i}",
+                "content": _LONG_ABSTRACT,
+                "url": f"http://ex.com/{i}",
+            }
+            for i in range(4)
+        ]
+    )
+
+    # Verify the response exceeds the cap before truncation
+    assert len(oversized_response) > _TOOL_RESPONSE_CAP
+
+    # Apply truncation logic that ToolAgentLoop._call_tool uses
+    truncated = _truncate_tool_text(oversized_response, _TOOL_RESPONSE_CAP, "left")
+
+    assert len(truncated) <= _TOOL_RESPONSE_CAP
+    # Parse (handle footer if present)
+    body = truncated.split("\n...")[0] if "\n..." in truncated else truncated
+    result = json.loads(body)
+    assert isinstance(result, list)
+    # Verify we kept the first page (highest ranked), not the last
+    assert result[0]["title"] == "Page 0", (
+        f"Truncation must keep leading items; got {result[0]['title']} first"
+    )
