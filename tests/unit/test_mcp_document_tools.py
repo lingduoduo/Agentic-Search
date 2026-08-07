@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -629,19 +630,45 @@ def test_office_zip_preflight_rejects_high_compression_ratio(monkeypatch):
         documents._preflight_office_zip(data)
 
 
+def _measure_parser_startup_seconds():
+    """Wall time of a trivial parser round-trip — dominated by child startup.
+
+    A forkserver child re-imports ``document_parser_runtime`` to unpickle the
+    worker on every call, and forkserver does not preload it, so this cost
+    recurs per call rather than being paid once. It is ~0.2s on a warm machine
+    and over 2s on a cold or loaded one.
+    """
+    probe_queue = documents._PARSER_CONTEXT.Queue()
+    started = time.monotonic()
+    documents._run_parser_in_process(parser_probes.sleeping_parser, probe_queue, 0.0)
+    elapsed = time.monotonic() - started
+    probe_queue.get(timeout=10)
+    return elapsed
+
+
 def test_parser_timeout_terminates_the_worker_process(monkeypatch):
     """A timed-out parser process is killed and reaped before returning."""
     assert hasattr(documents, "_PARSER_CONTEXT")
     assert hasattr(documents, "ParserTimeoutError")
     assert hasattr(documents, "_run_parser_in_process")
     context = documents._PARSER_CONTEXT
+
+    # The deadline covers child startup, not just the parser body, so a fixed
+    # timeout races the child's import of the parser runtime. Below ~2.5s on a
+    # cold machine the child is killed mid-import, before the probe publishes
+    # its pid — and the assertion then fails on a missing pid for a reason that
+    # has nothing to do with termination. Measure startup here and leave room
+    # above it, so what is under test is the kill, not the machine's speed.
+    deadline = _measure_parser_startup_seconds() + 1.0
+    monkeypatch.setattr(documents, "PARSER_TIMEOUT_SECONDS", deadline)
+
     pid_queue = context.Queue()
-    monkeypatch.setattr(documents, "PARSER_TIMEOUT_SECONDS", 1.5)
-
+    # Sleeps well past the deadline, so the parser is always still running when
+    # the timeout fires.
     with pytest.raises(documents.ParserTimeoutError, match="timed out"):
-        documents._run_parser_in_process(parser_probes.sleeping_parser, pid_queue, 5.0)
+        documents._run_parser_in_process(parser_probes.sleeping_parser, pid_queue, 30.0)
 
-    pid = pid_queue.get(timeout=1)
+    pid = pid_queue.get(timeout=10)
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
 
