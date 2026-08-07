@@ -308,7 +308,11 @@ def test_arxiv_truncation_keeps_the_leading_ranked_items(monkeypatch):
         knowledge.build_arxiv_tool().execute("default", {"query": "dense"})
     )
 
-    # The raw response may exceed the cap; apply the same truncation logic
+    # Verify the response exceeds the cap before truncation, otherwise this
+    # test exercises nothing.
+    assert len(response) > _TOOL_RESPONSE_CAP
+
+    # The raw response exceeds the cap; apply the same truncation logic
     # that ToolAgentLoop._call_tool would apply.
     truncated = _truncate_tool_text(response, _TOOL_RESPONSE_CAP, "left")
 
@@ -326,33 +330,54 @@ def test_arxiv_truncation_keeps_the_leading_ranked_items(monkeypatch):
 
 
 def test_wikipedia_truncation_keeps_the_leading_ranked_items(monkeypatch):
-    """Verify that oversized JSON arrays keep top-ranked items when truncated."""
+    """Verify that oversized wikipedia responses keep the top-ranked (first) pages when truncated."""
     from src.agents.tool.tool_calling import _truncate_tool_text
 
-    # Create a JSON array that will be truncated: 4 pages with long extracts
-    oversized_response = json.dumps(
-        [
-            {
-                "title": f"Page {i}",
-                "content": _LONG_ABSTRACT,
-                "url": f"http://ex.com/{i}",
+    page_count = 5  # 5 pages with long extracts
+    # pageid starts at 1: _search_wikipedia drops hits where
+    # hit.get("pageid") is falsy, which a literal 0 pageid would be.
+
+    async def _fake_get_json(url, *, params=None, **kwargs):
+        if params.get("list") == "search":
+            return {
+                "query": {
+                    "search": [
+                        {"pageid": i + 1, "title": f"Page {i}"}
+                        for i in range(page_count)
+                    ]
+                }
             }
-            for i in range(4)
-        ]
+        return {
+            "query": {
+                "pages": {
+                    str(i + 1): {"title": f"Page {i}", "extract": _LONG_ABSTRACT}
+                    for i in range(page_count)
+                }
+            }
+        }
+
+    monkeypatch.setattr(knowledge, "get_json", _fake_get_json)
+
+    response, _raw, _meta = asyncio.run(
+        knowledge.build_wikipedia_tool().execute("default", {"query": "x"})
     )
 
-    # Verify the response exceeds the cap before truncation
-    assert len(oversized_response) > _TOOL_RESPONSE_CAP
+    # Verify the response exceeds the cap before truncation, otherwise this
+    # test exercises nothing.
+    assert len(response) > _TOOL_RESPONSE_CAP
 
-    # Apply truncation logic that ToolAgentLoop._call_tool uses
-    truncated = _truncate_tool_text(oversized_response, _TOOL_RESPONSE_CAP, "left")
+    # The raw response exceeds the cap; apply the same truncation logic
+    # that ToolAgentLoop._call_tool would apply.
+    truncated = _truncate_tool_text(response, _TOOL_RESPONSE_CAP, "left")
 
     assert len(truncated) <= _TOOL_RESPONSE_CAP
-    # Parse (handle footer if present)
+    # Parse the truncated result (handle footer if present)
     body = truncated.split("\n...")[0] if "\n..." in truncated else truncated
     result = json.loads(body)
     assert isinstance(result, list)
-    # Verify we kept the first page (highest ranked), not the last
-    assert result[0]["title"] == "Page 0", (
-        f"Truncation must keep leading items; got {result[0]['title']} first"
+    # Extract titles; they should start with Page 0, not skip the head
+    titles = [item.get("title") for item in result]
+    assert titles[0] == "Page 0", (
+        f"Expected first page to be 'Page 0' (top-ranked), "
+        f"got {titles[0]}. Truncation must keep leading items."
     )

@@ -56,6 +56,26 @@ def test_keeps_the_first_items_that_fit():
     )
 
 
+def test_non_ascii_items_are_not_re_escaped():
+    """Bare json.dumps would escape CJK to \\uXXXX (1 char -> 6), inflating the
+    size accounting so badly that a single escaped item can exceed the whole
+    limit even though the un-escaped array fits comfortably. Regression for
+    the ensure_ascii=True bug: this must keep more than one item.
+    """
+    items = [{"a": "测试文本内容" * 10} for _ in range(6)]
+    text = json.dumps(items, ensure_ascii=False)
+    limit = len(text) - 100
+
+    result = _fit_json_array(text, limit)
+
+    assert result is not None
+    assert "\\u" not in result
+    body, _, _footer = result.partition("\n...")
+    kept = json.loads(body)
+    assert len(kept) > 1
+    assert kept == items[: len(kept)]
+
+
 def test_compacting_alone_can_make_everything_fit():
     """Indented input can shrink under the limit once re-serialized."""
     items = [{"a": 1}, {"b": 2}]
@@ -89,7 +109,7 @@ def test_json_array_over_the_limit_keeps_the_leading_items():
     assert len(kept) < len(items)
 
 
-def test_prose_over_the_limit_keeps_the_head_by_default():
+def test_prose_over_the_limit_keeps_the_head():
     from src.agents.tool.tool_calling import _truncate_tool_text
 
     text = "FIRST" + "." * 100 + "LAST"
@@ -133,6 +153,22 @@ def test_json_object_over_the_limit_falls_back_to_slicing():
     result = _truncate_tool_text(text, 50, "left")
 
     assert result.startswith('{"temperature"')
+    assert result.endswith("...(truncated)")
+
+
+def test_deeply_nested_json_falls_back_to_slicing_instead_of_raising():
+    """json.loads on deeply nested input raises RecursionError, not ValueError.
+    _fit_json_array must catch it and let the caller fall back to _slice_text
+    rather than letting it propagate out of run()'s tool_responses comprehension
+    and abort the whole agent run.
+    """
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    text = "[" * 3000 + "]" * 3000
+
+    result = _truncate_tool_text(text, 2048, "left")
+
+    assert result.startswith("[[[")
     assert result.endswith("...(truncated)")
 
 

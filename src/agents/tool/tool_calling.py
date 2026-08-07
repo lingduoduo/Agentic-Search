@@ -110,12 +110,16 @@ def _fit_json_array(text: str, limit: int) -> str | None:
     """
     try:
         items = json.loads(text)
-    except (TypeError, ValueError):
+    except (ValueError, RecursionError):
         return None
     if not isinstance(items, list) or not items:
         return None
 
-    compact = json.dumps(items)
+    # ensure_ascii=False throughout: bare json.dumps would re-escape every
+    # non-ASCII character to \uXXXX (one character becomes six), which both
+    # inflates the size accounting below and defeats the purpose of trimming
+    # for content that already arrived as real UTF-8 text.
+    compact = json.dumps(items, ensure_ascii=False)
     if len(compact) <= limit:
         # Re-serializing without the original's whitespace was enough. This
         # must be checked before the loop below: that loop charges every
@@ -128,17 +132,24 @@ def _fit_json_array(text: str, limit: int) -> str | None:
     for item in items:
         candidate = kept + [item]
         footer = _truncation_footer(len(candidate), total, total - len(candidate))
-        if len(json.dumps(candidate) + footer) > limit:
+        if len(json.dumps(candidate, ensure_ascii=False) + footer) > limit:
             break
         kept = candidate
 
     if not kept:
         return None
-    return json.dumps(kept) + _truncation_footer(len(kept), total, total - len(kept))
+    return json.dumps(kept, ensure_ascii=False) + _truncation_footer(
+        len(kept), total, total - len(kept)
+    )
 
 
 def _slice_text(text: str, limit: int, side: str) -> str:
-    """Character-slice *text*, keeping the side named by the config."""
+    """Character-slice *text*, keeping the side named by the config.
+
+    The marker is appended outside the slice, so the result can exceed
+    *limit* by its length (up to 17 chars for "middle") — unlike the JSON
+    path above, which budgets its footer inside the limit.
+    """
     if side == "left":
         return text[:limit] + "...(truncated)"
     if side == "right":
