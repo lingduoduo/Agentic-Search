@@ -67,3 +67,77 @@ def test_compacting_alone_can_make_everything_fit():
 
     assert result == json.dumps(items)
     assert "omitted for length" not in result
+
+
+def test_text_under_the_limit_is_returned_unchanged():
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    text = '[{"a": 1}]'
+    assert _truncate_tool_text(text, 100, "left") == text
+
+
+def test_json_array_over_the_limit_keeps_the_leading_items():
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    items = [{"rank": i, "a": "X" * 100} for i in range(5)]
+
+    result = _truncate_tool_text(json.dumps(items), 400, "left")
+
+    body, _, _footer = result.partition("\n...")
+    kept = json.loads(body)
+    assert [item["rank"] for item in kept] == list(range(len(kept)))
+    assert len(kept) < len(items)
+
+
+def test_prose_over_the_limit_keeps_the_head_by_default():
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    text = "FIRST" + "." * 100 + "LAST"
+
+    result = _truncate_tool_text(text, 50, "left")
+
+    assert result.startswith("FIRST")
+    assert "LAST" not in result
+    assert result.endswith("...(truncated)")
+
+
+def test_right_side_still_keeps_the_tail():
+    """The knob keeps working for anyone who sets it explicitly."""
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    text = "FIRST" + "." * 100 + "LAST"
+
+    result = _truncate_tool_text(text, 50, "right")
+
+    assert result.startswith("(truncated)...")
+    assert result.endswith("LAST")
+
+
+def test_middle_side_keeps_both_ends():
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    text = "FIRST" + "." * 100 + "LAST"
+
+    result = _truncate_tool_text(text, 50, "middle")
+
+    assert result.startswith("FIRST")
+    assert result.endswith("LAST")
+    assert "...(truncated)..." in result
+
+
+def test_json_object_over_the_limit_falls_back_to_slicing():
+    from src.agents.tool.tool_calling import _truncate_tool_text
+
+    text = json.dumps({"temperature": 14.2, "note": "Y" * 200})
+
+    result = _truncate_tool_text(text, 50, "left")
+
+    assert result.startswith('{"temperature"')
+    assert result.endswith("...(truncated)")
+
+
+def test_the_default_truncation_side_keeps_the_head():
+    """A ranked tool result must not lose its top entries."""
+    from src.agents.tool.tool_calling import ToolAgentLoopConfig
+
+    assert ToolAgentLoopConfig().tool_response_truncate_side == "left"

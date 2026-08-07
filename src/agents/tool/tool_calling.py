@@ -137,6 +137,26 @@ def _fit_json_array(text: str, limit: int) -> str | None:
     return json.dumps(kept) + _truncation_footer(len(kept), total, total - len(kept))
 
 
+def _slice_text(text: str, limit: int, side: str) -> str:
+    """Character-slice *text*, keeping the side named by the config."""
+    if side == "left":
+        return text[:limit] + "...(truncated)"
+    if side == "right":
+        return "(truncated)..." + text[-limit:]
+    half = limit // 2
+    return text[:half] + "...(truncated)..." + text[-half:]
+
+
+def _truncate_tool_text(text: str, limit: int, side: str) -> str:
+    """Bound one tool response, preferring whole JSON items over a raw slice."""
+    if len(text) <= limit:
+        return text
+    fitted = _fit_json_array(text, limit)
+    if fitted is not None:
+        return fitted
+    return _slice_text(text, limit, side)
+
+
 @dataclass(frozen=True)
 class ToolAgentLoopConfig(AgentLoopConfig):
     """Configuration for ToolAgentLoop.
@@ -148,11 +168,15 @@ class ToolAgentLoopConfig(AgentLoopConfig):
     max_assistant_turns: int = 10
     max_parallel_calls: int = 4
     max_tool_response_length: int = 2048
-    # How to truncate a tool response that exceeds max_tool_response_length:
+    # Fallback policy for a tool response that exceeds
+    # max_tool_response_length and is NOT a JSON array (arrays are trimmed by
+    # whole items instead — see _fit_json_array). Defaults to keeping the
+    # start: tool results are ranked best-first, so dropping the tail loses
+    # the least.
     #   "left"   — keep the start, append "...(truncated)"
     #   "right"  — prepend "(truncated)...", keep the end
     #   "middle" — keep equal halves from start and end
-    tool_response_truncate_side: str = "right"
+    tool_response_truncate_side: str = "left"
     tool_parser_format: str = "json"
     approval_timeout_seconds: float = 60.0
 
@@ -236,16 +260,11 @@ class ToolAgentLoop(AgentLoopBase):
         return self._build_prompt_ids_sync(messages)
 
     def _truncate_tool_response(self, text: str) -> str:
-        limit = self.tool_config.max_tool_response_length
-        if len(text) <= limit:
-            return text
-        side = self.tool_config.tool_response_truncate_side
-        if side == "left":
-            return text[:limit] + "...(truncated)"
-        if side == "right":
-            return "(truncated)..." + text[-limit:]
-        half = limit // 2
-        return text[:half] + "...(truncated)..." + text[-half:]
+        return _truncate_tool_text(
+            text,
+            self.tool_config.max_tool_response_length,
+            self.tool_config.tool_response_truncate_side,
+        )
 
     async def _call_tool(self, tool_call: FunctionCall) -> ToolExecutionResult:
         """Execute one tool call via the per-loop registry; return a structured result.
