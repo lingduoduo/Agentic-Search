@@ -92,6 +92,82 @@ class ToolApprovalRequest:
 ToolApprovalCallback = Callable[[ToolApprovalRequest], Awaitable[ApprovalDecision]]
 
 
+def _truncation_footer(shown: int, total: int, omitted: int) -> str:
+    """Tell the model what it is not seeing, in its own message."""
+    return f"\n...{shown} of {total} results shown, {omitted} omitted for length."
+
+
+def _fit_json_array(text: str, limit: int) -> str | None:
+    """Trim a JSON array to the leading items that fit within *limit*.
+
+    Ranked tool results are ordered best-first, so dropping items from the end
+    keeps what matters and leaves the model valid JSON rather than a fragment
+    that starts mid-object.
+
+    Returns None when *text* is not a non-empty JSON list, or when not even one
+    item fits. The caller then falls back to character slicing: a readable
+    prefix of one large item beats a valid but empty array.
+    """
+    try:
+        items = json.loads(text)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(items, list) or not items:
+        return None
+
+    # ensure_ascii=False throughout: bare json.dumps would re-escape every
+    # non-ASCII character to \uXXXX (one character becomes six), which both
+    # inflates the size accounting below and defeats the purpose of trimming
+    # for content that already arrived as real UTF-8 text.
+    compact = json.dumps(items, ensure_ascii=False)
+    if len(compact) <= limit:
+        # Re-serializing without the original's whitespace was enough. This
+        # must be checked before the loop below: that loop charges every
+        # candidate the cost of a footer, so a small indented array could
+        # otherwise be rejected outright even though all of it fits.
+        return compact
+
+    total = len(items)
+    kept: list[Any] = []
+    for item in items:
+        candidate = kept + [item]
+        footer = _truncation_footer(len(candidate), total, total - len(candidate))
+        if len(json.dumps(candidate, ensure_ascii=False) + footer) > limit:
+            break
+        kept = candidate
+
+    if not kept:
+        return None
+    return json.dumps(kept, ensure_ascii=False) + _truncation_footer(
+        len(kept), total, total - len(kept)
+    )
+
+
+def _slice_text(text: str, limit: int, side: str) -> str:
+    """Character-slice *text*, keeping the side named by the config.
+
+    The marker is appended outside the slice, so the result can exceed
+    *limit* by its length (up to 17 chars for "middle") — unlike the JSON
+    path above, which budgets its footer inside the limit.
+    """
+    if side == "left":
+        return text[:limit] + "...(truncated)"
+    if side == "right":
+        return "(truncated)..." + text[-limit:]
+    half = limit // 2
+    return text[:half] + "...(truncated)..." + text[-half:]
+
+
+def _truncate_tool_text(text: str, limit: int, side: str) -> str:
+    """Bound one tool response, preferring whole JSON items over a raw slice."""
+    if len(text) <= limit:
+        return text
+    fitted = _fit_json_array(text, limit)
+    if fitted is not None:
+        return fitted
+    return _slice_text(text, limit, side)
+
+
 @dataclass(frozen=True)
 class ToolAgentLoopConfig(AgentLoopConfig):
     """Configuration for ToolAgentLoop.
@@ -103,11 +179,15 @@ class ToolAgentLoopConfig(AgentLoopConfig):
     max_assistant_turns: int = 10
     max_parallel_calls: int = 4
     max_tool_response_length: int = 2048
-    # How to truncate a tool response that exceeds max_tool_response_length:
+    # Fallback policy for a tool response that exceeds
+    # max_tool_response_length and is NOT a JSON array (arrays are trimmed by
+    # whole items instead — see _fit_json_array). Defaults to keeping the
+    # start: tool results are ranked best-first, so dropping the tail loses
+    # the least.
     #   "left"   — keep the start, append "...(truncated)"
     #   "right"  — prepend "(truncated)...", keep the end
     #   "middle" — keep equal halves from start and end
-    tool_response_truncate_side: str = "right"
+    tool_response_truncate_side: str = "left"
     tool_parser_format: str = "json"
     approval_timeout_seconds: float = 60.0
 
@@ -191,16 +271,11 @@ class ToolAgentLoop(AgentLoopBase):
         return self._build_prompt_ids_sync(messages)
 
     def _truncate_tool_response(self, text: str) -> str:
-        limit = self.tool_config.max_tool_response_length
-        if len(text) <= limit:
-            return text
-        side = self.tool_config.tool_response_truncate_side
-        if side == "left":
-            return text[:limit] + "...(truncated)"
-        if side == "right":
-            return "(truncated)..." + text[-limit:]
-        half = limit // 2
-        return text[:half] + "...(truncated)..." + text[-half:]
+        return _truncate_tool_text(
+            text,
+            self.tool_config.max_tool_response_length,
+            self.tool_config.tool_response_truncate_side,
+        )
 
     async def _call_tool(self, tool_call: FunctionCall) -> ToolExecutionResult:
         """Execute one tool call via the per-loop registry; return a structured result.
