@@ -92,6 +92,51 @@ class ToolApprovalRequest:
 ToolApprovalCallback = Callable[[ToolApprovalRequest], Awaitable[ApprovalDecision]]
 
 
+def _truncation_footer(shown: int, total: int, omitted: int) -> str:
+    """Tell the model what it is not seeing, in its own message."""
+    return f"\n...{shown} of {total} results shown, {omitted} omitted for length."
+
+
+def _fit_json_array(text: str, limit: int) -> str | None:
+    """Trim a JSON array to the leading items that fit within *limit*.
+
+    Ranked tool results are ordered best-first, so dropping items from the end
+    keeps what matters and leaves the model valid JSON rather than a fragment
+    that starts mid-object.
+
+    Returns None when *text* is not a non-empty JSON list, or when not even one
+    item fits. The caller then falls back to character slicing: a readable
+    prefix of one large item beats a valid but empty array.
+    """
+    try:
+        items = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(items, list) or not items:
+        return None
+
+    compact = json.dumps(items)
+    if len(compact) <= limit:
+        # Re-serializing without the original's whitespace was enough. This
+        # must be checked before the loop below: that loop charges every
+        # candidate the cost of a footer, so a small indented array could
+        # otherwise be rejected outright even though all of it fits.
+        return compact
+
+    total = len(items)
+    kept: list[Any] = []
+    for item in items:
+        candidate = kept + [item]
+        footer = _truncation_footer(len(candidate), total, total - len(candidate))
+        if len(json.dumps(candidate) + footer) > limit:
+            break
+        kept = candidate
+
+    if not kept:
+        return None
+    return json.dumps(kept) + _truncation_footer(len(kept), total, total - len(kept))
+
+
 @dataclass(frozen=True)
 class ToolAgentLoopConfig(AgentLoopConfig):
     """Configuration for ToolAgentLoop.
