@@ -6,6 +6,32 @@
 
 Serving still uses indexes built offline by the `index_builder`. Filter-aware and degraded branches can use the composed session-aware retrieval, ranking/reranking, and evidence-grounded inference pipeline; strong unfiltered auto-search retains its direct ranking, sufficiency gate, and provider fallback path. Neither retrieval nor reranking is a training step. No new serving API or request/response schema was introduced; offline trainers may produce model artifacts, but requests only load and infer with them.
 
+## Intent-model training and promotion
+
+The supported offline command trains and evaluates the optional three-label (`chat`, `search`, `tool`) request router reproducibly. Prepare baseline prediction records from the current regex → LLM classifier → rule fallback on the held-out requests, with the schema accepted by `src.model.intent_training`, at `data/eval/intent_baseline_predictions.json`. Then run:
+
+```bash
+python -m src.model.intent_training train \
+  --examples data/intent_examples.json \
+  --baseline data/eval/intent_baseline_predictions.json \
+  --output-dir models/intent-candidate \
+  --seed 17
+```
+
+The seed controls the source-grouped train, validation, and held-out test split as well as supported deterministic training behavior. Threshold selection uses only validation predictions; the test split is evaluated once after selection. Baseline records must match the test example IDs and expected labels exactly, ensuring the baseline and candidate are compared on the same requests.
+
+The output directory contains three inspection-ready artifacts:
+
+- `intent_model.pt` is the candidate checkpoint, including its ordered labels, preprocessing and architecture metadata, dataset fingerprint, and format version.
+- `split_manifest.json` records the seed, fingerprint, split sizes, per-label counts, example IDs, and source groups.
+- `evaluation_report.json` records the selected threshold, candidate and baseline metrics, hyperparameters, dataset fingerprint, and every promotion-gate result.
+
+The promotion gates require non-decreasing macro-F1, the configured minimum `tool` precision, no more than the configured high-confidence error limit, reduced LLM-classifier usage, and lower model-resolved latency than LLM classification. A failed gate leaves all three candidate artifacts available for inspection but does not activate them or overwrite a serving setting.
+
+Exit codes are `0`, `1`, and `2`: `0` means training and evaluation completed and every promotion gate passed; `1` means invalid input, configuration, I/O, training, or artifact generation prevented a valid completed run; and `2` means the run completed and wrote its artifacts but one or more promotion gates failed.
+
+Operators activate a passing artifact explicitly by setting `AGENTIC_SEARCH_INTENT_MODEL_PATH` to the resulting `intent_model.pt` path and restarting the application. Learned routing is disabled by default when that variable is unset or empty. `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` defaults to `0.6`; increasing it reduces model coverage and sends more requests through the existing LLM/rule fallback. Training never changes either serving setting automatically.
+
 [← Back to README](../README.md)
 
 This guide covers dataset preparation, supervised and reinforcement-learning workflows, and benchmark evaluation.

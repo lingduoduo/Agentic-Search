@@ -92,9 +92,13 @@ When `mode` is omitted, `route_query` chooses one strategy. The cascade is inten
    - lookup verbs such as “find”, “search for”, or “retrieve” → `search`;
    - bare one-to-three-word terms such as `RAG`, `GRPO`, or `vector database` → `search`;
    - conversational or generative starts normally → `chat`.
-3. If configured, a trained intent model may select a route when its confidence reaches `INTENT_MIN_CONFIDENCE`.
+3. If configured, a trained intent model may select a route when its confidence reaches `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.6`).
 4. Otherwise an available LLM runs the three-label classifier at temperature 0.
 5. If no LLM exists or classification fails, the rule-based router applies `tool` → `search` → bare lookup → `chat` precedence.
+
+Explicit modes and providers, then regex decisions, precede the learned model. Covered model predictions skip the LLM classifier. Model abstentions fall through to that classifier and then to the rule-based router when needed. Downstream chat, search, and tool execution is unchanged: the model selects only the existing execution family and cannot select a specific tool or bypass authorization.
+
+Request captures identify the deciding mechanism as `explicit_source`, `regex`, `model`, `classifier`, or `rule_based`. When the model is evaluated, the `intent_model · evaluation` stage records its predicted intent, confidence, configured threshold, abstention state, and latency. An abstention also records `fallback_reason="model_below_threshold"` on the evaluation and eventual intent stage, so traces expose both the deciding mechanism and fallback reason without adding the raw request to intent telemetry. A missing, unreadable, or incompatible configured artifact disables the learned route safely; the loader logs a diagnostic and routing continues through the existing fallbacks.
 
 The selected strategy is recorded as `hook_metadata.route`. Capability fallback occurs after classification and may be recorded as `hook_metadata.route_degraded`.
 
@@ -243,7 +247,7 @@ This is serving-time routing and inference. It is unrelated to GRPO training, ev
 - Browser fallback: `SearchExperienceSettings.browser_search_url` and a running browser-search service. The default `from_app_settings()` construction does not currently populate this URL, so deployments that want browser fallback must wire it into app construction.
 - Local policy modes: `SEARCH_AGENT_MODEL` or `SEARCH_AGENT_SERVER_URL`.
 - Provider-backed chat and classification: `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, and provider credentials.
-- Learned intent route: intent-model artifact plus `INTENT_MIN_CONFIDENCE`.
+- Learned intent route: `AGENTIC_SEARCH_INTENT_MODEL_PATH` plus `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE`.
 - Sufficiency threshold: `SEARCH_DIRECT_COS_MIN`.
 
 See [Configuration](configuration.md) for setup details.
