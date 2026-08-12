@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -77,6 +78,31 @@ def test_incompatible_checkpoint_returns_none_and_caches_failure(monkeypatch):
     assert attempts == [str(configured_path.resolve())]
 
 
+def test_failed_artifact_does_not_block_distinct_configured_artifact(monkeypatch):
+    failed_path = Path("/configured/bad-intent.pt")
+    working_path = Path("/configured/good-intent.pt")
+    attempts: list[str] = []
+
+    class _Pipeline:
+        @classmethod
+        def load(cls, path: str):
+            attempts.append(path)
+            if path == str(failed_path.resolve()):
+                raise ValueError("unsupported checkpoint")
+            return _StubPipeline("search", 0.91)
+
+    import src.model.intent_classifier as intent_classifier
+
+    monkeypatch.setattr(intent_classifier, "IntentPipeline", _Pipeline)
+    monkeypatch.setattr(ml_intent, "_INTENT_MODELS", {})
+
+    assert (
+        ml_intent.load_intent_model(AppSettings(intent_model_path=failed_path)) is None
+    )
+    assert ml_intent.load_intent_model(AppSettings(intent_model_path=working_path))
+    assert attempts == [str(failed_path.resolve()), str(working_path.resolve())]
+
+
 def test_predict_route_maps_label_and_confidence(monkeypatch):
     monkeypatch.setenv("AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", "0.05")
     monkeypatch.setattr(
@@ -102,6 +128,24 @@ def test_predict_route_unknown_label_returns_none(monkeypatch):
         lambda settings: _StubPipeline("purchase", 0.99),
     )
     assert ml_intent.predict_route("buy a thing", settings=AppSettings()) is None
+
+
+@pytest.mark.parametrize(
+    "confidence",
+    [float("nan"), float("inf"), float("-inf"), -0.01, 1.01, "not-a-number"],
+)
+def test_predict_route_defers_malformed_confidence(monkeypatch, caplog, confidence):
+    monkeypatch.setattr(
+        ml_intent,
+        "load_intent_model",
+        lambda settings: _StubPipeline("search", confidence),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=ml_intent.__name__):
+        result = ml_intent.predict_route("find FAISS", settings=AppSettings())
+
+    assert result is None
+    assert "invalid confidence" in caplog.text
 
 
 def test_predict_route_swallows_predict_errors(monkeypatch):

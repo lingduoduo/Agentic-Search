@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import math
 from pathlib import Path
 from time import perf_counter
 
@@ -69,9 +70,17 @@ def predict_route(
         return None
     if pred.intent not in _ROUTE_VALUES:
         return None
+    try:
+        confidence = float(pred.confidence)
+    except (TypeError, ValueError):
+        logger.warning("intent-model: invalid confidence — deferring")
+        return None
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        logger.warning("intent-model: invalid confidence — deferring")
+        return None
     return IntentModelDecision(
         strategy=RouteStrategy(pred.intent),
-        confidence=float(pred.confidence),
+        confidence=confidence,
         threshold=resolved_settings.intent_model_min_confidence,
         latency_ms=(perf_counter() - start) * 1_000,
     )
