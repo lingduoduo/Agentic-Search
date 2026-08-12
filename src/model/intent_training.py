@@ -114,10 +114,20 @@ def load_corpus(path: Path) -> list[dict[str, Any]]:
 
     documents: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as handle:
-        for line in handle:
+        for line_number, line in enumerate(handle, start=1):
             line = line.strip()
             if line:
-                documents.append(json.loads(line))
+                document = json.loads(line)
+                if not isinstance(document, Mapping):
+                    raise ValueError(
+                        f"Corpus record at line {line_number} must be an object"
+                    )
+                _validate_optional_corpus_field(document, "id", (str, int), line_number)
+                _validate_optional_corpus_field(document, "title", str, line_number)
+                _validate_optional_corpus_field(document, "contents", str, line_number)
+                documents.append(dict(document))
+    if not documents:
+        raise ValueError(f"Corpus contains no documents: {path}")
     return documents
 
 
@@ -127,7 +137,20 @@ def load_vocabulary_tokens(path: Path, *, limit: int = 64) -> list[str]:
     with path.open(encoding="utf-8") as handle:
         payload = json.load(handle)
 
-    token2idx = payload.get("vocabulary", {}).get("token2idx", {})
+    if not isinstance(payload, Mapping):
+        raise ValueError("Vocabulary metadata must contain an object")
+    vocabulary = payload.get("vocabulary", {})
+    if not isinstance(vocabulary, Mapping):
+        raise ValueError("Vocabulary metadata 'vocabulary' must be an object")
+    token2idx = vocabulary.get("token2idx", {})
+    if not isinstance(token2idx, Mapping) or any(
+        not isinstance(token, str)
+        or not token
+        or isinstance(index, bool)
+        or not isinstance(index, int)
+        for token, index in token2idx.items()
+    ):
+        raise ValueError("Vocabulary metadata 'token2idx' must map tokens to integers")
     ranked = sorted(token2idx.items(), key=lambda item: item[1])
     return [token for token, _ in ranked[:limit]]
 
@@ -346,9 +369,15 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
     manifest_text = _serialize_json(manifest)
     report_text = _serialize_json(report)
     output_dir.mkdir(parents=True, exist_ok=True)
-    _atomic_save_pipeline(pipeline, checkpoint_path, split.fingerprint)
-    _atomic_write_text(split_manifest_path, manifest_text)
-    _atomic_write_text(evaluation_report_path, report_text)
+    _write_artifact_set(
+        pipeline=pipeline,
+        dataset_fingerprint=split.fingerprint,
+        checkpoint_path=checkpoint_path,
+        split_manifest_path=split_manifest_path,
+        split_manifest_text=manifest_text,
+        evaluation_report_path=evaluation_report_path,
+        evaluation_report_text=report_text,
+    )
 
     return IntentTrainingRun(
         checkpoint_path=checkpoint_path,
@@ -548,34 +577,64 @@ def _serialize_json(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def _atomic_write_text(path: Path, serialized: str) -> None:
+def _temporary_sibling(path: Path) -> tuple[int, Path]:
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
     )
-    temporary_path = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(serialized)
-        temporary_path.replace(path)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
+    return descriptor, Path(temporary_name)
 
 
-def _atomic_save_pipeline(
-    pipeline: IntentPipeline, path: Path, dataset_fingerprint: str
+def _write_artifact_set(
+    *,
+    pipeline: IntentPipeline,
+    dataset_fingerprint: str,
+    checkpoint_path: Path,
+    split_manifest_path: Path,
+    split_manifest_text: str,
+    evaluation_report_path: Path,
+    evaluation_report_text: str,
 ) -> None:
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
-    os.close(descriptor)
-    temporary_path = Path(temporary_name)
+    staged: list[tuple[Path, Path]] = []
     try:
-        pipeline.save(str(temporary_path), dataset_fingerprint=dataset_fingerprint)
-        temporary_path.replace(path)
+        checkpoint_descriptor, temporary_checkpoint = _temporary_sibling(
+            checkpoint_path
+        )
+        os.close(checkpoint_descriptor)
+        staged.append((temporary_checkpoint, checkpoint_path))
+        pipeline.save(
+            str(temporary_checkpoint), dataset_fingerprint=dataset_fingerprint
+        )
+
+        for path, serialized in (
+            (split_manifest_path, split_manifest_text),
+            (evaluation_report_path, evaluation_report_text),
+        ):
+            descriptor, temporary_path = _temporary_sibling(path)
+            staged.append((temporary_path, path))
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(serialized)
+
+        for temporary_path, final_path in staged:
+            temporary_path.replace(final_path)
     except BaseException:
-        temporary_path.unlink(missing_ok=True)
+        for temporary_path, _ in staged:
+            temporary_path.unlink(missing_ok=True)
         raise
+
+
+def _validate_optional_corpus_field(
+    document: Mapping[str, object],
+    field: str,
+    expected_type: type | tuple[type, ...],
+    line_number: int,
+) -> None:
+    value = document.get(field)
+    if value is not None and (
+        isinstance(value, bool)
+        or not isinstance(value, expected_type)
+        or (isinstance(value, str) and not value.strip())
+    ):
+        raise ValueError(f"Corpus record at line {line_number} has invalid {field}")
 
 
 def _nonempty_string(value: object, field: str, index: int) -> str:
