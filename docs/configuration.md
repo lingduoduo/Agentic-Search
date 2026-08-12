@@ -82,6 +82,12 @@ Routing configuration spans separate capabilities:
 | `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |
 
+Activate only an artifact whose evaluation report is promotable. Set both
+`AGENTIC_SEARCH_INTENT_MODEL_PATH` and
+`AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE`; the latter must equal the report's
+`selected_threshold` (or be stricter/higher). Serving rejects non-promotable
+checkpoints and configurations below the checkpoint's approved threshold.
+
 ## Neural reranking
 
 | Env var | Default | Description |

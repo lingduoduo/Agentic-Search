@@ -102,7 +102,11 @@ def test_intent_pipeline_save_and_load_round_trip(tmp_path):
     original_pred = pipeline.predict(["buy", "laptop"])
 
     save_path = str(tmp_path / "intent.pt")
-    pipeline.save(save_path, dataset_fingerprint="test-dataset")
+    pipeline.save(
+        save_path,
+        dataset_fingerprint="test-dataset",
+        promoted_min_confidence=None,
+    )
 
     loaded = IntentPipeline.load(save_path)
     loaded_pred = loaded.predict(["buy", "laptop"])
@@ -116,7 +120,11 @@ def test_intent_pipeline_save_requires_training(tmp_path):
     pytest.importorskip("torch")
     pipeline = IntentPipeline()
     try:
-        pipeline.save(str(tmp_path / "intent.pt"), dataset_fingerprint="test-dataset")
+        pipeline.save(
+            str(tmp_path / "intent.pt"),
+            dataset_fingerprint="test-dataset",
+            promoted_min_confidence=None,
+        )
     except RuntimeError as exc:
         assert "trained" in str(exc).lower()
     else:
@@ -247,12 +255,17 @@ def test_save_writes_version_two_checkpoint_contract(tmp_path):
     )
     path = tmp_path / "intent.pt"
 
-    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+    pipeline.save(
+        str(path),
+        dataset_fingerprint="sha256:abc",
+        promoted_min_confidence=None,
+    )
 
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     assert checkpoint["version"] == 2
     assert checkpoint["intent_labels"] == ["chat", "search", "tool"]
     assert checkpoint["dataset_fingerprint"] == "sha256:abc"
+    assert checkpoint["promoted_min_confidence"] is None
     assert checkpoint["preprocessing"] == {
         "tokenizer": "document_index.tokenize_text",
         "padding_id": 0,
@@ -271,7 +284,11 @@ def test_load_rejects_checkpoint_with_incompatible_intent_labels(tmp_path, label
         seed=17,
     )
     path = tmp_path / "intent.pt"
-    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+    pipeline.save(
+        str(path),
+        dataset_fingerprint="sha256:abc",
+        promoted_min_confidence=None,
+    )
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     checkpoint["intent_labels"] = labels
     torch.save(checkpoint, path)
@@ -299,7 +316,11 @@ def test_load_rejects_model_state_dimensions_that_disagree_with_config(tmp_path)
         seed=17,
     )
     path = tmp_path / "intent.pt"
-    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+    pipeline.save(
+        str(path),
+        dataset_fingerprint="sha256:abc",
+        promoted_min_confidence=None,
+    )
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     checkpoint["model_state"]["embedding.weight"] = checkpoint["model_state"][
         "embedding.weight"

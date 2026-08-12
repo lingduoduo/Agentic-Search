@@ -394,6 +394,7 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
     _write_artifact_set(
         pipeline=pipeline,
         dataset_fingerprint=split.fingerprint,
+        promoted_min_confidence=(selected_threshold if promotion.promotable else None),
         checkpoint_path=checkpoint_path,
         split_manifest_path=split_manifest_path,
         split_manifest_text=manifest_text,
@@ -731,6 +732,7 @@ def _write_artifact_set(
     *,
     pipeline: IntentPipeline,
     dataset_fingerprint: str,
+    promoted_min_confidence: float | None,
     checkpoint_path: Path,
     split_manifest_path: Path,
     split_manifest_text: str,
@@ -747,7 +749,9 @@ def _write_artifact_set(
         os.close(checkpoint_descriptor)
         staged.append((temporary_checkpoint, checkpoint_path))
         pipeline.save(
-            str(temporary_checkpoint), dataset_fingerprint=dataset_fingerprint
+            str(temporary_checkpoint),
+            dataset_fingerprint=dataset_fingerprint,
+            promoted_min_confidence=promoted_min_confidence,
         )
 
         for path, serialized in (

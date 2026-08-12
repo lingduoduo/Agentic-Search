@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -160,11 +161,24 @@ class IntentPipeline:
 
         return self.predict(tokenize_text(text))
 
-    def save(self, path: str, *, dataset_fingerprint: str) -> None:
+    def save(
+        self,
+        path: str,
+        *,
+        dataset_fingerprint: str,
+        promoted_min_confidence: float | None = None,
+    ) -> None:
         import torch
 
         if not self.is_trained:
             raise RuntimeError("Pipeline must be trained before saving.")
+        if promoted_min_confidence is not None and (
+            not math.isfinite(promoted_min_confidence)
+            or not 0.0 <= promoted_min_confidence <= 1.0
+        ):
+            raise ValueError(
+                "promoted_min_confidence must be null or a finite probability"
+            )
         checkpoint = {
             "version": 2,
             "intent_labels": list(INTENT_LABELS),
@@ -174,6 +188,7 @@ class IntentPipeline:
                 "pooling": "masked_mean",
             },
             "dataset_fingerprint": dataset_fingerprint,
+            "promoted_min_confidence": promoted_min_confidence,
             "vocab": {
                 "token2idx": self._vocab.token2idx,
                 "token2cnt": self._vocab.token2cnt,
@@ -217,6 +232,17 @@ class IntentPipeline:
             raise ValueError("Checkpoint preprocessing contract is unsupported.")
         if not isinstance(checkpoint.get("dataset_fingerprint"), str):
             raise ValueError("Checkpoint dataset_fingerprint must be a string.")
+        promoted_min_confidence = checkpoint.get("promoted_min_confidence")
+        if promoted_min_confidence is not None and (
+            isinstance(promoted_min_confidence, bool)
+            or not isinstance(promoted_min_confidence, (int, float))
+            or not math.isfinite(float(promoted_min_confidence))
+            or not 0.0 <= float(promoted_min_confidence) <= 1.0
+        ):
+            raise ValueError(
+                "Checkpoint promoted_min_confidence must be null or a finite "
+                "probability."
+            )
 
         cfg = checkpoint["config"]
         cls._validate_checkpoint_dimensions(cfg, checkpoint["model_state"])
@@ -233,6 +259,11 @@ class IntentPipeline:
         pipeline._model._net.load_state_dict(checkpoint["model_state"])
         pipeline._model._net.eval()
         pipeline.is_trained = True
+        pipeline.promoted_min_confidence = (
+            float(promoted_min_confidence)
+            if promoted_min_confidence is not None
+            else None
+        )
         return pipeline
 
     def _new_model(self) -> _IntentClassifier:

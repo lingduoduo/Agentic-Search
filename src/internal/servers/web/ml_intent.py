@@ -13,7 +13,7 @@ from src.internal.servers.web.intent_routing import RouteStrategy
 
 logger = logging.getLogger(__name__)
 
-_INTENT_MODELS: dict[Path, object | None] = {}
+_INTENT_MODELS: dict[tuple[Path, float], object | None] = {}
 
 _ROUTE_VALUES = {s.value for s in RouteStrategy}
 
@@ -40,18 +40,26 @@ def load_intent_model(settings: AppSettings | None = None) -> object | None:
     if configured_path is None:
         return None
     artifact_path = configured_path.resolve()
-    if artifact_path in _INTENT_MODELS:
-        return _INTENT_MODELS[artifact_path]
+    cache_key = (artifact_path, resolved_settings.intent_model_min_confidence)
+    if cache_key in _INTENT_MODELS:
+        return _INTENT_MODELS[cache_key]
     try:
         from src.model.intent_classifier import IntentPipeline
 
         model = IntentPipeline.load(str(artifact_path))
+        promoted_threshold = model.promoted_min_confidence
+        if promoted_threshold is None:
+            raise ValueError("checkpoint was not approved for serving")
+        if resolved_settings.intent_model_min_confidence < promoted_threshold:
+            raise ValueError(
+                "configured confidence is below the checkpoint promotion threshold"
+            )
     except Exception:
         logger.exception("intent-model: load failed — ML routing disabled")
-        _INTENT_MODELS[artifact_path] = None
+        _INTENT_MODELS[cache_key] = None
     else:
-        _INTENT_MODELS[artifact_path] = model
-    return _INTENT_MODELS[artifact_path]
+        _INTENT_MODELS[cache_key] = model
+    return _INTENT_MODELS[cache_key]
 
 
 def predict_route(

@@ -52,6 +52,52 @@ def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
     assert "promotion" in report
 
 
+def test_promotable_training_checkpoint_stores_selected_threshold(
+    tmp_path, monkeypatch
+):
+    torch = pytest.importorskip("torch")
+    real_compare = intent_training.compare_for_promotion
+
+    def force_promotable(*args, **kwargs):
+        decision = real_compare(*args, **kwargs)
+        return intent_training.PromotionDecision(True, decision.gates, ())
+
+    monkeypatch.setattr(intent_training, "compare_for_promotion", force_promotable)
+    run = run_intent_training(
+        IntentTrainingConfig(
+            examples_path=FIXTURES / "intent_examples.json",
+            baseline_path=FIXTURES / "baseline_predictions.json",
+            output_dir=tmp_path,
+            epochs=1,
+            embedding_dim=8,
+            hidden_dim=16,
+            seed=17,
+        )
+    )
+
+    checkpoint = torch.load(run.checkpoint_path, map_location="cpu", weights_only=True)
+    assert checkpoint["promoted_min_confidence"] == run.selected_threshold
+
+
+def test_nonpromotable_training_checkpoint_is_inspection_only(tmp_path):
+    torch = pytest.importorskip("torch")
+    run = run_intent_training(
+        IntentTrainingConfig(
+            examples_path=FIXTURES / "intent_examples.json",
+            baseline_path=FIXTURES / "baseline_predictions.json",
+            output_dir=tmp_path,
+            epochs=1,
+            embedding_dim=8,
+            hidden_dim=16,
+            seed=17,
+        )
+    )
+
+    checkpoint = torch.load(run.checkpoint_path, map_location="cpu", weights_only=True)
+    assert run.promotion.promotable is False
+    assert checkpoint["promoted_min_confidence"] is None
+
+
 def test_training_workflow_publishes_nothing_when_artifact_staging_fails(
     tmp_path, monkeypatch
 ):

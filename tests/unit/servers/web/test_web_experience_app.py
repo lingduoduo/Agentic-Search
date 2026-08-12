@@ -1298,7 +1298,11 @@ def _train_dispatch_checkpoint(tmp_path):
     pipeline = IntentPipeline(vocab_size=128, embedding_dim=16, hidden_dim=32)
     pipeline.train(examples, epochs=20, lr=0.02, min_freq=1, seed=17)
     checkpoint = tmp_path / "intent.pt"
-    pipeline.save(str(checkpoint), dataset_fingerprint="test-dispatch")
+    pipeline.save(
+        str(checkpoint),
+        dataset_fingerprint="test-dispatch",
+        promoted_min_confidence=0.5,
+    )
     return checkpoint
 
 

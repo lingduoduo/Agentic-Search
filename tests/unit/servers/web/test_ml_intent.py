@@ -13,8 +13,9 @@ from src.internal.servers.web.intent_routing import RouteStrategy
 
 
 class _StubPipeline:
-    def __init__(self, intent, confidence):
+    def __init__(self, intent, confidence, promoted_min_confidence=0.6):
         self._pred = SimpleNamespace(intent=intent, confidence=confidence)
+        self.promoted_min_confidence = promoted_min_confidence
 
     def predict_text(self, _query):
         return self._pred
@@ -55,6 +56,73 @@ def test_explicit_settings_choose_artifact_instead_of_process_environment(monkey
 
     assert result is not None
     assert loaded_paths == [str(configured_path.resolve())]
+
+
+@pytest.mark.parametrize("configured_threshold", [0.7, 0.9])
+def test_serving_loads_at_equal_or_stricter_promoted_threshold(
+    monkeypatch, configured_threshold
+):
+    configured_path = Path("/configured/promoted.pt")
+
+    class _Pipeline:
+        @classmethod
+        def load(cls, _path: str):
+            return _StubPipeline("search", 0.91, promoted_min_confidence=0.7)
+
+    import src.model.intent_classifier as intent_classifier
+
+    monkeypatch.setattr(intent_classifier, "IntentPipeline", _Pipeline)
+    monkeypatch.setattr(ml_intent, "_INTENT_MODELS", {})
+
+    assert ml_intent.load_intent_model(
+        AppSettings(
+            intent_model_path=configured_path,
+            intent_model_min_confidence=configured_threshold,
+        )
+    )
+
+
+def test_serving_rejects_threshold_below_checkpoint_promotion(monkeypatch):
+    configured_path = Path("/configured/promoted.pt")
+
+    class _Pipeline:
+        @classmethod
+        def load(cls, _path: str):
+            return _StubPipeline("search", 0.91, promoted_min_confidence=0.7)
+
+    import src.model.intent_classifier as intent_classifier
+
+    monkeypatch.setattr(intent_classifier, "IntentPipeline", _Pipeline)
+    monkeypatch.setattr(ml_intent, "_INTENT_MODELS", {})
+
+    assert (
+        ml_intent.load_intent_model(
+            AppSettings(
+                intent_model_path=configured_path,
+                intent_model_min_confidence=0.69,
+            )
+        )
+        is None
+    )
+
+
+def test_serving_rejects_nonpromotable_checkpoint(monkeypatch):
+    configured_path = Path("/configured/inspection-only.pt")
+
+    class _Pipeline:
+        @classmethod
+        def load(cls, _path: str):
+            return _StubPipeline("search", 0.91, promoted_min_confidence=None)
+
+    import src.model.intent_classifier as intent_classifier
+
+    monkeypatch.setattr(intent_classifier, "IntentPipeline", _Pipeline)
+    monkeypatch.setattr(ml_intent, "_INTENT_MODELS", {})
+
+    assert (
+        ml_intent.load_intent_model(AppSettings(intent_model_path=configured_path))
+        is None
+    )
 
 
 def test_incompatible_checkpoint_returns_none_and_caches_failure(monkeypatch):
