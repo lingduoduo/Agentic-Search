@@ -161,6 +161,16 @@ class AppSettings:
     intent_model_path: Path | None = None
     intent_model_min_confidence: float = 0.6
 
+    def __post_init__(self) -> None:
+        if (
+            not math.isfinite(self.intent_model_min_confidence)
+            or not 0.0 <= self.intent_model_min_confidence <= 1.0
+        ):
+            raise ValueError(
+                "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE must be a finite "
+                "probability between 0 and 1."
+            )
+
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     """Load settings from an environment mapping.
@@ -181,14 +191,6 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     intent_model_min_confidence = get_env_float(
         source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.6
     )
-    if (
-        not math.isfinite(intent_model_min_confidence)
-        or not 0.0 <= intent_model_min_confidence <= 1.0
-    ):
-        raise ValueError(
-            "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE must be a finite "
-            "probability between 0 and 1."
-        )
     intent_model_path_value = get_env_str(
         source, "AGENTIC_SEARCH_INTENT_MODEL_PATH", None
     )
