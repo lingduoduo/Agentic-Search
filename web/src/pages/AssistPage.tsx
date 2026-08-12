@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Bot, Gauge, MessageSquarePlus, Search } from "lucide-react";
 import { createSession, streamAgent, submitToolApproval } from "../api";
 import { AnswerPanel } from "../components/AnswerPanel";
+import { ClarificationPrompt } from "../components/ClarificationPrompt";
 import { DevConsole } from "../components/debug/DevConsole";
 import { SearchComposer } from "../components/SearchComposer";
 import { SessionTimeline } from "../components/SessionTimeline";
@@ -12,6 +13,7 @@ import { ToolCallTracePanel } from "../components/ToolCallTracePanel";
 import type {
   AgentExperienceRequest,
   ChatMessageView,
+  ClarificationView,
   ControlFlowEventView,
   ProgressStep,
   SearchSourceProvider,
@@ -43,6 +45,9 @@ export function AssistPage() {
   const [searchUrl, setSearchUrl] = useState(DEFAULT_SEARCH_URL);
   const [topK, setTopK] = useState(5);
   const [intent, setIntent] = useState<"search" | "chat" | "tool" | undefined>(undefined);
+  const [clarification, setClarification] = useState<
+    { view: ClarificationView; query: string } | null
+  >(null);
   const [route, setRoute] = useState<string | undefined>(undefined);
   const [routeDegraded, setRouteDegraded] = useState<string | undefined>(undefined);
   const [sourceProvider, setSourceProvider] =
@@ -85,7 +90,10 @@ export function AssistPage() {
     [sessionId],
   );
 
-  const handleSubmit = useCallback(async (eventOrQuery?: FormEvent | string) => {
+  const handleSubmit = useCallback(async (
+    eventOrQuery?: FormEvent | string,
+    options?: { route?: "chat" | "search" | "tool" },
+  ) => {
     if (eventOrQuery && typeof eventOrQuery !== "string") eventOrQuery.preventDefault();
     const raw = typeof eventOrQuery === "string" ? eventOrQuery : query;
     const normalizedQuery = raw.trim();
@@ -103,6 +111,7 @@ export function AssistPage() {
     // Clear the previous turn's answer so a failed/next query never renders a
     // stale answer or citation anchors pointing at now-removed source cards.
     setAnswer("");
+    setClarification(null);
     setStreamingAnswer("");
     setCitations([]);
     setDocuments([]);
@@ -126,6 +135,7 @@ export function AssistPage() {
         search_url: DEV_MODE ? searchUrl : undefined,
         top_k: topK,
         source_provider: DEV_MODE ? sourceProvider : undefined,
+        route: options?.route,
       };
 
       let accumulatedAnswer = "";
@@ -154,7 +164,12 @@ export function AssistPage() {
               (a, b) => a.sequence - b.sequence,
             ),
           );
-          if (event.intent) setIntent(event.intent);
+          if (event.intent && event.intent !== "clarify") setIntent(event.intent);
+          setClarification(
+            event.clarification
+              ? { view: event.clarification, query: normalizedQuery }
+              : null,
+          );
           setRoute(event.route ?? undefined);
           setRouteDegraded(event.route_degraded ?? undefined);
           setAnswer(accumulatedAnswer);
@@ -210,6 +225,7 @@ export function AssistPage() {
     setMessages([]);
     setError(null);
     setIntent(undefined);
+    setClarification(null);
     setIsLoading(false);
   }, []);
 
@@ -294,6 +310,17 @@ export function AssistPage() {
           citations={citations}
           controlFlowTrace={controlFlowTrace}
           selectedRequestId={lastRequestId}
+        />
+      )}
+
+      {clarification && (
+        <ClarificationPrompt
+          clarification={clarification.view}
+          onSelect={(route) => {
+            const asked = clarification.query;
+            setClarification(null);
+            void handleSubmit(asked, { route });
+          }}
         />
       )}
 
