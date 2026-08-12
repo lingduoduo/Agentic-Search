@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from src.model.intent_data import load_intent_examples, split_intent_examples
+from src.model.intent_data import (
+    IntentEvalQuery,
+    load_intent_eval_queries,
+    load_intent_examples,
+    split_intent_examples,
+)
 
 
 def test_load_rejects_unknown_label(tmp_path: Path):
@@ -72,3 +77,43 @@ def test_load_out_of_scope_probes_rejects_labels_and_duplicates(tmp_path):
     path.write_text('[{"id": "a", "text": ""}]')
     with pytest.raises(ValueError, match="text"):
         load_out_of_scope_probes(path)
+
+
+def test_load_intent_eval_queries_reads_id_text_and_label(tmp_path: Path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        '[{"id": "e1", "text": "where did we land on the index rebuild",'
+        ' "label": "search"}]',
+        encoding="utf-8",
+    )
+
+    queries = load_intent_eval_queries(path)
+
+    assert queries == (
+        IntentEvalQuery(
+            id="e1", text="where did we land on the index rebuild", label="search"
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ('[{"id": "e1", "text": "hi", "label": "purchase"}]', "Unknown intent label"),
+        ('[{"id": "e1", "text": " ", "label": "chat"}]', "empty 'text'"),
+        (
+            '[{"id": "e1", "text": "a", "label": "chat"},'
+            ' {"id": "e1", "text": "b", "label": "chat"}]',
+            "Duplicate",
+        ),
+        ("[]", "no records"),
+    ],
+)
+def test_load_intent_eval_queries_rejects_invalid_records(
+    tmp_path: Path, payload: str, message: str
+):
+    path = tmp_path / "eval.json"
+    path.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_intent_eval_queries(path)

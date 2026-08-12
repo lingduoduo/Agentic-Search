@@ -1,10 +1,19 @@
+import functools
 import json
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from src.internal.document_index.text import tokenize_text
 from src.model import intent_training
+from src.model.intent_data import (
+    load_intent_eval_queries,
+    load_intent_examples,
+    load_out_of_scope_probes,
+    split_intent_examples,
+)
 from src.model.intent_training import (
     IntentTrainingConfig,
     build_examples_for_document,
@@ -16,6 +25,7 @@ from src.model.intent_evaluation import (
     compare_for_promotion,
     compose_candidate_cascade,
     evaluate_intent_predictions,
+    realistic_accuracy_report,
 )
 
 
@@ -67,6 +77,93 @@ def test_build_examples_label_multi_intent_requests_by_route_precedence():
     assert all(_regex_route(e["text"]) is None for e in multi)
 
 
+def test_neutral_fillers_appear_equally_often_under_every_label():
+    """Chatter must carry no class evidence, or out-of-scope text scores high.
+
+    A token's embedding is pulled by the labels it trains under. Balancing the
+    neutral slots leaves them class-neutral, so a request built only from
+    ordinary English pools toward the centre and its softmax stays near 1/3 —
+    the only abstention signal a three-label model has.
+    """
+    counts = {slot: Counter() for slot in ("role", "time", "artifact", "opener")}
+    for _, template, label, _ in intent_training._FRAMES:
+        for slot, per_label in counts.items():
+            if "{" + slot + "}" in template:
+                per_label[label] += 1
+
+    for slot, per_label in counts.items():
+        assert set(per_label) == {"chat", "search", "tool"}, slot
+        assert len(set(per_label.values())) == 1, (slot, per_label)
+        assert min(per_label.values()) >= 2, (slot, per_label)
+
+
+def test_action_verbs_stay_tool_only():
+    """{action} is genuine tool evidence and must not be neutralised."""
+    labels = {
+        label
+        for _, template, label, _ in intent_training._FRAMES
+        if "{action}" in template
+    }
+    assert labels == {"tool"}
+
+
+def test_frames_introduce_function_words_absent_from_the_corpus():
+    """The corpus contributes domain nouns; real queries need ordinary English."""
+    document = {"id": "d1", "title": "vector search", "contents": "dense retrieval"}
+    corpus_tokens = set(tokenize_text(f"{document['title']} {document['contents']}"))
+
+    generated_tokens: set[str] = set()
+    for index in range(4):  # cover every filler rotation
+        for example in build_examples_for_document(document, [], document_index=index):
+            generated_tokens |= set(tokenize_text(example["text"]))
+
+    for function_word in ("where", "we", "need", "from", "can", "you", "before"):
+        assert function_word in generated_tokens
+        assert function_word not in corpus_tokens
+
+
+def test_frames_group_by_frame_and_produce_unique_ids():
+    documents = [
+        {"id": "d1", "title": "vector search", "contents": "dense retrieval"},
+        {"id": "d2", "title": "bm25 ranking", "contents": "sparse retrieval"},
+    ]
+    examples = [
+        example
+        for index, document in enumerate(documents)
+        for example in build_examples_for_document(document, [], document_index=index)
+    ]
+
+    ids = [example["id"] for example in examples]
+    assert len(ids) == len(set(ids))
+    assert all(example["source"].startswith("frame:") for example in examples)
+    by_source: dict[str, set[str]] = {}
+    for example in examples:
+        by_source.setdefault(example["source"], set()).add(example["id"])
+    assert all(len(members) == len(documents) for members in by_source.values())
+
+
+def test_generated_examples_split_without_source_leakage(tmp_path):
+    corpus = tmp_path / "corpus.jsonl"
+    corpus.write_text(
+        "\n".join(
+            json.dumps({"id": f"d{index}", "title": f"topic {index}", "contents": "x"})
+            for index in range(12)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    examples_path = tmp_path / "examples.json"
+    intent_training.write_intent_examples(
+        intent_training.generate_intent_examples(corpus_path=corpus), examples_path
+    )
+
+    split = split_intent_examples(load_intent_examples(examples_path), seed=17)
+
+    train_sources = {example.source for example in split.train}
+    assert not train_sources & {example.source for example in split.validation}
+    assert not train_sources & {example.source for example in split.test}
+
+
 def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
     pytest.importorskip("torch")
 
@@ -87,6 +184,171 @@ def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
     report = json.loads((tmp_path / "evaluation_report.json").read_text())
     assert report["labels"] == ["chat", "search", "tool"]
     assert "promotion" in report
+
+
+DATA = Path(__file__).resolve().parents[2] / "data"
+
+# Measured on the first frame-based run (seed 17, 300 epochs, min_freq 1):
+# realistic accuracy 0.5667, out-of-scope separation margin +0.0708. Pinned a
+# little below each so a regression is caught without the test tracking noise.
+# Raise them when a run beats them; never lower without recording why.
+#
+# Honest reading of the accuracy number: 0.5667 does NOT beat the 3/5 = 0.60
+# hand-scored diagnosis baseline. It is pinned as a floor, not as evidence the
+# model is ready to promote. See
+# docs/superpowers/plans/2026-08-12-intent-model-realistic-accuracy.md.
+_REALISTIC_ACCURACY_FLOOR = 0.55
+_OUT_OF_SCOPE_MARGIN_FLOOR = 0.03
+
+
+@functools.lru_cache(maxsize=1)
+def _pipeline_trained_on_committed_examples():
+    from src.model.intent_classifier import IntentPipeline
+
+    split = split_intent_examples(
+        load_intent_examples(DATA / "intent_examples.json"), seed=17
+    )
+    pipeline = IntentPipeline(vocab_size=5000, embedding_dim=128, hidden_dim=256)
+    pipeline.train(
+        [(tokenize_text(example.text), example.label) for example in split.train],
+        epochs=300,
+        lr=1e-3,
+        min_freq=1,
+        seed=17,
+    )
+    return pipeline
+
+
+def test_frame_trained_model_holds_the_realistic_accuracy_bar():
+    """The templated split measures memorization; this set measures the model."""
+    pytest.importorskip("torch")
+    pipeline = _pipeline_trained_on_committed_examples()
+
+    records = []
+    for query in load_intent_eval_queries(DATA / "intent_eval_queries.json"):
+        prediction = pipeline.predict_text(query.text)
+        records.append(
+            IntentPredictionRecord(
+                example_id=query.id,
+                expected=query.label,
+                predicted=prediction.intent,
+                confidence=prediction.confidence,
+                latency_ms=1.0,
+                mechanism="model",
+            )
+        )
+
+    report = realistic_accuracy_report(records, threshold=0.5)
+    assert report["accuracy"] >= _REALISTIC_ACCURACY_FLOOR
+
+
+def test_out_of_scope_requests_score_below_in_scope_requests():
+    """Chatter is in-vocabulary and class-neutral, so it must score lower.
+
+    Before the balanced fillers landed, every fully-out-of-vocabulary probe
+    pooled to the zero vector and returned one identical prediction — the
+    model could not tell "I read this" from "I saw nothing".
+    """
+    pytest.importorskip("torch")
+    pipeline = _pipeline_trained_on_committed_examples()
+
+    in_scope = [
+        pipeline.predict_text(query.text).confidence
+        for query in load_intent_eval_queries(DATA / "intent_eval_queries.json")
+    ]
+    out_of_scope = [
+        pipeline.predict_text(text).confidence
+        for _, text in load_out_of_scope_probes(DATA / "intent_out_of_scope.json")
+    ]
+
+    # Distinct scores prove the probes are being read, not masked to zero.
+    assert len({round(value, 4) for value in out_of_scope}) > 1
+    margin = sum(in_scope) / len(in_scope) - sum(out_of_scope) / len(out_of_scope)
+    assert margin >= _OUT_OF_SCOPE_MARGIN_FLOOR
+
+
+_HAND_WRITTEN_EVAL_TEXT = {
+    "chat": "not sure I follow how the two rankings get merged",
+    "search": "where did the quarterly numbers file end up",
+    "tool": "ping the on-call engineer about the failing job",
+}
+
+
+def _run_fixture_training(
+    tmp_path, *, with_eval_queries: bool, copy_training_text: bool = False
+):
+    eval_queries_path = None
+    if with_eval_queries:
+        examples = json.loads(
+            (FIXTURES / "intent_examples.json").read_text(encoding="utf-8")
+        )
+        trained_text_by_label: dict[str, str] = {}
+        for example in examples:
+            trained_text_by_label.setdefault(example["label"], example["text"])
+        eval_queries_path = tmp_path / "eval_queries.json"
+        eval_queries_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": f"eval-{label}",
+                        "text": (
+                            trained_text_by_label[label]
+                            if copy_training_text
+                            else _HAND_WRITTEN_EVAL_TEXT[label]
+                        ),
+                        "label": label,
+                    }
+                    for label in ("chat", "search", "tool")
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    return run_intent_training(
+        IntentTrainingConfig(
+            examples_path=FIXTURES / "intent_examples.json",
+            baseline_path=FIXTURES / "baseline_predictions.json",
+            eval_queries_path=eval_queries_path,
+            output_dir=tmp_path,
+            epochs=1,
+            embedding_dim=8,
+            hidden_dim=16,
+            seed=17,
+        )
+    )
+
+
+def test_training_report_records_realistic_accuracy(tmp_path):
+    pytest.importorskip("torch")
+    run = _run_fixture_training(tmp_path, with_eval_queries=True)
+
+    report = json.loads(run.evaluation_report_path.read_text(encoding="utf-8"))
+    assert report["realistic_accuracy"]["total_queries"] == 3
+    assert 0.0 <= report["realistic_accuracy"]["accuracy"] <= 1.0
+    assert set(report["realistic_accuracy"]) >= {
+        "accuracy",
+        "coverage",
+        "covered_accuracy",
+        "macro_f1",
+        "per_label_metrics",
+        "threshold",
+        "total_queries",
+    }
+
+
+def test_training_report_records_null_realistic_accuracy_without_a_set(tmp_path):
+    pytest.importorskip("torch")
+    run = _run_fixture_training(tmp_path, with_eval_queries=False)
+
+    report = json.loads(run.evaluation_report_path.read_text(encoding="utf-8"))
+    assert report["realistic_accuracy"] is None
+
+
+def test_training_rejects_an_evaluation_set_the_generator_produces(tmp_path):
+    """A set the training data already contains cannot measure generalization."""
+    pytest.importorskip("torch")
+    with pytest.raises(ValueError, match="cannot measure generalization"):
+        _run_fixture_training(tmp_path, with_eval_queries=True, copy_training_text=True)
 
 
 def test_promotable_training_checkpoint_stores_selected_threshold(

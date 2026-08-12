@@ -30,6 +30,15 @@ class IntentDatasetSplit:
     fingerprint: str
 
 
+@dataclass(frozen=True)
+class IntentEvalQuery:
+    """One hand-authored request used only to measure realistic accuracy."""
+
+    id: str
+    text: str
+    label: str
+
+
 def load_intent_examples(path: Path) -> list[IntentExample]:
     """Load and validate a JSON list of intent-training examples."""
     try:
@@ -194,10 +203,53 @@ def load_out_of_scope_probes(path: Path) -> tuple[tuple[str, str], ...]:
     return tuple(probes)
 
 
-def _required_text(record: Mapping[str, object], field: str, index: int) -> str:
+def load_intent_eval_queries(path: Path) -> tuple[IntentEvalQuery, ...]:
+    """Load the fixed realistic-evaluation set.
+
+    This set is never trained on and never split: it is an instrument, so it is
+    validated strictly and used exactly as authored.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid intent evaluation query JSON in {path}: {exc.msg}"
+        ) from exc
+
+    if not isinstance(payload, list):
+        raise ValueError("Intent evaluation query JSON must contain a list of records")
+
+    queries: list[IntentEvalQuery] = []
+    ids: set[str] = set()
+    kind = "Intent evaluation query"
+    for index, record in enumerate(payload):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"{kind} at index {index} must be an object")
+        query_id = _required_text(record, "id", index, kind=kind)
+        text = _required_text(record, "text", index, kind=kind)
+        label = _required_text(record, "label", index, kind=kind)
+        if label not in INTENT_LABELS:
+            raise ValueError(f"Unknown intent label: {label!r}")
+        if query_id in ids:
+            raise ValueError(f"Duplicate intent evaluation query id: {query_id!r}")
+        ids.add(query_id)
+        queries.append(IntentEvalQuery(id=query_id, text=text, label=label))
+
+    if not queries:
+        raise ValueError(f"Intent evaluation query file contains no records: {path}")
+    return tuple(queries)
+
+
+def _required_text(
+    record: Mapping[str, object],
+    field: str,
+    index: int,
+    *,
+    kind: str = "Intent example",
+) -> str:
     value = record.get(field)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"Intent example at index {index} has empty {field!r}")
+        raise ValueError(f"{kind} at index {index} has empty {field!r}")
     return value
 
 

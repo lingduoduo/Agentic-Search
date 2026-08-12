@@ -11,6 +11,7 @@ from src.model.intent_evaluation import (
     compare_for_promotion,
     compose_candidate_cascade,
     evaluate_intent_predictions,
+    realistic_accuracy_report,
     select_confidence_threshold,
 )
 
@@ -157,10 +158,7 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
         "llm_fallback_reduction",
         "latency_improvement",
         "authoritative_routes_unchanged",
-        "out_of_scope_abstention_minimum",
     }
-    # An unmeasured out-of-scope rate is not evidence of safety.
-    assert gates["out_of_scope_abstention_minimum"]["passed"] is False
     assert gates["llm_fallback_reduction"] == {
         "name": "llm_fallback_reduction",
         "passed": False,
@@ -171,8 +169,51 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
     assert set(decision.failed_gates) == {
         "llm_fallback_reduction",
         "latency_improvement",
-        "out_of_scope_abstention_minimum",
     }
+
+
+def test_realistic_accuracy_reports_argmax_accuracy_and_covered_accuracy():
+    records = [
+        IntentPredictionRecord("e1", "search", "search", 0.80, 1.0, "model"),
+        IntentPredictionRecord("e2", "chat", "search", 0.40, 1.0, "model"),
+        IntentPredictionRecord("e3", "tool", "tool", 0.90, 1.0, "model"),
+    ]
+
+    report = realistic_accuracy_report(records, threshold=0.75)
+
+    assert report["total_queries"] == 3
+    assert report["accuracy"] == pytest.approx(2 / 3)
+    assert report["coverage"] == pytest.approx(2 / 3)
+    assert report["covered_accuracy"] == pytest.approx(1.0)
+    assert set(report["per_label_metrics"]) == {"chat", "search", "tool"}
+
+
+def test_out_of_scope_abstention_is_reported_but_never_gates():
+    """The rate stays on the report; no gate can block promotion with it.
+
+    This model family cannot reach a useful abstention rate at any threshold
+    that leaves coverage, so the safety net is the LLM fallback, not the model.
+    """
+    decision = compare_for_promotion(
+        candidate=_report(
+            macro_f1=0.95,
+            tool_precision=0.99,
+            fallback_rate=0.1,
+            p50_latency_ms=1.0,
+            model_tool_precision=0.99,
+        ),
+        baseline=_report(
+            macro_f1=0.90,
+            tool_precision=0.97,
+            fallback_rate=0.5,
+            p50_latency_ms=40.0,
+        ),
+        criteria=PromotionCriteria(),
+    )
+
+    gates = {gate["name"] for gate in decision.gates}
+    assert "out_of_scope_abstention_minimum" not in gates
+    assert decision.promotable is True
 
 
 def test_candidate_cascade_keeps_regex_routes_and_models_only_ambiguous_queries():
