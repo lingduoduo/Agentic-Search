@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -113,6 +115,7 @@ def load_corpus(path: Path) -> list[dict[str, Any]]:
     """Load a JSONL corpus file into document dictionaries."""
 
     documents: list[dict[str, Any]] = []
+    document_identities: set[str] = set()
     with path.open(encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             line = line.strip()
@@ -125,7 +128,16 @@ def load_corpus(path: Path) -> list[dict[str, Any]]:
                 _validate_optional_corpus_field(document, "id", (str, int), line_number)
                 _validate_optional_corpus_field(document, "title", str, line_number)
                 _validate_optional_corpus_field(document, "contents", str, line_number)
-                documents.append(dict(document))
+                identity = _corpus_document_identity(document)
+                if identity in document_identities:
+                    raise ValueError(
+                        "Corpus contains duplicate document identity "
+                        f"{identity!r} at line {line_number}"
+                    )
+                document_identities.add(identity)
+                normalized_document = dict(document)
+                normalized_document["_intent_document_id"] = identity
+                documents.append(normalized_document)
     if not documents:
         raise ValueError(f"Corpus contains no documents: {path}")
     return documents
@@ -206,7 +218,7 @@ def build_examples_for_document(
         (f"schedule a meeting about {title}", "tool", ("direct",)),
         (f"open a pull request for {t2}", "tool", ("direct",)),
     )
-    document_id = str(document.get("id", title))
+    document_id = str(document.get("_intent_document_id", document.get("id", title)))
     label_offsets = Counter[str]()
     examples: list[dict[str, Any]] = []
     for text, label, tags in templates:
@@ -218,7 +230,7 @@ def build_examples_for_document(
             "source": f"corpus:{document_id}:{label}",
             "tags": list(tags),
         }
-        example["source_doc_id"] = document.get("id")
+        example["source_doc_id"] = document.get("id", document_id)
         example["source_title"] = title
         example["keywords"] = terms[:4]
         example["context_hint"] = contents[:120]
@@ -251,6 +263,7 @@ def generate_intent_examples(
             item["text"],
         )
     )
+    _validate_generated_examples(examples)
     return examples
 
 
@@ -577,9 +590,9 @@ def _serialize_json(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def _temporary_sibling(path: Path) -> tuple[int, Path]:
+def _temporary_sibling(path: Path, *, suffix: str = ".tmp") -> tuple[int, Path]:
     descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+        prefix=f".{path.name}.", suffix=suffix, dir=path.parent
     )
     return descriptor, Path(temporary_name)
 
@@ -595,6 +608,8 @@ def _write_artifact_set(
     evaluation_report_text: str,
 ) -> None:
     staged: list[tuple[Path, Path]] = []
+    backups: dict[Path, Path] = {}
+    publication_started = False
     try:
         checkpoint_descriptor, temporary_checkpoint = _temporary_sibling(
             checkpoint_path
@@ -614,12 +629,34 @@ def _write_artifact_set(
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 handle.write(serialized)
 
+        for _, final_path in staged:
+            if final_path.exists():
+                descriptor, backup_path = _temporary_sibling(
+                    final_path, suffix=".rollback"
+                )
+                os.close(descriptor)
+                shutil.copyfile(final_path, backup_path)
+                backups[final_path] = backup_path
+
+        publication_started = True
         for temporary_path, final_path in staged:
             temporary_path.replace(final_path)
     except BaseException:
+        if publication_started:
+            for _, final_path in staged:
+                backup_path = backups.get(final_path)
+                if backup_path is not None:
+                    backup_path.replace(final_path)
+                else:
+                    final_path.unlink(missing_ok=True)
         for temporary_path, _ in staged:
             temporary_path.unlink(missing_ok=True)
+        for backup_path in backups.values():
+            backup_path.unlink(missing_ok=True)
         raise
+    else:
+        for backup_path in backups.values():
+            backup_path.unlink(missing_ok=True)
 
 
 def _validate_optional_corpus_field(
@@ -628,13 +665,68 @@ def _validate_optional_corpus_field(
     expected_type: type | tuple[type, ...],
     line_number: int,
 ) -> None:
-    value = document.get(field)
-    if value is not None and (
-        isinstance(value, bool)
+    if field not in document:
+        return
+    value = document[field]
+    if (
+        value is None
+        or isinstance(value, bool)
         or not isinstance(value, expected_type)
         or (isinstance(value, str) and not value.strip())
     ):
         raise ValueError(f"Corpus record at line {line_number} has invalid {field}")
+
+
+def _corpus_document_identity(document: Mapping[str, object]) -> str:
+    if "id" in document:
+        return str(document["id"])
+    canonical = json.dumps(
+        document, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
+def _validate_generated_examples(examples: Sequence[Mapping[str, object]]) -> None:
+    if not examples:
+        raise ValueError("Generated intent examples must not be empty")
+    ids: set[str] = set()
+    labels_by_text: dict[str, str] = {}
+    for index, example in enumerate(examples):
+        if not isinstance(example, Mapping):
+            raise ValueError(
+                f"Generated intent example at index {index} must be an object"
+            )
+        values: dict[str, str] = {}
+        for field in ("id", "text", "label", "source"):
+            value = example.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"Generated intent example at index {index} has invalid {field}"
+                )
+            values[field] = value
+        if values["label"] not in INTENT_LABELS:
+            raise ValueError(
+                f"Generated intent example at index {index} has invalid label"
+            )
+        if values["id"] in ids:
+            raise ValueError(f"Duplicate generated intent example id: {values['id']!r}")
+        normalized_text = values["text"].casefold().strip()
+        previous_label = labels_by_text.get(normalized_text)
+        if previous_label is not None and previous_label != values["label"]:
+            raise ValueError(
+                "Generated intent examples contain conflicting duplicate text "
+                f"{values['text']!r}"
+            )
+        tags = example.get("tags", ())
+        if not isinstance(tags, (list, tuple)) or any(
+            not isinstance(tag, str) or not tag.strip() for tag in tags
+        ):
+            raise ValueError(
+                f"Generated intent example at index {index} has invalid tags"
+            )
+        ids.add(values["id"])
+        labels_by_text[normalized_text] = values["label"]
 
 
 def _nonempty_string(value: object, field: str, index: int) -> str:
@@ -696,6 +788,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             examples = generate_intent_examples(
                 corpus_path=args.corpus, vocabulary_path=args.vocabulary
             )
+            _validate_generated_examples(examples)
             write_intent_examples(examples, args.output)
             return 0
 
