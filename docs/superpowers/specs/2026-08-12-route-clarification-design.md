@@ -99,11 +99,20 @@ class Clarification:
 
 @dataclass(frozen=True)
 class RouteDecision:
-    strategy: RouteStrategy | None
-    clarification: Clarification | None
+    strategy: RouteStrategy
+    clarification: Clarification | None = None
 ```
 
-Exactly one of `strategy` and `clarification` is set.
+`strategy` is always set: it is the route to take if one must be chosen, and
+is exactly what today's cascade would return. `clarification` is set when that
+choice was a guess rather than a signal.
+
+Keeping `strategy` non-optional is what makes the legacy shim exact. The
+alternative — leaving `strategy` unset when clarifying — would change
+`route_query`'s answer at the LLM guess-site: today an unusable label yields
+`chat`, whereas falling back to the heuristic would yield `tool` for a query
+carrying a tool cue. Carrying the strategy alongside the clarification avoids
+that behavior change entirely.
 
 ### Entry points
 
@@ -111,10 +120,9 @@ Exactly one of `strategy` and `clarification` is set.
 -> RouteDecision` becomes the entry point and holds the cascade.
 
 `route_query` keeps its exact signature and return type, implemented as
-`decision.strategy or _rule_based_route(query)`. Because clarification fires
-precisely where the heuristic would have returned its no-signal default, that
-wrapper is behavior-identical to today, so existing callers and their tests are
-unaffected. `app.py` is the single production caller and moves to
+`route_request(...).strategy`. Since `strategy` always holds what today's
+cascade returns, the shim is behavior-identical, so existing callers and their
+tests are unaffected. `app.py` is the single production caller and moves to
 `route_request`.
 
 ### Supporting changes
@@ -125,7 +133,9 @@ the no-signal case; `_rule_based_route` becomes a wrapper returning
 
 `classify_route` returns `tuple[RouteStrategy | None, dict]`, yielding `None`
 for the `empty` and `unexpected` raw labels instead of defaulting to chat. The
-detail payload is unchanged and still carries no prompt or completion text.
+caller supplies `chat` as the strategy in that case, preserving today's answer
+while marking it a guess. The detail payload is unchanged and still carries no
+prompt or completion text.
 
 The clarification question and its three options are static. This fires
 precisely when no usable LLM produced a label, so generating the text with an
