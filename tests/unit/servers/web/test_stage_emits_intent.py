@@ -91,18 +91,20 @@ def test_classifier_exception_message_is_redacted_while_rule_fallback_runs(
             raise RuntimeError("private_sentinel from classifier prompt")
 
     monkeypatch.setattr(ir, "predict_route", lambda query, *, settings=None: None)
-    token = rc.start_capture("r", "the procurement approval flow")
+    query = "please send an email to Bob"
+    token = rc.start_capture("r", query)
     try:
         with caplog.at_level(logging.WARNING, logger=ir.__name__):
             strategy = route_query(
-                "the procurement approval flow",
+                query,
                 llm=_FailingLLM(),
                 explicit_source=False,
             )
 
         payload = _intent_stages()[0].payload
-        assert strategy is ir.RouteStrategy.CHAT
+        assert strategy is ir.RouteStrategy.TOOL
         assert payload["mechanism"] == "rule_based"
+        assert payload["strategy"] == "tool"
         assert "Route classifier failed, using rule-based." in caplog.text
         assert "private_sentinel" not in caplog.text
         assert "private_sentinel" not in repr(payload)
