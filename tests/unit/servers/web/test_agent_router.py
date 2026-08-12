@@ -134,9 +134,11 @@ def test_classify_route_parses_each_label():
         assert classify_route("q", _FakeLLM(label))[0] is expected
 
 
-def test_classify_route_defaults_to_chat_on_garbage():
-    assert classify_route("q", _FakeLLM("nonsense reply"))[0] is RouteStrategy.CHAT
-    assert classify_route("q", _FakeLLM(""))[0] is RouteStrategy.CHAT
+def test_classify_route_reports_none_on_garbage():
+    # An unusable response returns None; the caller (route_request) supplies
+    # the chat default, and decides whether that default is a guess.
+    assert classify_route("q", _FakeLLM("nonsense reply"))[0] is None
+    assert classify_route("q", _FakeLLM(""))[0] is None
 
 
 def test_bare_lookup_excludes_greetings_and_generative():
@@ -157,8 +159,8 @@ def test_route_query_greeting_routes_to_chat_without_llm():
 
 def test_classify_route_ignores_substring_false_positives():
     # Word-boundary match: "research" must not count as the "search" label.
-    assert classify_route("q", _FakeLLM("researching options"))[0] is RouteStrategy.CHAT
-    assert classify_route("q", _FakeLLM("chatbot style"))[0] is RouteStrategy.CHAT
+    assert classify_route("q", _FakeLLM("researching options"))[0] is None
+    assert classify_route("q", _FakeLLM("chatbot style"))[0] is None
     # Exact labels still parse.
     assert classify_route("q", _FakeLLM("search"))[0] is RouteStrategy.SEARCH
 
@@ -387,3 +389,152 @@ def test_route_query_reports_deciding_mechanism_outside_debug_captures(monkeypat
     assert telemetry["route_confidence"] == 0.91
     assert telemetry["route_threshold"] == 0.6
     assert telemetry["route_abstained"] is False
+
+
+# --- route_request: guess-site detection ---
+
+
+def test_route_request_clarifies_when_heuristic_has_no_signal():
+    decision = ir.route_request(
+        "Review the vendor renewal terms", llm=None, explicit_source=False
+    )
+
+    assert decision.strategy is RouteStrategy.CHAT  # legacy answer preserved
+    assert decision.clarification is not None
+    assert [option.route for option in decision.clarification.options] == [
+        "chat",
+        "search",
+        "tool",
+    ]
+
+
+def test_route_request_does_not_clarify_when_heuristic_matches_a_cue():
+    decision = ir.route_request(
+        "email the quarterly report to legal", llm=None, explicit_source=False
+    )
+
+    assert decision.strategy is RouteStrategy.TOOL
+    assert decision.clarification is None
+
+
+def test_route_request_clarifies_on_unusable_llm_output():
+    class _GarbageLLM:
+        def complete(self, messages, **kwargs):
+            return "I'm not sure what you mean"
+
+    decision = ir.route_request(
+        "Review the vendor renewal terms",
+        llm=_GarbageLLM(),
+        explicit_source=False,
+    )
+
+    assert decision.strategy is RouteStrategy.CHAT  # today's classifier default
+    assert decision.clarification is not None
+
+
+def test_route_request_never_clarifies_on_a_deterministic_rule():
+    for query in ("find the onboarding checklist", "Explain how FAISS works"):
+        decision = ir.route_request(query, llm=None, explicit_source=False)
+        assert decision.clarification is None
+
+
+def test_route_request_does_not_clarify_on_a_usable_llm_label():
+    class _UsableLLM:
+        def complete(self, messages, **kwargs):
+            return "search"
+
+    decision = ir.route_request(
+        "Review the vendor renewal terms", llm=_UsableLLM(), explicit_source=False
+    )
+
+    assert decision.strategy is RouteStrategy.SEARCH
+    assert decision.clarification is None
+
+
+def test_route_request_falls_through_to_the_heuristic_when_the_llm_raises():
+    class _BrokenLLM:
+        def complete(self, messages, **kwargs):
+            raise RuntimeError("provider down")
+
+    decision = ir.route_request(
+        "email the quarterly report to legal",
+        llm=_BrokenLLM(),
+        explicit_source=False,
+    )
+
+    assert decision.strategy is RouteStrategy.TOOL
+    assert decision.clarification is None
+
+
+def test_route_request_never_clarifies_on_a_confident_model(monkeypatch):
+    monkeypatch.setattr(
+        ir,
+        "predict_route",
+        lambda query, settings=None: IntentModelDecision(
+            strategy=RouteStrategy.TOOL,
+            confidence=0.91,
+            threshold=0.6,
+            latency_ms=1.5,
+        ),
+    )
+
+    decision = ir.route_request(
+        "Review the vendor renewal terms", llm=None, explicit_source=False
+    )
+
+    assert decision.strategy is RouteStrategy.TOOL
+    assert decision.clarification is None
+
+
+def test_route_request_never_clarifies_for_an_explicit_source():
+    decision = ir.route_request(
+        "Review the vendor renewal terms", llm=None, explicit_source=True
+    )
+
+    assert decision.strategy is RouteStrategy.SEARCH
+    assert decision.clarification is None
+
+
+def test_route_request_returns_chat_without_clarifying_for_an_empty_query():
+    decision = ir.route_request("   ", llm=None, explicit_source=False)
+
+    assert decision.strategy is RouteStrategy.CHAT
+    assert decision.clarification is None
+
+
+def test_route_query_answer_is_unchanged_at_every_guess_site():
+    class _GarbageLLM:
+        def complete(self, messages, **kwargs):
+            return ""
+
+    assert (
+        route_query("Review the vendor renewal terms", llm=None, explicit_source=False)
+        is RouteStrategy.CHAT
+    )
+    assert (
+        route_query(
+            "Review the vendor renewal terms",
+            llm=_GarbageLLM(),
+            explicit_source=False,
+        )
+        is RouteStrategy.CHAT
+    )
+    assert (
+        route_query(
+            "email the quarterly report to legal", llm=None, explicit_source=False
+        )
+        is RouteStrategy.TOOL
+    )
+
+
+def test_route_request_honors_the_clarification_setting():
+    settings = AppSettings(route_clarification=False)
+    decision = ir.route_request(
+        "Review the vendor renewal terms",
+        llm=None,
+        explicit_source=False,
+        settings=settings,
+    )
+
+    assert decision.strategy is RouteStrategy.CHAT
+    assert decision.clarification is None

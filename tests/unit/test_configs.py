@@ -64,6 +64,17 @@ def test_default_config_documents_intent_model_configuration():
     assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"] == 0.6
 
 
+def test_route_clarification_defaults_to_true_and_reads_from_env():
+    assert load_app_settings({}).route_clarification is True
+    assert (
+        load_app_settings(
+            {"AGENTIC_SEARCH_ROUTE_CLARIFICATION": "false"}
+        ).route_clarification
+        is False
+    )
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_ROUTE_CLARIFICATION"] is True
+
+
 def test_bool_env_parser_rejects_ambiguous_values():
     assert get_env_bool({"FLAG": "yes"}, "FLAG") is True
     assert get_env_bool({"FLAG": "0"}, "FLAG", True) is False
