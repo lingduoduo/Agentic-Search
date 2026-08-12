@@ -172,7 +172,11 @@ export function AssistPage() {
           );
           setRoute(event.route ?? undefined);
           setRouteDegraded(event.route_degraded ?? undefined);
-          setAnswer(accumulatedAnswer);
+          // ClarificationPrompt already renders the question; don't duplicate
+          // it in the answer panel.
+          const displayedAnswer = event.clarification ? "" : accumulatedAnswer;
+          setStreamingAnswer(displayedAnswer);
+          setAnswer(displayedAnswer);
           setMessages((current) => [
             ...current,
             { role: "assistant", content: accumulatedAnswer },

@@ -259,7 +259,7 @@ class AgentExperienceResponse(BaseModel):
     documents: list[SourceDocumentView]
     messages: list[ChatMessageView]
     hook_metadata: dict[str, object] = Field(default_factory=dict)
-    intent: str = "chat"  # "search" | "chat" | "tool"
+    intent: str = "chat"  # "search" | "chat" | "tool" | "clarify"
     clarification: dict | None = None
     tool_calls: list[ToolCallView] = Field(default_factory=list)
     control_flow_trace: list[ControlFlowEventView] = Field(default_factory=list)
@@ -1499,6 +1499,7 @@ def create_web_app(
 
         mode_str = request.mode.strip().lower() if request.mode else None
         normalized_mode = _normalize_agent_mode(mode_str) if mode_str else None
+        forced_route = _normalize_route(request.route) if request.route else None
 
         session_request = _copy_agent_request(request, user_id=user_id)
         session_id = _ensure_session(db, session_request)
@@ -1564,9 +1565,7 @@ def create_web_app(
                         on_approval=on_approval,
                         user_memory=user_memory,
                         user_present=capabilities.user_present,
-                        forced_route=(
-                            _normalize_route(request.route) if request.route else None
-                        ),
+                        forced_route=forced_route,
                     )
                     _cap = _capture.active()
                     if _cap is not None:

@@ -491,6 +491,35 @@ option:disabled,
   font-weight: 700;
 }
 
+.clarification {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.clarification-question {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.clarification-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clarification-options .icon-button {
+  flex: 1 1 200px;
+  height: auto;
+  padding: 10px 14px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+}
+
 /* Advisory, not an error: the answer is real, just incomplete. */
 .truncation-notice {
   border: 1px solid rgb(191 138 12 / 35%);
