@@ -457,7 +457,7 @@ async def test_auto_routed_tool_strategy_defaults_to_no_user_scoped_tools(
     ``False``, so a caller that omits it — e.g. one that never resolved an
     authenticated user — fails closed instead of leaking user-scoped tools.
     """
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
     from src.internal.tools.base import FunctionTool
     from src.internal.tools.registry import ToolRegistry
 
@@ -476,8 +476,8 @@ async def test_auto_routed_tool_strategy_defaults_to_no_user_scoped_tools(
     )
     monkeypatch.setattr("src.internal.tools.tool_registry", registry)
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.TOOL),
     )
 
     captured = _capture_tool_agent_loop(monkeypatch)
@@ -568,7 +568,7 @@ async def test_auto_routed_tool_strategy_gets_a_filtered_corpus_search(monkeypat
     request-bound, ACL-filtered instance rather than the unfiltered seeded one.
     """
     from src.context.models import SearchFilters
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
     built = {}
     real_builder = web_app_routing_tools.build_search_routing_tool
@@ -579,8 +579,8 @@ async def test_auto_routed_tool_strategy_gets_a_filtered_corpus_search(monkeypat
 
     monkeypatch.setattr(web_app_routing_tools, "build_search_routing_tool", _spy)
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.TOOL),
     )
 
     filters = SearchFilters(access_acl=["public", "user:userA"])

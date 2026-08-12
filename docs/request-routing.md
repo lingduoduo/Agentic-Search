@@ -114,6 +114,14 @@ Every auto-routed response carries the deciding mechanism in `hook_metadata.rout
 
 The selected strategy is recorded as `hook_metadata.route`. Capability fallback occurs after classification and may be recorded as `hook_metadata.route_degraded`.
 
+When no step in the cascade has a signal, the router asks instead of guessing.
+The response carries `intent: "clarify"` and a `clarification` object holding a
+question and one option per route; no agent runs. Sending the same query back
+with `route` set to `chat`, `search`, or `tool` skips the router and dispatches
+through the normal auto path, so the selected agent and its degradation
+behavior are identical. Set `AGENTIC_SEARCH_ROUTE_CLARIFICATION=false` to
+restore the previous behavior of always choosing a route.
+
 ## Auto-routed search provider order
 
 For a request with `source_provider=auto`, search is evidence-first and sequential:

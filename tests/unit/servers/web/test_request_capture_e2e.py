@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from src.agents.search import AgenticRAGResult
 from src.context.models import SearchContextBundle
 from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
-from src.internal.servers.web.intent_routing import RouteStrategy
+from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
 
 def _stub_agentic_rag_run(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -38,8 +38,8 @@ def _route_to_chat_with_fake_rag(monkeypatch: pytest.MonkeyPatch) -> None:
     completes with no local model and no network call (mirrors
     test_auto_route_agentic_rag_for_chat in test_web_experience_app.py)."""
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.CHAT,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.CHAT),
     )
     _stub_agentic_rag_run(monkeypatch)
 

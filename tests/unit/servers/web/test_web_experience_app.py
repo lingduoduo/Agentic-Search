@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from src.context.models import AnswerGenerationResult
@@ -773,11 +775,11 @@ def test_auto_route_agentic_rag_for_chat(monkeypatch, tmp_path):
     from unittest.mock import AsyncMock, MagicMock
     from src.agents.search import AgenticRAGResult
     from src.context.models import SearchContextBundle
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.CHAT,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.CHAT),
     )
     fake_result = AgenticRAGResult(
         answer="Grounded answer [D1]",
@@ -810,11 +812,11 @@ def test_auto_route_search_uses_direct_provider_order_without_local_model(
         called.append(source_provider)
         return []
 
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.SEARCH,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.SEARCH),
     )
     monkeypatch.setattr("src.internal.servers.web.app._run_direct_search", fake_direct)
     app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "db.sqlite3"))
@@ -853,12 +855,12 @@ def test_auto_route_tool_agent_runs_tool_loop_when_model_available(
     """TOOL route with a local model → ToolAgentLoop runs with real tools."""
     from unittest.mock import AsyncMock, MagicMock
     from src.agents.core.base import AgentLoopOutput
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
     import json
 
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.TOOL,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.TOOL),
     )
     # A trace that says the corpus search tool was called
     fake_trace = json.dumps(
@@ -899,13 +901,13 @@ def test_agent_no_llm_chat_degrades_to_pipeline(monkeypatch, tmp_path):
     can't repopulate it (delenv alone is insufficient — the reload re-adds it).
     """
     from src.internal.configs import AppSettings
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
     monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.CHAT,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.CHAT),
     )
 
     async def fake_pipeline(query, **kw):
@@ -925,6 +927,125 @@ def test_agent_no_llm_chat_degrades_to_pipeline(monkeypatch, tmp_path):
     body = response.json()
     assert body["intent"] == "chat"
     assert body["answer"] == "extractive answer"
+
+
+def test_uncertain_query_asks_instead_of_running_an_agent(monkeypatch, tmp_path):
+    from src.internal.configs import AppSettings
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("a clarification must not run an agent")
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", unexpected)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_search_direct_or_escalate", unexpected
+    )
+    monkeypatch.setattr("src.internal.servers.web.app._run_tool_agent", unexpected)
+
+    monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "clarify.sqlite3"),
+        app_settings=AppSettings(),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent", json={"query": "Review the vendor renewal terms"}
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "clarify"
+    assert [option["route"] for option in body["clarification"]["options"]] == [
+        "chat",
+        "search",
+        "tool",
+    ]
+    assert body["documents"] == []
+    assert body["hook_metadata"]["route_mechanism"] == "clarify"
+
+
+def test_selected_route_dispatches_to_the_matching_runner(monkeypatch, tmp_path):
+    calls = []
+
+    async def fake_search(query, **kwargs):
+        calls.append(("search", query))
+        return "search answer", [], [], "search", {}
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_search_direct_or_escalate", fake_search
+    )
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "picked.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent",
+            json={"query": "Review the vendor renewal terms", "route": "search"},
+        )
+
+    assert response.status_code == 200
+    assert calls == [("search", "Review the vendor renewal terms")]
+    assert response.json()["hook_metadata"]["route_mechanism"] == "user_selected"
+
+
+def test_unknown_route_value_is_rejected(tmp_path):
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "bad.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent", json={"query": "anything", "route": "teleport"}
+        )
+
+    assert response.status_code == 422
+
+
+def test_explicit_mode_never_clarifies(monkeypatch, tmp_path):
+    called = {}
+
+    async def fake_answer(
+        q, *, llm, chat_history, search_url, top_k, filters, user_memory=None
+    ):
+        called["answer"] = True
+        return _answer_result(q)
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.answer_with_retrieval", fake_answer
+    )
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "explicit.sqlite3")
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent",
+            json={"query": "Review the vendor renewal terms", "mode": "chat_once"},
+        )
+
+    assert response.status_code == 200
+    assert called.get("answer") is True
+    assert response.json()["intent"] == "chat"
+    assert response.json()["clarification"] is None
+
+
+def test_streaming_done_event_carries_the_clarification(monkeypatch, tmp_path):
+    from src.internal.configs import AppSettings
+
+    monkeypatch.setattr("src.internal.servers.web.app.load_dotenv", lambda: None)
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "stream.sqlite3"),
+        app_settings=AppSettings(),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent/stream", json={"query": "Review the vendor renewal terms"}
+        )
+
+    assert response.status_code == 200
+    done = [
+        json.loads(line[len("data: ") :])
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ][-1]
+    assert done["type"] == "done"
+    assert done["intent"] == "clarify"
+    assert done["clarification"]["options"][1]["route"] == "search"
 
 
 def test_agent_tool_mode_without_model_returns_clear_400(tmp_path):

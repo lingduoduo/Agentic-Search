@@ -118,7 +118,7 @@ from .static import APP_HTML
 from .static import APP_JS
 from .intent_routing import (
     RouteStrategy,
-    route_query,
+    route_request,
 )
 from .tool_agent_runner import (
     NO_LOCAL_MODEL_MESSAGE,
@@ -232,6 +232,13 @@ class AgentExperienceRequest(BaseModel):
             "'chat_loop', 'search_agent', 'tool_agent'. When None, intent is auto-detected."
         ),
     )
+    route: str | None = Field(
+        default=None,
+        description=(
+            "Optional route chosen by the user after a clarification: 'chat', "
+            "'search', or 'tool'. Skips the router and dispatches directly."
+        ),
+    )
 
 
 class ControlFlowEventView(BaseModel):
@@ -253,6 +260,7 @@ class AgentExperienceResponse(BaseModel):
     messages: list[ChatMessageView]
     hook_metadata: dict[str, object] = Field(default_factory=dict)
     intent: str = "chat"  # "search" | "chat" | "tool"
+    clarification: dict | None = None
     tool_calls: list[ToolCallView] = Field(default_factory=list)
     control_flow_trace: list[ControlFlowEventView] = Field(default_factory=list)
 
@@ -698,6 +706,7 @@ def _finalize_response(
     extra = dict(extra)
     extra.pop("_assistant_fallback", None)
     tool_calls = extra.pop("tool_calls", [])
+    clarification = extra.pop("clarification", None)
     raw_trace = extra.pop("control_flow_trace", None)
     trace_views = (
         [_control_flow_event_view(event) for event in raw_trace] if raw_trace else []
@@ -745,6 +754,7 @@ def _finalize_response(
         messages=messages,
         hook_metadata={**hook_metadata, **extra},
         intent=intent,
+        clarification=clarification,
         tool_calls=tool_calls,
         control_flow_trace=trace_views,
     )
@@ -1083,25 +1093,42 @@ async def _run_auto_routed(
     on_approval=None,
     user_memory: str | None = None,
     user_present: bool = False,
+    forced_route: RouteStrategy | None = None,
 ) -> tuple:
     """3-way agentic routing. Returns (answer, citations, documents, intent, extra).
 
-    `route_query` picks one of {chat, search, tool}; dispatch is
-    capability-aware and degrades gracefully when a required backend
-    (local model vs LLM client) is unavailable. `extra["route"]` records the
-    chosen strategy and `extra["route_degraded"]` records any degradation.
+    `route_request` picks one of {chat, search, tool}, or asks the user when no
+    signal in the cascade dominates; dispatch is capability-aware and degrades
+    gracefully when a required backend (local model vs LLM client) is
+    unavailable. `extra["route"]` records the chosen strategy and
+    `extra["route_degraded"]` records any degradation.
     """
     extra: dict = {}
     explicit_source = source_provider != "auto"
     has_local_model = manager is not None and tokenizer is not None
 
-    strategy = route_query(
-        query,
-        llm=llm,
-        explicit_source=explicit_source,
-        settings=app_settings,
-        telemetry=extra,
-    )
+    if forced_route is not None:
+        strategy = forced_route
+        extra["route_mechanism"] = "user_selected"
+    else:
+        decision = route_request(
+            query,
+            llm=llm,
+            explicit_source=explicit_source,
+            settings=app_settings,
+            telemetry=extra,
+        )
+        if decision.clarification is not None:
+            extra["route"] = "clarify"
+            extra["clarification"] = {
+                "question": decision.clarification.question,
+                "options": [
+                    {"route": option.route, "label": option.label}
+                    for option in decision.clarification.options
+                ],
+            }
+            return decision.clarification.question, [], [], "clarify", extra
+        strategy = decision.strategy
     extra["route"] = strategy.value
 
     # ---- TOOL: run ToolAgentLoop with the real registered tools ----
@@ -1537,6 +1564,9 @@ def create_web_app(
                         on_approval=on_approval,
                         user_memory=user_memory,
                         user_present=capabilities.user_present,
+                        forced_route=(
+                            _normalize_route(request.route) if request.route else None
+                        ),
                     )
                     _cap = _capture.active()
                     if _cap is not None:
@@ -1924,6 +1954,7 @@ def create_web_app(
                         "citations": result.citations,
                         "documents": [d.model_dump() for d in result.documents],
                         "intent": result.intent,
+                        "clarification": result.clarification,
                         "route": result.hook_metadata.get("route"),
                         "route_degraded": result.hook_metadata.get("route_degraded"),
                         "tool_calls": [tc.model_dump() for tc in result.tool_calls],
@@ -2045,6 +2076,17 @@ def _normalize_agent_mode(mode: str) -> str:
         valid = ", ".join(sorted(_VALID_AGENT_MODES))
         raise HTTPException(status_code=422, detail=f"mode must be one of: {valid}")
     return normalized
+
+
+_VALID_ROUTES = {"chat", "search", "tool"}
+
+
+def _normalize_route(route: str) -> RouteStrategy:
+    requested = route.strip().lower()
+    if requested not in _VALID_ROUTES:
+        valid = ", ".join(sorted(_VALID_ROUTES))
+        raise HTTPException(status_code=422, detail=f"route must be one of: {valid}")
+    return RouteStrategy(requested)
 
 
 _SOURCE_PROVIDER_ALIASES = {
