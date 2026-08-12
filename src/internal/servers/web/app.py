@@ -1067,6 +1067,7 @@ async def _run_search_direct_or_escalate(
 async def _run_auto_routed(
     query: str,
     *,
+    app_settings: AppSettings | None = None,
     llm,
     manager,
     tokenizer,
@@ -1098,6 +1099,7 @@ async def _run_auto_routed(
         query,
         llm=llm,
         explicit_source=explicit_source,
+        settings=app_settings,
     )
     extra["route"] = strategy.value
 
@@ -1516,6 +1518,7 @@ def create_web_app(
                         extra,
                     ) = await _run_auto_routed(
                         query,
+                        app_settings=resolved,
                         llm=llm,
                         manager=manager,
                         tokenizer=tokenizer,

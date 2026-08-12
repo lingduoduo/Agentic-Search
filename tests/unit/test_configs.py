@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from src.internal.configs import AppSettings
 from src.internal.configs import Tier
 from src.internal.configs import get_env_bool
 from src.internal.configs import is_license_enforcement_exempt
@@ -10,6 +13,7 @@ from src.internal.configs import is_path_allowed_for_tier
 from src.internal.configs import load_app_settings
 from src.internal.configs import load_permission_sync_settings
 from src.internal.configs import required_tier_for_path
+from src.internal.configs.default_config import DEFAULT_CONFIG
 from src.internal.servers.web.app import SearchExperienceSettings
 
 
@@ -29,6 +33,35 @@ def test_load_app_settings_reads_typed_environment():
     assert settings.auth.secret == "secret"
     assert settings.auth.super_users == ("admin@example.test",)
     assert settings.telemetry.posthog_debug_logs_enabled is True
+
+
+def test_load_app_settings_reads_intent_model_configuration():
+    settings = load_app_settings(
+        {
+            "AGENTIC_SEARCH_INTENT_MODEL_PATH": "/models/intent.pt",
+            "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": "0.73",
+        }
+    )
+
+    assert settings.intent_model_path == Path("/models/intent.pt")
+    assert settings.intent_model_min_confidence == 0.73
+
+
+@pytest.mark.parametrize("value", ["-0.1", "1.1", "nan", "inf"])
+def test_intent_threshold_must_be_finite_probability(value: str):
+    with pytest.raises(ValueError, match="INTENT_MODEL_MIN_CONFIDENCE"):
+        load_app_settings({"AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": value})
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1, float("nan"), float("inf")])
+def test_explicit_intent_threshold_must_be_finite_probability(value: float):
+    with pytest.raises(ValueError, match="INTENT_MODEL_MIN_CONFIDENCE"):
+        AppSettings(intent_model_min_confidence=value)
+
+
+def test_default_config_documents_intent_model_configuration():
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_PATH"] == ""
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"] == 0.6
 
 
 def test_bool_env_parser_rejects_ambiguous_values():
