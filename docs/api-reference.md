@@ -85,7 +85,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 # → {"answer": "...", "intent": "chat", "citations": ["[D1]"], "documents": [...], "session_id": "..."}
 ```
 
-`response.intent` is `"search" | "chat" | "tool"` and is the single field that drives the [intent-adaptive layout](frontend.md#ui-features) (`App.tsx` maps it to a `.results-layout` class). Read just that field:
+`response.intent` is `"search" | "chat" | "tool" | "clarify"` and is the single field that drives the [intent-adaptive layout](frontend.md#ui-features) (`App.tsx` maps it to a `.results-layout` class). When the auto-router has no signal at all, it returns `intent="clarify"` instead of guessing; no agent runs, and the response carries a `clarification` object — `{"question": "...", "options": [{"route": "chat", "label": "..."}, ...]}` — for the caller to present. Resend the same query with the request field `route` set to `chat`, `search`, or `tool` to skip the router and dispatch through the normal auto path (any other value returns `422`). Read just the intent field:
 ```bash
 curl -s -X POST http://localhost:7860/api/agent \
   -H "Content-Type: application/json" \
@@ -127,8 +127,10 @@ curl -s -X POST http://localhost:7860/api/feedback \
 Both `POST /api/agent` and `/api/agent/stream` run the same dispatcher
 (`_run_agent_impl`). The optional `mode` field selects the path; **when `mode` is
 omitted (the default, and what the bundled UI always sends) the request goes
-through the 3-way auto-router.** Every path returns the same shape
-`(answer, citations, documents, intent, …)` with `intent ∈ {search, chat, tool}`.
+through the auto-router, which may also ask the user to clarify.** Every path
+returns the same shape `(answer, citations, documents, intent, …)` with
+`intent ∈ {search, chat, tool, clarify}`; `clarify` is reachable only through
+the auto-router and carries no agent output.
 
 All three multi-turn paths are **conversation-aware** — `search_agent`,
 `tool_agent`, and `chat_loop` thread bounded prior session turns into the loop.
@@ -148,8 +150,10 @@ For the shared search pipeline, prior session messages are bounded and used to r
 
 **Auto-router:** a non-`auto` source forces `search`; otherwise deterministic
 regex cues, an optional learned intent model, an optional LLM classifier, and a
-rule-based fallback choose `chat`, `search`, or `tool`. Bare terms such as `RAG`
-and `GRPO` are deterministic searches.
+rule-based heuristic choose `chat`, `search`, or `tool` whenever any of them has
+a signal. Bare terms such as `RAG` and `GRPO` are deterministic searches. When
+none of those steps has a signal at all, the router returns `intent="clarify"`
+and asks the user instead of guessing (see [Auto-router decision order](request-routing.md#auto-router-decision-order)).
 
 For an unfiltered auto-routed search, `source_provider=auto` means **internal
 retrieval → sufficiency gate → SerpAPI → configured browser-search service**.

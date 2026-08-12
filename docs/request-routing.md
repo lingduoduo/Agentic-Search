@@ -12,10 +12,11 @@ The pipeline described here is query-time orchestration over indexes produced of
 request
   ├─ mode is set ───────────────→ run that explicit mode
   └─ mode is omitted
-       └─ route_query ──────────→ chat | search | tool
+       └─ route_query ──────────→ chat | search | tool | clarify
                                    │
                                    ├─ chat → grounded AgenticRAGLoop
                                    ├─ tool → ToolAgentLoop, or grounded chat fallback
+                                   ├─ clarify → ask the user which route they meant; no agent runs
                                    └─ search
                                         1. internal retrieval
                                         2. sufficiency gate
@@ -94,7 +95,8 @@ When `mode` is omitted, `route_query` chooses one strategy. The cascade is inten
    - conversational or generative starts normally → `chat`.
 3. If configured, a trained intent model may select a route when its confidence reaches `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.6`).
 4. Otherwise an available LLM runs the three-label classifier at temperature 0.
-5. If no LLM exists or classification fails, the rule-based router applies `tool` → `search` → bare lookup → `chat` precedence.
+5. If no LLM exists or classification fails, a heuristic cue is checked with `tool` → `search` → bare lookup → `chat` precedence. When a cue matches, that route is used deterministically.
+6. If no heuristic cue matches at all, the router asks the user which route they meant instead of guessing (see below).
 
 Explicit modes and providers, then regex decisions, precede the learned model. Covered model predictions skip the LLM classifier. Model abstentions fall through to that classifier and then to the rule-based router when needed. Downstream chat, search, and tool execution is unchanged: the model selects only the existing execution family and cannot select a specific tool or bypass authorization.
 
