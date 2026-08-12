@@ -214,6 +214,86 @@ def test_batch_padding_does_not_change_prediction_logits():
     assert torch.allclose(single, batched, atol=1e-6)
 
 
+def test_unknown_token_changes_the_pooled_vector():
+    """An unread word must be visible to the model, not silently dropped."""
+    torch = pytest.importorskip("torch")
+    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
+    pipeline.train(
+        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
+        epochs=1,
+        min_freq=1,
+        seed=17,
+    )
+
+    known = pipeline._encode(["find"])
+    with_unknown = pipeline._encode(["find", "zzzznotatoken"])
+
+    assert known == [pipeline._vocab.token2idx["find"]]
+    assert with_unknown == [pipeline._vocab.token2idx["find"], 1]
+
+    net = pipeline._model._net
+    net.eval()
+    with torch.no_grad():
+        pooled_known = net.embedding(pipeline._model._pad_sequences([known])).sum(dim=1)
+        pooled_unknown = net.embedding(
+            pipeline._model._pad_sequences([with_unknown])
+        ).sum(dim=1)
+    assert not torch.allclose(pooled_known, pooled_unknown)
+
+
+def test_encode_maps_an_all_unknown_query_to_the_unknown_id():
+    pytest.importorskip("torch")
+    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
+    pipeline.train(
+        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
+        epochs=1,
+        min_freq=1,
+        seed=17,
+    )
+
+    assert pipeline._encode(["zzzznotatoken"]) == [1]
+    assert pipeline._encode([]) == [1]
+
+
+def test_min_freq_two_trains_the_unknown_embedding():
+    """A vocabulary that covers every training token leaves index 1 random.
+
+    Rare tokens must fall out of the vocabulary so unknown words actually occur
+    during training; otherwise the unknown direction is never updated and an
+    unread word produces confident nonsense instead of abstention.
+    """
+    torch = pytest.importorskip("torch")
+    data = [
+        (["find", "the", "runbook"], "search"),
+        (["find", "the", "invoice"], "search"),
+        (["explain", "the", "tradeoff"], "chat"),
+        (["explain", "the", "design"], "chat"),
+        (["send", "the", "summary"], "tool"),
+        (["send", "the", "note"], "tool"),
+    ]
+
+    pipeline = IntentPipeline(vocab_size=64, embedding_dim=4, hidden_dim=8)
+    pipeline.train(data, epochs=1, min_freq=2, seed=17)
+    encoded = [pipeline._encode(tokens) for tokens, _ in data]
+    assert any(1 in row for row in encoded), "singletons must encode as unknown"
+    after_one_epoch = pipeline._model._net.embedding.weight[1].detach().clone()
+
+    trained = IntentPipeline(vocab_size=64, embedding_dim=4, hidden_dim=8)
+    trained.train(data, epochs=25, min_freq=2, seed=17)
+    after_many_epochs = trained._model._net.embedding.weight[1].detach()
+
+    assert not torch.allclose(after_one_epoch, after_many_epochs)
+
+
+def test_load_rejects_version_two_checkpoint_with_retraining_message(tmp_path):
+    torch = pytest.importorskip("torch")
+    path = tmp_path / "v2-intent.pt"
+    torch.save({"version": 2}, path)
+
+    with pytest.raises(ValueError, match="retrain"):
+        IntentPipeline.load(str(path))
+
+
 def test_training_rejects_vocabulary_that_exceeds_embedding_table():
     pytest.importorskip("torch")
     pipeline = IntentPipeline(vocab_size=2, embedding_dim=4, hidden_dim=8)
@@ -245,7 +325,7 @@ def test_training_seed_reproduces_predictions():
     assert second_prediction.confidence == pytest.approx(first_prediction.confidence)
 
 
-def test_save_writes_version_two_checkpoint_contract(tmp_path):
+def test_save_writes_version_three_checkpoint_contract(tmp_path):
     torch = pytest.importorskip("torch")
     pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
     pipeline.train(
@@ -263,13 +343,14 @@ def test_save_writes_version_two_checkpoint_contract(tmp_path):
     )
 
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    assert checkpoint["version"] == 2
+    assert checkpoint["version"] == 3
     assert checkpoint["intent_labels"] == ["chat", "search", "tool"]
     assert checkpoint["dataset_fingerprint"] == "sha256:abc"
     assert checkpoint["promoted_min_confidence"] is None
     assert checkpoint["preprocessing"] == {
         "tokenizer": "document_index.tokenize_text",
         "padding_id": 0,
+        "unknown_id": 1,
         "pooling": "masked_mean",
     }
 

@@ -65,7 +65,9 @@ class IntentTrainingConfig:
     seed: int = 17
     epochs: int = 10
     lr: float = 1e-3
-    min_freq: int = 1
+    # 2, not 1: singleton tokens must fall out of the vocabulary so unknown
+    # words occur during training and index 1 learns a real direction.
+    min_freq: int = 2
     vocab_size: int = 5000
     embedding_dim: int = 128
     hidden_dim: int = 256
@@ -1091,7 +1093,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--seed", type=int, default=17)
     train.add_argument("--epochs", type=int, default=10)
     train.add_argument("--lr", type=float, default=1e-3)
-    train.add_argument("--min-freq", type=int, default=1)
+    train.add_argument("--min-freq", type=int, default=2)
     train.add_argument("--vocab-size", type=int, default=5000)
     train.add_argument("--embedding-dim", type=int, default=128)
     train.add_argument("--hidden-dim", type=int, default=256)

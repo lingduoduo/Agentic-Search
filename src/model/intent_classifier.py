@@ -10,6 +10,12 @@ from typing import Any, Sequence
 
 INTENT_LABELS: list[str] = ["chat", "search", "tool"]
 
+# Padding stays 0 so masked-mean pooling keeps ignoring it. Unknown words take
+# 1, which `Vocabulary.build` never assigns (real tokens start at 2), so an
+# unread word gets a trained embedding instead of vanishing into the mask.
+PADDING_ID = 0
+UNKNOWN_ID = 1
+
 
 @dataclass(frozen=True)
 class IntentPrediction:
@@ -120,6 +126,19 @@ class IntentPipeline:
         self._label_to_id = {label: i for i, label in enumerate(INTENT_LABELS)}
         self.is_trained = False
 
+    def _encode(self, tokens: Sequence[str]) -> list[int]:
+        """Encode tokens, giving unknown words their own embedding index.
+
+        ``Vocabulary.encode`` returns 0 for a token it does not recognise, and
+        0 is the padding id that pooling masks out, so an unknown word would
+        otherwise be deleted. Every 0 it returns is unambiguously unknown.
+        """
+        encoded = [
+            UNKNOWN_ID if index == PADDING_ID else index
+            for index in self._vocab.encode(list(tokens))
+        ]
+        return encoded or [UNKNOWN_ID]
+
     def train(
         self,
         data: list[tuple[list[str], str]],
@@ -145,7 +164,7 @@ class IntentPipeline:
                 f"{self._model._net.embedding.num_embeddings}: "
                 f"maximum token index is {max_vocab_index}"
             )
-        encoded = [self._vocab.encode(tokens) or [0] for tokens, _ in data]
+        encoded = [self._encode(tokens) for tokens, _ in data]
         labels = [self._label_to_id[label] for _, label in data]
         self._model.train_batched(encoded, labels, epochs=epochs, lr=lr)
         self.is_trained = True
@@ -153,7 +172,7 @@ class IntentPipeline:
     def predict(self, tokens: Sequence[str]) -> IntentPrediction:
         if not self.is_trained:
             raise RuntimeError("Pipeline not trained. Call train() first.")
-        encoded = self._vocab.encode(list(tokens)) or [0]
+        encoded = self._encode(list(tokens))
         return self._model.predict_batch([encoded])[0]
 
     def predict_text(self, text: str) -> IntentPrediction:
@@ -180,11 +199,12 @@ class IntentPipeline:
                 "promoted_min_confidence must be null or a finite probability"
             )
         checkpoint = {
-            "version": 2,
+            "version": 3,
             "intent_labels": list(INTENT_LABELS),
             "preprocessing": {
                 "tokenizer": "document_index.tokenize_text",
-                "padding_id": 0,
+                "padding_id": PADDING_ID,
+                "unknown_id": UNKNOWN_ID,
                 "pooling": "masked_mean",
             },
             "dataset_fingerprint": dataset_fingerprint,
@@ -210,22 +230,27 @@ class IntentPipeline:
         from src.internal.document_index.text import Vocabulary
 
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-        if checkpoint.get("version") == 1:
+        version = checkpoint.get("version")
+        if version == 1:
             raise ValueError(
                 "Checkpoint version 1 uses unsafe legacy class indices; retrain "
                 "the intent model before loading it."
             )
-        if checkpoint.get("version") != 2:
+        if version == 2:
             raise ValueError(
-                f"Unsupported checkpoint version: {checkpoint.get('version')}"
+                "Checkpoint version 2 was trained with an encoding that deleted "
+                "unknown words; retrain the intent model before loading it."
             )
+        if version != 3:
+            raise ValueError(f"Unsupported checkpoint version: {version}")
         if checkpoint.get("intent_labels") != INTENT_LABELS:
             raise ValueError(
                 "Checkpoint intent_labels do not match the supported label order."
             )
         expected_preprocessing = {
             "tokenizer": "document_index.tokenize_text",
-            "padding_id": 0,
+            "padding_id": PADDING_ID,
+            "unknown_id": UNKNOWN_ID,
             "pooling": "masked_mean",
         }
         if checkpoint.get("preprocessing") != expected_preprocessing:
