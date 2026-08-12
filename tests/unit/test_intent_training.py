@@ -30,6 +30,24 @@ def test_build_examples_emit_only_route_labels():
     assert labels == {"chat", "search", "tool"}  # all three represented
 
 
+def test_build_examples_emit_ambiguous_cases_for_every_label():
+    """The learned route only matters where the regex router defers.
+
+    A corpus of phrases the deterministic router already decides leaves the
+    model with no held-out coverage, so generation must emit requests that
+    regex defers for each label.
+    """
+    from src.internal.servers.web.intent_routing import _regex_route
+
+    doc = {"id": "d1", "title": "FAISS", "contents": "vector index library"}
+    examples = build_examples_for_document(doc, ["vector", "index", "ranking"])
+    deferred = [e for e in examples if _regex_route(e["text"]) is None]
+
+    assert {e["label"] for e in deferred} == {"chat", "search", "tool"}
+    assert all("ambiguous" in e["tags"] for e in deferred)
+    assert len(deferred) * 3 >= len(examples)  # at least a third stay ambiguous
+
+
 def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
     pytest.importorskip("torch")
 

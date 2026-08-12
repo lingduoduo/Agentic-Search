@@ -18,7 +18,7 @@ python -m src.model.intent_training baseline \
   --seed 17
 ```
 
-The generator reproduces the seed-17 held-out split and runs the production high-precision regex router itself. It requires captured fallback rows for exactly the remaining ambiguous IDs, rejects missing or extra captures, and writes the complete regex → classifier/rule baseline consumed by training. No network or external LLM is invoked by the generator; operators can capture their chosen production classifier separately or supply deterministic rule-based fallback results.
+The generator reproduces the seed-17 held-out split and runs the production high-precision regex router itself. It requires captured fallback rows for exactly the remaining ambiguous IDs, rejects missing or extra captures, and writes the complete regex → classifier/rule baseline consumed by training. No network or external LLM is invoked by the generator; operators can capture their chosen production classifier separately or supply deterministic rule-based fallback results. Capture `classifier` rows to benchmark against a deployment that runs the LLM classifier: a purely `rule_based` capture reports a zero classifier-fallback rate and no classifier latency, so the fallback-reduction and latency gates have nothing to improve on and the run cannot be promotable.
 
 Both input and output prediction files are JSON arrays. Every record has exactly this schema:
 

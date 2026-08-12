@@ -219,6 +219,23 @@ def build_examples_for_document(
         (f"create a ticket for {t1}", "tool", ("direct",)),
         (f"schedule a meeting about {title}", "tool", ("direct",)),
         (f"open a pull request for {t2}", "tool", ("direct",)),
+        # Requests the deterministic router defers on: no start-anchored cue,
+        # no bare term, no trailing question mark. The learned model only ever
+        # decides this region, so every label needs examples of it.
+        (f"{title} benchmark numbers from last quarter", "search", ("ambiguous",)),
+        (f"the official {t1} configuration reference page", "search", ("ambiguous",)),
+        (f"walk me through the tradeoffs of {t1} versus {t2}", "chat", ("ambiguous",)),
+        (f"I'm confused about when {t1} beats {t2}", "chat", ("ambiguous",)),
+        (
+            f"the {title} rollout needs a calendar invite for the platform team",
+            "tool",
+            ("ambiguous",),
+        ),
+        (
+            f"please push the {t1} summary to the shared channel",
+            "tool",
+            ("ambiguous",),
+        ),
     )
     document_id = str(document.get("_intent_document_id", document.get("id", title)))
     label_offsets = Counter[str]()
