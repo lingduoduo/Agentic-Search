@@ -67,11 +67,17 @@ class IntentTrainingConfig:
     out_of_scope_path: Path | None = None
     eval_queries_path: Path | None = None
     seed: int = 17
-    epochs: int = 10
+    # `train_batched` takes one full-batch step per epoch, so 10 epochs is 10
+    # optimizer steps — measurably untrained (realistic accuracy 0.333 versus
+    # 0.567 at 300). See docs/training-and-evaluation.md.
+    epochs: int = 300
     lr: float = 1e-3
-    # 2, not 1: singleton tokens must fall out of the vocabulary so unknown
-    # words occur during training and index 1 learns a real direction.
-    min_freq: int = 2
+    # 1, not 2: dropping singletons was measured to cost more vocabulary than
+    # the unknown-token signal it buys. On the committed dataset min_freq=2
+    # left only 4 of 341 training rows containing an unknown word while
+    # shrinking the vocabulary 147 -> 135, and realistic accuracy fell from
+    # 0.600 to 0.500 with the out-of-scope margin going negative.
+    min_freq: int = 1
     vocab_size: int = 5000
     embedding_dim: int = 128
     hidden_dim: int = 256
@@ -1133,9 +1139,9 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--eval-queries", type=Path)
     train.add_argument("--output-dir", required=True, type=Path)
     train.add_argument("--seed", type=int, default=17)
-    train.add_argument("--epochs", type=int, default=10)
+    train.add_argument("--epochs", type=int, default=300)
     train.add_argument("--lr", type=float, default=1e-3)
-    train.add_argument("--min-freq", type=int, default=2)
+    train.add_argument("--min-freq", type=int, default=1)
     train.add_argument("--vocab-size", type=int, default=5000)
     train.add_argument("--embedding-dim", type=int, default=128)
     train.add_argument("--hidden-dim", type=int, default=256)

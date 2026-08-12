@@ -1,3 +1,4 @@
+import functools
 import json
 from collections import Counter
 from pathlib import Path
@@ -7,7 +8,12 @@ import pytest
 
 from src.internal.document_index.text import tokenize_text
 from src.model import intent_training
-from src.model.intent_data import load_intent_examples, split_intent_examples
+from src.model.intent_data import (
+    load_intent_eval_queries,
+    load_intent_examples,
+    load_out_of_scope_probes,
+    split_intent_examples,
+)
 from src.model.intent_training import (
     IntentTrainingConfig,
     build_examples_for_document,
@@ -19,6 +25,7 @@ from src.model.intent_evaluation import (
     compare_for_promotion,
     compose_candidate_cascade,
     evaluate_intent_predictions,
+    realistic_accuracy_report,
 )
 
 
@@ -177,6 +184,87 @@ def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
     report = json.loads((tmp_path / "evaluation_report.json").read_text())
     assert report["labels"] == ["chat", "search", "tool"]
     assert "promotion" in report
+
+
+DATA = Path(__file__).resolve().parents[2] / "data"
+
+# Measured on the first frame-based run (seed 17, 300 epochs, min_freq 1):
+# realistic accuracy 0.5667, out-of-scope separation margin +0.0708. Pinned a
+# little below each so a regression is caught without the test tracking noise.
+# Raise them when a run beats them; never lower without recording why.
+#
+# Honest reading of the accuracy number: 0.5667 does NOT beat the 3/5 = 0.60
+# hand-scored diagnosis baseline. It is pinned as a floor, not as evidence the
+# model is ready to promote. See
+# docs/superpowers/plans/2026-08-12-intent-model-realistic-accuracy.md.
+_REALISTIC_ACCURACY_FLOOR = 0.55
+_OUT_OF_SCOPE_MARGIN_FLOOR = 0.03
+
+
+@functools.lru_cache(maxsize=1)
+def _pipeline_trained_on_committed_examples():
+    from src.model.intent_classifier import IntentPipeline
+
+    split = split_intent_examples(
+        load_intent_examples(DATA / "intent_examples.json"), seed=17
+    )
+    pipeline = IntentPipeline(vocab_size=5000, embedding_dim=128, hidden_dim=256)
+    pipeline.train(
+        [(tokenize_text(example.text), example.label) for example in split.train],
+        epochs=300,
+        lr=1e-3,
+        min_freq=1,
+        seed=17,
+    )
+    return pipeline
+
+
+def test_frame_trained_model_holds_the_realistic_accuracy_bar():
+    """The templated split measures memorization; this set measures the model."""
+    pytest.importorskip("torch")
+    pipeline = _pipeline_trained_on_committed_examples()
+
+    records = []
+    for query in load_intent_eval_queries(DATA / "intent_eval_queries.json"):
+        prediction = pipeline.predict_text(query.text)
+        records.append(
+            IntentPredictionRecord(
+                example_id=query.id,
+                expected=query.label,
+                predicted=prediction.intent,
+                confidence=prediction.confidence,
+                latency_ms=1.0,
+                mechanism="model",
+            )
+        )
+
+    report = realistic_accuracy_report(records, threshold=0.5)
+    assert report["accuracy"] >= _REALISTIC_ACCURACY_FLOOR
+
+
+def test_out_of_scope_requests_score_below_in_scope_requests():
+    """Chatter is in-vocabulary and class-neutral, so it must score lower.
+
+    Before the balanced fillers landed, every fully-out-of-vocabulary probe
+    pooled to the zero vector and returned one identical prediction — the
+    model could not tell "I read this" from "I saw nothing".
+    """
+    pytest.importorskip("torch")
+    pipeline = _pipeline_trained_on_committed_examples()
+
+    in_scope = [
+        pipeline.predict_text(query.text).confidence
+        for query in load_intent_eval_queries(DATA / "intent_eval_queries.json")
+    ]
+    out_of_scope = [
+        pipeline.predict_text(text).confidence
+        for _, text in load_out_of_scope_probes(DATA / "intent_out_of_scope.json")
+    ]
+
+    # Distinct scores prove the probes are being read, not masked to zero.
+    assert len({round(value, 4) for value in out_of_scope}) > 1
+    margin = sum(in_scope) / len(in_scope) - sum(out_of_scope) / len(out_of_scope)
+    assert margin >= _OUT_OF_SCOPE_MARGIN_FLOOR
 
 
 _HAND_WRITTEN_EVAL_TEXT = {
