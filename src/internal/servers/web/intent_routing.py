@@ -216,9 +216,11 @@ def classify_route(query: str, llm: "LLMClient") -> "tuple[RouteStrategy, dict]"
     """LLM-backed 3-way route classification.
 
     Returns ``(strategy, detail)`` where ``detail`` is
-    ``{"prompt": ..., "raw_label": ...}``. Defaults to CHAT on an empty or
-    unexpected response. The caller (``route_query``) records the intent capture
-    stage, so this no longer emits one itself.
+    ``{"raw_label": ...}``. The prompt is deliberately omitted because it
+    contains the raw user query and this detail is recorded in request captures.
+    Defaults to CHAT on an empty or unexpected response. The caller
+    (``route_query``) records the intent capture stage, so this no longer emits
+    one itself.
     """
     from src.context.models import ChatMessage
 
@@ -243,7 +245,7 @@ def classify_route(query: str, llm: "LLMClient") -> "tuple[RouteStrategy, dict]"
                 "Route classification returned unexpected response %r; defaulting to chat.",
                 content,
             )
-    return strategy, {"prompt": prompt, "raw_label": content}
+    return strategy, {"raw_label": content}
 
 
 def _record_intent(mechanism: str, strategy: RouteStrategy, detail: dict) -> None:

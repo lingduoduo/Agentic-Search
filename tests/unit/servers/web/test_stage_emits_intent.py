@@ -38,7 +38,8 @@ def test_route_query_emits_regex_intent_stage():
 
 
 def test_route_query_emits_classifier_intent_stage_with_detail():
-    # A phrase _regex_route defers on → classifier path, preserving prompt/raw_label.
+    # A phrase _regex_route defers on → classifier path, preserving only the
+    # safe raw label rather than the prompt containing the user's query.
     token = rc.start_capture("r", "the procurement approval flow")
     try:
         route_query(
@@ -51,7 +52,7 @@ def test_route_query_emits_classifier_intent_stage_with_detail():
         assert stages[0].label == "classifier"
         assert stages[0].payload["mechanism"] == "classifier"
         assert stages[0].payload["raw_label"] == "search"
-        assert "prompt" in stages[0].payload
+        assert "prompt" not in stages[0].payload
     finally:
         rc.reset_capture(token)
 
@@ -160,6 +161,7 @@ def test_abstaining_model_records_evaluation_and_classifier_fallback(monkeypatch
         assert model_stages[0].payload["fallback_reason"] == "model_below_threshold"
         assert intent_stages[0].label == "classifier"
         assert intent_stages[0].payload["fallback_reason"] == "model_below_threshold"
+        assert "prompt" not in intent_stages[0].payload
     finally:
         rc.reset_capture(token)
 
