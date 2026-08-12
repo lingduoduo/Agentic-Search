@@ -2,47 +2,66 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
-import os
+from pathlib import Path
+from time import perf_counter
 
+from src.internal.configs import AppSettings, load_app_settings
 from src.internal.servers.web.intent_routing import RouteStrategy
 
 logger = logging.getLogger(__name__)
 
-_INTENT_MODEL: object | None = None  # None=unset, False=failed/absent, pipeline=loaded
+_INTENT_MODELS: dict[Path, object | None] = {}
 
 _ROUTE_VALUES = {s.value for s in RouteStrategy}
 
 
-def intent_min_confidence() -> float:
-    return float(os.environ.get("AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", "0.6"))
+@dataclass(frozen=True)
+class IntentModelDecision:
+    """A valid route prediction with serving diagnostics."""
+
+    strategy: RouteStrategy
+    confidence: float
+    threshold: float
+    latency_ms: float
 
 
-def load_intent_model():
-    """Lazy singleton trained intent classifier; None when unavailable."""
-    global _INTENT_MODEL
-    if _INTENT_MODEL is not None:
-        return _INTENT_MODEL or None
-    path = os.environ.get("AGENTIC_SEARCH_INTENT_MODEL_PATH", "").strip()
-    if not path:
-        _INTENT_MODEL = False
+def intent_min_confidence(settings: AppSettings | None = None) -> float:
+    """Return the configured model confidence threshold."""
+    return (settings or load_app_settings()).intent_model_min_confidence
+
+
+def load_intent_model(settings: AppSettings | None = None) -> object | None:
+    """Load the configured intent model lazily, caching by resolved artifact."""
+    resolved_settings = settings or load_app_settings()
+    configured_path = resolved_settings.intent_model_path
+    if configured_path is None:
         return None
+    artifact_path = configured_path.resolve()
+    if artifact_path in _INTENT_MODELS:
+        return _INTENT_MODELS[artifact_path]
     try:
         from src.model.intent_classifier import IntentPipeline
 
-        _INTENT_MODEL = IntentPipeline.load(path)
+        model = IntentPipeline.load(str(artifact_path))
     except Exception:
         logger.exception("intent-model: load failed — ML routing disabled")
-        _INTENT_MODEL = False
-        return None
-    return _INTENT_MODEL
+        _INTENT_MODELS[artifact_path] = None
+    else:
+        _INTENT_MODELS[artifact_path] = model
+    return _INTENT_MODELS[artifact_path]
 
 
-def predict_route(query: str) -> "tuple[RouteStrategy, float] | None":
-    """(RouteStrategy, confidence) from the trained model, or None to defer."""
-    model = load_intent_model()
+def predict_route(
+    query: str, *, settings: AppSettings | None = None
+) -> IntentModelDecision | None:
+    """Return a supported model route decision, or None to defer."""
+    resolved_settings = settings or load_app_settings()
+    model = load_intent_model(resolved_settings)
     if model is None:
         return None
+    start = perf_counter()
     try:
         pred = model.predict_text(query)
     except Exception:
@@ -50,4 +69,9 @@ def predict_route(query: str) -> "tuple[RouteStrategy, float] | None":
         return None
     if pred.intent not in _ROUTE_VALUES:
         return None
-    return RouteStrategy(pred.intent), float(pred.confidence)
+    return IntentModelDecision(
+        strategy=RouteStrategy(pred.intent),
+        confidence=float(pred.confidence),
+        threshold=resolved_settings.intent_model_min_confidence,
+        latency_ms=(perf_counter() - start) * 1_000,
+    )

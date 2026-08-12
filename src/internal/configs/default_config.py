@@ -21,6 +21,11 @@ DEFAULT_CONFIG: dict = {
     "AGENTIC_SEARCH_WEB_PORT": 8080,
     "AGENTIC_SEARCH_WEB_DB_PATH": ":memory:",
     "AGENTIC_SEARCH_WEB_TOP_K": 5,
+    # -------------------------------------------------------------------------
+    # Intent model serving
+    # -------------------------------------------------------------------------
+    "AGENTIC_SEARCH_INTENT_MODEL_PATH": "",
+    "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": 0.6,
     "WEB_DOMAIN": "http://localhost:8080",
     # -------------------------------------------------------------------------
     # Authentication

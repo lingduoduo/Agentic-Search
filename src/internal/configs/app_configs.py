@@ -158,6 +158,8 @@ class AppSettings:
     # hardware: MPS runs a 1.5B model at a few tokens/sec, so 120s cuts a long
     # answer mid-word long before the token budget is reached. 0 disables it.
     generation_timeout_seconds: float = 120.0
+    intent_model_path: Path | None = None
+    intent_model_min_confidence: float = 0.6
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -176,6 +178,20 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         or tool_approval_timeout_seconds <= 0
     ):
         raise ValueError("TOOL_APPROVAL_TIMEOUT_SECONDS must be positive.")
+    intent_model_min_confidence = get_env_float(
+        source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.6
+    )
+    if (
+        not math.isfinite(intent_model_min_confidence)
+        or not 0.0 <= intent_model_min_confidence <= 1.0
+    ):
+        raise ValueError(
+            "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE must be a finite "
+            "probability between 0 and 1."
+        )
+    intent_model_path_value = get_env_str(
+        source, "AGENTIC_SEARCH_INTENT_MODEL_PATH", None
+    )
     return AppSettings(
         services=ServiceSettings(
             retrieval_url=get_env_str(
@@ -259,6 +275,10 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         generation_timeout_seconds=get_env_float(
             source, "AGENTIC_SEARCH_GENERATION_TIMEOUT", 120.0
         ),
+        intent_model_path=(
+            Path(intent_model_path_value) if intent_model_path_value else None
+        ),
+        intent_model_min_confidence=intent_model_min_confidence,
     )
 
 
