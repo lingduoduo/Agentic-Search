@@ -10,6 +10,13 @@ from src.model.intent_training import (
     build_examples_for_document,
     run_intent_training,
 )
+from src.model.intent_evaluation import (
+    IntentPredictionRecord,
+    PromotionCriteria,
+    compare_for_promotion,
+    compose_candidate_cascade,
+    evaluate_intent_predictions,
+)
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "intent"
@@ -364,6 +371,109 @@ def test_training_rejects_baseline_ids_that_do_not_match_test_split(tmp_path):
     assert not (tmp_path / "artifacts").exists()
 
 
+def test_baseline_cli_generates_regex_records_and_requires_only_ambiguous_captures(
+    tmp_path,
+):
+    fallback_path = tmp_path / "fallback.json"
+    fallback_path.write_text(
+        json.dumps(
+            [
+                {
+                    "example_id": "chat-b",
+                    "expected": "chat",
+                    "predicted": "chat",
+                    "confidence": 1.0,
+                    "latency_ms": 40.0,
+                    "mechanism": "classifier",
+                },
+                {
+                    "example_id": "search-c",
+                    "expected": "search",
+                    "predicted": "search",
+                    "confidence": 1.0,
+                    "latency_ms": 45.0,
+                    "mechanism": "classifier",
+                },
+                {
+                    "example_id": "tool-a",
+                    "expected": "tool",
+                    "predicted": "tool",
+                    "confidence": 1.0,
+                    "latency_ms": 50.0,
+                    "mechanism": "rule_based",
+                },
+            ]
+        )
+    )
+    output = tmp_path / "baseline.json"
+
+    exit_code = intent_training.main(
+        [
+            "baseline",
+            "--examples",
+            str(FIXTURES / "intent_examples.json"),
+            "--fallback-predictions",
+            str(fallback_path),
+            "--output",
+            str(output),
+            "--seed",
+            "17",
+        ]
+    )
+
+    assert exit_code == 0
+    records = json.loads(output.read_text())
+    assert {record["example_id"] for record in records} == {
+        "chat-b",
+        "chat-b-regex",
+        "search-c",
+        "search-c-regex",
+        "tool-a",
+        "tool-a-regex",
+    }
+    tool = next(record for record in records if record["example_id"] == "tool-a-regex")
+    assert tool["mechanism"] == "regex"
+    assert tool["predicted"] == "tool"
+
+
+def test_baseline_cli_rejects_missing_ambiguous_capture(tmp_path, capsys):
+    fallback_path = tmp_path / "fallback.json"
+    fallback_path.write_text("[]")
+
+    exit_code = intent_training.main(
+        [
+            "baseline",
+            "--examples",
+            str(FIXTURES / "intent_examples.json"),
+            "--fallback-predictions",
+            str(fallback_path),
+            "--output",
+            str(tmp_path / "baseline.json"),
+            "--seed",
+            "17",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "ambiguous held-out" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        [],
+        ["train", "--examples"],
+        ["unknown-command"],
+    ],
+)
+def test_cli_usage_errors_return_one_without_artifacts(argv, tmp_path, capsys):
+    exit_code = intent_training.main(argv)
+
+    assert exit_code == 1
+    assert "usage:" in capsys.readouterr().err
+    assert not list(tmp_path.iterdir())
+
+
 def test_train_cli_returns_zero_for_promotable_run(tmp_path, monkeypatch):
     monkeypatch.setattr(
         intent_training,
@@ -409,6 +519,31 @@ def test_train_cli_returns_two_for_real_nonpromotable_workflow(tmp_path):
 
     assert exit_code == 2
     assert (tmp_path / "artifacts" / "intent_model.pt").exists()
+
+
+def test_deterministic_fixture_candidate_passes_default_promotion_gates():
+    baseline_payload = json.loads((FIXTURES / "baseline_predictions.json").read_text())
+    candidate_payload = json.loads(
+        (FIXTURES / "promotable_candidate_predictions.json").read_text()
+    )
+    baseline = tuple(IntentPredictionRecord(**record) for record in baseline_payload)
+    model = tuple(IntentPredictionRecord(**record) for record in candidate_payload)
+    threshold = 0.95
+
+    candidate = compose_candidate_cascade(model, baseline, threshold=threshold)
+    decision = compare_for_promotion(
+        evaluate_intent_predictions(candidate, threshold=threshold),
+        evaluate_intent_predictions(baseline, threshold=threshold),
+        PromotionCriteria(),
+    )
+
+    assert decision.promotable is True
+    assert all(gate["passed"] for gate in decision.gates)
+    assert all(
+        candidate_record == baseline_record
+        for candidate_record, baseline_record in zip(candidate, baseline)
+        if baseline_record.mechanism == "regex"
+    )
 
 
 def test_train_cli_returns_one_for_malformed_input_without_traceback(tmp_path, capsys):

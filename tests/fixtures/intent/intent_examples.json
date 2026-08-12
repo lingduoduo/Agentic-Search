@@ -8,10 +8,17 @@
   },
   {
     "id": "chat-b",
-    "text": "Explain how to send an email securely",
+    "text": "secure email guidance for a new teammate",
     "label": "chat",
     "source": "chat-b",
     "tags": ["hard_negative"]
+  },
+  {
+    "id": "chat-b-regex",
+    "text": "Explain secure email practices",
+    "label": "chat",
+    "source": "chat-b",
+    "tags": ["deterministic"]
   },
   {
     "id": "chat-c",
@@ -43,10 +50,17 @@
   },
   {
     "id": "search-c",
-    "text": "Locate the duplicate-document policy",
+    "text": "the duplicate-document policy reference",
     "label": "search",
     "source": "search-c",
     "tags": ["paraphrase"]
+  },
+  {
+    "id": "search-c-regex",
+    "text": "Locate the duplicate-document policy",
+    "label": "search",
+    "source": "search-c",
+    "tags": ["deterministic"]
   },
   {
     "id": "search-d",
@@ -57,10 +71,17 @@
   },
   {
     "id": "tool-a",
-    "text": "Send the security summary to the project owner",
+    "text": "the security summary needs delivery to the project owner",
     "label": "tool",
     "source": "tool-a",
     "tags": ["paraphrase"]
+  },
+  {
+    "id": "tool-a-regex",
+    "text": "Send the security summary to the project owner",
+    "label": "tool",
+    "source": "tool-a",
+    "tags": ["deterministic"]
   },
   {
     "id": "tool-b",

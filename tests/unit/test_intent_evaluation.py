@@ -6,7 +6,9 @@ from src.model.intent_evaluation import (
     IntentEvaluationReport,
     IntentPredictionRecord,
     PromotionCriteria,
+    authoritative_routes_match,
     compare_for_promotion,
+    compose_candidate_cascade,
     evaluate_intent_predictions,
     select_confidence_threshold,
 )
@@ -149,6 +151,7 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
         "high_confidence_errors_maximum",
         "llm_fallback_reduction",
         "latency_improvement",
+        "authoritative_routes_unchanged",
     }
     assert gates["llm_fallback_reduction"] == {
         "name": "llm_fallback_reduction",
@@ -161,3 +164,57 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
         "llm_fallback_reduction",
         "latency_improvement",
     }
+
+
+def test_candidate_cascade_keeps_regex_routes_and_models_only_ambiguous_queries():
+    baseline = [
+        IntentPredictionRecord("regex", "search", "search", 1.0, 0.1, "regex"),
+        IntentPredictionRecord("ambiguous", "tool", "chat", 1.0, 40.0, "classifier"),
+    ]
+    model = [
+        IntentPredictionRecord("regex", "search", "tool", 0.99, 1.0, "model"),
+        IntentPredictionRecord("ambiguous", "tool", "tool", 0.98, 1.0, "model"),
+    ]
+
+    candidate = compose_candidate_cascade(model, baseline, threshold=0.9)
+    report = evaluate_intent_predictions(candidate, threshold=0.9)
+
+    assert candidate[0] == baseline[0]
+    assert candidate[1].mechanism == "model"
+    assert report.covered_records == 1
+    assert report.coverage == 0.5
+    assert report.fallback_rate == 0.0
+
+
+def test_candidate_cascade_abstention_uses_same_captured_fallback():
+    baseline = [
+        IntentPredictionRecord("ambiguous", "tool", "chat", 1.0, 40.0, "classifier")
+    ]
+    model = [IntentPredictionRecord("ambiguous", "tool", "tool", 0.5, 1.0, "model")]
+
+    candidate = compose_candidate_cascade(model, baseline, threshold=0.9)
+
+    assert candidate == tuple(baseline)
+
+
+def test_authoritative_route_gate_fails_when_candidate_changes_regex_record():
+    baseline = [IntentPredictionRecord("regex", "search", "search", 1.0, 0.1, "regex")]
+    candidate = [IntentPredictionRecord("regex", "search", "tool", 0.99, 1.0, "model")]
+    report = evaluate_intent_predictions(
+        candidate,
+        threshold=0.9,
+        authoritative_routes_unchanged=authoritative_routes_match(candidate, baseline),
+    )
+
+    decision = compare_for_promotion(
+        report,
+        _report(
+            macro_f1=1.0,
+            tool_precision=1.0,
+            fallback_rate=1.0,
+            p50_latency_ms=40.0,
+        ),
+        PromotionCriteria(),
+    )
+
+    assert "authoritative_routes_unchanged" in decision.failed_gates

@@ -28,7 +28,9 @@ from .intent_evaluation import (
     IntentPredictionRecord,
     PromotionCriteria,
     PromotionDecision,
+    authoritative_routes_match,
     compare_for_promotion,
+    compose_candidate_cascade,
     evaluate_intent_predictions,
     select_confidence_threshold,
 )
@@ -342,15 +344,22 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
         seed=config.seed,
     )
 
-    validation_records = _predict_examples(pipeline, split.validation)
+    validation_records = _predict_model_eligible_examples(pipeline, split.validation)
     selected_threshold = select_confidence_threshold(
         validation_records,
         tool_precision_min=config.min_tool_precision,
         max_high_confidence_errors=config.max_high_confidence_errors,
     )
-    candidate_records = _predict_examples(pipeline, split.test)
+    model_records = _predict_examples(pipeline, split.test)
+    candidate_records = compose_candidate_cascade(
+        model_records, baseline_records, threshold=selected_threshold
+    )
     candidate_report = evaluate_intent_predictions(
-        candidate_records, threshold=selected_threshold
+        candidate_records,
+        threshold=selected_threshold,
+        authoritative_routes_unchanged=authoritative_routes_match(
+            candidate_records, baseline_records
+        ),
     )
     baseline_report = evaluate_intent_predictions(
         baseline_records, threshold=selected_threshold
@@ -446,10 +455,26 @@ def _predict_examples(
                 predicted=prediction.intent,
                 confidence=prediction.confidence,
                 latency_ms=latency_ms,
-                mechanism="classifier",
+                mechanism="model",
             )
         )
     return tuple(records)
+
+
+def _predict_model_eligible_examples(
+    pipeline: IntentPipeline, examples: Sequence[IntentExample]
+) -> tuple[IntentPredictionRecord, ...]:
+    """Predict only examples not already owned by the regex route."""
+    from src.internal.servers.web.intent_routing import _regex_route
+
+    eligible = tuple(
+        example for example in examples if _regex_route(example.text) is None
+    )
+    if not eligible:
+        raise ValueError(
+            "Validation split has no model-eligible examples after regex routing"
+        )
+    return _predict_examples(pipeline, eligible)
 
 
 def _load_baseline_records(
@@ -485,7 +510,7 @@ def _load_baseline_records(
         confidence = _finite_number(item["confidence"], "confidence", index)
         latency_ms = _finite_number(item["latency_ms"], "latency_ms", index)
         mechanism = _nonempty_string(item["mechanism"], "mechanism", index)
-        if mechanism not in {"classifier", "rule_based"}:
+        if mechanism not in {"regex", "classifier", "rule_based"}:
             raise ValueError(
                 f"Baseline prediction at index {index} has invalid mechanism"
             )
@@ -522,6 +547,111 @@ def _load_baseline_records(
                 f"Baseline expected label does not match test example {example_id!r}"
             )
     return tuple(by_id[example.id] for example in test_examples)
+
+
+def generate_baseline_predictions(
+    *,
+    examples_path: Path,
+    fallback_predictions_path: Path,
+    output_path: Path,
+    seed: int = 17,
+) -> tuple[IntentPredictionRecord, ...]:
+    """Generate held-out regex records and merge captured ambiguous fallbacks."""
+    examples = load_intent_examples(examples_path)
+    split = split_intent_examples(examples, seed=seed)
+    captured = _load_captured_fallbacks(fallback_predictions_path)
+
+    from src.internal.servers.web.intent_routing import _regex_route
+
+    records: list[IntentPredictionRecord] = []
+    ambiguous: dict[str, IntentExample] = {}
+    for example in split.test:
+        started = time.perf_counter()
+        strategy = _regex_route(example.text)
+        latency_ms = (time.perf_counter() - started) * 1_000
+        if strategy is None:
+            ambiguous[example.id] = example
+            continue
+        records.append(
+            IntentPredictionRecord(
+                example_id=example.id,
+                expected=example.label,
+                predicted=strategy.value,
+                confidence=1.0,
+                latency_ms=latency_ms,
+                mechanism="regex",
+            )
+        )
+
+    if set(captured) != set(ambiguous):
+        missing = sorted(set(ambiguous) - set(captured))
+        extra = sorted(set(captured) - set(ambiguous))
+        raise ValueError(
+            "Captured fallback predictions must exactly match ambiguous held-out "
+            f"IDs; missing={missing!r}, extra={extra!r}"
+        )
+    for example_id, example in ambiguous.items():
+        record = captured[example_id]
+        if record.expected != example.label:
+            raise ValueError(
+                f"Captured fallback expected label does not match {example_id!r}"
+            )
+        records.append(record)
+
+    ordered = tuple(sorted(records, key=lambda record: record.example_id))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps([record.__dict__ for record in ordered], indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return ordered
+
+
+def _load_captured_fallbacks(path: Path) -> dict[str, IntentPredictionRecord]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid fallback predictions JSON in {path}: {exc.msg}"
+        ) from exc
+    if not isinstance(payload, list):
+        raise ValueError("Fallback predictions JSON must contain a list")
+    records: dict[str, IntentPredictionRecord] = {}
+    required = {
+        "example_id",
+        "expected",
+        "predicted",
+        "confidence",
+        "latency_ms",
+        "mechanism",
+    }
+    for index, item in enumerate(payload):
+        if not isinstance(item, Mapping) or set(item) != required:
+            raise ValueError(
+                f"Fallback prediction at index {index} must have exactly "
+                f"{sorted(required)!r}"
+            )
+        mechanism = _nonempty_string(item["mechanism"], "mechanism", index)
+        if mechanism not in {"classifier", "rule_based"}:
+            raise ValueError(
+                "Captured fallback mechanism must be classifier or rule_based"
+            )
+        example_id = _nonempty_string(item["example_id"], "example_id", index)
+        if example_id in records:
+            raise ValueError(f"Duplicate fallback prediction id: {example_id!r}")
+        confidence = _finite_number(item["confidence"], "confidence", index)
+        latency_ms = _finite_number(item["latency_ms"], "latency_ms", index)
+        if not 0.0 <= confidence <= 1.0 or latency_ms < 0.0:
+            raise ValueError(f"Fallback prediction at index {index} is invalid")
+        records[example_id] = IntentPredictionRecord(
+            example_id=example_id,
+            expected=_supported_label(item["expected"], "expected", index),
+            predicted=_supported_label(item["predicted"], "predicted", index),
+            confidence=confidence,
+            latency_ms=latency_ms,
+            mechanism=mechanism,
+        )
+    return records
 
 
 def _split_manifest(split: IntentDatasetSplit) -> dict[str, Any]:
@@ -751,14 +881,30 @@ def _finite_number(value: object, field: str, index: int) -> float:
     return result
 
 
+class _IntentArgumentParser(argparse.ArgumentParser):
+    """Argument parser whose invalid invocations use the workflow error code."""
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        raise ValueError(f"argument error: {message}")
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _IntentArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     generate = subparsers.add_parser("generate", help="generate intent examples")
     generate.add_argument("--corpus", required=True, type=Path)
     generate.add_argument("--vocabulary", type=Path)
     generate.add_argument("--output", required=True, type=Path)
+
+    baseline = subparsers.add_parser(
+        "baseline", help="generate held-out baseline predictions"
+    )
+    baseline.add_argument("--examples", required=True, type=Path)
+    baseline.add_argument("--fallback-predictions", required=True, type=Path)
+    baseline.add_argument("--output", required=True, type=Path)
+    baseline.add_argument("--seed", type=int, default=17)
 
     train = subparsers.add_parser("train", help="train and evaluate a candidate")
     train.add_argument("--examples", required=True, type=Path)
@@ -781,15 +927,24 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the generation or offline train/evaluate command."""
 
-    parser = _build_parser()
-    args = parser.parse_args(argv)
     try:
+        parser = _build_parser()
+        args = parser.parse_args(argv)
         if args.command == "generate":
             examples = generate_intent_examples(
                 corpus_path=args.corpus, vocabulary_path=args.vocabulary
             )
             _validate_generated_examples(examples)
             write_intent_examples(examples, args.output)
+            return 0
+
+        if args.command == "baseline":
+            generate_baseline_predictions(
+                examples_path=args.examples,
+                fallback_predictions_path=args.fallback_predictions,
+                output_path=args.output,
+                seed=args.seed,
+            )
             return 0
 
         run = run_intent_training(

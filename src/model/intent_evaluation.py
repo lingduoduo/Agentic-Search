@@ -45,6 +45,7 @@ class IntentEvaluationReport:
     p95_latency_ms: float | None
     total_records: int
     covered_records: int
+    authoritative_routes_unchanged: bool = True
 
     @property
     def tool_precision(self) -> float:
@@ -71,6 +72,7 @@ class IntentEvaluationReport:
             "p95_latency_ms": self.p95_latency_ms,
             "total_records": self.total_records,
             "covered_records": self.covered_records,
+            "authoritative_routes_unchanged": self.authoritative_routes_unchanged,
         }
 
 
@@ -102,7 +104,10 @@ class PromotionDecision:
 
 
 def evaluate_intent_predictions(
-    records: Iterable[IntentPredictionRecord], *, threshold: float
+    records: Iterable[IntentPredictionRecord],
+    *,
+    threshold: float,
+    authoritative_routes_unchanged: bool = True,
 ) -> IntentEvaluationReport:
     """Calculate all metrics for labeled records at a selected threshold."""
     records = _validated_records(records)
@@ -124,14 +129,29 @@ def evaluate_intent_predictions(
         }
         for index, label in enumerate(INTENT_LABELS)
     }
-    covered = tuple(record for record in records if record.confidence >= threshold)
+    covered = tuple(
+        record
+        for record in records
+        if record.mechanism == "model" and record.confidence >= threshold
+    )
     high_confidence_errors = sum(
         record.expected != record.predicted for record in covered
     )
     covered_count = len(covered)
     total_records = len(records)
     coverage = covered_count / total_records
-    latencies = sorted(record.latency_ms for record in records)
+    latencies = (
+        sorted(record.latency_ms for record in covered)
+        if covered
+        else sorted(
+            record.latency_ms for record in records if record.mechanism == "classifier"
+        )
+    )
+    fallback_count = sum(
+        record.mechanism == "classifier"
+        or (record.mechanism == "model" and record.confidence < threshold)
+        for record in records
+    )
 
     return IntentEvaluationReport(
         threshold=threshold,
@@ -146,11 +166,54 @@ def evaluate_intent_predictions(
         coverage=coverage,
         error_rate=high_confidence_errors / covered_count if covered_count else 0.0,
         high_confidence_errors=high_confidence_errors,
-        fallback_rate=1.0 - coverage,
-        p50_latency_ms=_percentile(latencies, 50),
-        p95_latency_ms=_percentile(latencies, 95),
+        fallback_rate=fallback_count / total_records,
+        p50_latency_ms=_percentile(latencies, 50) if latencies else None,
+        p95_latency_ms=_percentile(latencies, 95) if latencies else None,
         total_records=total_records,
         covered_records=covered_count,
+        authoritative_routes_unchanged=authoritative_routes_unchanged,
+    )
+
+
+def compose_candidate_cascade(
+    model_records: Iterable[IntentPredictionRecord],
+    baseline_records: Iterable[IntentPredictionRecord],
+    *,
+    threshold: float,
+) -> tuple[IntentPredictionRecord, ...]:
+    """Compose regex -> covered model -> captured fallback for held-out records."""
+    _validate_probability(threshold, name="threshold")
+    model_by_id = {
+        record.example_id: record for record in _validated_records(model_records)
+    }
+    baseline_records = _validated_records(baseline_records)
+    if set(model_by_id) != {record.example_id for record in baseline_records}:
+        raise ValueError("Model and baseline prediction IDs must match exactly")
+
+    candidate: list[IntentPredictionRecord] = []
+    for baseline in baseline_records:
+        if baseline.mechanism == "regex":
+            candidate.append(baseline)
+            continue
+        model = model_by_id[baseline.example_id]
+        candidate.append(model if model.confidence >= threshold else baseline)
+    return tuple(candidate)
+
+
+def authoritative_routes_match(
+    candidate_records: Iterable[IntentPredictionRecord],
+    baseline_records: Iterable[IntentPredictionRecord],
+) -> bool:
+    """Return whether every authoritative baseline route is unchanged."""
+    candidate_by_id = {
+        record.example_id: record for record in _validated_records(candidate_records)
+    }
+    baseline_records = _validated_records(baseline_records)
+    authoritative = tuple(
+        record for record in baseline_records if record.mechanism == "regex"
+    )
+    return all(
+        candidate_by_id.get(record.example_id) == record for record in authoritative
     )
 
 
@@ -231,6 +294,12 @@ def compare_for_promotion(
             baseline.p50_latency_ms,
             criteria.require_latency_improvement,
         ),
+        _gate(
+            "authoritative_routes_unchanged",
+            candidate.authoritative_routes_unchanged,
+            int(candidate.authoritative_routes_unchanged),
+            1,
+        ),
     )
     failed_gates = tuple(gate["name"] for gate in gates if not gate["passed"])
     return PromotionDecision(
@@ -247,6 +316,7 @@ def _validated_records(
     if not records:
         raise ValueError("At least one intent prediction record is required")
     labels = set(INTENT_LABELS)
+    mechanisms = {"regex", "classifier", "rule_based", "model"}
     for record in records:
         if record.expected not in labels or record.predicted not in labels:
             raise ValueError(
@@ -255,6 +325,8 @@ def _validated_records(
         _validate_probability(record.confidence, name="record confidence")
         if not math.isfinite(record.latency_ms) or record.latency_ms < 0:
             raise ValueError("record latency_ms must be a non-negative finite number")
+        if record.mechanism not in mechanisms:
+            raise ValueError("Intent prediction mechanism is unsupported")
     return records
 
 

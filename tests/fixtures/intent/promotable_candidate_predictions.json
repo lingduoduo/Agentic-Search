@@ -1,0 +1,50 @@
+[
+  {
+    "example_id": "chat-b",
+    "expected": "chat",
+    "predicted": "chat",
+    "confidence": 0.99,
+    "latency_ms": 1.0,
+    "mechanism": "model"
+  },
+  {
+    "example_id": "chat-b-regex",
+    "expected": "chat",
+    "predicted": "tool",
+    "confidence": 0.99,
+    "latency_ms": 1.0,
+    "mechanism": "model"
+  },
+  {
+    "example_id": "search-c",
+    "expected": "search",
+    "predicted": "search",
+    "confidence": 0.99,
+    "latency_ms": 1.0,
+    "mechanism": "model"
+  },
+  {
+    "example_id": "search-c-regex",
+    "expected": "search",
+    "predicted": "tool",
+    "confidence": 0.99,
+    "latency_ms": 1.0,
+    "mechanism": "model"
+  },
+  {
+    "example_id": "tool-a",
+    "expected": "tool",
+    "predicted": "tool",
+    "confidence": 0.99,
+    "latency_ms": 1.0,
+    "mechanism": "model"
+  },
+  {
+    "example_id": "tool-a-regex",
+    "expected": "tool",
+    "predicted": "chat",
+    "confidence": 0.99,
+    "latency_ms": 1.0,
+    "mechanism": "model"
+  }
+]

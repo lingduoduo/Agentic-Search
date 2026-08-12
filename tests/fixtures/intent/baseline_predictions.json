@@ -8,6 +8,14 @@
     "mechanism": "classifier"
   },
   {
+    "example_id": "chat-b-regex",
+    "expected": "chat",
+    "predicted": "chat",
+    "confidence": 1.0,
+    "latency_ms": 0.1,
+    "mechanism": "regex"
+  },
+  {
     "example_id": "search-c",
     "expected": "search",
     "predicted": "search",
@@ -16,11 +24,27 @@
     "mechanism": "classifier"
   },
   {
+    "example_id": "search-c-regex",
+    "expected": "search",
+    "predicted": "search",
+    "confidence": 1.0,
+    "latency_ms": 0.1,
+    "mechanism": "regex"
+  },
+  {
     "example_id": "tool-a",
     "expected": "tool",
     "predicted": "tool",
     "confidence": 0.9,
     "latency_ms": 50.0,
     "mechanism": "classifier"
+  },
+  {
+    "example_id": "tool-a-regex",
+    "expected": "tool",
+    "predicted": "tool",
+    "confidence": 1.0,
+    "latency_ms": 0.1,
+    "mechanism": "regex"
   }
 ]

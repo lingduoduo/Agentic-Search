@@ -8,7 +8,34 @@ Serving still uses indexes built offline by the `index_builder`. Filter-aware an
 
 ## Intent-model training and promotion
 
-The supported offline command trains and evaluates the optional three-label (`chat`, `search`, `tool`) request router reproducibly. Prepare baseline prediction records from the current regex → LLM classifier → rule fallback on the held-out requests, with the schema accepted by `src.model.intent_training`, at `data/eval/intent_baseline_predictions.json`. Then run:
+The supported offline workflow trains and evaluates the optional three-label (`chat`, `search`, `tool`) request router reproducibly. First capture the existing classifier/rule result for each ambiguous held-out request in `data/eval/intent_fallback_predictions.json`, then generate the complete baseline:
+
+```bash
+python -m src.model.intent_training baseline \
+  --examples data/intent_examples.json \
+  --fallback-predictions data/eval/intent_fallback_predictions.json \
+  --output data/eval/intent_baseline_predictions.json \
+  --seed 17
+```
+
+The generator reproduces the seed-17 held-out split and runs the production high-precision regex router itself. It requires captured fallback rows for exactly the remaining ambiguous IDs, rejects missing or extra captures, and writes the complete regex → classifier/rule baseline consumed by training. No network or external LLM is invoked by the generator; operators can capture their chosen production classifier separately or supply deterministic rule-based fallback results.
+
+Both input and output prediction files are JSON arrays. Every record has exactly this schema:
+
+```json
+{
+  "example_id": "stable-example-id",
+  "expected": "chat",
+  "predicted": "chat",
+  "confidence": 1.0,
+  "latency_ms": 42.5,
+  "mechanism": "classifier"
+}
+```
+
+`expected` and `predicted` must be `chat`, `search`, or `tool`; `confidence` is a finite number from `0.0` through `1.0`; `latency_ms` is finite and non-negative. Captured fallback mechanisms are `classifier` or `rule_based`. The generated complete baseline may additionally contain `regex` records.
+
+Then train and evaluate the candidate:
 
 ```bash
 python -m src.model.intent_training train \
@@ -18,7 +45,7 @@ python -m src.model.intent_training train \
   --seed 17
 ```
 
-The seed controls the source-grouped train, validation, and held-out test split as well as supported deterministic training behavior. Threshold selection uses only validation predictions; the test split is evaluated once after selection. Baseline records must match the test example IDs and expected labels exactly, ensuring the baseline and candidate are compared on the same requests.
+The seed controls the source-grouped train, validation, and held-out test split as well as supported deterministic training behavior. Threshold selection uses only validation requests not already decided by regex; the test split is evaluated once after selection. Baseline records must match the test example IDs and expected labels exactly, ensuring the baseline and candidate are compared on the same requests.
 
 The output directory contains three inspection-ready artifacts:
 
@@ -26,7 +53,7 @@ The output directory contains three inspection-ready artifacts:
 - `split_manifest.json` records the seed, fingerprint, split sizes, per-label counts, example IDs, and source groups.
 - `evaluation_report.json` records the selected threshold, candidate and baseline metrics, hyperparameters, dataset fingerprint, and every promotion-gate result.
 
-The promotion gates require non-decreasing macro-F1, the configured minimum `tool` precision, no more than the configured high-confidence error limit, reduced LLM-classifier usage, and lower model-resolved latency than LLM classification. A failed gate leaves all three candidate artifacts available for inspection but does not activate them or overwrite a serving setting.
+Evaluation composes the actual cascades on every held-out request: baseline is regex → captured classifier/rule fallback; candidate is the same regex route → covered model → the identical captured fallback on abstention. Regex-owned requests cannot count as model coverage. The promotion gates require non-decreasing macro-F1, the configured minimum `tool` precision, no more than the configured high-confidence error limit, reduced LLM-classifier usage, lower model-resolved latency than LLM classification, and unchanged authoritative regex routes. A failed gate leaves all three candidate artifacts available for inspection but does not activate them or overwrite a serving setting.
 
 Exit codes are `0`, `1`, and `2`: `0` means training and evaluation completed and every promotion gate passed; `1` means invalid input, configuration, I/O, training, or artifact generation prevented a valid completed run; and `2` means the run completed and wrote its artifacts but one or more promotion gates failed.
 
