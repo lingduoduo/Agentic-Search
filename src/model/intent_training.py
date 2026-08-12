@@ -635,8 +635,8 @@ def _write_artifact_set(
                     final_path, suffix=".rollback"
                 )
                 os.close(descriptor)
-                shutil.copyfile(final_path, backup_path)
                 backups[final_path] = backup_path
+                shutil.copyfile(final_path, backup_path)
 
         publication_started = True
         for temporary_path, final_path in staged:

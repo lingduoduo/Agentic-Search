@@ -137,6 +137,42 @@ def test_training_workflow_restores_complete_generation_when_publication_fails(
     assert not list(tmp_path.glob("*.rollback"))
 
 
+def test_training_workflow_cleans_backup_when_backup_copy_fails(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    artifact_names = (
+        "intent_model.pt",
+        "split_manifest.json",
+        "evaluation_report.json",
+    )
+    old_contents = {name: f"previous:{name}".encode() for name in artifact_names}
+    for name, contents in old_contents.items():
+        (tmp_path / name).write_bytes(contents)
+
+    def fail_backup_copy(_source, _target):
+        raise OSError("injected backup copy failure")
+
+    monkeypatch.setattr(intent_training.shutil, "copyfile", fail_backup_copy)
+
+    with pytest.raises(OSError, match="injected backup copy failure"):
+        run_intent_training(
+            IntentTrainingConfig(
+                examples_path=FIXTURES / "intent_examples.json",
+                baseline_path=FIXTURES / "baseline_predictions.json",
+                output_dir=tmp_path,
+                epochs=1,
+                embedding_dim=8,
+                hidden_dim=16,
+                seed=17,
+            )
+        )
+
+    assert {
+        name: (tmp_path / name).read_bytes() for name in artifact_names
+    } == old_contents
+    assert not list(tmp_path.glob("*.tmp"))
+    assert not list(tmp_path.glob("*.rollback"))
+
+
 def test_generate_cli_reports_malformed_corpus_without_traceback(tmp_path, capsys):
     corpus_path = tmp_path / "corpus.jsonl"
     corpus_path.write_text("[1, 2, 3]\n", encoding="utf-8")
