@@ -89,6 +89,29 @@ Existing hard-negative and multi-intent cases are retained unchanged. Generated
 `source` values keep grouping every frame/document combination so derived
 paraphrases cannot cross a split boundary.
 
+#### Amendment (2026-08-12): balanced fillers for out-of-scope separability
+
+The frame set is the vocabulary extension, and the shape of that vocabulary
+decides what out-of-scope requests score. Neutral fillers — roles, time
+expressions, artifacts, and conversational openers — are used by **exactly two
+frames per label**, so their tokens train under all three classes and end up
+carrying no class evidence. A request built only from ordinary English then
+pools toward the class-balanced centre and its softmax stays near `1/3`, which
+is the only abstention signal a three-label model has. Action verbs are
+deliberately excluded from that balance: they are genuine `tool` evidence.
+
+This is what makes the out-of-scope metric meaningful rather than merely
+reported. Before it, every fully-out-of-vocabulary probe pooled to the zero
+vector and produced one identical prediction; the goal now is a measured,
+positive margin between mean in-scope and mean out-of-scope confidence, pinned
+by a test.
+
+Training also moves to `min_freq = 2`. With `min_freq = 1` the vocabulary covers
+every training token, so no unknown word is ever encoded during training and the
+unknown embedding of the previous section keeps its random initialisation —
+confident nonsense, the failure this design set out to remove. Dropping
+singletons gives that index a learned direction.
+
 ### Realistic evaluation set
 
 A new `data/intent_eval_queries.json`, tracked the same way as
