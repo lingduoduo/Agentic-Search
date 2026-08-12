@@ -44,8 +44,27 @@ def test_build_examples_emit_ambiguous_cases_for_every_label():
     deferred = [e for e in examples if _regex_route(e["text"]) is None]
 
     assert {e["label"] for e in deferred} == {"chat", "search", "tool"}
-    assert all("ambiguous" in e["tags"] for e in deferred)
+    assert all({"ambiguous", "multi_intent"} & set(e["tags"]) for e in deferred)
     assert len(deferred) * 3 >= len(examples)  # at least a third stay ambiguous
+
+
+def test_build_examples_label_multi_intent_requests_by_route_precedence():
+    """A request carrying two intents takes the higher-precedence route.
+
+    The dispatcher resolves tool > search > chat, so a request that both looks
+    something up and takes an action must train as ``tool``.
+    """
+    from src.internal.servers.web.intent_routing import _regex_route
+
+    doc = {"id": "d1", "title": "FAISS", "contents": "vector index library"}
+    multi = [
+        e
+        for e in build_examples_for_document(doc, ["vector", "index", "ranking"])
+        if "multi_intent" in e["tags"]
+    ]
+
+    assert {e["label"] for e in multi} == {"search", "tool"}
+    assert all(_regex_route(e["text"]) is None for e in multi)
 
 
 def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
@@ -596,7 +615,9 @@ def test_deterministic_fixture_candidate_passes_default_promotion_gates():
 
     candidate = compose_candidate_cascade(model, baseline, threshold=threshold)
     decision = compare_for_promotion(
-        evaluate_intent_predictions(candidate, threshold=threshold),
+        evaluate_intent_predictions(
+            candidate, threshold=threshold, out_of_scope_abstention=1.0
+        ),
         evaluate_intent_predictions(baseline, threshold=threshold),
         PromotionCriteria(),
     )

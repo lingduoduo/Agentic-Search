@@ -161,6 +161,39 @@ def split_intent_examples(
     )
 
 
+def load_out_of_scope_probes(path: Path) -> tuple[tuple[str, str], ...]:
+    """Load unlabeled requests the router should decline to serve.
+
+    Probes carry no intent label: the three-label taxonomy has no way to say
+    "none of these", so out-of-scope safety is measured as abstention below the
+    serving threshold rather than as a prediction.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid out-of-scope probe JSON in {path}: {exc.msg}"
+        ) from exc
+
+    if not isinstance(payload, list):
+        raise ValueError("Out-of-scope probe JSON must contain a list of records")
+
+    probes: list[tuple[str, str]] = []
+    ids: set[str] = set()
+    for index, record in enumerate(payload):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"Out-of-scope probe at index {index} must be an object")
+        probe_id = _required_text(record, "id", index)
+        text = _required_text(record, "text", index)
+        if probe_id in ids:
+            raise ValueError(f"Duplicate out-of-scope probe id: {probe_id!r}")
+        ids.add(probe_id)
+        probes.append((probe_id, text))
+    if not probes:
+        raise ValueError(f"Out-of-scope probe file contains no records: {path}")
+    return tuple(probes)
+
+
 def _required_text(record: Mapping[str, object], field: str, index: int) -> str:
     value = record.get(field)
     if not isinstance(value, str) or not value.strip():

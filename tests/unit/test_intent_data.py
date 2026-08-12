@@ -56,3 +56,19 @@ def test_grouped_split_is_reproducible_and_has_no_source_leakage(tmp_path: Path)
     assert not (
         sources[0] & sources[1] or sources[0] & sources[2] or sources[1] & sources[2]
     )
+
+
+def test_load_out_of_scope_probes_rejects_labels_and_duplicates(tmp_path):
+    from src.model.intent_data import load_out_of_scope_probes
+
+    path = tmp_path / "oos.json"
+    path.write_text('[{"id": "a", "text": "my cat knocked over the plant"}]')
+    assert load_out_of_scope_probes(path) == (("a", "my cat knocked over the plant"),)
+
+    path.write_text('[{"id": "a", "text": "one"}, {"id": "a", "text": "two"}]')
+    with pytest.raises(ValueError, match="Duplicate"):
+        load_out_of_scope_probes(path)
+
+    path.write_text('[{"id": "a", "text": ""}]')
+    with pytest.raises(ValueError, match="text"):
+        load_out_of_scope_probes(path)

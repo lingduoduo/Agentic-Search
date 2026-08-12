@@ -3,6 +3,7 @@ import json
 import pytest
 
 from src.model.intent_evaluation import (
+    calibration_report,
     IntentEvaluationReport,
     IntentPredictionRecord,
     PromotionCriteria,
@@ -152,7 +153,10 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
         "llm_fallback_reduction",
         "latency_improvement",
         "authoritative_routes_unchanged",
+        "out_of_scope_abstention_minimum",
     }
+    # An unmeasured out-of-scope rate is not evidence of safety.
+    assert gates["out_of_scope_abstention_minimum"]["passed"] is False
     assert gates["llm_fallback_reduction"] == {
         "name": "llm_fallback_reduction",
         "passed": False,
@@ -163,6 +167,7 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
     assert set(decision.failed_gates) == {
         "llm_fallback_reduction",
         "latency_improvement",
+        "out_of_scope_abstention_minimum",
     }
 
 
@@ -218,3 +223,63 @@ def test_authoritative_route_gate_fails_when_candidate_changes_regex_record():
     )
 
     assert "authoritative_routes_unchanged" in decision.failed_gates
+
+
+def test_threshold_selection_defers_out_of_scope_requests():
+    """A threshold that serves out-of-scope probes is rejected.
+
+    Softmax over three labels always names one, so out-of-scope safety comes
+    only from requiring those probes to land below the served threshold.
+    """
+    records = [
+        IntentPredictionRecord("1", "tool", "tool", 0.55, 1.0, "model"),
+        IntentPredictionRecord("2", "tool", "tool", 0.85, 1.0, "model"),
+        IntentPredictionRecord("3", "chat", "chat", 0.90, 1.0, "model"),
+    ]
+    without = select_confidence_threshold(
+        records, tool_precision_min=0.95, max_high_confidence_errors=0
+    )
+    with_oos = select_confidence_threshold(
+        records,
+        tool_precision_min=0.95,
+        max_high_confidence_errors=0,
+        out_of_scope_confidences=(0.60, 0.62),
+        min_out_of_scope_abstention=1.0,
+    )
+    assert without == 0.55
+    assert with_oos == 0.85  # lifted above every out-of-scope probe
+
+
+def test_calibration_report_sweeps_thresholds_and_scores_reliability():
+    records = [
+        IntentPredictionRecord("1", "chat", "chat", 0.90, 1.0, "model"),
+        IntentPredictionRecord("2", "chat", "search", 0.55, 1.0, "model"),
+    ]
+    calibration = calibration_report(
+        records, selected_threshold=0.90, out_of_scope_confidences=(0.40,)
+    )
+
+    thresholds = [row["threshold"] for row in calibration["thresholds"]]
+    assert 0.55 in thresholds and 0.90 in thresholds
+    selected = next(
+        row for row in calibration["thresholds"] if row["threshold"] == 0.90
+    )
+    assert selected["coverage"] == 0.5
+    assert selected["high_confidence_errors"] == 0
+    assert selected["out_of_scope_abstention"] == 1.0
+    assert 0.0 <= calibration["expected_calibration_error"] <= 1.0
+    assert sum(b["count"] for b in calibration["reliability_bins"]) == 2
+
+
+def test_calibration_reports_unmeasured_out_of_scope_as_none():
+    """No probes means unmeasured, never a perfect abstention score."""
+    calibration = calibration_report(
+        [IntentPredictionRecord("1", "chat", "chat", 0.9, 1.0, "model")],
+        selected_threshold=0.9,
+    )
+
+    assert calibration["out_of_scope_probes"] == 0
+    assert calibration["out_of_scope_abstention"] is None
+    assert all(
+        row["out_of_scope_abstention"] is None for row in calibration["thresholds"]
+    )

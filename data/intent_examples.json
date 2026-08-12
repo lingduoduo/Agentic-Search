@@ -2208,6 +2208,24 @@
     "context_hint": "Dense retrieval encodes queries and documents into continuous vector representations using transformer models. FAISS (Fa"
   },
   {
+    "id": "corpus:doc_001:search:07",
+    "text": "I need background on retrieval and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_001:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_001",
+    "source_title": "Dense Retrieval with FAISS",
+    "keywords": [
+      "dense",
+      "retrieval",
+      "faiss",
+      "search"
+    ],
+    "context_hint": "Dense retrieval encodes queries and documents into continuous vector representations using transformer models. FAISS (Fa"
+  },
+  {
     "id": "corpus:doc_002:search:01",
     "text": "find BM25 Sparse Retrieval",
     "label": "search",
@@ -2299,6 +2317,23 @@
     "source": "corpus:doc_002:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_002",
+    "source_title": "BM25 Sparse Retrieval",
+    "keywords": [
+      "bm25",
+      "sparse",
+      "retrieval"
+    ],
+    "context_hint": "BM25 is a bag-of-words ranking function that scores documents based on term frequency and inverse document frequency. It"
+  },
+  {
+    "id": "corpus:doc_002:search:07",
+    "text": "I need background on sparse and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_002:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_002",
     "source_title": "BM25 Sparse Retrieval",
@@ -2406,6 +2441,24 @@
     "source": "corpus:doc_003:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_003",
+    "source_title": "Retrieval-Augmented Generation",
+    "keywords": [
+      "retrieval",
+      "augmented",
+      "generation",
+      "rag"
+    ],
+    "context_hint": "Retrieval-Augmented Generation (RAG) combines a retriever with a generative language model. The retriever fetches releva"
+  },
+  {
+    "id": "corpus:doc_003:search:07",
+    "text": "I need background on augmented and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_003:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_003",
     "source_title": "Retrieval-Augmented Generation",
@@ -2526,6 +2579,24 @@
     "context_hint": "Cross-encoders rerank a short list of candidate documents by jointly encoding the query and each document through a sing"
   },
   {
+    "id": "corpus:doc_004:search:07",
+    "text": "I need background on encoder and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_004:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_004",
+    "source_title": "Cross-Encoder Reranking",
+    "keywords": [
+      "cross",
+      "encoder",
+      "reranking",
+      "encoders"
+    ],
+    "context_hint": "Cross-encoders rerank a short list of candidate documents by jointly encoding the query and each document through a sing"
+  },
+  {
     "id": "corpus:doc_005:search:01",
     "text": "find Sentence Transformers",
     "label": "search",
@@ -2622,6 +2693,24 @@
     "source": "corpus:doc_005:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_005",
+    "source_title": "Sentence Transformers",
+    "keywords": [
+      "sentence",
+      "transformers",
+      "models",
+      "library"
+    ],
+    "context_hint": "Sentence Transformers is a Python library built on top of Hugging Face Transformers that produces dense sentence embeddi"
+  },
+  {
+    "id": "corpus:doc_005:search:07",
+    "text": "I need background on transformers and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_005:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_005",
     "source_title": "Sentence Transformers",
@@ -2736,6 +2825,23 @@
     "context_hint": "E5 (EmbEddings from bidirEctional Encoder rEpresentations) is a family of text embedding models from Microsoft. E5 model"
   },
   {
+    "id": "corpus:doc_006:search:07",
+    "text": "I need background on models and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_006:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_006",
+    "source_title": "E5 Embedding Models",
+    "keywords": [
+      "embedding",
+      "models",
+      "text"
+    ],
+    "context_hint": "E5 (EmbEddings from bidirEctional Encoder rEpresentations) is a family of text embedding models from Microsoft. E5 model"
+  },
+  {
     "id": "corpus:doc_007:search:01",
     "text": "find BGE Embedding Models",
     "label": "search",
@@ -2827,6 +2933,23 @@
     "source": "corpus:doc_007:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_007",
+    "source_title": "BGE Embedding Models",
+    "keywords": [
+      "bge",
+      "embedding",
+      "models"
+    ],
+    "context_hint": "BGE (BAAI General Embedding) is a series of text embedding models from the Beijing Academy of Artificial Intelligence. B"
+  },
+  {
+    "id": "corpus:doc_007:search:07",
+    "text": "I need background on embedding and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_007:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_007",
     "source_title": "BGE Embedding Models",
@@ -2946,6 +3069,24 @@
     "context_hint": "Transformer-based encoders produce a sequence of hidden states, one per token. To obtain a single sentence embedding, po"
   },
   {
+    "id": "corpus:doc_008:search:07",
+    "text": "I need background on pooling and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_008:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_008",
+    "source_title": "Mean Pooling vs CLS Pooling",
+    "keywords": [
+      "mean",
+      "pooling",
+      "cls",
+      "sequence"
+    ],
+    "context_hint": "Transformer-based encoders produce a sequence of hidden states, one per token. To obtain a single sentence embedding, po"
+  },
+  {
     "id": "corpus:doc_009:search:01",
     "text": "find FastAPI for ML Serving",
     "label": "search",
@@ -3032,6 +3173,22 @@
     "source": "corpus:doc_009:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_009",
+    "source_title": "FastAPI for ML Serving",
+    "keywords": [
+      "fastapi",
+      "serving"
+    ],
+    "context_hint": "FastAPI is a modern Python web framework for building REST APIs with automatic OpenAPI documentation. It is built on top"
+  },
+  {
+    "id": "corpus:doc_009:search:07",
+    "text": "I need background on serving and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_009:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_009",
     "source_title": "FastAPI for ML Serving",
@@ -3138,6 +3295,24 @@
     "source": "corpus:doc_010:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_010",
+    "source_title": "FAISS Index Types",
+    "keywords": [
+      "faiss",
+      "index",
+      "types",
+      "search"
+    ],
+    "context_hint": "FAISS supports multiple index types suited to different workloads. IndexFlatIP performs exact inner-product search and i"
+  },
+  {
+    "id": "corpus:doc_010:search:07",
+    "text": "I need background on index and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_010:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_010",
     "source_title": "FAISS Index Types",
@@ -3258,6 +3433,24 @@
     "context_hint": "Contriever is an unsupervised dense retrieval model trained without labeled query-document pairs. It uses momentum contr"
   },
   {
+    "id": "corpus:doc_011:search:07",
+    "text": "I need background on retrieval and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_011:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_011",
+    "source_title": "Contriever Retrieval Model",
+    "keywords": [
+      "contriever",
+      "retrieval",
+      "model",
+      "unsupervised"
+    ],
+    "context_hint": "Contriever is an unsupervised dense retrieval model trained without labeled query-document pairs. It uses momentum contr"
+  },
+  {
     "id": "corpus:doc_012:search:01",
     "text": "find DPR: Dense Passage Retrieval",
     "label": "search",
@@ -3354,6 +3547,24 @@
     "source": "corpus:doc_012:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_012",
+    "source_title": "DPR: Dense Passage Retrieval",
+    "keywords": [
+      "dpr",
+      "dense",
+      "passage",
+      "retrieval"
+    ],
+    "context_hint": "Dense Passage Retrieval (DPR) trains separate bi-encoder models for queries and passages using supervised contrastive le"
+  },
+  {
+    "id": "corpus:doc_012:search:07",
+    "text": "I need background on dense and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_012:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_012",
     "source_title": "DPR: Dense Passage Retrieval",
@@ -3474,6 +3685,24 @@
     "context_hint": "Google Custom Search JSON API allows developers to programmatically query a Programmable Search Engine (CSE). It returns"
   },
   {
+    "id": "corpus:doc_013:search:07",
+    "text": "I need background on custom and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_013:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_013",
+    "source_title": "Google Custom Search API",
+    "keywords": [
+      "google",
+      "custom",
+      "search",
+      "api"
+    ],
+    "context_hint": "Google Custom Search JSON API allows developers to programmatically query a Programmable Search Engine (CSE). It returns"
+  },
+  {
     "id": "corpus:doc_014:search:01",
     "text": "find SerpAPI Web Search",
     "label": "search",
@@ -3565,6 +3794,23 @@
     "source": "corpus:doc_014:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_014",
+    "source_title": "SerpAPI Web Search",
+    "keywords": [
+      "serpapi",
+      "web",
+      "search"
+    ],
+    "context_hint": "SerpAPI is a real-time web scraping API that parses search engine result pages into structured JSON. It supports Google,"
+  },
+  {
+    "id": "corpus:doc_014:search:07",
+    "text": "I need background on web and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_014:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_014",
     "source_title": "SerpAPI Web Search",
@@ -3672,6 +3918,24 @@
     "source": "corpus:doc_015:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_015",
+    "source_title": "Vocabulary and Tokenization",
+    "keywords": [
+      "vocabulary",
+      "tokenization",
+      "tokens",
+      "token"
+    ],
+    "context_hint": "Text vocabulary construction involves normalizing tokens by lowercasing, removing punctuation, and stripping diacritics."
+  },
+  {
+    "id": "corpus:doc_015:search:07",
+    "text": "I need background on tokenization and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_015:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_015",
     "source_title": "Vocabulary and Tokenization",
@@ -3792,6 +4056,24 @@
     "context_hint": "Multi-stage retrieval pipelines combine a fast first-stage retriever with a slower but more accurate second-stage rerank"
   },
   {
+    "id": "corpus:doc_016:search:07",
+    "text": "I need background on stage and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_016:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_016",
+    "source_title": "Multi-Stage Retrieval Pipelines",
+    "keywords": [
+      "multi",
+      "stage",
+      "retrieval",
+      "pipelines"
+    ],
+    "context_hint": "Multi-stage retrieval pipelines combine a fast first-stage retriever with a slower but more accurate second-stage rerank"
+  },
+  {
     "id": "corpus:doc_017:search:01",
     "text": "find Batch Inference with PyTorch",
     "label": "search",
@@ -3888,6 +4170,24 @@
     "source": "corpus:doc_017:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_017",
+    "source_title": "Batch Inference with PyTorch",
+    "keywords": [
+      "batch",
+      "inference",
+      "pytorch",
+      "multiple"
+    ],
+    "context_hint": "Batch inference groups multiple inputs together to maximize GPU utilization. Transformer models benefit greatly from bat"
+  },
+  {
+    "id": "corpus:doc_017:search:07",
+    "text": "I need background on inference and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_017:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_017",
     "source_title": "Batch Inference with PyTorch",
@@ -4008,6 +4308,24 @@
     "context_hint": "Open-domain question answering (ODQA) requires retrieving relevant passages from a large corpus and then extracting or g"
   },
   {
+    "id": "corpus:doc_018:search:07",
+    "text": "I need background on domain and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_018:search",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_018",
+    "source_title": "Open-Domain Question Answering",
+    "keywords": [
+      "open",
+      "domain",
+      "question",
+      "answering"
+    ],
+    "context_hint": "Open-domain question answering (ODQA) requires retrieving relevant passages from a large corpus and then extracting or g"
+  },
+  {
     "id": "corpus:doc_019:search:01",
     "text": "find MS MARCO Passage Ranking",
     "label": "search",
@@ -4099,6 +4417,23 @@
     "source": "corpus:doc_019:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_019",
+    "source_title": "MS MARCO Passage Ranking",
+    "keywords": [
+      "marco",
+      "passage",
+      "ranking"
+    ],
+    "context_hint": "MS MARCO is a large-scale reading comprehension and passage ranking dataset collected from Bing search logs. The passage"
+  },
+  {
+    "id": "corpus:doc_019:search:07",
+    "text": "I need background on passage and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_019:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_019",
     "source_title": "MS MARCO Passage Ranking",
@@ -4206,6 +4541,24 @@
     "source": "corpus:doc_020:search",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_020",
+    "source_title": "Vector Similarity Search",
+    "keywords": [
+      "vector",
+      "similarity",
+      "search",
+      "nearest"
+    ],
+    "context_hint": "Vector similarity search finds the nearest neighbors of a query vector in a large collection of stored vectors. Inner pr"
+  },
+  {
+    "id": "corpus:doc_020:search:07",
+    "text": "I need background on similarity and the latest benchmark table",
+    "label": "search",
+    "source": "corpus:doc_020:search",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_020",
     "source_title": "Vector Similarity Search",
@@ -4326,6 +4679,24 @@
     "context_hint": "Dense retrieval encodes queries and documents into continuous vector representations using transformer models. FAISS (Fa"
   },
   {
+    "id": "corpus:doc_001:tool:07",
+    "text": "the dense contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_001:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_001",
+    "source_title": "Dense Retrieval with FAISS",
+    "keywords": [
+      "dense",
+      "retrieval",
+      "faiss",
+      "search"
+    ],
+    "context_hint": "Dense retrieval encodes queries and documents into continuous vector representations using transformer models. FAISS (Fa"
+  },
+  {
     "id": "corpus:doc_002:tool:01",
     "text": "send an email about BM25 Sparse Retrieval",
     "label": "tool",
@@ -4417,6 +4788,23 @@
     "source": "corpus:doc_002:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_002",
+    "source_title": "BM25 Sparse Retrieval",
+    "keywords": [
+      "bm25",
+      "sparse",
+      "retrieval"
+    ],
+    "context_hint": "BM25 is a bag-of-words ranking function that scores documents based on term frequency and inverse document frequency. It"
+  },
+  {
+    "id": "corpus:doc_002:tool:07",
+    "text": "the bm25 contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_002:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_002",
     "source_title": "BM25 Sparse Retrieval",
@@ -4524,6 +4912,24 @@
     "source": "corpus:doc_003:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_003",
+    "source_title": "Retrieval-Augmented Generation",
+    "keywords": [
+      "retrieval",
+      "augmented",
+      "generation",
+      "rag"
+    ],
+    "context_hint": "Retrieval-Augmented Generation (RAG) combines a retriever with a generative language model. The retriever fetches releva"
+  },
+  {
+    "id": "corpus:doc_003:tool:07",
+    "text": "the retrieval contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_003:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_003",
     "source_title": "Retrieval-Augmented Generation",
@@ -4644,6 +5050,24 @@
     "context_hint": "Cross-encoders rerank a short list of candidate documents by jointly encoding the query and each document through a sing"
   },
   {
+    "id": "corpus:doc_004:tool:07",
+    "text": "the cross contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_004:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_004",
+    "source_title": "Cross-Encoder Reranking",
+    "keywords": [
+      "cross",
+      "encoder",
+      "reranking",
+      "encoders"
+    ],
+    "context_hint": "Cross-encoders rerank a short list of candidate documents by jointly encoding the query and each document through a sing"
+  },
+  {
     "id": "corpus:doc_005:tool:01",
     "text": "send an email about Sentence Transformers",
     "label": "tool",
@@ -4740,6 +5164,24 @@
     "source": "corpus:doc_005:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_005",
+    "source_title": "Sentence Transformers",
+    "keywords": [
+      "sentence",
+      "transformers",
+      "models",
+      "library"
+    ],
+    "context_hint": "Sentence Transformers is a Python library built on top of Hugging Face Transformers that produces dense sentence embeddi"
+  },
+  {
+    "id": "corpus:doc_005:tool:07",
+    "text": "the sentence contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_005:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_005",
     "source_title": "Sentence Transformers",
@@ -4854,6 +5296,23 @@
     "context_hint": "E5 (EmbEddings from bidirEctional Encoder rEpresentations) is a family of text embedding models from Microsoft. E5 model"
   },
   {
+    "id": "corpus:doc_006:tool:07",
+    "text": "the embedding contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_006:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_006",
+    "source_title": "E5 Embedding Models",
+    "keywords": [
+      "embedding",
+      "models",
+      "text"
+    ],
+    "context_hint": "E5 (EmbEddings from bidirEctional Encoder rEpresentations) is a family of text embedding models from Microsoft. E5 model"
+  },
+  {
     "id": "corpus:doc_007:tool:01",
     "text": "send an email about BGE Embedding Models",
     "label": "tool",
@@ -4945,6 +5404,23 @@
     "source": "corpus:doc_007:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_007",
+    "source_title": "BGE Embedding Models",
+    "keywords": [
+      "bge",
+      "embedding",
+      "models"
+    ],
+    "context_hint": "BGE (BAAI General Embedding) is a series of text embedding models from the Beijing Academy of Artificial Intelligence. B"
+  },
+  {
+    "id": "corpus:doc_007:tool:07",
+    "text": "the bge contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_007:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_007",
     "source_title": "BGE Embedding Models",
@@ -5064,6 +5540,24 @@
     "context_hint": "Transformer-based encoders produce a sequence of hidden states, one per token. To obtain a single sentence embedding, po"
   },
   {
+    "id": "corpus:doc_008:tool:07",
+    "text": "the mean contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_008:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_008",
+    "source_title": "Mean Pooling vs CLS Pooling",
+    "keywords": [
+      "mean",
+      "pooling",
+      "cls",
+      "sequence"
+    ],
+    "context_hint": "Transformer-based encoders produce a sequence of hidden states, one per token. To obtain a single sentence embedding, po"
+  },
+  {
     "id": "corpus:doc_009:tool:01",
     "text": "send an email about FastAPI for ML Serving",
     "label": "tool",
@@ -5150,6 +5644,22 @@
     "source": "corpus:doc_009:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_009",
+    "source_title": "FastAPI for ML Serving",
+    "keywords": [
+      "fastapi",
+      "serving"
+    ],
+    "context_hint": "FastAPI is a modern Python web framework for building REST APIs with automatic OpenAPI documentation. It is built on top"
+  },
+  {
+    "id": "corpus:doc_009:tool:07",
+    "text": "the fastapi contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_009:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_009",
     "source_title": "FastAPI for ML Serving",
@@ -5256,6 +5766,24 @@
     "source": "corpus:doc_010:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_010",
+    "source_title": "FAISS Index Types",
+    "keywords": [
+      "faiss",
+      "index",
+      "types",
+      "search"
+    ],
+    "context_hint": "FAISS supports multiple index types suited to different workloads. IndexFlatIP performs exact inner-product search and i"
+  },
+  {
+    "id": "corpus:doc_010:tool:07",
+    "text": "the faiss contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_010:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_010",
     "source_title": "FAISS Index Types",
@@ -5376,6 +5904,24 @@
     "context_hint": "Contriever is an unsupervised dense retrieval model trained without labeled query-document pairs. It uses momentum contr"
   },
   {
+    "id": "corpus:doc_011:tool:07",
+    "text": "the contriever contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_011:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_011",
+    "source_title": "Contriever Retrieval Model",
+    "keywords": [
+      "contriever",
+      "retrieval",
+      "model",
+      "unsupervised"
+    ],
+    "context_hint": "Contriever is an unsupervised dense retrieval model trained without labeled query-document pairs. It uses momentum contr"
+  },
+  {
     "id": "corpus:doc_012:tool:01",
     "text": "send an email about DPR: Dense Passage Retrieval",
     "label": "tool",
@@ -5472,6 +6018,24 @@
     "source": "corpus:doc_012:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_012",
+    "source_title": "DPR: Dense Passage Retrieval",
+    "keywords": [
+      "dpr",
+      "dense",
+      "passage",
+      "retrieval"
+    ],
+    "context_hint": "Dense Passage Retrieval (DPR) trains separate bi-encoder models for queries and passages using supervised contrastive le"
+  },
+  {
+    "id": "corpus:doc_012:tool:07",
+    "text": "the dpr contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_012:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_012",
     "source_title": "DPR: Dense Passage Retrieval",
@@ -5592,6 +6156,24 @@
     "context_hint": "Google Custom Search JSON API allows developers to programmatically query a Programmable Search Engine (CSE). It returns"
   },
   {
+    "id": "corpus:doc_013:tool:07",
+    "text": "the google contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_013:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_013",
+    "source_title": "Google Custom Search API",
+    "keywords": [
+      "google",
+      "custom",
+      "search",
+      "api"
+    ],
+    "context_hint": "Google Custom Search JSON API allows developers to programmatically query a Programmable Search Engine (CSE). It returns"
+  },
+  {
     "id": "corpus:doc_014:tool:01",
     "text": "send an email about SerpAPI Web Search",
     "label": "tool",
@@ -5683,6 +6265,23 @@
     "source": "corpus:doc_014:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_014",
+    "source_title": "SerpAPI Web Search",
+    "keywords": [
+      "serpapi",
+      "web",
+      "search"
+    ],
+    "context_hint": "SerpAPI is a real-time web scraping API that parses search engine result pages into structured JSON. It supports Google,"
+  },
+  {
+    "id": "corpus:doc_014:tool:07",
+    "text": "the serpapi contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_014:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_014",
     "source_title": "SerpAPI Web Search",
@@ -5790,6 +6389,24 @@
     "source": "corpus:doc_015:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_015",
+    "source_title": "Vocabulary and Tokenization",
+    "keywords": [
+      "vocabulary",
+      "tokenization",
+      "tokens",
+      "token"
+    ],
+    "context_hint": "Text vocabulary construction involves normalizing tokens by lowercasing, removing punctuation, and stripping diacritics."
+  },
+  {
+    "id": "corpus:doc_015:tool:07",
+    "text": "the vocabulary contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_015:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_015",
     "source_title": "Vocabulary and Tokenization",
@@ -5910,6 +6527,24 @@
     "context_hint": "Multi-stage retrieval pipelines combine a fast first-stage retriever with a slower but more accurate second-stage rerank"
   },
   {
+    "id": "corpus:doc_016:tool:07",
+    "text": "the multi contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_016:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_016",
+    "source_title": "Multi-Stage Retrieval Pipelines",
+    "keywords": [
+      "multi",
+      "stage",
+      "retrieval",
+      "pipelines"
+    ],
+    "context_hint": "Multi-stage retrieval pipelines combine a fast first-stage retriever with a slower but more accurate second-stage rerank"
+  },
+  {
     "id": "corpus:doc_017:tool:01",
     "text": "send an email about Batch Inference with PyTorch",
     "label": "tool",
@@ -6006,6 +6641,24 @@
     "source": "corpus:doc_017:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_017",
+    "source_title": "Batch Inference with PyTorch",
+    "keywords": [
+      "batch",
+      "inference",
+      "pytorch",
+      "multiple"
+    ],
+    "context_hint": "Batch inference groups multiple inputs together to maximize GPU utilization. Transformer models benefit greatly from bat"
+  },
+  {
+    "id": "corpus:doc_017:tool:07",
+    "text": "the batch contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_017:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_017",
     "source_title": "Batch Inference with PyTorch",
@@ -6126,6 +6779,24 @@
     "context_hint": "Open-domain question answering (ODQA) requires retrieving relevant passages from a large corpus and then extracting or g"
   },
   {
+    "id": "corpus:doc_018:tool:07",
+    "text": "the open contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_018:tool",
+    "tags": [
+      "multi_intent"
+    ],
+    "source_doc_id": "doc_018",
+    "source_title": "Open-Domain Question Answering",
+    "keywords": [
+      "open",
+      "domain",
+      "question",
+      "answering"
+    ],
+    "context_hint": "Open-domain question answering (ODQA) requires retrieving relevant passages from a large corpus and then extracting or g"
+  },
+  {
     "id": "corpus:doc_019:tool:01",
     "text": "send an email about MS MARCO Passage Ranking",
     "label": "tool",
@@ -6217,6 +6888,23 @@
     "source": "corpus:doc_019:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_019",
+    "source_title": "MS MARCO Passage Ranking",
+    "keywords": [
+      "marco",
+      "passage",
+      "ranking"
+    ],
+    "context_hint": "MS MARCO is a large-scale reading comprehension and passage ranking dataset collected from Bing search logs. The passage"
+  },
+  {
+    "id": "corpus:doc_019:tool:07",
+    "text": "the marco contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_019:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_019",
     "source_title": "MS MARCO Passage Ranking",
@@ -6324,6 +7012,24 @@
     "source": "corpus:doc_020:tool",
     "tags": [
       "ambiguous"
+    ],
+    "source_doc_id": "doc_020",
+    "source_title": "Vector Similarity Search",
+    "keywords": [
+      "vector",
+      "similarity",
+      "search",
+      "nearest"
+    ],
+    "context_hint": "Vector similarity search finds the nearest neighbors of a query vector in a large collection of stored vectors. Inner pr"
+  },
+  {
+    "id": "corpus:doc_020:tool:07",
+    "text": "the vector contract needs a review summary and a note to the legal team",
+    "label": "tool",
+    "source": "corpus:doc_020:tool",
+    "tags": [
+      "multi_intent"
     ],
     "source_doc_id": "doc_020",
     "source_title": "Vector Similarity Search",
