@@ -268,8 +268,14 @@ def route_query(
     llm: "LLMClient | None",
     explicit_source: bool,
     settings: "AppSettings | None" = None,
+    telemetry: dict | None = None,
 ) -> RouteStrategy:
     """Decide the agent strategy for an auto-routed (mode=None) request.
+
+    When *telemetry* is supplied it is filled in with the deciding mechanism and
+    any model evaluation, so callers can persist route outcomes in production.
+    Request captures only run under the debug panels, and the query itself is
+    already stored with the session, so nothing new about the request is logged.
 
     Cascade:
       1. An explicit non-default source provider is a search command.
@@ -284,13 +290,18 @@ def route_query(
     Capability-aware *degradation* happens at dispatch time, not here — this
     function returns the ideal strategy for the query.
     """
+
+    def decided(mechanism: str, strategy: RouteStrategy, detail: dict) -> RouteStrategy:
+        _record_intent(mechanism, strategy, detail)
+        if telemetry is not None:
+            telemetry["route_mechanism"] = mechanism
+        return strategy
+
     if explicit_source:
-        _record_intent("explicit_source", RouteStrategy.SEARCH, {})
-        return RouteStrategy.SEARCH
+        return decided("explicit_source", RouteStrategy.SEARCH, {})
     regex_choice = _regex_route(query)
     if regex_choice is not None:
-        _record_intent("regex", regex_choice, {})
-        return regex_choice
+        return decided("regex", regex_choice, {})
     fallback_detail: dict = {}
     model_choice = predict_route(query, settings=settings)
     if model_choice is not None:
@@ -304,20 +315,24 @@ def route_query(
             "latency_ms": model_choice.latency_ms,
         }
         _capture.record_stage("intent_model", "evaluation", model_detail)
+        if telemetry is not None:
+            telemetry.update(
+                route_predicted_intent=model_choice.strategy.value,
+                route_confidence=model_choice.confidence,
+                route_threshold=model_choice.threshold,
+                route_abstained=abstained,
+                route_model_latency_ms=model_choice.latency_ms,
+            )
         if not abstained:
-            _record_intent("model", model_choice.strategy, model_detail)
-            return model_choice.strategy
+            return decided("model", model_choice.strategy, model_detail)
         fallback_detail = {"fallback_reason": "model_below_threshold"}
+    if telemetry is not None and fallback_detail:
+        telemetry["route_fallback_reason"] = fallback_detail["fallback_reason"]
     if llm is not None:
         try:
             strategy, detail = classify_route(query, llm)
-            _record_intent("classifier", strategy, {**detail, **fallback_detail})
-            return strategy
+            return decided("classifier", strategy, {**detail, **fallback_detail})
         except Exception:  # noqa: BLE001 — fall back, never fail routing
             logger.warning("Route classifier failed, using rule-based.")
-            strategy = _rule_based_route(query)
-            _record_intent("rule_based", strategy, fallback_detail)
-            return strategy
-    strategy = _rule_based_route(query)
-    _record_intent("rule_based", strategy, fallback_detail)
-    return strategy
+            return decided("rule_based", _rule_based_route(query), fallback_detail)
+    return decided("rule_based", _rule_based_route(query), fallback_detail)

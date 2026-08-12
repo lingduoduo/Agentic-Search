@@ -41,9 +41,12 @@ Then train and evaluate the candidate:
 python -m src.model.intent_training train \
   --examples data/intent_examples.json \
   --baseline data/eval/intent_baseline_predictions.json \
+  --out-of-scope data/intent_out_of_scope.json \
   --output-dir models/intent-candidate \
   --seed 17
 ```
+
+`--out-of-scope` supplies unlabeled requests the router should decline entirely. They carry no label, because the three-label taxonomy cannot express "none of these": out-of-scope safety is measured as the fraction of probes whose confidence falls below the serving threshold. Supplying probes both raises the selected threshold above what the model scores on requests it cannot serve, and enables the `out_of_scope_abstention_minimum` gate (`--min-out-of-scope-abstention`, default `1.0`). Without probes the rate is reported as `null` — unmeasured, never assumed safe.
 
 The seed controls the source-grouped train, validation, and held-out test split as well as supported deterministic training behavior. Threshold selection uses only validation requests not already decided by regex; the test split is evaluated once after selection. Baseline records must match the test example IDs and expected labels exactly, ensuring the baseline and candidate are compared on the same requests.
 
@@ -51,7 +54,9 @@ The output directory contains three inspection-ready artifacts:
 
 - `intent_model.pt` is the candidate checkpoint, including its ordered labels, preprocessing and architecture metadata, dataset fingerprint, and format version.
 - `split_manifest.json` records the seed, fingerprint, split sizes, per-label counts, example IDs, and source groups.
-- `evaluation_report.json` records the selected threshold, candidate and baseline metrics, hyperparameters, dataset fingerprint, and every promotion-gate result.
+- `evaluation_report.json` records the selected threshold, per-split label counts, candidate and baseline metrics, hyperparameters, dataset fingerprint, calibration, and every promotion-gate result.
+
+The `calibration` block is what to read before trusting a threshold. Softmax scores are not probabilities, so it reports the full validation sweep — coverage, macro-F1, tool precision, high-confidence errors, and out-of-scope abstention at every candidate threshold — plus reliability bins and the expected calibration error. A model whose out-of-scope confidences overlap its in-domain confidences shows up here as a sweep where abstention only reaches the required rate at a threshold that leaves no coverage.
 
 Evaluation composes the actual cascades on every held-out request: baseline is regex → captured classifier/rule fallback; candidate is the same regex route → covered model → the identical captured fallback on abstention. Regex-owned requests cannot count as model coverage. The promotion gates require non-decreasing macro-F1, the configured minimum `tool` precision, no more than the configured high-confidence error limit, reduced LLM-classifier usage, lower model-resolved latency than LLM classification, and unchanged authoritative regex routes. A failed gate leaves all three candidate artifacts available for inspection but does not activate them or overwrite a serving setting.
 

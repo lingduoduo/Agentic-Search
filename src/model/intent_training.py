@@ -22,6 +22,7 @@ from .intent_data import (
     IntentDatasetSplit,
     IntentExample,
     load_intent_examples,
+    load_out_of_scope_probes,
     split_intent_examples,
 )
 from .intent_evaluation import (
@@ -29,9 +30,11 @@ from .intent_evaluation import (
     PromotionCriteria,
     PromotionDecision,
     authoritative_routes_match,
+    calibration_report,
     compare_for_promotion,
     compose_candidate_cascade,
     evaluate_intent_predictions,
+    out_of_scope_abstention_rate,
     select_confidence_threshold,
 )
 from src.internal.document_index.text import extract_keywords, tokenize_text
@@ -58,6 +61,7 @@ class IntentTrainingConfig:
     examples_path: Path
     output_dir: Path
     baseline_path: Path
+    out_of_scope_path: Path | None = None
     seed: int = 17
     epochs: int = 10
     lr: float = 1e-3
@@ -72,6 +76,7 @@ class IntentTrainingConfig:
     require_macro_f1_non_decreasing: bool = True
     require_llm_fallback_reduction: bool = True
     require_latency_improvement: bool = True
+    min_out_of_scope_abstention: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -236,6 +241,18 @@ def build_examples_for_document(
             "tool",
             ("ambiguous",),
         ),
+        # Two intents in one request. The dispatcher resolves tool > search >
+        # chat, so the higher-precedence route is the correct label.
+        (
+            f"the {t1} contract needs a review summary and a note to the legal team",
+            "tool",
+            ("multi_intent",),
+        ),
+        (
+            f"I need background on {t2} and the latest benchmark table",
+            "search",
+            ("multi_intent",),
+        ),
     )
     document_id = str(document.get("_intent_document_id", document.get("id", title)))
     label_offsets = Counter[str]()
@@ -362,10 +379,15 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
     )
 
     validation_records = _predict_model_eligible_examples(pipeline, split.validation)
+    out_of_scope_confidences = _predict_out_of_scope_confidences(pipeline, config)
     selected_threshold = select_confidence_threshold(
         validation_records,
         tool_precision_min=config.min_tool_precision,
         max_high_confidence_errors=config.max_high_confidence_errors,
+        out_of_scope_confidences=out_of_scope_confidences,
+        min_out_of_scope_abstention=(
+            config.min_out_of_scope_abstention if out_of_scope_confidences else 0.0
+        ),
     )
     model_records = _predict_examples(pipeline, split.test)
     candidate_records = compose_candidate_cascade(
@@ -377,6 +399,11 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
         authoritative_routes_unchanged=authoritative_routes_match(
             candidate_records, baseline_records
         ),
+        out_of_scope_abstention=(
+            out_of_scope_abstention_rate(out_of_scope_confidences, selected_threshold)
+            if out_of_scope_confidences
+            else None
+        ),
     )
     baseline_report = evaluate_intent_predictions(
         baseline_records, threshold=selected_threshold
@@ -387,8 +414,16 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
         require_macro_f1_non_decreasing=config.require_macro_f1_non_decreasing,
         require_llm_fallback_reduction=config.require_llm_fallback_reduction,
         require_latency_improvement=config.require_latency_improvement,
+        min_out_of_scope_abstention=(
+            config.min_out_of_scope_abstention if out_of_scope_confidences else 0.0
+        ),
     )
     promotion = compare_for_promotion(candidate_report, baseline_report, criteria)
+    calibration = calibration_report(
+        validation_records,
+        selected_threshold=selected_threshold,
+        out_of_scope_confidences=out_of_scope_confidences,
+    )
 
     output_dir = Path(config.output_dir)
     checkpoint_path = output_dir / "intent_model.pt"
@@ -400,6 +435,11 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
         "hyperparameters": _hyperparameters(config),
         "dataset_fingerprint": split.fingerprint,
         "selected_threshold": selected_threshold,
+        "split_label_counts": {
+            name: manifest["splits"][name]["label_counts"]
+            for name in ("train", "validation", "test")
+        },
+        "calibration": calibration,
         "candidate_metrics": candidate_report.to_dict(),
         "baseline_metrics": baseline_report.to_dict(),
         "promotion": promotion.to_dict(),
@@ -477,6 +517,16 @@ def _predict_examples(
             )
         )
     return tuple(records)
+
+
+def _predict_out_of_scope_confidences(
+    pipeline: IntentPipeline, config: IntentTrainingConfig
+) -> tuple[float, ...]:
+    """Score requests the router should decline, if probes were supplied."""
+    if config.out_of_scope_path is None:
+        return ()
+    probes = load_out_of_scope_probes(Path(config.out_of_scope_path))
+    return tuple(pipeline.predict_text(text).confidence for _, text in probes)
 
 
 def _predict_model_eligible_examples(
@@ -930,6 +980,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train = subparsers.add_parser("train", help="train and evaluate a candidate")
     train.add_argument("--examples", required=True, type=Path)
     train.add_argument("--baseline", required=True, type=Path)
+    train.add_argument("--out-of-scope", type=Path)
     train.add_argument("--output-dir", required=True, type=Path)
     train.add_argument("--seed", type=int, default=17)
     train.add_argument("--epochs", type=int, default=10)
@@ -942,6 +993,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--validation-fraction", type=float, default=0.15)
     train.add_argument("--min-tool-precision", type=float, default=0.95)
     train.add_argument("--max-high-confidence-errors", type=int, default=0)
+    train.add_argument("--min-out-of-scope-abstention", type=float, default=1.0)
     return parser
 
 
@@ -972,6 +1024,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             IntentTrainingConfig(
                 examples_path=args.examples,
                 baseline_path=args.baseline,
+                out_of_scope_path=args.out_of_scope,
                 output_dir=args.output_dir,
                 seed=args.seed,
                 epochs=args.epochs,
@@ -984,6 +1037,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 validation_fraction=args.validation_fraction,
                 min_tool_precision=args.min_tool_precision,
                 max_high_confidence_errors=args.max_high_confidence_errors,
+                min_out_of_scope_abstention=args.min_out_of_scope_abstention,
             )
         )
     except (OSError, ValueError, RuntimeError) as exc:

@@ -46,6 +46,7 @@ class IntentEvaluationReport:
     total_records: int
     covered_records: int
     authoritative_routes_unchanged: bool = True
+    out_of_scope_abstention: float | None = None
 
     @property
     def tool_precision(self) -> float:
@@ -73,6 +74,7 @@ class IntentEvaluationReport:
             "total_records": self.total_records,
             "covered_records": self.covered_records,
             "authoritative_routes_unchanged": self.authoritative_routes_unchanged,
+            "out_of_scope_abstention": self.out_of_scope_abstention,
         }
 
 
@@ -85,6 +87,7 @@ class PromotionCriteria:
     require_macro_f1_non_decreasing: bool = True
     require_llm_fallback_reduction: bool = True
     require_latency_improvement: bool = True
+    min_out_of_scope_abstention: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,7 @@ def evaluate_intent_predictions(
     *,
     threshold: float,
     authoritative_routes_unchanged: bool = True,
+    out_of_scope_abstention: float | None = None,
 ) -> IntentEvaluationReport:
     """Calculate all metrics for labeled records at a selected threshold."""
     records = _validated_records(records)
@@ -172,6 +176,7 @@ def evaluate_intent_predictions(
         total_records=total_records,
         covered_records=covered_count,
         authoritative_routes_unchanged=authoritative_routes_unchanged,
+        out_of_scope_abstention=out_of_scope_abstention,
     )
 
 
@@ -222,34 +227,162 @@ def select_confidence_threshold(
     *,
     tool_precision_min: float,
     max_high_confidence_errors: int,
+    out_of_scope_confidences: Iterable[float] = (),
+    min_out_of_scope_abstention: float = 0.0,
 ) -> float:
-    """Choose the lowest validation threshold that satisfies route safety gates."""
+    """Choose the lowest validation threshold that satisfies route safety gates.
+
+    When out-of-scope probe confidences are supplied, a threshold also has to
+    defer at least ``min_out_of_scope_abstention`` of them, which raises the
+    threshold above the confidence the model assigns to requests it cannot
+    serve at all.
+    """
     records = _validated_records(records)
     _validate_probability(tool_precision_min, name="tool_precision_min")
+    _validate_probability(
+        min_out_of_scope_abstention, name="min_out_of_scope_abstention"
+    )
     if max_high_confidence_errors < 0:
         raise ValueError("max_high_confidence_errors must be non-negative")
+    out_of_scope = _validated_confidences(out_of_scope_confidences)
 
-    eligible: list[tuple[float, float, float]] = []
+    eligible: list[float] = []
     for threshold in sorted({record.confidence for record in records} | {1.0}):
+        if (
+            out_of_scope_abstention_rate(out_of_scope, threshold)
+            < min_out_of_scope_abstention
+        ):
+            continue
         covered = tuple(record for record in records if record.confidence >= threshold)
         if not covered:
             # The explicit 1.0 candidate safely defers every sub-1.0 prediction.
-            eligible.append((threshold, 0.0, 0.0))
+            eligible.append(threshold)
             continue
         report = evaluate_intent_predictions(covered, threshold=0.0)
         if (
             report.tool_precision >= tool_precision_min
             and report.high_confidence_errors <= max_high_confidence_errors
         ):
-            eligible.append((threshold, report.macro_f1, len(covered) / len(records)))
+            eligible.append(threshold)
 
     if not eligible:
         raise ValueError(
             "No confidence threshold satisfies the requested safety limits"
         )
-    return min(
-        eligible, key=lambda candidate: (candidate[0], -candidate[1], -candidate[2])
-    )[0]
+    return min(eligible)
+
+
+def calibration_report(
+    records: Iterable[IntentPredictionRecord],
+    *,
+    selected_threshold: float,
+    out_of_scope_confidences: Iterable[float] = (),
+    bins: int = 10,
+) -> dict[str, Any]:
+    """Report how confidence relates to correctness, not just the chosen cut.
+
+    Softmax scores are not probabilities, so the sweep and reliability bins let
+    an operator see the coverage/error trade at every candidate threshold
+    instead of trusting the single selected one.
+    """
+    records = _validated_records(records)
+    _validate_probability(selected_threshold, name="selected_threshold")
+    if bins < 1:
+        raise ValueError("bins must be positive")
+    out_of_scope = _validated_confidences(out_of_scope_confidences)
+
+    sweep: list[dict[str, Any]] = []
+    for threshold in sorted({record.confidence for record in records} | {1.0}):
+        covered = tuple(record for record in records if record.confidence >= threshold)
+        row: dict[str, Any] = {
+            "threshold": threshold,
+            "coverage": len(covered) / len(records),
+            "covered_records": len(covered),
+            "out_of_scope_abstention": (
+                out_of_scope_abstention_rate(out_of_scope, threshold)
+                if out_of_scope
+                else None
+            ),
+        }
+        if covered:
+            report = evaluate_intent_predictions(covered, threshold=0.0)
+            row["macro_f1"] = report.macro_f1
+            row["tool_precision"] = report.tool_precision
+            row["high_confidence_errors"] = report.high_confidence_errors
+        else:
+            row["macro_f1"] = None
+            row["tool_precision"] = None
+            row["high_confidence_errors"] = 0
+        sweep.append(row)
+
+    reliability: list[dict[str, Any]] = []
+    expected_calibration_error = 0.0
+    for index in range(bins):
+        lower = index / bins
+        upper = (index + 1) / bins
+        members = tuple(
+            record
+            for record in records
+            if lower <= record.confidence < upper
+            or (index == bins - 1 and record.confidence == 1.0)
+        )
+        if not members:
+            reliability.append(
+                {
+                    "lower": lower,
+                    "upper": upper,
+                    "count": 0,
+                    "accuracy": None,
+                    "mean_confidence": None,
+                }
+            )
+            continue
+        accuracy = sum(record.expected == record.predicted for record in members) / len(
+            members
+        )
+        mean_confidence = sum(record.confidence for record in members) / len(members)
+        expected_calibration_error += (
+            len(members) / len(records) * abs(accuracy - mean_confidence)
+        )
+        reliability.append(
+            {
+                "lower": lower,
+                "upper": upper,
+                "count": len(members),
+                "accuracy": accuracy,
+                "mean_confidence": mean_confidence,
+            }
+        )
+
+    return {
+        "selected_threshold": selected_threshold,
+        "thresholds": sweep,
+        "reliability_bins": reliability,
+        "expected_calibration_error": expected_calibration_error,
+        "out_of_scope_probes": len(out_of_scope),
+        # None, not 1.0: no probes means unmeasured, not safe.
+        "out_of_scope_abstention": (
+            out_of_scope_abstention_rate(out_of_scope, selected_threshold)
+            if out_of_scope
+            else None
+        ),
+    }
+
+
+def out_of_scope_abstention_rate(
+    confidences: tuple[float, ...], threshold: float
+) -> float:
+    """Fraction of out-of-scope probes the threshold declines to serve."""
+    if not confidences:
+        return 1.0
+    return sum(value < threshold for value in confidences) / len(confidences)
+
+
+def _validated_confidences(values: Iterable[float]) -> tuple[float, ...]:
+    values = tuple(values)
+    for value in values:
+        _validate_probability(value, name="out-of-scope confidence")
+    return values
 
 
 def compare_for_promotion(
@@ -299,6 +432,19 @@ def compare_for_promotion(
             candidate.authoritative_routes_unchanged,
             int(candidate.authoritative_routes_unchanged),
             1,
+        ),
+        _gate(
+            "out_of_scope_abstention_minimum",
+            # No probes measured is not evidence of safety: the gate only
+            # passes when a measured rate meets the requirement.
+            criteria.min_out_of_scope_abstention <= 0.0
+            or (
+                candidate.out_of_scope_abstention is not None
+                and candidate.out_of_scope_abstention
+                >= criteria.min_out_of_scope_abstention
+            ),
+            candidate.out_of_scope_abstention,
+            criteria.min_out_of_scope_abstention,
         ),
     )
     failed_gates = tuple(gate["name"] for gate in gates if not gate["passed"])

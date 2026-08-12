@@ -347,3 +347,43 @@ def test_regex_still_wins_over_model(monkeypatch):
     )
     assert strategy is RouteStrategy.SEARCH
     assert called["model"] is False
+
+
+def test_route_query_reports_deciding_mechanism_outside_debug_captures(monkeypatch):
+    """Route telemetry must survive without the dev-only request capture.
+
+    Request captures only run under AGENTIC_SEARCH_DEBUG_PANELS, so a caller
+    needs the deciding mechanism handed back directly to persist it and recycle
+    model errors into training.
+    """
+    telemetry: dict = {}
+    strategy = route_query(
+        "find the onboarding doc", llm=None, explicit_source=False, telemetry=telemetry
+    )
+
+    assert strategy is RouteStrategy.SEARCH
+    assert telemetry["route_mechanism"] == "regex"
+
+    monkeypatch.setattr(
+        ir,
+        "predict_route",
+        lambda query, settings=None: IntentModelDecision(
+            strategy=RouteStrategy.TOOL,
+            confidence=0.91,
+            threshold=0.6,
+            latency_ms=1.5,
+        ),
+    )
+    telemetry = {}
+    strategy = route_query(
+        "vendor renewal terms archive and notes",
+        llm=None,
+        explicit_source=False,
+        telemetry=telemetry,
+    )
+
+    assert strategy is RouteStrategy.TOOL
+    assert telemetry["route_mechanism"] == "model"
+    assert telemetry["route_confidence"] == 0.91
+    assert telemetry["route_threshold"] == 0.6
+    assert telemetry["route_abstained"] is False

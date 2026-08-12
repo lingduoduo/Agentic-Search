@@ -1100,6 +1100,7 @@ async def _run_auto_routed(
         llm=llm,
         explicit_source=explicit_source,
         settings=app_settings,
+        telemetry=extra,
     )
     extra["route"] = strategy.value
 
