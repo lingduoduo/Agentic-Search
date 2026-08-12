@@ -1275,3 +1275,140 @@ def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
     assert body["intent"] == "chat"
     assert body["documents"] == []  # zero relevant docs, no crash
     assert dispatched["query"] == "write a haiku about the sea"
+
+
+def _train_dispatch_checkpoint(tmp_path):
+    from src.internal.document_index.text import tokenize_text
+    from src.model.intent_classifier import IntentPipeline
+
+    examples = []
+    for text, label in [
+        ("vendor renewal terms archive", "search"),
+        ("supplier contract details records", "search"),
+        ("procurement agreement document library", "search"),
+        ("friendly casual discussion response", "chat"),
+        ("thoughtful conceptual explanation response", "chat"),
+        ("creative conversational writing ideas", "chat"),
+        ("workflow approval action request", "tool"),
+        ("operational system change request", "tool"),
+        ("business process action command", "tool"),
+    ]:
+        examples.extend([(tokenize_text(text), label)] * 8)
+
+    pipeline = IntentPipeline(vocab_size=128, embedding_dim=16, hidden_dim=32)
+    pipeline.train(examples, epochs=20, lr=0.02, min_freq=1, seed=17)
+    checkpoint = tmp_path / "intent.pt"
+    pipeline.save(
+        str(checkpoint),
+        dataset_fingerprint="test-dispatch",
+        promoted_min_confidence=0.5,
+    )
+    return checkpoint
+
+
+def test_real_intent_checkpoint_dispatches_to_each_existing_runner(
+    monkeypatch, tmp_path
+):
+    from src.internal.configs import AppSettings
+
+    checkpoint = _train_dispatch_checkpoint(tmp_path)
+    calls = []
+
+    async def fake_chat(query, **kwargs):
+        calls.append(("chat", query))
+        return "chat answer", [], [], "chat", {}
+
+    async def fake_search(query, **kwargs):
+        calls.append(("search", query))
+        return "search answer", [], [], "search", {}
+
+    async def fake_tool(query, **kwargs):
+        calls.append(("tool", query))
+        return "tool answer", [], [], "tool", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_chat)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_search_direct_or_escalate", fake_search
+    )
+    monkeypatch.setattr("src.internal.servers.web.app._run_tool_agent", fake_tool)
+
+    class _UnexpectedLLM:
+        def complete(self, messages, **kwargs):
+            raise AssertionError("confident checkpoint route consulted the LLM")
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "dispatch.sqlite3"),
+        app_settings=AppSettings(
+            intent_model_path=checkpoint,
+            intent_model_min_confidence=0.5,
+        ),
+        llm=_UnexpectedLLM(),
+    )
+    with TestClient(app) as client:
+        app.state.search_agent_manager = object()
+        app.state.search_agent_tokenizer = object()
+        for query in [
+            "vendor renewal terms archive",
+            "friendly casual discussion response",
+            "workflow approval action request",
+        ]:
+            response = client.post("/api/agent", json={"query": query})
+            assert response.status_code == 200
+
+    assert calls == [
+        ("search", "vendor renewal terms archive"),
+        ("chat", "friendly casual discussion response"),
+        ("tool", "workflow approval action request"),
+    ]
+
+
+def test_real_intent_checkpoint_high_threshold_uses_classifier_fallback(
+    monkeypatch, tmp_path
+):
+    from src.internal.configs import AppSettings
+
+    checkpoint = _train_dispatch_checkpoint(tmp_path)
+    calls = []
+
+    async def fake_chat(query, **kwargs):
+        calls.append(("chat", query))
+        return "fallback answer", [], [], "chat", {}
+
+    async def unexpected_search(query, **kwargs):
+        raise AssertionError("abstained model prediction dispatched search")
+
+    async def unexpected_tool(query, **kwargs):
+        raise AssertionError("abstained model prediction dispatched tool")
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_chat)
+    monkeypatch.setattr(
+        "src.internal.servers.web.app._run_search_direct_or_escalate",
+        unexpected_search,
+    )
+    monkeypatch.setattr("src.internal.servers.web.app._run_tool_agent", unexpected_tool)
+
+    class _ClassifierLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, messages, **kwargs):
+            self.calls += 1
+            return "chat"
+
+    llm = _ClassifierLLM()
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "fallback.sqlite3"),
+        app_settings=AppSettings(
+            intent_model_path=checkpoint,
+            intent_model_min_confidence=1.0,
+        ),
+        llm=llm,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent", json={"query": "vendor renewal discussion request"}
+        )
+
+    assert response.status_code == 200
+    assert llm.calls == 1
+    assert calls == [("chat", "vendor renewal discussion request")]

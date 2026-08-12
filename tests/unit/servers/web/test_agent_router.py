@@ -6,6 +6,7 @@ import pytest
 
 import src.internal.servers.web.intent_routing as ir
 from src.context.models import ChatMessage
+from src.internal.configs import AppSettings
 from src.internal.servers.web.intent_routing import (
     RouteStrategy,
     _regex_route,
@@ -13,6 +14,7 @@ from src.internal.servers.web.intent_routing import (
     classify_route,
     route_query,
 )
+from src.internal.servers.web.ml_intent import IntentModelDecision
 
 
 class _FakeLLM:
@@ -266,19 +268,42 @@ class _SpyLLM:
 
 
 def test_route_query_uses_model_when_confident(monkeypatch):
-    monkeypatch.setattr(ir, "predict_route", lambda q: (RouteStrategy.SEARCH, 0.9))
+    settings = AppSettings(intent_model_min_confidence=0.75)
+    observed_settings = []
+
+    def _predict(_query, *, settings=None):
+        observed_settings.append(settings)
+        return IntentModelDecision(
+            strategy=RouteStrategy.SEARCH,
+            confidence=0.9,
+            threshold=0.75,
+            latency_ms=1.25,
+        )
+
+    monkeypatch.setattr(ir, "predict_route", _predict)
     llm = _SpyLLM()
     strategy = ir.route_query(
         "the vendor contract renewal terms",
         llm=llm,
         explicit_source=False,
+        settings=settings,
     )
     assert strategy is RouteStrategy.SEARCH
     assert llm.called is False  # model replaced the LLM step
+    assert observed_settings == [settings]
 
 
 def test_route_query_defers_to_llm_when_model_low_confidence(monkeypatch):
-    monkeypatch.setattr(ir, "predict_route", lambda q: (RouteStrategy.SEARCH, 0.3))
+    monkeypatch.setattr(
+        ir,
+        "predict_route",
+        lambda q, *, settings=None: IntentModelDecision(
+            strategy=RouteStrategy.SEARCH,
+            confidence=0.3,
+            threshold=0.75,
+            latency_ms=1.25,
+        ),
+    )
     llm = _SpyLLM()
     strategy = ir.route_query(
         "the vendor contract renewal terms",
@@ -290,7 +315,7 @@ def test_route_query_defers_to_llm_when_model_low_confidence(monkeypatch):
 
 
 def test_route_query_no_model_is_unchanged(monkeypatch):
-    monkeypatch.setattr(ir, "predict_route", lambda q: None)
+    monkeypatch.setattr(ir, "predict_route", lambda q, *, settings=None: None)
     llm = _SpyLLM()
     strategy = ir.route_query(
         "the vendor contract renewal terms",
@@ -304,9 +329,14 @@ def test_route_query_no_model_is_unchanged(monkeypatch):
 def test_regex_still_wins_over_model(monkeypatch):
     called = {"model": False}
 
-    def _spy(_q):
+    def _spy(_q, *, settings=None):
         called["model"] = True
-        return (RouteStrategy.CHAT, 0.99)
+        return IntentModelDecision(
+            strategy=RouteStrategy.CHAT,
+            confidence=0.99,
+            threshold=0.6,
+            latency_ms=1.25,
+        )
 
     monkeypatch.setattr(ir, "predict_route", _spy)
     # "find X" matches the anchored search regex -> returns before predict_route.
