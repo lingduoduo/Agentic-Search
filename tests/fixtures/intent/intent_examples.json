@@ -1,0 +1,86 @@
+[
+  {
+    "id": "chat-a",
+    "text": "Explain how dense retrieval works",
+    "label": "chat",
+    "source": "chat-a",
+    "tags": ["explanation"]
+  },
+  {
+    "id": "chat-b",
+    "text": "Explain how to send an email securely",
+    "label": "chat",
+    "source": "chat-b",
+    "tags": ["hard_negative"]
+  },
+  {
+    "id": "chat-c",
+    "text": "Discuss approaches to finding duplicate documents",
+    "label": "chat",
+    "source": "chat-c",
+    "tags": ["hard_negative"]
+  },
+  {
+    "id": "chat-d",
+    "text": "Compare keyword search with vector search",
+    "label": "chat",
+    "source": "chat-d",
+    "tags": ["comparison"]
+  },
+  {
+    "id": "search-a",
+    "text": "Find the deployment guide",
+    "label": "search",
+    "source": "search-a",
+    "tags": ["direct"]
+  },
+  {
+    "id": "search-b",
+    "text": "Look up the incident response notes",
+    "label": "search",
+    "source": "search-b",
+    "tags": ["direct"]
+  },
+  {
+    "id": "search-c",
+    "text": "Locate the duplicate-document policy",
+    "label": "search",
+    "source": "search-c",
+    "tags": ["paraphrase"]
+  },
+  {
+    "id": "search-d",
+    "text": "Retrieve the indexing documentation",
+    "label": "search",
+    "source": "search-d",
+    "tags": ["direct"]
+  },
+  {
+    "id": "tool-a",
+    "text": "Send the security summary to the project owner",
+    "label": "tool",
+    "source": "tool-a",
+    "tags": ["paraphrase"]
+  },
+  {
+    "id": "tool-b",
+    "text": "Create an issue for the failed deployment",
+    "label": "tool",
+    "source": "tool-b",
+    "tags": ["direct"]
+  },
+  {
+    "id": "tool-c",
+    "text": "Schedule a review meeting for tomorrow",
+    "label": "tool",
+    "source": "tool-c",
+    "tags": ["direct"]
+  },
+  {
+    "id": "tool-d",
+    "text": "Open a pull request for the documentation update",
+    "label": "tool",
+    "source": "tool-d",
+    "tags": ["direct"]
+  }
+]

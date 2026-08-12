@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import math
+import os
+import sys
+import tempfile
+import time
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .intent_classifier import INTENT_LABELS, IntentPipeline, load_training_data
+from .intent_data import (
+    IntentDatasetSplit,
+    IntentExample,
+    load_intent_examples,
+    split_intent_examples,
+)
+from .intent_evaluation import (
+    IntentPredictionRecord,
+    PromotionCriteria,
+    PromotionDecision,
+    compare_for_promotion,
+    evaluate_intent_predictions,
+    select_confidence_threshold,
+)
 from src.internal.document_index.text import extract_keywords, tokenize_text
 
 INTENTS = tuple(INTENT_LABELS)  # ordering used for sort key
@@ -23,6 +45,68 @@ class IntentTrainingResult:
     pipeline: IntentPipeline
     num_examples: int
     label_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class IntentTrainingConfig:
+    """Inputs, hyperparameters, and promotion gates for one offline run."""
+
+    examples_path: Path
+    output_dir: Path
+    baseline_path: Path
+    seed: int = 17
+    epochs: int = 10
+    lr: float = 1e-3
+    min_freq: int = 1
+    vocab_size: int = 5000
+    embedding_dim: int = 128
+    hidden_dim: int = 256
+    train_fraction: float = 0.70
+    validation_fraction: float = 0.15
+    min_tool_precision: float = 0.95
+    max_high_confidence_errors: int = 0
+    require_macro_f1_non_decreasing: bool = True
+    require_llm_fallback_reduction: bool = True
+    require_latency_improvement: bool = True
+
+
+@dataclass(frozen=True)
+class IntentTrainingRun:
+    """Paths and promotion result produced by an offline training run."""
+
+    checkpoint_path: Path
+    split_manifest_path: Path
+    evaluation_report_path: Path
+    selected_threshold: float
+    promotion: PromotionDecision
+
+
+_HARD_CASES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "hard-secure-email-chat",
+        "Explain how to send an email securely",
+        "chat",
+        ("hard_negative",),
+    ),
+    (
+        "hard-secure-email-tool",
+        "Send the security summary to the project owner",
+        "tool",
+        ("paraphrase",),
+    ),
+    (
+        "hard-duplicate-documents-chat",
+        "Discuss approaches to finding duplicate documents",
+        "chat",
+        ("hard_negative",),
+    ),
+    (
+        "hard-duplicate-documents-search",
+        "Locate the duplicate-document policy",
+        "search",
+        ("paraphrase",),
+    ),
+)
 
 
 def load_corpus(path: Path) -> list[dict[str, Any]]:
@@ -85,47 +169,62 @@ def build_examples_for_document(
     t1 = _pick_term(terms, 0, "retrieval")
     t2 = _pick_term(terms, 1, "search")
 
-    examples = [
-        {"text": f"find {title}", "label": "search"},
-        {"text": f"look up {t1}", "label": "search"},
-        {"text": f"{title}", "label": "search"},
-        {"text": f"retrieve the {t2} documentation", "label": "search"},
-        {"text": f"what is {title} and how is it used?", "label": "chat"},
-        {"text": f"explain {t1} in {title}", "label": "chat"},
-        {"text": f"compare {t1} and {t2}", "label": "chat"},
-        {"text": f"summarize {title}", "label": "chat"},
-        {"text": f"send an email about {title}", "label": "tool"},
-        {"text": f"create a ticket for {t1}", "label": "tool"},
-        {"text": f"schedule a meeting about {title}", "label": "tool"},
-        {"text": f"open a pull request for {t2}", "label": "tool"},
-    ]
-
-    for example in examples:
+    templates = (
+        (f"find {title}", "search", ("direct",)),
+        (f"look up {t1}", "search", ("paraphrase",)),
+        (f"{title}", "search", ("short",)),
+        (f"retrieve the {t2} documentation", "search", ("paraphrase",)),
+        (f"what is {title} and how is it used?", "chat", ("direct",)),
+        (f"explain {t1} in {title}", "chat", ("paraphrase",)),
+        (f"compare {t1} and {t2}", "chat", ("comparison",)),
+        (f"summarize {title}", "chat", ("direct",)),
+        (f"send an email about {title}", "tool", ("direct",)),
+        (f"create a ticket for {t1}", "tool", ("direct",)),
+        (f"schedule a meeting about {title}", "tool", ("direct",)),
+        (f"open a pull request for {t2}", "tool", ("direct",)),
+    )
+    document_id = str(document.get("id", title))
+    label_offsets = Counter[str]()
+    examples: list[dict[str, Any]] = []
+    for text, label, tags in templates:
+        label_offsets[label] += 1
+        example = {
+            "id": f"corpus:{document_id}:{label}:{label_offsets[label]:02d}",
+            "text": text,
+            "label": label,
+            "source": f"corpus:{document_id}:{label}",
+            "tags": list(tags),
+        }
         example["source_doc_id"] = document.get("id")
         example["source_title"] = title
         example["keywords"] = terms[:4]
         example["context_hint"] = contents[:120]
+        examples.append(example)
     return examples
 
 
 def generate_intent_examples(
     *,
     corpus_path: Path,
-    vocabulary_path: Path,
+    vocabulary_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Generate intent-training examples from a local corpus and vocabulary."""
+    """Generate stable, source-grouped examples from a local corpus."""
 
     documents = load_corpus(corpus_path)
-    vocabulary_tokens = load_vocabulary_tokens(vocabulary_path)
+    vocabulary_tokens = (
+        load_vocabulary_tokens(vocabulary_path) if vocabulary_path is not None else []
+    )
 
     examples: list[dict[str, Any]] = []
     for document in documents:
         examples.extend(build_examples_for_document(document, vocabulary_tokens))
+    _inject_hard_cases(examples)
 
     examples.sort(
         key=lambda item: (
             INTENTS.index(item["label"]),
-            item["source_doc_id"],
+            item["source"],
+            item["id"],
             item["text"],
         )
     )
@@ -178,7 +277,398 @@ def train_intent_classifier(
     )
 
 
+def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
+    """Train, evaluate, compare, and atomically emit a candidate artifact set."""
+
+    _validate_training_config(config)
+    examples = load_intent_examples(Path(config.examples_path))
+    split = split_intent_examples(
+        examples,
+        seed=config.seed,
+        train_fraction=config.train_fraction,
+        validation_fraction=config.validation_fraction,
+    )
+    baseline_records = _load_baseline_records(Path(config.baseline_path), split.test)
+
+    pipeline = IntentPipeline(
+        vocab_size=config.vocab_size,
+        embedding_dim=config.embedding_dim,
+        hidden_dim=config.hidden_dim,
+    )
+    training_data = [
+        (tokenize_text(example.text), example.label) for example in split.train
+    ]
+    pipeline.train(
+        training_data,
+        epochs=config.epochs,
+        lr=config.lr,
+        min_freq=config.min_freq,
+        seed=config.seed,
+    )
+
+    validation_records = _predict_examples(pipeline, split.validation)
+    selected_threshold = select_confidence_threshold(
+        validation_records,
+        tool_precision_min=config.min_tool_precision,
+        max_high_confidence_errors=config.max_high_confidence_errors,
+    )
+    candidate_records = _predict_examples(pipeline, split.test)
+    candidate_report = evaluate_intent_predictions(
+        candidate_records, threshold=selected_threshold
+    )
+    baseline_report = evaluate_intent_predictions(
+        baseline_records, threshold=selected_threshold
+    )
+    criteria = PromotionCriteria(
+        min_tool_precision=config.min_tool_precision,
+        max_high_confidence_errors=config.max_high_confidence_errors,
+        require_macro_f1_non_decreasing=config.require_macro_f1_non_decreasing,
+        require_llm_fallback_reduction=config.require_llm_fallback_reduction,
+        require_latency_improvement=config.require_latency_improvement,
+    )
+    promotion = compare_for_promotion(candidate_report, baseline_report, criteria)
+
+    output_dir = Path(config.output_dir)
+    checkpoint_path = output_dir / "intent_model.pt"
+    split_manifest_path = output_dir / "split_manifest.json"
+    evaluation_report_path = output_dir / "evaluation_report.json"
+    manifest = _split_manifest(split)
+    report = {
+        "labels": list(INTENT_LABELS),
+        "hyperparameters": _hyperparameters(config),
+        "dataset_fingerprint": split.fingerprint,
+        "selected_threshold": selected_threshold,
+        "candidate_metrics": candidate_report.to_dict(),
+        "baseline_metrics": baseline_report.to_dict(),
+        "promotion": promotion.to_dict(),
+    }
+
+    manifest_text = _serialize_json(manifest)
+    report_text = _serialize_json(report)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_save_pipeline(pipeline, checkpoint_path, split.fingerprint)
+    _atomic_write_text(split_manifest_path, manifest_text)
+    _atomic_write_text(evaluation_report_path, report_text)
+
+    return IntentTrainingRun(
+        checkpoint_path=checkpoint_path,
+        split_manifest_path=split_manifest_path,
+        evaluation_report_path=evaluation_report_path,
+        selected_threshold=selected_threshold,
+        promotion=promotion,
+    )
+
+
+def _inject_hard_cases(examples: list[dict[str, Any]]) -> None:
+    """Replace four direct examples with independently authored boundary pairs."""
+
+    if not examples:
+        return
+    first_document_id = examples[0].get("source_doc_id")
+    used_indices: set[int] = set()
+    for example_id, text, label, tags in _HARD_CASES:
+        index = next(
+            index
+            for index, example in enumerate(examples)
+            if index not in used_indices
+            and example["label"] == label
+            and example.get("source_doc_id") == first_document_id
+        )
+        used_indices.add(index)
+        source = (
+            "manual:secure-email"
+            if example_id.startswith("hard-secure-email")
+            else "manual:duplicate-documents"
+        )
+        examples[index] = {
+            **examples[index],
+            "id": example_id,
+            "text": text,
+            "source": source,
+            "tags": list(tags),
+        }
+
+
+def _predict_examples(
+    pipeline: IntentPipeline, examples: Sequence[IntentExample]
+) -> tuple[IntentPredictionRecord, ...]:
+    records: list[IntentPredictionRecord] = []
+    for example in examples:
+        started = time.perf_counter()
+        prediction = pipeline.predict_text(example.text)
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        records.append(
+            IntentPredictionRecord(
+                example_id=example.id,
+                expected=example.label,
+                predicted=prediction.intent,
+                confidence=prediction.confidence,
+                latency_ms=latency_ms,
+                mechanism="classifier",
+            )
+        )
+    return tuple(records)
+
+
+def _load_baseline_records(
+    path: Path, test_examples: Sequence[IntentExample]
+) -> tuple[IntentPredictionRecord, ...]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid baseline predictions JSON in {path}: {exc.msg}"
+        ) from exc
+    if not isinstance(payload, list):
+        raise ValueError("Baseline predictions JSON must contain a list of records")
+
+    required_fields = {
+        "example_id",
+        "expected",
+        "predicted",
+        "confidence",
+        "latency_ms",
+        "mechanism",
+    }
+    by_id: dict[str, IntentPredictionRecord] = {}
+    for index, item in enumerate(payload):
+        if not isinstance(item, Mapping) or set(item) != required_fields:
+            raise ValueError(
+                f"Baseline prediction at index {index} must have exactly "
+                f"{sorted(required_fields)!r}"
+            )
+        example_id = _nonempty_string(item["example_id"], "example_id", index)
+        expected = _supported_label(item["expected"], "expected", index)
+        predicted = _supported_label(item["predicted"], "predicted", index)
+        confidence = _finite_number(item["confidence"], "confidence", index)
+        latency_ms = _finite_number(item["latency_ms"], "latency_ms", index)
+        mechanism = _nonempty_string(item["mechanism"], "mechanism", index)
+        if mechanism not in {"classifier", "rule_based"}:
+            raise ValueError(
+                f"Baseline prediction at index {index} has invalid mechanism"
+            )
+        if not 0.0 <= confidence <= 1.0:
+            raise ValueError(
+                f"Baseline prediction at index {index} has invalid confidence"
+            )
+        if latency_ms < 0.0:
+            raise ValueError(
+                f"Baseline prediction at index {index} has invalid latency_ms"
+            )
+        if example_id in by_id:
+            raise ValueError(f"Duplicate baseline prediction id: {example_id!r}")
+        by_id[example_id] = IntentPredictionRecord(
+            example_id=example_id,
+            expected=expected,
+            predicted=predicted,
+            confidence=confidence,
+            latency_ms=latency_ms,
+            mechanism=mechanism,
+        )
+
+    expected_by_id = {example.id: example.label for example in test_examples}
+    if set(by_id) != set(expected_by_id):
+        missing = sorted(set(expected_by_id) - set(by_id))
+        extra = sorted(set(by_id) - set(expected_by_id))
+        raise ValueError(
+            "Baseline prediction IDs must exactly match test IDs; "
+            f"missing={missing!r}, extra={extra!r}"
+        )
+    for example_id, expected in expected_by_id.items():
+        if by_id[example_id].expected != expected:
+            raise ValueError(
+                f"Baseline expected label does not match test example {example_id!r}"
+            )
+    return tuple(by_id[example.id] for example in test_examples)
+
+
+def _split_manifest(split: IntentDatasetSplit) -> dict[str, Any]:
+    return {
+        "seed": split.seed,
+        "dataset_fingerprint": split.fingerprint,
+        "splits": {
+            name: {
+                "size": len(examples),
+                "label_counts": dict(
+                    sorted(Counter(example.label for example in examples).items())
+                ),
+                "example_ids": [example.id for example in examples],
+                "sources": sorted({example.source for example in examples}),
+            }
+            for name, examples in (
+                ("train", split.train),
+                ("validation", split.validation),
+                ("test", split.test),
+            )
+        },
+    }
+
+
+def _hyperparameters(config: IntentTrainingConfig) -> dict[str, Any]:
+    return {
+        "seed": config.seed,
+        "epochs": config.epochs,
+        "lr": config.lr,
+        "min_freq": config.min_freq,
+        "vocab_size": config.vocab_size,
+        "embedding_dim": config.embedding_dim,
+        "hidden_dim": config.hidden_dim,
+        "train_fraction": config.train_fraction,
+        "validation_fraction": config.validation_fraction,
+        "min_tool_precision": config.min_tool_precision,
+        "max_high_confidence_errors": config.max_high_confidence_errors,
+        "require_macro_f1_non_decreasing": (config.require_macro_f1_non_decreasing),
+        "require_llm_fallback_reduction": config.require_llm_fallback_reduction,
+        "require_latency_improvement": config.require_latency_improvement,
+    }
+
+
+def _validate_training_config(config: IntentTrainingConfig) -> None:
+    integer_fields = {
+        "epochs": config.epochs,
+        "min_freq": config.min_freq,
+        "vocab_size": config.vocab_size,
+        "embedding_dim": config.embedding_dim,
+        "hidden_dim": config.hidden_dim,
+    }
+    invalid = [name for name, value in integer_fields.items() if value <= 0]
+    if invalid:
+        raise ValueError(f"Training values must be positive: {', '.join(invalid)}")
+    if config.hidden_dim < 2:
+        raise ValueError("hidden_dim must be at least 2")
+    if not math.isfinite(config.lr) or config.lr <= 0:
+        raise ValueError("lr must be a positive finite number")
+    if not 0.0 <= config.min_tool_precision <= 1.0:
+        raise ValueError("min_tool_precision must be between 0 and 1")
+    if config.max_high_confidence_errors < 0:
+        raise ValueError("max_high_confidence_errors must be non-negative")
+
+
+def _serialize_json(payload: Mapping[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _atomic_write_text(path: Path, serialized: str) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+        temporary_path.replace(path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _atomic_save_pipeline(
+    pipeline: IntentPipeline, path: Path, dataset_fingerprint: str
+) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        pipeline.save(str(temporary_path), dataset_fingerprint=dataset_fingerprint)
+        temporary_path.replace(path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _nonempty_string(value: object, field: str, index: int) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Baseline prediction at index {index} has invalid {field}")
+    return value
+
+
+def _supported_label(value: object, field: str, index: int) -> str:
+    label = _nonempty_string(value, field, index)
+    if label not in INTENT_LABELS:
+        raise ValueError(f"Baseline prediction at index {index} has invalid {field}")
+    return label
+
+
+def _finite_number(value: object, field: str, index: int) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"Baseline prediction at index {index} has invalid {field}")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"Baseline prediction at index {index} has invalid {field}")
+    return result
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    generate = subparsers.add_parser("generate", help="generate intent examples")
+    generate.add_argument("--corpus", required=True, type=Path)
+    generate.add_argument("--vocabulary", type=Path)
+    generate.add_argument("--output", required=True, type=Path)
+
+    train = subparsers.add_parser("train", help="train and evaluate a candidate")
+    train.add_argument("--examples", required=True, type=Path)
+    train.add_argument("--baseline", required=True, type=Path)
+    train.add_argument("--output-dir", required=True, type=Path)
+    train.add_argument("--seed", type=int, default=17)
+    train.add_argument("--epochs", type=int, default=10)
+    train.add_argument("--lr", type=float, default=1e-3)
+    train.add_argument("--min-freq", type=int, default=1)
+    train.add_argument("--vocab-size", type=int, default=5000)
+    train.add_argument("--embedding-dim", type=int, default=128)
+    train.add_argument("--hidden-dim", type=int, default=256)
+    train.add_argument("--train-fraction", type=float, default=0.70)
+    train.add_argument("--validation-fraction", type=float, default=0.15)
+    train.add_argument("--min-tool-precision", type=float, default=0.95)
+    train.add_argument("--max-high-confidence-errors", type=int, default=0)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the generation or offline train/evaluate command."""
+
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "generate":
+            examples = generate_intent_examples(
+                corpus_path=args.corpus, vocabulary_path=args.vocabulary
+            )
+            write_intent_examples(examples, args.output)
+            return 0
+
+        run = run_intent_training(
+            IntentTrainingConfig(
+                examples_path=args.examples,
+                baseline_path=args.baseline,
+                output_dir=args.output_dir,
+                seed=args.seed,
+                epochs=args.epochs,
+                lr=args.lr,
+                min_freq=args.min_freq,
+                vocab_size=args.vocab_size,
+                embedding_dim=args.embedding_dim,
+                hidden_dim=args.hidden_dim,
+                train_fraction=args.train_fraction,
+                validation_fraction=args.validation_fraction,
+                min_tool_precision=args.min_tool_precision,
+                max_high_confidence_errors=args.max_high_confidence_errors,
+            )
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"intent training failed: {exc}", file=sys.stderr)
+        return 1
+    return 0 if run.promotion.promotable else 2
+
+
 def _pick_term(terms: list[str], index: int, fallback: str) -> str:
     if not terms:
         return fallback
     return terms[index % len(terms)]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
