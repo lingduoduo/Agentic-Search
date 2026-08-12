@@ -179,6 +179,90 @@ def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
     assert "promotion" in report
 
 
+_HAND_WRITTEN_EVAL_TEXT = {
+    "chat": "not sure I follow how the two rankings get merged",
+    "search": "where did the quarterly numbers file end up",
+    "tool": "ping the on-call engineer about the failing job",
+}
+
+
+def _run_fixture_training(
+    tmp_path, *, with_eval_queries: bool, copy_training_text: bool = False
+):
+    eval_queries_path = None
+    if with_eval_queries:
+        examples = json.loads(
+            (FIXTURES / "intent_examples.json").read_text(encoding="utf-8")
+        )
+        trained_text_by_label: dict[str, str] = {}
+        for example in examples:
+            trained_text_by_label.setdefault(example["label"], example["text"])
+        eval_queries_path = tmp_path / "eval_queries.json"
+        eval_queries_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": f"eval-{label}",
+                        "text": (
+                            trained_text_by_label[label]
+                            if copy_training_text
+                            else _HAND_WRITTEN_EVAL_TEXT[label]
+                        ),
+                        "label": label,
+                    }
+                    for label in ("chat", "search", "tool")
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    return run_intent_training(
+        IntentTrainingConfig(
+            examples_path=FIXTURES / "intent_examples.json",
+            baseline_path=FIXTURES / "baseline_predictions.json",
+            eval_queries_path=eval_queries_path,
+            output_dir=tmp_path,
+            epochs=1,
+            embedding_dim=8,
+            hidden_dim=16,
+            seed=17,
+        )
+    )
+
+
+def test_training_report_records_realistic_accuracy(tmp_path):
+    pytest.importorskip("torch")
+    run = _run_fixture_training(tmp_path, with_eval_queries=True)
+
+    report = json.loads(run.evaluation_report_path.read_text(encoding="utf-8"))
+    assert report["realistic_accuracy"]["total_queries"] == 3
+    assert 0.0 <= report["realistic_accuracy"]["accuracy"] <= 1.0
+    assert set(report["realistic_accuracy"]) >= {
+        "accuracy",
+        "coverage",
+        "covered_accuracy",
+        "macro_f1",
+        "per_label_metrics",
+        "threshold",
+        "total_queries",
+    }
+
+
+def test_training_report_records_null_realistic_accuracy_without_a_set(tmp_path):
+    pytest.importorskip("torch")
+    run = _run_fixture_training(tmp_path, with_eval_queries=False)
+
+    report = json.loads(run.evaluation_report_path.read_text(encoding="utf-8"))
+    assert report["realistic_accuracy"] is None
+
+
+def test_training_rejects_an_evaluation_set_the_generator_produces(tmp_path):
+    """A set the training data already contains cannot measure generalization."""
+    pytest.importorskip("torch")
+    with pytest.raises(ValueError, match="cannot measure generalization"):
+        _run_fixture_training(tmp_path, with_eval_queries=True, copy_training_text=True)
+
+
 def test_promotable_training_checkpoint_stores_selected_threshold(
     tmp_path, monkeypatch
 ):
