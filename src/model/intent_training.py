@@ -170,7 +170,7 @@ def train_intent_classifier(
     pipeline.train(data, epochs=epochs, lr=lr, min_freq=min_freq)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    pipeline.save(str(output_path))
+    pipeline.save(str(output_path), dataset_fingerprint="untracked")
     return IntentTrainingResult(
         pipeline=pipeline,
         num_examples=len(data),

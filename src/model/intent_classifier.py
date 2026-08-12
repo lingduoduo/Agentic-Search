@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -41,7 +42,9 @@ class _IntentClassifier:
             def forward(self, ids: "torch.Tensor") -> "torch.Tensor":
                 import torch.nn.functional as F
 
-                x = self.embedding(ids).mean(dim=1)
+                mask = ids.ne(0).unsqueeze(-1)
+                embedded = self.embedding(ids)
+                x = (embedded * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
                 x = self.drop(F.relu(self.fc1(x)))
                 x = self.drop(F.relu(self.fc2(x)))
                 return self.fc3(x)
@@ -107,9 +110,12 @@ class IntentPipeline:
         from src.internal.document_index.text import Vocabulary
 
         self._vocab = Vocabulary()
-        self._model = _IntentClassifier(
-            vocab_size, embedding_dim, hidden_dim, len(INTENT_LABELS)
-        )
+        self._model_config = {
+            "vocab_size": vocab_size,
+            "embedding_dim": embedding_dim,
+            "hidden_dim": hidden_dim,
+        }
+        self._model = self._new_model()
         self._label_to_id = {label: i for i, label in enumerate(INTENT_LABELS)}
         self.is_trained = False
 
@@ -120,9 +126,24 @@ class IntentPipeline:
         epochs: int = 10,
         lr: float = 1e-3,
         min_freq: int = 2,
+        seed: int = 17,
     ) -> None:
         """Train on (token_list, intent_label) pairs."""
+        import torch
+
+        random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        self._model = self._new_model()
         self._vocab.build([tokens for tokens, _ in data], min_freq=min_freq)
+        max_vocab_index = max(self._vocab.token2idx.values(), default=0)
+        if max_vocab_index >= self._model._net.embedding.num_embeddings:
+            raise ValueError(
+                "Built vocabulary exceeds configured vocab_size "
+                f"{self._model._net.embedding.num_embeddings}: "
+                f"maximum token index is {max_vocab_index}"
+            )
         encoded = [self._vocab.encode(tokens) or [0] for tokens, _ in data]
         labels = [self._label_to_id[label] for _, label in data]
         self._model.train_batched(encoded, labels, epochs=epochs, lr=lr)
@@ -139,14 +160,20 @@ class IntentPipeline:
 
         return self.predict(tokenize_text(text))
 
-    def save(self, path: str) -> None:
+    def save(self, path: str, *, dataset_fingerprint: str) -> None:
         import torch
 
         if not self.is_trained:
             raise RuntimeError("Pipeline must be trained before saving.")
         checkpoint = {
-            "version": 1,
-            "intent_labels": INTENT_LABELS,
+            "version": 2,
+            "intent_labels": list(INTENT_LABELS),
+            "preprocessing": {
+                "tokenizer": "document_index.tokenize_text",
+                "padding_id": 0,
+                "pooling": "masked_mean",
+            },
+            "dataset_fingerprint": dataset_fingerprint,
             "vocab": {
                 "token2idx": self._vocab.token2idx,
                 "token2cnt": self._vocab.token2cnt,
@@ -168,12 +195,31 @@ class IntentPipeline:
         from src.internal.document_index.text import Vocabulary
 
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-        if checkpoint.get("version") != 1:
+        if checkpoint.get("version") == 1:
+            raise ValueError(
+                "Checkpoint version 1 uses unsafe legacy class indices; retrain "
+                "the intent model before loading it."
+            )
+        if checkpoint.get("version") != 2:
             raise ValueError(
                 f"Unsupported checkpoint version: {checkpoint.get('version')}"
             )
+        if checkpoint.get("intent_labels") != INTENT_LABELS:
+            raise ValueError(
+                "Checkpoint intent_labels do not match the supported label order."
+            )
+        expected_preprocessing = {
+            "tokenizer": "document_index.tokenize_text",
+            "padding_id": 0,
+            "pooling": "masked_mean",
+        }
+        if checkpoint.get("preprocessing") != expected_preprocessing:
+            raise ValueError("Checkpoint preprocessing contract is unsupported.")
+        if not isinstance(checkpoint.get("dataset_fingerprint"), str):
+            raise ValueError("Checkpoint dataset_fingerprint must be a string.")
 
         cfg = checkpoint["config"]
+        cls._validate_checkpoint_dimensions(cfg, checkpoint["model_state"])
         pipeline = cls(
             vocab_size=cfg["vocab_size"],
             embedding_dim=cfg["embedding_dim"],
@@ -188,6 +234,50 @@ class IntentPipeline:
         pipeline._model._net.eval()
         pipeline.is_trained = True
         return pipeline
+
+    def _new_model(self) -> _IntentClassifier:
+        return _IntentClassifier(
+            self._model_config["vocab_size"],
+            self._model_config["embedding_dim"],
+            self._model_config["hidden_dim"],
+            len(INTENT_LABELS),
+        )
+
+    @staticmethod
+    def _validate_checkpoint_dimensions(
+        config: dict[str, Any], model_state: dict[str, Any]
+    ) -> None:
+        required_config = ("vocab_size", "embedding_dim", "hidden_dim", "num_classes")
+        if (
+            not isinstance(config, dict)
+            or any(
+                not isinstance(config.get(key), int) or config[key] <= 0
+                for key in required_config
+            )
+            or config["num_classes"] != len(INTENT_LABELS)
+        ):
+            raise ValueError(
+                "Checkpoint config is invalid for the intent architecture."
+            )
+
+        hidden_half = config["hidden_dim"] // 2
+        expected_shapes = {
+            "embedding.weight": (config["vocab_size"], config["embedding_dim"]),
+            "fc1.weight": (config["hidden_dim"], config["embedding_dim"]),
+            "fc1.bias": (config["hidden_dim"],),
+            "fc2.weight": (hidden_half, config["hidden_dim"]),
+            "fc2.bias": (hidden_half,),
+            "fc3.weight": (config["num_classes"], hidden_half),
+            "fc3.bias": (config["num_classes"],),
+        }
+        if not isinstance(model_state, dict):
+            raise ValueError("Checkpoint config/model state dimensions are invalid.")
+        for name, expected_shape in expected_shapes.items():
+            tensor = model_state.get(name)
+            if tensor is None or tuple(tensor.shape) != expected_shape:
+                raise ValueError(
+                    "Checkpoint config/model state dimensions do not match."
+                )
 
 
 def resolve_search_settings(
