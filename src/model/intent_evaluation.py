@@ -47,6 +47,7 @@ class IntentEvaluationReport:
     covered_records: int
     authoritative_routes_unchanged: bool = True
     out_of_scope_abstention: float | None = None
+    model_tool_precision: float | None = None
 
     @property
     def tool_precision(self) -> float:
@@ -75,6 +76,7 @@ class IntentEvaluationReport:
             "covered_records": self.covered_records,
             "authoritative_routes_unchanged": self.authoritative_routes_unchanged,
             "out_of_scope_abstention": self.out_of_scope_abstention,
+            "model_tool_precision": self.model_tool_precision,
         }
 
 
@@ -156,6 +158,16 @@ def evaluate_intent_predictions(
         or (record.mechanism == "model" and record.confidence < threshold)
         for record in records
     )
+    covered_tool_predictions = sum(record.predicted == "tool" for record in covered)
+    model_tool_precision = (
+        sum(
+            record.predicted == "tool" and record.expected == "tool"
+            for record in covered
+        )
+        / covered_tool_predictions
+        if covered_tool_predictions
+        else None
+    )
 
     return IntentEvaluationReport(
         threshold=threshold,
@@ -177,6 +189,7 @@ def evaluate_intent_predictions(
         covered_records=covered_count,
         authoritative_routes_unchanged=authoritative_routes_unchanged,
         out_of_scope_abstention=out_of_scope_abstention,
+        model_tool_precision=model_tool_precision,
     )
 
 
@@ -405,8 +418,10 @@ def compare_for_promotion(
         ),
         _gate(
             "tool_precision_minimum",
-            candidate.tool_precision >= criteria.min_tool_precision,
-            candidate.tool_precision,
+            # Unmeasured is not evidence of safety, as with out-of-scope.
+            candidate.model_tool_precision is not None
+            and candidate.model_tool_precision >= criteria.min_tool_precision,
+            candidate.model_tool_precision,
             criteria.min_tool_precision,
         ),
         _gate(

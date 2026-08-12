@@ -53,6 +53,7 @@ Routing configuration spans separate capabilities:
 | `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, provider key | Enables grounded chat synthesis and the classifier for ambiguous routes |
 | `AGENTIC_SEARCH_INTENT_MODEL_PATH` | Learned intent-model checkpoint; unset by default, which disables the learned route |
 | `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | Minimum learned intent-model confidence before skipping the LLM/rule fallback; defaults to `0.6` |
+| `AGENTIC_SEARCH_ROUTE_CLARIFICATION` | Ask the user which route was meant when no step in the cascade has a signal; `true` by default. Set `false` to always choose a route, as before. |
 | `SEARCH_DIRECT_COS_MIN` | Semantic threshold for accepting internal evidence without external fallback |
 | `AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL` | Allows a request body to override the server-owned retrieval URL; development only |
 
@@ -78,6 +79,7 @@ Routing configuration spans separate capabilities:
 | `GEN_AI_API_BASE` | — | Override base URL (e.g. `http://localhost:11434/v1`) |
 | `AGENTIC_SEARCH_INTENT_MODEL_PATH` | — | Path to a promoted `intent_model.pt` checkpoint; unset keeps learned intent routing disabled |
 | `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | `0.6` | Inclusive confidence threshold for accepting a learned route; must be finite and between `0.0` and `1.0` |
+| `AGENTIC_SEARCH_ROUTE_CLARIFICATION` | `true` | Ask the user which route was meant when no step in the cascade has a signal; set `false` to always choose a route, as before |
 | `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
 | `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
 | `OAUTH_GOOGLE_DRIVE_CLIENT_ID` | — | Google Drive OAuth app client ID |

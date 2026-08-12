@@ -22,6 +22,7 @@ def _report(
     fallback_rate: float | None,
     p50_latency_ms: float | None,
     high_confidence_errors: int = 0,
+    model_tool_precision: float | None = None,
 ) -> IntentEvaluationReport:
     return IntentEvaluationReport(
         threshold=0.8,
@@ -42,6 +43,7 @@ def _report(
         p95_latency_ms=p50_latency_ms,
         total_records=3,
         covered_records=3,
+        model_tool_precision=model_tool_precision,
     )
 
 
@@ -114,6 +116,7 @@ def test_promotion_fails_when_macro_f1_regresses():
             tool_precision=1.0,
             fallback_rate=0.2,
             p50_latency_ms=2.0,
+            model_tool_precision=1.0,
         ),
         baseline=_report(
             macro_f1=0.85,
@@ -135,6 +138,7 @@ def test_promotion_reports_each_gate_and_rejects_missing_baseline_measurements()
             tool_precision=0.97,
             fallback_rate=0.2,
             p50_latency_ms=2.0,
+            model_tool_precision=0.97,
         ),
         baseline=_report(
             macro_f1=0.90,
@@ -223,6 +227,59 @@ def test_authoritative_route_gate_fails_when_candidate_changes_regex_record():
     )
 
     assert "authoritative_routes_unchanged" in decision.failed_gates
+
+
+def test_tool_precision_gate_ignores_deterministic_routes():
+    """Regex-decided tool routes must not dilute the model's own precision.
+
+    Forty correct deterministic tool routes plus two false model tool routes
+    give 0.9524 cascade precision, which clears the 0.95 limit while the model
+    itself got every tool route wrong.
+    """
+    records = [
+        IntentPredictionRecord(f"r{i}", "tool", "tool", 1.0, 0.1, "regex")
+        for i in range(40)
+    ] + [
+        IntentPredictionRecord(f"m{i}", "chat", "tool", 0.99, 0.1, "model")
+        for i in range(2)
+    ]
+    report = evaluate_intent_predictions(records, threshold=0.5)
+
+    assert report.tool_precision == pytest.approx(0.9524, abs=1e-4)
+    assert report.model_tool_precision == 0.0
+
+    decision = compare_for_promotion(
+        report,
+        _report(
+            macro_f1=0.0,
+            tool_precision=1.0,
+            fallback_rate=1.0,
+            p50_latency_ms=400.0,
+        ),
+        PromotionCriteria(max_high_confidence_errors=2),
+    )
+
+    assert "tool_precision_minimum" in decision.failed_gates
+
+
+def test_tool_precision_is_unmeasured_when_the_model_predicts_no_tool_route():
+    records = [IntentPredictionRecord("m1", "chat", "chat", 0.99, 0.1, "model")]
+    report = evaluate_intent_predictions(records, threshold=0.5)
+
+    assert report.model_tool_precision is None
+
+    decision = compare_for_promotion(
+        report,
+        _report(
+            macro_f1=0.0,
+            tool_precision=1.0,
+            fallback_rate=1.0,
+            p50_latency_ms=400.0,
+        ),
+        PromotionCriteria(),
+    )
+
+    assert "tool_precision_minimum" in decision.failed_gates
 
 
 def test_threshold_selection_defers_out_of_scope_requests():

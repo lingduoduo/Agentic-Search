@@ -40,6 +40,17 @@ export interface AgentExperienceRequest {
   top_k?: number;
   source_provider?: SearchSourceProvider;
   mode?: AgentMode;
+  route?: "chat" | "search" | "tool";
+}
+
+export interface ClarificationOptionView {
+  route: "chat" | "search" | "tool";
+  label: string;
+}
+
+export interface ClarificationView {
+  question: string;
+  options: ClarificationOptionView[];
 }
 
 export interface ToolCallTraceView {
@@ -68,9 +79,10 @@ export interface AgentExperienceResponse {
   citations: string[];
   documents: SourceDocumentView[];
   messages: ChatMessageView[];
-  intent?: "search" | "chat" | "tool";
+  intent?: "search" | "chat" | "tool" | "clarify";
   tool_calls?: ToolCallTraceView[];
   control_flow_trace?: ControlFlowEventView[];
+  clarification?: ClarificationView | null;
 }
 
 export interface SessionCreateRequest {
@@ -248,12 +260,13 @@ export interface SSEDoneEvent {
   session_id: string;
   citations: string[];
   documents: SourceDocumentView[];
-  intent?: "search" | "chat" | "tool";
+  intent?: "search" | "chat" | "tool" | "clarify";
   route?: string | null;
   route_degraded?: string | null;
   tool_calls?: ToolCallTraceView[];
   control_flow_trace?: ControlFlowEventView[];
   request_id?: string;
+  clarification?: ClarificationView | null;
 }
 
 export interface SSEErrorEvent {

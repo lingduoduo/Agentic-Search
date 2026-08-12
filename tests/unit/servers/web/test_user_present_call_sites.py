@@ -68,9 +68,11 @@ def test_tool_agent_mode_withholds_user_scoped_tools_from_a_claimed_user_id(
 def test_auto_route_withholds_user_scoped_tools_from_a_claimed_user_id(
     monkeypatch, patched_tool_agent, seen, tmp_path
 ):
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
-    monkeypatch.setattr(web_app, "route_query", lambda *a, **k: RouteStrategy.TOOL)
+    monkeypatch.setattr(
+        web_app, "route_request", lambda *a, **k: RouteDecision(RouteStrategy.TOOL)
+    )
 
     response = _client(tmp_path, "auto_route").post(
         "/api/agent",

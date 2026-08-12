@@ -160,6 +160,7 @@ class AppSettings:
     generation_timeout_seconds: float = 120.0
     intent_model_path: Path | None = None
     intent_model_min_confidence: float = 0.6
+    route_clarification: bool = True
 
     def __post_init__(self) -> None:
         if (
@@ -281,6 +282,9 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
             Path(intent_model_path_value) if intent_model_path_value else None
         ),
         intent_model_min_confidence=intent_model_min_confidence,
+        route_clarification=get_env_bool(
+            source, "AGENTIC_SEARCH_ROUTE_CLARIFICATION", True
+        ),
     )
 
 

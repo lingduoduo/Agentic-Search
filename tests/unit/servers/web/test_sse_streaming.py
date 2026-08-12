@@ -157,11 +157,11 @@ def test_stream_chat_once_emits_answer_and_done(monkeypatch, tmp_path):
 
 def test_stream_done_event_includes_route(monkeypatch, tmp_path):
     """The auto-route done event carries the chosen route + degradation."""
-    from src.internal.servers.web.intent_routing import RouteStrategy
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query",
-        lambda *a, **k: RouteStrategy.CHAT,
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.CHAT),
     )
 
     async def fake_rag(query, **kw):

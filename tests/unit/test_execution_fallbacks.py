@@ -23,7 +23,7 @@ from src.context.models import (
     ContextDocument,
 )
 from src.internal.servers.web.app import SearchExperienceSettings, create_web_app
-from src.internal.servers.web.intent_routing import RouteStrategy
+from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
 from src.agents.core.base import AgentLoopOutput
 
 
@@ -38,7 +38,8 @@ def _make_answer_result(answer: str = "ok") -> AnswerGenerationResult:
 
 def _force_route(monkeypatch, strategy: RouteStrategy) -> None:
     monkeypatch.setattr(
-        "src.internal.servers.web.app.route_query", lambda *a, **k: strategy
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(strategy),
     )
 
 
