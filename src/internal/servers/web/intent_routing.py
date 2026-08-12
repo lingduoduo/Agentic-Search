@@ -13,6 +13,7 @@ from src.internal.servers.web import request_capture as _capture
 if TYPE_CHECKING:
     from src.agents.core.base import AgentLoopOutput
     from src.context.models import LLMClient
+    from src.internal.configs import AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class RouteStrategy(str, Enum):
 # Imported after RouteStrategy is defined: ml_intent imports RouteStrategy from
 # this module at its own top level, so importing ml_intent any earlier here
 # would hit a circular-import error (RouteStrategy not yet defined).
-from src.internal.servers.web.ml_intent import intent_min_confidence, predict_route  # noqa: E402
+from src.internal.servers.web.ml_intent import predict_route  # noqa: E402
 
 
 # Imperative verbs that imply taking an action through a tool/MCP.
@@ -263,6 +264,7 @@ def route_query(
     *,
     llm: "LLMClient | None",
     explicit_source: bool,
+    settings: "AppSettings | None" = None,
 ) -> RouteStrategy:
     """Decide the agent strategy for an auto-routed (mode=None) request.
 
@@ -271,8 +273,8 @@ def route_query(
       2. A confident `_regex_route` match (anchored tool/search/chat cues,
          incl. bare lookup) is returned deterministically, skipping the
          classifier.
-      3. A trained intent model (`predict_route`) whose confidence clears
-         `intent_min_confidence()` is returned, replacing the LLM step.
+      3. A trained intent model (`predict_route`) whose confidence clears its
+         typed serving threshold is returned, replacing the LLM step.
       4. With an LLM, use the 3-way classifier (rule-based on error).
       5. Without an LLM, use the rule-based route.
 
@@ -286,22 +288,33 @@ def route_query(
     if regex_choice is not None:
         _record_intent("regex", regex_choice, {})
         return regex_choice
-    model_choice = predict_route(query)
+    fallback_detail: dict = {}
+    model_choice = predict_route(query, settings=settings)
     if model_choice is not None:
-        strategy, confidence = model_choice
-        if confidence >= intent_min_confidence():
-            _record_intent("model", strategy, {"confidence": confidence})
-            return strategy
+        abstained = model_choice.confidence < model_choice.threshold
+        model_detail = {
+            "predicted_intent": model_choice.strategy.value,
+            "confidence": model_choice.confidence,
+            "threshold": model_choice.threshold,
+            "abstained": abstained,
+            "fallback_reason": "model_below_threshold" if abstained else None,
+            "latency_ms": model_choice.latency_ms,
+        }
+        _capture.record_stage("intent_model", "evaluation", model_detail)
+        if not abstained:
+            _record_intent("model", model_choice.strategy, model_detail)
+            return model_choice.strategy
+        fallback_detail = {"fallback_reason": "model_below_threshold"}
     if llm is not None:
         try:
             strategy, detail = classify_route(query, llm)
-            _record_intent("classifier", strategy, detail)
+            _record_intent("classifier", strategy, {**detail, **fallback_detail})
             return strategy
         except Exception as exc:  # noqa: BLE001 — fall back, never fail routing
             logger.warning("Route classifier failed, using rule-based: %s", exc)
             strategy = _rule_based_route(query)
-            _record_intent("rule_based", strategy, {})
+            _record_intent("rule_based", strategy, fallback_detail)
             return strategy
     strategy = _rule_based_route(query)
-    _record_intent("rule_based", strategy, {})
+    _record_intent("rule_based", strategy, fallback_detail)
     return strategy
