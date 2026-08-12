@@ -83,6 +83,33 @@ def test_unexpected_classifier_output_is_redacted_from_capture_and_logs(caplog):
         rc.reset_capture(token)
 
 
+def test_classifier_exception_message_is_redacted_while_rule_fallback_runs(
+    monkeypatch, caplog
+):
+    class _FailingLLM:
+        def complete(self, messages: list[ChatMessage], **_) -> str:
+            raise RuntimeError("private_sentinel from classifier prompt")
+
+    monkeypatch.setattr(ir, "predict_route", lambda query, *, settings=None: None)
+    token = rc.start_capture("r", "the procurement approval flow")
+    try:
+        with caplog.at_level(logging.WARNING, logger=ir.__name__):
+            strategy = route_query(
+                "the procurement approval flow",
+                llm=_FailingLLM(),
+                explicit_source=False,
+            )
+
+        payload = _intent_stages()[0].payload
+        assert strategy is ir.RouteStrategy.CHAT
+        assert payload["mechanism"] == "rule_based"
+        assert "Route classifier failed, using rule-based." in caplog.text
+        assert "private_sentinel" not in caplog.text
+        assert "private_sentinel" not in repr(payload)
+    finally:
+        rc.reset_capture(token)
+
+
 def test_route_query_emits_explicit_source_intent_stage():
     token = rc.start_capture("r", "anything at all")
     try:

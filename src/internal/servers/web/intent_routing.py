@@ -313,8 +313,8 @@ def route_query(
             strategy, detail = classify_route(query, llm)
             _record_intent("classifier", strategy, {**detail, **fallback_detail})
             return strategy
-        except Exception as exc:  # noqa: BLE001 — fall back, never fail routing
-            logger.warning("Route classifier failed, using rule-based: %s", exc)
+        except Exception:  # noqa: BLE001 — fall back, never fail routing
+            logger.warning("Route classifier failed, using rule-based.")
             strategy = _rule_based_route(query)
             _record_intent("rule_based", strategy, fallback_detail)
             return strategy
