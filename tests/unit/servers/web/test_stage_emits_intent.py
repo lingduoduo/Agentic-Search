@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from src.context.models import ChatMessage
 from src.internal.servers.web import request_capture as rc
 from src.internal.servers.web import intent_routing as ir
@@ -8,12 +10,13 @@ from src.internal.servers.web.ml_intent import IntentModelDecision
 
 
 class _FakeLLM:
-    def __init__(self) -> None:
+    def __init__(self, reply: str = "search") -> None:
         self.calls = 0
+        self.reply = reply
 
     def complete(self, messages: list[ChatMessage], **_) -> str:
         self.calls += 1
-        return "search"
+        return self.reply
 
 
 def _intent_stages():
@@ -44,7 +47,9 @@ def test_route_query_emits_classifier_intent_stage_with_detail():
     try:
         route_query(
             "the procurement approval flow",
-            llm=_FakeLLM(),
+            llm=_FakeLLM(
+                "search — request was private_sentinel procurement approval flow"
+            ),
             explicit_source=False,
         )
         stages = _intent_stages()
@@ -53,6 +58,27 @@ def test_route_query_emits_classifier_intent_stage_with_detail():
         assert stages[0].payload["mechanism"] == "classifier"
         assert stages[0].payload["raw_label"] == "search"
         assert "prompt" not in stages[0].payload
+        assert "private_sentinel" not in repr(stages[0].payload)
+    finally:
+        rc.reset_capture(token)
+
+
+def test_unexpected_classifier_output_is_redacted_from_capture_and_logs(caplog):
+    token = rc.start_capture("r", "the private_sentinel procurement approval flow")
+    try:
+        with caplog.at_level(logging.WARNING, logger=ir.__name__):
+            route_query(
+                "the private_sentinel procurement approval flow",
+                llm=_FakeLLM(
+                    "unrecognized response echoing private_sentinel procurement"
+                ),
+                explicit_source=False,
+            )
+
+        payload = _intent_stages()[0].payload
+        assert payload["raw_label"] == "unexpected"
+        assert "private_sentinel" not in repr(payload)
+        assert "private_sentinel" not in caplog.text
     finally:
         rc.reset_capture(token)
 
@@ -149,7 +175,9 @@ def test_abstaining_model_records_evaluation_and_classifier_fallback(monkeypatch
     try:
         strategy = route_query(
             "the vendor contract renewal terms",
-            llm=_FakeLLM(),
+            llm=_FakeLLM(
+                "search — request was private_sentinel vendor contract renewal terms"
+            ),
             explicit_source=False,
         )
         model_stages = [s for s in rc.active().stages if s.stage == "intent_model"]
@@ -160,8 +188,10 @@ def test_abstaining_model_records_evaluation_and_classifier_fallback(monkeypatch
         assert model_stages[0].payload["abstained"] is True
         assert model_stages[0].payload["fallback_reason"] == "model_below_threshold"
         assert intent_stages[0].label == "classifier"
+        assert intent_stages[0].payload["raw_label"] == "search"
         assert intent_stages[0].payload["fallback_reason"] == "model_below_threshold"
         assert "prompt" not in intent_stages[0].payload
+        assert "private_sentinel" not in repr(intent_stages[0].payload)
     finally:
         rc.reset_capture(token)
 

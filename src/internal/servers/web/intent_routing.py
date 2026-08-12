@@ -216,11 +216,12 @@ def classify_route(query: str, llm: "LLMClient") -> "tuple[RouteStrategy, dict]"
     """LLM-backed 3-way route classification.
 
     Returns ``(strategy, detail)`` where ``detail`` is
-    ``{"raw_label": ...}``. The prompt is deliberately omitted because it
-    contains the raw user query and this detail is recorded in request captures.
-    Defaults to CHAT on an empty or unexpected response. The caller
-    (``route_query``) records the intent capture stage, so this no longer emits
-    one itself.
+    ``{"raw_label": ...}``, where ``raw_label`` is restricted to a supported
+    label or the ``empty``/``unexpected`` sentinel. The prompt and arbitrary
+    completion text are deliberately omitted because either can contain the raw
+    user query and this detail is recorded in request captures. Defaults to CHAT
+    on an empty or unexpected response. The caller (``route_query``) records the
+    intent capture stage, so this no longer emits one itself.
     """
     from src.context.models import ChatMessage
 
@@ -233,19 +234,19 @@ def classify_route(query: str, llm: "LLMClient") -> "tuple[RouteStrategy, dict]"
         (response if isinstance(response, str) else response.content).strip().lower()
     )
     strategy = RouteStrategy.CHAT
+    captured_label = "empty"
     if not content:
         logger.warning("Route classification empty; defaulting to chat.")
     else:
         for value, mapped in _LABEL_BY_VALUE.items():
             if re.search(rf"\b{value}\b", content):
                 strategy = mapped
+                captured_label = value
                 break
         else:
-            logger.warning(
-                "Route classification returned unexpected response %r; defaulting to chat.",
-                content,
-            )
-    return strategy, {"raw_label": content}
+            captured_label = "unexpected"
+            logger.warning("Route classification response invalid; defaulting to chat.")
+    return strategy, {"raw_label": captured_label}
 
 
 def _record_intent(mechanism: str, strategy: RouteStrategy, detail: dict) -> None:
