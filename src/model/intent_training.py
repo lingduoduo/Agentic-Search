@@ -90,6 +90,139 @@ class IntentTrainingRun:
     promotion: PromotionDecision
 
 
+# Neutral fillers: ordinary English that carries no intent by itself. Each of
+# these slots is used by exactly two frames per label, so their tokens train
+# under all three classes and stay class-neutral. A request built only from
+# words like these pools toward the centre and scores low confidence, which is
+# the only way a three-label model can decline anything.
+_ROLES = ("the platform team", "my manager", "the on-call engineer", "the legal team")
+_TIMES = ("last quarter", "this morning", "the last release", "yesterday")
+_ARTIFACTS = ("the design doc", "the runbook", "the invoice", "the summary")
+_OPENERS = ("quick one", "hey", "I'm not sure", "when you get a chance")
+# Cue fillers: action verbs are genuine tool evidence and are deliberately
+# unbalanced — they appear under `tool` only.
+_ACTIONS = ("share", "send", "post", "file")
+
+# (frame_id, template, label, tags). Slots: {title}, {t1}, {t2} carry document
+# terms; {role}, {time}, {artifact}, {opener} are neutral; {action} is a cue.
+# Every frame includes a document term so no two documents produce equal text.
+# Frames tagged `ambiguous` are phrased so `_regex_route` defers on them: that
+# region is the only one the learned model ever decides.
+_FRAMES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    ("s-find", "find {title}", "search", ("direct",)),
+    ("s-lookup", "look up {t1}", "search", ("paraphrase",)),
+    ("s-bare", "{title}", "search", ("short",)),
+    (
+        "s-where-artifact",
+        "where is {artifact} for {t1}",
+        "search",
+        ("ambiguous", "question"),
+    ),
+    (
+        "s-we-need-time",
+        "we need the {t1} numbers from {time}",
+        "search",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "s-opener-anyone",
+        "{opener}, does anyone have {artifact} for {t2}",
+        "search",
+        ("ambiguous", "question"),
+    ),
+    (
+        "s-role-sent",
+        "the {t1} page {role} sent {time}",
+        "search",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "s-official-role",
+        "{opener} the official {t1} reference {role} uses",
+        "search",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "s-multi",
+        "I need background on {t2} and the latest benchmark table",
+        "search",
+        ("multi_intent",),
+    ),
+    ("c-what-is", "what is {title} and how is it used?", "chat", ("direct",)),
+    ("c-explain", "explain {t1} in {title}", "chat", ("paraphrase",)),
+    ("c-compare", "compare {t1} and {t2}", "chat", ("comparison",)),
+    (
+        "c-artifact-say",
+        "I wonder what {artifact} says about {t1}",
+        "chat",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "c-what-changed",
+        "not sure what changed about {t1} since {time}",
+        "chat",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "c-opener-understand",
+        "{opener}, help me understand what {t1} is doing under the hood",
+        "chat",
+        ("ambiguous", "polite"),
+    ),
+    (
+        "c-role-why",
+        "curious why {role} uses {t1} instead of {t2} {time}",
+        "chat",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "c-opener-artifact",
+        "{opener} is {artifact} still right about {t1} for {role}",
+        "chat",
+        ("ambiguous", "question"),
+    ),
+    ("t-email", "send an email about {title}", "tool", ("direct",)),
+    ("t-ticket", "create a ticket for {t1}", "tool", ("direct",)),
+    ("t-pr", "open a pull request for {t2}", "tool", ("direct",)),
+    (
+        "t-artifact-action",
+        "{action} {artifact} for {t1}",
+        "tool",
+        ("ambiguous", "imperative"),
+    ),
+    (
+        "t-schedule-time",
+        "schedule the {t1} review for {time}",
+        "tool",
+        ("ambiguous", "imperative"),
+    ),
+    (
+        "t-opener-push",
+        "{opener}, please {action} the {t1} summary to the shared channel",
+        "tool",
+        ("ambiguous", "polite"),
+    ),
+    (
+        "t-role-invite",
+        "the {title} rollout needs a calendar invite for {role} before {time}",
+        "tool",
+        ("ambiguous", "statement"),
+    ),
+    (
+        "t-opener-can-you",
+        "{opener} can you {action} {artifact} to {role}",
+        "tool",
+        ("ambiguous", "question"),
+    ),
+    (
+        "t-multi",
+        "the {t1} contract needs a review summary and a sign-off note",
+        "tool",
+        ("multi_intent",),
+    ),
+)
+
+
 _HARD_CASES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     (
         "hard-secure-email-chat",
@@ -202,75 +335,44 @@ def build_domain_terms(
 def build_examples_for_document(
     document: dict[str, Any],
     vocabulary_tokens: list[str],
+    *,
+    document_index: int = 0,
 ) -> list[dict[str, Any]]:
-    """Build intent-labeled examples for one corpus document."""
+    """Build one intent-labeled example per frame for a corpus document."""
 
     title = document.get("title", "retrieval topic")
     contents = document.get("contents", "")
     terms = build_domain_terms(document, vocabulary_tokens)
-    t1 = _pick_term(terms, 0, "retrieval")
-    t2 = _pick_term(terms, 1, "search")
+    slots = {
+        "title": title,
+        "t1": _pick_term(terms, 0, "retrieval"),
+        "t2": _pick_term(terms, 1, "search"),
+        # Fillers rotate by document so each chatter word appears many times
+        # across the dataset rather than once.
+        "role": _ROLES[document_index % len(_ROLES)],
+        "time": _TIMES[document_index % len(_TIMES)],
+        "artifact": _ARTIFACTS[document_index % len(_ARTIFACTS)],
+        "opener": _OPENERS[document_index % len(_OPENERS)],
+        "action": _ACTIONS[document_index % len(_ACTIONS)],
+    }
 
-    templates = (
-        (f"find {title}", "search", ("direct",)),
-        (f"look up {t1}", "search", ("paraphrase",)),
-        (f"{title}", "search", ("short",)),
-        (f"retrieve the {t2} documentation", "search", ("paraphrase",)),
-        (f"what is {title} and how is it used?", "chat", ("direct",)),
-        (f"explain {t1} in {title}", "chat", ("paraphrase",)),
-        (f"compare {t1} and {t2}", "chat", ("comparison",)),
-        (f"summarize {title}", "chat", ("direct",)),
-        (f"send an email about {title}", "tool", ("direct",)),
-        (f"create a ticket for {t1}", "tool", ("direct",)),
-        (f"schedule a meeting about {title}", "tool", ("direct",)),
-        (f"open a pull request for {t2}", "tool", ("direct",)),
-        # Requests the deterministic router defers on: no start-anchored cue,
-        # no bare term, no trailing question mark. The learned model only ever
-        # decides this region, so every label needs examples of it.
-        (f"{title} benchmark numbers from last quarter", "search", ("ambiguous",)),
-        (f"the official {t1} configuration reference page", "search", ("ambiguous",)),
-        (f"walk me through the tradeoffs of {t1} versus {t2}", "chat", ("ambiguous",)),
-        (f"I'm confused about when {t1} beats {t2}", "chat", ("ambiguous",)),
-        (
-            f"the {title} rollout needs a calendar invite for the platform team",
-            "tool",
-            ("ambiguous",),
-        ),
-        (
-            f"please push the {t1} summary to the shared channel",
-            "tool",
-            ("ambiguous",),
-        ),
-        # Two intents in one request. The dispatcher resolves tool > search >
-        # chat, so the higher-precedence route is the correct label.
-        (
-            f"the {t1} contract needs a review summary and a note to the legal team",
-            "tool",
-            ("multi_intent",),
-        ),
-        (
-            f"I need background on {t2} and the latest benchmark table",
-            "search",
-            ("multi_intent",),
-        ),
-    )
     document_id = str(document.get("_intent_document_id", document.get("id", title)))
-    label_offsets = Counter[str]()
     examples: list[dict[str, Any]] = []
-    for text, label, tags in templates:
-        label_offsets[label] += 1
-        example = {
-            "id": f"corpus:{document_id}:{label}:{label_offsets[label]:02d}",
-            "text": text,
-            "label": label,
-            "source": f"corpus:{document_id}:{label}",
-            "tags": list(tags),
-        }
-        example["source_doc_id"] = document.get("id", document_id)
-        example["source_title"] = title
-        example["keywords"] = terms[:4]
-        example["context_hint"] = contents[:120]
-        examples.append(example)
+    for frame_id, template, label, tags in _FRAMES:
+        examples.append(
+            {
+                "id": f"corpus:{document_id}:{frame_id}",
+                "text": template.format(**slots),
+                "label": label,
+                # Grouping by frame keeps one phrasing pattern inside one split.
+                "source": f"frame:{frame_id}",
+                "tags": list(tags),
+                "source_doc_id": document.get("id", document_id),
+                "source_title": title,
+                "keywords": terms[:4],
+                "context_hint": contents[:120],
+            }
+        )
     return examples
 
 
@@ -287,8 +389,12 @@ def generate_intent_examples(
     )
 
     examples: list[dict[str, Any]] = []
-    for document in documents:
-        examples.extend(build_examples_for_document(document, vocabulary_tokens))
+    for document_index, document in enumerate(documents):
+        examples.extend(
+            build_examples_for_document(
+                document, vocabulary_tokens, document_index=document_index
+            )
+        )
     _inject_hard_cases(examples)
 
     examples.sort(

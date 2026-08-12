@@ -1,10 +1,13 @@
 import json
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from src.internal.document_index.text import tokenize_text
 from src.model import intent_training
+from src.model.intent_data import load_intent_examples, split_intent_examples
 from src.model.intent_training import (
     IntentTrainingConfig,
     build_examples_for_document,
@@ -65,6 +68,93 @@ def test_build_examples_label_multi_intent_requests_by_route_precedence():
 
     assert {e["label"] for e in multi} == {"search", "tool"}
     assert all(_regex_route(e["text"]) is None for e in multi)
+
+
+def test_neutral_fillers_appear_equally_often_under_every_label():
+    """Chatter must carry no class evidence, or out-of-scope text scores high.
+
+    A token's embedding is pulled by the labels it trains under. Balancing the
+    neutral slots leaves them class-neutral, so a request built only from
+    ordinary English pools toward the centre and its softmax stays near 1/3 —
+    the only abstention signal a three-label model has.
+    """
+    counts = {slot: Counter() for slot in ("role", "time", "artifact", "opener")}
+    for _, template, label, _ in intent_training._FRAMES:
+        for slot, per_label in counts.items():
+            if "{" + slot + "}" in template:
+                per_label[label] += 1
+
+    for slot, per_label in counts.items():
+        assert set(per_label) == {"chat", "search", "tool"}, slot
+        assert len(set(per_label.values())) == 1, (slot, per_label)
+        assert min(per_label.values()) >= 2, (slot, per_label)
+
+
+def test_action_verbs_stay_tool_only():
+    """{action} is genuine tool evidence and must not be neutralised."""
+    labels = {
+        label
+        for _, template, label, _ in intent_training._FRAMES
+        if "{action}" in template
+    }
+    assert labels == {"tool"}
+
+
+def test_frames_introduce_function_words_absent_from_the_corpus():
+    """The corpus contributes domain nouns; real queries need ordinary English."""
+    document = {"id": "d1", "title": "vector search", "contents": "dense retrieval"}
+    corpus_tokens = set(tokenize_text(f"{document['title']} {document['contents']}"))
+
+    generated_tokens: set[str] = set()
+    for index in range(4):  # cover every filler rotation
+        for example in build_examples_for_document(document, [], document_index=index):
+            generated_tokens |= set(tokenize_text(example["text"]))
+
+    for function_word in ("where", "we", "need", "from", "can", "you", "before"):
+        assert function_word in generated_tokens
+        assert function_word not in corpus_tokens
+
+
+def test_frames_group_by_frame_and_produce_unique_ids():
+    documents = [
+        {"id": "d1", "title": "vector search", "contents": "dense retrieval"},
+        {"id": "d2", "title": "bm25 ranking", "contents": "sparse retrieval"},
+    ]
+    examples = [
+        example
+        for index, document in enumerate(documents)
+        for example in build_examples_for_document(document, [], document_index=index)
+    ]
+
+    ids = [example["id"] for example in examples]
+    assert len(ids) == len(set(ids))
+    assert all(example["source"].startswith("frame:") for example in examples)
+    by_source: dict[str, set[str]] = {}
+    for example in examples:
+        by_source.setdefault(example["source"], set()).add(example["id"])
+    assert all(len(members) == len(documents) for members in by_source.values())
+
+
+def test_generated_examples_split_without_source_leakage(tmp_path):
+    corpus = tmp_path / "corpus.jsonl"
+    corpus.write_text(
+        "\n".join(
+            json.dumps({"id": f"d{index}", "title": f"topic {index}", "contents": "x"})
+            for index in range(12)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    examples_path = tmp_path / "examples.json"
+    intent_training.write_intent_examples(
+        intent_training.generate_intent_examples(corpus_path=corpus), examples_path
+    )
+
+    split = split_intent_examples(load_intent_examples(examples_path), seed=17)
+
+    train_sources = {example.source for example in split.train}
+    assert not train_sources & {example.source for example in split.validation}
+    assert not train_sources & {example.source for example in split.test}
 
 
 def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):

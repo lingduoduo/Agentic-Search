@@ -11,6 +11,7 @@ from src import (
     write_intent_examples,
 )
 from src.internal.document_index.text import Vocabulary
+from src.model import intent_training
 from src.model.intent_classifier import _IntentClassifier
 
 
@@ -148,7 +149,7 @@ def test_generate_intent_examples_from_corpus_and_vocabulary(tmp_path):
         vocabulary_path=vocabulary_path,
     )
 
-    assert len(examples) == 20
+    assert len(examples) == len(intent_training._FRAMES)
     assert {example["label"] for example in examples} == set(INTENT_LABELS)
     assert all(example["source_doc_id"] == 7 for example in examples)
 
