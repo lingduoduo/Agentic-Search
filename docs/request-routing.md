@@ -98,7 +98,19 @@ When `mode` is omitted, `route_query` chooses one strategy. The cascade is inten
 
 Explicit modes and providers, then regex decisions, precede the learned model. Covered model predictions skip the LLM classifier. Model abstentions fall through to that classifier and then to the rule-based router when needed. Downstream chat, search, and tool execution is unchanged: the model selects only the existing execution family and cannot select a specific tool or bypass authorization.
 
-Every auto-routed response carries the deciding mechanism in `hook_metadata.route_mechanism` (`explicit_source`, `regex`, `model`, `classifier`, or `rule_based`), alongside `route_predicted_intent`, `route_confidence`, `route_threshold`, `route_abstained`, `route_model_latency_ms`, and `route_fallback_reason` when a model was evaluated. That metadata is persisted with the session, so route outcomes can be joined to the already-stored request and recycled into a corrected training set without logging anything new about the request. Request captures additionally identify the deciding mechanism When the model is evaluated, the `intent_model · evaluation` stage records its predicted intent, confidence, configured threshold, abstention state, and latency. An abstention also records `fallback_reason="model_below_threshold"` on the evaluation and eventual intent stage, so traces expose both the deciding mechanism and fallback reason without adding the raw request to intent telemetry. A missing, unreadable, or incompatible configured artifact disables the learned route safely; the loader logs a diagnostic and routing continues through the existing fallbacks.
+Every auto-routed response carries the deciding mechanism in `hook_metadata.route_mechanism`, alongside `route_predicted_intent`, `route_confidence`, `route_threshold`, `route_abstained`, `route_model_latency_ms`, and `route_fallback_reason` when a model was evaluated. That metadata is persisted with the session, so route outcomes can be joined to the already-stored request and recycled into a corrected training set without logging anything new about the request. Request captures additionally identify the deciding mechanism When the model is evaluated, the `intent_model · evaluation` stage records its predicted intent, confidence, configured threshold, abstention state, and latency. An abstention also records `fallback_reason="model_below_threshold"` on the evaluation and eventual intent stage, so traces expose both the deciding mechanism and fallback reason without adding the raw request to intent telemetry. A missing, unreadable, or incompatible configured artifact disables the learned route safely; the loader logs a diagnostic and routing continues through the existing fallbacks.
+
+`route_mechanism` uses the following vocabulary:
+
+| Mechanism | Meaning |
+|---|---|
+| `explicit_source` | An explicit non-default source provider forced search |
+| `rules` | Deterministic high-precision cues decided |
+| `model` | The trained intent model was confident |
+| `classifier` | The LLM classifier returned a usable label |
+| `heuristic_default` | Nothing else worked; a heuristic cue decided |
+| `clarify` | No signal at all; the user was asked |
+| `user_selected` | The user chose the route |
 
 The selected strategy is recorded as `hook_metadata.route`. Capability fallback occurs after classification and may be recorded as `hook_metadata.route_degraded`.
 

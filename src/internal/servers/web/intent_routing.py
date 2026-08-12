@@ -297,7 +297,7 @@ def _record_intent(mechanism: str, strategy: RouteStrategy, detail: dict) -> Non
     """Record the single intent capture stage for the chosen route.
 
     No-op when no capture is active. Labeled by ``mechanism`` so the Request
-    Inspector shows ``intent · regex`` vs ``intent · classifier``, etc.
+    Inspector shows ``intent · rules`` vs ``intent · classifier``, etc.
     """
     _capture.record_stage(
         "intent",
@@ -346,20 +346,21 @@ def route_request(
             telemetry["route_mechanism"] = mechanism
         return RouteDecision(strategy)
 
-    def guessed(mechanism: str, strategy: RouteStrategy, detail: dict) -> RouteDecision:
-        # Records under the same mechanism the old cascade used for this
-        # fallback, so route_query's capture/telemetry side effects are
-        # unchanged; only the added `.clarification` is new.
-        decision = decided(mechanism, strategy, detail)
+    def guessed(strategy: RouteStrategy, detail: dict) -> RouteDecision:
+        # A guess with no signal at all: "clarify" when the question is
+        # actually asked, or "heuristic_default" (nothing else worked) when
+        # settings turn clarification off and the CHAT default is returned
+        # unadorned.
         if settings is not None and not settings.route_clarification:
-            return decision
+            return decided("heuristic_default", strategy, detail)
+        decision = decided("clarify", strategy, detail)
         return RouteDecision(decision.strategy, _CLARIFICATION)
 
     if explicit_source:
         return decided("explicit_source", RouteStrategy.SEARCH, {})
     regex_choice = _regex_route(query)
     if regex_choice is not None:
-        return decided("regex", regex_choice, {})
+        return decided("rules", regex_choice, {})
     fallback_detail: dict = {}
     model_choice = predict_route(query, settings=settings)
     if model_choice is not None:
@@ -391,14 +392,14 @@ def route_request(
             strategy, detail = classify_route(query, llm)
             merged = {**detail, **fallback_detail}
             if strategy is None:
-                return guessed("classifier", RouteStrategy.CHAT, merged)
+                return guessed(RouteStrategy.CHAT, merged)
             return decided("classifier", strategy, merged)
         except Exception:  # noqa: BLE001 — fall back, never fail routing
             logger.warning("Route classifier failed, using rule-based.")
     heuristic = _rule_based_route_or_none(query)
     if heuristic is not None:
-        return decided("rule_based", heuristic, fallback_detail)
-    return guessed("rule_based", RouteStrategy.CHAT, fallback_detail)
+        return decided("heuristic_default", heuristic, fallback_detail)
+    return guessed(RouteStrategy.CHAT, fallback_detail)
 
 
 def route_query(

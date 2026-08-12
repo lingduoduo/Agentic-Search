@@ -33,8 +33,8 @@ def test_route_query_emits_regex_intent_stage():
         )
         stages = _intent_stages()
         assert len(stages) == 1
-        assert stages[0].label == "regex"
-        assert stages[0].payload["mechanism"] == "regex"
+        assert stages[0].label == "rules"
+        assert stages[0].payload["mechanism"] == "rules"
         assert stages[0].payload["strategy"] == strategy.value  # "chat"
     finally:
         rc.reset_capture(token)
@@ -103,7 +103,7 @@ def test_classifier_exception_message_is_redacted_while_rule_fallback_runs(
 
         payload = _intent_stages()[0].payload
         assert strategy is ir.RouteStrategy.TOOL
-        assert payload["mechanism"] == "rule_based"
+        assert payload["mechanism"] == "heuristic_default"
         assert payload["strategy"] == "tool"
         assert "Route classifier failed, using rule-based." in caplog.text
         assert "private_sentinel" not in caplog.text
@@ -124,7 +124,8 @@ def test_route_query_emits_explicit_source_intent_stage():
         rc.reset_capture(token)
 
 
-def test_route_query_emits_rule_based_intent_stage_without_llm():
+def test_route_query_emits_clarify_intent_stage_without_llm():
+    # No LLM and no dominant heuristic cue → a guess, recorded as "clarify".
     token = rc.start_capture("r", "the procurement approval flow")
     try:
         route_query(
@@ -134,7 +135,7 @@ def test_route_query_emits_rule_based_intent_stage_without_llm():
         )
         stages = _intent_stages()
         assert len(stages) == 1
-        assert stages[0].payload["mechanism"] == "rule_based"
+        assert stages[0].payload["mechanism"] == "clarify"
     finally:
         rc.reset_capture(token)
 

@@ -364,7 +364,7 @@ def test_route_query_reports_deciding_mechanism_outside_debug_captures(monkeypat
     )
 
     assert strategy is RouteStrategy.SEARCH
-    assert telemetry["route_mechanism"] == "regex"
+    assert telemetry["route_mechanism"] == "rules"
 
     monkeypatch.setattr(
         ir,
@@ -525,6 +525,35 @@ def test_route_query_answer_is_unchanged_at_every_guess_site():
         )
         is RouteStrategy.TOOL
     )
+
+
+def test_route_mechanisms_use_the_documented_vocabulary():
+    telemetry: dict = {}
+    ir.route_request(
+        "find the onboarding checklist",
+        llm=None,
+        explicit_source=False,
+        telemetry=telemetry,
+    )
+    assert telemetry["route_mechanism"] == "rules"
+
+    telemetry = {}
+    ir.route_request(
+        "email the quarterly report to legal",
+        llm=None,
+        explicit_source=False,
+        telemetry=telemetry,
+    )
+    assert telemetry["route_mechanism"] == "heuristic_default"
+
+    telemetry = {}
+    ir.route_request(
+        "Review the vendor renewal terms",
+        llm=None,
+        explicit_source=False,
+        telemetry=telemetry,
+    )
+    assert telemetry["route_mechanism"] == "clarify"
 
 
 def test_route_request_honors_the_clarification_setting():
