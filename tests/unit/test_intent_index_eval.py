@@ -115,6 +115,13 @@ _PROBES = [
 ]
 
 
+# Only 3 clean (bulk-) queries exist in this fixture, so slice_size must stay
+# well under that. At 1, the split is deterministic regardless of seed: the
+# lone "search"-route clean query is the only member of its pool, so
+# rng.sample of a 1-item list always returns that same item.
+_SLICE_SIZE = 1
+
+
 def _run(tmp_path, *, monkeypatch, out_of_scope=None, hard=None):
     monkeypatch.setattr(intent_index_eval, "encode_texts", _encode_stub)
     index_dir = _build_index(tmp_path)
@@ -127,20 +134,31 @@ def _run(tmp_path, *, monkeypatch, out_of_scope=None, hard=None):
         ),
         canonical_path=tmp_path / "canonical.json",
         output_path=tmp_path / "report.json",
+        model_name="test-encoder",
+        slice_size=_SLICE_SIZE,
     )
 
 
-def test_slice_split_puts_eval_prefixed_in_legacy_and_bulk_prefixed_in_clean(
+def test_split_puts_every_legacy_query_in_tuning_and_reports_split_sizes(
     tmp_path, monkeypatch
 ):
+    """The legacy queries are contaminated, so all of them are free to tune on.
+
+    With ``_SLICE_SIZE`` clean queries drawn into tuning, tuning holds the 2
+    legacy queries plus that slice, and the rest of the clean set becomes the
+    untouched test slice.
+    """
     report = _run(tmp_path, monkeypatch=monkeypatch)
 
+    assert report["split"]["tuning_size"] == 2 + _SLICE_SIZE
+    assert report["split"]["test_size"] == 3 - _SLICE_SIZE
     assert report["legacy_30"]["total_queries"] == 2
-    assert report["clean_151"]["total_queries"] == 3
+    assert report["tuning"]["total_queries"] == report["split"]["tuning_size"]
+    assert report["test_slice"]["total_queries"] == report["split"]["test_size"]
     assert report["bulk"]["total_queries"] == len(_BULK_QUERIES)
     # Pooled, not just parallel: nothing dropped, nothing double-counted.
     assert (
-        report["legacy_30"]["total_queries"] + report["clean_151"]["total_queries"]
+        report["tuning"]["total_queries"] + report["test_slice"]["total_queries"]
         == report["bulk"]["total_queries"]
     )
 
@@ -152,35 +170,43 @@ def test_accuracy_is_argmax_over_every_query_not_only_those_above_a_threshold(
 
     If accuracy were computed only over records clearing some confidence
     threshold, the low-confidence miss ("clean low confidence miss", best
-    route score only 0.3) is exactly the record a bug would drop, and both
-    clean_151 and bulk accuracy would read 1.0 instead of the true values.
+    route score only 0.3) is exactly the record a bug would drop. With
+    ``_SLICE_SIZE`` == 1 the split is deterministic: the lone search-route
+    clean query ("clean search query") is the only one that can join tuning,
+    so the test slice always holds the other two -- the correct tool query
+    and the mislabeled low-confidence miss.
     """
     report = _run(tmp_path, monkeypatch=monkeypatch)
 
     assert report["legacy_30"]["accuracy"] == pytest.approx(1.0)
-    assert report["clean_151"]["accuracy"] == pytest.approx(2 / 3)
+    assert report["tuning"]["accuracy"] == pytest.approx(1.0)
+    assert report["test_slice"]["accuracy"] == pytest.approx(1 / 2)
     assert report["bulk"]["accuracy"] == pytest.approx(4 / 5)
 
 
-def test_out_of_scope_margin_is_mean_in_scope_minus_mean_out_of_scope_on_clean(
-    tmp_path, monkeypatch
-):
+def test_out_of_scope_uses_separability_on_the_test_slice(tmp_path, monkeypatch):
     report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
 
-    # clean_151 confidences: search query 0.85, tool query 0.85, low-
-    # confidence miss 0.3 (its best route score, regardless of correctness).
-    mean_in_scope = (0.85 + 0.85 + 0.3) / 3
+    # test-slice confidences: "clean tool query" 0.85, "clean low confidence
+    # miss" 0.3 (its best route score, regardless of correctness).
+    mean_in_scope = (0.85 + 0.3) / 2
     # probe confidences: "probe one" best route score 0.1, "probe two" 0.2.
     mean_out_of_scope = (0.1 + 0.2) / 2
 
     out_of_scope = report["out_of_scope"]
-    assert out_of_scope["mean_in_scope_confidence"] == pytest.approx(mean_in_scope)
-    assert out_of_scope["mean_out_of_scope_confidence"] == pytest.approx(
-        mean_out_of_scope
-    )
-    assert out_of_scope["separation_margin"] == pytest.approx(
+    assert out_of_scope["counts"] == {"in_scope": 2, "out_of_scope": 2}
+    assert out_of_scope["min_in_scope"] == pytest.approx(0.3)
+    assert out_of_scope["max_out_of_scope"] == pytest.approx(0.2)
+    assert out_of_scope["raw_margin"] == pytest.approx(
         mean_in_scope - mean_out_of_scope
     )
+    # Alias kept for the raw-cosine-units bar in the pinned section below.
+    assert out_of_scope["separation_margin"] == pytest.approx(
+        out_of_scope["raw_margin"]
+    )
+    # Perfectly separated on this fixture: both in-scope scores clear both
+    # out-of-scope scores.
+    assert out_of_scope["auc"] == pytest.approx(1.0)
 
 
 def test_run_index_evaluation_raises_on_a_stale_canonical_fingerprint(
@@ -207,6 +233,8 @@ def test_run_index_evaluation_raises_on_a_stale_canonical_fingerprint(
             out_of_scope_path=None,
             canonical_path=canonical_path,
             output_path=tmp_path / "report.json",
+            model_name="test-encoder",
+            slice_size=_SLICE_SIZE,
         )
 
 
@@ -240,7 +268,44 @@ def test_run_index_evaluation_raises_on_leakage_instead_of_scoring_anyway(
             out_of_scope_path=None,
             canonical_path=tmp_path / "canonical.json",
             output_path=tmp_path / "report.json",
+            model_name="test-encoder",
+            slice_size=1,
         )
+
+
+def test_run_index_evaluation_raises_when_the_encoder_does_not_match_the_index(
+    tmp_path, monkeypatch
+):
+    """Both all-MiniLM-L6-v2 and e5-small-v2 are 384-dimensional, so nothing
+    else catches a mismatched encoder: no shape error, no exception, just a
+    confident, meaningless number -- exactly what happened once already,
+    scoring a stale MiniLM-built index against e5-encoded queries.
+
+    The index built here is structurally valid (right dimensionality, right
+    row count); its only defect is that it declares a different encoder than
+    the one this evaluation asks for. ``_encode_stub`` ignores ``model_name``
+    entirely, so without the guard this would run to completion and score
+    without error -- the guard is the only thing standing between a real
+    mismatch and a silently wrong report.
+    """
+    monkeypatch.setattr(intent_index_eval, "encode_texts", _encode_stub)
+    index_dir = _build_index(tmp_path)  # built with model_name="test-encoder"
+
+    with pytest.raises(ValueError) as exc_info:
+        intent_index_eval.run_index_evaluation(
+            index_path=index_dir,
+            eval_queries_path=_eval_queries_path(tmp_path, _BULK_QUERIES),
+            hard_queries_path=None,
+            out_of_scope_path=None,
+            canonical_path=tmp_path / "canonical.json",
+            output_path=tmp_path / "report.json",
+            model_name="different-encoder",
+            slice_size=_SLICE_SIZE,
+        )
+
+    message = str(exc_info.value)
+    assert "test-encoder" in message
+    assert "different-encoder" in message
 
 
 def test_leave_one_out_excludes_each_example_from_its_own_scoring():
@@ -315,7 +380,7 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
         intent_index_eval._SWEEP_TOP_K
     )
     for row in sweep["rows"]:
-        assert 0.0 <= row["clean_151_accuracy"] <= 1.0
+        assert 0.0 <= row["test_slice_accuracy"] <= 1.0
         assert 0.0 <= row["leave_one_out_accuracy"] <= 1.0
         assert "separation_margin" in row
         assert "hard_accuracy" not in row  # no hard queries were supplied
@@ -324,8 +389,8 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
     shipped = next(
         row for row in sweep["rows"] if row["top_k"] == intent_index_eval.TOP_K
     )
-    assert shipped["clean_151_accuracy"] == pytest.approx(
-        report["clean_151"]["accuracy"]
+    assert shipped["test_slice_accuracy"] == pytest.approx(
+        report["test_slice"]["accuracy"]
     )
     assert shipped["leave_one_out_accuracy"] == pytest.approx(
         report["leave_one_out"]["accuracy"]
@@ -361,13 +426,28 @@ _P95_LATENCY_CEILING_MS = 25.0
 @functools.lru_cache(maxsize=1)
 def _report():
     pytest.importorskip("sentence_transformers")
+    from src.model.intent_encoder import DEFAULT_ENCODER
     from src.model.intent_index_eval import run_index_evaluation
+    from src.model.intent_knn import INDEX_FILENAME, IntentIndex
 
     index = DATA / "intent_index"
-    if not (index / "index.npz").exists():
+    if not (index / INDEX_FILENAME).exists():
         pytest.skip(
             "run `python -m src.model.intent_index_cli build --canonical "
             f"data/intent_canonical.json --output {index}` to measure the bars"
+        )
+    on_disk_encoder = IntentIndex.load(index / INDEX_FILENAME).encoder
+    if on_disk_encoder != DEFAULT_ENCODER:
+        # run_index_evaluation now rejects this itself (an index whose
+        # encoder differs from the one in use scores silent garbage
+        # otherwise), so a stale on-disk index is a skip here rather than an
+        # error: these bars are unmeasurable until the index is rebuilt.
+        pytest.skip(
+            f"data/intent_index was built with encoder {on_disk_encoder!r}, "
+            f"but the current encoder is {DEFAULT_ENCODER!r}; run "
+            "`python -m src.model.intent_index_cli build --canonical "
+            f"data/intent_canonical.json --output {index}` to re-measure "
+            "the bars"
         )
     return run_index_evaluation(
         index_path=index,

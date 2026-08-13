@@ -481,3 +481,47 @@ def test_module_report_records_how_many_queries_carried_gold_modules():
 
     assert report["scored_queries"] == 1
     assert report["total_queries"] == 2
+
+
+def test_separability_auc_is_one_for_perfectly_separated_scores():
+    from src.model.intent_evaluation import separability_report
+
+    report = separability_report([0.8, 0.9, 0.85], [0.1, 0.2, 0.15])
+
+    assert report["auc"] == pytest.approx(1.0)
+    assert report["cohens_d"] > 0
+
+
+def test_separability_auc_is_half_for_identical_distributions():
+    from src.model.intent_evaluation import separability_report
+
+    report = separability_report([0.5, 0.6, 0.7], [0.5, 0.6, 0.7])
+
+    assert report["auc"] == pytest.approx(0.5)
+
+
+def test_raw_margin_can_shrink_while_separability_improves():
+    """The whole reason the bar changed units: raw margin is scale-dependent."""
+    from src.model.intent_evaluation import separability_report
+
+    wide = separability_report([0.9, 0.5], [0.4, 0.0])  # margin 0.5
+    tight = separability_report([0.81, 0.80], [0.79, 0.78])  # margin 0.02
+
+    assert tight["raw_margin"] < wide["raw_margin"]
+    assert tight["auc"] >= wide["auc"]
+
+
+def test_separability_reports_the_overlap_bounds():
+    from src.model.intent_evaluation import separability_report
+
+    report = separability_report([0.4, 0.9], [0.1, 0.5])
+
+    assert report["max_out_of_scope"] == pytest.approx(0.5)
+    assert report["min_in_scope"] == pytest.approx(0.4)
+
+
+def test_separability_rejects_an_empty_group():
+    from src.model.intent_evaluation import separability_report
+
+    with pytest.raises(ValueError, match="empty"):
+        separability_report([], [0.1])
