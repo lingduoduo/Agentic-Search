@@ -130,14 +130,6 @@
     ]
   },
   {
-    "id": "canon-auth-006",
-    "text": "need the slides from the retrieval offsite",
-    "route": "search",
-    "modules": [
-      "lookup_document"
-    ]
-  },
-  {
     "id": "canon-auth-007",
     "text": "the readme for the eval harness, wherever it lives now",
     "route": "search",
@@ -250,14 +242,6 @@
     ]
   },
   {
-    "id": "canon-auth-021",
-    "text": "the deck marketing used for the launch",
-    "route": "search",
-    "modules": [
-      "lookup_document"
-    ]
-  },
-  {
     "id": "canon-auth-022",
     "text": "the spec for the connector api, the newer one",
     "route": "search",
@@ -266,16 +250,8 @@
     ]
   },
   {
-    "id": "canon-auth-023",
-    "text": "old thread where we argued about mean pooling",
-    "route": "search",
-    "modules": [
-      "lookup_document"
-    ]
-  },
-  {
-    "id": "canon-340",
-    "text": "Locate the duplicate-document policy",
+    "id": "canon-auth-260",
+    "text": "where's the policy on duplicate documents",
     "route": "search",
     "modules": [
       "lookup_document"
@@ -292,14 +268,6 @@
   {
     "id": "canon-auth-025",
     "text": "the notes from yesterday's incident call",
-    "route": "search",
-    "modules": [
-      "lookup_document"
-    ]
-  },
-  {
-    "id": "canon-auth-026",
-    "text": "the design doc for the tokenizer swap",
     "route": "search",
     "modules": [
       "lookup_document"
@@ -324,14 +292,6 @@
   {
     "id": "canon-auth-029",
     "text": "there must be a benchmark table somewhere for pooling",
-    "route": "search",
-    "modules": [
-      "lookup_document"
-    ]
-  },
-  {
-    "id": "canon-auth-030",
-    "text": "the report the team put together for the board",
     "route": "search",
     "modules": [
       "lookup_document"
@@ -458,7 +418,6 @@
     "text": "find the churn figure in the quarterly deck",
     "route": "search",
     "modules": [
-      "lookup_document",
       "lookup_fact"
     ]
   },
@@ -520,16 +479,16 @@
     ]
   },
   {
-    "id": "canon-190",
-    "text": "find Contriever Retrieval Model",
+    "id": "canon-auth-261",
+    "text": "who maintains the contriever wrapper we forked",
     "route": "search",
     "modules": [
       "lookup_fact"
     ]
   },
   {
-    "id": "canon-195",
-    "text": "find Multi-Stage Retrieval Pipelines",
+    "id": "canon-auth-262",
+    "text": "how many stages does our pipeline run before rerank",
     "route": "search",
     "modules": [
       "lookup_fact"
@@ -832,16 +791,16 @@
     ]
   },
   {
-    "id": "canon-141",
-    "text": "what is Retrieval-Augmented Generation and how is it used?",
+    "id": "canon-auth-263",
+    "text": "what does the generation step actually do with the retrieved passages",
     "route": "chat",
     "modules": [
       "explain"
     ]
   },
   {
-    "id": "canon-160",
-    "text": "Explain how to send an email securely",
+    "id": "canon-auth-265",
+    "text": "why do we hash the transcript ids before logging them",
     "route": "chat",
     "modules": [
       "explain"
@@ -942,14 +901,6 @@
     ]
   },
   {
-    "id": "canon-auth-098",
-    "text": "why do we bother with an eval set at all",
-    "route": "chat",
-    "modules": [
-      "explain"
-    ]
-  },
-  {
     "id": "canon-auth-099",
     "text": "is the sparse leg pulling its weight",
     "route": "chat",
@@ -984,8 +935,8 @@
     ]
   },
   {
-    "id": "canon-159",
-    "text": "Discuss approaches to finding duplicate documents",
+    "id": "canon-auth-264",
+    "text": "what are our options for spotting near-duplicate documents",
     "route": "chat",
     "modules": [
       "explain",
@@ -1043,14 +994,6 @@
   {
     "id": "canon-auth-109",
     "text": "more candidates or deeper reranking, where is the win",
-    "route": "chat",
-    "modules": [
-      "compare"
-    ]
-  },
-  {
-    "id": "canon-auth-110",
-    "text": "hosted embeddings versus a local model once you count the gpu",
     "route": "chat",
     "modules": [
       "compare"
@@ -1368,6 +1311,62 @@
     ]
   },
   {
+    "id": "canon-auth-269",
+    "text": "draft an email to the platform team laying out the migration steps",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-270",
+    "text": "write up a short note explaining the abstain behaviour for support",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-271",
+    "text": "put together a paragraph for the release announcement",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-272",
+    "text": "draft a reply to the customer who reported empty results",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-273",
+    "text": "draft an email to the vendor about the price increase",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-274",
+    "text": "write an email to the team explaining the new retention rules",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-275",
+    "text": "put together an email for finance summarising the quarter's spend",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
     "id": "canon-auth-149",
     "text": "let's think through the routing problem together",
     "route": "chat",
@@ -1644,16 +1643,16 @@
     ]
   },
   {
-    "id": "canon-509",
-    "text": "create a ticket for faiss",
+    "id": "canon-auth-268",
+    "text": "make a ticket for the stale cache on results",
     "route": "tool",
     "modules": [
       "create"
     ]
   },
   {
-    "id": "canon-450",
-    "text": "open a pull request for retrieval",
+    "id": "canon-auth-267",
+    "text": "raise a pr with the connector retry change",
     "route": "tool",
     "modules": [
       "create"
@@ -1882,8 +1881,8 @@
     ]
   },
   {
-    "id": "canon-363",
-    "text": "send an email about Cross-Encoder Reranking",
+    "id": "canon-auth-266",
+    "text": "email the finance team about the renewal paperwork",
     "route": "tool",
     "modules": [
       "send"
