@@ -398,7 +398,35 @@ def test_module_macro_f1_excludes_the_form_label():
     report = module_metrics_report(records)
 
     assert "bare_entity" not in report["per_module_metrics"]
-    assert report["per_module_metrics"]["lookup_fact"]["recall"] == pytest.approx(1.0)
+    # b's predicted lookup_fact has no matching gold lookup_fact (b's gold is
+    # bare_entity, excluded), so it is a false positive against lookup_fact:
+    # precision 1/2. This exercises the false-positive path; recall would be
+    # 1.0 here regardless of whether bare_entity were excluded.
+    assert report["per_module_metrics"]["lookup_fact"]["precision"] == pytest.approx(
+        0.5
+    )
+
+
+def test_macro_f1_divides_by_every_semantic_module_not_only_those_that_appear():
+    """The denominator is fixed at len(SEMANTIC_MODULES) == 13, always."""
+    from src.model.intent_evaluation import (
+        ModulePredictionRecord,
+        module_metrics_report,
+    )
+    from src.model.intent_taxonomy import SEMANTIC_MODULES
+
+    records = [
+        ModulePredictionRecord("a", ("lookup_fact",), ("lookup_fact",), True),
+        ModulePredictionRecord("b", ("explain",), ("explain",), True),
+        ModulePredictionRecord("c", ("create",), ("create",), True),
+    ]
+
+    report = module_metrics_report(records)
+
+    # Perfect (f1=1.0) on the 3 modules that appear; the other 10 semantic
+    # modules have no support and no predictions, so f1=0.0 for each, yet
+    # they still count in the average's denominator.
+    assert report["macro_f1"] == pytest.approx(3 / len(SEMANTIC_MODULES))
 
 
 def test_joint_accuracy_requires_route_and_exact_module_set():
