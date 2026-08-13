@@ -1399,8 +1399,12 @@ def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
 
 
 def _train_dispatch_checkpoint(tmp_path):
+    import numpy as np
+
     from src.internal.document_index.text import tokenize_text
     from src.model.intent_classifier import IntentPipeline
+    from src.model.intent_pretrained import PretrainedBundle
+    from src.model.wordpiece import WordPieceVocabulary
 
     examples = []
     for text, label in [
@@ -1416,8 +1420,20 @@ def _train_dispatch_checkpoint(tmp_path):
     ]:
         examples.extend([(tokenize_text(text), label)] * 8)
 
-    pipeline = IntentPipeline(vocab_size=128, embedding_dim=16, hidden_dim=32)
-    pipeline.train(examples, epochs=20, lr=0.02, min_freq=1, seed=17)
+    vocab_tokens = (
+        ["[PAD]"]
+        + [f"[unused{index}]" for index in range(99)]
+        + ["[UNK]"]
+        + sorted({word for tokens, _ in examples for word in tokens})
+    )
+    rng = np.random.default_rng(17)
+    bundle = PretrainedBundle(
+        vocabulary=WordPieceVocabulary.from_tokens(vocab_tokens),
+        embeddings=rng.normal(size=(len(vocab_tokens), 16)).astype(np.float16),
+    )
+
+    pipeline = IntentPipeline(bundle, hidden_dim=32)
+    pipeline.train(examples, epochs=20, lr=0.02, seed=17)
     checkpoint = tmp_path / "intent.pt"
     pipeline.save(
         str(checkpoint),
