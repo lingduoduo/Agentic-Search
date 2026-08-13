@@ -13,6 +13,26 @@ from src import (
 from src.internal.document_index.text import Vocabulary
 from src.model import intent_training
 from src.model.intent_classifier import _IntentClassifier
+from src.model.intent_pretrained import write_pretrained_bundle
+
+
+def _bundle(dim: int = 8):
+    """A tiny frozen bundle: [PAD], [UNK], and three real tokens."""
+    import numpy as np
+
+    from src.model.intent_pretrained import PretrainedBundle
+    from src.model.wordpiece import WordPieceVocabulary
+
+    tokens = (
+        ["[PAD]"]
+        + [f"[unused{index}]" for index in range(99)]
+        + ["[UNK]", "find", "explain", "send", "the", "runbook"]
+    )
+    rng = np.random.default_rng(17)
+    embeddings = rng.normal(size=(len(tokens), dim)).astype(np.float16)
+    return PretrainedBundle(
+        vocabulary=WordPieceVocabulary.from_tokens(tokens), embeddings=embeddings
+    )
 
 
 def test_vocabulary_build_and_encode_support_sequence_training():
@@ -28,7 +48,7 @@ def test_vocabulary_build_and_encode_support_sequence_training():
 
 def test_pipeline_predict_requires_training():
     pytest.importorskip("torch")
-    pipeline = IntentPipeline()
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
     try:
         pipeline.predict(["buy", "phone"])
     except RuntimeError as exc:
@@ -98,8 +118,8 @@ def test_intent_pipeline_save_and_load_round_trip(tmp_path):
         (["what", "is", "faiss"], "chat"),
         (["how", "does", "search", "work"], "chat"),
     ]
-    pipeline = IntentPipeline()
-    pipeline.train(data, epochs=3, min_freq=1)
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+    pipeline.train(data, epochs=3)
     original_pred = pipeline.predict(["buy", "laptop"])
 
     save_path = str(tmp_path / "intent.pt")
@@ -119,7 +139,7 @@ def test_intent_pipeline_save_and_load_round_trip(tmp_path):
 
 def test_intent_pipeline_save_requires_training(tmp_path):
     pytest.importorskip("torch")
-    pipeline = IntentPipeline()
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
     try:
         pipeline.save(
             str(tmp_path / "intent.pt"),
@@ -177,14 +197,19 @@ def test_train_intent_classifier_utility_saves_pipeline(tmp_path):
         examples_path,
     )
     output_path = tmp_path / "intent.pt"
+    bundle_path = tmp_path / "bundle"
+    bundle = _bundle()
+    write_pretrained_bundle(
+        bundle_path,
+        tokens=bundle.vocabulary.tokens,
+        embeddings=bundle.embeddings,
+    )
 
     result = train_intent_classifier(
         examples_path=examples_path,
         output_path=output_path,
+        pretrained_path=bundle_path,
         epochs=1,
-        min_freq=1,
-        vocab_size=128,
-        embedding_dim=16,
         hidden_dim=32,
     )
 
@@ -196,13 +221,11 @@ def test_train_intent_classifier_utility_saves_pipeline(tmp_path):
 
 def test_batch_padding_does_not_change_prediction_logits():
     torch = pytest.importorskip("torch")
-    model = _IntentClassifier(
-        vocab_size=8, embedding_dim=4, hidden_dim=4, num_classes=3
-    )
+    import numpy as np
+
+    matrix = np.arange(32, dtype=np.float16).reshape(8, 4)
+    model = _IntentClassifier(matrix, 4, 3)
     with torch.no_grad():
-        model._net.embedding.weight.copy_(
-            torch.arange(32, dtype=torch.float32).reshape(8, 4)
-        )
         for layer in (model._net.fc1, model._net.fc2, model._net.fc3):
             layer.weight.fill_(0.1)
             layer.bias.zero_()
@@ -214,96 +237,114 @@ def test_batch_padding_does_not_change_prediction_logits():
     assert torch.allclose(single, batched, atol=1e-6)
 
 
-def test_unknown_token_changes_the_pooled_vector():
-    """An unread word must be visible to the model, not silently dropped."""
-    torch = pytest.importorskip("torch")
-    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
-    pipeline.train(
-        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
-        epochs=1,
-        min_freq=1,
-        seed=17,
-    )
-
-    known = pipeline._encode(["find"])
-    with_unknown = pipeline._encode(["find", "zzzznotatoken"])
-
-    assert known == [pipeline._vocab.token2idx["find"]]
-    assert with_unknown == [pipeline._vocab.token2idx["find"], 1]
-
-    net = pipeline._model._net
-    net.eval()
-    with torch.no_grad():
-        pooled_known = net.embedding(pipeline._model._pad_sequences([known])).sum(dim=1)
-        pooled_unknown = net.embedding(
-            pipeline._model._pad_sequences([with_unknown])
-        ).sum(dim=1)
-    assert not torch.allclose(pooled_known, pooled_unknown)
-
-
-def test_encode_maps_an_all_unknown_query_to_the_unknown_id():
+def test_pipeline_derives_its_dimensions_from_the_bundle():
     pytest.importorskip("torch")
-    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
+    bundle = _bundle(dim=8)
+
+    pipeline = IntentPipeline(bundle, hidden_dim=16)
+
+    assert pipeline._model._net.embedding.num_embeddings == bundle.size
+    assert pipeline._model._net.embedding.embedding_dim == 8
+
+
+def test_pretrained_embeddings_are_frozen_by_training():
+    torch = pytest.importorskip("torch")
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+    before = pipeline._model._net.embedding.weight.detach().clone()
+
     pipeline.train(
-        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
-        epochs=1,
-        min_freq=1,
+        [
+            (["find", "the", "runbook"], "search"),
+            (["explain", "the", "runbook"], "chat"),
+            (["send", "the", "runbook"], "tool"),
+        ],
+        epochs=25,
         seed=17,
     )
 
-    assert pipeline._encode(["zzzznotatoken"]) == [1]
-    assert pipeline._encode([]) == [1]
+    assert torch.equal(pipeline._model._net.embedding.weight.detach(), before)
+    assert pipeline._model._net.embedding.weight.requires_grad is False
 
 
-def test_min_freq_two_trains_the_unknown_embedding():
-    """A vocabulary that covers every training token leaves index 1 random.
+def test_unseen_word_is_read_as_wordpieces_not_dropped():
+    """The defect this change exists to fix: 'runbooks' was unreadable."""
+    pytest.importorskip("torch")
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
 
-    Rare tokens must fall out of the vocabulary so unknown words actually occur
-    during training; otherwise the unknown direction is never updated and an
-    unread word produces confident nonsense instead of abstention.
-    """
-    torch = pytest.importorskip("torch")
-    data = [
-        (["find", "the", "runbook"], "search"),
-        (["find", "the", "invoice"], "search"),
-        (["explain", "the", "tradeoff"], "chat"),
-        (["explain", "the", "design"], "chat"),
-        (["send", "the", "summary"], "tool"),
-        (["send", "the", "note"], "tool"),
+    encoded = pipeline._encode_text("the runbook")
+
+    assert encoded == [
+        pipeline._bundle.vocabulary.encode("the")[0],
+        pipeline._bundle.vocabulary.encode("runbook")[0],
     ]
-
-    pipeline = IntentPipeline(vocab_size=64, embedding_dim=4, hidden_dim=8)
-    pipeline.train(data, epochs=1, min_freq=2, seed=17)
-    encoded = [pipeline._encode(tokens) for tokens, _ in data]
-    assert any(1 in row for row in encoded), "singletons must encode as unknown"
-    after_one_epoch = pipeline._model._net.embedding.weight[1].detach().clone()
-
-    trained = IntentPipeline(vocab_size=64, embedding_dim=4, hidden_dim=8)
-    trained.train(data, epochs=25, min_freq=2, seed=17)
-    after_many_epochs = trained._model._net.embedding.weight[1].detach()
-
-    assert not torch.allclose(after_one_epoch, after_many_epochs)
+    assert 100 not in encoded  # [UNK] never fires for in-vocabulary words
 
 
-def test_load_rejects_version_two_checkpoint_with_retraining_message(tmp_path):
+def test_empty_query_encodes_to_a_single_unknown():
+    pytest.importorskip("torch")
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+
+    assert pipeline._encode_text("!!!") == [100]
+
+
+def test_save_writes_version_four_checkpoint_contract(tmp_path):
     torch = pytest.importorskip("torch")
-    path = tmp_path / "v2-intent.pt"
-    torch.save({"version": 2}, path)
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+    pipeline.train(
+        [
+            (["find", "the"], "search"),
+            (["explain", "the"], "chat"),
+            (["send", "the"], "tool"),
+        ],
+        epochs=1,
+        seed=17,
+    )
+    path = tmp_path / "intent.pt"
+
+    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    assert checkpoint["version"] == 4
+    assert checkpoint["preprocessing"] == {
+        "tokenizer": "wordpiece",
+        "padding_id": 0,
+        "unknown_id": 100,
+        "pooling": "masked_mean",
+        "embeddings": "frozen_pretrained",
+    }
+
+
+def test_checkpoint_round_trip_preserves_predictions(tmp_path):
+    pytest.importorskip("torch")
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+    pipeline.train(
+        [
+            (["find", "the"], "search"),
+            (["explain", "the"], "chat"),
+            (["send", "the"], "tool"),
+        ],
+        epochs=5,
+        seed=17,
+    )
+    path = tmp_path / "intent.pt"
+    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+
+    reloaded = IntentPipeline.load(str(path))
+
+    before = pipeline.predict_text("find the runbook")
+    after = reloaded.predict_text("find the runbook")
+    assert after.intent == before.intent
+    assert after.confidence == pytest.approx(before.confidence, abs=1e-6)
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_load_rejects_every_earlier_checkpoint_version(tmp_path, version):
+    torch = pytest.importorskip("torch")
+    path = tmp_path / "old-intent.pt"
+    torch.save({"version": version}, path)
 
     with pytest.raises(ValueError, match="retrain"):
         IntentPipeline.load(str(path))
-
-
-def test_training_rejects_vocabulary_that_exceeds_embedding_table():
-    pytest.importorskip("torch")
-    pipeline = IntentPipeline(vocab_size=2, embedding_dim=4, hidden_dim=8)
-
-    with pytest.raises(ValueError, match="vocab_size"):
-        pipeline.train(
-            [(["one"], "chat"), (["two"], "search"), (["three"], "tool")],
-            epochs=1,
-            min_freq=1,
-        )
 
 
 def test_training_seed_reproduces_predictions():
@@ -313,11 +354,11 @@ def test_training_seed_reproduces_predictions():
         (["find", "documents"], "search"),
         (["run", "the", "tool"], "tool"),
     ]
-    first = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
-    second = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
+    first = IntentPipeline(_bundle(), hidden_dim=16)
+    second = IntentPipeline(_bundle(), hidden_dim=16)
 
-    first.train(data, epochs=2, min_freq=1, seed=31)
-    second.train(data, epochs=2, min_freq=1, seed=31)
+    first.train(data, epochs=2, seed=31)
+    second.train(data, epochs=2, seed=31)
 
     first_prediction = first.predict(["find", "documents"])
     second_prediction = second.predict(["find", "documents"])
@@ -325,44 +366,13 @@ def test_training_seed_reproduces_predictions():
     assert second_prediction.confidence == pytest.approx(first_prediction.confidence)
 
 
-def test_save_writes_version_three_checkpoint_contract(tmp_path):
-    torch = pytest.importorskip("torch")
-    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
-    pipeline.train(
-        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
-        epochs=1,
-        min_freq=1,
-        seed=17,
-    )
-    path = tmp_path / "intent.pt"
-
-    pipeline.save(
-        str(path),
-        dataset_fingerprint="sha256:abc",
-        promoted_min_confidence=None,
-    )
-
-    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    assert checkpoint["version"] == 3
-    assert checkpoint["intent_labels"] == ["chat", "search", "tool"]
-    assert checkpoint["dataset_fingerprint"] == "sha256:abc"
-    assert checkpoint["promoted_min_confidence"] is None
-    assert checkpoint["preprocessing"] == {
-        "tokenizer": "document_index.tokenize_text",
-        "padding_id": 0,
-        "unknown_id": 1,
-        "pooling": "masked_mean",
-    }
-
-
 @pytest.mark.parametrize("labels", [["search", "chat", "tool"], ["chat", "search"]])
 def test_load_rejects_checkpoint_with_incompatible_intent_labels(tmp_path, labels):
     torch = pytest.importorskip("torch")
-    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
     pipeline.train(
         [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
         epochs=1,
-        min_freq=1,
         seed=17,
     )
     path = tmp_path / "intent.pt"
@@ -379,22 +389,31 @@ def test_load_rejects_checkpoint_with_incompatible_intent_labels(tmp_path, label
         IntentPipeline.load(str(path))
 
 
-def test_load_rejects_version_one_checkpoint_with_retraining_message(tmp_path):
+def test_load_rejects_a_vocabulary_truncated_away_from_its_matrix(tmp_path):
+    """A short vocabulary re-encodes every request against the wrong rows."""
     torch = pytest.importorskip("torch")
-    path = tmp_path / "legacy-intent.pt"
-    torch.save({"version": 1}, path)
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+    pipeline.train(
+        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
+        epochs=1,
+        seed=17,
+    )
+    path = tmp_path / "intent.pt"
+    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    checkpoint["vocab_tokens"] = checkpoint["vocab_tokens"][:-1]
+    torch.save(checkpoint, path)
 
-    with pytest.raises(ValueError, match="retrain"):
+    with pytest.raises(ValueError, match="vocabulary size"):
         IntentPipeline.load(str(path))
 
 
 def test_load_rejects_model_state_dimensions_that_disagree_with_config(tmp_path):
     torch = pytest.importorskip("torch")
-    pipeline = IntentPipeline(vocab_size=16, embedding_dim=4, hidden_dim=8)
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
     pipeline.train(
         [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
         epochs=1,
-        min_freq=1,
         seed=17,
     )
     path = tmp_path / "intent.pt"
@@ -404,9 +423,9 @@ def test_load_rejects_model_state_dimensions_that_disagree_with_config(tmp_path)
         promoted_min_confidence=None,
     )
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    checkpoint["model_state"]["embedding.weight"] = checkpoint["model_state"][
-        "embedding.weight"
-    ][:-1]
+    checkpoint["model_state"]["fc1.weight"] = checkpoint["model_state"]["fc1.weight"][
+        :-1
+    ]
     torch.save(checkpoint, path)
 
     with pytest.raises(ValueError, match="config"):
