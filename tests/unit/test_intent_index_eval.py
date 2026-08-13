@@ -411,8 +411,10 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
 # The pinned bars.
 #
 # Everything above runs on a synthetic index and no encoder. Everything below
-# measures the *committed* canonical set with the real MiniLM encoder, so it
-# skips wherever sentence-transformers or the built index is absent.
+# measures the *committed* canonical set with the real e5-small-v2 encoder, so
+# it skips wherever sentence-transformers or the built index is absent -- which
+# is every CI job, none of which installs sentence-transformers. These bars are
+# a local guard, not a gate; nothing enforces them on a pull request.
 #
 # Raise a floor when a run beats it; never lower one without recording why in
 # the commit message.
@@ -420,13 +422,27 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 
-# Measured 2026-08-13 on the 280-example canonical set (task-8 report), pinned
-# ~0.02 below the measurement so ordinary encoder/float drift cannot trip them:
-#   bulk_181 route accuracy   0.6519  -> floor 0.63
-#   out-of-scope margin       0.1188  -> floor 0.10
-#   p95 routing latency       5.88 ms -> ceiling 25.0 ms
-_BULK_ACCURACY_FLOOR = 0.63
-_SEPARATION_MARGIN_FLOOR = 0.10
+# Re-measured 2026-08-13 on the intfloat/e5-small-v2 index over the same
+# 280-example canonical set (Task 3 of
+# docs/superpowers/plans/2026-08-13-intent-encoder-e5.md), pinned ~0.02 below
+# the measurement so ordinary encoder/float drift cannot trip them:
+#   test-slice route accuracy  0.7928 (111 queries, split seed 17) -> floor 0.77
+#   out-of-scope AUC           0.8551                              -> floor 0.83
+#   p95 routing latency       11.47 ms                             -> ceiling 25.0 ms
+#
+# The accuracy bar reads report["test_slice"], not report["bulk"]: `bulk` is
+# the *mixed* tuning+test set, so a floor there would quietly re-admit the
+# contamination the tuning/test split exists to remove.
+#
+# The out-of-scope bar is an AUC now, where it used to be the raw cosine
+# margin (floor 0.10, from MiniLM's 0.1188). Raw margin is encoder-specific:
+# e5 scores 0.0280 over the *same* probes while separating comparably, because
+# it compresses cosines into a narrow high band. A raw-margin floor therefore
+# rejects an encoder for its cosine range rather than for its separation. AUC
+# and Cohen's d are scale-free; raw margin stays in the report as
+# encoder-specific context only and must not be compared across encoders.
+_TEST_SLICE_ACCURACY_FLOOR = 0.77
+_OUT_OF_SCOPE_AUC_FLOOR = 0.83
 _P95_LATENCY_CEILING_MS = 25.0
 
 
@@ -466,36 +482,16 @@ def _report():
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "_BULK_ACCURACY_FLOOR=0.63 is a raw-cosine-units bar calibrated for "
-        "all-MiniLM-L6-v2 and is encoder-specific; it does not survive the "
-        "e5-small-v2 swap (PR feat/intent-encoder-e5 Task 1) — the on-disk "
-        "index this reads was built with the previous encoder. Re-derived "
-        "and re-pinned once Task 3 of "
-        "docs/superpowers/plans/2026-08-13-intent-encoder-e5.md rebuilds the "
-        "index and re-measures."
-    ),
-)
-def test_index_holds_the_bulk_accuracy_bar():
-    assert _report()["bulk"]["accuracy"] >= _BULK_ACCURACY_FLOOR
+def test_index_holds_the_test_slice_accuracy_bar():
+    """The untouched slice, never `bulk` -- see the constant's comment."""
+    report = _report()
+    assert report["test_slice"]["tuned_on"] is False
+    assert report["test_slice"]["accuracy"] >= _TEST_SLICE_ACCURACY_FLOOR
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "_SEPARATION_MARGIN_FLOOR=0.10 is a raw-cosine-units bar calibrated "
-        "for all-MiniLM-L6-v2 and is encoder-specific; it does not survive "
-        "the e5-small-v2 swap (PR feat/intent-encoder-e5 Task 1) — the "
-        "on-disk index this reads was built with the previous encoder. "
-        "Re-derived and re-pinned once Task 3 of "
-        "docs/superpowers/plans/2026-08-13-intent-encoder-e5.md rebuilds the "
-        "index and re-measures."
-    ),
-)
 def test_out_of_scope_requests_score_below_in_scope_requests():
-    assert _report()["out_of_scope"]["separation_margin"] >= _SEPARATION_MARGIN_FLOOR
+    """Scale-free separability, so the bar survives the next encoder swap."""
+    assert _report()["out_of_scope"]["auc"] >= _OUT_OF_SCOPE_AUC_FLOOR
 
 
 def test_every_module_has_enough_canonical_support_to_be_emitted():

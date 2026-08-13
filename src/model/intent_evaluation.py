@@ -666,10 +666,19 @@ def separability_report(
 
     Reported scale-free, because raw margin is not comparable across encoders.
     e5 compresses cosine similarities into a narrow high band: measured against
-    the same anchors it scores a *smaller* raw margin than MiniLM (0.0401 vs
-    0.1188) while being clearly better separated (AUC 0.927 vs 0.868). A bar in
-    raw cosine units would reject the better model, so the bar is AUC and the
-    raw margin is reported as encoder-specific context only.
+    the same anchors, e5-base-v2 scores a *smaller* raw margin than MiniLM
+    (0.0401 vs 0.1188) while being clearly better separated (AUC 0.927 vs
+    0.868). A bar in raw cosine units would reject the better model, so the bar
+    is AUC and the raw margin is reported as encoder-specific context only.
+    (Those two AUCs are e5-*base* against MiniLM. The shipped encoder is
+    e5-*small*-v2, which measures 0.855 on the split -- compression is not the
+    same thing as better separation, and only the scale-free number can tell
+    you which one you got.)
+
+    Caveat on ``cohens_d``: the pooled SD below averages each group's
+    *population* variance (divided by n), not the textbook (n-1)-weighted
+    form. Values from this function are therefore comparable to each other but
+    not to a Cohen's d computed by scipy or any stats package.
     """
     in_scope = tuple(float(value) for value in in_scope)
     out_of_scope = tuple(float(value) for value in out_of_scope)
