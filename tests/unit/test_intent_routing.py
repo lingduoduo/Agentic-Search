@@ -145,3 +145,25 @@ def test_rag_routing_tool_returns_answer():
     result = asyncio.run(run())
     data = _json.loads(result)
     assert data["answer"] == "42"
+
+
+def test_route_request_is_unchanged_by_a_none_returning_model(monkeypatch):
+    """A margin abstention must look exactly like having no model at all."""
+    from src.internal.servers.web import intent_routing
+
+    monkeypatch.setattr(intent_routing, "predict_route", lambda q, settings=None: None)
+    calls = []
+
+    class _LLM:
+        def complete(self, messages, temperature=0.0):
+            calls.append(messages)
+            return "search"
+
+    decision = intent_routing.route_request(
+        "where does the reranker timeout live",
+        llm=_LLM(),
+        explicit_source=False,
+    )
+
+    assert decision.strategy is intent_routing.RouteStrategy.SEARCH
+    assert calls, "the LLM classifier must still be consulted"

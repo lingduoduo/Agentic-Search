@@ -24,7 +24,7 @@ DEFAULT_CONFIG: dict = {
     # -------------------------------------------------------------------------
     # Intent model serving
     # -------------------------------------------------------------------------
-    "AGENTIC_SEARCH_INTENT_MODEL_PATH": "",
+    "AGENTIC_SEARCH_INTENT_INDEX_PATH": "",
     "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": 0.6,
     "AGENTIC_SEARCH_ROUTE_CLARIFICATION": True,
     "WEB_DOMAIN": "http://localhost:8080",

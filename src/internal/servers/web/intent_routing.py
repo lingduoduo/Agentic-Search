@@ -372,6 +372,7 @@ def route_request(
             "abstained": abstained,
             "fallback_reason": "model_below_threshold" if abstained else None,
             "latency_ms": model_choice.latency_ms,
+            "modules": list(model_choice.modules),
         }
         _capture.record_stage("intent_model", "evaluation", model_detail)
         if telemetry is not None:

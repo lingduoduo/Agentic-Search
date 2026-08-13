@@ -1398,57 +1398,57 @@ def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
     assert dispatched["query"] == "write a haiku about the sea"
 
 
-def _train_dispatch_checkpoint(tmp_path):
+def _write_dispatch_index(tmp_path):
     import numpy as np
 
-    from src.internal.document_index.text import tokenize_text
-    from src.model.intent_classifier import IntentPipeline
-    from src.model.intent_pretrained import PretrainedBundle
-    from src.model.wordpiece import WordPieceVocabulary
+    from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
 
-    examples = []
-    for text, label in [
-        ("vendor renewal terms archive", "search"),
-        ("supplier contract details records", "search"),
-        ("procurement agreement document library", "search"),
-        ("friendly casual discussion response", "chat"),
-        ("thoughtful conceptual explanation response", "chat"),
-        ("creative conversational writing ideas", "chat"),
-        ("workflow approval action request", "tool"),
-        ("operational system change request", "tool"),
-        ("business process action command", "tool"),
-    ]:
-        examples.extend([(tokenize_text(text), label)] * 8)
-
-    vocab_tokens = (
-        ["[PAD]"]
-        + [f"[unused{index}]" for index in range(99)]
-        + ["[UNK]"]
-        + sorted({word for tokens, _ in examples for word in tokens})
+    axis = {"search": 0, "chat": 1, "tool": 2}
+    module = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
+    examples, rows = [], []
+    for route, index in axis.items():
+        for position in range(12):
+            examples.append(
+                CanonicalExample(
+                    f"{route}-{position}",
+                    f"{route} {position}",
+                    route,
+                    (module[route],),
+                )
+            )
+            rows.append(np.eye(3, dtype=np.float32)[index])
+    directory = tmp_path / "intent_index"
+    IntentIndex(examples, np.stack(rows), "test-encoder", "sha256:x").save(
+        directory / INDEX_FILENAME
     )
-    rng = np.random.default_rng(17)
-    bundle = PretrainedBundle(
-        vocabulary=WordPieceVocabulary.from_tokens(vocab_tokens),
-        embeddings=rng.normal(size=(len(vocab_tokens), 16)).astype(np.float16),
-    )
-
-    pipeline = IntentPipeline(bundle, hidden_dim=32)
-    pipeline.train(examples, epochs=20, lr=0.02, seed=17)
-    checkpoint = tmp_path / "intent.pt"
-    pipeline.save(
-        str(checkpoint),
-        dataset_fingerprint="test-dispatch",
-        promoted_min_confidence=0.5,
-    )
-    return checkpoint
+    return directory
 
 
-def test_real_intent_checkpoint_dispatches_to_each_existing_runner(
-    monkeypatch, tmp_path
-):
+def _stub_encode_texts(monkeypatch, vector_by_query):
+    import numpy as np
+
+    from src.internal.servers.web import ml_intent
+
+    def _fake(texts):
+        return np.stack([vector_by_query[text] for text in texts]).astype(np.float32)
+
+    monkeypatch.setattr(ml_intent, "encode_texts", _fake)
+
+
+def test_real_intent_index_dispatches_to_each_existing_runner(monkeypatch, tmp_path):
+    import numpy as np
+
     from src.internal.configs import AppSettings
 
-    checkpoint = _train_dispatch_checkpoint(tmp_path)
+    index_path = _write_dispatch_index(tmp_path)
+    _stub_encode_texts(
+        monkeypatch,
+        {
+            "vendor renewal terms archive": np.array([1.0, 0.0, 0.0]),
+            "friendly casual discussion response": np.array([0.0, 1.0, 0.0]),
+            "workflow approval action request": np.array([0.0, 0.0, 1.0]),
+        },
+    )
     calls = []
 
     async def fake_chat(query, **kwargs):
@@ -1471,12 +1471,12 @@ def test_real_intent_checkpoint_dispatches_to_each_existing_runner(
 
     class _UnexpectedLLM:
         def complete(self, messages, **kwargs):
-            raise AssertionError("confident checkpoint route consulted the LLM")
+            raise AssertionError("confident index route consulted the LLM")
 
     app = create_web_app(
         SearchExperienceSettings(db_path=tmp_path / "dispatch.sqlite3"),
         app_settings=AppSettings(
-            intent_model_path=checkpoint,
+            intent_index_path=index_path,
             intent_model_min_confidence=0.5,
         ),
         llm=_UnexpectedLLM(),
@@ -1499,12 +1499,19 @@ def test_real_intent_checkpoint_dispatches_to_each_existing_runner(
     ]
 
 
-def test_real_intent_checkpoint_high_threshold_uses_classifier_fallback(
+def test_real_intent_index_high_threshold_uses_classifier_fallback(
     monkeypatch, tmp_path
 ):
+    import numpy as np
+
     from src.internal.configs import AppSettings
 
-    checkpoint = _train_dispatch_checkpoint(tmp_path)
+    index_path = _write_dispatch_index(tmp_path)
+    # Off-axis so confidence lands just under 1.0 while the margin to the
+    # runner-up route stays wide, isolating the confidence-threshold path.
+    near_search = np.array([0.99, 0.1, 0.0])
+    near_search = near_search / np.linalg.norm(near_search)
+    _stub_encode_texts(monkeypatch, {"vendor renewal discussion request": near_search})
     calls = []
 
     async def fake_chat(query, **kwargs):
@@ -1512,10 +1519,10 @@ def test_real_intent_checkpoint_high_threshold_uses_classifier_fallback(
         return "fallback answer", [], [], "chat", {}
 
     async def unexpected_search(query, **kwargs):
-        raise AssertionError("abstained model prediction dispatched search")
+        raise AssertionError("abstained index prediction dispatched search")
 
     async def unexpected_tool(query, **kwargs):
-        raise AssertionError("abstained model prediction dispatched tool")
+        raise AssertionError("abstained index prediction dispatched tool")
 
     monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_chat)
     monkeypatch.setattr(
@@ -1536,7 +1543,7 @@ def test_real_intent_checkpoint_high_threshold_uses_classifier_fallback(
     app = create_web_app(
         SearchExperienceSettings(db_path=tmp_path / "fallback.sqlite3"),
         app_settings=AppSettings(
-            intent_model_path=checkpoint,
+            intent_index_path=index_path,
             intent_model_min_confidence=1.0,
         ),
         llm=llm,

@@ -35,32 +35,32 @@ def test_load_app_settings_reads_typed_environment():
     assert settings.telemetry.posthog_debug_logs_enabled is True
 
 
-def test_load_app_settings_reads_intent_model_configuration():
+def test_load_app_settings_reads_intent_index_configuration():
     settings = load_app_settings(
         {
-            "AGENTIC_SEARCH_INTENT_MODEL_PATH": "/models/intent.pt",
+            "AGENTIC_SEARCH_INTENT_INDEX_PATH": "/models/intent-index",
             "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": "0.73",
         }
     )
 
-    assert settings.intent_model_path == Path("/models/intent.pt")
+    assert settings.intent_index_path == Path("/models/intent-index")
     assert settings.intent_model_min_confidence == 0.73
 
 
 @pytest.mark.parametrize("value", ["-0.1", "1.1", "nan", "inf"])
 def test_intent_threshold_must_be_finite_probability(value: str):
-    with pytest.raises(ValueError, match="INTENT_MODEL_MIN_CONFIDENCE"):
+    with pytest.raises(ValueError, match="intent_model_min_confidence"):
         load_app_settings({"AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": value})
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.1, float("nan"), float("inf")])
 def test_explicit_intent_threshold_must_be_finite_probability(value: float):
-    with pytest.raises(ValueError, match="INTENT_MODEL_MIN_CONFIDENCE"):
+    with pytest.raises(ValueError, match="intent_model_min_confidence"):
         AppSettings(intent_model_min_confidence=value)
 
 
 def test_default_config_documents_intent_model_configuration():
-    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_PATH"] == ""
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_INDEX_PATH"] == ""
     assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"] == 0.6
 
 

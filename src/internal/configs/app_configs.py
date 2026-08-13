@@ -158,19 +158,21 @@ class AppSettings:
     # hardware: MPS runs a 1.5B model at a few tokens/sec, so 120s cuts a long
     # answer mid-word long before the token budget is reached. 0 disables it.
     generation_timeout_seconds: float = 120.0
-    intent_model_path: Path | None = None
+    intent_index_path: Path | None = None
     intent_model_min_confidence: float = 0.6
+    intent_min_route_margin: float = 0.05
+    intent_min_module_score: float = 0.45
     route_clarification: bool = True
 
     def __post_init__(self) -> None:
-        if (
-            not math.isfinite(self.intent_model_min_confidence)
-            or not 0.0 <= self.intent_model_min_confidence <= 1.0
+        for name in (
+            "intent_model_min_confidence",
+            "intent_min_route_margin",
+            "intent_min_module_score",
         ):
-            raise ValueError(
-                "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE must be a finite "
-                "probability between 0 and 1."
-            )
+            value = getattr(self, name)
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be a probability between 0 and 1")
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -192,8 +194,14 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     intent_model_min_confidence = get_env_float(
         source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.6
     )
-    intent_model_path_value = get_env_str(
-        source, "AGENTIC_SEARCH_INTENT_MODEL_PATH", None
+    intent_min_route_margin = get_env_float(
+        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.05
+    )
+    intent_min_module_score = get_env_float(
+        source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.45
+    )
+    intent_index_path_value = get_env_str(
+        source, "AGENTIC_SEARCH_INTENT_INDEX_PATH", None
     )
     return AppSettings(
         services=ServiceSettings(
@@ -278,10 +286,12 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         generation_timeout_seconds=get_env_float(
             source, "AGENTIC_SEARCH_GENERATION_TIMEOUT", 120.0
         ),
-        intent_model_path=(
-            Path(intent_model_path_value) if intent_model_path_value else None
+        intent_index_path=(
+            Path(intent_index_path_value) if intent_index_path_value else None
         ),
         intent_model_min_confidence=intent_model_min_confidence,
+        intent_min_route_margin=intent_min_route_margin,
+        intent_min_module_score=intent_min_module_score,
         route_clarification=get_env_bool(
             source, "AGENTIC_SEARCH_ROUTE_CLARIFICATION", True
         ),
