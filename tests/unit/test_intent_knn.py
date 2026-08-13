@@ -12,6 +12,7 @@ import pytest
 
 from src.model.intent_knn import (
     MIN_MODULE_SUPPORT,
+    TOP_K,
     CanonicalExample,
     IntentIndex,
 )
@@ -87,6 +88,36 @@ def test_fewer_than_three_examples_averages_what_exists():
     index = IntentIndex(examples, vectors, "test-encoder", "sha256:test")
 
     assert index.route_scores(_unit(1, 0, 0))["search"] == pytest.approx(1.0)
+
+
+def test_top_k_is_a_parameter_that_changes_route_and_module_scores():
+    """A swept top_k must actually change scoring, not just exist as a knob."""
+    examples = [CanonicalExample("s-exact", "t", "search", ("lookup_fact",))]
+    examples += [
+        CanonicalExample(f"s-far-{i}", "t", "search", ("lookup_fact",))
+        for i in range(3)
+    ]
+    vectors = np.stack([_unit(1, 0, 0)] + [_unit(0, 0, 1)] * 3)
+    index = IntentIndex(examples, vectors, "test-encoder", "sha256:test")
+
+    top_1 = index.route_scores(_unit(1, 0, 0), top_k=1)["search"]
+    top_4 = index.route_scores(_unit(1, 0, 0), top_k=4)["search"]
+
+    assert top_1 == pytest.approx(1.0)
+    assert top_4 == pytest.approx(0.25)
+    assert top_1 != top_4
+
+
+def test_decide_top_k_default_matches_the_module_constant():
+    """Nothing passing top_k must behave exactly as before the parameter existed."""
+    index = _index()
+    vector = _unit(1, 0.9, 0)
+
+    default = _decide(index, vector)
+    explicit = _decide(index, vector, top_k=TOP_K)
+    explicit_three = _decide(index, vector, top_k=3)
+
+    assert default == explicit == explicit_three
 
 
 def test_equidistant_query_abstains_on_margin_not_on_confidence():

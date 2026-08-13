@@ -105,6 +105,7 @@ def predict_route(
             min_confidence=resolved.intent_model_min_confidence,
             min_margin=resolved.intent_min_route_margin,
             min_module_score=resolved.intent_min_module_score,
+            top_k=resolved.intent_top_k,
         )
     except Exception:
         logger.exception("intent-index: predict failed — deferring")

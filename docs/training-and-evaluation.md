@@ -33,7 +33,9 @@ python -m src.model.intent_index_cli evaluate \
 
 ### How routing works
 
-Each canonical example is encoded once by `all-MiniLM-L6-v2` and L2-normalized. At serving time the request is encoded the same way, and each route scores as the **mean of its top-3 cosine similarities** to that request. The best route wins; the module labels reported alongside it are diagnostics and can never change the route.
+Each canonical example is encoded once by `all-MiniLM-L6-v2` and L2-normalized. At serving time the request is encoded the same way, and each route scores as the **mean of its top-k cosine similarities** to that request. The best route wins; the module labels reported alongside it are diagnostics and can never change the route.
+
+`k` (`TOP_K` in `src/model/intent_knn.py`) is `3` by default and is what serves today, but it is a parameter of `IntentIndex.decide()`, not a hardcoded constant — see [the ceiling finding, corrected](#the-ceiling-finding-corrected-top_k-was-never-swept) below for why that distinction matters and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var.
 
 Two thresholds gate the answer, because two different things go wrong:
 
@@ -72,14 +74,29 @@ The new router beats the MLP on every slice (**+0.146** on the clean instrument)
 
 Read the stop for what it is. The `0.80`/`0.75` promotion bands were calibrated against the legacy-30 instrument, and on legacy-30 this router scores `0.800` — the top band. The hard stop is what happens when a legacy-calibrated constant meets a harder, honest instrument. It is not a regression against anything real; every like-for-like comparison above is a clear win. Latency is a deliberate regression — roughly 13x the MLP's p95 — bought with accuracy and out-of-scope safety, and it clears the 25ms ceiling with wide headroom.
 
-### The ceiling finding
+### The ceiling finding, corrected: `TOP_K` was never swept
 
-This is the most valuable thing the exercise produced. **Leave-one-out accuracy over the canonical set is `0.6750`**: scoring each of the 280 anchors against the other 279 with the same top-3-mean rule, a third of them cannot recover their own route. Those are the hand-curated examples, on the easiest possible task — no phrasing drift, no unseen vocabulary. That is a property of the representation, not of the curation. `all-MiniLM-L6-v2` sentence embeddings with top-3-mean cosine over a few hundred anchors top out somewhere near `0.67`–`0.70` no matter how good the examples get, and clean_151 accuracy (`0.6225`) already sits just under that.
+Leave-one-out accuracy over the canonical set at the shipped `TOP_K=3` is `0.6750`: scoring each of the 280 anchors against the other 279 with the same top-k-mean rule, a third of them cannot recover their own route. An earlier version of this document read that `0.6750` as a representation ceiling — "`all-MiniLM-L6-v2` sentence embeddings with top-3-mean cosine top out near `0.67`–`0.70` no matter how good the examples get" — and named a stronger encoder as the only remaining lever. **That was overstated.** `TOP_K = 3` is an arbitrary constant that was never swept, and sweeping it — same encoder, same 280 anchors — moves both numbers substantially:
 
-The previous design document named "run the full MiniLM encoder" as the next step after the word-level model. That has now been done. It bought `+0.146`, and it is not enough. **The next lever is a stronger encoder or a learned head over the embeddings — not more canonical examples and not better-written ones.** Adding anchors cannot lift a ceiling that the anchors themselves already sit under.
+| `top_k` | clean_151 accuracy | hard_40 accuracy | out-of-scope separation margin | leave-one-out accuracy |
+|---|---|---|---|---|
+| **3 (shipped)** | 0.6225 | 0.6250 | **0.1188** | 0.6750 |
+| 5 | 0.6358 | 0.6000 | 0.1036 | 0.6893 |
+| 8 | 0.6556 | 0.6500 | 0.0918 | 0.7036 |
+| **15** | **0.6887** | 0.6500 | 0.0767 | **0.7464** |
+| 25 | 0.6755 | 0.6250 | 0.0654 | 0.7643 |
+
+At `k=15`, leave-one-out reaches `0.7464` and clean_151 accuracy reaches `0.6887` — both well above the shipped `k=3` numbers on the same encoder and the same anchors. The `0.6750` figure this document previously called a ceiling reflects `TOP_K`'s arbitrary value at least as much as it reflects the encoder's representation.
+
+**The trade, plainly stated:** out-of-scope separation falls from `0.1188` to `0.0767` as `k` rises from 3 to 15, because averaging more neighbors lifts the confidence floor for every route — including routes the request has nothing to do with — so accuracy and abstention pull against each other. There is no `k` that improves both at once in this table.
+
+**The caveat:** the gap between `k=8` (`0.6556`) and `k=15` (`0.6887`) on clean_151 is about five queries out of 151. That is well within the noise a single held-out slice can produce, so `k` must be chosen on a validation split with the accuracy/abstention trade decided deliberately — not read off this table as if it named a single best value.
+
+**What survives:** the hard stop still stands at every `k` tested. `bulk_181` — the decision-rule input, not clean_151 — lands near `0.72` at `k=15`, still under the `0.75` promotion bar. A stronger encoder and a swept `k` both remain live levers; `k` is the cheaper one to try first, because it costs a config change and a re-run of the evaluation CLI, not a new model. This module's sweep runs report-only (`_sweep_top_k` in `src/model/intent_index_eval.py`, recorded as `top_k_sweep` in `evaluation_report.json`): `TOP_K` stays `3` in serving until that trade is decided once, together with whatever encoder change is tried next — not decided twice.
 
 ### Known limitations
 
+- **`top_k` is a live parameter with a measured trade, not a settled constant.** `TOP_K = 3` ships unchanged, but it is now a parameter of `IntentIndex.decide()` (`AGENTIC_SEARCH_INTENT_TOP_K`), and [the corrected ceiling finding](#the-ceiling-finding-corrected-top_k-was-never-swept) above shows sweeping it reaches `0.7464` leave-one-out and `0.6887` clean_151 accuracy at `k=15`, against `0.1188` out-of-scope separation falling to `0.0767`. `evaluation_report.json`'s `top_k_sweep` carries the full table for `k ∈ {3, 5, 8, 15, 25}`. Nothing has picked a new default from it: that decision is deferred to a validation split, alongside whatever encoder change is tried next.
 - **Topical concentration.** 47% of the canonical examples carry IR/ML vocabulary, because they were curated from this project's own example set. Of 16 held-out in-scope probes drawn from outside that vocabulary, **13 abstained** rather than routing at all, and **9 had a wrong best-guess route underneath**. The two counts overlap and are not a partition — an abstaining query still has a nearest route; it just does not clear the thresholds. The failure is safe, because abstention defers to the LLM classifier, but off-domain traffic abstains more often than it should.
 - **The compose-versus-dispatch boundary.** "write an email to the vendor about the overage" sits at `0.963` cosine to the canonical "email the vendor about the overage". One verb apart, so it routes to `tool` without abstaining, when composing text is arguably `chat`. Adding more compose anchors did not fix it: the two phrasings are near-identical to the encoder and genuinely ambiguous to a human reader.
 - **Route imbalance.** The `tool` route scores 45/50 on the clean slice while `search` and `chat` sit near 25/50. Rewriting tool queries into indirect phrasings did not move it, so this is a property of the route — tool requests carry imperative verbs that anchor cleanly — rather than of the instrument.

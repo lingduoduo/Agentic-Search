@@ -165,6 +165,11 @@ class AppSettings:
     intent_model_min_confidence: float = 0.30
     intent_min_route_margin: float = 0.02
     intent_min_module_score: float = 0.45
+    # Neighbors averaged per route. A sweep over the shipped encoder moves
+    # both accuracy and out-of-scope separation (see
+    # docs/training-and-evaluation.md); the default stays 3, the shipped
+    # value, until that trade is decided together with a stronger encoder.
+    intent_top_k: int = 3
     route_clarification: bool = True
 
     def __post_init__(self) -> None:
@@ -178,6 +183,8 @@ class AppSettings:
                 raise ValueError(
                     f"{name} must be a finite cosine similarity between 0 and 1"
                 )
+        if self.intent_top_k <= 0:
+            raise ValueError("intent_top_k must be a positive integer")
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -205,6 +212,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     intent_min_module_score = get_env_float(
         source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.45
     )
+    intent_top_k = get_env_int(source, "AGENTIC_SEARCH_INTENT_TOP_K", 3)
     intent_index_path_value = get_env_str(
         source, "AGENTIC_SEARCH_INTENT_INDEX_PATH", None
     )
@@ -297,6 +305,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         intent_model_min_confidence=intent_model_min_confidence,
         intent_min_route_margin=intent_min_route_margin,
         intent_min_module_score=intent_min_module_score,
+        intent_top_k=intent_top_k,
         route_clarification=get_env_bool(
             source, "AGENTIC_SEARCH_ROUTE_CLARIFICATION", True
         ),

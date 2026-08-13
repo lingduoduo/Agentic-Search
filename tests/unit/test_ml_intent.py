@@ -70,6 +70,59 @@ def test_confident_query_returns_its_route_and_modules(tmp_path, monkeypatch):
     assert decision.latency_ms >= 0.0
 
 
+def test_predict_route_passes_settings_top_k_through_to_decide(tmp_path, monkeypatch):
+    """decide()'s neighbor count must come from AppSettings, not the module default."""
+    examples = [
+        CanonicalExample("s-exact", "s", "search", ("lookup_fact",)),
+    ]
+    examples += [
+        CanonicalExample(f"s-far-{i}", "s", "search", ("lookup_fact",))
+        for i in range(3)
+    ]
+    for route, axis in (("chat", 1), ("tool", 2)):
+        for position in range(12):
+            examples.append(
+                CanonicalExample(
+                    f"{route}-{position}",
+                    f"{route} {position}",
+                    route,
+                    (_MODULE[route],),
+                )
+            )
+    rows = (
+        [np.eye(3, dtype=np.float32)[0]]
+        + [np.eye(3, dtype=np.float32)[2]] * 3
+        + [np.eye(3, dtype=np.float32)[1]] * 12
+        + [np.eye(3, dtype=np.float32)[2]] * 12
+    )
+    directory = tmp_path / "index"
+    IntentIndex(examples, np.stack(rows), DEFAULT_ENCODER, "sha256:x").save(
+        directory / INDEX_FILENAME
+    )
+    monkeypatch.setattr(
+        ml_intent,
+        "encode_texts",
+        lambda texts: np.eye(3, dtype=np.float32)[0][None, :],
+    )
+    base = {
+        "intent_index_path": directory,
+        "intent_model_min_confidence": 0.1,
+        "intent_min_route_margin": 0.0,
+        "intent_min_module_score": 0.0,
+    }
+
+    decision_top_1 = ml_intent.predict_route(
+        "anything", settings=AppSettings(**base, intent_top_k=1)
+    )
+    decision_top_4 = ml_intent.predict_route(
+        "anything", settings=AppSettings(**base, intent_top_k=4)
+    )
+
+    assert decision_top_1 is not None and decision_top_4 is not None
+    assert decision_top_1.confidence == pytest.approx(1.0)
+    assert decision_top_4.confidence == pytest.approx(0.25)
+
+
 def test_low_confidence_is_returned_for_route_request_to_abstain_on(
     tmp_path, monkeypatch
 ):

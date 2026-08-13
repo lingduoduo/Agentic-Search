@@ -282,6 +282,59 @@ def test_leave_one_out_excludes_each_example_from_its_own_scoring():
     assert loo["accuracy"] < control_accuracy
 
 
+def test_leave_one_out_default_top_k_matches_the_module_constant():
+    """Nothing passing top_k must behave exactly as before the parameter existed."""
+    examples = [
+        CanonicalExample("s0", "search zero", "search", ("lookup_fact",)),
+        CanonicalExample("s1", "search one", "search", ("lookup_fact",)),
+        CanonicalExample("c0", "chat zero", "chat", ("explain",)),
+        CanonicalExample("c1", "chat one", "chat", ("explain",)),
+        CanonicalExample("t0", "tool zero", "tool", ("schedule",)),
+    ]
+    vectors = np.array([_SEARCH, _SEARCH, _CHAT, _CHAT, _TOOL], dtype=np.float32)
+    index = IntentIndex(
+        examples=examples, vectors=vectors, encoder="test", fingerprint="test"
+    )
+
+    default = intent_index_eval.leave_one_out_route_accuracy(index)
+    explicit = intent_index_eval.leave_one_out_route_accuracy(
+        index, top_k=intent_index_eval.TOP_K
+    )
+
+    assert default == explicit
+
+
+def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_report(
+    tmp_path, monkeypatch
+):
+    """The sweep is evidence, not a selection: the shipped headline is untouched."""
+    report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True, hard=None)
+
+    sweep = report["top_k_sweep"]
+    assert [row["top_k"] for row in sweep["rows"]] == list(
+        intent_index_eval._SWEEP_TOP_K
+    )
+    for row in sweep["rows"]:
+        assert 0.0 <= row["clean_151_accuracy"] <= 1.0
+        assert 0.0 <= row["leave_one_out_accuracy"] <= 1.0
+        assert "separation_margin" in row
+        assert "hard_accuracy" not in row  # no hard queries were supplied
+
+    # The row at the shipped TOP_K reproduces the report's own headline numbers.
+    shipped = next(
+        row for row in sweep["rows"] if row["top_k"] == intent_index_eval.TOP_K
+    )
+    assert shipped["clean_151_accuracy"] == pytest.approx(
+        report["clean_151"]["accuracy"]
+    )
+    assert shipped["leave_one_out_accuracy"] == pytest.approx(
+        report["leave_one_out"]["accuracy"]
+    )
+    assert shipped["separation_margin"] == pytest.approx(
+        report["out_of_scope"]["separation_margin"]
+    )
+
+
 # ---------------------------------------------------------------------------
 # The pinned bars.
 #

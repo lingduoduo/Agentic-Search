@@ -36,6 +36,12 @@ _SWEEP_MIN_CONFIDENCES = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55)
 _SWEEP_MIN_MARGINS = (0.02, 0.05, 0.08, 0.12)
 _MIN_COVERAGE = 0.60
 
+# TOP_K sweep, report-only: this is evidence for a later decision, not a
+# selection. TOP_K stays 3 in serving regardless of what this table shows —
+# the accuracy/abstention trade it exposes should be decided once, together
+# with a stronger encoder, not twice. See docs/training-and-evaluation.md.
+_SWEEP_TOP_K = (3, 5, 8, 15, 25)
+
 # Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
 # app_configs.py) so evaluation scores modules with the same bar serving uses.
 _DEFAULT_MIN_MODULE_SCORE = 0.45
@@ -110,11 +116,13 @@ def _argmax_report(records) -> dict[str, Any]:
     return report
 
 
-def leave_one_out_route_accuracy(index: IntentIndex) -> dict[str, Any]:
+def leave_one_out_route_accuracy(
+    index: IntentIndex, *, top_k: int = TOP_K
+) -> dict[str, Any]:
     """Score every canonical example against only the *other* examples.
 
     For each example, its own row is excluded from every route's candidate
-    pool before taking the top-3-mean argmax, so an example can never vote
+    pool before taking the top-k-mean argmax, so an example can never vote
     for its own label. This measures the anchor set's self-consistency with
     no curation-target contamination at all, which makes it a better
     predictor of unseen in-domain traffic than any eval-set number.
@@ -136,8 +144,8 @@ def leave_one_out_route_accuracy(index: IntentIndex) -> dict[str, Any]:
             if rows_without_self.size == 0:
                 continue
             row_similarities = similarities[position, rows_without_self]
-            if row_similarities.size > TOP_K:
-                row_similarities = np.partition(row_similarities, -TOP_K)[-TOP_K:]
+            if row_similarities.size > top_k:
+                row_similarities = np.partition(row_similarities, -top_k)[-top_k:]
             score = float(row_similarities.mean())
             if score > best_score:
                 best_score, best_route = score, route
@@ -194,6 +202,82 @@ def _select_thresholds(
     eligible = [row for row in sweep if row["coverage"] >= _MIN_COVERAGE]
     eligible.sort(key=lambda row: (-row["served_accuracy"], -row["oos_deferral"]))
     return {"sweep": sweep, "selected": eligible[0] if eligible else None}
+
+
+def _accuracy_at_top_k(
+    index: IntentIndex,
+    records: tuple[IntentPredictionRecord, ...],
+    vectors: np.ndarray,
+    top_k: int,
+) -> float:
+    """Argmax route accuracy over *records* at a given *top_k*, threshold 0.0."""
+    if not records:
+        return 0.0
+    correct = sum(
+        index.decide(
+            vector,
+            min_confidence=0.0,
+            min_margin=0.0,
+            min_module_score=_DEFAULT_MIN_MODULE_SCORE,
+            top_k=top_k,
+        ).route
+        == record.expected
+        for record, vector in zip(records, vectors)
+    )
+    return correct / len(records)
+
+
+def _separation_margin_at_top_k(
+    index: IntentIndex,
+    clean_vectors: np.ndarray,
+    probe_vectors: np.ndarray,
+    top_k: int,
+) -> float:
+    """Mean in-scope minus mean out-of-scope confidence at a given *top_k*."""
+    kwargs = {
+        "min_confidence": 0.0,
+        "min_margin": 0.0,
+        "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
+        "top_k": top_k,
+    }
+    in_scope = [index.decide(v, **kwargs).confidence for v in clean_vectors]
+    out_of_scope = [index.decide(v, **kwargs).confidence for v in probe_vectors]
+    return sum(in_scope) / len(in_scope) - sum(out_of_scope) / len(out_of_scope)
+
+
+def _sweep_top_k(
+    index: IntentIndex,
+    clean: tuple[IntentPredictionRecord, ...],
+    clean_vectors: np.ndarray,
+    hard: tuple[IntentPredictionRecord, ...] | None,
+    hard_vectors: np.ndarray | None,
+    probe_vectors: np.ndarray | None,
+) -> list[dict[str, Any]]:
+    """Report-only sweep of TOP_K over the already-built index and encoder.
+
+    Evidence for a later decision, not a selection: TOP_K stays 3 in serving
+    regardless of this table. See the module-level ``_SWEEP_TOP_K`` comment
+    and docs/training-and-evaluation.md.
+    """
+    rows: list[dict[str, Any]] = []
+    for top_k in _SWEEP_TOP_K:
+        row: dict[str, Any] = {
+            "top_k": top_k,
+            "clean_151_accuracy": _accuracy_at_top_k(
+                index, clean, clean_vectors, top_k
+            ),
+            "leave_one_out_accuracy": leave_one_out_route_accuracy(index, top_k=top_k)[
+                "accuracy"
+            ],
+        }
+        if hard is not None and hard_vectors is not None:
+            row["hard_accuracy"] = _accuracy_at_top_k(index, hard, hard_vectors, top_k)
+        if probe_vectors is not None and len(probe_vectors):
+            row["separation_margin"] = _separation_margin_at_top_k(
+                index, clean_vectors, probe_vectors, top_k
+            )
+        rows.append(row)
+    return rows
 
 
 def run_index_evaluation(
@@ -289,6 +373,24 @@ def run_index_evaluation(
         report["threshold_tuning"] = _select_thresholds(
             index, clean, clean_vectors, probe_vectors
         )
+
+    report["top_k_sweep"] = {
+        "note": (
+            "Report-only. TOP_K stays 3 in serving (unchanged by this sweep): "
+            "the accuracy/abstention trade it exposes -- clean_151 accuracy "
+            "rises while out-of-scope separation falls as k grows -- should "
+            "be decided once, together with a stronger encoder, not twice. "
+            "See docs/training-and-evaluation.md."
+        ),
+        "rows": _sweep_top_k(
+            index,
+            clean,
+            clean_vectors,
+            hard_records if hard_queries_path is not None else None,
+            hard_vectors if hard_queries_path is not None else None,
+            probe_vectors if out_of_scope_path is not None else None,
+        ),
+    }
 
     selected = report.get("threshold_tuning", {}).get("selected")
     report["headline"] = {

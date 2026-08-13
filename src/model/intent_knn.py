@@ -1,8 +1,12 @@
 """Route a request by similarity to curated canonical examples.
 
-The route is the argmax of a per-route score: the mean of the top-3 cosine
-similarities among that route's canonical examples. Two thresholds gate the
-result, because two different things go wrong. A low absolute score means
+The route is the argmax of a per-route score: the mean of the top-k cosine
+similarities among that route's canonical examples, k=3 (``TOP_K``) by
+default. ``top_k`` is a parameter, not a hardcoded constant, because a swept
+value moves both accuracy and out-of-scope separation (see
+docs/training-and-evaluation.md); the shipped default is unchanged. Two
+thresholds gate the result, because two different things go wrong. A low
+absolute score means
 nothing canonical resembles the request — out of scope. A low margin between
 the best and second-best route means two routes fit equally well — ambiguous.
 Either one abstains, and the caller falls through to the LLM classifier.
@@ -127,8 +131,10 @@ class IntentIndex:
         """The normalized example matrix, for callers that need raw similarity."""
         return self._vectors
 
-    def _top_k_mean(self, similarities: np.ndarray, rows: np.ndarray) -> float:
-        """Mean of the highest TOP_K similarities among *rows*, or 0.0 if empty.
+    def _top_k_mean(
+        self, similarities: np.ndarray, rows: np.ndarray, top_k: int
+    ) -> float:
+        """Mean of the highest *top_k* similarities among *rows*, or 0.0 if empty.
 
         Taking a top-k mean rather than the mean of all rows keeps one close
         neighbor from being diluted by distant same-route examples, and keeps
@@ -137,26 +143,30 @@ class IntentIndex:
         if rows.size == 0:
             return 0.0
         selected = similarities[rows]
-        if selected.size > TOP_K:
-            selected = np.partition(selected, -TOP_K)[-TOP_K:]
+        if selected.size > top_k:
+            selected = np.partition(selected, -top_k)[-top_k:]
         return float(selected.mean())
 
     def _similarities(self, vector: np.ndarray) -> np.ndarray:
         return self._vectors @ np.asarray(vector, dtype=np.float32)
 
-    def route_scores(self, vector: np.ndarray) -> dict[str, float]:
-        """Per-route top-3 mean cosine."""
+    def route_scores(
+        self, vector: np.ndarray, *, top_k: int = TOP_K
+    ) -> dict[str, float]:
+        """Per-route top-k mean cosine."""
         similarities = self._similarities(vector)
         return {
-            route: self._top_k_mean(similarities, rows)
+            route: self._top_k_mean(similarities, rows, top_k)
             for route, rows in self._route_rows.items()
         }
 
-    def module_scores(self, vector: np.ndarray) -> dict[str, float]:
-        """Per-module top-3 mean cosine, over every module in the taxonomy."""
+    def module_scores(
+        self, vector: np.ndarray, *, top_k: int = TOP_K
+    ) -> dict[str, float]:
+        """Per-module top-k mean cosine, over every module in the taxonomy."""
         similarities = self._similarities(vector)
         return {
-            module: self._top_k_mean(similarities, rows)
+            module: self._top_k_mean(similarities, rows, top_k)
             for module, rows in self._module_rows.items()
         }
 
@@ -173,9 +183,10 @@ class IntentIndex:
         min_confidence: float,
         min_margin: float,
         min_module_score: float,
+        top_k: int = TOP_K,
     ) -> KnnDecision:
         """Score *vector*, apply both routing thresholds, and report modules."""
-        routes = self.route_scores(vector)
+        routes = self.route_scores(vector, top_k=top_k)
         ranked = sorted(routes.items(), key=lambda item: item[1], reverse=True)
         (best_route, confidence), (runner_up, runner_up_score) = ranked[0], ranked[1]
         margin = confidence - runner_up_score
@@ -188,19 +199,26 @@ class IntentIndex:
         elif margin < min_margin:
             abstain_reason = "margin_below_threshold"
 
-        modules = self._emit_modules(vector, best_route, min_module_score)
+        modules = self._emit_modules(vector, best_route, min_module_score, top_k=top_k)
         return KnnDecision(
             route=best_route,
             confidence=confidence,
             margin=margin,
             modules=modules,
-            composite=self._is_composite(vector, runner_up, margin, min_margin),
+            composite=self._is_composite(
+                vector, runner_up, margin, min_margin, top_k=top_k
+            ),
             abstained=abstain_reason is not None,
             abstain_reason=abstain_reason,
         )
 
     def _emit_modules(
-        self, vector: np.ndarray, route: str, min_module_score: float
+        self,
+        vector: np.ndarray,
+        route: str,
+        min_module_score: float,
+        *,
+        top_k: int = TOP_K,
     ) -> tuple[str, ...]:
         """Every well-supported module of *route* scoring at or above the bar.
 
@@ -210,7 +228,7 @@ class IntentIndex:
         lookup_fact.
         """
         low_support = set(self.low_support_modules())
-        scores = self.module_scores(vector)
+        scores = self.module_scores(vector, top_k=top_k)
         # A module with zero examples has no real score at all (module_scores
         # reports 0.0 for it by construction) and must never be a candidate,
         # even as a fallback. "Low support" (< MIN_MODULE_SUPPORT) is a softer,
@@ -235,7 +253,13 @@ class IntentIndex:
         return (max(candidates, key=lambda module: candidates[module]),)
 
     def _is_composite(
-        self, vector: np.ndarray, runner_up: str, margin: float, min_margin: float
+        self,
+        vector: np.ndarray,
+        runner_up: str,
+        margin: float,
+        min_margin: float,
+        *,
+        top_k: int = TOP_K,
     ) -> bool:
         """True when a close runner-up route is an action.
 
@@ -246,7 +270,7 @@ class IntentIndex:
         """
         if margin >= min_margin:
             return False
-        scores = self.module_scores(vector)
+        scores = self.module_scores(vector, top_k=top_k)
         candidates = modules_for_route(runner_up)
         if not candidates:
             return False

@@ -59,6 +59,22 @@ def test_explicit_intent_threshold_must_be_finite_probability(value: float):
         AppSettings(intent_model_min_confidence=value)
 
 
+def test_intent_top_k_defaults_to_three_and_reads_from_env():
+    assert load_app_settings({}).intent_top_k == 3
+    assert load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": "15"}).intent_top_k == 15
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_intent_top_k_must_be_a_positive_integer(value: str):
+    with pytest.raises(ValueError, match="intent_top_k"):
+        load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": value})
+
+
+def test_explicit_intent_top_k_must_be_a_positive_integer():
+    with pytest.raises(ValueError, match="intent_top_k"):
+        AppSettings(intent_top_k=0)
+
+
 def test_default_config_documents_intent_model_configuration():
     """The mirror must carry every routing threshold, at the tuned values."""
     settings = load_app_settings({})
@@ -78,6 +94,7 @@ def test_default_config_documents_intent_model_configuration():
         == settings.intent_min_module_score
         == 0.45
     )
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 3
 
 
 def test_route_clarification_defaults_to_true_and_reads_from_env():
