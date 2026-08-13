@@ -417,9 +417,14 @@ def test_confidence_is_checked_before_margin():
 
 
 def test_a_confident_decision_still_reports_its_route_and_modules():
-    """Abstention defers routing; it never blanks the diagnostics."""
-    decision = _decide(_index(), _unit(1, 1, 0), min_confidence=0.5)
+    """Abstention defers routing; it never blanks the diagnostics.
 
+    Note the asymmetric vector: exactly equal route scores tie-break by
+    INTENT_LABELS order, which puts chat first.
+    """
+    decision = _decide(_index(), _unit(1, 0.98, 0), min_confidence=0.5)
+
+    assert decision.abstained is True
     assert decision.route == "search"
     assert decision.modules == ("lookup_fact",)
 
@@ -464,15 +469,21 @@ def test_module_threshold_cannot_change_the_route():
 
 
 def test_composite_fires_when_a_close_runner_up_is_an_action():
-    """The 'find the best place and book it' signature."""
-    decision = _decide(_index(), _unit(1, 0, 0.98), min_margin=0.0)
+    """The 'find the best place and book it' signature.
+
+    Composite means "closer than the margin bar", so it always co-occurs with a
+    margin abstention. That is correct: such a request needs two steps, and one
+    route cannot serve it.
+    """
+    decision = _decide(_index(), _unit(1, 0, 0.98))
 
     assert decision.route == "search"
     assert decision.composite is True
+    assert decision.abstain_reason == "margin_below_threshold"
 
 
 def test_composite_does_not_fire_for_a_close_non_action_runner_up():
-    decision = _decide(_index(), _unit(1, 0.98, 0), min_margin=0.0)
+    decision = _decide(_index(), _unit(1, 0.98, 0))
 
     assert decision.composite is False
 
@@ -707,6 +718,11 @@ class IntentIndex:
     @property
     def examples(self) -> tuple[CanonicalExample, ...]:
         return self._examples
+
+    @property
+    def vectors(self) -> np.ndarray:
+        """The normalized example matrix, for callers that need raw similarity."""
+        return self._vectors
 
     def _top_k_mean(self, similarities: np.ndarray, rows: np.ndarray) -> float:
         """Mean of the highest TOP_K similarities among *rows*, or 0.0 if empty.
@@ -1214,7 +1230,7 @@ git commit -m "feat(intent): load canonical examples and module-labeled eval que
 - Consumes: `load_canonical_examples` (Task 3), `IntentIndex`, `INDEX_FILENAME` (Task 2).
 - Produces:
   - `intent_encoder.DEFAULT_ENCODER = "sentence-transformers/all-MiniLM-L6-v2"`; `encode_texts(texts: Sequence[str], *, model_name: str = DEFAULT_ENCODER) -> np.ndarray` returning L2-normalized `float32` of shape `(len(texts), 384)`; `encoder_dimension(model_name) -> int`.
-  - `intent_index_cli.build_index(canonical_path: Path, output_dir: Path, *, model_name: str, encode=encode_texts) -> IntentIndex`; `check_leakage(index: IntentIndex, eval_texts: Sequence[str], eval_vectors: np.ndarray) -> list[str]`; `main(argv) -> int` with subcommands `seed`, `build`, `evaluate`.
+  - `intent_index_cli.build_index(canonical_path: Path, output_dir: Path, *, model_name: str = DEFAULT_ENCODER, encode=None) -> IntentIndex`; `check_leakage(index: IntentIndex, eval_texts: Sequence[str], eval_vectors: np.ndarray) -> list[str]`; `main(argv) -> int` with subcommands `seed`, `build`, `evaluate`.
   - `LEAKAGE_COSINE = 0.95`
 - Task 5 loads the index this writes; Task 7 uses `evaluate`.
 
@@ -1503,15 +1519,19 @@ def build_index(
     output_dir: Path,
     *,
     model_name: str = DEFAULT_ENCODER,
-    encode=encode_texts,
+    encode=None,
 ) -> IntentIndex:
     """Encode the canonical examples and write the index.
 
     ``encode`` is injectable so the build is testable without an encoder; it is
-    not a production knob.
+    not a production knob. It defaults to None rather than to ``encode_texts``
+    so the module attribute is resolved at call time — a default argument binds
+    at definition, which would put the real encoder beyond reach of a test's
+    monkeypatch.
     """
+    encoder = encode if encode is not None else encode_texts
     examples = load_canonical_examples(canonical_path)
-    vectors = encode([example.text for example in examples], model_name=model_name)
+    vectors = encoder([example.text for example in examples], model_name=model_name)
     index = IntentIndex(
         examples=examples,
         vectors=vectors,
@@ -1533,7 +1553,7 @@ def check_leakage(
     """
     canonical_texts = [example.text for example in index.examples]
     normalized = {text.casefold().strip(): text for text in canonical_texts}
-    similarities = eval_vectors @ index._vectors.T  # noqa: SLF001 — same package
+    similarities = eval_vectors @ index.vectors.T
     leaks: list[str] = []
     for position, text in enumerate(eval_texts):
         exact = normalized.get(text.casefold().strip())
@@ -1916,7 +1936,9 @@ git commit -m "feat(intent): curate the canonical routing example set"
 
 **Interfaces:**
 - Consumes: `IntentIndex.load`, `KnnDecision` (Task 2); `encode_texts` (Task 4).
-- Produces: `IntentModelDecision` gains `modules: tuple[str, ...] = ()` and `composite: bool = False`. `predict_route(query, *, settings) -> IntentModelDecision | None` keeps its signature. `load_intent_index(settings) -> IntentIndex | None` replaces `load_intent_model`.
+- Produces: `IntentModelDecision` gains `modules: tuple[str, ...] = ()`. `predict_route(query, *, settings) -> IntentModelDecision | None` keeps its signature. `load_intent_index(settings) -> IntentIndex | None` replaces `load_intent_model`.
+
+**`composite` is deliberately NOT a field on `IntentModelDecision`.** Composite means the runner-up route is closer than `τ_margin`, which is exactly the margin-abstention condition — so `predict_route` returns `None` before any decision carrying the flag could be built, and the field would be permanently `False`. It lives on `KnnDecision`, where it is meaningful and tested, and is recorded in the margin-abstention capture stage. (The spec's §1 lists it on `IntentModelDecision`; its §2 threshold semantics make that unreachable, and §2 governs.)
 - Settings: `intent_index_path: Path | None`, `intent_min_route_margin: float = 0.05`, `intent_min_module_score: float = 0.45`. `intent_model_path` is removed; `intent_model_min_confidence` is kept and becomes the cosine bar.
 
 **Abstention asymmetry, deliberate:** a confidence abstention returns the decision and lets `route_request`'s existing `confidence < threshold` comparison handle it, unchanged. A margin abstention returns `None` after recording its own `intent_model` capture stage, because `route_request` has no margin concept and must not gain one. Both end at the LLM classifier.
@@ -1991,7 +2013,6 @@ def test_confident_query_returns_its_route_and_modules(tmp_path, monkeypatch):
     assert decision.strategy is RouteStrategy.SEARCH
     assert decision.confidence == pytest.approx(1.0)
     assert decision.modules == ("lookup_fact",)
-    assert decision.composite is False
     assert decision.latency_ms >= 0.0
 
 
@@ -2060,18 +2081,31 @@ def test_index_is_loaded_once_and_cached(tmp_path, monkeypatch):
     assert loads["count"] == 1
 
 
-def test_composite_query_is_flagged(tmp_path, monkeypatch):
+def test_composite_query_defers_and_is_recorded_as_composite(tmp_path, monkeypatch):
+    """A composite request is by definition low-margin, so it defers.
+
+    The flag therefore reaches the capture stage, never a returned decision.
+    """
     monkeypatch.setattr(
         ml_intent, "encode_texts",
         lambda texts: np.array([[0.71, 0.0, 0.70]], dtype=np.float32),
     )
-    settings = _settings(tmp_path)
-    object.__setattr__(settings, "intent_min_route_margin", 0.0)
+    recorded = []
+    monkeypatch.setattr(
+        ml_intent._capture,
+        "record_stage",
+        lambda stage, mechanism, detail: recorded.append((stage, detail)),
+    )
 
-    decision = ml_intent.predict_route("anything", settings=settings)
+    assert ml_intent.predict_route("anything", settings=_settings(tmp_path)) is None
+    assert recorded[-1][0] == "intent_model"
+    assert recorded[-1][1]["composite"] is True
+    assert recorded[-1][1]["fallback_reason"] == "margin_below_threshold"
 
-    assert decision is not None
-    assert decision.composite is True
+
+def test_intent_model_decision_has_no_composite_field():
+    """It could only ever be False: composite implies a margin abstention."""
+    assert not hasattr(ml_intent.IntentModelDecision("chat", 1.0, 0.5, 1.0), "composite")
 ```
 
 Add to `tests/unit/test_intent_routing.py`:
@@ -2189,7 +2223,6 @@ class IntentModelDecision:
     threshold: float
     latency_ms: float
     modules: tuple[str, ...] = ()
-    composite: bool = False
 
 
 def intent_min_confidence(settings: AppSettings | None = None) -> float:
@@ -2291,13 +2324,12 @@ def predict_route(
         threshold=resolved.intent_model_min_confidence,
         latency_ms=latency_ms,
         modules=decision.modules,
-        composite=decision.composite,
     )
 ```
 
-- [ ] **Step 5: Carry modules and composite into telemetry**
+- [ ] **Step 5: Carry modules into telemetry**
 
-In `src/internal/servers/web/intent_routing.py`, inside `route_request`, extend `model_detail` — this is the only edit to that file, and it adds keys without changing any decision:
+In `src/internal/servers/web/intent_routing.py`, inside `route_request`, extend `model_detail` — this is the only edit to that file, and it adds one key without changing any decision:
 
 ```python
         model_detail = {
@@ -2308,9 +2340,10 @@ In `src/internal/servers/web/intent_routing.py`, inside `route_request`, extend 
             "fallback_reason": "model_below_threshold" if abstained else None,
             "latency_ms": model_choice.latency_ms,
             "modules": list(model_choice.modules),
-            "composite": model_choice.composite,
         }
 ```
+
+`composite` is not added here — a decision that reaches this line never has it set. It is recorded on the margin-abstention path inside `predict_route` instead.
 
 - [ ] **Step 6: Run the tests**
 
@@ -2410,12 +2443,26 @@ def test_every_bulk_query_carries_at_least_one_module():
 
 
 def test_the_original_thirty_queries_survive_unchanged():
-    """Continuity with the pinned 0.733 depends on these exact queries."""
-    ids = {query.id for query in _queries(BULK)}
-    legacy = {query.id for query in _queries(BULK) if query.id.startswith("eval-0")}
+    """Continuity with the pinned 0.733 depends on these exact queries.
 
-    assert len(legacy) >= 30
-    assert legacy <= ids
+    Legacy ids are `eval-<route>-NN`; the new bulk queries use `bulk-NNN`, so
+    the two are distinguishable by prefix and neither can swallow the other.
+    """
+    legacy = [q for q in _queries(BULK) if q.id.startswith("eval-")]
+
+    assert len(legacy) == 30
+    assert {q.id for q in legacy} == {
+        f"eval-{route}-{n:02d}"
+        for route in ("search", "chat", "tool")
+        for n in range(1, 11)
+    }
+
+
+def test_new_bulk_queries_use_the_bulk_prefix():
+    added = [q for q in _queries(BULK) if not q.id.startswith("eval-")]
+
+    assert added
+    assert all(q.id.startswith("bulk-") for q in added)
 
 
 def test_hard_slice_exists_and_is_sized_for_triplets():
@@ -2472,11 +2519,11 @@ Expected: the hard-slice tests SKIP (`intent_eval_hard.json` absent); the bulk t
 
 - [ ] **Step 3: Add modules to the existing 30 queries**
 
-Keep every existing `id`, `text`, and `label` byte-identical — the `0.733` comparison depends on them — and add a `modules` array to each. Example:
+Keep every existing `id`, `text`, and `label` byte-identical — the `0.733` comparison depends on them — and add a `modules` array to each. The existing ids are `eval-search-01` … `eval-search-10`, `eval-chat-01` … `eval-chat-10`, `eval-tool-01` … `eval-tool-10`. Example:
 
 ```json
 {
-  "id": "eval-001",
+  "id": "eval-search-01",
   "text": "where did we land on the index rebuild last week",
   "label": "search",
   "modules": ["lookup_fact"]
@@ -2485,7 +2532,7 @@ Keep every existing `id`, `text`, and `label` byte-identical — the `0.733` com
 
 - [ ] **Step 4: Author ~150 more bulk queries**
 
-Append to `data/intent_eval_queries.json` with ids `eval-031` upward. Requirements:
+Append to `data/intent_eval_queries.json` with ids `bulk-001` upward — a distinct prefix from the legacy `eval-` ids, so the legacy 30 stay separable for the continuity metric. Requirements:
 
 - ~60 per route, so no route can be gamed by a majority guess.
 - Every semantic module appears at least 8 times across the whole bulk set.
@@ -2784,7 +2831,8 @@ from .intent_evaluation import (
 from .intent_index_cli import check_leakage
 from .intent_knn import INDEX_FILENAME, IntentIndex
 
-LEGACY_PREFIX = "eval-0"
+# Legacy ids are `eval-<route>-NN`; queries added later use `bulk-NNN`.
+LEGACY_PREFIX = "eval-"
 
 
 def _predict(index, queries, thresholds):
@@ -3079,10 +3127,11 @@ def test_every_module_has_enough_canonical_support_to_be_emitted():
     assert _report()["index"]["low_support_modules"] == []
 
 
-def test_evaluation_refuses_to_score_a_leaking_evaluation_set():
-    """The guard must fail loudly, not quietly inflate accuracy."""
+def test_the_report_covers_the_whole_bulk_set():
+    """A silently shrunken eval set would inflate every later number."""
     pytest.importorskip("sentence_transformers")
     assert _report()["bulk"]["total_queries"] >= 170
+    assert _report()["legacy_30"]["total_queries"] == 30
 ```
 
 - [ ] **Step 2: Pin the measured values**
