@@ -93,14 +93,14 @@ When `mode` is omitted, `route_query` chooses one strategy. The cascade is inten
    - lookup verbs such as “find”, “search for”, or “retrieve” → `search`;
    - bare one-to-three-word terms such as `RAG`, `GRPO`, or `vector database` → `search`;
    - conversational or generative starts normally → `chat`.
-3. If configured, a trained intent model may select a route when its confidence reaches `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.6`).
+3. If configured, a nearest-canonical-example similarity match may select a route when its cosine confidence reaches `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.30`, a cosine similarity rather than a softmax probability; nothing is trained — see [Training and evaluation](training-and-evaluation.md#intent-routing-by-nearest-canonical-example)).
 4. Otherwise an available LLM runs the three-label classifier at temperature 0.
 5. If no LLM exists or classification fails, a heuristic cue is checked with `tool` → `search` → bare lookup → `chat` precedence. When a cue matches, that route is used deterministically.
 6. If no heuristic cue matches at all, the router asks the user which route they meant instead of guessing (see below).
 
 Explicit modes and providers, then regex decisions, precede the learned model. Covered model predictions skip the LLM classifier. Model abstentions fall through to that classifier and then to the rule-based router when needed. Downstream chat, search, and tool execution is unchanged: the model selects only the existing execution family and cannot select a specific tool or bypass authorization.
 
-Every auto-routed response carries the deciding mechanism in `hook_metadata.route_mechanism`, alongside `route_predicted_intent`, `route_confidence`, `route_threshold`, `route_abstained`, `route_model_latency_ms`, and `route_fallback_reason` when a model was evaluated. That metadata is persisted with the session, so route outcomes can be joined to the already-stored request and recycled into a corrected training set without logging anything new about the request. Request captures additionally identify the deciding mechanism When the model is evaluated, the `intent_model · evaluation` stage records its predicted intent, confidence, configured threshold, abstention state, and latency. An abstention also records `fallback_reason="model_below_threshold"` on the evaluation and eventual intent stage, so traces expose both the deciding mechanism and fallback reason without adding the raw request to intent telemetry. A missing, unreadable, or incompatible configured artifact disables the learned route safely; the loader logs a diagnostic and routing continues through the existing fallbacks.
+Every auto-routed response carries the deciding mechanism in `hook_metadata.route_mechanism`, alongside `route_predicted_intent`, `route_confidence`, `route_threshold`, `route_abstained`, `route_model_latency_ms`, and `route_fallback_reason` when a model was evaluated. That metadata is persisted with the session, so route outcomes can be joined to the already-stored request and recycled into a corrected training set without logging anything new about the request. Request captures additionally identify the deciding mechanism When the model is evaluated, the `intent_model · evaluation` stage records its predicted intent, confidence, configured threshold, abstention state, and latency. An abstention also records `fallback_reason="model_below_threshold"` on the evaluation and eventual intent stage, so traces expose both the deciding mechanism and fallback reason without adding the raw request to intent telemetry. A missing, unreadable, or incompatible configured artifact disables the similarity route safely; the loader logs a diagnostic and routing continues through the existing fallbacks.
 
 `route_mechanism` uses the following vocabulary:
 
@@ -108,7 +108,7 @@ Every auto-routed response carries the deciding mechanism in `hook_metadata.rout
 |---|---|
 | `explicit_source` | An explicit non-default source provider forced search |
 | `rules` | Deterministic high-precision cues decided |
-| `model` | The trained intent model was confident |
+| `model` | The canonical-example similarity match was confident |
 | `classifier` | The LLM classifier returned a usable label |
 | `heuristic_default` | Nothing else worked; a heuristic cue decided |
 | `clarify` | No signal at all; the user was asked |
@@ -269,7 +269,7 @@ This is serving-time routing and inference. It is unrelated to GRPO training, ev
 - Browser fallback: `SearchExperienceSettings.browser_search_url` and a running browser-search service. The default `from_app_settings()` construction does not currently populate this URL, so deployments that want browser fallback must wire it into app construction.
 - Local policy modes: `SEARCH_AGENT_MODEL` or `SEARCH_AGENT_SERVER_URL`.
 - Provider-backed chat and classification: `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, and provider credentials.
-- Learned intent route: `AGENTIC_SEARCH_INTENT_MODEL_PATH` plus `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE`.
+- Learned intent route: `AGENTIC_SEARCH_INTENT_INDEX_PATH` plus `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE`.
 - Sufficiency threshold: `SEARCH_DIRECT_COS_MIN`.
 
 See [Configuration](configuration.md) for setup details.

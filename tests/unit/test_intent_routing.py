@@ -4,13 +4,24 @@ import json
 import json as _json
 from unittest.mock import AsyncMock, patch
 
+import numpy as np
+import pytest
+
 from src.agents.core.base import AgentLoopOutput
-from src.internal.servers.web.intent_routing import _infer_intent_from_output
+from src.internal.configs import AppSettings
+from src.internal.servers.web import ml_intent
+from src.internal.servers.web import request_capture as rc
+from src.internal.servers.web.intent_routing import (
+    _infer_intent_from_output,
+    route_request,
+)
 from src.internal.tools.routing_tools import (
     build_rag_routing_tool,
     build_search_routing_tool,
 )
 from src.internal.tools import ToolEffect
+from src.model.intent_encoder import DEFAULT_ENCODER
+from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
 
 
 def _make_output(
@@ -145,3 +156,106 @@ def test_rag_routing_tool_returns_answer():
     result = asyncio.run(run())
     data = _json.loads(result)
     assert data["answer"] == "42"
+
+
+def test_route_request_is_unchanged_by_a_none_returning_model(monkeypatch):
+    """A margin abstention must look exactly like having no model at all."""
+    from src.internal.servers.web import intent_routing
+
+    monkeypatch.setattr(intent_routing, "predict_route", lambda q, settings=None: None)
+    calls = []
+
+    class _LLM:
+        def complete(self, messages, temperature=0.0):
+            calls.append(messages)
+            return "search"
+
+    decision = intent_routing.route_request(
+        "where does the reranker timeout live",
+        llm=_LLM(),
+        explicit_source=False,
+    )
+
+    assert decision.strategy is intent_routing.RouteStrategy.SEARCH
+    assert calls, "the LLM classifier must still be consulted"
+
+
+# --- route_request end-to-end: exactly one intent_model capture stage ---
+
+_AXIS = {"search": 0, "chat": 1, "tool": 2}
+_MODULE = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
+
+# Deliberately not "?" and more than 3 words with no tool/search/chat cue, so
+# _regex_route defers and the query actually reaches predict_route instead of
+# being decided deterministically at cascade step 2.
+_MODEL_STAGE_QUERY = "the vendor contract renewal terms"
+
+
+def _write_routing_index(tmp_path):
+    examples, rows = [], []
+    for route, axis in _AXIS.items():
+        for position in range(12):
+            examples.append(
+                CanonicalExample(
+                    f"{route}-{position}",
+                    f"{route} {position}",
+                    route,
+                    (_MODULE[route],),
+                )
+            )
+            rows.append(np.eye(3, dtype=np.float32)[axis])
+    directory = tmp_path / "index"
+    IntentIndex(examples, np.stack(rows), DEFAULT_ENCODER, "sha256:x").save(
+        directory / INDEX_FILENAME
+    )
+    return directory
+
+
+class _ChatLLM:
+    def complete(self, messages, temperature=0.0):
+        return "chat"
+
+
+@pytest.mark.parametrize(
+    "vector, min_confidence, expect_composite",
+    [
+        # Confidence-only abstention: clear margin, low absolute confidence.
+        pytest.param([0.9950, 0.1005, 0.0], 1.0, False, id="confidence_only"),
+        # Margin abstention: confidence clears the (low) bar, but the top two
+        # routes tie, failing the margin gate. predict_route returns None
+        # itself and records its own single stage before doing so.
+        pytest.param([0.707, 0.707, 0.0], 0.5, False, id="margin_only"),
+        # Both gates trip together: confidence 0.71 < 0.8, and margin 0.01
+        # against the "tool" runner-up (whose only module is an action) is
+        # composite.
+        pytest.param([0.71, 0.0, 0.70], 0.8, True, id="confidence_and_composite"),
+    ],
+)
+def test_route_request_records_exactly_one_intent_model_stage(
+    tmp_path, monkeypatch, vector, min_confidence, expect_composite
+):
+    ml_intent._INTENT_INDEXES.clear()
+    monkeypatch.setattr(
+        ml_intent, "encode_texts", lambda texts: np.array([vector], dtype=np.float32)
+    )
+    settings = AppSettings(
+        intent_index_path=_write_routing_index(tmp_path),
+        intent_model_min_confidence=min_confidence,
+        intent_min_route_margin=0.05,
+        intent_min_module_score=0.4,
+    )
+    token = rc.start_capture("r", _MODEL_STAGE_QUERY)
+    try:
+        route_request(
+            _MODEL_STAGE_QUERY,
+            llm=_ChatLLM(),
+            explicit_source=False,
+            settings=settings,
+        )
+        model_stages = [s for s in rc.active().stages if s.stage == "intent_model"]
+
+        assert len(model_stages) == 1
+        assert model_stages[0].payload["composite"] is expect_composite
+    finally:
+        rc.reset_capture(token)
+        ml_intent._INTENT_INDEXES.clear()

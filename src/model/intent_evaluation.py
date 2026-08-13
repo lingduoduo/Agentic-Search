@@ -1,4 +1,30 @@
-"""Evaluation, threshold selection, and promotion gates for intent models."""
+"""Evaluation, threshold selection, and promotion gates for intent models.
+
+Half of this module is live and half is retained-but-unused. Read this before
+concluding either half is dead.
+
+**Live.** ``IntentPredictionRecord``, ``ModulePredictionRecord``,
+``realistic_accuracy_report`` and ``module_metrics_report`` are consumed by
+``intent_index_eval``, which scores the canonical-example router.
+
+**Retained, currently no production caller.** ``evaluate_intent_predictions``,
+``IntentEvaluationReport``, ``select_confidence_threshold``,
+``calibration_report``, ``out_of_scope_abstention_rate``,
+``compose_candidate_cascade``, ``authoritative_routes_match``,
+``compare_for_promotion``, ``PromotionCriteria`` and ``PromotionDecision`` lost
+their only caller when the trained classifier and its trainer were retired.
+They are kept deliberately, per the design document
+(``docs/superpowers/specs/2026-08-13-intent-knn-routing-design.md``), which
+retargets this module rather than deleting it: promotion gates, calibration and
+the ``evaluation_report.json`` contract all still apply to an index, and this
+module's survival is the stated mitigation for deleting recently-merged work.
+
+They are unused today because the task that measured the index reimplemented
+its threshold sweep inside ``intent_index_eval`` instead of reusing
+``select_confidence_threshold``. Reunifying the two, or dropping this half, is a
+reviewed decision for a follow-up — not something to infer from the absence of
+callers.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +38,7 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
-from .intent_classifier import INTENT_LABELS
+from .intent_taxonomy import INTENT_LABELS, SEMANTIC_MODULES
 
 
 @dataclass(frozen=True)
@@ -561,3 +587,72 @@ def _relative_gate(
         candidate,
         baseline,
     )
+
+
+@dataclass(frozen=True)
+class ModulePredictionRecord:
+    """One query's gold and predicted module sets, plus its route outcome."""
+
+    example_id: str
+    expected: tuple[str, ...]
+    predicted: tuple[str, ...]
+    route_correct: bool
+
+
+def module_metrics_report(
+    records: Iterable[ModulePredictionRecord],
+) -> dict[str, Any]:
+    """Per-module precision/recall/F1, macro-F1, and joint accuracy.
+
+    Only the thirteen semantic modules are scored. ``bare_entity`` names an
+    utterance form rather than an intent, and averaging it in would distort the
+    macro number. Queries with no gold modules — the original thirty predate the
+    taxonomy — are excluded from scoring and counted separately, so the report
+    never implies coverage it does not have.
+    """
+    records = tuple(records)
+    scored = tuple(record for record in records if record.expected)
+
+    per_module: dict[str, dict[str, float]] = {}
+    f1_values: list[float] = []
+    for module in SEMANTIC_MODULES:
+        true_positive = sum(
+            1 for r in scored if module in r.expected and module in r.predicted
+        )
+        false_positive = sum(
+            1 for r in scored if module not in r.expected and module in r.predicted
+        )
+        false_negative = sum(
+            1 for r in scored if module in r.expected and module not in r.predicted
+        )
+        precision = (
+            true_positive / (true_positive + false_positive)
+            if true_positive + false_positive
+            else 0.0
+        )
+        recall = (
+            true_positive / (true_positive + false_negative)
+            if true_positive + false_negative
+            else 0.0
+        )
+        f1 = (
+            2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        )
+        per_module[module] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": true_positive + false_negative,
+        }
+        f1_values.append(f1)
+
+    joint = sum(
+        1 for r in scored if r.route_correct and set(r.expected) == set(r.predicted)
+    )
+    return {
+        "total_queries": len(records),
+        "scored_queries": len(scored),
+        "per_module_metrics": per_module,
+        "macro_f1": sum(f1_values) / len(SEMANTIC_MODULES),
+        "joint_accuracy": joint / len(scored) if scored else 0.0,
+    }

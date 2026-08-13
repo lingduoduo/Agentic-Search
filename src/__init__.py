@@ -138,21 +138,11 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".training.reward",
         "simple_sparse_correctness_reward",
     ),
-    # model.intent_classifier
-    "INTENT_LABELS": (".model.intent_classifier", "INTENT_LABELS"),
-    "IntentPipeline": (".model.intent_classifier", "IntentPipeline"),
-    "IntentPrediction": (".model.intent_classifier", "IntentPrediction"),
-    "IntentionClassificationPipeline": (
-        ".model.intent_classifier",
-        "IntentionClassificationPipeline",
-    ),
-    "load_intent_training_data": (".model.intent_classifier", "load_training_data"),
-    "resolve_search_settings": (".model.intent_classifier", "resolve_search_settings"),
+    # model.intent_taxonomy
+    "INTENT_LABELS": (".model.intent_taxonomy", "INTENT_LABELS"),
     # model.intent_data
-    "IntentDatasetSplit": (".model.intent_data", "IntentDatasetSplit"),
     "IntentExample": (".model.intent_data", "IntentExample"),
     "load_intent_examples": (".model.intent_data", "load_intent_examples"),
-    "split_intent_examples": (".model.intent_data", "split_intent_examples"),
     # model.intent_evaluation
     "IntentEvaluationReport": (
         ".model.intent_evaluation",
@@ -173,15 +163,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".model.intent_evaluation",
         "select_confidence_threshold",
     ),
-    # model.intent_training
-    "IntentTrainingResult": (".model.intent_training", "IntentTrainingResult"),
-    "build_examples_for_document": (
-        ".model.intent_training",
-        "build_examples_for_document",
-    ),
-    "generate_intent_examples": (".model.intent_training", "generate_intent_examples"),
-    "train_intent_classifier": (".model.intent_training", "train_intent_classifier"),
-    "write_intent_examples": (".model.intent_training", "write_intent_examples"),
     # model.generation (SearchToolCall excluded — already exported from agents.search)
     "ActorRolloutStep": (".model.generation", "ActorRolloutStep"),
     "ContinuationDecision": (".model.generation", "ContinuationDecision"),

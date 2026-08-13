@@ -35,33 +35,66 @@ def test_load_app_settings_reads_typed_environment():
     assert settings.telemetry.posthog_debug_logs_enabled is True
 
 
-def test_load_app_settings_reads_intent_model_configuration():
+def test_load_app_settings_reads_intent_index_configuration():
     settings = load_app_settings(
         {
-            "AGENTIC_SEARCH_INTENT_MODEL_PATH": "/models/intent.pt",
+            "AGENTIC_SEARCH_INTENT_INDEX_PATH": "/models/intent-index",
             "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": "0.73",
         }
     )
 
-    assert settings.intent_model_path == Path("/models/intent.pt")
+    assert settings.intent_index_path == Path("/models/intent-index")
     assert settings.intent_model_min_confidence == 0.73
 
 
 @pytest.mark.parametrize("value", ["-0.1", "1.1", "nan", "inf"])
 def test_intent_threshold_must_be_finite_probability(value: str):
-    with pytest.raises(ValueError, match="INTENT_MODEL_MIN_CONFIDENCE"):
+    with pytest.raises(ValueError, match="intent_model_min_confidence"):
         load_app_settings({"AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": value})
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.1, float("nan"), float("inf")])
 def test_explicit_intent_threshold_must_be_finite_probability(value: float):
-    with pytest.raises(ValueError, match="INTENT_MODEL_MIN_CONFIDENCE"):
+    with pytest.raises(ValueError, match="intent_model_min_confidence"):
         AppSettings(intent_model_min_confidence=value)
 
 
+def test_intent_top_k_defaults_to_three_and_reads_from_env():
+    assert load_app_settings({}).intent_top_k == 3
+    assert load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": "15"}).intent_top_k == 15
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_intent_top_k_must_be_a_positive_integer(value: str):
+    with pytest.raises(ValueError, match="intent_top_k"):
+        load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": value})
+
+
+def test_explicit_intent_top_k_must_be_a_positive_integer():
+    with pytest.raises(ValueError, match="intent_top_k"):
+        AppSettings(intent_top_k=0)
+
+
 def test_default_config_documents_intent_model_configuration():
-    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_PATH"] == ""
-    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"] == 0.6
+    """The mirror must carry every routing threshold, at the tuned values."""
+    settings = load_app_settings({})
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_INDEX_PATH"] == ""
+    assert (
+        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"]
+        == settings.intent_model_min_confidence
+        == 0.30
+    )
+    assert (
+        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN"]
+        == settings.intent_min_route_margin
+        == 0.02
+    )
+    assert (
+        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE"]
+        == settings.intent_min_module_score
+        == 0.45
+    )
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 3
 
 
 def test_route_clarification_defaults_to_true_and_reads_from_env():

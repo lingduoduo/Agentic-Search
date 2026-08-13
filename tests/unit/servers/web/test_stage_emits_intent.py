@@ -177,6 +177,8 @@ def test_confident_model_records_evaluation_and_final_intent(monkeypatch):
             "abstained": False,
             "fallback_reason": None,
             "latency_ms": 2.5,
+            "modules": [],
+            "composite": False,
         }
         assert len(intent_stages) == 1
         assert intent_stages[0].label == "model"

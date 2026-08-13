@@ -1,0 +1,54 @@
+[
+  {"id": "hard-earnings-1", "text": "find the q3 earnings report", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-earnings-2", "text": "what was revenue in the q3 earnings report", "label": "search", "modules": ["lookup_fact"]},
+  {"id": "hard-earnings-3", "text": "summarize the q3 earnings report", "label": "chat", "modules": ["summarize"]},
+
+  {"id": "hard-runbook-1", "text": "where's the failover runbook", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-runbook-2", "text": "what timeout does the failover runbook say to use", "label": "search", "modules": ["lookup_fact"]},
+  {"id": "hard-runbook-3", "text": "explain what the failover runbook is actually doing", "label": "chat", "modules": ["explain"]},
+
+  {"id": "hard-deploy-1", "text": "did the friday deploy go out", "label": "search", "modules": ["current_info", "lookup_fact"]},
+  {"id": "hard-deploy-2", "text": "how does our deploy process work", "label": "chat", "modules": ["explain"]},
+  {"id": "hard-deploy-3", "text": "deploy the release branch to staging", "label": "tool", "modules": ["execute"]},
+
+  {"id": "hard-oncall-1", "text": "who's on call tonight", "label": "search", "modules": ["lookup_fact", "current_info"]},
+  {"id": "hard-oncall-2", "text": "how does the on call rotation work", "label": "chat", "modules": ["explain"]},
+  {"id": "hard-oncall-3", "text": "change the on call rotation for tonight", "label": "tool", "modules": ["modify"]},
+
+  {"id": "hard-p95-1", "text": "where do i see p95 latency for the api", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-p95-2", "text": "what's p95 latency right now", "label": "search", "modules": ["lookup_fact", "current_info"]},
+  {"id": "hard-p95-3", "text": "compare p95 latency before and after the reranker change", "label": "chat", "modules": ["compare"]},
+
+  {"id": "hard-email-1", "text": "find the email from the customer about the outage", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-email-2", "text": "draft an email to the customer about the outage", "label": "chat", "modules": ["generate"]},
+  {"id": "hard-email-3", "text": "send the outage email to the customer", "label": "tool", "modules": ["send"]},
+
+  {"id": "hard-pricing-1", "text": "where's the pricing page copy", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-pricing-2", "text": "what does the pricing page say the pro tier costs", "label": "search", "modules": ["lookup_fact"]},
+  {"id": "hard-pricing-3", "text": "rewrite the pricing page copy to be shorter", "label": "chat", "modules": ["generate"]},
+
+  {"id": "hard-incident-1", "text": "find the ticket for the checkout incident", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-incident-2", "text": "why did the checkout incident happen", "label": "chat", "modules": ["explain"]},
+  {"id": "hard-incident-3", "text": "file a new ticket for the checkout incident", "label": "tool", "modules": ["create"]},
+
+  {"id": "hard-limit-1", "text": "where is the expense approval limit written down", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-limit-2", "text": "what's the expense approval limit for managers", "label": "search", "modules": ["lookup_fact"]},
+  {"id": "hard-limit-3", "text": "raise the expense approval limit for managers to 5k", "label": "tool", "modules": ["modify"]},
+
+  {"id": "hard-notes-1", "text": "find the notes from monday's planning meeting", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-notes-2", "text": "summarize the notes from monday's planning meeting", "label": "chat", "modules": ["summarize"]},
+  {"id": "hard-notes-3", "text": "schedule the next planning meeting", "label": "tool", "modules": ["schedule"]},
+
+  {"id": "hard-contract-1", "text": "find the cloudkite vendor contract", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-contract-2", "text": "when does the cloudkite contract renew", "label": "search", "modules": ["lookup_fact"]},
+  {"id": "hard-contract-3", "text": "cancel the cloudkite contract before it renews", "label": "tool", "modules": ["modify"]},
+
+  {"id": "hard-payroll-1", "text": "find the thread where we discussed the payroll cutover", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-payroll-2", "text": "how does the payroll cutover actually work", "label": "chat", "modules": ["explain"]},
+  {"id": "hard-payroll-3", "text": "start the payroll cutover", "label": "tool", "modules": ["execute"]},
+
+  {"id": "hard-composite-1", "text": "find the best italian place near the office and book it for 7", "label": "tool", "modules": ["schedule"]},
+  {"id": "hard-composite-2", "text": "pull up the vendor list and email the top three for quotes", "label": "tool", "modules": ["send"]},
+  {"id": "hard-composite-3", "text": "look up who owns the billing service and page them", "label": "tool", "modules": ["send"]},
+  {"id": "hard-composite-4", "text": "read the churn report and draft a summary for the board", "label": "chat", "modules": ["summarize", "generate"]}
+]
