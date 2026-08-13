@@ -265,19 +265,20 @@ def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 
-# Measured on the first frame-based run (seed 17, 300 epochs, min_freq 1):
-# realistic accuracy 0.5667, out-of-scope separation margin +0.0708. Pinned a
-# little below each so a regression is caught without the test tracking noise.
-# Raise them when a run beats them; never lower without recording why.
+# Measured on the first pretrained-wordpiece run (seed 17, swept over
+# epochs 100/300/800 x lr 1e-3/3e-3): realistic accuracy 0.7333, out-of-scope
+# separation margin +0.0593. Pinned a little below each so a regression is
+# caught without the test tracking noise. Raise them when a run beats them;
+# never lower one without recording why.
 #
-# Honest reading of the accuracy number: 0.5667 does NOT beat the 3/5 = 0.60
-# hand-scored diagnosis baseline. It is pinned as a floor, not as evidence the
-# model is ready to promote. See
+# Honest reading of the accuracy number: 0.7333 clears the 3/5 = 0.60
+# hand-scored diagnosis baseline and the word-level model's 0.5667, but not the
+# 0.75 promotion bar, so the artifact stays dark. See
 # docs/superpowers/plans/2026-08-12-intent-model-realistic-accuracy.md.
-_REALISTIC_ACCURACY_FLOOR = 0.55
-_OUT_OF_SCOPE_MARGIN_FLOOR = 0.03
-_PINNED_EPOCHS = 300
-_PINNED_LR = 1e-3
+_REALISTIC_ACCURACY_FLOOR = 0.71
+_OUT_OF_SCOPE_MARGIN_FLOOR = 0.039
+_PINNED_EPOCHS = 800
+_PINNED_LR = 3e-3
 
 
 @functools.lru_cache(maxsize=1)
