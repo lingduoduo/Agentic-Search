@@ -198,7 +198,15 @@ class IntentPipeline:
             "promoted_min_confidence": promoted_min_confidence,
             "vocab_tokens": self._bundle.vocabulary.tokens,
             "embeddings": torch.tensor(self._bundle.embeddings),
-            "model_state": self._model._net.state_dict(),
+            # The frozen matrix is already stored once, in fp16, under
+            # "embeddings". nn.Embedding.from_pretrained keeps it in the state
+            # dict too, so saving that copy would triple the checkpoint for a
+            # tensor load() rebuilds from the bundle anyway.
+            "model_state": {
+                name: tensor
+                for name, tensor in self._model._net.state_dict().items()
+                if name != "embedding.weight"
+            },
             "config": {
                 "vocab_size": self._bundle.size,
                 "embedding_dim": self._bundle.dim,
@@ -249,13 +257,25 @@ class IntentPipeline:
             )
 
         cfg = checkpoint["config"]
-        cls._validate_checkpoint_dimensions(cfg, checkpoint["model_state"])
+        cls._validate_checkpoint_dimensions(
+            cfg, checkpoint["model_state"], checkpoint["embeddings"]
+        )
+        # A vocabulary that disagrees with the matrix it indexes re-encodes every
+        # request against the wrong rows, and nothing downstream would notice.
+        vocab_tokens = checkpoint["vocab_tokens"]
+        if len(vocab_tokens) != cfg["vocab_size"]:
+            raise ValueError(
+                "Checkpoint vocabulary size does not match its config: "
+                f"{len(vocab_tokens)} tokens against {cfg['vocab_size']}."
+            )
         bundle = PretrainedBundle(
-            vocabulary=WordPieceVocabulary.from_tokens(checkpoint["vocab_tokens"]),
+            vocabulary=WordPieceVocabulary.from_tokens(vocab_tokens),
             embeddings=checkpoint["embeddings"].numpy().astype(np.float16),
         )
         pipeline = cls(bundle, hidden_dim=cfg["hidden_dim"])
-        pipeline._model._net.load_state_dict(checkpoint["model_state"])
+        # strict=False: the frozen embedding is rebuilt from "embeddings" above,
+        # so the state dict deliberately omits it.
+        pipeline._model._net.load_state_dict(checkpoint["model_state"], strict=False)
         pipeline._model._net.eval()
         pipeline.is_trained = True
         pipeline.promoted_min_confidence = (
@@ -272,7 +292,7 @@ class IntentPipeline:
 
     @staticmethod
     def _validate_checkpoint_dimensions(
-        config: dict[str, Any], model_state: dict[str, Any]
+        config: dict[str, Any], model_state: dict[str, Any], embeddings: Any
     ) -> None:
         required_config = ("vocab_size", "embedding_dim", "hidden_dim", "num_classes")
         if (
@@ -287,9 +307,17 @@ class IntentPipeline:
                 "Checkpoint config is invalid for the intent architecture."
             )
 
+        # The frozen matrix lives outside the state dict, so it is checked here
+        # rather than alongside the trained layers below.
+        embedding_shape = getattr(embeddings, "shape", None)
+        if embedding_shape is None or tuple(embedding_shape) != (
+            config["vocab_size"],
+            config["embedding_dim"],
+        ):
+            raise ValueError("Checkpoint config/model state dimensions do not match.")
+
         hidden_half = config["hidden_dim"] // 2
         expected_shapes = {
-            "embedding.weight": (config["vocab_size"], config["embedding_dim"]),
             "fc1.weight": (config["hidden_dim"], config["embedding_dim"]),
             "fc1.bias": (config["hidden_dim"],),
             "fc2.weight": (hidden_half, config["hidden_dim"]),

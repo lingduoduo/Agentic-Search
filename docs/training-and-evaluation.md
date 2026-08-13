@@ -67,7 +67,7 @@ The seed controls the source-grouped train, validation, and held-out test split 
 
 The output directory contains three inspection-ready artifacts:
 
-- `intent_model.pt` is the candidate checkpoint, including its ordered labels, preprocessing and architecture metadata, dataset fingerprint, and format version. It carries its own copy of the wordpiece vocabulary and the frozen fp16 embedding matrix, so it is now roughly 23MB and is written at version `4`; versions `1`-`3` predate pretrained wordpieces and are rejected on load, which means an older checkpoint must be retrained rather than migrated.
+- `intent_model.pt` is the candidate checkpoint, including its ordered labels, preprocessing and architecture metadata, dataset fingerprint, and format version. It carries its own copy of the wordpiece vocabulary and the frozen fp16 embedding matrix, so it is now roughly 24MB (measured: 24.5MB) and is written at version `4`; versions `1`-`3` predate pretrained wordpieces and are rejected on load, which means an older checkpoint must be retrained rather than migrated.
 - `split_manifest.json` records the seed, fingerprint, split sizes, per-label counts, example IDs, and source groups.
 - `evaluation_report.json` records the selected threshold, per-split label counts, candidate and baseline metrics, hyperparameters, dataset fingerprint, calibration, realistic accuracy, and every promotion-gate result.
 

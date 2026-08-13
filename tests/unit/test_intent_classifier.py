@@ -389,12 +389,22 @@ def test_load_rejects_checkpoint_with_incompatible_intent_labels(tmp_path, label
         IntentPipeline.load(str(path))
 
 
-def test_load_rejects_version_one_checkpoint_with_retraining_message(tmp_path):
+def test_load_rejects_a_vocabulary_truncated_away_from_its_matrix(tmp_path):
+    """A short vocabulary re-encodes every request against the wrong rows."""
     torch = pytest.importorskip("torch")
-    path = tmp_path / "legacy-intent.pt"
-    torch.save({"version": 1}, path)
+    pipeline = IntentPipeline(_bundle(), hidden_dim=16)
+    pipeline.train(
+        [(["hello"], "chat"), (["find"], "search"), (["run"], "tool")],
+        epochs=1,
+        seed=17,
+    )
+    path = tmp_path / "intent.pt"
+    pipeline.save(str(path), dataset_fingerprint="sha256:abc")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    checkpoint["vocab_tokens"] = checkpoint["vocab_tokens"][:-1]
+    torch.save(checkpoint, path)
 
-    with pytest.raises(ValueError, match="retrain"):
+    with pytest.raises(ValueError, match="vocabulary size"):
         IntentPipeline.load(str(path))
 
 
@@ -413,9 +423,9 @@ def test_load_rejects_model_state_dimensions_that_disagree_with_config(tmp_path)
         promoted_min_confidence=None,
     )
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    checkpoint["model_state"]["embedding.weight"] = checkpoint["model_state"][
-        "embedding.weight"
-    ][:-1]
+    checkpoint["model_state"]["fc1.weight"] = checkpoint["model_state"]["fc1.weight"][
+        :-1
+    ]
     torch.save(checkpoint, path)
 
     with pytest.raises(ValueError, match="config"):
