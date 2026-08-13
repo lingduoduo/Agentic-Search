@@ -13,6 +13,7 @@ from src import (
 from src.internal.document_index.text import Vocabulary
 from src.model import intent_training
 from src.model.intent_classifier import _IntentClassifier
+from src.model.intent_pretrained import write_pretrained_bundle
 
 
 def _bundle(dim: int = 8):
@@ -196,14 +197,19 @@ def test_train_intent_classifier_utility_saves_pipeline(tmp_path):
         examples_path,
     )
     output_path = tmp_path / "intent.pt"
+    bundle_path = tmp_path / "bundle"
+    bundle = _bundle()
+    write_pretrained_bundle(
+        bundle_path,
+        tokens=bundle.vocabulary.tokens,
+        embeddings=bundle.embeddings,
+    )
 
     result = train_intent_classifier(
         examples_path=examples_path,
         output_path=output_path,
+        pretrained_path=bundle_path,
         epochs=1,
-        min_freq=1,
-        vocab_size=128,
-        embedding_dim=16,
         hidden_dim=32,
     )
 

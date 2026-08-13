@@ -40,6 +40,11 @@ from .intent_evaluation import (
     realistic_accuracy_report,
     select_confidence_threshold,
 )
+from .intent_pretrained import (
+    DEFAULT_MODEL,
+    extract_pretrained_bundle,
+    load_pretrained_bundle,
+)
 from src.internal.document_index.text import extract_keywords, tokenize_text
 
 INTENTS = tuple(INTENT_LABELS)  # ordering used for sort key
@@ -64,6 +69,7 @@ class IntentTrainingConfig:
     examples_path: Path
     output_dir: Path
     baseline_path: Path
+    pretrained_path: Path = Path("data/intent_pretrained")
     out_of_scope_path: Path | None = None
     eval_queries_path: Path | None = None
     seed: int = 17
@@ -72,14 +78,6 @@ class IntentTrainingConfig:
     # 0.567 at 300). See docs/training-and-evaluation.md.
     epochs: int = 300
     lr: float = 1e-3
-    # 1, not 2: dropping singletons was measured to cost more vocabulary than
-    # the unknown-token signal it buys. On the committed dataset min_freq=2
-    # left only 4 of 341 training rows containing an unknown word while
-    # shrinking the vocabulary 147 -> 135, and realistic accuracy fell from
-    # 0.600 to 0.500 with the out-of-scope margin going negative.
-    min_freq: int = 1
-    vocab_size: int = 5000
-    embedding_dim: int = 128
     hidden_dim: int = 256
     train_fraction: float = 0.70
     validation_fraction: float = 0.15
@@ -433,11 +431,9 @@ def train_intent_classifier(
     *,
     examples_path: Path,
     output_path: Path,
+    pretrained_path: Path = Path("data/intent_pretrained"),
     epochs: int = 10,
     lr: float = 1e-3,
-    min_freq: int = 2,
-    vocab_size: int = 5000,
-    embedding_dim: int = 128,
     hidden_dim: int = 256,
 ) -> IntentTrainingResult:
     """Train an IntentPipeline from examples and save it to *output_path*."""
@@ -450,12 +446,9 @@ def train_intent_classifier(
     for _, label in data:
         label_counts[label] = label_counts.get(label, 0) + 1
 
-    pipeline = IntentPipeline(
-        vocab_size=vocab_size,
-        embedding_dim=embedding_dim,
-        hidden_dim=hidden_dim,
-    )
-    pipeline.train(data, epochs=epochs, lr=lr, min_freq=min_freq)
+    bundle = load_pretrained_bundle(Path(pretrained_path))
+    pipeline = IntentPipeline(bundle, hidden_dim=hidden_dim)
+    pipeline.train(data, epochs=epochs, lr=lr)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pipeline.save(str(output_path), dataset_fingerprint="untracked")
@@ -486,11 +479,8 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
     )
     baseline_records = _load_baseline_records(Path(config.baseline_path), split.test)
 
-    pipeline = IntentPipeline(
-        vocab_size=config.vocab_size,
-        embedding_dim=config.embedding_dim,
-        hidden_dim=config.hidden_dim,
-    )
+    bundle = load_pretrained_bundle(Path(config.pretrained_path))
+    pipeline = IntentPipeline(bundle, hidden_dim=config.hidden_dim)
     training_data = [
         (tokenize_text(example.text), example.label) for example in split.train
     ]
@@ -498,7 +488,6 @@ def run_intent_training(config: IntentTrainingConfig) -> IntentTrainingRun:
         training_data,
         epochs=config.epochs,
         lr=config.lr,
-        min_freq=config.min_freq,
         seed=config.seed,
     )
 
@@ -901,9 +890,7 @@ def _hyperparameters(config: IntentTrainingConfig) -> dict[str, Any]:
         "seed": config.seed,
         "epochs": config.epochs,
         "lr": config.lr,
-        "min_freq": config.min_freq,
-        "vocab_size": config.vocab_size,
-        "embedding_dim": config.embedding_dim,
+        "pretrained": str(config.pretrained_path),
         "hidden_dim": config.hidden_dim,
         "train_fraction": config.train_fraction,
         "validation_fraction": config.validation_fraction,
@@ -921,9 +908,6 @@ def _hyperparameters(config: IntentTrainingConfig) -> dict[str, Any]:
 def _validate_training_config(config: IntentTrainingConfig) -> None:
     integer_fields = {
         "epochs": config.epochs,
-        "min_freq": config.min_freq,
-        "vocab_size": config.vocab_size,
-        "embedding_dim": config.embedding_dim,
         "hidden_dim": config.hidden_dim,
     }
     invalid = [name for name, value in integer_fields.items() if value <= 0]
@@ -1132,6 +1116,14 @@ def _build_parser() -> argparse.ArgumentParser:
     baseline.add_argument("--output", required=True, type=Path)
     baseline.add_argument("--seed", type=int, default=17)
 
+    embeddings = subparsers.add_parser(
+        "embeddings", help="extract the frozen pretrained wordpiece bundle"
+    )
+    embeddings.add_argument("--model", default=DEFAULT_MODEL)
+    embeddings.add_argument(
+        "--output", required=True, type=Path, help="bundle directory to write"
+    )
+
     train = subparsers.add_parser("train", help="train and evaluate a candidate")
     train.add_argument("--examples", required=True, type=Path)
     train.add_argument("--baseline", required=True, type=Path)
@@ -1141,9 +1133,9 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--seed", type=int, default=17)
     train.add_argument("--epochs", type=int, default=300)
     train.add_argument("--lr", type=float, default=1e-3)
-    train.add_argument("--min-freq", type=int, default=1)
-    train.add_argument("--vocab-size", type=int, default=5000)
-    train.add_argument("--embedding-dim", type=int, default=128)
+    train.add_argument(
+        "--pretrained", type=Path, default=Path("data/intent_pretrained")
+    )
     train.add_argument("--hidden-dim", type=int, default=256)
     train.add_argument("--train-fraction", type=float, default=0.70)
     train.add_argument("--validation-fraction", type=float, default=0.15)
@@ -1175,19 +1167,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "embeddings":
+            extract_pretrained_bundle(args.model, args.output)
+            return 0
+
         run = run_intent_training(
             IntentTrainingConfig(
                 examples_path=args.examples,
                 baseline_path=args.baseline,
+                pretrained_path=args.pretrained,
                 out_of_scope_path=args.out_of_scope,
                 eval_queries_path=args.eval_queries,
                 output_dir=args.output_dir,
                 seed=args.seed,
                 epochs=args.epochs,
                 lr=args.lr,
-                min_freq=args.min_freq,
-                vocab_size=args.vocab_size,
-                embedding_dim=args.embedding_dim,
                 hidden_dim=args.hidden_dim,
                 train_fraction=args.train_fraction,
                 validation_fraction=args.validation_fraction,

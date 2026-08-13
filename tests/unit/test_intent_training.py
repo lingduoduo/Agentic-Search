@@ -32,6 +32,83 @@ from src.model.intent_evaluation import (
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "intent"
 
 
+def _write_test_bundle(directory: Path, dim: int = 8) -> Path:
+    """A bundle covering the fixture vocabulary, for fast offline training."""
+    import numpy as np
+
+    from src.model.intent_pretrained import write_pretrained_bundle
+
+    tokens = (
+        ["[PAD]"]
+        + [f"[unused{index}]" for index in range(99)]
+        + ["[UNK]"]
+        + [
+            "find",
+            "explain",
+            "send",
+            "the",
+            "a",
+            "how",
+            "to",
+            "dense",
+            "retrieval",
+            "works",
+            "email",
+            "ticket",
+            "##s",
+            "##ing",
+        ]
+    )
+    rng = np.random.default_rng(17)
+    write_pretrained_bundle(
+        directory,
+        tokens=tokens,
+        embeddings=rng.normal(size=(len(tokens), dim)).astype(np.float16),
+    )
+    return directory
+
+
+def test_embeddings_cli_writes_a_loadable_bundle(tmp_path, monkeypatch):
+    """The extraction command is the only place a model is loaded."""
+    from src.model import intent_pretrained
+
+    captured = {}
+
+    def fake_extract(model_name, directory):
+        captured["model_name"] = model_name
+        _write_test_bundle(Path(directory))
+
+    monkeypatch.setattr(intent_training, "extract_pretrained_bundle", fake_extract)
+    output = tmp_path / "bundle"
+
+    exit_code = intent_training.main(
+        ["embeddings", "--output", str(output), "--model", "test/model"]
+    )
+
+    assert exit_code == 0
+    assert captured["model_name"] == "test/model"
+    assert intent_pretrained.load_pretrained_bundle(output).size > 100
+
+
+def test_training_requires_a_pretrained_bundle(tmp_path, capsys):
+    exit_code = intent_training.main(
+        [
+            "train",
+            "--examples",
+            str(FIXTURES / "intent_examples.json"),
+            "--baseline",
+            str(FIXTURES / "baseline_predictions.json"),
+            "--pretrained",
+            str(tmp_path / "missing"),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    assert exit_code == 1
+    assert "embeddings" in capsys.readouterr().err
+
+
 def test_build_examples_emit_only_route_labels():
     doc = {"id": "d1", "title": "FAISS", "contents": "vector index library"}
     examples = build_examples_for_document(doc, ["vector", "index", "ranking"])
@@ -173,7 +250,7 @@ def test_training_workflow_writes_artifact_manifest_and_report(tmp_path):
             baseline_path=FIXTURES / "baseline_predictions.json",
             output_dir=tmp_path,
             epochs=1,
-            embedding_dim=8,
+            pretrained_path=_write_test_bundle(tmp_path / "bundle"),
             hidden_dim=16,
             seed=17,
         )
@@ -199,21 +276,29 @@ DATA = Path(__file__).resolve().parents[2] / "data"
 # docs/superpowers/plans/2026-08-12-intent-model-realistic-accuracy.md.
 _REALISTIC_ACCURACY_FLOOR = 0.55
 _OUT_OF_SCOPE_MARGIN_FLOOR = 0.03
+_PINNED_EPOCHS = 300
+_PINNED_LR = 1e-3
 
 
 @functools.lru_cache(maxsize=1)
 def _pipeline_trained_on_committed_examples():
     from src.model.intent_classifier import IntentPipeline
+    from src.model.intent_pretrained import load_pretrained_bundle
 
+    bundle_path = DATA / "intent_pretrained"
+    if not (bundle_path / "vocab.txt").exists():
+        pytest.skip(
+            "run `python -m src.model.intent_training embeddings "
+            f"--output {bundle_path}` to measure the pinned bars"
+        )
     split = split_intent_examples(
         load_intent_examples(DATA / "intent_examples.json"), seed=17
     )
-    pipeline = IntentPipeline(vocab_size=5000, embedding_dim=128, hidden_dim=256)
+    pipeline = IntentPipeline(load_pretrained_bundle(bundle_path), hidden_dim=256)
     pipeline.train(
         [(tokenize_text(example.text), example.label) for example in split.train],
-        epochs=300,
-        lr=1e-3,
-        min_freq=1,
+        epochs=_PINNED_EPOCHS,
+        lr=_PINNED_LR,
         seed=17,
     )
     return pipeline
@@ -311,7 +396,7 @@ def _run_fixture_training(
             eval_queries_path=eval_queries_path,
             output_dir=tmp_path,
             epochs=1,
-            embedding_dim=8,
+            pretrained_path=_write_test_bundle(tmp_path / "bundle"),
             hidden_dim=16,
             seed=17,
         )
@@ -368,7 +453,7 @@ def test_promotable_training_checkpoint_stores_selected_threshold(
             baseline_path=FIXTURES / "baseline_predictions.json",
             output_dir=tmp_path,
             epochs=1,
-            embedding_dim=8,
+            pretrained_path=_write_test_bundle(tmp_path / "bundle"),
             hidden_dim=16,
             seed=17,
         )
@@ -386,7 +471,7 @@ def test_nonpromotable_training_checkpoint_is_inspection_only(tmp_path):
             baseline_path=FIXTURES / "baseline_predictions.json",
             output_dir=tmp_path,
             epochs=1,
-            embedding_dim=8,
+            pretrained_path=_write_test_bundle(tmp_path / "bundle"),
             hidden_dim=16,
             seed=17,
         )
@@ -428,7 +513,7 @@ def test_training_workflow_publishes_nothing_when_artifact_staging_fails(
                 baseline_path=FIXTURES / "baseline_predictions.json",
                 output_dir=tmp_path,
                 epochs=1,
-                embedding_dim=8,
+                pretrained_path=_write_test_bundle(tmp_path / "bundle"),
                 hidden_dim=16,
                 seed=17,
             )
@@ -475,7 +560,7 @@ def test_training_workflow_restores_complete_generation_when_publication_fails(
                 baseline_path=FIXTURES / "baseline_predictions.json",
                 output_dir=tmp_path,
                 epochs=1,
-                embedding_dim=8,
+                pretrained_path=_write_test_bundle(tmp_path / "bundle"),
                 hidden_dim=16,
                 seed=17,
             )
@@ -512,7 +597,7 @@ def test_training_workflow_cleans_backup_when_backup_copy_fails(tmp_path, monkey
                 baseline_path=FIXTURES / "baseline_predictions.json",
                 output_dir=tmp_path,
                 epochs=1,
-                embedding_dim=8,
+                pretrained_path=_write_test_bundle(tmp_path / "bundle"),
                 hidden_dim=16,
                 seed=17,
             )
@@ -707,7 +792,7 @@ def test_training_rejects_baseline_ids_that_do_not_match_test_split(tmp_path):
                 baseline_path=baseline_path,
                 output_dir=tmp_path / "artifacts",
                 epochs=1,
-                embedding_dim=8,
+                pretrained_path=_write_test_bundle(tmp_path / "bundle"),
                 hidden_dim=16,
                 seed=17,
             )
@@ -853,8 +938,8 @@ def test_train_cli_returns_two_for_real_nonpromotable_workflow(tmp_path):
             str(tmp_path / "artifacts"),
             "--epochs",
             "1",
-            "--embedding-dim",
-            "8",
+            "--pretrained",
+            str(_write_test_bundle(tmp_path / "bundle")),
             "--hidden-dim",
             "16",
             "--seed",

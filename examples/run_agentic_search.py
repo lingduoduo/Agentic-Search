@@ -46,6 +46,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from src.model.serving import (  # re-export for back-compat
@@ -692,6 +693,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "Use --intent_model instead when the model has been pre-trained.",
     )
     parser.add_argument(
+        "--intent_pretrained",
+        type=str,
+        default="data/intent_pretrained",
+        help="Directory holding the frozen pretrained wordpiece bundle used when "
+        "training from --intent_examples. Create it with "
+        "`python -m src.model.intent_training embeddings --output <dir>`.",
+    )
+    parser.add_argument(
         "--intent_min_confidence",
         type=float,
         default=0.6,
@@ -729,16 +738,18 @@ async def main() -> None:
         print(f"Status  : loading intent model from {args.intent_model}")
         intent_pipeline = IntentPipeline.load(args.intent_model)
         print(
-            f"Status  : intent model ready (vocab size {len(intent_pipeline._vocab.token2idx)})"
+            f"Status  : intent model ready (vocab size {intent_pipeline._bundle.size})"
         )
     elif args.intent_examples:
         # Slow path: train from scratch on the fly (use --intent_model for production)
         from src.model.intent_classifier import IntentPipeline, load_training_data
+        from src.model.intent_pretrained import load_pretrained_bundle
 
         print(f"Status  : training intent classifier from {args.intent_examples}")
         training_data = load_training_data(args.intent_examples)
         if training_data:
-            intent_pipeline = IntentPipeline()
+            bundle = load_pretrained_bundle(Path(args.intent_pretrained))
+            intent_pipeline = IntentPipeline(bundle)
             intent_pipeline.train(training_data, epochs=10)
             print("Status  : intent classifier ready")
 
