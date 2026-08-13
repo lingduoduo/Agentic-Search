@@ -48,7 +48,7 @@ transformer per request is not required to fix out-of-vocabulary. Taking only
 the **wordpiece tokenizer and the input embedding table** — a dictionary lookup
 and a mean — keeps today's sub-millisecond cost while removing the defect,
 because wordpiece decomposes any word into known subwords: *postmortem* becomes
-`post ##mor ##tem`, each with a pretrained vector behind it.
+`post ##mo ##rte ##m`, each with a pretrained vector behind it.
 
 Two consequences worth naming. MiniLM on MPS is *slower* than on CPU at batch 1,
 where kernel-launch overhead dominates a 6-layer model, so an encoder-based
@@ -110,7 +110,8 @@ at all, never on an ordinary unseen word.
 `src/model/wordpiece.py`, roughly 80 lines of pure Python with no torch import:
 `WordPieceVocabulary.from_file(path)` and `.encode(text) -> list[int]`,
 implementing greedy longest-match-first with `##` continuations, a per-word
-`[UNK]` fallback, and the reference 200-character-per-word guard.
+`[UNK]` fallback, and the reference 100-character-per-word guard (HuggingFace's
+`max_input_chars_per_word`, confirmed against the loaded tokenizer).
 
 Dependency-free is a deliberate requirement, not an aesthetic one. The unit-test
 CI job installs neither torch nor transformers, and this repo has twice shipped
@@ -178,7 +179,7 @@ deleted rather than left as inert knobs:
 ### Unit tests, running in CI
 
 - Known decompositions, `##` continuation, `[UNK]` fallback for undecomposable
-  characters, the 200-character guard, and empty input.
+  characters, the 100-character guard, and empty input.
 - Vocabulary/matrix size disagreement is rejected. The bundle loader reads the
   matrix with numpy, which the unit-test job already installs through
   scikit-learn, so this check stays torch-free.
