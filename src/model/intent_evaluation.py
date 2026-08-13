@@ -12,7 +12,7 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
-from .intent_classifier import INTENT_LABELS
+from .intent_taxonomy import INTENT_LABELS, SEMANTIC_MODULES
 
 
 @dataclass(frozen=True)
@@ -561,3 +561,72 @@ def _relative_gate(
         candidate,
         baseline,
     )
+
+
+@dataclass(frozen=True)
+class ModulePredictionRecord:
+    """One query's gold and predicted module sets, plus its route outcome."""
+
+    example_id: str
+    expected: tuple[str, ...]
+    predicted: tuple[str, ...]
+    route_correct: bool
+
+
+def module_metrics_report(
+    records: Iterable[ModulePredictionRecord],
+) -> dict[str, Any]:
+    """Per-module precision/recall/F1, macro-F1, and joint accuracy.
+
+    Only the thirteen semantic modules are scored. ``bare_entity`` names an
+    utterance form rather than an intent, and averaging it in would distort the
+    macro number. Queries with no gold modules — the original thirty predate the
+    taxonomy — are excluded from scoring and counted separately, so the report
+    never implies coverage it does not have.
+    """
+    records = tuple(records)
+    scored = tuple(record for record in records if record.expected)
+
+    per_module: dict[str, dict[str, float]] = {}
+    f1_values: list[float] = []
+    for module in SEMANTIC_MODULES:
+        true_positive = sum(
+            1 for r in scored if module in r.expected and module in r.predicted
+        )
+        false_positive = sum(
+            1 for r in scored if module not in r.expected and module in r.predicted
+        )
+        false_negative = sum(
+            1 for r in scored if module in r.expected and module not in r.predicted
+        )
+        precision = (
+            true_positive / (true_positive + false_positive)
+            if true_positive + false_positive
+            else 0.0
+        )
+        recall = (
+            true_positive / (true_positive + false_negative)
+            if true_positive + false_negative
+            else 0.0
+        )
+        f1 = (
+            2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        )
+        per_module[module] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": true_positive + false_negative,
+        }
+        f1_values.append(f1)
+
+    joint = sum(
+        1 for r in scored if r.route_correct and set(r.expected) == set(r.predicted)
+    )
+    return {
+        "total_queries": len(records),
+        "scored_queries": len(scored),
+        "per_module_metrics": per_module,
+        "macro_f1": sum(f1_values) / len(SEMANTIC_MODULES),
+        "joint_accuracy": joint / len(scored) if scored else 0.0,
+    }

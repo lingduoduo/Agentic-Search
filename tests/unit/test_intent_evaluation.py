@@ -381,3 +381,75 @@ def test_calibration_reports_unmeasured_out_of_scope_as_none():
     assert all(
         row["out_of_scope_abstention"] is None for row in calibration["thresholds"]
     )
+
+
+def test_module_macro_f1_excludes_the_form_label():
+    """bare_entity describes utterance shape, not intent; it would distort F1."""
+    from src.model.intent_evaluation import (
+        ModulePredictionRecord,
+        module_metrics_report,
+    )
+
+    records = [
+        ModulePredictionRecord("a", ("lookup_fact",), ("lookup_fact",), True),
+        ModulePredictionRecord("b", ("bare_entity",), ("lookup_fact",), True),
+    ]
+
+    report = module_metrics_report(records)
+
+    assert "bare_entity" not in report["per_module_metrics"]
+    assert report["per_module_metrics"]["lookup_fact"]["recall"] == pytest.approx(1.0)
+
+
+def test_joint_accuracy_requires_route_and_exact_module_set():
+    from src.model.intent_evaluation import (
+        ModulePredictionRecord,
+        module_metrics_report,
+    )
+
+    records = [
+        ModulePredictionRecord("a", ("lookup_fact",), ("lookup_fact",), True),
+        # right route, extra module -> not joint-correct
+        ModulePredictionRecord(
+            "b", ("lookup_fact",), ("lookup_fact", "current_info"), True
+        ),
+        # right modules, wrong route -> not joint-correct
+        ModulePredictionRecord("c", ("explain",), ("explain",), False),
+    ]
+
+    report = module_metrics_report(records)
+
+    assert report["joint_accuracy"] == pytest.approx(1 / 3)
+
+
+def test_module_set_order_does_not_affect_joint_accuracy():
+    from src.model.intent_evaluation import (
+        ModulePredictionRecord,
+        module_metrics_report,
+    )
+
+    records = [
+        ModulePredictionRecord(
+            "a", ("lookup_fact", "current_info"), ("current_info", "lookup_fact"), True
+        )
+    ]
+
+    assert module_metrics_report(records)["joint_accuracy"] == pytest.approx(1.0)
+
+
+def test_module_report_records_how_many_queries_carried_gold_modules():
+    """The legacy 30 predate modules; the metric must say what it covered."""
+    from src.model.intent_evaluation import (
+        ModulePredictionRecord,
+        module_metrics_report,
+    )
+
+    records = [
+        ModulePredictionRecord("a", ("lookup_fact",), ("lookup_fact",), True),
+        ModulePredictionRecord("b", (), ("explain",), True),
+    ]
+
+    report = module_metrics_report(records)
+
+    assert report["scored_queries"] == 1
+    assert report["total_queries"] == 2
