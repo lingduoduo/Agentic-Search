@@ -60,8 +60,24 @@ def test_explicit_intent_threshold_must_be_finite_probability(value: float):
 
 
 def test_default_config_documents_intent_model_configuration():
+    """The mirror must carry every routing threshold, at the tuned values."""
+    settings = load_app_settings({})
     assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_INDEX_PATH"] == ""
-    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"] == 0.6
+    assert (
+        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"]
+        == settings.intent_model_min_confidence
+        == 0.30
+    )
+    assert (
+        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN"]
+        == settings.intent_min_route_margin
+        == 0.02
+    )
+    assert (
+        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE"]
+        == settings.intent_min_module_score
+        == 0.45
+    )
 
 
 def test_route_clarification_defaults_to_true_and_reads_from_env():

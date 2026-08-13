@@ -6,78 +6,95 @@
 
 Serving still uses indexes built offline by the `index_builder`. Filter-aware and degraded branches can use the composed session-aware retrieval, ranking/reranking, and evidence-grounded inference pipeline; strong unfiltered auto-search retains its direct ranking, sufficiency gate, and provider fallback path. Neither retrieval nor reranking is a training step. No new serving API or request/response schema was introduced; offline trainers may produce model artifacts, but requests only load and infer with them.
 
-## Intent-model training and promotion
+## Intent routing by nearest canonical example
 
-The supported offline workflow trains and evaluates the optional three-label (`chat`, `search`, `tool`) request router reproducibly. First extract the frozen pretrained wordpiece bundle the model reads with:
-
-```bash
-python -m src.model.intent_training embeddings --output data/intent_pretrained
-```
-
-The intent model reads requests as **pretrained wordpieces**, not as words from a vocabulary built out of its own training data. `embeddings` extracts MiniLM's tokenizer vocabulary and input embedding matrix once into `data/intent_pretrained/` (a 230KB `vocab.txt` and a 23MB fp16 matrix); the transformer itself never runs, at training time or serving time. This is what removes out-of-vocabulary entirely: an unseen word decomposes into known subwords — *postmortem* becomes `post ##mo ##rte ##m` — instead of being deleted by the padding mask. The previous word-level model read only 47% of the tokens in the evaluation set. The bundle lives under gitignored `data/`, so it is regenerable rather than committed, and a checkpoint carries its own copy so serving needs no separate file.
-
-Then capture the existing classifier/rule result for each ambiguous held-out request in `data/eval/intent_fallback_predictions.json`, and generate the complete baseline:
+**There is no intent training run any more.** The optional three-label (`chat`, `search`, `tool`) request router used to be a small MLP trained on generated examples. It is gone — module, checkpoint format, wordpiece bundle and all. What replaced it compares the incoming request against roughly 280 curated canonical examples and takes the route whose nearest examples are closest. The whole offline workflow is three commands, none of which trains anything:
 
 ```bash
-python -m src.model.intent_training baseline \
-  --examples data/intent_examples.json \
-  --fallback-predictions data/eval/intent_fallback_predictions.json \
-  --output data/eval/intent_baseline_predictions.json \
-  --seed 17
-```
+# 1. Seed a canonical draft from existing labelled examples (optional; run once).
+python -m src.model.intent_index_cli seed \
+  --examples data/intent_examples.json --output data/intent_canonical.draft.json
 
-The generator reproduces the seed-17 held-out split and runs the production high-precision regex router itself. It requires captured fallback rows for exactly the remaining ambiguous IDs, rejects missing or extra captures, and writes the complete regex → classifier/rule baseline consumed by training. No network or external LLM is invoked by the generator; operators can capture their chosen production classifier separately or supply deterministic rule-based fallback results. Capture `classifier` rows to benchmark against a deployment that runs the LLM classifier: a purely `rule_based` capture reports a zero classifier-fallback rate and no classifier latency, so the fallback-reduction and latency gates have nothing to improve on and the run cannot be promotable.
+# 2. Build the index the router serves from.
+python -m src.model.intent_index_cli build \
+  --canonical data/intent_canonical.json --output data/intent_index
 
-Both input and output prediction files are JSON arrays. Every record has exactly this schema:
-
-```json
-{
-  "example_id": "stable-example-id",
-  "expected": "chat",
-  "predicted": "chat",
-  "confidence": 1.0,
-  "latency_ms": 42.5,
-  "mechanism": "classifier"
-}
-```
-
-`expected` and `predicted` must be `chat`, `search`, or `tool`; `confidence` is a finite number from `0.0` through `1.0`; `latency_ms` is finite and non-negative. Captured fallback mechanisms are `classifier` or `rule_based`. The generated complete baseline may additionally contain `regex` records, and candidate evaluation adds `model` for candidate-covered predictions. This offline `mechanism` vocabulary (`regex` / `classifier` / `rule_based` / `model`) is separate from the runtime `hook_metadata.route_mechanism` vocabulary used by serving (`explicit_source` / `rules` / `model` / `classifier` / `heuristic_default` / `clarify` / `user_selected`, documented in [Auto-router decision order](request-routing.md#auto-router-decision-order)); the two must not be compared directly.
-
-Then train and evaluate the candidate:
-
-```bash
-python -m src.model.intent_training train \
-  --examples data/intent_examples.json \
-  --baseline data/eval/intent_baseline_predictions.json \
-  --out-of-scope data/intent_out_of_scope.json \
+# 3. Measure it. Never skip this after editing the canonical set.
+python -m src.model.intent_index_cli evaluate \
+  --index data/intent_index \
   --eval-queries data/intent_eval_queries.json \
-  --output-dir models/intent-candidate \
-  --seed 17
+  --hard-queries data/intent_eval_hard.json \
+  --out-of-scope data/intent_out_of_scope.json \
+  --canonical data/intent_canonical.json \
+  --output data/intent_index/evaluation_report.json
 ```
 
-`--out-of-scope` supplies unlabeled requests the router should decline entirely. They carry no label, because the three-label taxonomy cannot express "none of these": out-of-scope safety is measured as the fraction of probes whose confidence falls below the serving threshold. That rate is **reported, not gated**. This model family cannot reach a useful abstention rate at any threshold that leaves coverage, so out-of-scope safety comes from the LLM-classifier fallback and the clarification path, not from the model. What the model can do is score chatter *lower* than real requests: the generated dataset's neutral fillers (roles, times, artifacts, conversational openers) appear equally often under all three labels, so ordinary English carries no class evidence and a request built from it pools toward the centre. Without probes the rate is reported as `null` — unmeasured, never assumed safe.
+`data/intent_canonical.json` and the evaluation JSON files are tracked (force-added under an otherwise gitignored `data/`). `data/intent_index/` is a regenerable local build artifact and is not.
 
-`--eval-queries` supplies `data/intent_eval_queries.json`, a hand-authored set written independently of the generator. It is never trained on and never split. The report's `realistic_accuracy` block scores it: argmax accuracy and per-label precision/recall/F1 over every query, plus coverage and covered accuracy at the selected threshold. This is the number that says whether the model handles phrasing a person would actually type; the templated test split, whose coverage is `1.00` by construction, measures memorization of the generator instead. Training refuses a set whose queries all appear verbatim in the training examples. Without the flag, `realistic_accuracy` is recorded as `null`.
+### How routing works
 
-**What the current model actually scores, and why it is still not promoted.** On the committed dataset at seed 17 with the pretrained bundle, realistic accuracy is `0.733` (macro-F1 `0.731`; chat P/R/F1 `0.875`/`0.700`/`0.778`, search `0.643`/`0.900`/`0.750`, tool `0.750`/`0.600`/`0.667`) and the out-of-scope separation margin (mean in-scope confidence minus mean out-of-scope confidence) is `+0.059`, from mean in-scope `0.941` against mean out-of-scope `0.882`. Routing costs p50 `0.16ms` and p95 `0.43ms` per query. Both bars are pinned by tests in `tests/unit/test_intent_training.py`. Token coverage of the evaluation set, the probes, and the dataset is now **100%** — no query word goes unread, against the word-level model's `47%` — and accuracy rose from `0.567` to `0.733`, clearing the `3/5 = 0.60` hand-scored baseline that motivated this work. Read that headline with the hyperparameters attached: `0.567` was measured at 300 epochs / lr `1e-3`, and the pretrained model at those same settings scores `0.700`, so `0.133` of the gain is the representation change alone and the remaining `0.033` — one query of thirty — comes from the longer schedule the sweep selected. It does not reach the `0.75` bar the spec set for promotion, so the artifact stays dark and the LLM-classifier fallback and clarification path still own out-of-scope safety. The remaining gap is a representation ceiling rather than a vocabulary one: a bag of frozen MiniLM input embeddings discards word order, so running the full MiniLM encoder behind the same tokenizer is the next step. Separation stays positive but narrow, with out-of-scope probes producing 20 distinct confidences across 24 probes, where previously every fully-out-of-vocabulary probe pooled to the zero vector and returned one identical prediction.
+Each canonical example is encoded once by `all-MiniLM-L6-v2` and L2-normalized. At serving time the request is encoded the same way, and each route scores as the **mean of its top-3 cosine similarities** to that request. The best route wins; the module labels reported alongside it are diagnostics and can never change the route.
 
-Those figures come from `--epochs 800 --lr 3e-3`, the best of a sweep over epochs `100`/`300`/`800` against learning rates `1e-3`/`3e-3` (ties on accuracy broken toward the larger margin). Both are now the CLI defaults, so the `train` command above reproduces the measured and pinned run without extra flags. The epoch count is an optimizer-step count, because training takes one **full-batch** step per epoch: 10 epochs is 10 steps and leaves the model effectively untrained (realistic accuracy `0.333`). There is no longer a `--min-freq`, `--vocab-size`, or `--embedding-dim` knob — the vocabulary and the embedding matrix both come from the extracted bundle at 30522 × 384, and the unknown-token id survives only as the fallback for a word no subword covers, so an unread word maps to its own index rather than the padding id that masked pooling deletes.
+Two thresholds gate the answer, because two different things go wrong:
 
-The seed controls the source-grouped train, validation, and held-out test split as well as supported deterministic training behavior. Threshold selection uses only validation requests not already decided by regex; the test split is evaluated once after selection. Baseline records must match the test example IDs and expected labels exactly, ensuring the baseline and candidate are compared on the same requests.
+- `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.30`) — a low **absolute** similarity means nothing canonical resembles this request at all. That is an out-of-scope request.
+- `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` (default `0.02`) — a small **gap** between the best and second-best route means two routes fit equally well. That is an ambiguous request.
 
-The output directory contains three inspection-ready artifacts:
+Either one abstains, and abstention defers to the LLM classifier and the clarification path exactly as before. This is the concrete reason the softmax head was replaced: probabilities sum to one by construction, so a softmax router cannot express "none of these" — it can only say which of the three is least bad. That is why the old model's out-of-scope separation was only `+0.059` (mean in-scope confidence minus mean out-of-scope confidence) against this one's `0.1188`.
 
-- `intent_model.pt` is the candidate checkpoint, including its ordered labels, preprocessing and architecture metadata, dataset fingerprint, and format version. It carries its own copy of the wordpiece vocabulary and the frozen fp16 embedding matrix, so it is now roughly 24MB (measured: 24.5MB) and is written at version `4`; versions `1`-`3` predate pretrained wordpieces and are rejected on load, which means an older checkpoint must be retrained rather than migrated.
-- `split_manifest.json` records the seed, fingerprint, split sizes, per-label counts, example IDs, and source groups.
-- `evaluation_report.json` records the selected threshold, per-split label counts, candidate and baseline metrics, hyperparameters, dataset fingerprint, calibration, realistic accuracy, and every promotion-gate result.
+### Changing routing behavior
 
-The `calibration` block is what to read before trusting a threshold. Softmax scores are not probabilities, so it reports the full validation sweep — coverage, macro-F1, tool precision, high-confidence errors, and out-of-scope abstention at every candidate threshold — plus reliability bins and the expected calibration error. A model whose out-of-scope confidences overlap its in-domain confidences shows up here as a sweep where abstention only reaches the required rate at a threshold that leaves no coverage.
+Edit `data/intent_canonical.json` and rebuild. There is no training run, no seed, no schedule, no checkpoint. The canonical examples *are* the model.
 
-Evaluation composes the actual cascades on every held-out request: baseline is regex → captured classifier/rule fallback; candidate is the same regex route → covered model → the identical captured fallback on abstention. Regex-owned requests cannot count as model coverage. The promotion gates require: non-decreasing macro-F1; the configured minimum `tool` precision, measured over the model's own covered predictions so deterministic routes cannot dilute it (reported as `null`, which fails the gate, when the model predicted no `tool` route at all); no more than the configured high-confidence error limit; reduced LLM-classifier usage; lower model-resolved latency than LLM classification; and unchanged authoritative regex routes. A failed gate leaves all three candidate artifacts available for inspection but does not activate them or overwrite a serving setting.
+Always **append, rebuild, re-measure**, in that order. A badly-phrased canonical example does not fail loudly; it becomes a bad attractor that quietly pulls every nearby query onto its route. The only thing that catches it is the evaluation report, so a canonical edit that has not been re-measured has not been verified. `tests/unit/test_intent_canonical_data.py` additionally guards the set's size band, per-route balance, per-module support, and internal near-duplication; `tests/unit/test_intent_index_eval.py` pins the measured accuracy, out-of-scope separation, and latency bars.
 
-Exit codes are `0`, `1`, and `2`: `0` means training and evaluation completed and every promotion gate passed; `1` means invalid input, configuration, I/O, training, or artifact generation prevented a valid completed run; and `2` means the run completed and wrote its artifacts but one or more promotion gates failed.
+### What it scores, and why it is still dark
 
-`AGENTIC_SEARCH_INTENT_MODEL_PATH` no longer exists. Serving now reads the request router from `AGENTIC_SEARCH_INTENT_INDEX_PATH`, a directory holding an `index.npz` built by `intent_index_cli` from curated canonical examples — not from this checkpoint. This training-and-promotion workflow, and the resulting `intent_model.pt` / `evaluation_report.json`, is not currently wired into serving; it remains useful for offline inspection of the checkpoint's accuracy against the same held-out data. Learned routing is disabled by default when `AGENTIC_SEARCH_INTENT_INDEX_PATH` is unset or empty. Training never changes any serving setting automatically.
+Measured 2026-08-13 against the committed canonical set. The evaluation set has two parts: 30 legacy queries that were used as feedback while curating the canonical examples, and 151 `bulk-`prefixed queries written independently. **The clean 151 is the honest number.**
+
+| Slice | This router | MLP | Regex cascade | Majority floor |
+|---|---|---|---|---|
+| **clean_151** (honest) | **0.6225** | 0.4768 | 0.4238 | 0.3377 |
+| legacy_30 (contaminated) | 0.8000 | 0.733 | 0.4000 | 0.3333 |
+| bulk_181 (decision-rule input) | 0.6519 | — | 0.4199 | 0.3370 |
+| hard_40 (adversarial) | 0.6250 | — | 0.4750 | 0.2750 |
+
+| Other measures | This router | Previous MLP |
+|---|---|---|
+| Out-of-scope separation margin | `0.1188` | `+0.059` |
+| Module macro-F1 / joint accuracy | `0.3471` / `0.2318` | — |
+| Leave-one-out over the canonical set | `0.6750` (189/280) | — |
+| p50 / p95 routing latency | `5.51ms` / `5.88ms` | `0.16ms` / `0.43ms` |
+| Tuned thresholds | `min_confidence=0.30`, `min_margin=0.02` | — |
+| Per-route accuracy, clean_151 | chat 24/51, search 25/50, tool 45/50 | — |
+
+The new router beats the MLP on every slice (**+0.146** on the clean instrument), beats the production regex cascade by **+0.199**, and beats the majority-class floor by **+0.285** — **and still misses the `0.75` promotion bar at `0.6519`, so the artifact stays dark.** `AGENTIC_SEARCH_INTENT_INDEX_PATH` remains unset by default and every request falls through the existing LLM/rule cascade.
+
+Read the stop for what it is. The `0.80`/`0.75` promotion bands were calibrated against the legacy-30 instrument, and on legacy-30 this router scores `0.800` — the top band. The hard stop is what happens when a legacy-calibrated constant meets a harder, honest instrument. It is not a regression against anything real; every like-for-like comparison above is a clear win. Latency is a deliberate regression — roughly 13x the MLP's p95 — bought with accuracy and out-of-scope safety, and it clears the 25ms ceiling with wide headroom.
+
+### The ceiling finding
+
+This is the most valuable thing the exercise produced. **Leave-one-out accuracy over the canonical set is `0.6750`**: scoring each of the 280 anchors against the other 279 with the same top-3-mean rule, a third of them cannot recover their own route. Those are the hand-curated examples, on the easiest possible task — no phrasing drift, no unseen vocabulary. That is a property of the representation, not of the curation. `all-MiniLM-L6-v2` sentence embeddings with top-3-mean cosine over a few hundred anchors top out somewhere near `0.67`–`0.70` no matter how good the examples get, and clean_151 accuracy (`0.6225`) already sits just under that.
+
+The previous design document named "run the full MiniLM encoder" as the next step after the word-level model. That has now been done. It bought `+0.146`, and it is not enough. **The next lever is a stronger encoder or a learned head over the embeddings — not more canonical examples and not better-written ones.** Adding anchors cannot lift a ceiling that the anchors themselves already sit under.
+
+### Known limitations
+
+- **Topical concentration.** 47% of the canonical examples carry IR/ML vocabulary, because they were curated from this project's own example set. Of 16 off-domain in-scope probes, 9 landed on the wrong route and 13 abstained. It fails safe — abstention defers to the LLM classifier — but off-domain traffic abstains more often than it needs to.
+- **The compose-versus-dispatch boundary.** "write an email to the vendor about the overage" sits at `0.963` cosine to the canonical "email the vendor about the overage". One verb apart, so it routes to `tool` without abstaining, when composing text is arguably `chat`. Adding more compose anchors did not fix it: the two phrasings are near-identical to the encoder and genuinely ambiguous to a human reader.
+- **Route imbalance.** The `tool` route scores 45/50 on the clean slice while `search` and `chat` sit near 25/50. Rewriting tool queries into indirect phrasings did not move it, so this is a property of the route — tool requests carry imperative verbs that anchor cleanly — rather than of the instrument.
+- **Margin abstentions are invisible to production telemetry.** They are recorded through `request_capture`, which only runs under the debug panels. Measuring how often the margin gate fires in production would need a `predict_route` signature change.
+- **The evaluation set is partly contaminated.** The legacy 30 queries were used as feedback while the canonical set was being curated, so their `0.800` is optimistic and must never be quoted as the router's accuracy. The 151 `bulk-`prefixed queries are clean, and they are the honest measurement.
+
+### Deploying an index
+
+The loaded index is cached by resolved path and is never invalidated, so: **rebuild the index, then restart the web process.** A *failed* load is cached too — starting the web process before the index exists leaves learned routing disabled until the next restart, even after the file appears.
+
+### The units trap
+
+`AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` is now a **cosine similarity, not a softmax probability**. The two live on entirely different scales: the retired model routinely emitted confidences above `0.9` where this one's in-scope mean is `0.378`. A value carried over from the old model is meaningless, and a plausible-looking `0.6` would abstain on almost every request. Re-tune with the threshold sweep written into `evaluation_report.json` (`threshold_tuning.sweep`, and the chosen pair under `threshold_tuning.selected`) rather than reusing a number. `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` and `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` are cosine-scaled in the same way.
+
+`AGENTIC_SEARCH_INTENT_MODEL_PATH` no longer exists. Serving reads `AGENTIC_SEARCH_INTENT_INDEX_PATH`, a directory holding an `index.npz`. Building or evaluating an index never changes a serving setting.
 
 [← Back to README](../README.md)
 

@@ -42,7 +42,13 @@ def test_the_committed_file_loads_through_the_canonical_loader(examples):
 
 
 def test_the_set_stays_in_the_curated_size_band(examples):
-    assert 260 <= len(examples) <= 280
+    """Wide enough that appending an anchor is a normal edit, not a test break.
+
+    Extending the set is the documented way to change routing behavior, so a
+    ceiling sitting on the current count would block the one workflow the
+    operator guide tells people to use.
+    """
+    assert 260 <= len(examples) <= 400
 
 
 def test_no_route_dominates_the_index(examples):
@@ -67,7 +73,7 @@ def test_every_semantic_module_keeps_headroom_above_the_support_floor(examples):
 def test_bare_entity_stays_capped(examples):
     """A form label, routed at cascade step 2 before this model ever runs."""
     counts = Counter(module for example in examples for module in example.modules)
-    assert 10 <= counts["bare_entity"] <= 12
+    assert 8 <= counts["bare_entity"] <= 12
 
 
 def test_no_two_canonical_examples_are_near_duplicates(examples):

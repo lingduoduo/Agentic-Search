@@ -326,8 +326,10 @@ def route_request(
       2. A confident `_regex_route` match (anchored tool/search/chat cues,
          incl. bare lookup) is returned deterministically, skipping the
          classifier.
-      3. A trained intent model (`predict_route`) whose confidence clears its
-         typed serving threshold is returned, replacing the LLM step.
+      3. A similarity match against the curated canonical examples
+         (`predict_route`) whose cosine confidence clears its typed serving
+         threshold is returned, replacing the LLM step. Nothing is trained:
+         the route is the one whose nearest canonical examples are closest.
       4. With an LLM, use the 3-way classifier (rule-based on error).
       5. Without an LLM, use the rule-based route.
 

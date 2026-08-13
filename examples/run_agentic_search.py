@@ -159,6 +159,78 @@ def _build_sampling_params(args: argparse.Namespace) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
+class IntentPrediction:
+    """One accepted route for the request, with its cosine similarity.
+
+    ``confidence`` is the top-3 mean cosine to the winning route's canonical
+    examples — not a softmax probability. Thresholds compared against it must
+    be tuned on that scale.
+    """
+
+    intent: str
+    confidence: float
+
+
+def _load_intent_prediction(
+    index_dir: str, question: str, *, min_confidence: float
+) -> IntentPrediction | None:
+    """Route *question* against a canonical-example index, or return None.
+
+    None means the index abstained: either nothing canonical resembles the
+    request, or two routes fit it equally well. Neither is a signal worth
+    switching a generation model on.
+    """
+    from src.internal.configs import load_app_settings
+    from src.model.intent_encoder import encode_texts
+    from src.model.intent_knn import INDEX_FILENAME, IntentIndex
+
+    settings = load_app_settings()
+    index = IntentIndex.load(Path(index_dir) / INDEX_FILENAME)
+    decision = index.decide(
+        encode_texts([question])[0],
+        min_confidence=min_confidence,
+        min_margin=settings.intent_min_route_margin,
+        min_module_score=settings.intent_min_module_score,
+    )
+    if decision.abstained:
+        return None
+    return IntentPrediction(intent=decision.route, confidence=decision.confidence)
+
+
+def resolve_search_settings(
+    prediction: IntentPrediction,
+    *,
+    topk: int,
+    max_search_limit: int,
+    require_evidence: bool,
+    allow_internal_knowledge: bool,
+    min_confidence: float,
+) -> tuple[int, int, bool, bool, dict[str, Any]]:
+    """Apply the per-intent search policy for one CLI request."""
+
+    meta: dict[str, Any] = {
+        "intent_routing_used": True,
+        "predicted_intent": prediction.intent,
+        "intent_confidence": prediction.confidence,
+    }
+    if prediction.confidence < min_confidence:
+        meta["intent_policy_applied"] = False
+        return topk, max_search_limit, require_evidence, allow_internal_knowledge, meta
+
+    meta["intent_policy_applied"] = True
+    policy: dict[str, tuple[int, int, bool, bool]] = {
+        "chat": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
+        "search": (max(topk, 8), max(max_search_limit, 3), True, False),
+        "tool": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
+    }
+    t, s, r, a = policy.get(
+        prediction.intent,
+        (topk, max_search_limit, require_evidence, allow_internal_knowledge),
+    )
+    return t, s, r, a, meta
+
+
+@dataclass(frozen=True)
 class ModelRouteDecision:
     """Selected generation model for one CLI request."""
 
@@ -170,7 +242,7 @@ class ModelRouteDecision:
 
 def _resolve_model_route(
     args: argparse.Namespace,
-    intent_prediction: Any | None = None,
+    intent_prediction: IntentPrediction | None = None,
 ) -> ModelRouteDecision:
     """Choose a request-level generation model without touching agent loops.
 
@@ -340,9 +412,8 @@ async def run_search_agent(
     require_evidence: bool = True,
     max_answer_rejections: int = 3,
     allow_internal_knowledge: bool = True,
-    intent_pipeline: Any | None = None,
-    intent_prediction: Any | None = None,
-    intent_min_confidence: float = 0.6,
+    intent_prediction: IntentPrediction | None = None,
+    intent_min_confidence: float = 0.30,
 ) -> None:
     """Run the SearchAgentLoop and print results.
 
@@ -373,11 +444,7 @@ async def run_search_agent(
 
     sampling_params = sampling_params or {"temperature": 0.7, "max_tokens": 512}
     effective_search_limit = max_search_limit or max_turns
-    if intent_pipeline is not None or intent_prediction is not None:
-        if intent_prediction is None:
-            intent_prediction = intent_pipeline.predict_text(question)
-        from src.model.intent_classifier import resolve_search_settings
-
+    if intent_prediction is not None:
         (
             resolved_topk,
             effective_search_limit,
@@ -679,32 +746,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disable internal-knowledge direct answers",
     )
     parser.add_argument(
-        "--intent_model",
+        "--intent_index",
         type=str,
         default=None,
-        help="Path to a pre-trained intent classifier (.pt file from src.model.intent_training.train_intent_classifier). "
-        "Preferred over --intent_examples — loads instantly with no retraining.",
-    )
-    parser.add_argument(
-        "--intent_examples",
-        type=str,
-        default=None,
-        help="JSON file of intent-labeled examples for on-the-fly training. "
-        "Use --intent_model instead when the model has been pre-trained.",
-    )
-    parser.add_argument(
-        "--intent_pretrained",
-        type=str,
-        default="data/intent_pretrained",
-        help="Directory holding the frozen pretrained wordpiece bundle used when "
-        "training from --intent_examples. Create it with "
-        "`python -m src.model.intent_training embeddings --output <dir>`.",
+        help="Directory holding a canonical-example intent index (index.npz), "
+        "built with `python -m src.model.intent_index_cli build`. Nothing is "
+        "trained; routing compares the question against curated examples.",
     )
     parser.add_argument(
         "--intent_min_confidence",
         type=float,
-        default=0.6,
-        help="Minimum confidence for intent-based routing",
+        default=0.30,
+        help="Minimum cosine similarity to the winning route's canonical "
+        "examples before intent routing is applied. A cosine, not a softmax "
+        "probability — a value from the retired classifier is meaningless.",
     )
     parser.add_argument(
         "--tool_format", choices=["hermes", "llama3", "json"], default="json"
@@ -729,32 +784,21 @@ async def main() -> None:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    intent_pipeline = None
     intent_prediction = None
-    if args.intent_model:
-        # Fast path: load a pre-trained model saved by src.model.intent_training.train_intent_classifier.
-        from src.model.intent_classifier import IntentPipeline
-
-        print(f"Status  : loading intent model from {args.intent_model}")
-        intent_pipeline = IntentPipeline.load(args.intent_model)
-        print(
-            f"Status  : intent model ready (vocab size {intent_pipeline._bundle.size})"
+    if args.intent_index:
+        print(f"Status  : routing intent against {args.intent_index}")
+        intent_prediction = _load_intent_prediction(
+            args.intent_index,
+            args.question,
+            min_confidence=args.intent_min_confidence,
         )
-    elif args.intent_examples:
-        # Slow path: train from scratch on the fly (use --intent_model for production)
-        from src.model.intent_classifier import IntentPipeline, load_training_data
-        from src.model.intent_pretrained import load_pretrained_bundle
-
-        print(f"Status  : training intent classifier from {args.intent_examples}")
-        training_data = load_training_data(args.intent_examples)
-        if training_data:
-            bundle = load_pretrained_bundle(Path(args.intent_pretrained))
-            intent_pipeline = IntentPipeline(bundle)
-            intent_pipeline.train(training_data, epochs=10)
-            print("Status  : intent classifier ready")
-
-    if intent_pipeline is not None:
-        intent_prediction = intent_pipeline.predict_text(args.question)
+        if intent_prediction is None:
+            print("Status  : intent index abstained — no intent routing applied")
+        else:
+            print(
+                f"Status  : intent {intent_prediction.intent} "
+                f"(cosine {intent_prediction.confidence:.3f})"
+            )
 
     model_route = _resolve_model_route(args, intent_prediction)
     args.model = model_route.model
@@ -815,7 +859,6 @@ async def main() -> None:
                 require_evidence=not args.no_evidence_gate,
                 max_answer_rejections=args.max_answer_rejections,
                 allow_internal_knowledge=not args.require_search,
-                intent_pipeline=intent_pipeline,
                 intent_prediction=intent_prediction,
                 intent_min_confidence=args.intent_min_confidence,
             )

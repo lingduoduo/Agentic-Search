@@ -1,4 +1,12 @@
-"""Validated intent-training examples and deterministic source-grouped splits."""
+"""Validated intent examples: canonical anchors, labelled queries, splits.
+
+``load_canonical_examples`` reads the curated set the router is built from.
+The labelled-example loader and the deterministic source-grouped split
+predate it and survive the retired classifier: seeding a canonical draft
+(``intent_seed``) still reads labelled examples, and the split keeps a
+reproducible held-out partition available for offline analysis. Nothing here
+trains anything.
+"""
 
 from __future__ import annotations
 

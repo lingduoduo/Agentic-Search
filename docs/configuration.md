@@ -52,8 +52,8 @@ Routing configuration spans separate capabilities:
 | `SEARCH_AGENT_MODEL` / `SEARCH_AGENT_SERVER_URL` | Enables explicit local/remote policy-agent modes; not required for default auto-search |
 | `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, provider key | Enables grounded chat synthesis and the classifier for ambiguous routes |
 | `AGENTIC_SEARCH_INTENT_INDEX_PATH` | Directory holding a canonical-example index (`index.npz`) built by `intent_index_cli`; unset by default, which disables the learned route |
-| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | Minimum cosine similarity to the best-matching route before skipping the LLM/rule fallback (not a softmax probability); defaults to `0.6` |
-| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | Minimum cosine-similarity gap between the top and runner-up route; defaults to `0.05` |
+| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | Minimum cosine similarity to the best-matching route before skipping the LLM/rule fallback (not a softmax probability); defaults to `0.30` |
+| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | Minimum cosine-similarity gap between the top and runner-up route; defaults to `0.02` |
 | `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | Minimum cosine similarity for a module label to be emitted alongside the route; defaults to `0.45` |
 | `AGENTIC_SEARCH_ROUTE_CLARIFICATION` | Ask the user which route was meant when no step in the cascade has a signal; `true` by default. Set `false` to always choose a route, as before. |
 | `SEARCH_DIRECT_COS_MIN` | Semantic threshold for accepting internal evidence without external fallback |
@@ -80,8 +80,8 @@ Routing configuration spans separate capabilities:
 | `GEN_AI_API_KEY` | — | Provider API key |
 | `GEN_AI_API_BASE` | — | Override base URL (e.g. `http://localhost:11434/v1`) |
 | `AGENTIC_SEARCH_INTENT_INDEX_PATH` | — | Directory holding a canonical-example index (`index.npz`) built by `intent_index_cli`; unset keeps learned intent routing disabled |
-| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | `0.6` | Inclusive cosine-similarity threshold for accepting a route (not a softmax probability — a value carried over from the old learned-model checkpoint is meaningless here); must be finite and between `0.0` and `1.0` |
-| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | `0.05` | Minimum cosine-similarity gap between the top and runner-up route; must be finite and between `0.0` and `1.0` |
+| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | `0.30` | Inclusive cosine-similarity threshold for accepting a route (not a softmax probability — a value carried over from the old learned-model checkpoint is meaningless here); must be finite and between `0.0` and `1.0`. Tuned on 2026-08-13 against the committed canonical set |
+| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | `0.02` | Minimum cosine-similarity gap between the top and runner-up route; must be finite and between `0.0` and `1.0` |
 | `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | `0.45` | Minimum cosine similarity for a module label to be emitted alongside the route; must be finite and between `0.0` and `1.0` |
 | `AGENTIC_SEARCH_ROUTE_CLARIFICATION` | `true` | Ask the user which route was meant when no step in the cascade has a signal; set `false` to always choose a route, as before |
 | `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |

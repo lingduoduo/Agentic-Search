@@ -6,12 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import AgentLoopBase, IntentPrediction
+from src import AgentLoopBase
 from examples.run_agentic_search import (
+    IntentPrediction,
     _build_sampling_params,
     _has_accelerate,
     _friendly_model_load_error,
     _handle_local_cli_value_error,
+    _load_intent_prediction,
     _parse_major_minor,
     _resolve_model_route,
     _resolve_local_device,
@@ -237,6 +239,76 @@ def test_resolve_model_route_keeps_base_model_for_low_confidence():
 
     assert decision.model == "base-model"
     assert decision.metadata["model_routing_applied"] is False
+
+
+def _canonical_index(tmp_path: Path):
+    """A three-route index on the basis axes, so every cosine is exact."""
+    import numpy as np
+
+    from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+
+    axes = {"search": 0, "chat": 1, "tool": 2}
+    modules = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
+    examples, rows = [], []
+    for route, axis in axes.items():
+        for position in range(3):
+            examples.append(
+                CanonicalExample(
+                    id=f"{route}-{position}",
+                    text=f"{route} example {position}",
+                    route=route,
+                    modules=(modules[route],),
+                )
+            )
+            rows.append(np.eye(3, dtype=np.float32)[axis])
+    index = IntentIndex(
+        examples=examples,
+        vectors=np.stack(rows),
+        encoder="test-encoder",
+        fingerprint="sha256:test",
+    )
+    index.save(tmp_path / INDEX_FILENAME)
+    return tmp_path
+
+
+def _stub_encoder(monkeypatch, vector):
+    import numpy as np
+
+    import src.model.intent_encoder as encoder
+
+    monkeypatch.setattr(
+        encoder,
+        "encode_texts",
+        lambda texts, **kwargs: np.array([vector] * len(texts), dtype=np.float32),
+    )
+
+
+def test_load_intent_prediction_returns_the_nearest_canonical_route(
+    tmp_path, monkeypatch
+):
+    directory = _canonical_index(tmp_path)
+    _stub_encoder(monkeypatch, [0.0, 0.0, 1.0])
+
+    prediction = _load_intent_prediction(
+        str(directory), "book the room", min_confidence=0.3
+    )
+
+    assert prediction is not None
+    assert prediction.intent == "tool"
+    assert prediction.confidence == pytest.approx(1.0)
+
+
+def test_load_intent_prediction_returns_none_when_the_index_abstains(
+    tmp_path, monkeypatch
+):
+    """Nothing canonical resembles the request, so there is nothing to route on."""
+    directory = _canonical_index(tmp_path)
+    _stub_encoder(monkeypatch, [0.0, 0.0, 1.0])
+
+    assert (
+        _load_intent_prediction(str(directory), "book the room", min_confidence=1.01)
+        is None
+    )
 
 
 def test_resolve_local_device_returns_explicit_choice():

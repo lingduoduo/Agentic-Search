@@ -1,5 +1,7 @@
+import functools
 import json
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pytest
@@ -243,3 +245,92 @@ def test_leave_one_out_excludes_each_example_from_its_own_scoring():
     assert control_accuracy == pytest.approx(1.0)
     assert loo["n"] == len(examples)
     assert loo["accuracy"] < control_accuracy
+
+
+# ---------------------------------------------------------------------------
+# The pinned bars.
+#
+# Everything above runs on a synthetic index and no encoder. Everything below
+# measures the *committed* canonical set with the real MiniLM encoder, so it
+# skips wherever sentence-transformers or the built index is absent.
+#
+# Raise a floor when a run beats it; never lower one without recording why in
+# the commit message.
+# ---------------------------------------------------------------------------
+
+DATA = Path(__file__).resolve().parents[2] / "data"
+
+# Measured 2026-08-13 on the 280-example canonical set (task-8 report), pinned
+# ~0.02 below the measurement so ordinary encoder/float drift cannot trip them:
+#   bulk_181 route accuracy   0.6519  -> floor 0.63
+#   out-of-scope margin       0.1188  -> floor 0.10
+#   p95 routing latency       5.88 ms -> ceiling 25.0 ms
+_BULK_ACCURACY_FLOOR = 0.63
+_SEPARATION_MARGIN_FLOOR = 0.10
+_P95_LATENCY_CEILING_MS = 25.0
+
+
+@functools.lru_cache(maxsize=1)
+def _report():
+    pytest.importorskip("sentence_transformers")
+    from src.model.intent_index_eval import run_index_evaluation
+
+    index = DATA / "intent_index"
+    if not (index / "index.npz").exists():
+        pytest.skip(
+            "run `python -m src.model.intent_index_cli build --canonical "
+            f"data/intent_canonical.json --output {index}` to measure the bars"
+        )
+    return run_index_evaluation(
+        index_path=index,
+        eval_queries_path=DATA / "intent_eval_queries.json",
+        hard_queries_path=DATA / "intent_eval_hard.json",
+        out_of_scope_path=DATA / "intent_out_of_scope.json",
+        canonical_path=DATA / "intent_canonical.json",
+        output_path=index / "evaluation_report.json",
+    )
+
+
+def test_index_holds_the_bulk_accuracy_bar():
+    assert _report()["bulk"]["accuracy"] >= _BULK_ACCURACY_FLOOR
+
+
+def test_out_of_scope_requests_score_below_in_scope_requests():
+    assert _report()["out_of_scope"]["separation_margin"] >= _SEPARATION_MARGIN_FLOOR
+
+
+def test_every_module_has_enough_canonical_support_to_be_emitted():
+    assert _report()["index"]["low_support_modules"] == []
+
+
+def test_the_report_covers_the_whole_bulk_set():
+    """A silently shrunken eval set would inflate every later number."""
+    pytest.importorskip("sentence_transformers")
+    assert _report()["bulk"]["total_queries"] >= 170
+    assert _report()["legacy_30"]["total_queries"] == 30
+
+
+def test_routing_one_request_stays_under_the_latency_ceiling():
+    """Encode plus decide, the whole serving cost of a route decision."""
+    pytest.importorskip("sentence_transformers")
+    _report()  # skips for the same reasons as the bars above
+
+    from src.model.intent_encoder import encode_texts
+    from src.model.intent_knn import INDEX_FILENAME, IntentIndex
+
+    index = IntentIndex.load(DATA / "intent_index" / INDEX_FILENAME)
+    query = "book the meeting room for tomorrow afternoon"
+    decide = functools.partial(
+        index.decide, min_confidence=0.30, min_margin=0.02, min_module_score=0.45
+    )
+    for _ in range(5):
+        decide(encode_texts([query])[0])
+
+    timings = []
+    for _ in range(50):
+        start = perf_counter()
+        decide(encode_texts([query])[0])
+        timings.append((perf_counter() - start) * 1_000)
+
+    p95 = sorted(timings)[int(0.95 * (len(timings) - 1))]
+    assert p95 <= _P95_LATENCY_CEILING_MS, p95

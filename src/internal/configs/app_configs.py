@@ -159,8 +159,11 @@ class AppSettings:
     # answer mid-word long before the token budget is reached. 0 disables it.
     generation_timeout_seconds: float = 120.0
     intent_index_path: Path | None = None
-    intent_model_min_confidence: float = 0.6
-    intent_min_route_margin: float = 0.05
+    # Cosine similarity to the best-matching route, not a softmax probability.
+    # Both routing thresholds are the pair the 2026-08-13 sweep selected over
+    # the committed canonical set; see docs/training-and-evaluation.md.
+    intent_model_min_confidence: float = 0.30
+    intent_min_route_margin: float = 0.02
     intent_min_module_score: float = 0.45
     route_clarification: bool = True
 
@@ -172,7 +175,9 @@ class AppSettings:
         ):
             value = getattr(self, name)
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
-                raise ValueError(f"{name} must be a probability between 0 and 1")
+                raise ValueError(
+                    f"{name} must be a finite cosine similarity between 0 and 1"
+                )
 
 
 def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
@@ -192,10 +197,10 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
     ):
         raise ValueError("TOOL_APPROVAL_TIMEOUT_SECONDS must be positive.")
     intent_model_min_confidence = get_env_float(
-        source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.6
+        source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.30
     )
     intent_min_route_margin = get_env_float(
-        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.05
+        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.02
     )
     intent_min_module_score = get_env_float(
         source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.45
