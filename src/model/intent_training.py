@@ -73,11 +73,15 @@ class IntentTrainingConfig:
     out_of_scope_path: Path | None = None
     eval_queries_path: Path | None = None
     seed: int = 17
-    # `train_batched` takes one full-batch step per epoch, so 10 epochs is 10
-    # optimizer steps — measurably untrained (realistic accuracy 0.333 versus
-    # 0.567 at 300). See docs/training-and-evaluation.md.
-    epochs: int = 300
-    lr: float = 1e-3
+    # `train_batched` takes one full-batch step per epoch, so the epoch count is
+    # an optimizer-step count: 10 epochs is 10 steps and leaves the model
+    # measurably untrained (realistic accuracy 0.333). 800 epochs at lr 3e-3 is
+    # the configuration swept over 100/300/800 x 1e-3/3e-3 that the pinned bars
+    # in tests/unit/test_intent_training.py measure (realistic accuracy 0.733
+    # against 0.700 at 300/1e-3), so the shipped default reproduces them.
+    # See docs/training-and-evaluation.md.
+    epochs: int = 800
+    lr: float = 3e-3
     hidden_dim: int = 256
     train_fraction: float = 0.70
     validation_fraction: float = 0.15
@@ -1131,8 +1135,8 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--eval-queries", type=Path)
     train.add_argument("--output-dir", required=True, type=Path)
     train.add_argument("--seed", type=int, default=17)
-    train.add_argument("--epochs", type=int, default=300)
-    train.add_argument("--lr", type=float, default=1e-3)
+    train.add_argument("--epochs", type=int, default=800)
+    train.add_argument("--lr", type=float, default=3e-3)
     train.add_argument(
         "--pretrained", type=Path, default=Path("data/intent_pretrained")
     )
