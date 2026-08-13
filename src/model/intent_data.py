@@ -9,7 +9,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from .intent_classifier import INTENT_LABELS
+from .intent_knn import CanonicalExample
+from .intent_taxonomy import INTENT_LABELS, validate_modules
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class IntentEvalQuery:
     id: str
     text: str
     label: str
+    modules: tuple[str, ...] = ()
 
 
 def load_intent_examples(path: Path) -> list[IntentExample]:
@@ -232,12 +234,85 @@ def load_intent_eval_queries(path: Path) -> tuple[IntentEvalQuery, ...]:
             raise ValueError(f"Unknown intent label: {label!r}")
         if query_id in ids:
             raise ValueError(f"Duplicate intent evaluation query id: {query_id!r}")
+        modules = _modules(record, index, label, kind=kind, required=False)
         ids.add(query_id)
-        queries.append(IntentEvalQuery(id=query_id, text=text, label=label))
+        queries.append(
+            IntentEvalQuery(id=query_id, text=text, label=label, modules=modules)
+        )
 
     if not queries:
         raise ValueError(f"Intent evaluation query file contains no records: {path}")
     return tuple(queries)
+
+
+def load_canonical_examples(path: Path) -> tuple[CanonicalExample, ...]:
+    """Load and validate the curated examples that make up the routing index.
+
+    These examples *are* the model, so validation is strict: a mislabeled or
+    duplicated record changes routing directly, with no training run in between
+    to average the mistake away.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid canonical example JSON in {path}: {exc.msg}"
+        ) from exc
+
+    if not isinstance(payload, list):
+        raise ValueError("Canonical example JSON must contain a list of records")
+
+    kind = "Canonical example"
+    examples: list[CanonicalExample] = []
+    ids: set[str] = set()
+    texts: set[str] = set()
+    for index, record in enumerate(payload):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"{kind} at index {index} must be an object")
+        identifier = _required_text(record, "id", index, kind=kind)
+        text = _required_text(record, "text", index, kind=kind)
+        route = _required_text(record, "route", index, kind=kind)
+        if route not in INTENT_LABELS:
+            raise ValueError(f"Unknown intent label: {route!r}")
+        if identifier in ids:
+            raise ValueError(f"Duplicate canonical example id: {identifier!r}")
+        normalized = text.casefold().strip()
+        if normalized in texts:
+            # Duplicated text doubles that point's pull on every nearby query.
+            raise ValueError(f"Duplicate canonical example text: {text!r}")
+        modules = _modules(record, index, route, kind=kind, required=True)
+        ids.add(identifier)
+        texts.add(normalized)
+        examples.append(
+            CanonicalExample(id=identifier, text=text, route=route, modules=modules)
+        )
+
+    if not examples:
+        raise ValueError(f"Canonical example file contains no records: {path}")
+    return tuple(examples)
+
+
+def _modules(
+    record: Mapping[str, object],
+    index: int,
+    route: str,
+    *,
+    kind: str,
+    required: bool,
+) -> tuple[str, ...]:
+    """Read and validate a record's modules against its route."""
+    value = record.get("modules")
+    if value is None:
+        if required:
+            raise ValueError(f"{kind} at index {index} has no 'modules'")
+        return ()
+    if not isinstance(value, (list, tuple)) or any(
+        not isinstance(module, str) for module in value
+    ):
+        raise ValueError(f"{kind} at index {index} has invalid modules")
+    modules = tuple(value)
+    validate_modules(route, modules)
+    return modules
 
 
 def _required_text(
