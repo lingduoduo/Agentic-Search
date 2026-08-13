@@ -8,13 +8,17 @@ import random
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+import numpy as np
+
+from .intent_pretrained import PretrainedBundle
+from .wordpiece import PAD_ID, UNK_ID, WordPieceVocabulary
+
 INTENT_LABELS: list[str] = ["chat", "search", "tool"]
 
-# Padding stays 0 so masked-mean pooling keeps ignoring it. Unknown words take
-# 1, which `Vocabulary.build` never assigns (real tokens start at 2), so an
-# unread word gets a trained embedding instead of vanishing into the mask.
-PADDING_ID = 0
-UNKNOWN_ID = 1
+# BERT's own layout, because the ids index a pretrained matrix: padding stays 0
+# so masked-mean pooling keeps ignoring it, and unknown words take 100.
+PADDING_ID = PAD_ID
+UNKNOWN_ID = UNK_ID
 
 
 @dataclass(frozen=True)
@@ -26,8 +30,7 @@ class IntentPrediction:
 class _IntentClassifier:
     def __init__(
         self,
-        vocab_size: int,
-        embedding_dim: int,
+        embedding_matrix: "np.ndarray",
         hidden_dim: int,
         num_classes: int,
     ) -> None:
@@ -36,11 +39,18 @@ class _IntentClassifier:
 
         self._torch = torch
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        weights = torch.tensor(embedding_matrix, dtype=torch.float32)
+        embedding_dim = weights.shape[1]
 
         class _Net(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+                # Frozen: with a few hundred training examples, fine-tuning
+                # these would overwrite the pretrained semantics that make
+                # unseen words readable in the first place.
+                self.embedding = nn.Embedding.from_pretrained(
+                    weights, freeze=True, padding_idx=PADDING_ID
+                )
                 self.fc1 = nn.Linear(embedding_dim, hidden_dim)
                 self.fc2 = nn.Linear(hidden_dim, hidden_dim // 2)
                 self.fc3 = nn.Linear(hidden_dim // 2, num_classes)
@@ -49,7 +59,7 @@ class _IntentClassifier:
             def forward(self, ids: "torch.Tensor") -> "torch.Tensor":
                 import torch.nn.functional as F
 
-                mask = ids.ne(0).unsqueeze(-1)
+                mask = ids.ne(PADDING_ID).unsqueeze(-1)
                 embedded = self.embedding(ids)
                 x = (embedded * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
                 x = self.drop(F.relu(self.fc1(x)))
@@ -77,7 +87,9 @@ class _IntentClassifier:
     ) -> None:
         import torch.nn as nn
 
-        optimizer = self._torch.optim.Adam(self._net.parameters(), lr=lr)
+        optimizer = self._torch.optim.Adam(
+            (p for p in self._net.parameters() if p.requires_grad), lr=lr
+        )
         criterion = nn.CrossEntropyLoss()
         self._net.train()
 
@@ -108,36 +120,20 @@ class _IntentClassifier:
 
 
 class IntentPipeline:
-    def __init__(
-        self,
-        vocab_size: int = 5000,
-        embedding_dim: int = 128,
-        hidden_dim: int = 256,
-    ) -> None:
-        from src.internal.document_index.text import Vocabulary
-
-        self._vocab = Vocabulary()
-        self._model_config = {
-            "vocab_size": vocab_size,
-            "embedding_dim": embedding_dim,
-            "hidden_dim": hidden_dim,
-        }
+    def __init__(self, bundle: "PretrainedBundle", *, hidden_dim: int = 256) -> None:
+        self._bundle = bundle
+        self._hidden_dim = hidden_dim
         self._model = self._new_model()
         self._label_to_id = {label: i for i, label in enumerate(INTENT_LABELS)}
         self.is_trained = False
 
-    def _encode(self, tokens: Sequence[str]) -> list[int]:
-        """Encode tokens, giving unknown words their own embedding index.
+    def _encode_text(self, text: str) -> list[int]:
+        """Encode one request as wordpiece ids.
 
-        ``Vocabulary.encode`` returns 0 for a token it does not recognise, and
-        0 is the padding id that pooling masks out, so an unknown word would
-        otherwise be deleted. Every 0 it returns is unambiguously unknown.
+        Reading no tokens is a fact about the input, not padding, so an empty
+        result becomes a single [UNK] rather than an empty sequence.
         """
-        encoded = [
-            UNKNOWN_ID if index == PADDING_ID else index
-            for index in self._vocab.encode(list(tokens))
-        ]
-        return encoded or [UNKNOWN_ID]
+        return self._bundle.vocabulary.encode(text) or [UNKNOWN_ID]
 
     def train(
         self,
@@ -145,10 +141,9 @@ class IntentPipeline:
         *,
         epochs: int = 10,
         lr: float = 1e-3,
-        min_freq: int = 2,
         seed: int = 17,
     ) -> None:
-        """Train on (token_list, intent_label) pairs."""
+        """Train the head on (token_list, intent_label) pairs."""
         import torch
 
         random.seed(seed)
@@ -156,15 +151,7 @@ class IntentPipeline:
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         self._model = self._new_model()
-        self._vocab.build([tokens for tokens, _ in data], min_freq=min_freq)
-        max_vocab_index = max(self._vocab.token2idx.values(), default=0)
-        if max_vocab_index >= self._model._net.embedding.num_embeddings:
-            raise ValueError(
-                "Built vocabulary exceeds configured vocab_size "
-                f"{self._model._net.embedding.num_embeddings}: "
-                f"maximum token index is {max_vocab_index}"
-            )
-        encoded = [self._encode(tokens) for tokens, _ in data]
+        encoded = [self._encode_text(" ".join(tokens)) for tokens, _ in data]
         labels = [self._label_to_id[label] for _, label in data]
         self._model.train_batched(encoded, labels, epochs=epochs, lr=lr)
         self.is_trained = True
@@ -172,13 +159,12 @@ class IntentPipeline:
     def predict(self, tokens: Sequence[str]) -> IntentPrediction:
         if not self.is_trained:
             raise RuntimeError("Pipeline not trained. Call train() first.")
-        encoded = self._encode(list(tokens))
-        return self._model.predict_batch([encoded])[0]
+        return self._model.predict_batch([self._encode_text(" ".join(tokens))])[0]
 
     def predict_text(self, text: str) -> IntentPrediction:
-        from src.internal.document_index.text import tokenize_text
-
-        return self.predict(tokenize_text(text))
+        if not self.is_trained:
+            raise RuntimeError("Pipeline not trained. Call train() first.")
+        return self._model.predict_batch([self._encode_text(text)])[0]
 
     def save(
         self,
@@ -199,25 +185,23 @@ class IntentPipeline:
                 "promoted_min_confidence must be null or a finite probability"
             )
         checkpoint = {
-            "version": 3,
+            "version": 4,
             "intent_labels": list(INTENT_LABELS),
             "preprocessing": {
-                "tokenizer": "document_index.tokenize_text",
+                "tokenizer": "wordpiece",
                 "padding_id": PADDING_ID,
                 "unknown_id": UNKNOWN_ID,
                 "pooling": "masked_mean",
+                "embeddings": "frozen_pretrained",
             },
             "dataset_fingerprint": dataset_fingerprint,
             "promoted_min_confidence": promoted_min_confidence,
-            "vocab": {
-                "token2idx": self._vocab.token2idx,
-                "token2cnt": self._vocab.token2cnt,
-                "idx2token": self._vocab.idx2token,
-            },
+            "vocab_tokens": self._bundle.vocabulary.tokens,
+            "embeddings": torch.tensor(self._bundle.embeddings),
             "model_state": self._model._net.state_dict(),
             "config": {
-                "vocab_size": self._model._net.embedding.num_embeddings,
-                "embedding_dim": self._model._net.embedding.embedding_dim,
+                "vocab_size": self._bundle.size,
+                "embedding_dim": self._bundle.dim,
                 "hidden_dim": self._model._net.fc1.out_features,
                 "num_classes": len(INTENT_LABELS),
             },
@@ -227,31 +211,26 @@ class IntentPipeline:
     @classmethod
     def load(cls, path: str) -> "IntentPipeline":
         import torch
-        from src.internal.document_index.text import Vocabulary
 
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         version = checkpoint.get("version")
-        if version == 1:
+        if version in (1, 2, 3):
             raise ValueError(
-                "Checkpoint version 1 uses unsafe legacy class indices; retrain "
-                "the intent model before loading it."
+                f"Checkpoint version {version} predates pretrained wordpiece "
+                "embeddings; retrain the intent model before loading it."
             )
-        if version == 2:
-            raise ValueError(
-                "Checkpoint version 2 was trained with an encoding that deleted "
-                "unknown words; retrain the intent model before loading it."
-            )
-        if version != 3:
+        if version != 4:
             raise ValueError(f"Unsupported checkpoint version: {version}")
         if checkpoint.get("intent_labels") != INTENT_LABELS:
             raise ValueError(
                 "Checkpoint intent_labels do not match the supported label order."
             )
         expected_preprocessing = {
-            "tokenizer": "document_index.tokenize_text",
+            "tokenizer": "wordpiece",
             "padding_id": PADDING_ID,
             "unknown_id": UNKNOWN_ID,
             "pooling": "masked_mean",
+            "embeddings": "frozen_pretrained",
         }
         if checkpoint.get("preprocessing") != expected_preprocessing:
             raise ValueError("Checkpoint preprocessing contract is unsupported.")
@@ -271,16 +250,11 @@ class IntentPipeline:
 
         cfg = checkpoint["config"]
         cls._validate_checkpoint_dimensions(cfg, checkpoint["model_state"])
-        pipeline = cls(
-            vocab_size=cfg["vocab_size"],
-            embedding_dim=cfg["embedding_dim"],
-            hidden_dim=cfg["hidden_dim"],
+        bundle = PretrainedBundle(
+            vocabulary=WordPieceVocabulary.from_tokens(checkpoint["vocab_tokens"]),
+            embeddings=checkpoint["embeddings"].numpy().astype(np.float16),
         )
-        vocab = Vocabulary()
-        vocab.token2idx = checkpoint["vocab"]["token2idx"]
-        vocab.token2cnt = checkpoint["vocab"]["token2cnt"]
-        vocab.idx2token = checkpoint["vocab"]["idx2token"]
-        pipeline._vocab = vocab
+        pipeline = cls(bundle, hidden_dim=cfg["hidden_dim"])
         pipeline._model._net.load_state_dict(checkpoint["model_state"])
         pipeline._model._net.eval()
         pipeline.is_trained = True
@@ -293,10 +267,7 @@ class IntentPipeline:
 
     def _new_model(self) -> _IntentClassifier:
         return _IntentClassifier(
-            self._model_config["vocab_size"],
-            self._model_config["embedding_dim"],
-            self._model_config["hidden_dim"],
-            len(INTENT_LABELS),
+            self._bundle.embeddings, self._hidden_dim, len(INTENT_LABELS)
         )
 
     @staticmethod

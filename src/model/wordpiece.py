@@ -56,6 +56,14 @@ class WordPieceVocabulary:
     def size(self) -> int:
         return len(self._token_to_id)
 
+    @property
+    def tokens(self) -> list[str]:
+        """Vocabulary tokens in id order, as written to vocab.txt."""
+        return [
+            token
+            for token, _ in sorted(self._token_to_id.items(), key=lambda kv: kv[1])
+        ]
+
     def encode(self, text: str) -> list[int]:
         """Normalize, split on whitespace, and encode each word."""
         ids: list[int] = []
