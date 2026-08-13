@@ -29,6 +29,7 @@ class IntentModelDecision:
     threshold: float
     latency_ms: float
     modules: tuple[str, ...] = ()
+    composite: bool = False
 
 
 def intent_min_confidence(settings: AppSettings | None = None) -> float:
@@ -120,13 +121,7 @@ def predict_route(
         )
         return None
 
-    # composite is computed off the margin alone (see intent_knn._is_composite)
-    # and is independent of decide()'s if/elif abstention priority: a query
-    # that trips the confidence gate can still be composite even though its
-    # abstain_reason is "confidence_below_threshold", not "margin_below_threshold".
-    # Record it whenever it's set, but only a margin abstention returns None —
-    # this is still one record_stage call either way, never two.
-    if decision.abstain_reason == "margin_below_threshold" or decision.composite:
+    if decision.abstain_reason == "margin_below_threshold":
         _capture.record_stage(
             "intent_model",
             "evaluation",
@@ -134,14 +129,12 @@ def predict_route(
                 "predicted_intent": decision.route,
                 "confidence": confidence,
                 "margin": float(decision.margin),
-                "abstained": decision.abstained,
-                "fallback_reason": decision.abstain_reason,
+                "abstained": True,
+                "fallback_reason": "margin_below_threshold",
                 "composite": decision.composite,
                 "latency_ms": latency_ms,
             },
         )
-
-    if decision.abstain_reason == "margin_below_threshold":
         return None
 
     return IntentModelDecision(
@@ -150,4 +143,5 @@ def predict_route(
         threshold=resolved.intent_model_min_confidence,
         latency_ms=latency_ms,
         modules=decision.modules,
+        composite=decision.composite,
     )

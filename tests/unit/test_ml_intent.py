@@ -200,17 +200,20 @@ def test_composite_query_defers_and_is_recorded_as_composite(tmp_path, monkeypat
     assert recorded[-1][1]["fallback_reason"] == "margin_below_threshold"
 
 
-def test_both_gates_trip_records_composite_and_still_returns_a_decision(
-    tmp_path, monkeypatch
-):
+def test_both_gates_trip_sets_composite_on_the_returned_decision(tmp_path, monkeypatch):
     """decide() checks confidence before margin, but composite is computed off
     the margin alone (see intent_knn._is_composite) — so a query that trips
     both gates gets abstain_reason="confidence_below_threshold" (not
     "margin_below_threshold") together with composite=True. That is not a
     margin abstention, so predict_route must still return a decision for
-    route_request's own confidence check to act on; but the composite flag
-    must not be silently dropped, so the capture stage must still fire —
-    exactly once.
+    route_request's own confidence check to act on, and that decision must
+    carry composite=True rather than silently dropping it.
+
+    predict_route itself must NOT record a capture stage here: it only
+    returns a decision (not None) on this path, and route_request always
+    records its own single "intent_model" stage whenever it gets a decision
+    back. If predict_route also recorded one here, a request that trips both
+    gates would produce two stages with conflicting payloads.
     """
     monkeypatch.setattr(
         ml_intent,
@@ -230,14 +233,5 @@ def test_both_gates_trip_records_composite_and_still_returns_a_decision(
 
     assert decision is not None
     assert decision.confidence < decision.threshold
-    assert len(recorded) == 1
-    assert recorded[0][0] == "intent_model"
-    assert recorded[0][1]["composite"] is True
-    assert recorded[0][1]["fallback_reason"] == "confidence_below_threshold"
-
-
-def test_intent_model_decision_has_no_composite_field():
-    """It could only ever be False: composite implies a margin abstention."""
-    assert not hasattr(
-        ml_intent.IntentModelDecision("chat", 1.0, 0.5, 1.0), "composite"
-    )
+    assert decision.composite is True
+    assert recorded == []
