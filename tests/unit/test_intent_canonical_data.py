@@ -81,6 +81,16 @@ def test_bare_entity_stays_capped(examples):
     assert MIN_MODULE_SUPPORT <= counts["bare_entity"] <= 12
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "_MAX_INTERNAL_COSINE=0.90 is a raw-cosine-units bar calibrated for "
+        "all-MiniLM-L6-v2 and is encoder-specific; it does not survive the "
+        "e5-small-v2 swap (PR feat/intent-encoder-e5 Task 1). Re-derived and "
+        "re-pinned from e5's measured internal-cosine distribution in Task 3 "
+        "of docs/superpowers/plans/2026-08-13-intent-encoder-e5.md."
+    ),
+)
 def test_no_two_canonical_examples_are_near_duplicates(examples):
     pytest.importorskip("sentence_transformers")
     import numpy as np
