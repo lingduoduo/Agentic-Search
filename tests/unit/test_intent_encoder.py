@@ -14,8 +14,71 @@ def _clear_cache():
     intent_encoder._MODEL_CACHE.clear()
 
 
-def test_default_encoder_is_the_minilm_the_index_is_built_with():
-    assert DEFAULT_ENCODER == "sentence-transformers/all-MiniLM-L6-v2"
+def test_default_encoder_is_e5_small():
+    assert DEFAULT_ENCODER == "intfloat/e5-small-v2"
+
+
+def test_the_default_encoder_has_a_registered_prefix():
+    from src.model.intent_encoder import DEFAULT_ENCODER, prefix_for
+
+    assert prefix_for(DEFAULT_ENCODER) == "query: "
+
+
+def test_an_unregistered_model_raises_rather_than_using_no_prefix():
+    """A silently missing prefix degrades e5 vectors without erroring."""
+    from src.model.intent_encoder import prefix_for
+
+    with pytest.raises(ValueError, match="prefix"):
+        prefix_for("some/unregistered-model")
+
+
+def test_minilm_is_still_registered_with_an_empty_prefix():
+    """Old indexes are rejected by name, but the mapping must stay honest."""
+    from src.model.intent_encoder import prefix_for
+
+    assert prefix_for("sentence-transformers/all-MiniLM-L6-v2") == ""
+
+
+def test_encode_applies_the_prefix():
+    """The whole contract: encode_texts('x') must equal raw encode('query: x')."""
+    pytest.importorskip("sentence_transformers")
+    import numpy as np
+
+    from src.model.intent_encoder import DEFAULT_ENCODER, _model, encode_texts
+
+    through_seam = encode_texts(["find the runbook"])
+    raw = _model(DEFAULT_ENCODER).encode(
+        ["query: find the runbook"],
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+
+    np.testing.assert_allclose(through_seam, raw.astype(np.float32), atol=1e-5)
+
+
+def test_the_prefix_actually_changes_the_vector():
+    """Proves the assertion above is not vacuous."""
+    pytest.importorskip("sentence_transformers")
+
+    from src.model.intent_encoder import DEFAULT_ENCODER, _model, encode_texts
+
+    unprefixed = _model(DEFAULT_ENCODER).encode(
+        ["find the runbook"],
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+
+    assert float(encode_texts(["find the runbook"])[0] @ unprefixed[0]) < 0.999
+
+
+def test_encoded_width_is_unchanged_at_384():
+    """Same width as the previous encoder, so index.npz's format is unchanged."""
+    pytest.importorskip("sentence_transformers")
+    from src.model.intent_encoder import encode_texts
+
+    assert encode_texts(["find the runbook"]).shape == (1, 384)
 
 
 def test_encode_returns_normalized_float32_rows():
@@ -69,10 +132,15 @@ def test_a_failed_load_is_not_retried_on_a_later_call(monkeypatch):
 
     monkeypatch.setattr(sentence_transformers, "SentenceTransformer", _boom)
 
+    # A registered model name: the constructor is monkeypatched to fail before
+    # any real load happens, so this exercises _model's failure caching, not
+    # prefix_for's model-name validation.
+    broken_model = "intfloat/e5-base-v2"
+
     with pytest.raises(OSError, match="model fetch failed"):
-        intent_encoder.encode_texts(["find the runbook"], model_name="broken-model")
+        intent_encoder.encode_texts(["find the runbook"], model_name=broken_model)
 
     with pytest.raises(RuntimeError, match="not retrying"):
-        intent_encoder.encode_texts(["find the runbook"], model_name="broken-model")
+        intent_encoder.encode_texts(["find the runbook"], model_name=broken_model)
 
     assert calls["count"] == 1

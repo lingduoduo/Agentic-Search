@@ -253,6 +253,37 @@ def test_composite_query_defers_and_is_recorded_as_composite(tmp_path, monkeypat
     assert recorded[-1][1]["fallback_reason"] == "margin_below_threshold"
 
 
+def test_an_index_built_with_the_previous_encoder_is_rejected(tmp_path, monkeypatch):
+    """e5-small is also 384-d, so a stale index would otherwise score silently."""
+    import numpy as np
+
+    from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+
+    examples, rows = [], []
+    for route, axis in _AXIS.items():
+        for position in range(12):
+            examples.append(
+                CanonicalExample(
+                    f"{route}-{position}",
+                    f"{route} {position}",
+                    route,
+                    (_MODULE[route],),
+                )
+            )
+            rows.append(np.eye(3, dtype=np.float32)[axis])
+    directory = tmp_path / "stale"
+    IntentIndex(
+        examples,
+        np.stack(rows),
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "sha256:x",
+    ).save(directory / INDEX_FILENAME)
+
+    settings = AppSettings(intent_index_path=directory)
+
+    assert ml_intent.predict_route("anything", settings=settings) is None
+
+
 def test_both_gates_trip_sets_composite_on_the_returned_decision(tmp_path, monkeypatch):
     """decide() checks confidence before margin, but composite is computed off
     the margin alone (see intent_knn._is_composite) — so a query that trips
