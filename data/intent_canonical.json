@@ -1,0 +1,2312 @@
+[
+  {
+    "id": "canon-161",
+    "text": "Dense Retrieval with FAISS",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-162",
+    "text": "BM25 Sparse Retrieval",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-163",
+    "text": "Retrieval-Augmented Generation",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-164",
+    "text": "Cross-Encoder Reranking",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-165",
+    "text": "Sentence Transformers",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-166",
+    "text": "E5 Embedding Models",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-170",
+    "text": "FAISS Index Types",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-174",
+    "text": "SerpAPI Web Search",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-180",
+    "text": "Vector Similarity Search",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-179",
+    "text": "MS MARCO Passage Ranking",
+    "route": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-001",
+    "text": "the runbook for restarting the index service",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-002",
+    "text": "where did the acl migration writeup end up",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-003",
+    "text": "is there a doc on how we shard the corpus",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-004",
+    "text": "the security review we filed for the vendor last year",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-005",
+    "text": "someone had a spreadsheet with the gpu costs",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-006",
+    "text": "need the slides from the retrieval offsite",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-007",
+    "text": "the readme for the eval harness, wherever it lives now",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-008",
+    "text": "looking for the design doc on the query rewrite leg",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-009",
+    "text": "the notes from the vendor call about pricing",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-010",
+    "text": "the old architecture diagram from before we split the servers",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-011",
+    "text": "there was a policy about retaining user transcripts",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-012",
+    "text": "any writeup on why we picked minilm",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-013",
+    "text": "the contract we signed with the search vendor",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-014",
+    "text": "did anyone write up the tokenizer regression",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-015",
+    "text": "the migration plan for moving off the old index",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-016",
+    "text": "our internal guide for adding a new connector",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-017",
+    "text": "a table of the pooling settings we tried",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-018",
+    "text": "pull up the data retention policy for support tickets",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-019",
+    "text": "the onboarding material we send to contractors",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-020",
+    "text": "where do we keep the incident templates",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-021",
+    "text": "the deck marketing used for the launch",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-022",
+    "text": "the spec for the connector api, the newer one",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-023",
+    "text": "old thread where we argued about mean pooling",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-340",
+    "text": "Locate the duplicate-document policy",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-024",
+    "text": "I can't track down the acl spec anywhere",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-025",
+    "text": "the notes from yesterday's incident call",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-026",
+    "text": "the design doc for the tokenizer swap",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-027",
+    "text": "nobody can find the vendor security questionnaire",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-028",
+    "text": "the writeup from when we tuned the sparse leg",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-029",
+    "text": "there must be a benchmark table somewhere for pooling",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-030",
+    "text": "the report the team put together for the board",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-031",
+    "text": "did we ever write down the chunking defaults",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-032",
+    "text": "which dashboard shows the ingestion lag",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-033",
+    "text": "where does the hybrid weight config live",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-034",
+    "text": "which file holds the timeout settings",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-035",
+    "text": "where do we keep the outage writeups",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-auth-036",
+    "text": "which page has the on-call rotation on it",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-037",
+    "text": "which doc has the abstain thresholds written down",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-038",
+    "text": "what did the load test report say about p99",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-039",
+    "text": "where are the recall numbers from the hybrid writeup",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-040",
+    "text": "which sheet has the per-connector document counts",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-041",
+    "text": "the runbook step for the rerank service port",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-042",
+    "text": "what does the retention policy say about transcripts",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-043",
+    "text": "which spec lists the connector rate limits",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-044",
+    "text": "find the churn figure in the quarterly deck",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-045",
+    "text": "where is the seat count recorded for the enterprise plan",
+    "route": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-046",
+    "text": "who owns the ingestion pipeline these days",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-047",
+    "text": "when did we cut over to the hybrid backend",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-048",
+    "text": "what version of faiss are we pinned to",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-049",
+    "text": "what port does the rerank service listen on",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-050",
+    "text": "what was the churn number in the Q3 report",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-051",
+    "text": "what is the default chunk overlap we ship with",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-190",
+    "text": "find Contriever Retrieval Model",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-195",
+    "text": "find Multi-Stage Retrieval Pipelines",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-209",
+    "text": "look up faiss",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-auth-052",
+    "text": "which model are we running in staging right now",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-053",
+    "text": "how long does a full rebuild take these days",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-054",
+    "text": "who is on call this weekend",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-055",
+    "text": "what did the last eval run score on recall at 10",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-056",
+    "text": "what is the current cost per thousand queries",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-057",
+    "text": "how many open incidents do we have right now",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-058",
+    "text": "what is the p99 on the retrieval endpoint at the moment",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-059",
+    "text": "what is the queue depth right now",
+    "route": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-060",
+    "text": "did the nightly index build finish",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-061",
+    "text": "is the reranker still returning 500s",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-062",
+    "text": "latest numbers from the benchmark run",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-063",
+    "text": "any news on the serpapi quota increase",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-064",
+    "text": "is staging back up yet",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-065",
+    "text": "what is deployed in prod at the moment",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-066",
+    "text": "how is the error rate looking today",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-067",
+    "text": "where are we on the security review right now",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-068",
+    "text": "is the corpus still syncing",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-069",
+    "text": "anything new on the tokenizer bug",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-070",
+    "text": "did the pricing page change recently",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-071",
+    "text": "is the new connector live yet",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-072",
+    "text": "what is the latest on the outage",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-073",
+    "text": "did the release go out this morning",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-074",
+    "text": "is the staging index fresher than prod right now",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-075",
+    "text": "state of the backlog as of now",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-076",
+    "text": "has the invoice been paid yet",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-077",
+    "text": "any recent complaints about search quality",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-078",
+    "text": "current status of the migration",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-auth-079",
+    "text": "why do we normalize the embeddings before the dot product",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-080",
+    "text": "what does the k constant in rrf actually do",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-081",
+    "text": "why is a cross-encoder so much slower to run",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-082",
+    "text": "I don't follow how the acl filter gets applied before retrieval",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-083",
+    "text": "why would recall drop when we made the chunks smaller",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-084",
+    "text": "not clear to me why we chunk at all instead of whole docs",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-085",
+    "text": "why do embeddings from two different models not line up",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-086",
+    "text": "why is our latency worse on long queries",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-141",
+    "text": "what is Retrieval-Augmented Generation and how is it used?",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-160",
+    "text": "Explain how to send an email securely",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-087",
+    "text": "is there a reason we rerank after fusion rather than before",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-088",
+    "text": "why would anyone still pick a sparse index over a dense one",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-089",
+    "text": "what do we actually lose going from 768 dims down to 384",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-090",
+    "text": "should the router stay rules or become a model, and why",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-091",
+    "text": "same query, two models, why do the answers differ",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-092",
+    "text": "does query rewriting actually help or is it just noise",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-093",
+    "text": "do bigger chunks actually help recall",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-094",
+    "text": "why does lexical matching miss synonyms",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-095",
+    "text": "why do dense models do badly on names and product codes",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-096",
+    "text": "what makes keyword matching different from vector matching",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-097",
+    "text": "I still get lost in the difference between recall and precision",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-098",
+    "text": "why do we bother with an eval set at all",
+    "route": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-099",
+    "text": "is the sparse leg pulling its weight",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-100",
+    "text": "is it worth the effort to fine tune our own embeddings",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-101",
+    "text": "what is a good way to describe reranking to a customer",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-102",
+    "text": "what makes hnsw a different tradeoff from a flat index",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-159",
+    "text": "Discuss approaches to finding duplicate documents",
+    "route": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-103",
+    "text": "hnsw or flat for a corpus our size",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-104",
+    "text": "is bge actually better than e5 on our data",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-105",
+    "text": "cross-encoder or just a bigger bi-encoder, which is worth it",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-106",
+    "text": "difference between rrf and a weighted score blend",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-107",
+    "text": "should we call the api or self host the embedding model",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-108",
+    "text": "bm25 against dense on our own eval set, what wins",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-109",
+    "text": "more candidates or deeper reranking, where is the win",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-110",
+    "text": "hosted embeddings versus a local model once you count the gpu",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-111",
+    "text": "is a hybrid leg worth the complexity over pure dense",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-112",
+    "text": "how different are the results with and without the rewrite leg",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-113",
+    "text": "weekly rebuilds or incremental updates, what makes sense for us",
+    "route": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-114",
+    "text": "give me the short version of the outage doc",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-115",
+    "text": "tldr on the vendor contract please",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-116",
+    "text": "sum up what the retro notes said",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-117",
+    "text": "condense the migration plan into a few bullets",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-118",
+    "text": "what are the main points of the security review",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-119",
+    "text": "recap the thread about pooling for me",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-120",
+    "text": "short summary of the last three incident reports",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-121",
+    "text": "what did the vendor call actually conclude",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-122",
+    "text": "summarize the changelog since the last release",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-123",
+    "text": "give me the gist of the acl design doc",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-124",
+    "text": "pull the key decisions out of the meeting notes",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-125",
+    "text": "what is the upshot of the load test report",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-126",
+    "text": "summarize what changed in the ranking config doc",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-127",
+    "text": "give me the two-line version of the legal review",
+    "route": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "canon-auth-128",
+    "text": "sum up the arguments on both sides of the chunking debate",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-129",
+    "text": "boil the two vendor proposals down to where they differ",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-130",
+    "text": "recap how this quarter's eval went against last quarter's",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "compare"
+    ]
+  },
+  {
+    "id": "canon-auth-131",
+    "text": "write the summary paragraph for the postmortem",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-132",
+    "text": "trim the onboarding guide down to what a new hire needs",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-133",
+    "text": "turn the retro notes into a short update I can post",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-134",
+    "text": "shorten the announcement draft to a single paragraph",
+    "route": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-135",
+    "text": "draft a note to the team about the tokenizer change",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-136",
+    "text": "write the release notes for this version",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-137",
+    "text": "rephrase this paragraph so it sounds less defensive",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-138",
+    "text": "turn these bullets into a proper paragraph",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-139",
+    "text": "compose a reply to the vendor pushing back on price",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-140",
+    "text": "brainstorm some eval queries for the legal corpus",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-141",
+    "text": "draft the agenda for the retro",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-142",
+    "text": "write a test plan for the connector rollout",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-143",
+    "text": "sketch out an outline for the design doc",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-144",
+    "text": "come up with a few options for the abstain message",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-145",
+    "text": "reword the announcement so it does not sound alarming",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-146",
+    "text": "draft the faq section for the docs",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-147",
+    "text": "write a one-liner describing what the router does",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-148",
+    "text": "write an email asking legal for a review",
+    "route": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-149",
+    "text": "let's think through the routing problem together",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-150",
+    "text": "I want to bounce an idea off you about the index",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-151",
+    "text": "can we go back to what you said about pooling",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-152",
+    "text": "hold on, that doesn't match what I saw yesterday",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-153",
+    "text": "actually let's park the reranker question for now",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-154",
+    "text": "what is your take on the whole hybrid thing",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-155",
+    "text": "I'm not sure I agree with that, say more",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-156",
+    "text": "let's keep going on the eval design",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-157",
+    "text": "before we get into it, remind me what we decided",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-158",
+    "text": "I've been mulling the abstain threshold, want to talk it out",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-159",
+    "text": "hmm, that isn't quite what I meant about chunking",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-160",
+    "text": "just thinking out loud here about the corpus split",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-161",
+    "text": "I'd rather talk this through than read another doc",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-162",
+    "text": "quick sanity check with me on these numbers",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-163",
+    "text": "we've been going round in circles on this, help me out",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-164",
+    "text": "any thoughts before I commit to the design",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-165",
+    "text": "tell me if this sounds reasonable to you",
+    "route": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "canon-auth-166",
+    "text": "talk me through the routing cascade, I keep losing the thread",
+    "route": "chat",
+    "modules": [
+      "converse",
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-167",
+    "text": "humour me and explain the fusion step one more time",
+    "route": "chat",
+    "modules": [
+      "converse",
+      "explain"
+    ]
+  },
+  {
+    "id": "canon-auth-168",
+    "text": "can we brainstorm out loud for a minute about the eval set",
+    "route": "chat",
+    "modules": [
+      "converse",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-169",
+    "text": "let's kick around some names for the abstain state",
+    "route": "chat",
+    "modules": [
+      "converse",
+      "generate"
+    ]
+  },
+  {
+    "id": "canon-auth-170",
+    "text": "file a ticket for the tokenizer regression",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-171",
+    "text": "start a new doc for the migration plan",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-172",
+    "text": "add a row to the tracking sheet for this incident",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-173",
+    "text": "new issue: search returns empty for quoted phrases",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-174",
+    "text": "set up a channel for the migration work",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-175",
+    "text": "create an api key for the staging environment",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-176",
+    "text": "open a bug for the duplicate results",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-177",
+    "text": "add a task for me to follow up with legal",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-178",
+    "text": "create a dashboard for the abstain rate",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-179",
+    "text": "create an alert when p99 goes over a second",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-180",
+    "text": "add these three queries to the eval set",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-181",
+    "text": "open a github issue about the missing citations",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-182",
+    "text": "open a pull request for the timeout bump",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-509",
+    "text": "create a ticket for faiss",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-450",
+    "text": "open a pull request for retrieval",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-183",
+    "text": "start a thread in the ops channel about the incident",
+    "route": "tool",
+    "modules": [
+      "create",
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-184",
+    "text": "open a ticket and let the on-call know it's there",
+    "route": "tool",
+    "modules": [
+      "create",
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-185",
+    "text": "file the bug then share it with the platform team",
+    "route": "tool",
+    "modules": [
+      "create",
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-186",
+    "text": "spin up a staging index for the legal corpus",
+    "route": "tool",
+    "modules": [
+      "create",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-187",
+    "text": "open a draft pr so ci runs on it",
+    "route": "tool",
+    "modules": [
+      "create",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-188",
+    "text": "set up a recurring export of the query logs",
+    "route": "tool",
+    "modules": [
+      "create",
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-189",
+    "text": "send the runbook to the new hire",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-190",
+    "text": "email the vendor about the overage",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-191",
+    "text": "let the on-call know the queue is backing up",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-192",
+    "text": "post the results in the retrieval channel",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-193",
+    "text": "forward the invoice to finance",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-194",
+    "text": "ping legal about the retention question",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-195",
+    "text": "share the eval dashboard with the platform team",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-196",
+    "text": "tell the customer we shipped the fix",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-197",
+    "text": "drop the postmortem link in the incident thread",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-198",
+    "text": "send my manager the weekly numbers",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-199",
+    "text": "notify the team that indexing is paused",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-200",
+    "text": "send out the meeting notes to everyone who missed it",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-201",
+    "text": "let qa know the staging index is ready",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-202",
+    "text": "tell the team the backfill finished",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-203",
+    "text": "let everyone know the reindex completed",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-204",
+    "text": "get the ops team the incident timeline",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-205",
+    "text": "add the migration milestones to the roadmap doc",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-206",
+    "text": "put the new numbers into the weekly rollup",
+    "route": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "canon-auth-207",
+    "text": "close the tickets nobody has touched in months",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-208",
+    "text": "wrap up the old routing tickets",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-209",
+    "text": "flip the staging flag on for the beta users",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-363",
+    "text": "send an email about Cross-Encoder Reranking",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-520",
+    "text": "Send the security summary to the project owner",
+    "route": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-210",
+    "text": "get an hour with the data team on the calendar",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-211",
+    "text": "put the design review on the calendar for thursday",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-212",
+    "text": "set a reminder to check the index size on friday",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-213",
+    "text": "find a slot with the vendor next week",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-214",
+    "text": "block out friday afternoon for the migration",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-215",
+    "text": "set up a recurring sync with the platform team",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-216",
+    "text": "remind me to renew the contract in november",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-217",
+    "text": "invite the on-call to the incident review",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-218",
+    "text": "book the big room for the workshop",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-219",
+    "text": "put a hold on my calendar before the release",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-220",
+    "text": "arrange a call with legal about retention",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-221",
+    "text": "set the maintenance window for sunday night",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-222",
+    "text": "set a nightly reminder while the migration runs",
+    "route": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "canon-auth-223",
+    "text": "move the standup to nine",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-224",
+    "text": "push the retro to next tuesday",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-225",
+    "text": "reschedule tomorrow's demo, I'll be out",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-226",
+    "text": "make the weekly sync fortnightly instead",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-227",
+    "text": "remind the team about the survey on monday",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-228",
+    "text": "schedule the rebuild for the weekend",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-229",
+    "text": "start the load test tonight when traffic is low",
+    "route": "tool",
+    "modules": [
+      "schedule",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-230",
+    "text": "bump the reranker timeout to five seconds",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-231",
+    "text": "close the duplicate bugs in the routing epic",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-232",
+    "text": "change the owner of the ingestion ticket to me",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-233",
+    "text": "delete the old staging index",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-234",
+    "text": "update the runbook with the new restart steps",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-235",
+    "text": "cancel the vendor meeting on friday",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-236",
+    "text": "remove my access to the legal corpus",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-237",
+    "text": "turn off the alert while we do maintenance",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-238",
+    "text": "edit the announcement, the date is wrong",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-239",
+    "text": "mark the migration ticket as done",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-240",
+    "text": "revert the ranking config to yesterday's",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-241",
+    "text": "change the retention on the query logs to 30 days",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-242",
+    "text": "reopen the ticket, it is still happening",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-243",
+    "text": "update the on-call rotation for next month",
+    "route": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "canon-auth-244",
+    "text": "swap the model in staging to the new one and restart it",
+    "route": "tool",
+    "modules": [
+      "modify",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-245",
+    "text": "clear the failed jobs out of the queue",
+    "route": "tool",
+    "modules": [
+      "modify",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-246",
+    "text": "roll the ranking config back and redeploy",
+    "route": "tool",
+    "modules": [
+      "modify",
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-247",
+    "text": "kick off a reindex of the legal corpus",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-248",
+    "text": "run the eval suite against the new model",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-249",
+    "text": "deploy the reranker fix to staging",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-250",
+    "text": "trigger the nightly job now",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-251",
+    "text": "rerun the failed connector sync",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-252",
+    "text": "roll back the last deploy",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-253",
+    "text": "run the migration script against the test db",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-254",
+    "text": "execute the backfill for last week's documents",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-255",
+    "text": "restart the retrieval service",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-256",
+    "text": "kick the ci job again, it flaked",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-257",
+    "text": "run the benchmark on the gpu box",
+    "route": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "canon-auth-258",
+    "text": "start the index build and tell me when it is done",
+    "route": "tool",
+    "modules": [
+      "execute",
+      "send"
+    ]
+  },
+  {
+    "id": "canon-auth-259",
+    "text": "run the export and send it to the data team",
+    "route": "tool",
+    "modules": [
+      "execute",
+      "send"
+    ]
+  }
+]

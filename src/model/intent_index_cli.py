@@ -143,3 +143,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"intent index command failed: {exc}", file=sys.stderr)
         return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
