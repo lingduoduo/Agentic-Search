@@ -305,13 +305,27 @@ def _pipeline_trained_on_committed_examples():
     return pipeline
 
 
+def _legacy_eval_queries():
+    """The original thirty `eval-` queries the pinned floors were measured on.
+
+    The file has since grown a `bulk-` slice that is larger, topic-broader and
+    uncontaminated; these floors predate it, so they keep reading the queries
+    they were pinned against rather than silently changing meaning.
+    """
+    return [
+        query
+        for query in load_intent_eval_queries(DATA / "intent_eval_queries.json")
+        if query.id.startswith("eval-")
+    ]
+
+
 def test_frame_trained_model_holds_the_realistic_accuracy_bar():
     """The templated split measures memorization; this set measures the model."""
     pytest.importorskip("torch")
     pipeline = _pipeline_trained_on_committed_examples()
 
     records = []
-    for query in load_intent_eval_queries(DATA / "intent_eval_queries.json"):
+    for query in _legacy_eval_queries():
         prediction = pipeline.predict_text(query.text)
         records.append(
             IntentPredictionRecord(
@@ -339,8 +353,7 @@ def test_out_of_scope_requests_score_below_in_scope_requests():
     pipeline = _pipeline_trained_on_committed_examples()
 
     in_scope = [
-        pipeline.predict_text(query.text).confidence
-        for query in load_intent_eval_queries(DATA / "intent_eval_queries.json")
+        pipeline.predict_text(query.text).confidence for query in _legacy_eval_queries()
     ]
     out_of_scope = [
         pipeline.predict_text(text).confidence
