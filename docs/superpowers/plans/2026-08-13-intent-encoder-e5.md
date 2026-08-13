@@ -60,12 +60,10 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `tests/unit/test_intent_encoder.py`:
+In `tests/unit/test_intent_encoder.py`, **replace** the existing `test_default_encoder_is_the_minilm_the_index_is_built_with` — it asserts the old model name and must not survive — and add the rest. The file already imports `intent_encoder` and `DEFAULT_ENCODER` at module scope and has an autouse fixture clearing `_MODEL_CACHE`; keep both.
 
 ```python
 def test_default_encoder_is_e5_small():
-    from src.model.intent_encoder import DEFAULT_ENCODER
-
     assert DEFAULT_ENCODER == "intfloat/e5-small-v2"
 
 
@@ -128,6 +126,7 @@ def test_the_prefix_actually_changes_the_vector():
 def test_encoded_width_is_unchanged_at_384():
     """Same width as the previous encoder, so index.npz's format is unchanged."""
     pytest.importorskip("sentence_transformers")
+    from src.model.intent_encoder import encode_texts
 
     assert encode_texts(["find the runbook"]).shape == (1, 384)
 ```
@@ -302,9 +301,9 @@ def _queries(n_clean: int = 151, n_legacy: int = 30):
 
 def test_every_legacy_query_goes_to_tuning():
     """They are contaminated, so they are worthless as a gate and free to tune on."""
-    split = split_eval_queries(_queries())
+    split = split_eval_queries(_queries(n_legacy=30))
 
-    assert all(q.id.startswith("eval-") for q in split.tuning if q.id.startswith("eval-"))
+    assert len([q for q in split.tuning if q.id.startswith("eval-")]) == 30
     assert not any(q.id.startswith("eval-") for q in split.test)
 
 
