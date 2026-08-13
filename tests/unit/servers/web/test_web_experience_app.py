@@ -1401,6 +1401,7 @@ def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
 def _write_dispatch_index(tmp_path):
     import numpy as np
 
+    from src.model.intent_encoder import DEFAULT_ENCODER
     from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
 
     axis = {"search": 0, "chat": 1, "tool": 2}
@@ -1418,7 +1419,7 @@ def _write_dispatch_index(tmp_path):
             )
             rows.append(np.eye(3, dtype=np.float32)[index])
     directory = tmp_path / "intent_index"
-    IntentIndex(examples, np.stack(rows), "test-encoder", "sha256:x").save(
+    IntentIndex(examples, np.stack(rows), DEFAULT_ENCODER, "sha256:x").save(
         directory / INDEX_FILENAME
     )
     return directory

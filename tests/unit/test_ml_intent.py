@@ -8,6 +8,7 @@ import pytest
 from src.internal.configs import AppSettings
 from src.internal.servers.web import ml_intent
 from src.internal.servers.web.intent_routing import RouteStrategy
+from src.model.intent_encoder import DEFAULT_ENCODER
 from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
 
 _AXIS = {"search": 0, "chat": 1, "tool": 2}
@@ -28,7 +29,7 @@ def _write_index(tmp_path: Path) -> Path:
             )
             rows.append(np.eye(3, dtype=np.float32)[axis])
     directory = tmp_path / "index"
-    IntentIndex(examples, np.stack(rows), "test-encoder", "sha256:x").save(
+    IntentIndex(examples, np.stack(rows), DEFAULT_ENCODER, "sha256:x").save(
         directory / INDEX_FILENAME
     )
     return directory
@@ -109,11 +110,44 @@ def test_missing_index_path_defers_without_raising(tmp_path):
     assert ml_intent.predict_route("anything", settings=settings) is None
 
 
-def test_unreadable_index_defers_and_is_not_retried(tmp_path, monkeypatch, caplog):
+def test_unreadable_index_defers_and_is_not_retried(tmp_path, monkeypatch):
     settings = AppSettings(intent_index_path=tmp_path / "absent")
+    loads = {"count": 0}
+    original = IntentIndex.load
+
+    def _counting_load(path):
+        loads["count"] += 1
+        return original(path)
+
+    monkeypatch.setattr(IntentIndex, "load", staticmethod(_counting_load))
 
     assert ml_intent.predict_route("anything", settings=settings) is None
     assert ml_intent.predict_route("anything", settings=settings) is None
+    assert loads["count"] == 1
+
+
+def test_encoder_mismatch_defers_and_is_cached_as_failure(tmp_path, monkeypatch):
+    """A same- or different-dimension encoder mismatch must never silently
+    score garbage dot products; the index records which encoder built it, and
+    a mismatch must become one loud, cached failure instead."""
+    examples = [CanonicalExample("search-0", "search 0", "search", ("lookup_fact",))]
+    directory = tmp_path / "mismatched"
+    IntentIndex(
+        examples, np.eye(3, dtype=np.float32)[:1], "wrong-encoder", "sha256:x"
+    ).save(directory / INDEX_FILENAME)
+    settings = AppSettings(intent_index_path=directory)
+    loads = {"count": 0}
+    original = IntentIndex.load
+
+    def _counting_load(path):
+        loads["count"] += 1
+        return original(path)
+
+    monkeypatch.setattr(IntentIndex, "load", staticmethod(_counting_load))
+
+    assert ml_intent.predict_route("anything", settings=settings) is None
+    assert ml_intent.predict_route("anything", settings=settings) is None
+    assert loads["count"] == 1
 
 
 def test_encoder_failure_defers_rather_than_failing_the_request(tmp_path, monkeypatch):
@@ -164,6 +198,42 @@ def test_composite_query_defers_and_is_recorded_as_composite(tmp_path, monkeypat
     assert recorded[-1][0] == "intent_model"
     assert recorded[-1][1]["composite"] is True
     assert recorded[-1][1]["fallback_reason"] == "margin_below_threshold"
+
+
+def test_both_gates_trip_records_composite_and_still_returns_a_decision(
+    tmp_path, monkeypatch
+):
+    """decide() checks confidence before margin, but composite is computed off
+    the margin alone (see intent_knn._is_composite) — so a query that trips
+    both gates gets abstain_reason="confidence_below_threshold" (not
+    "margin_below_threshold") together with composite=True. That is not a
+    margin abstention, so predict_route must still return a decision for
+    route_request's own confidence check to act on; but the composite flag
+    must not be silently dropped, so the capture stage must still fire —
+    exactly once.
+    """
+    monkeypatch.setattr(
+        ml_intent,
+        "encode_texts",
+        lambda texts: np.array([[0.71, 0.0, 0.70]], dtype=np.float32),
+    )
+    recorded = []
+    monkeypatch.setattr(
+        ml_intent._capture,
+        "record_stage",
+        lambda stage, mechanism, detail: recorded.append((stage, detail)),
+    )
+
+    decision = ml_intent.predict_route(
+        "anything", settings=_settings(tmp_path, intent_model_min_confidence=0.8)
+    )
+
+    assert decision is not None
+    assert decision.confidence < decision.threshold
+    assert len(recorded) == 1
+    assert recorded[0][0] == "intent_model"
+    assert recorded[0][1]["composite"] is True
+    assert recorded[0][1]["fallback_reason"] == "confidence_below_threshold"
 
 
 def test_intent_model_decision_has_no_composite_field():

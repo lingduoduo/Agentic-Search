@@ -93,7 +93,7 @@ When `mode` is omitted, `route_query` chooses one strategy. The cascade is inten
    - lookup verbs such as “find”, “search for”, or “retrieve” → `search`;
    - bare one-to-three-word terms such as `RAG`, `GRPO`, or `vector database` → `search`;
    - conversational or generative starts normally → `chat`.
-3. If configured, a trained intent model may select a route when its confidence reaches `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.6`).
+3. If configured, a trained intent model may select a route when its confidence reaches `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.6`, now a cosine similarity rather than a softmax probability).
 4. Otherwise an available LLM runs the three-label classifier at temperature 0.
 5. If no LLM exists or classification fails, a heuristic cue is checked with `tool` → `search` → bare lookup → `chat` precedence. When a cue matches, that route is used deterministically.
 6. If no heuristic cue matches at all, the router asks the user which route they meant instead of guessing (see below).
@@ -269,7 +269,7 @@ This is serving-time routing and inference. It is unrelated to GRPO training, ev
 - Browser fallback: `SearchExperienceSettings.browser_search_url` and a running browser-search service. The default `from_app_settings()` construction does not currently populate this URL, so deployments that want browser fallback must wire it into app construction.
 - Local policy modes: `SEARCH_AGENT_MODEL` or `SEARCH_AGENT_SERVER_URL`.
 - Provider-backed chat and classification: `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, and provider credentials.
-- Learned intent route: `AGENTIC_SEARCH_INTENT_MODEL_PATH` plus `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE`.
+- Learned intent route: `AGENTIC_SEARCH_INTENT_INDEX_PATH` plus `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE`.
 - Sufficiency threshold: `SEARCH_DIRECT_COS_MIN`.
 
 See [Configuration](configuration.md) for setup details.

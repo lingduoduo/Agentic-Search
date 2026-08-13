@@ -11,7 +11,7 @@ from time import perf_counter
 from src.internal.configs import AppSettings, load_app_settings
 from src.internal.servers.web import request_capture as _capture
 from src.internal.servers.web.intent_routing import RouteStrategy
-from src.model.intent_encoder import encode_texts
+from src.model.intent_encoder import DEFAULT_ENCODER, encode_texts
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,15 @@ def load_intent_index(settings: AppSettings | None = None) -> object | None:
         from src.model.intent_knn import INDEX_FILENAME, IntentIndex
 
         index = IntentIndex.load(directory / INDEX_FILENAME)
+        if index.encoder != DEFAULT_ENCODER:
+            # A dimension mismatch would raise inside index.decide(); a same-
+            # dimension different model (e.g. MiniLM-L6 vs MiniLM-L12, both
+            # 384-d) would not — it would just score silent garbage dot
+            # products. Catch both the same way: fail loudly here, once.
+            raise ValueError(
+                f"intent-index built with encoder {index.encoder!r}, "
+                f"serving uses {DEFAULT_ENCODER!r}"
+            )
     except Exception:
         logger.exception("intent-index: load failed — similarity routing disabled")
         _INTENT_INDEXES[directory] = None
@@ -102,13 +111,22 @@ def predict_route(
     latency_ms = (perf_counter() - start) * 1_000
 
     if decision.route not in _ROUTE_VALUES:
+        logger.warning("intent-index: unsupported route %r — deferring", decision.route)
         return None
     confidence = float(decision.confidence)
-    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
-        logger.warning("intent-index: invalid confidence — deferring")
+    if not math.isfinite(confidence) or not -1.0 <= confidence <= 1.0:
+        logger.warning(
+            "intent-index: non-finite or out-of-range cosine confidence — deferring"
+        )
         return None
 
-    if decision.abstain_reason == "margin_below_threshold":
+    # composite is computed off the margin alone (see intent_knn._is_composite)
+    # and is independent of decide()'s if/elif abstention priority: a query
+    # that trips the confidence gate can still be composite even though its
+    # abstain_reason is "confidence_below_threshold", not "margin_below_threshold".
+    # Record it whenever it's set, but only a margin abstention returns None —
+    # this is still one record_stage call either way, never two.
+    if decision.abstain_reason == "margin_below_threshold" or decision.composite:
         _capture.record_stage(
             "intent_model",
             "evaluation",
@@ -116,12 +134,14 @@ def predict_route(
                 "predicted_intent": decision.route,
                 "confidence": confidence,
                 "margin": float(decision.margin),
-                "abstained": True,
-                "fallback_reason": "margin_below_threshold",
+                "abstained": decision.abstained,
+                "fallback_reason": decision.abstain_reason,
                 "composite": decision.composite,
                 "latency_ms": latency_ms,
             },
         )
+
+    if decision.abstain_reason == "margin_below_threshold":
         return None
 
     return IntentModelDecision(
