@@ -31,9 +31,9 @@
   {"id": "hard-incident-2", "text": "why did the checkout incident happen", "label": "chat", "modules": ["explain"]},
   {"id": "hard-incident-3", "text": "file a new ticket for the checkout incident", "label": "tool", "modules": ["create"]},
 
-  {"id": "hard-reranker-1", "text": "where are the reranker settings defined", "label": "search", "modules": ["lookup_document"]},
-  {"id": "hard-reranker-2", "text": "what's the reranker timeout set to", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "hard-reranker-3", "text": "change the reranker timeout to two seconds", "label": "tool", "modules": ["modify"]},
+  {"id": "hard-limit-1", "text": "where is the expense approval limit written down", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-limit-2", "text": "what's the expense approval limit for managers", "label": "search", "modules": ["lookup_fact"]},
+  {"id": "hard-limit-3", "text": "raise the expense approval limit for managers to 5k", "label": "tool", "modules": ["modify"]},
 
   {"id": "hard-notes-1", "text": "find the notes from monday's planning meeting", "label": "search", "modules": ["lookup_document"]},
   {"id": "hard-notes-2", "text": "summarize the notes from monday's planning meeting", "label": "chat", "modules": ["summarize"]},
@@ -43,9 +43,9 @@
   {"id": "hard-contract-2", "text": "when does the cloudkite contract renew", "label": "search", "modules": ["lookup_fact"]},
   {"id": "hard-contract-3", "text": "cancel the cloudkite contract before it renews", "label": "tool", "modules": ["modify"]},
 
-  {"id": "hard-rebuild-1", "text": "find the thread where we discussed the index rebuild", "label": "search", "modules": ["lookup_document"]},
-  {"id": "hard-rebuild-2", "text": "how does the index rebuild actually work", "label": "chat", "modules": ["explain"]},
-  {"id": "hard-rebuild-3", "text": "start the index rebuild", "label": "tool", "modules": ["execute"]},
+  {"id": "hard-payroll-1", "text": "find the thread where we discussed the payroll cutover", "label": "search", "modules": ["lookup_document"]},
+  {"id": "hard-payroll-2", "text": "how does the payroll cutover actually work", "label": "chat", "modules": ["explain"]},
+  {"id": "hard-payroll-3", "text": "start the payroll cutover", "label": "tool", "modules": ["execute"]},
 
   {"id": "hard-composite-1", "text": "find the best italian place near the office and book it for 7", "label": "tool", "modules": ["schedule"]},
   {"id": "hard-composite-2", "text": "pull up the vendor list and email the top three for quotes", "label": "tool", "modules": ["send"]},

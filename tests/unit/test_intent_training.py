@@ -280,6 +280,19 @@ _OUT_OF_SCOPE_MARGIN_FLOOR = 0.039
 _PINNED_EPOCHS = 800
 _PINNED_LR = 3e-3
 
+# The same model measured on the `bulk-` slice, which is six times larger, drawn
+# from HR/finance/legal/support/facilities as well as engineering, and was never
+# iterated against. Accuracy 0.4768 and separation margin +0.0158, against 0.7333
+# and +0.0593 on the legacy thirty.
+#
+# These two are a RECORDED MEASUREMENT, not a bar. They exist so the honest
+# number lives in the suite rather than only in a task report, and they are set
+# well below what was measured so they never gate a change. The gap between the
+# two pairs is the size of the contamination plus small-sample optimism in the
+# legacy figure, confounded with the broader topic range of the new slice.
+_CLEAN_ACCURACY_FLOOR = 0.45
+_CLEAN_OUT_OF_SCOPE_MARGIN_FLOOR = 0.012
+
 
 @functools.lru_cache(maxsize=1)
 def _pipeline_trained_on_committed_examples():
@@ -312,11 +325,26 @@ def _legacy_eval_queries():
     uncontaminated; these floors predate it, so they keep reading the queries
     they were pinned against rather than silently changing meaning.
     """
-    return [
+    queries = [
         query
         for query in load_intent_eval_queries(DATA / "intent_eval_queries.json")
         if query.id.startswith("eval-")
     ]
+    # Fail here rather than downstream: an empty list divides by zero inside the
+    # accuracy report, which reads as a crash instead of "the ids moved".
+    assert len(queries) == 30, f"expected the original thirty, found {len(queries)}"
+    return queries
+
+
+def _clean_eval_queries():
+    """The uncontaminated `bulk-` slice the recorded floors above read."""
+    queries = [
+        query
+        for query in load_intent_eval_queries(DATA / "intent_eval_queries.json")
+        if query.id.startswith("bulk-")
+    ]
+    assert len(queries) >= 140, f"expected the bulk slice, found {len(queries)}"
+    return queries
 
 
 def test_frame_trained_model_holds_the_realistic_accuracy_bar():
@@ -340,6 +368,41 @@ def test_frame_trained_model_holds_the_realistic_accuracy_bar():
 
     report = realistic_accuracy_report(records, threshold=0.5)
     assert report["accuracy"] >= _REALISTIC_ACCURACY_FLOOR
+
+
+def test_the_clean_slice_records_what_the_model_scores_untuned_against():
+    """Keep the honest number in the suite, not only in a task report.
+
+    Both floors here are deliberately slack. This test is a ratchet against
+    silent collapse, not a promotion gate; the bar that gates anything is the
+    legacy-thirty one above.
+    """
+    pytest.importorskip("torch")
+    pipeline = _pipeline_trained_on_committed_examples()
+
+    queries = _clean_eval_queries()
+    predictions = [pipeline.predict_text(query.text) for query in queries]
+    records = [
+        IntentPredictionRecord(
+            example_id=query.id,
+            expected=query.label,
+            predicted=prediction.intent,
+            confidence=prediction.confidence,
+            latency_ms=1.0,
+            mechanism="model",
+        )
+        for query, prediction in zip(queries, predictions)
+    ]
+    out_of_scope = [
+        pipeline.predict_text(text).confidence
+        for _, text in load_out_of_scope_probes(DATA / "intent_out_of_scope.json")
+    ]
+    in_scope = [prediction.confidence for prediction in predictions]
+    margin = sum(in_scope) / len(in_scope) - sum(out_of_scope) / len(out_of_scope)
+
+    report = realistic_accuracy_report(records, threshold=0.5)
+    assert report["accuracy"] >= _CLEAN_ACCURACY_FLOOR
+    assert margin >= _CLEAN_OUT_OF_SCOPE_MARGIN_FLOOR
 
 
 def test_out_of_scope_requests_score_below_in_scope_requests():
