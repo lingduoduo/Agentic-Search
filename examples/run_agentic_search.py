@@ -206,18 +206,21 @@ def resolve_search_settings(
     allow_internal_knowledge: bool,
     min_confidence: float,
 ) -> tuple[int, int, bool, bool, dict[str, Any]]:
-    """Apply the per-intent search policy for one CLI request."""
+    """Apply the per-intent search policy for one CLI request.
+
+    ``min_confidence`` is not compared here: the only caller,
+    ``run_search_agent``, only reaches this function with a *prediction*
+    that ``_load_intent_prediction`` already built with this exact
+    ``min_confidence`` — ``IntentIndex.decide`` returns ``None`` below that
+    bar, so a covered prediction always clears it.
+    """
 
     meta: dict[str, Any] = {
         "intent_routing_used": True,
         "predicted_intent": prediction.intent,
         "intent_confidence": prediction.confidence,
+        "intent_policy_applied": True,
     }
-    if prediction.confidence < min_confidence:
-        meta["intent_policy_applied"] = False
-        return topk, max_search_limit, require_evidence, allow_internal_knowledge, meta
-
-    meta["intent_policy_applied"] = True
     policy: dict[str, tuple[int, int, bool, bool]] = {
         "chat": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
         "search": (max(topk, 8), max(max_search_limit, 3), True, False),

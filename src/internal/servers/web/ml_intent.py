@@ -128,6 +128,7 @@ def predict_route(
             {
                 "predicted_intent": decision.route,
                 "confidence": confidence,
+                "threshold": resolved.intent_model_min_confidence,
                 "margin": float(decision.margin),
                 "abstained": True,
                 "fallback_reason": "margin_below_threshold",

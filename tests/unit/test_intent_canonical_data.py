@@ -71,9 +71,14 @@ def test_every_semantic_module_keeps_headroom_above_the_support_floor(examples):
 
 
 def test_bare_entity_stays_capped(examples):
-    """A form label, routed at cascade step 2 before this model ever runs."""
+    """A form label, routed at cascade step 2 before this model ever runs.
+
+    The floor is MIN_MODULE_SUPPORT (10), not 8: a count between 8 and 9
+    would pass this test yet fall below the support floor, silently dropping
+    the module from `_emit_modules`' candidate set.
+    """
     counts = Counter(module for example in examples for module in example.modules)
-    assert 8 <= counts["bare_entity"] <= 12
+    assert MIN_MODULE_SUPPORT <= counts["bare_entity"] <= 12
 
 
 def test_no_two_canonical_examples_are_near_duplicates(examples):

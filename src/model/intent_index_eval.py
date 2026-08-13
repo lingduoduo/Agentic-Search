@@ -22,7 +22,7 @@ from .intent_evaluation import (
     module_metrics_report,
     realistic_accuracy_report,
 )
-from .intent_index_cli import check_leakage
+from .intent_index_cli import _fingerprint, check_leakage
 from .intent_knn import INDEX_FILENAME, TOP_K, IntentIndex
 
 # Legacy ids are `eval-<route>-NN`; queries added later use `bulk-NNN`. The
@@ -35,6 +35,10 @@ LEGACY_PREFIX = "eval-"
 _SWEEP_MIN_CONFIDENCES = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55)
 _SWEEP_MIN_MARGINS = (0.02, 0.05, 0.08, 0.12)
 _MIN_COVERAGE = 0.60
+
+# Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
+# app_configs.py) so evaluation scores modules with the same bar serving uses.
+_DEFAULT_MIN_MODULE_SCORE = 0.45
 
 
 def _predict(index: IntentIndex, queries, thresholds):
@@ -162,7 +166,7 @@ def _select_thresholds(
             thresholds = {
                 "min_confidence": min_confidence,
                 "min_margin": min_margin,
-                "min_module_score": 0.45,
+                "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
             }
             served = correct = 0
             for record, vector in zip(clean, clean_vectors):
@@ -203,10 +207,19 @@ def run_index_evaluation(
 ) -> dict[str, Any]:
     """Score the index and write the evaluation report."""
     index = IntentIndex.load(index_path / INDEX_FILENAME)
+    canonical_fingerprint = _fingerprint(canonical_path)
+    if canonical_fingerprint != index.fingerprint:
+        raise ValueError(
+            f"canonical file {canonical_path} has fingerprint "
+            f"{canonical_fingerprint!r}, but the index at {index_path} was built "
+            f"from fingerprint {index.fingerprint!r}. The canonical set changed "
+            "since the index was built; run `intent_index_cli build` again "
+            "before evaluating."
+        )
     thresholds = {
         "min_confidence": 0.0,
         "min_margin": 0.0,
-        "min_module_score": 0.45,
+        "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
     }
 
     bulk = load_intent_eval_queries(eval_queries_path)
@@ -283,8 +296,11 @@ def run_index_evaluation(
         "legacy_30_accuracy": report["legacy_30"]["accuracy"],
         "clean_151_accuracy": report["clean_151"]["accuracy"],
         "hard_accuracy": report.get("hard", {}).get("accuracy"),
-        "module_macro_f1": report["modules"]["macro_f1"],
-        "joint_accuracy": report["modules"]["joint_accuracy"],
+        # Clean slice, not bulk: bulk still carries the contaminated legacy_30
+        # queries, which the clean_151_accuracy figure right beside these two
+        # deliberately excludes.
+        "clean_151_module_macro_f1": report["clean_modules"]["macro_f1"],
+        "clean_151_joint_accuracy": report["clean_modules"]["joint_accuracy"],
         "separation_margin": report.get("out_of_scope", {}).get("separation_margin"),
         "leave_one_out_accuracy": report["leave_one_out"]["accuracy"],
         "selected_min_confidence": selected["min_confidence"] if selected else None,

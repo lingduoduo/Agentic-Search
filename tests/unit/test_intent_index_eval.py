@@ -183,6 +183,41 @@ def test_out_of_scope_margin_is_mean_in_scope_minus_mean_out_of_scope_on_clean(
     )
 
 
+def test_run_index_evaluation_raises_on_a_stale_canonical_fingerprint(
+    tmp_path, monkeypatch
+):
+    """Editing the canonical file without rebuilding must fail loudly.
+
+    Otherwise `evaluate` silently scores the index built from the *old*
+    canonical file and stamps the report with the new canonical path, so an
+    operator reads the old accuracy as if it measured their edit.
+    """
+    monkeypatch.setattr(intent_index_eval, "encode_texts", _encode_stub)
+    index_dir = _build_index(tmp_path)
+    canonical_path = tmp_path / "canonical.json"
+    edited = json.loads(canonical_path.read_text(encoding="utf-8"))
+    edited[0]["text"] = "canonical search 0 but edited after the index was built"
+    canonical_path.write_text(json.dumps(edited), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fingerprint"):
+        intent_index_eval.run_index_evaluation(
+            index_path=index_dir,
+            eval_queries_path=_eval_queries_path(tmp_path, _BULK_QUERIES),
+            hard_queries_path=None,
+            out_of_scope_path=None,
+            canonical_path=canonical_path,
+            output_path=tmp_path / "report.json",
+        )
+
+
+def test_run_index_evaluation_passes_when_the_canonical_fingerprint_matches(
+    tmp_path, monkeypatch
+):
+    report = _run(tmp_path, monkeypatch=monkeypatch)
+
+    assert report["index"]["fingerprint"]
+
+
 def test_run_index_evaluation_raises_on_leakage_instead_of_scoring_anyway(
     tmp_path, monkeypatch
 ):

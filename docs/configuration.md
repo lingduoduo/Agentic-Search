@@ -51,7 +51,7 @@ Routing configuration spans separate capabilities:
 | `SearchExperienceSettings.browser_search_url` | Enables the HTTP browser-search fallback after SerpAPI; run `src.internal.servers.web_search.browser` separately and wire its `/retrieve` URL into app construction |
 | `SEARCH_AGENT_MODEL` / `SEARCH_AGENT_SERVER_URL` | Enables explicit local/remote policy-agent modes; not required for default auto-search |
 | `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, provider key | Enables grounded chat synthesis and the classifier for ambiguous routes |
-| `AGENTIC_SEARCH_INTENT_INDEX_PATH` | Directory holding a canonical-example index (`index.npz`) built by `intent_index_cli`; unset by default, which disables the learned route |
+| `AGENTIC_SEARCH_INTENT_INDEX_PATH` | Directory holding a canonical-example index (`index.npz`) built by `intent_index_cli`; unset by default, which disables the similarity route |
 | `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | Minimum cosine similarity to the best-matching route before skipping the LLM/rule fallback (not a softmax probability); defaults to `0.30` |
 | `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | Minimum cosine-similarity gap between the top and runner-up route; defaults to `0.02` |
 | `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | Minimum cosine similarity for a module label to be emitted alongside the route; defaults to `0.45` |
@@ -93,7 +93,7 @@ Set `AGENTIC_SEARCH_INTENT_INDEX_PATH` to a directory containing an
 Leave it unset to keep learned intent routing disabled. There is no
 promotion gate on this path the way there was for the earlier trained
 checkpoint: a missing, unreadable, or encoder-mismatched index simply
-disables the learned route (logged once, then cached) and every request
+disables the similarity route (logged once, then cached) and every request
 falls through to the existing LLM/rule fallbacks.
 
 ## Neural reranking

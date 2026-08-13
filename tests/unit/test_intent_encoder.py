@@ -3,7 +3,15 @@
 import numpy as np
 import pytest
 
+from src.model import intent_encoder
 from src.model.intent_encoder import DEFAULT_ENCODER
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    intent_encoder._MODEL_CACHE.clear()
+    yield
+    intent_encoder._MODEL_CACHE.clear()
 
 
 def test_default_encoder_is_the_minilm_the_index_is_built_with():
@@ -40,3 +48,31 @@ def test_word_order_changes_the_vector():
     vectors = encode_texts(["how to send an email", "send an email to how"])
 
     assert float(vectors[0] @ vectors[1]) < 0.99
+
+
+def test_a_failed_load_is_not_retried_on_a_later_call(monkeypatch):
+    """A broken or unreachable model must not re-attempt the download per call.
+
+    The first call raises straight from the constructor; the second call must
+    raise too, without invoking the constructor again — otherwise a caller on
+    the event loop (route_request) would block on the same failing download
+    once per auto-routed request instead of degrading once.
+    """
+    pytest.importorskip("sentence_transformers")
+    import sentence_transformers
+
+    calls = {"count": 0}
+
+    def _boom(model_name, device=None):
+        calls["count"] += 1
+        raise OSError("model fetch failed")
+
+    monkeypatch.setattr(sentence_transformers, "SentenceTransformer", _boom)
+
+    with pytest.raises(OSError, match="model fetch failed"):
+        intent_encoder.encode_texts(["find the runbook"], model_name="broken-model")
+
+    with pytest.raises(RuntimeError, match="not retrying"):
+        intent_encoder.encode_texts(["find the runbook"], model_name="broken-model")
+
+    assert calls["count"] == 1

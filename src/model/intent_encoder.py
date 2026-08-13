@@ -10,19 +10,38 @@ makes the rest of the routing path testable without it.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from functools import lru_cache
 
 import numpy as np
 
 DEFAULT_ENCODER = "sentence-transformers/all-MiniLM-L6-v2"
 
+# Keyed by model name; holds either a loaded model or an Exception. A failed
+# load is cached too — lru_cache does not cache exceptions, and retrying a
+# broken or unreachable model download on every call would block whichever
+# request triggers it, forever. See ml_intent._INTENT_INDEXES for the same
+# policy one layer up.
+_MODEL_CACHE: dict[str, object] = {}
 
-@lru_cache(maxsize=2)
+
 def _model(model_name: str):
     """Load and cache the encoder. Loading costs seconds; encoding costs ms."""
+    cached = _MODEL_CACHE.get(model_name)
+    if isinstance(cached, Exception):
+        raise RuntimeError(
+            f"intent encoder {model_name!r} failed to load previously; not retrying"
+        ) from cached
+    if cached is not None:
+        return cached
+
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(model_name, device="cpu")
+    try:
+        model = SentenceTransformer(model_name, device="cpu")
+    except Exception as exc:
+        _MODEL_CACHE[model_name] = exc
+        raise
+    _MODEL_CACHE[model_name] = model
+    return model
 
 
 def encode_texts(
@@ -40,8 +59,3 @@ def encode_texts(
         show_progress_bar=False,
     )
     return np.asarray(vectors, dtype=np.float32)
-
-
-def encoder_dimension(model_name: str = DEFAULT_ENCODER) -> int:
-    """The encoder's output width."""
-    return int(_model(model_name).get_sentence_embedding_dimension())
