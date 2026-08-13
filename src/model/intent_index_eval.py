@@ -175,6 +175,51 @@ def _decide_batch(
     return [index.decide(vector, **thresholds) for vector in vectors]
 
 
+def _decide_records(
+    index: IntentIndex,
+    queries,
+    vectors: np.ndarray,
+    *,
+    top_k: int,
+) -> tuple[tuple[IntentPredictionRecord, ...], tuple[ModulePredictionRecord, ...]]:
+    """Route + module predictions at a specific top_k, from already-encoded vectors.
+
+    Argmax only (min_confidence=min_margin=0.0), matching ``_argmax_report``'s
+    semantics. Rebuilds the diagnostic prediction/module records at the
+    selected top_k without re-encoding: the first, fixed-top_k decide pass in
+    ``_predict`` only exists to get vectors (for the split, for leakage
+    detection) before ``top_k`` is known; its own ``.predicted``/``.modules``
+    would otherwise silently stay at ``TOP_K`` regardless of what got
+    selected, which is inconsistent with every other block in the report.
+    Latency is not recomputed here -- it was already captured by that first
+    pass and nothing downstream reads it.
+    """
+    decisions = _decide_batch(
+        index, vectors, top_k=top_k, min_confidence=0.0, min_margin=0.0
+    )
+    records = tuple(
+        IntentPredictionRecord(
+            example_id=query.id,
+            expected=query.label,
+            predicted=decision.route,
+            confidence=decision.confidence,
+            latency_ms=0.0,
+            mechanism="model",
+        )
+        for query, decision in zip(queries, decisions)
+    )
+    modules = tuple(
+        ModulePredictionRecord(
+            example_id=query.id,
+            expected=tuple(query.modules),
+            predicted=tuple(decision.modules),
+            route_correct=decision.route == query.label,
+        )
+        for query, decision in zip(queries, decisions)
+    )
+    return records, modules
+
+
 def _serving_report(
     index: IntentIndex,
     records: tuple[IntentPredictionRecord, ...],
@@ -293,7 +338,7 @@ def _accuracy_at_top_k(
 
 def _separation_margin_at_top_k(
     index: IntentIndex,
-    test_vectors: np.ndarray,
+    in_scope_vectors: np.ndarray,
     probe_vectors: np.ndarray,
     top_k: int,
 ) -> float:
@@ -304,15 +349,15 @@ def _separation_margin_at_top_k(
         "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
         "top_k": top_k,
     }
-    in_scope = [index.decide(v, **kwargs).confidence for v in test_vectors]
+    in_scope = [index.decide(v, **kwargs).confidence for v in in_scope_vectors]
     out_of_scope = [index.decide(v, **kwargs).confidence for v in probe_vectors]
     return sum(in_scope) / len(in_scope) - sum(out_of_scope) / len(out_of_scope)
 
 
 def _sweep_top_k(
     index: IntentIndex,
-    test: tuple[IntentPredictionRecord, ...],
-    test_vectors: np.ndarray,
+    tuning: tuple[IntentPredictionRecord, ...],
+    tuning_vectors: np.ndarray,
     hard: tuple[IntentPredictionRecord, ...] | None,
     hard_vectors: np.ndarray | None,
     probe_vectors: np.ndarray | None,
@@ -320,16 +365,20 @@ def _sweep_top_k(
     """Report-only sweep of TOP_K over the already-built index and encoder.
 
     Evidence for a later decision, not a selection: TOP_K stays 3 in serving
-    regardless of this table. Draws on the test slice (never the tuning
-    slice) so this evidence stays as honest as everything else in the report.
-    See the module-level ``_SWEEP_TOP_K`` comment and
+    regardless of this table. Draws on the tuning slice (never the test
+    slice) for the same reason ``_select_thresholds`` does: this is the
+    fitting curve for the one hyperparameter this task moved into an
+    automated sweep, and publishing that curve computed on the slice no
+    hyperparameter is allowed to see would hand test-set fitting straight
+    back to the human reading the report, even though nothing in code
+    selects from it. See the module-level ``_SWEEP_TOP_K`` comment and
     docs/training-and-evaluation.md.
     """
     rows: list[dict[str, Any]] = []
     for top_k in _SWEEP_TOP_K:
         row: dict[str, Any] = {
             "top_k": top_k,
-            "test_slice_accuracy": _accuracy_at_top_k(index, test, test_vectors, top_k),
+            "tuning_accuracy": _accuracy_at_top_k(index, tuning, tuning_vectors, top_k),
             "leave_one_out_accuracy": leave_one_out_route_accuracy(index, top_k=top_k)[
                 "accuracy"
             ],
@@ -338,7 +387,7 @@ def _sweep_top_k(
             row["hard_accuracy"] = _accuracy_at_top_k(index, hard, hard_vectors, top_k)
         if probe_vectors is not None and len(probe_vectors):
             row["separation_margin"] = _separation_margin_at_top_k(
-                index, test_vectors, probe_vectors, top_k
+                index, tuning_vectors, probe_vectors, top_k
             )
         rows.append(row)
     return rows
@@ -387,21 +436,23 @@ def run_index_evaluation(
     }
 
     bulk = load_intent_eval_queries(eval_queries_path)
-    bulk_records, bulk_modules, bulk_vectors = _predict(
+    bulk_records, _, bulk_vectors = _predict(
         index, bulk, thresholds, model_name=model_name
     )
     _raise_on_leakage(index, bulk, bulk_vectors)
 
     split = split_eval_queries(bulk, slice_size=slice_size, seed=seed)
+    # Only .expected (via the record) and the vector are needed downstream --
+    # .predicted/.modules on this first, fixed-TOP_K pass get rebuilt at the
+    # selected top_k below, once it is known.
     by_id = {
-        record.example_id: (record, vector, modules)
-        for record, vector, modules in zip(bulk_records, bulk_vectors, bulk_modules)
+        record.example_id: (record, vector)
+        for record, vector in zip(bulk_records, bulk_vectors)
     }
     tuning_records = tuple(by_id[q.id][0] for q in split.tuning)
     tuning_vectors = np.stack([by_id[q.id][1] for q in split.tuning])
     test_records = tuple(by_id[q.id][0] for q in split.test)
     test_vectors = np.stack([by_id[q.id][1] for q in split.test])
-    test_modules = tuple(by_id[q.id][2] for q in split.test)
 
     legacy_pairs = [
         (record, vector)
@@ -429,20 +480,16 @@ def run_index_evaluation(
             "tuning_size": len(split.tuning),
             "test_size": len(split.test),
         },
-        "bulk": _argmax_report(bulk_records),
-        "modules": module_metrics_report(bulk_modules),
-        "test_modules": module_metrics_report(test_modules),
         "leave_one_out": leave_one_out_route_accuracy(index),
     }
 
-    hard_records = hard_vectors = None
+    hard = hard_records = hard_vectors = None
     if hard_queries_path is not None:
         hard = load_intent_eval_queries(hard_queries_path)
-        hard_records, hard_modules, hard_vectors = _predict(
+        hard_records, _, hard_vectors = _predict(
             index, hard, thresholds, model_name=model_name
         )
         _raise_on_leakage(index, hard, hard_vectors)
-        report["hard_modules"] = module_metrics_report(hard_modules)
 
     selected: dict[str, Any] | None = None
     probe_vectors: np.ndarray | None = None
@@ -463,6 +510,21 @@ def run_index_evaluation(
     top_k = selected["top_k"] if selected else TOP_K
     min_confidence = selected["min_confidence"] if selected else 0.0
     min_margin = selected["min_margin"] if selected else 0.0
+
+    # bulk/modules/test_modules/hard_modules were only ever decided at the
+    # first pass's fixed TOP_K (needed before top_k was known, to get vectors
+    # for the split and the sweep). Rebuild them now at the selected top_k so
+    # every block in the report reflects the same hyperparameters.
+    bulk_records, bulk_modules = _decide_records(index, bulk, bulk_vectors, top_k=top_k)
+    _, test_modules = _decide_records(index, split.test, test_vectors, top_k=top_k)
+    report["bulk"] = _argmax_report(bulk_records)
+    report["modules"] = module_metrics_report(bulk_modules)
+    report["test_modules"] = module_metrics_report(test_modules)
+    if hard_records is not None:
+        hard_records, hard_modules = _decide_records(
+            index, hard, hard_vectors, top_k=top_k
+        )
+        report["hard_modules"] = module_metrics_report(hard_modules)
 
     report["legacy_30"] = {
         **_serving_report(
@@ -534,16 +596,17 @@ def run_index_evaluation(
 
     report["top_k_sweep"] = {
         "note": (
-            "Report-only. TOP_K stays 3 in serving (unchanged by this sweep): "
-            "the accuracy/abstention trade it exposes -- test slice accuracy "
-            "rises while out-of-scope separation falls as k grows -- should "
-            "be decided once, together with a stronger encoder, not twice. "
-            "See docs/training-and-evaluation.md."
+            "Report-only, computed on the tuning slice (never test): TOP_K "
+            "stays 3 in serving (unchanged by this sweep). The "
+            "accuracy/abstention trade it exposes -- tuning accuracy rises "
+            "while out-of-scope separation falls as k grows -- should be "
+            "decided once, together with a stronger encoder, not twice. See "
+            "docs/training-and-evaluation.md."
         ),
         "rows": _sweep_top_k(
             index,
-            test_records,
-            test_vectors,
+            tuning_records,
+            tuning_vectors,
             hard_records,
             hard_vectors,
             probe_vectors,
@@ -551,6 +614,8 @@ def run_index_evaluation(
     }
 
     report["headline"] = {
+        # Argmax (abstention-blind) accuracy on the untouched test slice --
+        # this is the honest headline number.
         "test_slice_accuracy": report["test_slice"]["accuracy"],
         "test_slice_size": report["split"]["test_size"],
         "hard_accuracy": report.get("hard_40", {}).get("accuracy"),
@@ -560,6 +625,12 @@ def run_index_evaluation(
         "selected_top_k": selected["top_k"] if selected else None,
         "selected_min_confidence": selected["min_confidence"] if selected else None,
         "selected_min_margin": selected["min_margin"] if selected else None,
+        # The metric the sweep actually maximized -- served (abstention-
+        # gated) accuracy on the *tuning* slice at the selected
+        # hyperparameters. Different quantity, different slice from
+        # test_slice_accuracy above; do not compare them as if they were the
+        # same number measured twice.
+        "tuning_served_accuracy": selected["served_accuracy"] if selected else None,
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

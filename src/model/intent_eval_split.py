@@ -40,8 +40,23 @@ def split_eval_queries(
     Tuning is every legacy query plus a seeded, route-stratified *slice_size*
     sample of the clean ones. Test is the remaining clean queries.
     """
+    if slice_size <= 0:
+        raise ValueError(f"slice_size must be positive, got {slice_size}")
+
+    seen_ids: dict[str, int] = {}
+    for query in queries:
+        seen_ids[query.id] = seen_ids.get(query.id, 0) + 1
+    duplicates = sorted(qid for qid, count in seen_ids.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"duplicate query id(s) in input: {duplicates}")
+
     legacy = [q for q in queries if q.id.startswith(LEGACY_PREFIX)]
-    clean = [q for q in queries if not q.id.startswith(LEGACY_PREFIX)]
+    # Sorted by id, not left in input order: the split must depend only on
+    # (queries, slice_size, seed), and rng.sample's output depends on the
+    # order of the sequence it draws from.
+    clean = sorted(
+        (q for q in queries if not q.id.startswith(LEGACY_PREFIX)), key=lambda q: q.id
+    )
     if slice_size >= len(clean):
         raise ValueError(
             f"slice_size {slice_size} leaves no test queries: only "

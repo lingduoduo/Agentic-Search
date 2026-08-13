@@ -61,6 +61,23 @@ def test_the_split_is_deterministic_for_a_seed():
     assert [q.id for q in a.test] == [q.id for q in b.test]
 
 
+def test_the_split_is_deterministic_regardless_of_input_order():
+    """Determinism is keyed on (queries, slice_size, seed), not input order.
+
+    rng.sample's output depends on the order of the sequence it draws from,
+    so an unsorted pool would make the split depend on how the caller happens
+    to have ordered its query list -- an implicit, unstated input.
+    """
+    forward = _queries()
+    reversed_input = list(reversed(forward))
+
+    a = split_eval_queries(forward, seed=17)
+    b = split_eval_queries(reversed_input, seed=17)
+
+    assert {q.id for q in a.tuning} == {q.id for q in b.tuning}
+    assert [q.id for q in a.test] == [q.id for q in b.test]
+
+
 def test_a_different_seed_gives_a_different_split():
     a = split_eval_queries(_queries(), seed=17)
     b = split_eval_queries(_queries(), seed=18)
@@ -71,3 +88,24 @@ def test_a_different_seed_gives_a_different_split():
 def test_a_slice_larger_than_the_clean_set_is_rejected():
     with pytest.raises(ValueError, match="slice_size"):
         split_eval_queries(_queries(n_clean=10), slice_size=40)
+
+
+def test_a_non_positive_slice_size_is_rejected():
+    with pytest.raises(ValueError, match="slice_size"):
+        split_eval_queries(_queries(), slice_size=0)
+
+
+def test_a_duplicate_query_id_is_rejected():
+    """A duplicate id would silently drop a query from both sides of the split.
+
+    ``test`` is filtered by id, not object identity, so if the sampled half
+    of a duplicate-id pair lands in tuning, the id-based filter excludes the
+    *other*, un-sampled copy from test too -- both copies vanish from one
+    side or the other, breaking the partition invariant.
+    """
+    queries = list(_queries())
+    duplicate = IntentEvalQuery(queries[-1].id, "a duplicate", queries[-1].label, ())
+    queries.append(duplicate)
+
+    with pytest.raises(ValueError, match="duplicate"):
+        split_eval_queries(queries)

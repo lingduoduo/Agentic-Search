@@ -372,7 +372,13 @@ def test_leave_one_out_default_top_k_matches_the_module_constant():
 def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_report(
     tmp_path, monkeypatch
 ):
-    """The sweep is evidence, not a selection: the shipped headline is untouched."""
+    """The sweep is evidence, not a selection: the shipped headline is untouched.
+
+    It also must never publish a fitting curve over the test slice -- the
+    per-k accuracy and separation-margin columns are computed on *tuning*
+    (legacy_a/legacy_b/bulk-a, all correctly and confidently routed at 0.85),
+    not on test_slice (bulk-b/bulk-c).
+    """
     report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True, hard=None)
 
     sweep = report["top_k_sweep"]
@@ -380,24 +386,25 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
         intent_index_eval._SWEEP_TOP_K
     )
     for row in sweep["rows"]:
-        assert 0.0 <= row["test_slice_accuracy"] <= 1.0
+        assert 0.0 <= row["tuning_accuracy"] <= 1.0
         assert 0.0 <= row["leave_one_out_accuracy"] <= 1.0
         assert "separation_margin" in row
         assert "hard_accuracy" not in row  # no hard queries were supplied
 
-    # The row at the shipped TOP_K reproduces the report's own headline numbers.
+    # The row at the shipped TOP_K reproduces the report's own tuning numbers.
     shipped = next(
         row for row in sweep["rows"] if row["top_k"] == intent_index_eval.TOP_K
     )
-    assert shipped["test_slice_accuracy"] == pytest.approx(
-        report["test_slice"]["accuracy"]
-    )
+    assert shipped["tuning_accuracy"] == pytest.approx(report["tuning"]["accuracy"])
     assert shipped["leave_one_out_accuracy"] == pytest.approx(
         report["leave_one_out"]["accuracy"]
     )
-    assert shipped["separation_margin"] == pytest.approx(
-        report["out_of_scope"]["separation_margin"]
-    )
+    # tuning in-scope confidences are all 0.85 (legacy_a, legacy_b, bulk-a);
+    # probes are 0.1 and 0.2. This is deliberately *not* compared against
+    # report["out_of_scope"]["separation_margin"] -- that field measures the
+    # test slice, a different slice by design, so the two are not expected to
+    # match.
+    assert shipped["separation_margin"] == pytest.approx(0.85 - (0.1 + 0.2) / 2)
 
 
 # ---------------------------------------------------------------------------
@@ -492,14 +499,50 @@ def test_out_of_scope_requests_score_below_in_scope_requests():
 
 
 def test_every_module_has_enough_canonical_support_to_be_emitted():
-    assert _report()["index"]["low_support_modules"] == []
+    """Canonical module support is a fact about the canonical set, not the
+    encoder -- read it directly rather than through ``_report()``, so this
+    stays measurable even while the on-disk index is stale and its encoder
+    guard makes ``_report()`` skip.
+
+    Mirrors ``IntentIndex.low_support_modules()`` exactly: every module
+    across every route, counted from the canonical examples alone, compared
+    against ``MIN_MODULE_SUPPORT``. No vectors, no ``IntentIndex`` instance,
+    no encoder involved on either side of that computation.
+    """
+    from collections import Counter
+
+    from src.model.intent_data import load_canonical_examples
+    from src.model.intent_knn import MIN_MODULE_SUPPORT
+    from src.model.intent_taxonomy import INTENT_LABELS, modules_for_route
+
+    canonical_path = DATA / "intent_canonical.json"
+    if not canonical_path.exists():
+        pytest.skip(f"canonical example file is missing: {canonical_path}")
+    examples = load_canonical_examples(canonical_path)
+    counts = Counter(module for example in examples for module in example.modules)
+    all_modules = [m for route in INTENT_LABELS for m in modules_for_route(route)]
+    low_support = [m for m in all_modules if counts[m] < MIN_MODULE_SUPPORT]
+
+    assert low_support == []
 
 
 def test_the_report_covers_the_whole_bulk_set():
-    """A silently shrunken eval set would inflate every later number."""
-    pytest.importorskip("sentence_transformers")
-    assert _report()["bulk"]["total_queries"] >= 170
-    assert _report()["legacy_30"]["total_queries"] == 30
+    """A silently shrunken eval set would inflate every later number.
+
+    Eval-set size is a fact about ``data/intent_eval_queries.json``, not the
+    encoder -- read it directly rather than through ``_report()``, for the
+    same reason as the module-support test above.
+    """
+    from src.model.intent_data import load_intent_eval_queries
+
+    queries_path = DATA / "intent_eval_queries.json"
+    if not queries_path.exists():
+        pytest.skip(f"eval queries file is missing: {queries_path}")
+    queries = load_intent_eval_queries(queries_path)
+    legacy = [q for q in queries if q.id.startswith(intent_index_eval.LEGACY_PREFIX)]
+
+    assert len(queries) >= 170
+    assert len(legacy) == 30
 
 
 def test_routing_one_request_stays_under_the_latency_ceiling():
