@@ -1,19 +1,16 @@
-"""Validated intent examples: canonical anchors, labelled queries, splits.
+"""Validated intent inputs: canonical anchors, labelled examples, eval queries.
 
 ``load_canonical_examples`` reads the curated set the router is built from.
-The labelled-example loader and the deterministic source-grouped split
-predate it and survive the retired classifier: seeding a canonical draft
-(``intent_seed``) still reads labelled examples, and the split keeps a
-reproducible held-out partition available for offline analysis. Nothing here
-trains anything.
+The labelled-example loader predates it and survives the retired classifier
+because ``intent_seed`` still reads it to draft canonical candidates. The
+train/validation/test split went with the classifier — nothing splits, and
+nothing here trains anything.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-import random
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,15 +25,6 @@ class IntentExample:
     label: str
     source: str
     tags: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class IntentDatasetSplit:
-    train: tuple[IntentExample, ...]
-    validation: tuple[IntentExample, ...]
-    test: tuple[IntentExample, ...]
-    seed: int
-    fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -95,89 +83,6 @@ def load_intent_examples(path: Path) -> list[IntentExample]:
             )
         )
     return examples
-
-
-def split_intent_examples(
-    examples: Iterable[IntentExample],
-    *,
-    seed: int = 17,
-    train_fraction: float = 0.70,
-    validation_fraction: float = 0.15,
-) -> IntentDatasetSplit:
-    """Make a reproducible, label-stratified split without source leakage."""
-    _validate_fractions(train_fraction, validation_fraction)
-    examples = tuple(examples)
-    expected_labels = tuple(INTENT_LABELS)
-    observed_labels = {example.label for example in examples}
-    unknown_labels = observed_labels - set(expected_labels)
-    if unknown_labels:
-        raise ValueError(
-            f"Unknown intent labels in examples: {sorted(unknown_labels)!r}"
-        )
-
-    missing_labels = set(expected_labels) - observed_labels
-    if missing_labels:
-        raise ValueError(
-            f"Cannot split intent examples; missing labels: {sorted(missing_labels)!r}"
-        )
-
-    groups = _source_groups(examples)
-    sources_by_label = {
-        label: {
-            source
-            for source, group in groups.items()
-            if any(example.label == label for example in group)
-        }
-        for label in expected_labels
-    }
-    too_few_groups = [
-        label for label, sources in sources_by_label.items() if len(sources) < 3
-    ]
-    if too_few_groups:
-        raise ValueError(
-            "Each label needs at least three independent source groups; "
-            "add more independent source groups before splitting "
-            f"({', '.join(too_few_groups)})."
-        )
-
-    allocations = {
-        label: _split_group_counts(len(sources), train_fraction, validation_fraction)
-        for label, sources in sources_by_label.items()
-    }
-    assigned: list[list[IntentExample]] = [[], [], []]
-    actual = {label: [0, 0, 0] for label in expected_labels}
-    sources = sorted(groups)
-    random.Random(seed).shuffle(sources)
-
-    for source in sources:
-        group = groups[source]
-        group_labels = {example.label for example in group}
-        split_index = max(
-            range(3),
-            key=lambda index: sum(
-                allocations[label][index] - actual[label][index]
-                for label in group_labels
-            ),
-        )
-        assigned[split_index].extend(group)
-        for label in group_labels:
-            actual[label][split_index] += 1
-
-    if any(
-        actual[label][index] == 0 for label in expected_labels for index in range(3)
-    ):
-        raise ValueError(
-            "Unable to place every label in every split; add more independent "
-            "source groups before splitting."
-        )
-
-    return IntentDatasetSplit(
-        train=tuple(assigned[0]),
-        validation=tuple(assigned[1]),
-        test=tuple(assigned[2]),
-        seed=seed,
-        fingerprint=_fingerprint(examples),
-    )
 
 
 def load_out_of_scope_probes(path: Path) -> tuple[tuple[str, str], ...]:
@@ -343,67 +248,3 @@ def _tags(record: Mapping[str, object], index: int) -> tuple[str, ...]:
     ):
         raise ValueError(f"Intent example at index {index} has invalid tags")
     return tuple(value)
-
-
-def _validate_fractions(train_fraction: float, validation_fraction: float) -> None:
-    test_fraction = 1.0 - train_fraction - validation_fraction
-    if not all(
-        0.0 < fraction < 1.0
-        for fraction in (train_fraction, validation_fraction, test_fraction)
-    ):
-        raise ValueError(
-            "Split fractions must each be greater than zero and sum to one"
-        )
-
-
-def _source_groups(
-    examples: tuple[IntentExample, ...],
-) -> dict[str, tuple[IntentExample, ...]]:
-    grouped: dict[str, list[IntentExample]] = {}
-    for example in examples:
-        if not isinstance(example.source, str) or not example.source.strip():
-            raise ValueError("Intent examples must have a nonempty source")
-        grouped.setdefault(example.source, []).append(example)
-    return {
-        source: tuple(
-            sorted(group, key=lambda item: (item.id, item.text, item.label, item.tags))
-        )
-        for source, group in grouped.items()
-    }
-
-
-def _split_group_counts(
-    total: int, train_fraction: float, validation_fraction: float
-) -> tuple[int, int, int]:
-    counts = [1, 1, 1]
-    targets = (
-        total * train_fraction,
-        total * validation_fraction,
-        total * (1.0 - train_fraction - validation_fraction),
-    )
-    for _ in range(total - sum(counts)):
-        index = max(
-            range(3), key=lambda candidate: targets[candidate] - counts[candidate]
-        )
-        counts[index] += 1
-    return tuple(counts)  # type: ignore[return-value]
-
-
-def _fingerprint(examples: tuple[IntentExample, ...]) -> str:
-    records = sorted(
-        (
-            {
-                "id": example.id,
-                "label": example.label,
-                "source": example.source,
-                "tags": list(example.tags),
-                "text": example.text,
-            }
-            for example in examples
-        ),
-        key=lambda record: json.dumps(record, ensure_ascii=False, sort_keys=True),
-    )
-    canonical = json.dumps(
-        records, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

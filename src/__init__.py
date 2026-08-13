@@ -141,29 +141,12 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # model.intent_taxonomy
     "INTENT_LABELS": (".model.intent_taxonomy", "INTENT_LABELS"),
     # model.intent_data
-    "IntentDatasetSplit": (".model.intent_data", "IntentDatasetSplit"),
     "IntentExample": (".model.intent_data", "IntentExample"),
     "load_intent_examples": (".model.intent_data", "load_intent_examples"),
-    "split_intent_examples": (".model.intent_data", "split_intent_examples"),
     # model.intent_evaluation
-    "IntentEvaluationReport": (
-        ".model.intent_evaluation",
-        "IntentEvaluationReport",
-    ),
     "IntentPredictionRecord": (
         ".model.intent_evaluation",
         "IntentPredictionRecord",
-    ),
-    "PromotionCriteria": (".model.intent_evaluation", "PromotionCriteria"),
-    "PromotionDecision": (".model.intent_evaluation", "PromotionDecision"),
-    "compare_for_promotion": (".model.intent_evaluation", "compare_for_promotion"),
-    "evaluate_intent_predictions": (
-        ".model.intent_evaluation",
-        "evaluate_intent_predictions",
-    ),
-    "select_confidence_threshold": (
-        ".model.intent_evaluation",
-        "select_confidence_threshold",
     ),
     # model.generation (SearchToolCall excluded — already exported from agents.search)
     "ActorRolloutStep": (".model.generation", "ActorRolloutStep"),
