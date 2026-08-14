@@ -601,18 +601,23 @@ def test_the_module_sweep_is_tuning_only_and_records_its_rule(tmp_path, monkeypa
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 
-# Re-measured 2026-08-14 on the intfloat/e5-small-v2 index over the same
-# 280-example canonical set, at the top_k selected on the split in #522
-# (docs/superpowers/plans/2026-08-14-intent-top-k-selection.md), pinned ~0.02
+# Re-measured 2026-08-14 on the intfloat/e5-small-v2 index over the
+# 304-example canonical set (280 + the 24 business-vocabulary search anchors
+# added in #524), at the top_k selected on the split in #522, pinned ~0.02
 # below the measurement so ordinary encoder/float drift cannot trip them:
-#   test-slice route accuracy  0.8018 (111 queries, split seed 17) -> floor 0.78
-#   out-of-scope AUC           0.8622                              -> floor 0.84
+#   test-slice route accuracy  0.8108 (111 queries, split seed 17) -> floor 0.79
+#   out-of-scope AUC           0.8720                              -> floor 0.85
 #   p95 routing latency       12.20 ms                             -> ceiling 25.0 ms
 #
-# Both floors rose with k=15 (from 0.77/0.83, measured at k=3's 0.7928/0.8551).
-# Raising them is the point of the convention: a floor left at the old value
-# would let the router silently regress all the way back to the setting this
-# change replaced.
+# Both floors have now risen twice: 0.77/0.83 at k=3, 0.78/0.84 at k=15, and
+# 0.79/0.85 with the added anchors. Raising them each time is the point of the
+# convention -- a floor left at an old value would let the router silently
+# regress all the way back to the setting that floor was written against.
+#
+# Deliberately NOT pinned: hard_40 argmax, which fell 0.7500 -> 0.7250 with
+# these anchors while its *served* accuracy rose 0.8947 -> 0.9048 on more
+# coverage. A floor on the argmax figure would have blocked a change that
+# improves the operating point, which is the number serving actually uses.
 #
 # The accuracy bar reads report["test_slice"], not report["bulk"]: `bulk` is
 # the *mixed* tuning+test set, so a floor there would quietly re-admit the
@@ -625,8 +630,8 @@ DATA = Path(__file__).resolve().parents[2] / "data"
 # rejects an encoder for its cosine range rather than for its separation. AUC
 # and Cohen's d are scale-free; raw margin stays in the report as
 # encoder-specific context only and must not be compared across encoders.
-_TEST_SLICE_ACCURACY_FLOOR = 0.78
-_OUT_OF_SCOPE_AUC_FLOOR = 0.84
+_TEST_SLICE_ACCURACY_FLOOR = 0.79
+_OUT_OF_SCOPE_AUC_FLOOR = 0.85
 _P95_LATENCY_CEILING_MS = 25.0
 
 

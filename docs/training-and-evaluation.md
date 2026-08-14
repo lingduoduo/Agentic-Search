@@ -77,30 +77,30 @@ Unless a row says otherwise, "test slice" means the 111 queries left after the s
 
 | Measure | e5-small-v2 (now) | all-MiniLM-L6-v2 (before) |
 |---|---|---|
-| **Route accuracy, test slice (111 queries; seed 17, tuning 70 / test 111)** | **0.8018** | **0.6216** (re-measured on the same 111) |
+| **Route accuracy, test slice (111 queries; seed 17, tuning 70 / test 111)** | **0.8108** | **0.6216** (re-measured on the same 111) |
 | — the same, on the older clean_151 instrument | `0.7881` | `0.6225` (as published by #511) |
-| hard_40 (adversarial, never tuned on) | `0.7500` | `0.6250` |
-| Out-of-scope **AUC**, test_111 vs. 24 probes | `0.8622` | **`0.8848`** (re-measured on the same 111) |
+| hard_40 (adversarial, never tuned on) | `0.7250` argmax / `0.9048` served | `0.6250` |
+| Out-of-scope **AUC**, test_111 vs. 24 probes | `0.8720` | `0.8848` (re-measured on the same 111) |
 | — the same, on clean_151 vs. 24 probes | `0.8626` | `0.8681` |
-| Out-of-scope Cohen's d, test_111 vs. 24 probes | `1.6030` | `1.6365` |
-| Leave-one-out over the 280 canonical anchors (diagnostic, never a selector) | `0.8393` (235/280) | `0.6643` (186/280) |
+| Out-of-scope Cohen's d, test_111 vs. 24 probes | `1.6849` | `1.6365` |
+| Leave-one-out over the canonical anchors (diagnostic, never a selector) | `0.8191` (249/304) | `0.6643` (186/280) |
 | p50 / p95 routing latency, encode + decide | `10.35ms` / `12.20ms` | `5.51ms` / `5.88ms` |
-| Out-of-scope raw margin, test_111 *(encoder-specific — do not compare across this row)* | `0.0234` | `0.1210` |
-| Module macro-F1 / joint accuracy (diagnostic; both on the mixed `bulk_181`, like-for-like with the before column — the test slice alone gives `0.6048` / `0.4595`) | `0.6268` / `0.4751` | `0.3471` / `0.2318` |
-| Per-route accuracy, test slice (111) | search 25/37, chat 34/37, tool 30/37 | chat 24/51, search 25/50, tool 45/50 (on clean_151) |
-| Serving hyperparameters | `top_k=15`, `min_confidence=0.30`, `min_margin=0.010` | `top_k=3`, `min_confidence=0.30`, `min_margin=0.02` |
+| Out-of-scope raw margin, test_111 *(encoder-specific — do not compare across this row)* | `0.0242` | `0.1210` |
+| Module macro-F1 / joint accuracy (diagnostic; both on the mixed `bulk_181`, like-for-like with the before column — the test slice alone gives `0.6291` / `0.4775`) | `0.6463` / `0.4972` | `0.3471` / `0.2318` |
+| Per-route accuracy, test slice (111) | search 26/37, chat 34/37, tool 30/37 | chat 24/51, search 25/50, tool 45/50 (on clean_151) |
+| Serving hyperparameters | `top_k=15`, `min_confidence=0.30`, `min_margin=0.010`, `min_module_score=0.8216` | `top_k=3`, `min_confidence=0.30`, `min_margin=0.02` |
 
-**What `0.8018` is, precisely.** It is **argmax route accuracy with no abstention**: the fraction of the 111 test queries whose best-scoring route is the right one, counted whether or not the thresholds would have served an answer. It is *not* the accuracy a caller sees. With the shipped `min_margin=0.010` the router **serves 57 of those 111 (coverage `0.514`) at `0.9825` served accuracy**, and defers the rest to the LLM classifier. Argmax is the number the decision rule was written against and the only one comparable to the `0.6225`/`0.6216` before-figures, which are argmax too; the served pair is what promotion would actually deliver. Both are reported for every slice in `evaluation_report.json`.
+**What `0.8108` is, precisely.** It is **argmax route accuracy with no abstention**: the fraction of the 111 test queries whose best-scoring route is the right one, counted whether or not the thresholds would have served an answer. It is *not* the accuracy a caller sees. With the shipped `min_margin=0.010` the router **serves 58 of those 111 (coverage `0.523`) at `1.0000` served accuracy — no misroutes at all** — and defers the rest to the LLM classifier. Argmax is the number the decision rule was written against and the only one comparable to the `0.6225`/`0.6216` before-figures, which are argmax too; the served pair is what promotion would actually deliver. Both are reported for every slice in `evaluation_report.json`.
 
-**The margin gate abstains hardest exactly where the router is weakest**, which is the behavior you want and is not visible in either headline. Broken out by route on the test slice: `search` is the weak route at 25/37 argmax, and it is also the route that serves least — 11 of its 37 queries, 10 of them correct. `chat` serves 24 of 37 and `tool` 22 of 37, both with **no** errors at all. So the single surviving wrong route on the whole slice is a `search` query, and the route whose representation is worst contributes essentially all of the deferrals *and* the only mistake. Abstention is not spread evenly over the slice; it is concentrated on the queries the index genuinely cannot place.
+**The margin gate abstains hardest exactly where the router is weakest**, which is the behavior you want and is not visible in either headline. Broken out by route on the test slice: `search` remains the weak route at 26/37 argmax, and it is still the route that serves least. Every route now serves with **no errors at all** — the 58 served queries contain zero misroutes. The route whose representation is worst therefore contributes all of the deferrals and none of the mistakes, which is exactly the shape the margin gate is supposed to produce. Abstention is not spread evenly over the slice; it is concentrated on the queries the index genuinely cannot place.
 
 For older context, on the retired clean-151 instrument the previous MLP scored `0.4768`, the production regex cascade `0.4238`, and the majority-class floor `0.3377`. Those are different queries under a different encoder — context, not a like-for-like comparison with the column above.
 
 **+0.18 on route accuracy against MiniLM on the identical 111 queries**, at roughly 2x the latency and well inside the 25ms ceiling. The instrument is smaller than #511's, not harder or cleaner: MiniLM scores `0.6216` on these 111 against `0.6225` on the clean 151, so the slice itself is of ordinary difficulty.
 
-**The decision rule fixed in advance had three bands: `≥ 0.80` clears the promotion bar, `0.75`–`0.80` is a real improvement, below `0.75` is a hard stop. `0.8018` clears the bar.** It did not at `k=3`, where the same index scored `0.7928` and sat in the middle band; choosing `top_k` on the split (see [below](#top_k-chosen-on-the-split)) is what moved it.
+**The decision rule fixed in advance had three bands: `≥ 0.80` clears the promotion bar, `0.75`–`0.80` is a real improvement, below `0.75` is a hard stop. `0.8108` clears the bar.** It did not at `k=3`, where the same index scored `0.7928` and sat in the middle band; choosing `top_k` on the split (see [below](#top_k-chosen-on-the-split)) moved it to `0.8018`, and the business-vocabulary anchors added after that took it to `0.8108`.
 
-**Read that margin honestly before acting on it.** `0.8018` against a `0.80` bar is **89 of 111 correct against 88** — one query. On a 111-query slice the confidence interval swamps that difference entirely, so what the number supports is "this is no longer clearly below the bar", not "this is above the bar". A bar cleared by one query is a prompt to build a bigger instrument, which is exactly what [canonical coverage](#known-limitations) would produce.
+**Read that margin honestly before acting on it.** `0.8108` against a `0.80` bar is **90 of 111 correct against 88** — two queries. On a 111-query slice the confidence interval still swamps that, so what the number supports is "no longer clearly below the bar", not "comfortably above it". The stronger evidence is elsewhere: **served accuracy is `1.0000` over 58 queries**, meaning the router currently makes no wrong routing decision at all at its operating point, and defers everything it cannot place.
 
 **The artifact still ships dark.** `AGENTIC_SEARCH_INTENT_INDEX_PATH` remains unset by default and every request falls through the existing LLM/rule cascade. Promotion was always specified as a separate change reviewed on its own terms, and a one-query bar crossing is not a reason to skip that review — if anything it is a reason to hold it more carefully.
 
@@ -200,6 +200,37 @@ Held out on the test slice, at the shipped `0.821`:
 
 The test slice scores slightly *below* the tuning slice that selected the value (`0.6048` against `0.6531`), which is the ordinary direction for a held-out number and small enough to be noise on 111 queries.
 
+### Off-domain coverage, measured and then closed a little
+
+`data/intent_offdomain_probes.json` holds **45 in-scope probes**, 15 per route, in ordinary business/personal English — HR, finance, travel, facilities, scheduling, procurement — carrying none of the IR/ML vocabulary the canonical set was curated from. They were authored and committed in #523 **with no score attached**, deliberately, so they could not be curated against.
+
+Measured at the shipped settings before any anchor was added:
+
+| | value |
+|---|---|
+| argmax accuracy | `0.8222` (37/45) |
+| abstained | 19/45 (42%) |
+| wrong best-guess | 8/45 |
+| **served wrong** | **2** |
+
+That is *better* than the in-domain test slice scored at the time (`0.8018`), which makes the original "off-domain traffic abstains more often than it should" framing largely obsolete — see [Known limitations](#known-limitations) for why the comparison with #511's `13/16` is not like-for-like.
+
+**The residual weakness was a route, not a vocabulary.** All 6 of the search-route probe failures were `search` misread as `tool` or `chat` — "find the signed lease", "who is listed as the emergency contact", "is the office open on Monday" — while `chat` and `tool` had one each. `search` is also the weak route in-domain (25/37). Adding 24 `search` anchors covering business document and fact lookup moved:
+
+| | before | after |
+|---|---|---|
+| off-domain argmax | `0.8222` | **`0.8667`** |
+| off-domain abstention | 42.2% | **37.8%** |
+| test-slice argmax | `0.8018` | **`0.8108`** |
+| **test-slice served accuracy** | `0.9825` | **`1.0000`** |
+| out-of-scope AUC | `0.8622` | **`0.8720`** |
+| hard_40 argmax | `0.7500` | `0.7250` |
+| leave-one-out | `0.8393` | `0.8191` |
+
+**Two rows moved the wrong way and neither is what it looks like.** `hard_40` argmax fell by one query, but its *served* accuracy rose (`0.8947` → `0.9048`) on more coverage (19 → 21) — at the operating point the adversarial set improved too, and that is why no floor is pinned to its argmax. Leave-one-out falling is expected and arguably healthy: #518 established it measures the anchor set's self-consistency, and 24 anchors in a vocabulary region the set did not previously cover legitimately lower how well anchors recover their own route from their neighbours.
+
+**These probes are now spent as a clean instrument, and that is recorded rather than hidden.** Their per-item failures were read in order to decide what anchors to write, so they are a development set from here on. The genuinely held-out gates for this change were the ones that had never been looked at for this purpose: test-slice accuracy, hard_40, and out-of-scope AUC. A future off-domain number wanting to be a *result* needs a fresh probe set, authored the same way.
+
 ### The grid that must not be a constant
 
 #520 derived `0.84` by hand from the tuning quantiles **at `k=3`**. When `top_k` moved to `15`, that constant excluded **325 of 328** candidate module scores — module emission would have collapsed to the top-1 fallback for nearly every query, silently, with no error.
@@ -274,7 +305,11 @@ Every held-out number improved together, which is not what a genuine trade looks
 ### Known limitations
 
 - **`top_k` is settled at `15`, but only over a five-value grid.** It is [chosen on the split](#top_k-chosen-on-the-split) now rather than inherited, and every held-out number improved. What is *not* established is that 15 is optimal: `_SWEEP_TOP_K` is `{3, 5, 8, 15, 25}`, tuning accuracy plateaus at `0.8714` from `k=8` onward, and `k=25` is within `0.0005` of the winner on served accuracy. The grid is deliberately not widened — doing so after seeing the headline it now influences is the fitting the split exists to prevent — so a finer search is possible but must re-register the grid first.
-- **Topical concentration.** 47% of the canonical examples carry IR/ML vocabulary, because they were curated from this project's own example set. Of 16 held-out in-scope probes drawn from outside that vocabulary, **13 abstained** rather than routing at all, and **9 had a wrong best-guess route underneath**. The two counts overlap and are not a partition — an abstaining query still has a nearest route; it just does not clear the thresholds. The failure is safe, because abstention defers to the LLM classifier, but off-domain traffic abstains more often than it should.
+- **Topical concentration is much smaller than #511 measured, and mostly dissolved before it was addressed.** #511 reported 47% IR/ML vocabulary and **13 of 16** off-domain probes abstaining. Measured now against 45 purpose-built probes (`data/intent_offdomain_probes.json`, authored score-free in #523): **19 of 45 abstain (42%)** and off-domain argmax accuracy is `0.8222` — *higher* than the in-domain test slice's `0.8018` at the time. The encoder swap and the `top_k` selection did most of that, not any anchor work.
+
+  Two caveats keep this from being a clean refutation. The instruments are not comparable: different probes, different encoder, different `k`, and #511's 16 probes were not committed, so the `13/16` cannot be re-run. And the 47% figure came from an unrecorded word list — a plausible regex measures the same set at **26.1%**, so those two numbers are not the same measurement either. What is solid is the current number, on a committed instrument anyone can re-run.
+
+  Adding 24 business-vocabulary `search` anchors took off-domain argmax to `0.8667` and abstention to 37.8%, so the residual gap was real but modest.
 - **The compose-versus-dispatch boundary.** "write an email to the vendor about the overage" sits at `0.963` cosine (MiniLM-measured) to the canonical "email the vendor about the overage". One verb apart, so it routes to `tool` without abstaining, when composing text is arguably `chat`. Adding more compose anchors did not fix it: the two phrasings are near-identical to the encoder and genuinely ambiguous to a human reader.
 - **Route imbalance, and it moved with the encoder.** Under MiniLM the `tool` route scored 45/50 on the clean slice while `search` and `chat` sat near 25/50. Under e5 the imbalance inverts: on the test slice `chat` is 33/37 and `tool` 30/37, while **`search` is the weak route at 25/37**. Route-level error is therefore a property of the encoder's representation at least as much as of the route, and any conclusion drawn from one encoder's per-route table does not carry to another's.
 - **Module emission is derived now, and recall paid for it.** The threshold moved `0.45` → `0.821` (see [the module threshold](#the-module-threshold-derived-and-no-longer-dead)), trading recall for precision: mean modules emitted falls from ~4.7 to ~1.2. Macro-F1 on the test slice roughly doubles (`0.3492` → `0.6048`) and joint accuracy goes `0.0` → `0.4595`, so the trade is clearly net-positive — but it *is* a trade, and a consumer that needs recall over precision should re-run the sweep under a rule that says so rather than treating `0.821` as settled.
