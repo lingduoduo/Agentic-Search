@@ -12,6 +12,7 @@ from src.internal.configs import AppSettings
 from src.internal.servers.web import ml_intent
 from src.internal.servers.web import request_capture as rc
 from src.internal.servers.web.intent_routing import (
+    RouteStrategy,
     _infer_intent_from_output,
     route_request,
 )
@@ -222,8 +223,10 @@ class _ChatLLM:
         # Confidence-only abstention: clear margin, low absolute confidence.
         pytest.param([0.9950, 0.1005, 0.0], 1.0, False, id="confidence_only"),
         # Margin abstention: confidence clears the (low) bar, but the top two
-        # routes tie, failing the margin gate. predict_route returns None
-        # itself and records its own single stage before doing so.
+        # routes tie, failing the margin gate. predict_route returns the
+        # decision with abstain_reason set, and route_request records the one
+        # stage -- previously predict_route returned None and recorded its own,
+        # which is what kept this deferral out of production telemetry.
         pytest.param([0.707, 0.707, 0.0], 0.5, False, id="margin_only"),
         # Both gates trip together: confidence 0.71 < 0.8, and margin 0.01
         # against the "tool" runner-up (whose only module is an action) is
@@ -259,3 +262,107 @@ def test_route_request_records_exactly_one_intent_model_stage(
     finally:
         rc.reset_capture(token)
         ml_intent._INTENT_INDEXES.clear()
+
+
+def _route_with_telemetry(tmp_path, monkeypatch, vector, **overrides):
+    """Route one query with **no capture active** — production conditions.
+
+    Starting no capture is the point: ``request_capture`` only records under
+    the debug panels, so anything asserted here is reaching the telemetry dict
+    that is actually persisted with the session.
+    """
+    ml_intent._INTENT_INDEXES.clear()
+    monkeypatch.setattr(
+        ml_intent, "encode_texts", lambda texts: np.array([vector], dtype=np.float32)
+    )
+    settings = AppSettings(
+        intent_index_path=_write_routing_index(tmp_path),
+        intent_min_route_margin=0.05,
+        intent_min_module_score=0.4,
+        **overrides,
+    )
+    telemetry: dict = {}
+    try:
+        decision = route_request(
+            _MODEL_STAGE_QUERY,
+            llm=_ChatLLM(),
+            explicit_source=False,
+            settings=settings,
+            telemetry=telemetry,
+        )
+    finally:
+        ml_intent._INTENT_INDEXES.clear()
+    return decision, telemetry
+
+
+def test_margin_abstention_is_distinguishable_in_production_telemetry(
+    tmp_path, monkeypatch
+):
+    """The gate that does all the abstaining under e5 must be countable.
+
+    The confidence floor cannot fire under this encoder (in-scope scores sit
+    far above it), so every deferral the router makes is a margin abstention.
+    It previously reached ``None`` inside predict_route, indistinguishable from
+    "no index configured", and the only record of it was a capture stage that
+    runs solely under the debug panels. "How often does the router defer, and
+    why" was therefore unanswerable from production data.
+    """
+    # Confidence clears the default floor; the top two routes tie on margin.
+    _, telemetry = _route_with_telemetry(
+        tmp_path, monkeypatch, [0.707, 0.707, 0.0], intent_model_min_confidence=0.5
+    )
+
+    assert telemetry["route_abstained"] is True
+    assert telemetry["route_fallback_reason"] == "margin_below_threshold"
+    # Not the confidence label: these are different failures and conflating
+    # them would make the counts useless.
+    assert telemetry["route_fallback_reason"] != "model_below_threshold"
+
+
+def test_confidence_abstention_keeps_its_existing_production_label(
+    tmp_path, monkeypatch
+):
+    """The confidence path must be untouched by the margin path's plumbing.
+
+    ``decide()`` labels this one "confidence_below_threshold" internally, but
+    only the margin reason is propagated onto the decision, so route_request
+    still derives and reports ``model_below_threshold`` exactly as before.
+    """
+    _, telemetry = _route_with_telemetry(
+        tmp_path, monkeypatch, [0.9950, 0.1005, 0.0], intent_model_min_confidence=1.0
+    )
+
+    assert telemetry["route_abstained"] is True
+    assert telemetry["route_fallback_reason"] == "model_below_threshold"
+
+
+def test_modules_and_composite_reach_production_telemetry(tmp_path, monkeypatch):
+    """Both were recorded only in the dev-only capture stage.
+
+    The composite flag exists solely so a future plan-aware router can be
+    designed against measured data; observable only under a debug panel, it
+    gathered none.
+    """
+    _, telemetry = _route_with_telemetry(
+        tmp_path, monkeypatch, [1.0, 0.0, 0.0], intent_model_min_confidence=0.1
+    )
+
+    assert telemetry["route_abstained"] is False
+    assert telemetry["route_modules"] == list(telemetry["route_modules"])
+    assert telemetry["route_modules"], "a served route must carry its modules"
+    assert telemetry["route_composite"] is False
+
+
+def test_margin_abstention_still_defers_to_the_classifier(tmp_path, monkeypatch):
+    """Observability only. The routing behavior must not have moved.
+
+    ``_ChatLLM`` answers "chat", so a decision of CHAT proves the abstention
+    fell through to the classifier rather than being served as the model's own
+    (search) answer.
+    """
+    decision, telemetry = _route_with_telemetry(
+        tmp_path, monkeypatch, [0.707, 0.707, 0.0], intent_model_min_confidence=0.5
+    )
+
+    assert decision.strategy is RouteStrategy.CHAT
+    assert telemetry["route_mechanism"] == "classifier"

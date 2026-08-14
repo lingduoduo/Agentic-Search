@@ -174,6 +174,10 @@ def test_confident_model_records_evaluation_and_final_intent(monkeypatch):
             "predicted_intent": "search",
             "confidence": 0.91,
             "threshold": 0.73,
+            # Carried on the decision now that predict_route no longer records
+            # its own stage; without it the margin would be lost from the
+            # capture entirely.
+            "margin": 0.0,
             "abstained": False,
             "fallback_reason": None,
             "latency_ms": 2.5,

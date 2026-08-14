@@ -366,13 +366,22 @@ def route_request(
     fallback_detail: dict = {}
     model_choice = predict_route(query, settings=settings)
     if model_choice is not None:
-        abstained = model_choice.confidence < model_choice.threshold
+        # Two independent abstentions reach here. The margin gate reports
+        # itself on the decision; the confidence gate is derived here, as it
+        # always has been. Either one defers to the classifier below.
+        fallback_reason = model_choice.abstain_reason or (
+            "model_below_threshold"
+            if model_choice.confidence < model_choice.threshold
+            else None
+        )
+        abstained = fallback_reason is not None
         model_detail = {
             "predicted_intent": model_choice.strategy.value,
             "confidence": model_choice.confidence,
             "threshold": model_choice.threshold,
+            "margin": model_choice.margin,
             "abstained": abstained,
-            "fallback_reason": "model_below_threshold" if abstained else None,
+            "fallback_reason": fallback_reason,
             "latency_ms": model_choice.latency_ms,
             "modules": list(model_choice.modules),
             "composite": model_choice.composite,
@@ -385,10 +394,16 @@ def route_request(
                 route_threshold=model_choice.threshold,
                 route_abstained=abstained,
                 route_model_latency_ms=model_choice.latency_ms,
+                # Persisted in production, not only under the debug panels.
+                # The composite flag exists to give a future plan-aware router
+                # measured data; recording it only in a dev-only capture meant
+                # it gathered none.
+                route_modules=list(model_choice.modules),
+                route_composite=model_choice.composite,
             )
         if not abstained:
             return decided("model", model_choice.strategy, model_detail)
-        fallback_detail = {"fallback_reason": "model_below_threshold"}
+        fallback_detail = {"fallback_reason": fallback_reason}
     if telemetry is not None and fallback_detail:
         telemetry["route_fallback_reason"] = fallback_detail["fallback_reason"]
     if llm is not None:
