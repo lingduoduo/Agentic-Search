@@ -380,6 +380,67 @@ Every held-out number improved together, which is not what a genuine trade looks
 
   **Two distribution statistics moved with it, and were missed at the time**: Cohen's d `1.4747` → `1.4852` and the out-of-scope raw margin `0.0280` → `0.0278` (MiniLM's equivalents moved the same way, `1.6208` → `1.6365` and leave-one-out `0.6750` → `0.6643`, since the canonical set is shared by both encoders). Neither changes any conclusion — d moved *up*, and raw margin is encoder-specific context that is never a bar — but "unchanged" was too strong a claim: what was invariant was accuracy and the AUC ranking, not every number the report emits. Anything that summarizes the *spread* of the score distribution moves when an anchor moves, and only the tables that quote the accuracy bars are safe to leave alone after a canonical edit.
 
+### Promotion: what would have to be true
+
+The router has shipped dark since #511. `AGENTIC_SEARCH_INTENT_INDEX_PATH` is unset by default and every request falls through the LLM/rule cascade. Seven changes have improved the artifact behind that flag, each ending with some version of "promotion is a separate change, reviewed on its own terms" — without anyone writing down what that review consists of. This is that.
+
+**Nothing here promotes the router**, and none of it argues that it should be promoted.
+
+#### The evidence, stated with its uncertainty
+
+| | value |
+|---|---|
+| argmax accuracy, test slice (201) | `0.8159`, 95% CI **`[0.757, 0.863]`** |
+| coverage | `0.597` — 120 of 201 answered |
+| served accuracy | `0.9667`, 95% CI `[0.917, 0.987]` — **4 wrong in 120** |
+| hard_40 argmax | `0.7000`, 95% CI `[0.546, 0.819]` |
+| out-of-scope AUC (31 held-out probes) | `0.8578` |
+| p95 routing latency | `12.20ms`, ceiling `25ms` |
+
+**The `0.80` promotion bar sits inside the accuracy interval.** The point estimate clears it; the interval does not. That is the honest summary, and it does not improve by tuning — only by more queries.
+
+#### The checklist
+
+Pre-registered here so a future decision is taken against stated criteria rather than whichever number is quoted that day. **All five must hold.**
+
+1. **Accuracy interval clears the bar.** Not the point estimate — the *lower bound* of the 95% CI at or above `0.80`. Today that is `0.757`. This is the criterion the current instrument cannot satisfy at any tuning, and closing it means a larger eval set.
+2. **Served accuracy at or above `0.95`** with its lower CI bound at or above `0.90`. Today: `0.9667`, lower bound `0.917`. **Met.**
+3. **Out-of-scope AUC at or above `0.85`** on probes no sweep has seen. Today: `0.8578`. **Met**, and note this bar is lower than the `0.90` #512 set for itself — that figure came from e5-*base*, a model this work does not use, and was never reachable.
+4. **Production shadow data agrees with the eval sets.** Shadow mode must have run long enough to compare the deferral rate and route mix against the test slice's `0.597` coverage. Unmet: no shadow data exists yet.
+5. **The cost is accepted explicitly.** At `0.597` coverage the router defers ~40% of auto-routed traffic to the LLM classifier and adds `12.20ms` p95 to every request. That is a budget decision, not a correctness one, and it needs an owner rather than a metric.
+
+**Today: 2 of 5.** The blocking criteria are (1), which needs a larger instrument, and (4), which needs shadow mode to have run.
+
+#### Shadow mode
+
+`AGENTIC_SEARCH_INTENT_SHADOW_MODE=true`, with an index configured, scores every auto-routed request and records what the router *would* have decided — then discards it and falls through to the classifier exactly as if no index were configured.
+
+```
+route_shadow_intent            the route it would have returned
+route_shadow_abstained         whether it would have deferred
+route_shadow_fallback_reason   why, when it would have
+```
+
+Deliberately distinct from `route_predicted_intent`, which both modes populate, so a shadow run can never be read back as a served one. This converts promotion from a bet into a measurement: criterion 4 is answerable without any request being routed by the model.
+
+#### Rollback, and the trap in it
+
+Unsetting `AGENTIC_SEARCH_INTENT_INDEX_PATH` disables learned routing. **It does not take effect until the process restarts**, because the loaded index is cached by resolved path and never invalidated.
+
+The same cache makes the *enabling* direction fragile in a way worth stating plainly: **a failed load is cached too.** Starting the web process before the index file exists leaves routing disabled until the next restart, even after the file appears. So:
+
+- **enabling**: build the index, verify the file exists, *then* start the process
+- **rolling back**: unset the variable, *then* restart — the variable alone changes nothing in a running process
+- **any rollout plan that assumes runtime toggling is wrong** for both directions
+
+Rollback triggers worth pre-committing: served accuracy below `0.90` on production feedback, deferral rate more than 10 points from the shadow-measured `0.597`, or p95 routing latency above the `25ms` ceiling.
+
+#### The decision, for now
+
+**Not yet, on criterion 1.** The accuracy interval contains the bar, so the evidence does not distinguish "clears it" from "does not". Criterion 4 is also unmet and is the cheaper of the two to close — shadow mode exists now, and running it costs nothing because the router stays dark while it gathers.
+
+This is a better-founded "not yet" than the previous seven: it names what would change it.
+
 ### Deploying an index
 
 The loaded index is cached by resolved path and is never invalidated, so: **rebuild the index, then restart the web process.** A *failed* load is cached too — starting the web process before the index exists leaves learned routing disabled until the next restart, even after the file appears.

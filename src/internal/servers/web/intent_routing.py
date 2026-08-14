@@ -364,6 +364,7 @@ def route_request(
     if regex_choice is not None:
         return decided("rules", regex_choice, {})
     fallback_detail: dict = {}
+    resolved_settings = settings
     model_choice = predict_route(query, settings=settings)
     if model_choice is not None:
         # One abstention reaches here. The confidence gate that used to provide
@@ -396,9 +397,29 @@ def route_request(
                 route_modules=list(model_choice.modules),
                 route_composite=model_choice.composite,
             )
-        if not abstained:
+        if resolved_settings is not None and resolved_settings.intent_shadow_mode:
+            # Shadow mode: everything above still runs and is still recorded,
+            # but the decision is discarded and the request falls through to
+            # the classifier exactly as if no index were configured.
+            #
+            # This exists because the promotion question -- does the router
+            # behave on real traffic the way it behaves on 201 held-out
+            # queries -- cannot be answered from the eval sets, and answering
+            # it by promoting is the expensive way round. The `route_shadow_*`
+            # fields are deliberately distinct from `route_predicted_intent`
+            # so a shadow run can never be mistaken for a served one when the
+            # telemetry is read back.
+            if telemetry is not None:
+                telemetry.update(
+                    route_shadow_intent=model_choice.strategy.value,
+                    route_shadow_abstained=abstained,
+                    route_shadow_fallback_reason=fallback_reason,
+                )
+            fallback_detail = {"fallback_reason": "shadow_mode"}
+        elif not abstained:
             return decided("model", model_choice.strategy, model_detail)
-        fallback_detail = {"fallback_reason": fallback_reason}
+        else:
+            fallback_detail = {"fallback_reason": fallback_reason}
     if telemetry is not None and fallback_detail:
         telemetry["route_fallback_reason"] = fallback_detail["fallback_reason"]
     if llm is not None:
