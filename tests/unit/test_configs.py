@@ -64,7 +64,7 @@ def test_intent_top_k_defaults_to_the_selected_value_and_reads_from_env():
 
     It was 3 from #511 to #521 -- an arbitrary constant nobody had swept.
     """
-    assert load_app_settings({}).intent_top_k == 15
+    assert load_app_settings({}).intent_top_k == 8
     assert load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": "8"}).intent_top_k == 8
 
 
@@ -96,9 +96,9 @@ def test_default_config_documents_intent_model_configuration():
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE"]
         == settings.intent_min_module_score
-        == 0.8216
+        == 0.8215
     )
-    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 15
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 8
 
 
 def test_route_clarification_defaults_to_true_and_reads_from_env():

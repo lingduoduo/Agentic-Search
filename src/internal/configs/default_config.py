@@ -29,9 +29,9 @@ DEFAULT_CONFIG: dict = {
     # the encoder; see intent_model_min_confidence in app_configs.py.
     "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": 0.30,
     "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN": 0.010,
-    "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE": 0.8216,
+    "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE": 0.8215,
     # Neighbors averaged per route; see intent_top_k in app_configs.py.
-    "AGENTIC_SEARCH_INTENT_TOP_K": 15,
+    "AGENTIC_SEARCH_INTENT_TOP_K": 8,
     "AGENTIC_SEARCH_ROUTE_CLARIFICATION": True,
     "WEB_DOMAIN": "http://localhost:8080",
     # -------------------------------------------------------------------------

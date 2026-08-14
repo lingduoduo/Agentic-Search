@@ -204,25 +204,48 @@ def test_accuracy_is_argmax_over_every_query_not_only_those_above_a_threshold(
     assert report["bulk"]["accuracy"] == pytest.approx(4 / 5)
 
 
-def test_out_of_scope_uses_separability_on_the_test_slice(tmp_path, monkeypatch):
+def test_out_of_scope_separability_is_reported_on_held_out_probes_only(
+    tmp_path, monkeypatch
+):
+    """The reported AUC must not be measured on probes that tuned the sweep.
+
+    Until the probe set grew large enough to split, one set of probes both
+    tie-broke threshold selection and denominated the reported separability --
+    so the headline figure was never fully held out from the thresholds it was
+    measured at. The report now carries `probe_split`, and `out_of_scope`
+    counts only the reporting half.
+    """
     report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
 
-    # test-slice confidences: "clean tool query" 0.85, "clean low confidence
-    # miss" 0.3 (its best route score, regardless of correctness).
-    mean_in_scope = (0.85 + 0.3) / 2
-    # probe confidences: "probe one" best route score 0.1, "probe two" 0.2.
-    mean_out_of_scope = (0.1 + 0.2) / 2
+    split = report["probe_split"]
+    assert split["tuning"] >= 1 and split["reporting"] >= 1
+    assert split["tuning"] + split["reporting"] == len(_PROBES)
 
     out_of_scope = report["out_of_scope"]
-    assert out_of_scope["counts"] == {"in_scope": 2, "out_of_scope": 2}
-    assert out_of_scope["min_in_scope"] == pytest.approx(0.3)
-    assert out_of_scope["max_out_of_scope"] == pytest.approx(0.2)
-    assert out_of_scope["raw_margin"] == pytest.approx(
-        mean_in_scope - mean_out_of_scope
-    )
-    # Perfectly separated on this fixture: both in-scope scores clear both
-    # out-of-scope scores.
+    assert out_of_scope["tuned_on"] is False
+    assert out_of_scope["probes"] == split["reporting"]
+    assert out_of_scope["counts"]["out_of_scope"] == split["reporting"]
+    # In-scope side is the whole test slice, unaffected by the probe split.
+    assert out_of_scope["counts"]["in_scope"] == report["split"]["test_size"]
+    # Still perfectly separated on this fixture: every in-scope score (0.85,
+    # 0.3) clears every probe score (0.1, 0.2), whichever half each landed in.
     assert out_of_scope["auc"] == pytest.approx(1.0)
+
+
+def test_the_probe_split_halves_are_disjoint_and_cover_every_probe(tmp_path):
+    """A probe leaking into both halves would silently undo the split."""
+    from src.model.intent_eval_split import split_out_of_scope_probes
+
+    probes = tuple((p["id"], p["text"]) for p in _PROBES)
+    split = split_out_of_scope_probes(probes)
+
+    tuning_ids = {pid for pid, _ in split.tuning}
+    reporting_ids = {pid for pid, _ in split.reporting}
+    assert not (tuning_ids & reporting_ids)
+    assert tuning_ids | reporting_ids == {pid for pid, _ in probes}
+    # Deterministic in the seed alone.
+    assert split_out_of_scope_probes(probes) == split
+    assert split_out_of_scope_probes(tuple(reversed(probes))) == split
 
 
 def test_run_index_evaluation_raises_on_a_stale_canonical_fingerprint(
@@ -419,12 +442,22 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
     assert shipped["leave_one_out_accuracy"] == pytest.approx(
         report["leave_one_out"]["accuracy"]
     )
-    # tuning in-scope confidences are all 0.85 (legacy_a, legacy_b, bulk-a);
-    # probes are 0.1 and 0.2. This is deliberately *not* compared against
-    # report["out_of_scope"]["separation_margin"] -- that field measures the
-    # test slice, a different slice by design, so the two are not expected to
-    # match.
-    assert shipped["separation_margin"] == pytest.approx(0.85 - (0.1 + 0.2) / 2)
+    # tuning in-scope confidences are all 0.85 (legacy_a, legacy_b, bulk-a).
+    # The probe side is the TUNING half only, since this sweep is a tuning
+    # artifact -- derived here rather than hardcoded so the assertion tracks the
+    # split instead of a value that changes whenever the split does.
+    from src.model.intent_eval_split import split_out_of_scope_probes
+
+    tuning_probes = split_out_of_scope_probes(
+        tuple((probe["id"], probe["text"]) for probe in _PROBES)
+    ).tuning
+    expected_probe_mean = sum(
+        _VECTORS_BY_TEXT[text][0] for _, text in tuning_probes
+    ) / len(tuning_probes)
+    # Deliberately *not* compared against report["out_of_scope"]
+    # ["separation_margin"]: that measures the test slice against the
+    # *reporting* probes, two different slices by design.
+    assert shipped["separation_margin"] == pytest.approx(0.85 - expected_probe_mean)
 
 
 def test_the_sweep_searches_top_k_only_over_the_pre_registered_grid(
@@ -601,23 +634,27 @@ def test_the_module_sweep_is_tuning_only_and_records_its_rule(tmp_path, monkeypa
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 
-# Re-measured 2026-08-14 on the intfloat/e5-small-v2 index over the
-# 304-example canonical set (280 + the 24 business-vocabulary search anchors
-# added in #524), at the top_k selected on the split in #522, pinned ~0.02
-# below the measurement so ordinary encoder/float drift cannot trip them:
-#   test-slice route accuracy  0.8108 (111 queries, split seed 17) -> floor 0.79
-#   out-of-scope AUC           0.8720                              -> floor 0.85
+# Re-measured 2026-08-14 on the intfloat/e5-small-v2 index over the 304-example
+# canonical set, on the WIDER instrument (201-query test slice, 60 probes split
+# into 29 tuning / 31 reporting), at the top_k that instrument selected:
+#   test-slice route accuracy  0.8159 (201 queries, split seed 17) -> floor 0.79
+#   out-of-scope AUC           0.8578 (31 held-out probes)         -> floor 0.83
 #   p95 routing latency       12.20 ms                             -> ceiling 25.0 ms
 #
-# Both floors have now risen twice: 0.77/0.83 at k=3, 0.78/0.84 at k=15, and
-# 0.79/0.85 with the added anchors. Raising them each time is the point of the
-# convention -- a floor left at an old value would let the router silently
-# regress all the way back to the setting that floor was written against.
+# The accuracy floor is unchanged at 0.79 and the measurement rose slightly
+# (0.8108 -> 0.8159) despite nearly doubling the slice.
 #
-# Deliberately NOT pinned: hard_40 argmax, which fell 0.7500 -> 0.7250 with
-# these anchors while its *served* accuracy rose 0.8947 -> 0.9048 on more
-# coverage. A floor on the argmax figure would have blocked a change that
-# improves the operating point, which is the number serving actually uses.
+# THE AUC FLOOR IS LOWERED, 0.85 -> 0.83, and that needs its reason recorded
+# because the convention says never lower one silently. The number did not
+# regress -- the measurement changed. AUC is now computed against the *reporting*
+# half of the probes, which no sweep has ever seen. Previously the same 24
+# probes both tie-broke threshold selection and denominated the reported AUC, so
+# the old 0.8720 was measured partly on data that had selected the thresholds it
+# was measured at. 0.8578 against held-out probes is the harder and more honest
+# number, and 0.83 restores the ~0.02 headroom the convention asks for.
+#
+# Deliberately NOT pinned: hard_40 argmax. It is 40 queries with a 95% CI of
+# roughly [0.55, 0.82] -- far too wide to floor without producing false alarms.
 #
 # The accuracy bar reads report["test_slice"], not report["bulk"]: `bulk` is
 # the *mixed* tuning+test set, so a floor there would quietly re-admit the
@@ -631,7 +668,7 @@ DATA = Path(__file__).resolve().parents[2] / "data"
 # and Cohen's d are scale-free; raw margin stays in the report as
 # encoder-specific context only and must not be compared across encoders.
 _TEST_SLICE_ACCURACY_FLOOR = 0.79
-_OUT_OF_SCOPE_AUC_FLOOR = 0.85
+_OUT_OF_SCOPE_AUC_FLOOR = 0.83
 _P95_LATENCY_CEILING_MS = 25.0
 
 

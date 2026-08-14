@@ -21,6 +21,7 @@ from .intent_eval_split import (
     DEFAULT_SLICE_SIZE,
     LEGACY_PREFIX,
     split_eval_queries,
+    split_out_of_scope_probes,
 )
 from .intent_evaluation import (
     IntentPredictionRecord,
@@ -62,7 +63,7 @@ _SWEEP_TOP_K = (3, 5, 8, 15, 25)
 
 # Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
 # app_configs.py) so evaluation scores modules with the same bar serving uses.
-_DEFAULT_MIN_MODULE_SCORE = 0.8216
+_DEFAULT_MIN_MODULE_SCORE = 0.8215
 
 # The module grid is COMPUTED, not written down, because a hardcoded one goes
 # stale twice over: module scores move with the encoder *and* with top_k (a
@@ -114,6 +115,31 @@ def _module_score_grid(
     high = float(np.percentile(candidates, 99))
     grid = np.linspace(low, high, _MODULE_GRID_STEPS)
     return (_LEGACY_MIN_MODULE_SCORE, *(round(float(value), 4) for value in grid))
+
+
+def wilson_interval(successes: int, total: int, z: float = 1.96) -> dict[str, float]:
+    """95% Wilson score interval for a proportion.
+
+    Wilson rather than the textbook normal approximation because these slices
+    are small and the proportions are near 0.8, where the normal interval is
+    both too narrow and capable of running past 1.0. Wilson stays inside [0, 1]
+    and behaves at the extremes.
+
+    Reported next to every accuracy so that a one- or two-query difference is
+    visibly inside the noise. Several conclusions in this document's history
+    turned on margins of exactly that size, and quoting a bare point estimate is
+    what made them look decisive.
+    """
+    if total <= 0:
+        return {"low": 0.0, "high": 0.0, "width": 0.0}
+    phat = successes / total
+    denom = 1.0 + z * z / total
+    centre = (phat + z * z / (2 * total)) / denom
+    spread = (
+        z * ((phat * (1 - phat) / total + z * z / (4 * total * total)) ** 0.5) / denom
+    )
+    low, high = max(0.0, centre - spread), min(1.0, centre + spread)
+    return {"low": low, "high": high, "width": high - low}
 
 
 def _predict(index: IntentIndex, queries, thresholds, *, model_name: str):
@@ -327,8 +353,12 @@ def _serving_report(
     return {
         "total_queries": total,
         "accuracy": argmax_correct / total if total else 0.0,
+        # Quoted beside every accuracy so a one- or two-query difference reads
+        # as the noise it is. See wilson_interval.
+        "accuracy_ci": wilson_interval(argmax_correct, total),
         "coverage": len(served) / total if total else 0.0,
         "served_accuracy": served_correct / len(served) if served else 0.0,
+        "served_accuracy_ci": wilson_interval(served_correct, len(served)),
         "served": len(served),
     }
 
@@ -649,9 +679,24 @@ def run_index_evaluation(
     probes: tuple[tuple[str, str], ...] = ()
     if out_of_scope_path is not None:
         probes = load_out_of_scope_probes(out_of_scope_path)
+        # Disjoint halves. The sweep tie-breaks on the tuning probes; the
+        # reported AUC and Cohen's d are computed only against the reporting
+        # probes. Sharing one set between those two jobs is the caveat this
+        # document carried from #512 until the probe set grew large enough to
+        # split, and it meant the headline separability figure was never fully
+        # held out from the thresholds it was measured at.
+        probe_split = split_out_of_scope_probes(probes, seed=seed)
         probe_vectors = encode_texts(
-            [text for _, text in probes], model_name=model_name
+            [text for _, text in probe_split.tuning], model_name=model_name
         )
+        reporting_probe_vectors = encode_texts(
+            [text for _, text in probe_split.reporting], model_name=model_name
+        )
+        report["probe_split"] = {
+            "seed": seed,
+            "tuning": len(probe_split.tuning),
+            "reporting": len(probe_split.reporting),
+        }
         report["threshold_tuning"] = _select_thresholds(
             index, tuning_records, tuning_vectors, probe_vectors
         )
@@ -757,10 +802,16 @@ def run_index_evaluation(
             index, test_vectors, top_k=top_k, min_confidence=0.0, min_margin=0.0
         )
         probe_decisions = _decide_batch(
-            index, probe_vectors, top_k=top_k, min_confidence=0.0, min_margin=0.0
+            index,
+            reporting_probe_vectors,
+            top_k=top_k,
+            min_confidence=0.0,
+            min_margin=0.0,
         )
         out_of_scope = {
-            "probes": len(probes),
+            # The reporting half only. `probe_split` above records both counts.
+            "probes": len(probe_split.reporting),
+            "tuned_on": False,
             **separability_report(
                 in_scope=[d.confidence for d in test_decisions],
                 out_of_scope=[d.confidence for d in probe_decisions],
