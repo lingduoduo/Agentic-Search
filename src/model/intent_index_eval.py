@@ -58,7 +58,30 @@ _SWEEP_TOP_K = (3, 5, 8, 15, 25)
 
 # Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
 # app_configs.py) so evaluation scores modules with the same bar serving uses.
-_DEFAULT_MIN_MODULE_SCORE = 0.45
+_DEFAULT_MIN_MODULE_SCORE = 0.84
+
+# Module-score grid, derived from the *tuning* slice's own quantiles under
+# e5-small-v2 (over the winning route's candidate modules, the only ones
+# _emit_modules considers): p0 0.7450, p25 0.8047, p50 0.8221, p75 0.8374,
+# p100 0.8941. The legacy 0.4500 is kept as the first row so the sweep records
+# the status quo it replaces -- it is below every score e5 produces, so it
+# emits every well-supported module of the route and is what drove module
+# precision to ~0.2 and joint accuracy to 0.0.
+#
+# Derive any future grid from the tuning slice too, never the test slice. A
+# grid in the previous encoder's units selects nothing at all: that is exactly
+# what happened to the margin grid in #512.
+_SWEEP_MIN_MODULE_SCORES = (
+    0.45,
+    0.76,
+    0.78,
+    0.80,
+    0.82,
+    0.84,
+    0.86,
+    0.88,
+    0.90,
+)
 
 
 def _predict(index: IntentIndex, queries, thresholds, *, model_name: str):
@@ -179,11 +202,12 @@ def _decide_batch(
     top_k: int,
     min_confidence: float,
     min_margin: float,
+    min_module_score: float = _DEFAULT_MIN_MODULE_SCORE,
 ) -> list[KnnDecision]:
     thresholds = {
         "min_confidence": min_confidence,
         "min_margin": min_margin,
-        "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
+        "min_module_score": min_module_score,
         "top_k": top_k,
     }
     return [index.decide(vector, **thresholds) for vector in vectors]
@@ -195,6 +219,7 @@ def _decide_records(
     vectors: np.ndarray,
     *,
     top_k: int,
+    min_module_score: float = _DEFAULT_MIN_MODULE_SCORE,
 ) -> tuple[tuple[IntentPredictionRecord, ...], tuple[ModulePredictionRecord, ...]]:
     """Route + module predictions at a specific top_k, from already-encoded vectors.
 
@@ -209,7 +234,12 @@ def _decide_records(
     pass and nothing downstream reads it.
     """
     decisions = _decide_batch(
-        index, vectors, top_k=top_k, min_confidence=0.0, min_margin=0.0
+        index,
+        vectors,
+        top_k=top_k,
+        min_confidence=0.0,
+        min_margin=0.0,
+        min_module_score=min_module_score,
     )
     records = tuple(
         IntentPredictionRecord(
@@ -337,6 +367,55 @@ def _select_thresholds(
     eligible = [row for row in sweep if row["coverage"] >= _MIN_COVERAGE]
     eligible.sort(key=lambda row: (-row["served_accuracy"], -row["oos_deferral"]))
     return {"sweep": sweep, "selected": eligible[0] if eligible else None}
+
+
+def _select_module_threshold(
+    index: IntentIndex,
+    tuning_queries,
+    tuning_vectors: np.ndarray,
+    *,
+    top_k: int,
+) -> dict[str, Any]:
+    """Sweep ``min_module_score`` on the tuning slice only.
+
+    The rule is fixed in advance (see
+    docs/superpowers/plans/2026-08-14-intent-module-threshold.md): **highest
+    module macro-F1, ties broken toward the lower threshold.** Macro-F1 rather
+    than precision-at-a-recall-floor because module emission is multi-label and
+    a recall floor would be a constant invented after seeing the curve. Ties to
+    the lower threshold because over-emitting is visible in precision while
+    under-emitting is hidden by ``_emit_modules``'s top-1 fallback.
+
+    ``joint_accuracy`` is recorded for every row but never selects: it is an
+    exact-set match over 70 queries and would chase the support distribution.
+
+    This sweep cannot move the route. ``_emit_modules`` runs *after*
+    ``decide()`` has already chosen from ``route_scores``, so no value here
+    changes ``test_slice.accuracy`` -- an invariant asserted by
+    ``test_the_module_sweep_never_changes_the_route``.
+    """
+    sweep: list[dict[str, Any]] = []
+    for min_module_score in _SWEEP_MIN_MODULE_SCORES:
+        _, modules = _decide_records(
+            index,
+            tuning_queries,
+            tuning_vectors,
+            top_k=top_k,
+            min_module_score=min_module_score,
+        )
+        metrics = module_metrics_report(modules)
+        emitted = [len(record.predicted) for record in modules]
+        sweep.append(
+            {
+                "min_module_score": min_module_score,
+                "macro_f1": metrics["macro_f1"],
+                "joint_accuracy": metrics["joint_accuracy"],
+                "mean_modules_emitted": sum(emitted) / len(emitted) if emitted else 0.0,
+            }
+        )
+
+    ranked = sorted(sweep, key=lambda row: (-row["macro_f1"], row["min_module_score"]))
+    return {"sweep": sweep, "selected": ranked[0] if ranked else None, "tuned_on": True}
 
 
 def _accuracy_at_top_k(
@@ -539,14 +618,38 @@ def run_index_evaluation(
     # first pass's fixed TOP_K (needed before top_k was known, to get vectors
     # for the split and the sweep). Rebuild them now at the selected top_k so
     # every block in the report reflects the same hyperparameters.
-    bulk_records, bulk_modules = _decide_records(index, bulk, bulk_vectors, top_k=top_k)
-    _, test_modules = _decide_records(index, split.test, test_vectors, top_k=top_k)
+    # Chosen on the tuning slice only, before any module block below is built,
+    # so every reported module number reflects the threshold serving will use.
+    report["module_threshold_tuning"] = _select_module_threshold(
+        index, split.tuning, tuning_vectors, top_k=top_k
+    )
+    module_selected = report["module_threshold_tuning"]["selected"]
+    min_module_score = (
+        module_selected["min_module_score"]
+        if module_selected
+        else _DEFAULT_MIN_MODULE_SCORE
+    )
+
+    bulk_records, bulk_modules = _decide_records(
+        index, bulk, bulk_vectors, top_k=top_k, min_module_score=min_module_score
+    )
+    _, test_modules = _decide_records(
+        index,
+        split.test,
+        test_vectors,
+        top_k=top_k,
+        min_module_score=min_module_score,
+    )
     report["bulk"] = _argmax_report(bulk_records)
     report["modules"] = module_metrics_report(bulk_modules)
     report["test_modules"] = module_metrics_report(test_modules)
     if hard_records is not None:
         hard_records, hard_modules = _decide_records(
-            index, hard, hard_vectors, top_k=top_k
+            index,
+            hard,
+            hard_vectors,
+            top_k=top_k,
+            min_module_score=min_module_score,
         )
         report["hard_modules"] = module_metrics_report(hard_modules)
 
