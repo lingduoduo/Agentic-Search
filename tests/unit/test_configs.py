@@ -59,9 +59,13 @@ def test_explicit_intent_threshold_must_be_finite_probability(value: float):
         AppSettings(intent_model_min_confidence=value)
 
 
-def test_intent_top_k_defaults_to_three_and_reads_from_env():
-    assert load_app_settings({}).intent_top_k == 3
-    assert load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": "15"}).intent_top_k == 15
+def test_intent_top_k_defaults_to_the_selected_value_and_reads_from_env():
+    """15 since #522, when k was first chosen on the tuning/test split.
+
+    It was 3 from #511 to #521 -- an arbitrary constant nobody had swept.
+    """
+    assert load_app_settings({}).intent_top_k == 15
+    assert load_app_settings({"AGENTIC_SEARCH_INTENT_TOP_K": "8"}).intent_top_k == 8
 
 
 @pytest.mark.parametrize("value", ["0", "-1"])
@@ -87,14 +91,14 @@ def test_default_config_documents_intent_model_configuration():
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN"]
         == settings.intent_min_route_margin
-        == 0.015
+        == 0.010
     )
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE"]
         == settings.intent_min_module_score
-        == 0.84
+        == 0.821
     )
-    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 3
+    assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 15
 
 
 def test_route_clarification_defaults_to_true_and_reads_from_env():

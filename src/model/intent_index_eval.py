@@ -31,6 +31,7 @@ from .intent_evaluation import (
 )
 from .intent_index_cli import _fingerprint, check_leakage
 from .intent_knn import INDEX_FILENAME, TOP_K, IntentIndex, KnnDecision
+from .intent_taxonomy import modules_for_route
 
 # Legacy ids are `eval-<route>-NN`; queries added later use `bulk-NNN`. The
 # legacy 30 were iterated against during canonical-set curation, so they are
@@ -52,36 +53,67 @@ _SWEEP_MIN_CONFIDENCES = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55)
 # slice, whose quantiles are a different (and off-limits) distribution.
 _SWEEP_MIN_MARGINS = (0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.05, 0.08, 0.12)
 _MIN_COVERAGE = 0.60
-# Report-only, for _sweep_top_k's table. `top_k` is NOT swept for selection --
-# see _select_thresholds.
+# Fixed in #511 as a report-only table, and since #522 also the selection grid
+# for `top_k` in _select_thresholds. It is deliberately UNCHANGED across that
+# promotion: a grid widened after seeing the headline it now influences would
+# be exactly the fitting this split exists to prevent. Widening it later means
+# re-registering the grid first, then re-running -- never the other way round.
 _SWEEP_TOP_K = (3, 5, 8, 15, 25)
 
 # Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
 # app_configs.py) so evaluation scores modules with the same bar serving uses.
-_DEFAULT_MIN_MODULE_SCORE = 0.84
+_DEFAULT_MIN_MODULE_SCORE = 0.821
 
-# Module-score grid, derived from the *tuning* slice's own quantiles under
-# e5-small-v2 (over the winning route's candidate modules, the only ones
-# _emit_modules considers): p0 0.7450, p25 0.8047, p50 0.8221, p75 0.8374,
-# p100 0.8941. The legacy 0.4500 is kept as the first row so the sweep records
-# the status quo it replaces -- it is below every score e5 produces, so it
-# emits every well-supported module of the route and is what drove module
-# precision to ~0.2 and joint accuracy to 0.0.
+# The module grid is COMPUTED, not written down, because a hardcoded one goes
+# stale twice over: module scores move with the encoder *and* with top_k (a
+# larger k averages in more distant same-module neighbours, which lowers every
+# score). #520 derived 0.84 by hand from the tuning quantiles at k=3; at k=15
+# that same constant excludes 325 of 328 candidate scores and collapses
+# emission to the top-1 fallback for nearly every query.
 #
-# Derive any future grid from the tuning slice too, never the test slice. A
-# grid in the previous encoder's units selects nothing at all: that is exactly
-# what happened to the margin grid in #512.
-_SWEEP_MIN_MODULE_SCORES = (
-    0.45,
-    0.76,
-    0.78,
-    0.80,
-    0.82,
-    0.84,
-    0.86,
-    0.88,
-    0.90,
-)
+# This is the third time a grid in the wrong units has bitten: the margin grid
+# in #512 selected nothing at all, the module grid here would have selected
+# something meaningless. Deriving the endpoints from the tuning slice at the
+# top_k actually in force removes the whole class.
+_MODULE_GRID_STEPS = 9
+# Kept as an explicit extra row so the sweep always records the status quo it
+# replaces: it is below every score any of these encoders produce, so it emits
+# every well-supported module of the winning route.
+_LEGACY_MIN_MODULE_SCORE = 0.45
+
+
+def _module_score_grid(
+    index: IntentIndex, vectors: np.ndarray, *, top_k: int
+) -> tuple[float, ...]:
+    """Candidate module thresholds, spanning the tuning slice's own range.
+
+    Scores only the *winning route's* modules, because those are the only ones
+    ``_emit_modules`` ever considers -- a grid spanning every module in the
+    taxonomy would be anchored by routes the query is nowhere near.
+
+    Never call this with the test slice. The endpoints of this grid decide what
+    gets selected, so reading them off held-out data is test-set fitting even
+    though no threshold is compared against a test label here.
+    """
+    candidates: list[float] = []
+    for vector in vectors:
+        decision = index.decide(
+            vector,
+            min_confidence=0.0,
+            min_margin=0.0,
+            min_module_score=0.0,
+            top_k=top_k,
+        )
+        scores = index.module_scores(vector, top_k=top_k)
+        candidates.extend(
+            scores[module] for module in modules_for_route(decision.route)
+        )
+    if not candidates:
+        return (_LEGACY_MIN_MODULE_SCORE,)
+    low = float(np.percentile(candidates, 5))
+    high = float(np.percentile(candidates, 99))
+    grid = np.linspace(low, high, _MODULE_GRID_STEPS)
+    return (_LEGACY_MIN_MODULE_SCORE, *(round(float(value), 4) for value in grid))
 
 
 def _predict(index: IntentIndex, queries, thresholds, *, model_name: str):
@@ -307,65 +339,78 @@ def _select_thresholds(
     tuning_vectors: np.ndarray,
     probe_vectors: np.ndarray,
 ) -> dict[str, Any]:
-    """Sweep (min_confidence, min_margin) on the tuning slice only, at fixed k.
+    """Sweep (top_k, min_confidence, min_margin) on the tuning slice only.
 
     Tuned exclusively against the tuning split and the out-of-scope probes --
-    the test slice and hard slice are never consulted. Selects the
-    combination with the highest served accuracy at coverage >= 0.60,
-    breaking ties toward higher out-of-scope deferral: the rule fixed in
-    advance by the spec. ``leave_one_out_route_accuracy`` is not part of this
-    key -- see its docstring for why it would be a biased selector.
+    the test slice and hard slice are never consulted. Selects the combination
+    with the highest served accuracy at coverage >= 0.60, breaking ties first
+    toward higher out-of-scope deferral and then toward **lower top_k**: the
+    rule fixed in advance in
+    docs/superpowers/plans/2026-08-14-intent-top-k-selection.md.
+    ``leave_one_out_route_accuracy`` is not part of this key -- see its
+    docstring for why it would be a biased selector.
 
-    ``top_k`` is **pinned at the shipped ``TOP_K``** rather than swept, and
-    that is a safety property, not a convenience. The reported headline is
-    argmax route accuracy, which is abstention-blind: it depends on ``top_k``
-    and on nothing else this function chooses. Sweeping ``top_k`` therefore
-    couples a tuning-slice search to the held-out headline, so widening the
-    grid after seeing the headline could move it. Pinning ``k`` severs that
-    coupling arithmetically -- with ``k`` fixed, no choice made here can
-    change ``test_slice.accuracy`` by any amount -- which is what makes the
-    threshold grid free to be re-derived whenever the encoder changes.
-    ``_sweep_top_k`` still reports the per-k table, on the tuning slice, as
-    evidence for a separate and deliberate decision.
+    **``top_k`` used to be pinned here, and giving that up was deliberate.**
+    Pinning it severed an arithmetic coupling: the reported headline is argmax
+    route accuracy, which is abstention-blind, so it depends on ``top_k`` and
+    on nothing else this function chooses. With ``k`` fixed no selection here
+    could move ``test_slice.accuracy``, which is what let the margin grid be
+    re-derived in #512 *after* the headline was known.
+
+    Three things replace that guarantee, and all three are load-bearing:
+
+    1. ``_SWEEP_TOP_K`` is **pre-existing** -- fixed in #511 as a report-only
+       table, not widened here and specifically not widened after seeing the
+       headline it now influences. Widening it later requires re-registering
+       the grid *before* re-running, not after.
+    2. Selection still reads the tuning slice only.
+    3. The test slice is read once, at the selected combination.
+
+    The tie-break toward lower ``k`` exists because a marginal, noise-sized
+    accuracy gain should not trigger a re-measurement of every published
+    number; when accuracy cannot separate two settings, the incumbent and the
+    better out-of-scope separation win.
     """
     sweep: list[dict[str, Any]] = []
-    top_k = TOP_K
-    for min_confidence in _SWEEP_MIN_CONFIDENCES:
-        for min_margin in _SWEEP_MIN_MARGINS:
-            decisions = _decide_batch(
-                index,
-                tuning_vectors,
-                top_k=top_k,
-                min_confidence=min_confidence,
-                min_margin=min_margin,
-            )
-            served = [(d, r) for d, r in zip(decisions, tuning) if not d.abstained]
-            correct = sum(d.route == r.expected for d, r in served)
-            probe_decisions = _decide_batch(
-                index,
-                probe_vectors,
-                top_k=top_k,
-                min_confidence=min_confidence,
-                min_margin=min_margin,
-            )
-            deferred = sum(d.abstained for d in probe_decisions)
-            coverage = len(served) / len(tuning) if tuning else 0.0
-            sweep.append(
-                {
-                    "top_k": top_k,
-                    "min_confidence": min_confidence,
-                    "min_margin": min_margin,
-                    "coverage": coverage,
-                    "served_accuracy": correct / len(served) if served else 0.0,
-                    "served": len(served),
-                    "oos_deferral": deferred / len(probe_vectors)
-                    if len(probe_vectors)
-                    else 0.0,
-                }
-            )
+    for top_k in _SWEEP_TOP_K:
+        for min_confidence in _SWEEP_MIN_CONFIDENCES:
+            for min_margin in _SWEEP_MIN_MARGINS:
+                decisions = _decide_batch(
+                    index,
+                    tuning_vectors,
+                    top_k=top_k,
+                    min_confidence=min_confidence,
+                    min_margin=min_margin,
+                )
+                served = [(d, r) for d, r in zip(decisions, tuning) if not d.abstained]
+                correct = sum(d.route == r.expected for d, r in served)
+                probe_decisions = _decide_batch(
+                    index,
+                    probe_vectors,
+                    top_k=top_k,
+                    min_confidence=min_confidence,
+                    min_margin=min_margin,
+                )
+                deferred = sum(d.abstained for d in probe_decisions)
+                coverage = len(served) / len(tuning) if tuning else 0.0
+                sweep.append(
+                    {
+                        "top_k": top_k,
+                        "min_confidence": min_confidence,
+                        "min_margin": min_margin,
+                        "coverage": coverage,
+                        "served_accuracy": correct / len(served) if served else 0.0,
+                        "served": len(served),
+                        "oos_deferral": deferred / len(probe_vectors)
+                        if len(probe_vectors)
+                        else 0.0,
+                    }
+                )
 
     eligible = [row for row in sweep if row["coverage"] >= _MIN_COVERAGE]
-    eligible.sort(key=lambda row: (-row["served_accuracy"], -row["oos_deferral"]))
+    eligible.sort(
+        key=lambda row: (-row["served_accuracy"], -row["oos_deferral"], row["top_k"])
+    )
     return {"sweep": sweep, "selected": eligible[0] if eligible else None}
 
 
@@ -393,9 +438,14 @@ def _select_module_threshold(
     ``decide()`` has already chosen from ``route_scores``, so no value here
     changes ``test_slice.accuracy`` -- an invariant asserted by
     ``test_the_module_sweep_never_changes_the_route``.
+
+    The grid is computed at *this* ``top_k`` rather than written down, because
+    module scores fall as ``k`` rises: a constant derived at k=3 excludes all
+    but three of the candidate scores at k=15. See ``_module_score_grid``.
     """
+    grid = _module_score_grid(index, tuning_vectors, top_k=top_k)
     sweep: list[dict[str, Any]] = []
-    for min_module_score in _SWEEP_MIN_MODULE_SCORES:
+    for min_module_score in grid:
         _, modules = _decide_records(
             index,
             tuning_queries,

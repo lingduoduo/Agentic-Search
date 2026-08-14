@@ -167,13 +167,13 @@ class AppSettings:
     # 0.792-0.905); the margin does the abstaining. See
     # docs/training-and-evaluation.md.
     intent_model_min_confidence: float = 0.30
-    intent_min_route_margin: float = 0.015
-    intent_min_module_score: float = 0.84
+    intent_min_route_margin: float = 0.010
+    intent_min_module_score: float = 0.821
     # Neighbors averaged per route. A sweep over the shipped encoder moves
     # both accuracy and out-of-scope separation (see
     # docs/training-and-evaluation.md); the default stays 3, the shipped
     # value, until that trade is decided together with a stronger encoder.
-    intent_top_k: int = 3
+    intent_top_k: int = 15
     route_clarification: bool = True
 
     def __post_init__(self) -> None:
@@ -211,12 +211,12 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.30
     )
     intent_min_route_margin = get_env_float(
-        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.015
+        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.010
     )
     intent_min_module_score = get_env_float(
-        source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.84
+        source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.821
     )
-    intent_top_k = get_env_int(source, "AGENTIC_SEARCH_INTENT_TOP_K", 3)
+    intent_top_k = get_env_int(source, "AGENTIC_SEARCH_INTENT_TOP_K", 15)
     intent_index_path_value = get_env_str(
         source, "AGENTIC_SEARCH_INTENT_INDEX_PATH", None
     )
