@@ -163,7 +163,7 @@
   },
   {
     "id": "canon-auth-011",
-    "text": "there was a policy about retaining user transcripts",
+    "text": "there was something written up about the failover drill",
     "route": "search",
     "modules": [
       "lookup_document"
