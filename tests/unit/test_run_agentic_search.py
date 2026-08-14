@@ -289,10 +289,7 @@ def test_load_intent_prediction_returns_the_nearest_canonical_route(
 ):
     directory = _canonical_index(tmp_path)
     _stub_encoder(monkeypatch, [0.0, 0.0, 1.0])
-
-    prediction = _load_intent_prediction(
-        str(directory), "book the room", min_confidence=0.3
-    )
+    prediction = _load_intent_prediction(str(directory), "book the room")
 
     assert prediction is not None
     assert prediction.intent == "tool"
@@ -302,14 +299,17 @@ def test_load_intent_prediction_returns_the_nearest_canonical_route(
 def test_load_intent_prediction_returns_none_when_the_index_abstains(
     tmp_path, monkeypatch
 ):
-    """Nothing canonical resembles the request, so there is nothing to route on."""
-    directory = _canonical_index(tmp_path)
-    _stub_encoder(monkeypatch, [0.0, 0.0, 1.0])
+    """Two routes fit equally well, so there is nothing to route on.
 
-    assert (
-        _load_intent_prediction(str(directory), "book the room", min_confidence=1.01)
-        is None
-    )
+    This used to force abstention with a `min_confidence` above every possible
+    score. That gate was removed after measuring at 3 changed decisions in 416,
+    so abstention is provoked the way it now actually happens: an equidistant
+    query whose top two routes tie, failing the margin.
+    """
+    directory = _canonical_index(tmp_path)
+    _stub_encoder(monkeypatch, [0.577, 0.577, 0.577])
+
+    assert _load_intent_prediction(str(directory), "book the room") is None
 
 
 def test_load_intent_prediction_rejects_an_index_built_with_a_different_encoder(
@@ -362,7 +362,7 @@ def test_load_intent_prediction_rejects_an_index_built_with_a_different_encoder(
     with pytest.raises(
         ValueError, match="all-MiniLM-L6-v2.*e5-small-v2|e5-small-v2.*all-MiniLM-L6-v2"
     ):
-        _load_intent_prediction(str(directory), "book the room", min_confidence=0.3)
+        _load_intent_prediction(str(directory), "book the room")
 
 
 def test_resolve_local_device_returns_explicit_choice():

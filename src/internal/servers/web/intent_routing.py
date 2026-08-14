@@ -366,19 +366,15 @@ def route_request(
     fallback_detail: dict = {}
     model_choice = predict_route(query, settings=settings)
     if model_choice is not None:
-        # Two independent abstentions reach here. The margin gate reports
-        # itself on the decision; the confidence gate is derived here, as it
-        # always has been. Either one defers to the classifier below.
-        fallback_reason = model_choice.abstain_reason or (
-            "model_below_threshold"
-            if model_choice.confidence < model_choice.threshold
-            else None
-        )
+        # One abstention reaches here. The confidence gate that used to provide
+        # a second was removed after measuring at 3 changed decisions in 416 --
+        # under this encoder anything far enough from a route to fail an
+        # absolute floor already fails the margin.
+        fallback_reason = model_choice.abstain_reason
         abstained = fallback_reason is not None
         model_detail = {
             "predicted_intent": model_choice.strategy.value,
             "confidence": model_choice.confidence,
-            "threshold": model_choice.threshold,
             "margin": model_choice.margin,
             "abstained": abstained,
             "fallback_reason": fallback_reason,
@@ -391,7 +387,6 @@ def route_request(
             telemetry.update(
                 route_predicted_intent=model_choice.strategy.value,
                 route_confidence=model_choice.confidence,
-                route_threshold=model_choice.threshold,
                 route_abstained=abstained,
                 route_model_latency_ms=model_choice.latency_ms,
                 # Persisted in production, not only under the debug panels.

@@ -166,7 +166,6 @@ class AppSettings:
     # this encoder the confidence gate never fires (in-scope confidences run
     # 0.792-0.905); the margin does the abstaining. See
     # docs/training-and-evaluation.md.
-    intent_model_min_confidence: float = 0.30
     intent_min_route_margin: float = 0.010
     intent_min_module_score: float = 0.8215
     # Neighbors averaged per route. A sweep over the shipped encoder moves
@@ -178,7 +177,6 @@ class AppSettings:
 
     def __post_init__(self) -> None:
         for name in (
-            "intent_model_min_confidence",
             "intent_min_route_margin",
             "intent_min_module_score",
         ):
@@ -207,9 +205,6 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         or tool_approval_timeout_seconds <= 0
     ):
         raise ValueError("TOOL_APPROVAL_TIMEOUT_SECONDS must be positive.")
-    intent_model_min_confidence = get_env_float(
-        source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.30
-    )
     intent_min_route_margin = get_env_float(
         source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.010
     )
@@ -306,7 +301,6 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         intent_index_path=(
             Path(intent_index_path_value) if intent_index_path_value else None
         ),
-        intent_model_min_confidence=intent_model_min_confidence,
         intent_min_route_margin=intent_min_route_margin,
         intent_min_module_score=intent_min_module_score,
         intent_top_k=intent_top_k,

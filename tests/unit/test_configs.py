@@ -39,24 +39,39 @@ def test_load_app_settings_reads_intent_index_configuration():
     settings = load_app_settings(
         {
             "AGENTIC_SEARCH_INTENT_INDEX_PATH": "/models/intent-index",
-            "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": "0.73",
         }
     )
 
     assert settings.intent_index_path == Path("/models/intent-index")
-    assert settings.intent_model_min_confidence == 0.73
 
 
 @pytest.mark.parametrize("value", ["-0.1", "1.1", "nan", "inf"])
-def test_intent_threshold_must_be_finite_probability(value: str):
-    with pytest.raises(ValueError, match="intent_model_min_confidence"):
-        load_app_settings({"AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": value})
+@pytest.mark.parametrize(
+    "key,field",
+    [
+        ("AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", "intent_min_route_margin"),
+        ("AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", "intent_min_module_score"),
+    ],
+)
+def test_intent_threshold_must_be_finite_probability(key: str, field: str, value: str):
+    """Retargeted onto the surviving thresholds.
+
+    These asserted `intent_model_min_confidence` until that gate was removed for
+    changing 3 decisions in 416. The validation itself is worth keeping — a NaN
+    threshold silently disables a gate rather than failing — so it now covers the
+    two thresholds that still exist.
+    """
+    with pytest.raises(ValueError, match=field):
+        load_app_settings({key: value})
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.1, float("nan"), float("inf")])
-def test_explicit_intent_threshold_must_be_finite_probability(value: float):
-    with pytest.raises(ValueError, match="intent_model_min_confidence"):
-        AppSettings(intent_model_min_confidence=value)
+@pytest.mark.parametrize(
+    "field", ["intent_min_route_margin", "intent_min_module_score"]
+)
+def test_explicit_intent_threshold_must_be_finite_probability(field: str, value: float):
+    with pytest.raises(ValueError, match=field):
+        AppSettings(**{field: value})
 
 
 def test_intent_top_k_defaults_to_the_selected_value_and_reads_from_env():
@@ -83,11 +98,6 @@ def test_default_config_documents_intent_model_configuration():
     """The mirror must carry every routing threshold, at the tuned values."""
     settings = load_app_settings({})
     assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_INDEX_PATH"] == ""
-    assert (
-        DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE"]
-        == settings.intent_model_min_confidence
-        == 0.30
-    )
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN"]
         == settings.intent_min_route_margin

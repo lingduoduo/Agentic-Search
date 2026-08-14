@@ -23,34 +23,21 @@ _ROUTE_VALUES = {s.value for s in RouteStrategy}
 class IntentModelDecision:
     """A valid route prediction with serving diagnostics.
 
-    ``abstain_reason`` is set only for ``margin_below_threshold``. Confidence
-    abstention is deliberately left ``None``: ``route_request`` already derives
-    it from ``confidence < threshold`` and reports it as
-    ``model_below_threshold``, and re-labelling that path here would change an
-    existing production signal for no reason.
+    ``abstain_reason`` is ``margin_below_threshold`` or ``None``. It was once
+    one of two abstentions; the confidence gate that provided the other was
+    removed after measuring at 3 changed decisions in 416.
 
-    Both new fields default, so a construction without them means "served" —
-    which is what every existing caller and test double intends.
+    The optional fields default, so a construction without them means "served"
+    — which is what every existing caller and test double intends.
     """
 
     strategy: RouteStrategy
     confidence: float
-    threshold: float
     latency_ms: float
     modules: tuple[str, ...] = ()
     composite: bool = False
     margin: float = 0.0
     abstain_reason: str | None = None
-
-
-def intent_min_confidence(settings: AppSettings | None = None) -> float:
-    """Return the configured similarity threshold.
-
-    This is a cosine similarity, not a softmax probability. The two live on
-    different scales, so a value carried over from the previous model is
-    meaningless here.
-    """
-    return (settings or load_app_settings()).intent_model_min_confidence
 
 
 def load_intent_index(settings: AppSettings | None = None) -> object | None:
@@ -99,16 +86,20 @@ def predict_route(
 ) -> IntentModelDecision | None:
     """Return a route decision, or None when there is nothing to say at all.
 
-    **Neither** abstention is decided here. Confidence abstention is left to
-    ``route_request``'s existing confidence-versus-threshold rule, and margin
-    abstention is reported on the returned decision's ``abstain_reason`` for
-    the same caller to act on. Both paths end at the LLM classifier.
+    Abstention is not decided here. Margin abstention is reported on the
+    returned decision's ``abstain_reason`` for ``route_request`` to act on, and
+    it ends at the LLM classifier.
+
+    There used to be a second, confidence-based abstention judged by
+    ``route_request`` against a configured floor. That gate was measured to
+    change 3 decisions out of 416 and removed, so the margin is now the only
+    thing that abstains.
 
     Margin abstention used to return ``None`` after recording its own capture
     stage, which is why it was invisible to production telemetry: ``None`` is
     indistinguishable from "no index configured", so ``route_request`` could
     not tell a deferral from an absent model. Returning the decision makes the
-    two abstentions symmetric and lets one caller own the reporting.
+    reporting single-owner.
 
     This function records **no** capture stage. ``route_request`` records
     exactly one per decision; recording here as well would emit two stages with
@@ -126,7 +117,6 @@ def predict_route(
         vector = encode_texts([query])[0]
         decision = index.decide(
             vector,
-            min_confidence=resolved.intent_model_min_confidence,
             min_margin=resolved.intent_min_route_margin,
             min_module_score=resolved.intent_min_module_score,
             top_k=resolved.intent_top_k,
@@ -149,7 +139,6 @@ def predict_route(
     return IntentModelDecision(
         strategy=RouteStrategy(decision.route),
         confidence=confidence,
-        threshold=resolved.intent_model_min_confidence,
         latency_ms=latency_ms,
         modules=decision.modules,
         composite=decision.composite,

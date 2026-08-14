@@ -37,7 +37,6 @@ def _write_index(tmp_path: Path) -> Path:
 
 def _settings(tmp_path: Path, **overrides) -> AppSettings:
     defaults = {
-        "intent_model_min_confidence": 0.5,
         "intent_min_route_margin": 0.05,
         "intent_min_module_score": 0.4,
     }
@@ -106,7 +105,6 @@ def test_predict_route_passes_settings_top_k_through_to_decide(tmp_path, monkeyp
     )
     base = {
         "intent_index_path": directory,
-        "intent_model_min_confidence": 0.1,
         "intent_min_route_margin": 0.0,
         "intent_min_module_score": 0.0,
     }
@@ -121,29 +119,6 @@ def test_predict_route_passes_settings_top_k_through_to_decide(tmp_path, monkeyp
     assert decision_top_1 is not None and decision_top_4 is not None
     assert decision_top_1.confidence == pytest.approx(1.0)
     assert decision_top_4.confidence == pytest.approx(0.25)
-
-
-def test_low_confidence_is_returned_for_route_request_to_abstain_on(
-    tmp_path, monkeypatch
-):
-    """route_request already compares confidence to threshold; do not duplicate."""
-    monkeypatch.setattr(
-        ml_intent,
-        "encode_texts",
-        lambda texts: np.array([[0.577, 0.577, 0.577]], dtype=np.float32),
-    )
-
-    # A three-way tie has margin 0.0, which would also fail the margin gate at
-    # the default threshold (0.05) — that's test_low_margin_defers_by_returning_none.
-    # IntentIndex.decide() checks confidence first (elif margin), so overriding
-    # the confidence bar above 0.577 isolates the confidence-only path this
-    # test targets, without depending on the tied margin at all.
-    decision = ml_intent.predict_route(
-        "anything", settings=_settings(tmp_path, intent_model_min_confidence=0.9)
-    )
-
-    assert decision is not None
-    assert decision.confidence < decision.threshold
 
 
 def test_low_margin_reports_its_abstention_on_the_returned_decision(
@@ -167,9 +142,6 @@ def test_low_margin_reports_its_abstention_on_the_returned_decision(
 
     assert decision is not None
     assert decision.abstain_reason == "margin_below_threshold"
-    # Above the confidence floor: this is a margin abstention and nothing else,
-    # so route_request must not mislabel it as model_below_threshold.
-    assert decision.confidence >= decision.threshold
 
 
 def test_missing_index_path_defers_without_raising(tmp_path):
@@ -319,38 +291,35 @@ def test_an_index_built_with_the_previous_encoder_is_rejected(tmp_path, monkeypa
     assert ml_intent.predict_route("anything", settings=settings) is None
 
 
-def test_both_gates_trip_sets_composite_on_the_returned_decision(tmp_path, monkeypatch):
-    """decide() checks confidence before margin, but composite is computed off
-    the margin alone (see intent_knn._is_composite) — so a query that trips
-    both gates gets abstain_reason="confidence_below_threshold" (not
-    "margin_below_threshold") together with composite=True. That is not a
-    margin abstention, so predict_route must still return a decision for
-    route_request's own confidence check to act on, and that decision must
-    carry composite=True rather than silently dropping it.
+def test_predict_route_records_no_capture_stage_on_any_path(tmp_path, monkeypatch):
+    """Replaces a "both gates trip" test that outlived its second gate.
 
-    predict_route records no capture stage on any path — route_request records
-    exactly one per decision. That used to be true only of this path; now that
-    margin abstention also returns a decision, it is true universally, which is
-    what keeps a both-gates request from emitting two stages with conflicting
-    payloads.
+    That test distinguished a confidence abstention from a margin one. With the
+    confidence gate removed for changing 3 decisions in 416, its vector simply
+    margin-abstains — which
+    ``test_composite_query_defers_and_carries_the_flag_on_its_decision``
+    already covers with the very same input.
 
-    ``abstain_reason`` stays None here even though decide() set
-    "confidence_below_threshold" internally: only the margin reason is
-    propagated, so route_request's existing model_below_threshold label for the
-    confidence path is unchanged.
+    What survives nowhere else is this: ``predict_route`` records **no** capture
+    stage on any path. ``route_request`` records exactly one per decision, so a
+    stage recorded here as well would emit two with conflicting payloads for
+    every abstaining request. It used to record one on the margin path
+    precisely because that path returned ``None`` and ``route_request`` never
+    saw the decision.
     """
     monkeypatch.setattr(
         ml_intent,
         "encode_texts",
         lambda texts: np.array([[0.71, 0.0, 0.70]], dtype=np.float32),
     )
-
-    decision = ml_intent.predict_route(
-        "anything", settings=_settings(tmp_path, intent_model_min_confidence=0.8)
+    recorded = []
+    monkeypatch.setattr(
+        "src.internal.servers.web.request_capture.record_stage",
+        lambda *a, **k: recorded.append(a),
     )
 
+    decision = ml_intent.predict_route("anything", settings=_settings(tmp_path))
+
     assert decision is not None
-    assert decision.confidence < decision.threshold
     assert decision.composite is True
-    assert decision.abstain_reason is None
-    assert not hasattr(ml_intent, "_capture")
+    assert recorded == []

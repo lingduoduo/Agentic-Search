@@ -152,7 +152,6 @@ def test_confident_model_records_evaluation_and_final_intent(monkeypatch):
         lambda query, *, settings=None: IntentModelDecision(
             strategy=ir.RouteStrategy.SEARCH,
             confidence=0.91,
-            threshold=0.73,
             latency_ms=2.5,
         ),
     )
@@ -173,7 +172,6 @@ def test_confident_model_records_evaluation_and_final_intent(monkeypatch):
         assert model_stages[0].payload == {
             "predicted_intent": "search",
             "confidence": 0.91,
-            "threshold": 0.73,
             # Carried on the decision now that predict_route no longer records
             # its own stage; without it the margin would be lost from the
             # capture entirely.
@@ -189,7 +187,6 @@ def test_confident_model_records_evaluation_and_final_intent(monkeypatch):
         assert intent_stages[0].payload["mechanism"] == "model"
         assert intent_stages[0].payload["predicted_intent"] == "search"
         assert intent_stages[0].payload["confidence"] == 0.91
-        assert intent_stages[0].payload["threshold"] == 0.73
         assert intent_stages[0].payload["latency_ms"] == 2.5
         assert llm.calls == 0
     finally:
@@ -200,11 +197,13 @@ def test_abstaining_model_records_evaluation_and_classifier_fallback(monkeypatch
     monkeypatch.setattr(
         ir,
         "predict_route",
+        # Abstention is now expressed on the decision itself. It used to be
+        # inferred from confidence < threshold, and that gate is gone.
         lambda query, *, settings=None: IntentModelDecision(
             strategy=ir.RouteStrategy.TOOL,
             confidence=0.42,
-            threshold=0.8,
             latency_ms=3.25,
+            abstain_reason="margin_below_threshold",
         ),
     )
     token = rc.start_capture("r", "the vendor contract renewal terms")
@@ -222,10 +221,10 @@ def test_abstaining_model_records_evaluation_and_classifier_fallback(monkeypatch
         assert strategy is ir.RouteStrategy.SEARCH
         assert model_stages[0].payload["predicted_intent"] == "tool"
         assert model_stages[0].payload["abstained"] is True
-        assert model_stages[0].payload["fallback_reason"] == "model_below_threshold"
+        assert model_stages[0].payload["fallback_reason"] == "margin_below_threshold"
         assert intent_stages[0].label == "classifier"
         assert intent_stages[0].payload["raw_label"] == "search"
-        assert intent_stages[0].payload["fallback_reason"] == "model_below_threshold"
+        assert intent_stages[0].payload["fallback_reason"] == "margin_below_threshold"
         assert "prompt" not in intent_stages[0].payload
         assert "private_sentinel" not in repr(intent_stages[0].payload)
     finally:

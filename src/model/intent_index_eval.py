@@ -44,7 +44,6 @@ from .intent_taxonomy import modules_for_route
 
 # The tuning-slice threshold sweep, fixed by the spec: never touch the test
 # slice or hard slice while choosing serving hyperparameters.
-_SWEEP_MIN_CONFIDENCES = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55)
 # Margins span two encoders' scales. The four large values are MiniLM's; the
 # low end is derived from the *tuning* slice's own margin quantiles under
 # e5-small-v2 (min 0.0008, p25 0.0116, median 0.0188, p75 0.0280, max 0.0676),
@@ -100,7 +99,6 @@ def _module_score_grid(
     for vector in vectors:
         decision = index.decide(
             vector,
-            min_confidence=0.0,
             min_margin=0.0,
             min_module_score=0.0,
             top_k=top_k,
@@ -258,12 +256,10 @@ def _decide_batch(
     vectors: np.ndarray,
     *,
     top_k: int,
-    min_confidence: float,
     min_margin: float,
     min_module_score: float = _DEFAULT_MIN_MODULE_SCORE,
 ) -> list[KnnDecision]:
     thresholds = {
-        "min_confidence": min_confidence,
         "min_margin": min_margin,
         "min_module_score": min_module_score,
         "top_k": top_k,
@@ -281,7 +277,7 @@ def _decide_records(
 ) -> tuple[tuple[IntentPredictionRecord, ...], tuple[ModulePredictionRecord, ...]]:
     """Route + module predictions at a specific top_k, from already-encoded vectors.
 
-    Argmax only (min_confidence=min_margin=0.0), matching ``_argmax_report``'s
+    Argmax only (min_margin=0.0), matching ``_argmax_report``'s
     semantics. Rebuilds the diagnostic prediction/module records at the
     selected top_k without re-encoding: the first, fixed-top_k decide pass in
     ``_predict`` only exists to get vectors (for the split, for leakage
@@ -295,7 +291,6 @@ def _decide_records(
         index,
         vectors,
         top_k=top_k,
-        min_confidence=0.0,
         min_margin=0.0,
         min_module_score=min_module_score,
     )
@@ -328,7 +323,6 @@ def _serving_report(
     vectors: np.ndarray,
     *,
     top_k: int,
-    min_confidence: float,
     min_margin: float,
 ) -> dict[str, Any]:
     """Accuracy and coverage at specific serving hyperparameters.
@@ -336,14 +330,13 @@ def _serving_report(
     ``accuracy`` is the argmax route match regardless of abstention, so it
     stays comparable with the hand-scored diagnosis baseline the way
     ``realistic_accuracy_report`` is; ``coverage``/``served_accuracy`` show
-    what a caller actually sees once ``min_confidence``/``min_margin`` gate
+    what a caller actually sees once ``min_margin`` gates
     the response.
     """
     decisions = _decide_batch(
         index,
         vectors,
         top_k=top_k,
-        min_confidence=min_confidence,
         min_margin=min_margin,
     )
     total = len(records)
@@ -369,7 +362,7 @@ def _select_thresholds(
     tuning_vectors: np.ndarray,
     probe_vectors: np.ndarray,
 ) -> dict[str, Any]:
-    """Sweep (top_k, min_confidence, min_margin) on the tuning slice only.
+    """Sweep (top_k, min_margin) on the tuning slice only.
 
     Tuned exclusively against the tuning split and the out-of-scope probes --
     the test slice and hard slice are never consulted. Selects the combination
@@ -403,39 +396,35 @@ def _select_thresholds(
     """
     sweep: list[dict[str, Any]] = []
     for top_k in _SWEEP_TOP_K:
-        for min_confidence in _SWEEP_MIN_CONFIDENCES:
-            for min_margin in _SWEEP_MIN_MARGINS:
-                decisions = _decide_batch(
-                    index,
-                    tuning_vectors,
-                    top_k=top_k,
-                    min_confidence=min_confidence,
-                    min_margin=min_margin,
-                )
-                served = [(d, r) for d, r in zip(decisions, tuning) if not d.abstained]
-                correct = sum(d.route == r.expected for d, r in served)
-                probe_decisions = _decide_batch(
-                    index,
-                    probe_vectors,
-                    top_k=top_k,
-                    min_confidence=min_confidence,
-                    min_margin=min_margin,
-                )
-                deferred = sum(d.abstained for d in probe_decisions)
-                coverage = len(served) / len(tuning) if tuning else 0.0
-                sweep.append(
-                    {
-                        "top_k": top_k,
-                        "min_confidence": min_confidence,
-                        "min_margin": min_margin,
-                        "coverage": coverage,
-                        "served_accuracy": correct / len(served) if served else 0.0,
-                        "served": len(served),
-                        "oos_deferral": deferred / len(probe_vectors)
-                        if len(probe_vectors)
-                        else 0.0,
-                    }
-                )
+        for min_margin in _SWEEP_MIN_MARGINS:
+            decisions = _decide_batch(
+                index,
+                tuning_vectors,
+                top_k=top_k,
+                min_margin=min_margin,
+            )
+            served = [(d, r) for d, r in zip(decisions, tuning) if not d.abstained]
+            correct = sum(d.route == r.expected for d, r in served)
+            probe_decisions = _decide_batch(
+                index,
+                probe_vectors,
+                top_k=top_k,
+                min_margin=min_margin,
+            )
+            deferred = sum(d.abstained for d in probe_decisions)
+            coverage = len(served) / len(tuning) if tuning else 0.0
+            sweep.append(
+                {
+                    "top_k": top_k,
+                    "min_margin": min_margin,
+                    "coverage": coverage,
+                    "served_accuracy": correct / len(served) if served else 0.0,
+                    "served": len(served),
+                    "oos_deferral": deferred / len(probe_vectors)
+                    if len(probe_vectors)
+                    else 0.0,
+                }
+            )
 
     eligible = [row for row in sweep if row["coverage"] >= _MIN_COVERAGE]
     eligible.sort(
@@ -510,7 +499,6 @@ def _accuracy_at_top_k(
     correct = sum(
         index.decide(
             vector,
-            min_confidence=0.0,
             min_margin=0.0,
             min_module_score=_DEFAULT_MIN_MODULE_SCORE,
             top_k=top_k,
@@ -529,7 +517,6 @@ def _separation_margin_at_top_k(
 ) -> float:
     """Mean in-scope minus mean out-of-scope confidence at a given *top_k*."""
     kwargs = {
-        "min_confidence": 0.0,
         "min_margin": 0.0,
         "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
         "top_k": top_k,
@@ -613,7 +600,6 @@ def run_index_evaluation(
             "before evaluating."
         )
     thresholds = {
-        "min_confidence": 0.0,
         "min_margin": 0.0,
         "min_module_score": _DEFAULT_MIN_MODULE_SCORE,
     }
@@ -706,7 +692,6 @@ def run_index_evaluation(
     # winner of the tuning-only sweep above, or the unswept defaults when
     # there were no out-of-scope probes to tune against.
     top_k = selected["top_k"] if selected else TOP_K
-    min_confidence = selected["min_confidence"] if selected else 0.0
     min_margin = selected["min_margin"] if selected else 0.0
 
     # bulk/modules/test_modules/hard_modules were only ever decided at the
@@ -754,7 +739,6 @@ def run_index_evaluation(
             legacy_records,
             legacy_vectors,
             top_k=top_k,
-            min_confidence=min_confidence,
             min_margin=min_margin,
         ),
         "tuned_on": True,
@@ -765,7 +749,6 @@ def run_index_evaluation(
             tuning_records,
             tuning_vectors,
             top_k=top_k,
-            min_confidence=min_confidence,
             min_margin=min_margin,
         ),
         "tuned_on": True,
@@ -776,7 +759,6 @@ def run_index_evaluation(
             test_records,
             test_vectors,
             top_k=top_k,
-            min_confidence=min_confidence,
             min_margin=min_margin,
         ),
         "tuned_on": False,
@@ -788,7 +770,6 @@ def run_index_evaluation(
                 hard_records,
                 hard_vectors,
                 top_k=top_k,
-                min_confidence=min_confidence,
                 min_margin=min_margin,
             ),
             "tuned_on": False,
@@ -798,14 +779,11 @@ def run_index_evaluation(
         # Raw (ungated) confidences at the selected top_k -- separability
         # measures how well the two distributions separate, not what a
         # threshold happens to catch.
-        test_decisions = _decide_batch(
-            index, test_vectors, top_k=top_k, min_confidence=0.0, min_margin=0.0
-        )
+        test_decisions = _decide_batch(index, test_vectors, top_k=top_k, min_margin=0.0)
         probe_decisions = _decide_batch(
             index,
             reporting_probe_vectors,
             top_k=top_k,
-            min_confidence=0.0,
             min_margin=0.0,
         )
         out_of_scope = {
@@ -846,7 +824,6 @@ def run_index_evaluation(
         "cohens_d": report.get("out_of_scope", {}).get("cohens_d"),
         "leave_one_out_accuracy": report["leave_one_out"]["accuracy"],
         "selected_top_k": selected["top_k"] if selected else None,
-        "selected_min_confidence": selected["min_confidence"] if selected else None,
         "selected_min_margin": selected["min_margin"] if selected else None,
         # The metric the sweep actually maximized -- served (abstention-
         # gated) accuracy on the *tuning* slice at the selected

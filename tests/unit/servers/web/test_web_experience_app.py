@@ -1478,7 +1478,6 @@ def test_real_intent_index_dispatches_to_each_existing_runner(monkeypatch, tmp_p
         SearchExperienceSettings(db_path=tmp_path / "dispatch.sqlite3"),
         app_settings=AppSettings(
             intent_index_path=index_path,
-            intent_model_min_confidence=0.5,
         ),
         llm=_UnexpectedLLM(),
     )
@@ -1500,9 +1499,7 @@ def test_real_intent_index_dispatches_to_each_existing_runner(monkeypatch, tmp_p
     ]
 
 
-def test_real_intent_index_high_threshold_uses_classifier_fallback(
-    monkeypatch, tmp_path
-):
+def test_real_intent_index_abstention_uses_classifier_fallback(monkeypatch, tmp_path):
     import numpy as np
 
     from src.internal.configs import AppSettings
@@ -1545,7 +1542,8 @@ def test_real_intent_index_high_threshold_uses_classifier_fallback(
         SearchExperienceSettings(db_path=tmp_path / "fallback.sqlite3"),
         app_settings=AppSettings(
             intent_index_path=index_path,
-            intent_model_min_confidence=1.0,
+            # No confidence gate any more, so force abstention via the margin.
+            intent_min_route_margin=1.0,
         ),
         llm=llm,
     )

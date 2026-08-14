@@ -171,9 +171,7 @@ class IntentPrediction:
     confidence: float
 
 
-def _load_intent_prediction(
-    index_dir: str, question: str, *, min_confidence: float
-) -> IntentPrediction | None:
+def _load_intent_prediction(index_dir: str, question: str) -> IntentPrediction | None:
     """Route *question* against a canonical-example index, or return None.
 
     None means the index abstained: either nothing canonical resembles the
@@ -201,7 +199,6 @@ def _load_intent_prediction(
         )
     decision = index.decide(
         encode_texts([question])[0],
-        min_confidence=min_confidence,
         min_margin=settings.intent_min_route_margin,
         min_module_score=settings.intent_min_module_score,
     )
@@ -217,15 +214,13 @@ def resolve_search_settings(
     max_search_limit: int,
     require_evidence: bool,
     allow_internal_knowledge: bool,
-    min_confidence: float,
 ) -> tuple[int, int, bool, bool, dict[str, Any]]:
     """Apply the per-intent search policy for one CLI request.
 
-    ``min_confidence`` is not compared here: the only caller,
-    ``run_search_agent``, only reaches this function with a *prediction*
-    that ``_load_intent_prediction`` already built with this exact
-    ``min_confidence`` — ``IntentIndex.decide`` returns ``None`` below that
-    bar, so a covered prediction always clears it.
+    There is no confidence comparison here, and there is no longer one
+    anywhere: ``IntentIndex.decide`` returns an abstention on a low *margin*
+    only, and ``_load_intent_prediction`` turns that into ``None``. So any
+    prediction reaching this function was served rather than abstained.
     """
 
     meta: dict[str, Any] = {
@@ -429,7 +424,6 @@ async def run_search_agent(
     max_answer_rejections: int = 3,
     allow_internal_knowledge: bool = True,
     intent_prediction: IntentPrediction | None = None,
-    intent_min_confidence: float = 0.30,
 ) -> None:
     """Run the SearchAgentLoop and print results.
 
@@ -473,7 +467,6 @@ async def run_search_agent(
             max_search_limit=effective_search_limit,
             require_evidence=require_evidence,
             allow_internal_knowledge=allow_internal_knowledge,
-            min_confidence=intent_min_confidence,
         )
     else:
         resolved_topk = topk
@@ -770,14 +763,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "trained; routing compares the question against curated examples.",
     )
     parser.add_argument(
-        "--intent_min_confidence",
-        type=float,
-        default=0.30,
-        help="Minimum cosine similarity to the winning route's canonical "
-        "examples before intent routing is applied. A cosine, not a softmax "
-        "probability — a value from the retired classifier is meaningless.",
-    )
-    parser.add_argument(
         "--tool_format", choices=["hermes", "llama3", "json"], default="json"
     )
 
@@ -803,11 +788,7 @@ async def main() -> None:
     intent_prediction = None
     if args.intent_index:
         print(f"Status  : routing intent against {args.intent_index}")
-        intent_prediction = _load_intent_prediction(
-            args.intent_index,
-            args.question,
-            min_confidence=args.intent_min_confidence,
-        )
+        intent_prediction = _load_intent_prediction(args.intent_index, args.question)
         if intent_prediction is None:
             print("Status  : intent index abstained — no intent routing applied")
         else:
@@ -876,7 +857,6 @@ async def main() -> None:
                 max_answer_rejections=args.max_answer_rejections,
                 allow_internal_knowledge=not args.require_search,
                 intent_prediction=intent_prediction,
-                intent_min_confidence=args.intent_min_confidence,
             )
         elif args.mode == "tool":
             await run_tool_agent(

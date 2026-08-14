@@ -371,9 +371,7 @@ def test_leave_one_out_excludes_each_example_from_its_own_scoring():
     )
 
     control_correct = sum(
-        index.decide(
-            vectors[i], min_confidence=0.0, min_margin=0.0, min_module_score=0.0
-        ).route
+        index.decide(vectors[i], min_margin=0.0, min_module_score=0.0).route
         == examples[i].route
         for i in range(len(examples))
     )
@@ -484,8 +482,8 @@ def test_the_sweep_searches_top_k_only_over_the_pre_registered_grid(
     rows = report["threshold_tuning"]["sweep"]
     assert {row["top_k"] for row in rows} == set(intent_index_eval._SWEEP_TOP_K)
     assert len(rows) == len(intent_index_eval._SWEEP_TOP_K) * len(
-        intent_index_eval._SWEEP_MIN_CONFIDENCES
-    ) * len(intent_index_eval._SWEEP_MIN_MARGINS)
+        intent_index_eval._SWEEP_MIN_MARGINS
+    )
     selected = report["threshold_tuning"]["selected"]
     assert selected is None or selected["top_k"] in intent_index_eval._SWEEP_TOP_K
 
@@ -535,7 +533,6 @@ def test_the_module_sweep_never_changes_the_route(tmp_path, monkeypatch):
         return [
             index.decide(
                 vector,
-                min_confidence=0.0,
                 min_margin=0.0,
                 min_module_score=min_module_score,
                 top_k=intent_index_eval.TOP_K,
@@ -574,10 +571,8 @@ def test_the_module_sweep_never_changes_the_route(tmp_path, monkeypatch):
         fingerprint="test",
     )
     query = np.array(_SEARCH, dtype=np.float32)
-    wide = multi.decide(query, min_confidence=0.0, min_margin=0.0, min_module_score=0.0)
-    narrow = multi.decide(
-        query, min_confidence=0.0, min_margin=0.0, min_module_score=0.9
-    )
+    wide = multi.decide(query, min_margin=0.0, min_module_score=0.0)
+    narrow = multi.decide(query, min_margin=0.0, min_module_score=0.9)
     assert set(wide.modules) == {"lookup_fact", "lookup_document"}
     assert set(narrow.modules) == {"lookup_fact"}
     assert wide.route == narrow.route == "search"
@@ -777,9 +772,7 @@ def test_routing_one_request_stays_under_the_latency_ceiling():
 
     index = IntentIndex.load(DATA / "intent_index" / INDEX_FILENAME)
     query = "book the meeting room for tomorrow afternoon"
-    decide = functools.partial(
-        index.decide, min_confidence=0.30, min_margin=0.015, min_module_score=0.45
-    )
+    decide = functools.partial(index.decide, min_margin=0.015, min_module_score=0.45)
     for _ in range(5):
         decide(encode_texts([query])[0])
 

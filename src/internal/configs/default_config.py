@@ -25,9 +25,6 @@ DEFAULT_CONFIG: dict = {
     # Intent model serving
     # -------------------------------------------------------------------------
     "AGENTIC_SEARCH_INTENT_INDEX_PATH": "",
-    # Cosine similarities, not softmax probabilities, and the scale moves with
-    # the encoder; see intent_model_min_confidence in app_configs.py.
-    "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE": 0.30,
     "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN": 0.010,
     "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE": 0.8215,
     # Neighbors averaged per route; see intent_top_k in app_configs.py.

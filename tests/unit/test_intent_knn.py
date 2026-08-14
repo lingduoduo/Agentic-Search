@@ -50,7 +50,7 @@ def _index(per_route: int = 3, **kwargs) -> IntentIndex:
 
 
 def _decide(index: IntentIndex, vector, **overrides):
-    thresholds = {"min_confidence": 0.5, "min_margin": 0.05, "min_module_score": 0.4}
+    thresholds = {"min_margin": 0.05, "min_module_score": 0.4}
     return index.decide(vector, **{**thresholds, **overrides})
 
 
@@ -128,9 +128,9 @@ def test_decide_top_k_default_matches_the_module_constant():
     assert default == explicit == explicit_three
 
 
-def test_equidistant_query_abstains_on_margin_not_on_confidence():
-    """Ambiguity and out-of-scope are different failures with different causes."""
-    decision = _decide(_index(), _unit(1, 1, 0), min_confidence=0.5)
+def test_equidistant_query_abstains_on_margin():
+    """Two routes fitting equally well is the one abstention that survives."""
+    decision = _decide(_index(), _unit(1, 1, 0))
 
     assert decision.confidence == pytest.approx(0.7071, abs=1e-3)
     assert decision.margin == pytest.approx(0.0, abs=1e-6)
@@ -138,20 +138,25 @@ def test_equidistant_query_abstains_on_margin_not_on_confidence():
     assert decision.abstain_reason == "margin_below_threshold"
 
 
-def test_query_far_from_everything_abstains_on_confidence():
-    """Cosine is unnormalized across routes, so 'far from all' is expressible."""
-    decision = _decide(_index(), _unit(1, 1, 1), min_confidence=0.7)
+def test_a_query_far_from_every_route_still_abstains_via_the_margin():
+    """Replaces two tests of the removed absolute-confidence gate.
+
+    Those asserted that a request far from everything abstains with
+    ``confidence_below_threshold``, and that confidence was checked before
+    margin. The gate is gone -- swept on the tuning slice, it changed 3
+    decisions out of 416, because anything far enough from one route to fail an
+    absolute floor is already close to two routes and fails the margin.
+
+    This asserts the property that mattered, which the margin gate provides on
+    its own: an equidistant-from-everything request does not get served. The
+    diagonal (1,1,1) scores 0.5774 to every route, so its margin is 0.
+    """
+    decision = _decide(_index(), _unit(1, 1, 1))
 
     assert decision.confidence == pytest.approx(0.5774, abs=1e-3)
+    assert decision.margin == pytest.approx(0.0, abs=1e-6)
     assert decision.abstained is True
-    assert decision.abstain_reason == "confidence_below_threshold"
-
-
-def test_confidence_is_checked_before_margin():
-    """A query far from everything is out of scope, not merely ambiguous."""
-    decision = _decide(_index(), _unit(1, 1, 1), min_confidence=0.7, min_margin=0.9)
-
-    assert decision.abstain_reason == "confidence_below_threshold"
+    assert decision.abstain_reason == "margin_below_threshold"
 
 
 def test_a_confident_decision_still_reports_its_route_and_modules():
@@ -160,7 +165,7 @@ def test_a_confident_decision_still_reports_its_route_and_modules():
     Note the asymmetric vector: exactly equal route scores tie-break by
     INTENT_LABELS order, which puts chat first.
     """
-    decision = _decide(_index(), _unit(1, 0.98, 0), min_confidence=0.5)
+    decision = _decide(_index(), _unit(1, 0.98, 0))
 
     assert decision.abstained is True
     assert decision.route == "search"
