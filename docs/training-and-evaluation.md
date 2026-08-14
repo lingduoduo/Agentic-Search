@@ -144,7 +144,17 @@ python -m examples.measure_intent_operating_point
 
 **What this does and does not settle.** It removes the safety argument against promotion: e5 is more accurate *and* misroutes less at every comparable point. What it leaves is a cost question — e5 at its tuned point defers 61 of 111 queries to the LLM classifier against MiniLM's 37, which is more latency and more spend per request. That is a budget decision, not a correctness one.
 
-Two limits worth stating. The slice is 111 queries, so `2` versus `21` has a wide interval on the low end — the direction is solid, the ratio is not precise. And `min_margin 0.012` scores the same 2 wrong routes as the shipped `0.015` while covering 6 more queries, which looks strictly better — but that was read off the **test** slice, so it is a fitted observation and must be re-derived on the tuning slice before it ships.
+One limit worth stating: the slice is 111 queries, so `2` versus `21` has a wide interval on the low end — the direction is solid, the ratio is not precise.
+
+**A fitted observation that did not survive checking, recorded because the checking is the point.** On the test slice, `min_margin 0.012` scores the same 2 wrong routes as the shipped `0.015` while covering 6 more queries — apparently strictly better. It is not in the swept grid, which steps `0.010 → 0.015`, so it was never evaluated on tuning data. Checking the tuning curve settles it:
+
+| `min_margin` | coverage | served accuracy | clears the 0.60 floor |
+|---|---|---|---|
+| `0.010` | `0.7714` | `0.8889` | yes |
+| **`0.015`** | `0.6571` | **`0.9130`** | **yes — selected** |
+| `0.020` | `0.4714` | `0.9394` | no |
+
+Served accuracy rises monotonically with margin while coverage falls, so the selection rule — highest served accuracy at coverage ≥ `0.60` — takes the last eligible point. `0.012` interpolates between `0.010` and `0.015`: still eligible, but at *lower* served accuracy than `0.015`. **Under the pre-registered rule it loses.** Its advantage exists only on the slice it was read from, which is what a fitted number looks like when you check it. `0.015` stands.
 
 ### The ceiling finding, corrected: `TOP_K` was never swept
 
