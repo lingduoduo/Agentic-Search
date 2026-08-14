@@ -16,7 +16,12 @@ import numpy as np
 
 from .intent_data import load_intent_eval_queries, load_out_of_scope_probes
 from .intent_encoder import DEFAULT_ENCODER, encode_texts
-from .intent_eval_split import DEFAULT_SEED, DEFAULT_SLICE_SIZE, split_eval_queries
+from .intent_eval_split import (
+    DEFAULT_SEED,
+    DEFAULT_SLICE_SIZE,
+    LEGACY_PREFIX,
+    split_eval_queries,
+)
 from .intent_evaluation import (
     IntentPredictionRecord,
     ModulePredictionRecord,
@@ -32,8 +37,8 @@ from .intent_knn import INDEX_FILENAME, TOP_K, IntentIndex, KnnDecision
 # contaminated -- worthless as a gate and therefore free to tune on. Every
 # legacy query lands in the tuning split (see intent_eval_split), which is
 # what preserves the bulk-prefixed queries not drawn into that split as an
-# untouched test set.
-LEGACY_PREFIX = "eval-"
+# untouched test set. Imported from intent_eval_split, the module that owns
+# the split, so the two definitions cannot drift apart.
 
 # The tuning-slice threshold sweep, fixed by the spec: never touch the test
 # slice or hard slice while choosing serving hyperparameters.
@@ -379,21 +384,21 @@ def _sweep_top_k(
     index: IntentIndex,
     tuning: tuple[IntentPredictionRecord, ...],
     tuning_vectors: np.ndarray,
-    hard: tuple[IntentPredictionRecord, ...] | None,
-    hard_vectors: np.ndarray | None,
     probe_vectors: np.ndarray | None,
 ) -> list[dict[str, Any]]:
     """Report-only sweep of TOP_K over the already-built index and encoder.
 
     Evidence for a later decision, not a selection: TOP_K stays 3 in serving
-    regardless of this table. Draws on the tuning slice (never the test
-    slice) for the same reason ``_select_thresholds`` does: this is the
-    fitting curve for the one hyperparameter this task moved into an
-    automated sweep, and publishing that curve computed on the slice no
-    hyperparameter is allowed to see would hand test-set fitting straight
-    back to the human reading the report, even though nothing in code
-    selects from it. See the module-level ``_SWEEP_TOP_K`` comment and
-    docs/training-and-evaluation.md.
+    regardless of this table. Draws only on the tuning slice and the
+    out-of-scope probes -- never the test slice, and never hard-40, which is
+    held-out test data by this project's own split (see
+    docs/training-and-evaluation.md) even though it is not drawn from the
+    same clean-query pool. This is the fitting curve for the one
+    hyperparameter this task moved into an automated sweep, and publishing
+    that curve computed on data no hyperparameter is allowed to see would
+    hand test-set fitting straight back to the human reading the report,
+    even though nothing in code selects from it. See the module-level
+    ``_SWEEP_TOP_K`` comment and docs/training-and-evaluation.md.
     """
     rows: list[dict[str, Any]] = []
     for top_k in _SWEEP_TOP_K:
@@ -404,8 +409,6 @@ def _sweep_top_k(
                 "accuracy"
             ],
         }
-        if hard is not None and hard_vectors is not None:
-            row["hard_accuracy"] = _accuracy_at_top_k(index, hard, hard_vectors, top_k)
         if probe_vectors is not None and len(probe_vectors):
             row["separation_margin"] = _separation_margin_at_top_k(
                 index, tuning_vectors, probe_vectors, top_k
@@ -610,9 +613,6 @@ def run_index_evaluation(
                 out_of_scope=[d.confidence for d in probe_decisions],
             ),
         }
-        # Alias retained for the raw-cosine-units bar pinned in
-        # test_intent_index_eval.py, which reads this key.
-        out_of_scope["separation_margin"] = out_of_scope["raw_margin"]
         report["out_of_scope"] = out_of_scope
 
     report["top_k_sweep"] = {
@@ -628,8 +628,6 @@ def run_index_evaluation(
             index,
             tuning_records,
             tuning_vectors,
-            hard_records,
-            hard_vectors,
             probe_vectors,
         ),
     }

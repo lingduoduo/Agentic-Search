@@ -245,6 +245,7 @@ def _canonical_index(tmp_path: Path):
     """A three-route index on the basis axes, so every cosine is exact."""
     import numpy as np
 
+    from src.model.intent_encoder import DEFAULT_ENCODER
     from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
 
     axes = {"search": 0, "chat": 1, "tool": 2}
@@ -264,7 +265,7 @@ def _canonical_index(tmp_path: Path):
     index = IntentIndex(
         examples=examples,
         vectors=np.stack(rows),
-        encoder="test-encoder",
+        encoder=DEFAULT_ENCODER,
         fingerprint="sha256:test",
     )
     index.save(tmp_path / INDEX_FILENAME)
@@ -309,6 +310,59 @@ def test_load_intent_prediction_returns_none_when_the_index_abstains(
         _load_intent_prediction(str(directory), "book the room", min_confidence=1.01)
         is None
     )
+
+
+def test_load_intent_prediction_rejects_an_index_built_with_a_different_encoder(
+    tmp_path, monkeypatch
+):
+    """e5-small is also 384-d, so a stale index would otherwise score silently.
+
+    The fixture must be genuinely 384-dimensional -- the same width as e5's
+    real output -- not the 3-dim toy vectors ``_canonical_index`` uses
+    elsewhere. With 3-dim rows, ``index.decide()`` would raise a numpy shape
+    mismatch against the real-width query vector regardless of any
+    encoder-name check, which would make this assertion hold even with the
+    guard removed. A structurally valid, same-width index, paired with a
+    query vector that would score an unambiguous, confident decision if
+    scoring were ever reached, leaves the encoder-name check in
+    ``_load_intent_prediction`` as the only thing that can make this raise.
+    """
+    import numpy as np
+
+    from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+
+    axes = {"search": 0, "chat": 1, "tool": 2}
+    modules = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
+    basis = np.eye(384, dtype=np.float32)
+    examples, rows = [], []
+    for route, axis in axes.items():
+        for position in range(3):
+            examples.append(
+                CanonicalExample(
+                    id=f"{route}-{position}",
+                    text=f"{route} example {position}",
+                    route=route,
+                    modules=(modules[route],),
+                )
+            )
+            rows.append(basis[axis])
+    directory = tmp_path / "stale"
+    IntentIndex(
+        examples=examples,
+        vectors=np.stack(rows),
+        encoder="sentence-transformers/all-MiniLM-L6-v2",
+        fingerprint="sha256:test",
+    ).save(directory / INDEX_FILENAME)
+
+    # An exact match on the "search" axis: if the guard did not short-circuit
+    # before this vector is ever used, decide() would return a maximally
+    # confident, unambiguous decision, well clear of every default threshold.
+    _stub_encoder(monkeypatch, list(basis[axes["search"]]))
+
+    with pytest.raises(
+        ValueError, match="all-MiniLM-L6-v2.*e5-small-v2|e5-small-v2.*all-MiniLM-L6-v2"
+    ):
+        _load_intent_prediction(str(directory), "book the room", min_confidence=0.3)
 
 
 def test_resolve_local_device_returns_explicit_choice():

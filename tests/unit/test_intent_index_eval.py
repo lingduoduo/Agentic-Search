@@ -114,6 +114,24 @@ _PROBES = [
     {"id": "oos-2", "text": "probe two"},
 ]
 
+# Reuses texts already in _VECTORS_BY_TEXT / _BULK_QUERIES, so no new encoder
+# stub entries are needed and the 0.85-on-axis vectors stay well clear of the
+# >=0.95 leakage guard.
+_HARD_QUERIES = [
+    {
+        "id": "hard-a",
+        "text": "clean search query",
+        "label": "search",
+        "modules": ["lookup_fact"],
+    },
+    {
+        "id": "hard-b",
+        "text": "clean tool query",
+        "label": "tool",
+        "modules": ["schedule"],
+    },
+]
+
 
 # Only 3 clean (bulk-) queries exist in this fixture, so slice_size must stay
 # well under that. At 1, the split is deterministic regardless of seed: the
@@ -128,7 +146,9 @@ def _run(tmp_path, *, monkeypatch, out_of_scope=None, hard=None):
     return intent_index_eval.run_index_evaluation(
         index_path=index_dir,
         eval_queries_path=_eval_queries_path(tmp_path, _BULK_QUERIES),
-        hard_queries_path=hard,
+        hard_queries_path=(
+            _write_json(tmp_path / "hard.json", _HARD_QUERIES) if hard else None
+        ),
         out_of_scope_path=(
             _write_json(tmp_path / "oos.json", _PROBES) if out_of_scope else None
         ),
@@ -199,10 +219,6 @@ def test_out_of_scope_uses_separability_on_the_test_slice(tmp_path, monkeypatch)
     assert out_of_scope["max_out_of_scope"] == pytest.approx(0.2)
     assert out_of_scope["raw_margin"] == pytest.approx(
         mean_in_scope - mean_out_of_scope
-    )
-    # Alias kept for the raw-cosine-units bar in the pinned section below.
-    assert out_of_scope["separation_margin"] == pytest.approx(
-        out_of_scope["raw_margin"]
     )
     # Perfectly separated on this fixture: both in-scope scores clear both
     # out-of-scope scores.
@@ -374,12 +390,16 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
 ):
     """The sweep is evidence, not a selection: the shipped headline is untouched.
 
-    It also must never publish a fitting curve over the test slice -- the
+    It also must never publish a fitting curve over held-out data -- the
     per-k accuracy and separation-margin columns are computed on *tuning*
     (legacy_a/legacy_b/bulk-a, all correctly and confidently routed at 0.85),
-    not on test_slice (bulk-b/bulk-c).
+    never on test_slice (bulk-b/bulk-c) and never on hard-40, which is
+    held-out test data by this project's own split. ``hard=True`` here
+    supplies hard queries -- the shipping configuration, since the documented
+    CLI always passes ``--hard-queries`` -- so this is the one configuration
+    that actually exercises the guard.
     """
-    report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True, hard=None)
+    report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True, hard=True)
 
     sweep = report["top_k_sweep"]
     assert [row["top_k"] for row in sweep["rows"]] == list(
@@ -389,7 +409,7 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
         assert 0.0 <= row["tuning_accuracy"] <= 1.0
         assert 0.0 <= row["leave_one_out_accuracy"] <= 1.0
         assert "separation_margin" in row
-        assert "hard_accuracy" not in row  # no hard queries were supplied
+        assert "hard_accuracy" not in row  # hard-40 is held-out; never in the sweep
 
     # The row at the shipped TOP_K reproduces the report's own tuning numbers.
     shipped = next(

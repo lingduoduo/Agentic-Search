@@ -181,11 +181,24 @@ def _load_intent_prediction(
     switching a generation model on.
     """
     from src.internal.configs import load_app_settings
-    from src.model.intent_encoder import encode_texts
+    from src.model.intent_encoder import DEFAULT_ENCODER, encode_texts
     from src.model.intent_knn import INDEX_FILENAME, IntentIndex
 
     settings = load_app_settings()
     index = IntentIndex.load(Path(index_dir) / INDEX_FILENAME)
+    if index.encoder != DEFAULT_ENCODER:
+        # Both all-MiniLM-L6-v2 and e5-small-v2 are 384-dimensional, so a
+        # mismatched encoder has no other symptom: no shape error, no
+        # exception, just a confident, meaningless number driving
+        # resolve_search_settings silently. Match the same guard
+        # run_index_evaluation and ml_intent.load_intent_index apply.
+        raise ValueError(
+            f"--intent_index at {index_dir} was built with encoder "
+            f"{index.encoder!r}, but this CLI encodes queries with "
+            f"{DEFAULT_ENCODER!r}. Rebuild the index with the current "
+            "encoder (`python -m src.model.intent_index_cli build`) before "
+            "using --intent_index."
+        )
     decision = index.decide(
         encode_texts([question])[0],
         min_confidence=min_confidence,
