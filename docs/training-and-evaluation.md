@@ -96,7 +96,9 @@ For older context, on the retired clean-151 instrument the previous MLP scored `
 
 One result did **not** improve, and it matters more than the headline:
 
-**Out-of-scope separability got worse, not better: AUC `0.8551` against MiniLM's `0.8848` on the same 111 queries — `−0.0297`.** On the older clean_151 slice the same comparison is `0.8626` vs `0.8681` (`−0.0055`), so the regression looks small there and is five times larger on the slice actually reported from; quote the matched pair, never one number from each slice. Either way it misses the `0.90` bar this change set for itself. The `0.927` AUC that made e5 look better at abstaining was measured on **e5-*base*-v2**, a different, larger model that is explicitly out of scope here; the fitted e5-*small* probe scored `0.871`, already under the bar. Abstention is the safety property of this router, so this is the single strongest argument against promoting it as it stands.
+**Out-of-scope separability got worse, not better: AUC `0.8551` against MiniLM's `0.8848` on the same 111 queries — `−0.0297`.** On the older clean_151 slice the same comparison is `0.8626` vs `0.8681` (`−0.0055`), so the regression looks small there and is five times larger on the slice actually reported from; quote the matched pair, never one number from each slice. Either way it misses the `0.90` bar this change set for itself. The `0.927` AUC that made e5 look better at abstaining was measured on **e5-*base*-v2**, a different, larger model that is explicitly out of scope here; the fitted e5-*small* probe scored `0.871`, already under the bar. Abstention is the safety property of this router, so this looked like the single strongest argument against promoting it.
+
+**It does not survive being measured at the operating point** — e5 makes 2 wrong routes against MiniLM's 21 at each model's own tuned threshold, and 7 against 21 at matched coverage. AUC ranks over the whole score range; the margin gate only needs separation at the boundary. See [The out-of-scope regression, measured where it bites](#the-out-of-scope-regression-measured-where-it-bites) below. The `0.90` bar is still missed and the ranking regression is still real — what changed is that neither costs anything at any threshold this router would run at.
 
 **The threshold grid had to be re-derived, because it was in MiniLM's units.** The original grid started at `min_margin=0.02`, which under e5 abstains on more than half the tuning slice; no combination cleared the sweep's `coverage ≥ 0.60` floor, so the first run selected nothing at all. The grid's low end is now derived from the **tuning slice's own margin quantiles** under e5 (min `0.0008`, p25 `0.0116`, median `0.0188`, p75 `0.0280`, max `0.0676`), and it selects `min_margin=0.015` — the shipped default. **Derive any future re-tuning from the tuning slice too. Never from the test slice**, whose quantiles (median `0.0129`) are a different distribution and are off-limits: reading them to choose a threshold is test-set fitting even when no code does it.
 
@@ -108,6 +110,51 @@ One result did **not** improve, and it matters more than the headline:
 2. **The headline AUC and Cohen's d are not fully held out.** The same 24 out-of-scope probes both tie-break the tuning sweep's hyperparameter selection *and* denominate the reported separability. The in-scope side is the untouched test slice, but the out-of-scope side is not held out from everything upstream of it.
 
 Also note the instrument itself: 111 test queries is a small slice, and it is deliberately smaller than the 151 the "before" column used — that is the honest cost of holding 40 queries back for tuning, and it widens the confidence interval on every number in the column.
+
+### The out-of-scope regression, measured where it bites
+
+The AUC row above says e5 is *worse* at separating out-of-scope requests (`0.8551` against MiniLM's `0.8848` on the same slice), and #512 called that the single strongest argument against promoting it. **Measured at the operating point each encoder would actually run at, the ordering reverses.**
+
+AUC is a threshold-free ranking statistic over the whole score range. Serving does not use the whole range — the margin gate needs separation only near the decision boundary, and abstaining costs an LLM fallback rather than a wrong answer. So the number that matters is not "how well does the score rank in-scope above out-of-scope", but **how much traffic is answered, and how often those answers are wrong.**
+
+Each encoder's `min_margin` is tuned on the **tuning** slice and reported on the **test** slice — a threshold chosen on the reported queries would flatter whichever encoder it was chosen for.
+
+| | all-MiniLM-L6-v2 | e5-small-v2 |
+|---|---|---|
+| tuned `min_margin` (on the tuning slice) | `0.030` | `0.015` |
+| coverage, test slice | `0.6667` (74/111) | `0.4505` (50/111) |
+| served accuracy | `0.7162` | **`0.9600`** |
+| **wrong routes** | **21** | **2** |
+
+At its own tuned point e5 answers less and is right far more often: **2 wrong routes against 21**. Because the two points serve different volumes, the same comparison at **matched coverage** — e5 loosened to `min_margin 0.008`, answering 73 queries against MiniLM's 74:
+
+| | all-MiniLM-L6-v2 @ `0.030` | e5-small-v2 @ `0.008` |
+|---|---|---|
+| coverage | `0.6667` (74/111) | `0.6577` (73/111) |
+| served accuracy | `0.7162` | `0.9041` |
+| **wrong routes** | **21** | **7** |
+
+**A 3× reduction in misroutes at the same answered volume, and 10× at each model's own tuned point.** The AUC regression is real as a ranking property and does not bite at any threshold either model would run at. The reason is that e5 compresses cosine similarities into a narrow high band — which costs global ranking across the full score range while leaving local separation at the boundary cleaner.
+
+Reproduce with:
+
+```bash
+python -m examples.measure_intent_operating_point
+```
+
+**What this does and does not settle.** It removes the safety argument against promotion: e5 is more accurate *and* misroutes less at every comparable point. What it leaves is a cost question — e5 at its tuned point defers 61 of 111 queries to the LLM classifier against MiniLM's 37, which is more latency and more spend per request. That is a budget decision, not a correctness one.
+
+One limit worth stating: the slice is 111 queries, so `2` versus `21` has a wide interval on the low end — the direction is solid, the ratio is not precise.
+
+**A fitted observation that did not survive checking, recorded because the checking is the point.** On the test slice, `min_margin 0.012` scores the same 2 wrong routes as the shipped `0.015` while covering 6 more queries — apparently strictly better. It is not in the swept grid, which steps `0.010 → 0.015`, so it was never evaluated on tuning data. Checking the tuning curve settles it:
+
+| `min_margin` | coverage | served accuracy | clears the 0.60 floor |
+|---|---|---|---|
+| `0.010` | `0.7714` | `0.8889` | yes |
+| **`0.015`** | `0.6571` | **`0.9130`** | **yes — selected** |
+| `0.020` | `0.4714` | `0.9394` | no |
+
+Served accuracy rises monotonically with margin while coverage falls, so the selection rule — highest served accuracy at coverage ≥ `0.60` — takes the last eligible point. `0.012` interpolates between `0.010` and `0.015`: still eligible, but at *lower* served accuracy than `0.015`. **Under the pre-registered rule it loses.** Its advantage exists only on the slice it was read from, which is what a fitted number looks like when you check it. `0.015` stands.
 
 ### The ceiling finding, corrected: `TOP_K` was never swept
 
@@ -217,6 +264,16 @@ python3 -m examples.run_agentic_search \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --vllm_url http://localhost:8080 --search_url http://localhost:8001/retrieve
 ```
+
+### Intent operating point
+
+Compares the serving encoder against the previous one at the threshold each would actually run at — coverage, served accuracy, and wrong-route count — rather than at the abstention-blind argmax the evaluation report headlines. Tunes each encoder's `min_margin` on the tuning slice and reports on the test slice. This is the evidence behind [The out-of-scope regression, measured where it bites](#the-out-of-scope-regression-measured-where-it-bites).
+
+```bash
+python -m examples.measure_intent_operating_point
+```
+
+Needs sentence-transformers and both models; MiniLM is pulled only for the comparison. Takes about a minute on CPU.
 
 ### Bamboogle evaluation
 
