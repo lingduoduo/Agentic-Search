@@ -30,12 +30,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     precision_recall_fscore_support,
+    roc_auc_score,
 )
 
 from .intent_taxonomy import INTENT_LABELS, SEMANTIC_MODULES
@@ -655,4 +656,50 @@ def module_metrics_report(
         "per_module_metrics": per_module,
         "macro_f1": sum(f1_values) / len(SEMANTIC_MODULES),
         "joint_accuracy": joint / len(scored) if scored else 0.0,
+    }
+
+
+def separability_report(
+    in_scope: Sequence[float], out_of_scope: Sequence[float]
+) -> dict[str, Any]:
+    """How well in-scope and out-of-scope confidences separate.
+
+    Reported scale-free, because raw margin is not comparable across encoders.
+    e5 compresses cosine similarities into a narrow high band: measured against
+    the same anchors, e5-base-v2 scores a *smaller* raw margin than MiniLM
+    (0.0401 vs 0.1188) while being clearly better separated (AUC 0.927 vs
+    0.868). A bar in raw cosine units would reject the better model, so the bar
+    is AUC and the raw margin is reported as encoder-specific context only.
+    (Those two AUCs are e5-*base* against MiniLM. The shipped encoder is
+    e5-*small*-v2, which measures 0.855 on the split -- compression is not the
+    same thing as better separation, and only the scale-free number can tell
+    you which one you got.)
+
+    Caveat on ``cohens_d``: the pooled SD below averages each group's
+    *population* variance (divided by n), not the textbook (n-1)-weighted
+    form. Values from this function are therefore comparable to each other but
+    not to a Cohen's d computed by scipy or any stats package.
+    """
+    in_scope = tuple(float(value) for value in in_scope)
+    out_of_scope = tuple(float(value) for value in out_of_scope)
+    if not in_scope or not out_of_scope:
+        raise ValueError("separability needs a non-empty group on both sides")
+
+    in_mean = sum(in_scope) / len(in_scope)
+    out_mean = sum(out_of_scope) / len(out_of_scope)
+
+    def _variance(values: tuple[float, ...], mean: float) -> float:
+        return sum((value - mean) ** 2 for value in values) / max(len(values), 1)
+
+    pooled = (
+        (_variance(in_scope, in_mean) + _variance(out_of_scope, out_mean)) / 2
+    ) ** 0.5
+    labels = [1] * len(in_scope) + [0] * len(out_of_scope)
+    return {
+        "auc": float(roc_auc_score(labels, list(in_scope) + list(out_of_scope))),
+        "cohens_d": float((in_mean - out_mean) / pooled) if pooled else 0.0,
+        "raw_margin": in_mean - out_mean,
+        "max_out_of_scope": max(out_of_scope),
+        "min_in_scope": min(in_scope),
+        "counts": {"in_scope": len(in_scope), "out_of_scope": len(out_of_scope)},
     }

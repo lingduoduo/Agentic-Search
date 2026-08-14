@@ -52,10 +52,10 @@ Routing configuration spans separate capabilities:
 | `SEARCH_AGENT_MODEL` / `SEARCH_AGENT_SERVER_URL` | Enables explicit local/remote policy-agent modes; not required for default auto-search |
 | `GEN_AI_MODEL_PROVIDER`, `GEN_AI_MODEL_VERSION`, provider key | Enables grounded chat synthesis and the classifier for ambiguous routes |
 | `AGENTIC_SEARCH_INTENT_INDEX_PATH` | Directory holding a canonical-example index (`index.npz`) built by `intent_index_cli`; unset by default, which disables the similarity route |
-| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | Minimum cosine similarity to the best-matching route before skipping the LLM/rule fallback (not a softmax probability); defaults to `0.30` |
-| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | Minimum cosine-similarity gap between the top and runner-up route; defaults to `0.02` |
-| `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | Minimum cosine similarity for a module label to be emitted alongside the route; defaults to `0.45` |
-| `AGENTIC_SEARCH_INTENT_TOP_K` | Neighbors averaged per route; defaults to `3`. Swept alongside the thresholds in `evaluation_report.json`'s `top_k_sweep`, but the shipped default is unchanged |
+| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | Minimum cosine similarity to the best-matching route before skipping the LLM/rule fallback (not a softmax probability); defaults to `0.30`, a MiniLM-era value that is non-binding under the current `e5-small-v2` encoder — see [the units trap](training-and-evaluation.md#the-units-trap) |
+| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | Minimum cosine-similarity gap between the top and runner-up route; defaults to `0.015`, re-derived on the tuning slice for `e5-small-v2` (the MiniLM-era `0.02` abstained on roughly two thirds of requests under this encoder) |
+| `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | Minimum cosine similarity for a module label to be emitted alongside the route; defaults to `0.45`, below every score `e5-small-v2` produces, so every well-supported module of the winning route is emitted |
+| `AGENTIC_SEARCH_INTENT_TOP_K` | Neighbors averaged per route; defaults to `3`. Swept on the tuning slice alongside the thresholds in `evaluation_report.json`, but the shipped default is unchanged |
 | `AGENTIC_SEARCH_ROUTE_CLARIFICATION` | Ask the user which route was meant when no step in the cascade has a signal; `true` by default. Set `false` to always choose a route, as before. |
 | `SEARCH_DIRECT_COS_MIN` | Semantic threshold for accepting internal evidence without external fallback |
 | `AGENTIC_SEARCH_ALLOW_CLIENT_RETRIEVAL_URL` | Allows a request body to override the server-owned retrieval URL; development only |
@@ -81,10 +81,10 @@ Routing configuration spans separate capabilities:
 | `GEN_AI_API_KEY` | — | Provider API key |
 | `GEN_AI_API_BASE` | — | Override base URL (e.g. `http://localhost:11434/v1`) |
 | `AGENTIC_SEARCH_INTENT_INDEX_PATH` | — | Directory holding a canonical-example index (`index.npz`) built by `intent_index_cli`; unset keeps learned intent routing disabled |
-| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | `0.30` | Inclusive cosine-similarity threshold for accepting a route (not a softmax probability — a value carried over from the old learned-model checkpoint is meaningless here); must be finite and between `0.0` and `1.0`. Tuned on 2026-08-13 against the committed canonical set |
-| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | `0.02` | Minimum cosine-similarity gap between the top and runner-up route; must be finite and between `0.0` and `1.0` |
-| `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | `0.45` | Minimum cosine similarity for a module label to be emitted alongside the route; must be finite and between `0.0` and `1.0` |
-| `AGENTIC_SEARCH_INTENT_TOP_K` | `3` | Neighbors averaged per route; must be a positive integer. A stronger encoder is expected to move this number too, so it is a live parameter, not a settled constant — see the top-k sweep in [Training and evaluation](training-and-evaluation.md) |
+| `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` | `0.30` | Inclusive cosine-similarity threshold for accepting a route (not a softmax probability — a value carried over from the old learned-model checkpoint is meaningless here); must be finite and between `0.0` and `1.0`. **The scale changed again with the `e5-small-v2` encoder**: measured in-scope confidences are `0.792`–`0.905`, so this default never fires. Re-derive on the tuning slice before promoting the route — see [the units trap](training-and-evaluation.md#the-units-trap) |
+| `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` | `0.015` | Minimum cosine-similarity gap between the top and runner-up route; must be finite and between `0.0` and `1.0`. Selected by the 2026-08-13 sweep on the tuning slice under `e5-small-v2`, at a pinned `top_k` so the search could not move the reported accuracy; serves 50 of 111 test-slice queries at `0.960` served accuracy. The previous `0.02` served 38 |
+| `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` | `0.45` | Minimum cosine similarity for a module label to be emitted alongside the route; must be finite and between `0.0` and `1.0`. Below every module score e5 produces, so module emission is currently unfiltered (diagnostics only; it can never change the route) |
+| `AGENTIC_SEARCH_INTENT_TOP_K` | `3` | Neighbors averaged per route; must be a positive integer. Deliberately **not** chosen by the threshold sweep — pinning it is what keeps the reported accuracy independent of any threshold tuning — so the shipped default is unchanged; see [Training and evaluation](training-and-evaluation.md) |
 | `AGENTIC_SEARCH_ROUTE_CLARIFICATION` | `true` | Ask the user which route was meant when no step in the cascade has a signal; set `false` to always choose a route, as before |
 | `OAUTH_SLACK_CLIENT_ID` | — | Slack OAuth app client ID |
 | `OAUTH_CONFLUENCE_CLOUD_CLIENT_ID` | — | Confluence OAuth app client ID |
