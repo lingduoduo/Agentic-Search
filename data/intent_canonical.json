@@ -2307,5 +2307,197 @@
       "execute",
       "send"
     ]
+  },
+  {
+    "id": "canon-biz-001",
+    "text": "where is the signed vendor agreement stored",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-002",
+    "text": "the onboarding checklist for new managers",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-003",
+    "text": "pull the maintenance log for the elevator",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-004",
+    "text": "I need the insurance certificate for the venue",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-005",
+    "text": "which folder has the board meeting minutes",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-006",
+    "text": "get me the safety inspection report from March",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-007",
+    "text": "the signed offer letter for the new analyst",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-008",
+    "text": "locate the warranty paperwork for the espresso machine",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-009",
+    "text": "where did we file the tax residency forms",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-010",
+    "text": "show me the floor plan for the second building",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-011",
+    "text": "the amended sublease agreement",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-012",
+    "text": "dig up the old catering invoices from the summer event",
+    "route": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "canon-biz-013",
+    "text": "how much is left in the training budget this year",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-014",
+    "text": "what time does the mailroom close on Fridays",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-015",
+    "text": "who signed off on the furniture order",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-016",
+    "text": "how long is the probation period for new starters",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-017",
+    "text": "what is the seat count in the large meeting room",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-018",
+    "text": "when does the printer lease expire",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-019",
+    "text": "how many people replied to the leaving party invite",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-020",
+    "text": "what is the daily meal allowance in Berlin",
+    "route": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "canon-biz-021",
+    "text": "is the loading bay free right now",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-biz-022",
+    "text": "are there any desks free on the fourth floor today",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-biz-023",
+    "text": "what is the wait time at the clinic this morning",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "canon-biz-024",
+    "text": "is the shuttle running during the holiday week",
+    "route": "search",
+    "modules": [
+      "current_info"
+    ]
   }
 ]

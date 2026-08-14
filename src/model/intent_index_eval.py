@@ -62,7 +62,7 @@ _SWEEP_TOP_K = (3, 5, 8, 15, 25)
 
 # Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
 # app_configs.py) so evaluation scores modules with the same bar serving uses.
-_DEFAULT_MIN_MODULE_SCORE = 0.821
+_DEFAULT_MIN_MODULE_SCORE = 0.8216
 
 # The module grid is COMPUTED, not written down, because a hardcoded one goes
 # stale twice over: module scores move with the encoder *and* with top_k (a
