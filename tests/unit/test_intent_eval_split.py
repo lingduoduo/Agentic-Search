@@ -109,3 +109,56 @@ def test_a_duplicate_query_id_is_rejected():
 
     with pytest.raises(ValueError, match="duplicate"):
         split_eval_queries(queries)
+
+
+# --- out-of-scope probe split ---
+
+
+def _probes(counts: dict[str, int]) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (f"oos-{category}-{i:02d}", f"{category} probe {i}")
+        for category, n in counts.items()
+        for i in range(1, n + 1)
+    )
+
+
+def test_probe_split_is_stratified_across_categories():
+    """Categories are not interchangeable, so neither half may monopolise one.
+
+    A reporting half holding all the gibberish and none of the injections would
+    measure something quite different from one holding the reverse, and the
+    reported AUC would silently depend on which.
+    """
+    from src.model.intent_eval_split import split_out_of_scope_probes
+
+    split = split_out_of_scope_probes(_probes({"personal": 6, "injection": 6}))
+
+    for half in (split.tuning, split.reporting):
+        categories = {pid.rsplit("-", 1)[0] for pid, _ in half}
+        assert categories == {"oos-personal", "oos-injection"}
+
+
+def test_probe_split_never_empties_a_half_on_small_categories():
+    """A category of 2 must contribute to both halves, not vanish from one."""
+    from src.model.intent_eval_split import split_out_of_scope_probes
+
+    split = split_out_of_scope_probes(_probes({"personal": 2, "smalltalk": 2}))
+
+    assert len(split.tuning) == 2
+    assert len(split.reporting) == 2
+
+
+def test_probe_split_rejects_duplicate_ids():
+    from src.model.intent_eval_split import split_out_of_scope_probes
+
+    duplicated = (("oos-a-01", "one"), ("oos-a-01", "two"), ("oos-b-01", "three"))
+    with pytest.raises(ValueError, match="duplicate probe id"):
+        split_out_of_scope_probes(duplicated)
+
+
+def test_probe_split_rejects_a_share_that_cannot_produce_two_halves():
+    from src.model.intent_eval_split import split_out_of_scope_probes
+
+    for share in (0.0, 1.0, -0.1, 1.5):
+        with pytest.raises(ValueError, match="tuning_share"):
+            split_out_of_scope_probes(_probes({"personal": 4}), tuning_share=share)

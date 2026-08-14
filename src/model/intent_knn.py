@@ -35,7 +35,7 @@ from .intent_taxonomy import (
     validate_modules,
 )
 
-TOP_K = 15
+TOP_K = 8
 MIN_MODULE_SUPPORT = 10
 INDEX_FILENAME = "index.npz"
 
