@@ -10,7 +10,7 @@ Serving still uses indexes built offline by the `index_builder`. Filter-aware an
 
 ## Intent routing by nearest canonical example
 
-**There is no intent training run any more.** The optional three-label (`chat`, `search`, `tool`) request router used to be a small MLP trained on generated examples. It is gone — module, checkpoint format, wordpiece bundle and all. What replaced it compares the incoming request against roughly 280 curated canonical examples and takes the route whose nearest examples are closest. The whole offline workflow is three commands, none of which trains anything:
+**There is no intent training run any more.** The optional three-label (`chat`, `search`, `tool`) request router used to be a small MLP trained on generated examples. It is gone — module, checkpoint format, wordpiece bundle and all. What replaced it compares the incoming request against roughly 300 curated canonical examples and takes the route whose nearest examples are closest. The whole offline workflow is three commands, none of which trains anything:
 
 ```bash
 # 1. Seed a canonical draft from existing labelled examples (optional; run once).
@@ -71,32 +71,32 @@ The split is deterministic in the seed alone (input order is normalized first), 
 
 ### What it scores, and why it is still dark
 
-Re-measured 2026-08-13 against the same committed canonical set (280 anchors) and the same eval files — only the encoder changed. **The instrument is not identical**: the reported slice is now the 111-query test slice rather than the 151-query clean set, because 40 clean queries are spent on tuning. Every row below is therefore quoted **on the same slice for both encoders**, re-measuring MiniLM where needed rather than carrying a number across slices.
+Both columns are measured against the **current** committed canonical set (304 anchors) and the same eval files, each at its own shipped hyperparameters — e5 at `k=15, min_margin=0.010`, MiniLM at the `k=3, min_margin=0.02` it actually shipped with. **The instrument is not identical**: the reported slice is now the 111-query test slice rather than the 151-query clean set, because 40 clean queries are spent on tuning. Every row below is therefore quoted **on the same slice for both encoders**, re-measuring MiniLM where needed rather than carrying a number across slices.
 
 Unless a row says otherwise, "test slice" means the 111 queries left after the split (**seed 17**, tuning 70 / test 111), and the out-of-scope rows score those 111 against the 24 probes.
 
 | Measure | e5-small-v2 (now) | all-MiniLM-L6-v2 (before) |
 |---|---|---|
-| **Route accuracy, test slice (111 queries; seed 17, tuning 70 / test 111)** | **0.8108** | **0.6216** (re-measured on the same 111) |
+| **Route accuracy, test slice (111 queries; seed 17, tuning 70 / test 111)** | **0.8108** | **0.6667** |
 | — the same, on the older clean_151 instrument | `0.7881` | `0.6225` (as published by #511) |
 | hard_40 (adversarial, never tuned on) | `0.7250` argmax / `0.9048` served | `0.6250` |
-| Out-of-scope **AUC**, test_111 vs. 24 probes | `0.8720` | `0.8848` (re-measured on the same 111) |
+| Out-of-scope **AUC**, test_111 vs. 24 probes | `0.8720` | **`0.8863`** |
 | — the same, on clean_151 vs. 24 probes | `0.8626` | `0.8681` |
-| Out-of-scope Cohen's d, test_111 vs. 24 probes | `1.6849` | `1.6365` |
-| Leave-one-out over the canonical anchors (diagnostic, never a selector) | `0.8191` (249/304) | `0.6643` (186/280) |
+| Out-of-scope Cohen's d, test_111 vs. 24 probes | `1.6849` | `1.6701` |
+| Leave-one-out over the canonical anchors (diagnostic, never a selector) | `0.8191` (249/304) | `0.6382` (194/304) |
 | p50 / p95 routing latency, encode + decide | `10.35ms` / `12.20ms` | `5.51ms` / `5.88ms` |
-| Out-of-scope raw margin, test_111 *(encoder-specific — do not compare across this row)* | `0.0242` | `0.1210` |
+| Out-of-scope raw margin, test_111 *(encoder-specific — do not compare across this row)* | `0.0242` | `0.1227` |
 | Module macro-F1 / joint accuracy (diagnostic; both on the mixed `bulk_181`, like-for-like with the before column — the test slice alone gives `0.6291` / `0.4775`) | `0.6463` / `0.4972` | `0.3471` / `0.2318` |
 | Per-route accuracy, test slice (111) | search 26/37, chat 34/37, tool 30/37 | chat 24/51, search 25/50, tool 45/50 (on clean_151) |
 | Serving hyperparameters | `top_k=15`, `min_confidence=0.30`, `min_margin=0.010`, `min_module_score=0.8216` | `top_k=3`, `min_confidence=0.30`, `min_margin=0.02` |
 
-**What `0.8108` is, precisely.** It is **argmax route accuracy with no abstention**: the fraction of the 111 test queries whose best-scoring route is the right one, counted whether or not the thresholds would have served an answer. It is *not* the accuracy a caller sees. With the shipped `min_margin=0.010` the router **serves 58 of those 111 (coverage `0.523`) at `1.0000` served accuracy — no misroutes at all** — and defers the rest to the LLM classifier. Argmax is the number the decision rule was written against and the only one comparable to the `0.6225`/`0.6216` before-figures, which are argmax too; the served pair is what promotion would actually deliver. Both are reported for every slice in `evaluation_report.json`.
+**What `0.8108` is, precisely.** It is **argmax route accuracy with no abstention**: the fraction of the 111 test queries whose best-scoring route is the right one, counted whether or not the thresholds would have served an answer. It is *not* the accuracy a caller sees. With the shipped `min_margin=0.010` the router **serves 58 of those 111 (coverage `0.523`) at `1.0000` served accuracy — no misroutes at all** — and defers the rest to the LLM classifier. Argmax is the number the decision rule was written against and the only one comparable to the `0.6667` MiniLM figure, which is argmax too; the served pair is what promotion would actually deliver. Both are reported for every slice in `evaluation_report.json`.
 
 **The margin gate abstains hardest exactly where the router is weakest**, which is the behavior you want and is not visible in either headline. Broken out by route on the test slice: `search` remains the weak route at 26/37 argmax, and it is still the route that serves least. Every route now serves with **no errors at all** — the 58 served queries contain zero misroutes. The route whose representation is worst therefore contributes all of the deferrals and none of the mistakes, which is exactly the shape the margin gate is supposed to produce. Abstention is not spread evenly over the slice; it is concentrated on the queries the index genuinely cannot place.
 
 For older context, on the retired clean-151 instrument the previous MLP scored `0.4768`, the production regex cascade `0.4238`, and the majority-class floor `0.3377`. Those are different queries under a different encoder — context, not a like-for-like comparison with the column above.
 
-**+0.18 on route accuracy against MiniLM on the identical 111 queries**, at roughly 2x the latency and well inside the 25ms ceiling. The instrument is smaller than #511's, not harder or cleaner: MiniLM scores `0.6216` on these 111 against `0.6225` on the clean 151, so the slice itself is of ordinary difficulty.
+**+0.14 on route accuracy against MiniLM**, measured on the identical 111 queries *and* the identical 304 anchors, each encoder at its own shipped hyperparameters — at roughly 2x the latency and well inside the 25ms ceiling. Keeping both halves of that comparison matched matters: MiniLM's own numbers moved when the anchor set grew (`0.6216` → `0.6667` argmax, leave-one-out `0.6643` → `0.6382`), so a column carried forward unchanged would have silently compared two different models on two different anchor sets.
 
 **The decision rule fixed in advance had three bands: `≥ 0.80` clears the promotion bar, `0.75`–`0.80` is a real improvement, below `0.75` is a hard stop. `0.8108` clears the bar.** It did not at `k=3`, where the same index scored `0.7928` and sat in the middle band; choosing `top_k` on the split (see [below](#top_k-chosen-on-the-split)) moved it to `0.8018`, and the business-vocabulary anchors added after that took it to `0.8108`.
 
@@ -106,7 +106,7 @@ For older context, on the retired clean-151 instrument the previous MLP scored `
 
 One result did **not** improve, and it matters more than the headline:
 
-**Out-of-scope separability got worse, not better: AUC `0.8551` against MiniLM's `0.8848` on the same 111 queries — `−0.0297`.** On the older clean_151 slice the same comparison is `0.8626` vs `0.8681` (`−0.0055`), so the regression looks small there and is five times larger on the slice actually reported from; quote the matched pair, never one number from each slice. Either way it misses the `0.90` bar this change set for itself. The `0.927` AUC that made e5 look better at abstaining was measured on **e5-*base*-v2**, a different, larger model that is explicitly out of scope here; the fitted e5-*small* probe scored `0.871`, already under the bar. Abstention is the safety property of this router, so this looked like the single strongest argument against promoting it.
+**Out-of-scope separability is still the one measure MiniLM wins: AUC `0.8720` against `0.8863` on the same 111 queries and the same anchors — `−0.0143`, roughly half the gap #512 measured.** On the older clean_151 slice the same comparison is `0.8626` vs `0.8681` (`−0.0055`), so the regression looks small there and is five times larger on the slice actually reported from; quote the matched pair, never one number from each slice. Either way it misses the `0.90` bar this change set for itself. The `0.927` AUC that made e5 look better at abstaining was measured on **e5-*base*-v2**, a different, larger model that is explicitly out of scope here; the fitted e5-*small* probe scored `0.871`, already under the bar. Abstention is the safety property of this router, so this looked like the single strongest argument against promoting it.
 
 **It does not survive being measured at the operating point** — e5 makes 2 wrong routes against MiniLM's 21 at each model's own tuned threshold, and 7 against 21 at matched coverage. AUC ranks over the whole score range; the margin gate only needs separation at the boundary. See [The out-of-scope regression, measured where it bites](#the-out-of-scope-regression-measured-where-it-bites) below. The `0.90` bar is still missed and the ranking regression is still real — what changed is that neither costs anything at any threshold this router would run at.
 
