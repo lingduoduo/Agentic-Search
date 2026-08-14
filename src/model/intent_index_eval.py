@@ -38,8 +38,17 @@ LEGACY_PREFIX = "eval-"
 # The tuning-slice threshold sweep, fixed by the spec: never touch the test
 # slice or hard slice while choosing serving hyperparameters.
 _SWEEP_MIN_CONFIDENCES = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55)
-_SWEEP_MIN_MARGINS = (0.02, 0.05, 0.08, 0.12)
+# Margins span two encoders' scales. The four large values are MiniLM's; the
+# low end is derived from the *tuning* slice's own margin quantiles under
+# e5-small-v2 (min 0.0008, p25 0.0116, median 0.0188, p75 0.0280, max 0.0676),
+# because e5 compresses every route score into a narrow band and a grid that
+# starts at 0.02 abstains on more than half of everything before it begins.
+# Derive any future extension from the tuning slice too -- never from the test
+# slice, whose quantiles are a different (and off-limits) distribution.
+_SWEEP_MIN_MARGINS = (0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.05, 0.08, 0.12)
 _MIN_COVERAGE = 0.60
+# Report-only, for _sweep_top_k's table. `top_k` is NOT swept for selection --
+# see _select_thresholds.
 _SWEEP_TOP_K = (3, 5, 8, 15, 25)
 
 # Mirrors AppSettings.intent_min_module_score's default (src/internal/configs/
@@ -263,7 +272,7 @@ def _select_thresholds(
     tuning_vectors: np.ndarray,
     probe_vectors: np.ndarray,
 ) -> dict[str, Any]:
-    """Sweep (top_k, min_confidence, min_margin) on the tuning slice only.
+    """Sweep (min_confidence, min_margin) on the tuning slice only, at fixed k.
 
     Tuned exclusively against the tuning split and the out-of-scope probes --
     the test slice and hard slice are never consulted. Selects the
@@ -271,42 +280,54 @@ def _select_thresholds(
     breaking ties toward higher out-of-scope deferral: the rule fixed in
     advance by the spec. ``leave_one_out_route_accuracy`` is not part of this
     key -- see its docstring for why it would be a biased selector.
+
+    ``top_k`` is **pinned at the shipped ``TOP_K``** rather than swept, and
+    that is a safety property, not a convenience. The reported headline is
+    argmax route accuracy, which is abstention-blind: it depends on ``top_k``
+    and on nothing else this function chooses. Sweeping ``top_k`` therefore
+    couples a tuning-slice search to the held-out headline, so widening the
+    grid after seeing the headline could move it. Pinning ``k`` severs that
+    coupling arithmetically -- with ``k`` fixed, no choice made here can
+    change ``test_slice.accuracy`` by any amount -- which is what makes the
+    threshold grid free to be re-derived whenever the encoder changes.
+    ``_sweep_top_k`` still reports the per-k table, on the tuning slice, as
+    evidence for a separate and deliberate decision.
     """
     sweep: list[dict[str, Any]] = []
-    for top_k in _SWEEP_TOP_K:
-        for min_confidence in _SWEEP_MIN_CONFIDENCES:
-            for min_margin in _SWEEP_MIN_MARGINS:
-                decisions = _decide_batch(
-                    index,
-                    tuning_vectors,
-                    top_k=top_k,
-                    min_confidence=min_confidence,
-                    min_margin=min_margin,
-                )
-                served = [(d, r) for d, r in zip(decisions, tuning) if not d.abstained]
-                correct = sum(d.route == r.expected for d, r in served)
-                probe_decisions = _decide_batch(
-                    index,
-                    probe_vectors,
-                    top_k=top_k,
-                    min_confidence=min_confidence,
-                    min_margin=min_margin,
-                )
-                deferred = sum(d.abstained for d in probe_decisions)
-                coverage = len(served) / len(tuning) if tuning else 0.0
-                sweep.append(
-                    {
-                        "top_k": top_k,
-                        "min_confidence": min_confidence,
-                        "min_margin": min_margin,
-                        "coverage": coverage,
-                        "served_accuracy": correct / len(served) if served else 0.0,
-                        "served": len(served),
-                        "oos_deferral": deferred / len(probe_vectors)
-                        if len(probe_vectors)
-                        else 0.0,
-                    }
-                )
+    top_k = TOP_K
+    for min_confidence in _SWEEP_MIN_CONFIDENCES:
+        for min_margin in _SWEEP_MIN_MARGINS:
+            decisions = _decide_batch(
+                index,
+                tuning_vectors,
+                top_k=top_k,
+                min_confidence=min_confidence,
+                min_margin=min_margin,
+            )
+            served = [(d, r) for d, r in zip(decisions, tuning) if not d.abstained]
+            correct = sum(d.route == r.expected for d, r in served)
+            probe_decisions = _decide_batch(
+                index,
+                probe_vectors,
+                top_k=top_k,
+                min_confidence=min_confidence,
+                min_margin=min_margin,
+            )
+            deferred = sum(d.abstained for d in probe_decisions)
+            coverage = len(served) / len(tuning) if tuning else 0.0
+            sweep.append(
+                {
+                    "top_k": top_k,
+                    "min_confidence": min_confidence,
+                    "min_margin": min_margin,
+                    "coverage": coverage,
+                    "served_accuracy": correct / len(served) if served else 0.0,
+                    "served": len(served),
+                    "oos_deferral": deferred / len(probe_vectors)
+                    if len(probe_vectors)
+                    else 0.0,
+                }
+            )
 
     eligible = [row for row in sweep if row["coverage"] >= _MIN_COVERAGE]
     eligible.sort(key=lambda row: (-row["served_accuracy"], -row["oos_deferral"]))

@@ -87,7 +87,7 @@ def test_default_config_documents_intent_model_configuration():
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN"]
         == settings.intent_min_route_margin
-        == 0.02
+        == 0.015
     )
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE"]

@@ -407,6 +407,27 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
     assert shipped["separation_margin"] == pytest.approx(0.85 - (0.1 + 0.2) / 2)
 
 
+def test_the_threshold_sweep_never_chooses_top_k(tmp_path, monkeypatch):
+    """Pinning k is what leaves the threshold grid free to be re-derived.
+
+    The reported headline is argmax route accuracy, which is abstention-blind:
+    it depends on ``top_k`` and on nothing else the sweep selects. A sweep that
+    also chose ``k`` would couple a tuning-slice search to the held-out number,
+    so widening the grid after seeing that number could move it. With ``k``
+    pinned, no threshold this sweep picks can change ``test_slice.accuracy`` by
+    any amount -- so this assertion is the one guarding that property.
+    """
+    report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
+
+    rows = report["threshold_tuning"]["sweep"]
+    assert {row["top_k"] for row in rows} == {intent_index_eval.TOP_K}
+    assert len(rows) == len(intent_index_eval._SWEEP_MIN_CONFIDENCES) * len(
+        intent_index_eval._SWEEP_MIN_MARGINS
+    )
+    selected = report["threshold_tuning"]["selected"]
+    assert selected is None or selected["top_k"] == intent_index_eval.TOP_K
+
+
 # ---------------------------------------------------------------------------
 # The pinned bars.
 #
@@ -552,7 +573,7 @@ def test_routing_one_request_stays_under_the_latency_ceiling():
     index = IntentIndex.load(DATA / "intent_index" / INDEX_FILENAME)
     query = "book the meeting room for tomorrow afternoon"
     decide = functools.partial(
-        index.decide, min_confidence=0.30, min_margin=0.02, min_module_score=0.45
+        index.decide, min_confidence=0.30, min_margin=0.015, min_module_score=0.45
     )
     for _ in range(5):
         decide(encode_texts([query])[0])

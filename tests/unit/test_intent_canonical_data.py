@@ -47,8 +47,14 @@ _MAX_ROUTE_SHARE = 0.40
 # transcripts" against "what does the retention policy say about transcripts",
 # both route `search` -- is a genuine near-duplicate: two phrasings of one
 # request, which is exactly what this test exists to catch. The fix belongs in
-# the canonical set, not in this constant, and this branch is forbidden from
-# editing that set. Recorded in the Task 3 report as a data follow-up.
+# the canonical set, not in this constant, and the change that re-derived this
+# ceiling was forbidden from editing that set.
+#
+# So be clear about what that costs: **this test no longer catches that pair**,
+# and no test does. It is tracked in prose only -- PR #512's body and
+# .superpowers/sdd/2026-08-13-intent-encoder-e5/task-3-report.md -- as an open
+# data follow-up. Whoever de-duplicates it should re-measure this distribution
+# afterwards and tighten this constant if the new maximum allows.
 _MAX_INTERNAL_COSINE = 0.95
 
 

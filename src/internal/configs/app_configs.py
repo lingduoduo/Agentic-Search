@@ -159,11 +159,15 @@ class AppSettings:
     # answer mid-word long before the token budget is reached. 0 disables it.
     generation_timeout_seconds: float = 120.0
     intent_index_path: Path | None = None
-    # Cosine similarity to the best-matching route, not a softmax probability.
-    # Both routing thresholds are the pair the 2026-08-13 sweep selected over
-    # the committed canonical set; see docs/training-and-evaluation.md.
+    # Cosine similarity to the best-matching route, not a softmax probability,
+    # and the scale moves with the encoder: these are the pair the 2026-08-13
+    # sweep selected on the *tuning* slice under intfloat/e5-small-v2, at a
+    # pinned top_k so the search could not touch the reported number. Under
+    # this encoder the confidence gate never fires (in-scope confidences run
+    # 0.792-0.905); the margin does the abstaining. See
+    # docs/training-and-evaluation.md.
     intent_model_min_confidence: float = 0.30
-    intent_min_route_margin: float = 0.02
+    intent_min_route_margin: float = 0.015
     intent_min_module_score: float = 0.45
     # Neighbors averaged per route. A sweep over the shipped encoder moves
     # both accuracy and out-of-scope separation (see
@@ -207,7 +211,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         source, "AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE", 0.30
     )
     intent_min_route_margin = get_env_float(
-        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.02
+        source, "AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN", 0.015
     )
     intent_min_module_score = get_env_float(
         source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.45
