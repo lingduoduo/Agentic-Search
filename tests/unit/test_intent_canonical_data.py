@@ -43,19 +43,27 @@ _MAX_ROUTE_SHARE = 0.40
 # all; 0.95 is tighter and is already this repo's duplicate threshold in the
 # same units under the same encoder (LEAKAGE_COSINE in intent_index_cli).
 #
-# The measured maximum, 0.9340 -- "there was a policy about retaining user
-# transcripts" against "what does the retention policy say about transcripts",
-# both route `search` -- is a genuine near-duplicate: two phrasings of one
-# request, which is exactly what this test exists to catch. The fix belongs in
-# the canonical set, not in this constant, and the change that re-derived this
-# ceiling was forbidden from editing that set.
+# That 0.9340 maximum was a genuine near-duplicate -- "there was a policy about
+# retaining user transcripts" against "what does the retention policy say about
+# transcripts", both route `search` -- and the change that re-derived this
+# ceiling was forbidden from editing the canonical set, so it raised the
+# constant past the defect and recorded the debt.
 #
-# So be clear about what that costs: **this test no longer catches that pair**,
-# and no test does. It is tracked in prose only -- PR #512's body and
-# .superpowers/sdd/2026-08-13-intent-encoder-e5/task-3-report.md -- as an open
-# data follow-up. Whoever de-duplicates it should re-measure this distribution
-# afterwards and tighten this constant if the new maximum allows.
-_MAX_INTERNAL_COSINE = 0.95
+# The defect is now fixed. `canon-auth-011` was re-subjected to the failover
+# drill, keeping its vague-recall register and its pure `lookup_document` role
+# while vacating a topic three other anchors already covered. Re-measured over
+# the cleaned set (2026-08-14): mean 0.7776, sd 0.0266, **max 0.9271**, and
+# **no pair at or above 0.93**. The four highest surviving pairs are all
+# deliberate contrasts -- cross-route or cross-module on a shared subject --
+# not duplicates.
+#
+# So this constant tightens 0.95 -> 0.94, restoring the rule the original
+# encoded: a hair above a clean set's maximum. 0.94 sits +0.6 sd above 0.9271,
+# the same headroom the pre-e5 constant had over its own maximum. 0.93 would
+# sit at +0.11 sd, close enough to the top contrast pair to fire on phrasing
+# noise. Anything at 0.94 or above is now a duplicate to fix in the data, the
+# way this one was -- not a constant to raise.
+_MAX_INTERNAL_COSINE = 0.94
 
 
 @pytest.fixture(scope="module")
