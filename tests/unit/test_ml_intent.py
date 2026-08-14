@@ -146,15 +146,30 @@ def test_low_confidence_is_returned_for_route_request_to_abstain_on(
     assert decision.confidence < decision.threshold
 
 
-def test_low_margin_defers_by_returning_none(tmp_path, monkeypatch):
-    """route_request has no margin concept, so this abstention happens here."""
+def test_low_margin_reports_its_abstention_on_the_returned_decision(
+    tmp_path, monkeypatch
+):
+    """The margin abstention is reported, not swallowed into ``None``.
+
+    It used to return ``None``, which ``route_request`` cannot tell apart from
+    "no index configured" — so every margin deferral was invisible to
+    production telemetry, and the margin gate is the only abstention that fires
+    at all under e5. Returning the decision with a reason is what makes it
+    countable, and leaves both abstentions symmetric.
+    """
     monkeypatch.setattr(
         ml_intent,
         "encode_texts",
         lambda texts: np.array([[0.707, 0.707, 0.0]], dtype=np.float32),
     )
 
-    assert ml_intent.predict_route("anything", settings=_settings(tmp_path)) is None
+    decision = ml_intent.predict_route("anything", settings=_settings(tmp_path))
+
+    assert decision is not None
+    assert decision.abstain_reason == "margin_below_threshold"
+    # Above the confidence floor: this is a margin abstention and nothing else,
+    # so route_request must not mislabel it as model_below_threshold.
+    assert decision.confidence >= decision.threshold
 
 
 def test_missing_index_path_defers_without_raising(tmp_path):
@@ -230,27 +245,27 @@ def test_index_is_loaded_once_and_cached(tmp_path, monkeypatch):
     assert loads["count"] == 1
 
 
-def test_composite_query_defers_and_is_recorded_as_composite(tmp_path, monkeypatch):
+def test_composite_query_defers_and_carries_the_flag_on_its_decision(
+    tmp_path, monkeypatch
+):
     """A composite request is by definition low-margin, so it defers.
 
-    The flag therefore reaches the capture stage, never a returned decision.
+    The flag used to reach only the capture stage, which runs solely under the
+    debug panels — so the one signal whose entire purpose is to feed a future
+    plan-aware router was never recorded anywhere durable. It now rides the
+    returned decision, and ``route_request`` puts it in production telemetry.
     """
     monkeypatch.setattr(
         ml_intent,
         "encode_texts",
         lambda texts: np.array([[0.71, 0.0, 0.70]], dtype=np.float32),
     )
-    recorded = []
-    monkeypatch.setattr(
-        ml_intent._capture,
-        "record_stage",
-        lambda stage, mechanism, detail: recorded.append((stage, detail)),
-    )
 
-    assert ml_intent.predict_route("anything", settings=_settings(tmp_path)) is None
-    assert recorded[-1][0] == "intent_model"
-    assert recorded[-1][1]["composite"] is True
-    assert recorded[-1][1]["fallback_reason"] == "margin_below_threshold"
+    decision = ml_intent.predict_route("anything", settings=_settings(tmp_path))
+
+    assert decision is not None
+    assert decision.composite is True
+    assert decision.abstain_reason == "margin_below_threshold"
 
 
 def test_an_index_built_with_the_previous_encoder_is_rejected(tmp_path, monkeypatch):
@@ -313,22 +328,21 @@ def test_both_gates_trip_sets_composite_on_the_returned_decision(tmp_path, monke
     route_request's own confidence check to act on, and that decision must
     carry composite=True rather than silently dropping it.
 
-    predict_route itself must NOT record a capture stage here: it only
-    returns a decision (not None) on this path, and route_request always
-    records its own single "intent_model" stage whenever it gets a decision
-    back. If predict_route also recorded one here, a request that trips both
-    gates would produce two stages with conflicting payloads.
+    predict_route records no capture stage on any path — route_request records
+    exactly one per decision. That used to be true only of this path; now that
+    margin abstention also returns a decision, it is true universally, which is
+    what keeps a both-gates request from emitting two stages with conflicting
+    payloads.
+
+    ``abstain_reason`` stays None here even though decide() set
+    "confidence_below_threshold" internally: only the margin reason is
+    propagated, so route_request's existing model_below_threshold label for the
+    confidence path is unchanged.
     """
     monkeypatch.setattr(
         ml_intent,
         "encode_texts",
         lambda texts: np.array([[0.71, 0.0, 0.70]], dtype=np.float32),
-    )
-    recorded = []
-    monkeypatch.setattr(
-        ml_intent._capture,
-        "record_stage",
-        lambda stage, mechanism, detail: recorded.append((stage, detail)),
     )
 
     decision = ml_intent.predict_route(
@@ -338,4 +352,5 @@ def test_both_gates_trip_sets_composite_on_the_returned_decision(tmp_path, monke
     assert decision is not None
     assert decision.confidence < decision.threshold
     assert decision.composite is True
-    assert recorded == []
+    assert decision.abstain_reason is None
+    assert not hasattr(ml_intent, "_capture")
