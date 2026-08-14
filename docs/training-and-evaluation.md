@@ -591,7 +591,9 @@ Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` |
 
 **GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo.py`.
 
-**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use (with a group-relative advantage in place of GAE). `compute_value_loss` and `compute_gae_advantages` implement the PPO-with-critic path but are **not wired into any trainer** — training here is critic-free GRPO (no value/critic model), and those helpers exist for parity/tests only. All require an `eos_mask` tensor. See `src/training/ppo/core_algos.py`.
+**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/ppo/core_algos.py`.
+
+The PPO-**with-critic** path (`compute_value_loss`, `compute_gae_advantages`) used to live alongside it, exported from three surfaces and called only from tests. It was removed: training here is critic-free GRPO, there is no value model, value head, or critic anywhere in the repo to produce the `values` those helpers consume, and so the path could never be exercised end to end. Exported-but-unreachable code reads as supported API and its test coverage implies a path that is exercised rather than merely arithmetic-checked. If a critic is ever wanted, the git history has both functions.
 
 ### Smoke test
 

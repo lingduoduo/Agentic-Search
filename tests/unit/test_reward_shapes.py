@@ -19,7 +19,6 @@ from src.training.ppo.core_algos import (
 )
 from src.training.ppo.core_algos import (
     PPOPolicyLossConfig,
-    compute_gae_advantages,
     compute_grpo_policy_loss,
 )
 from src.training.reward import (
@@ -497,45 +496,6 @@ class TestComputeGRPOOutcomeAdvantageClipping:
             rewards, eos_mask, index, clip_advantages=0.5
         )
         assert adv_clipped.abs().max().item() <= 0.5 + 1e-5
-
-
-# ---------------------------------------------------------------------------
-# compute_gae_advantages
-# ---------------------------------------------------------------------------
-
-
-class TestComputeGAEAdvantages:
-    def test_shape_preserved(self):
-        rewards = torch.zeros(2, 5)
-        values = torch.zeros(2, 5)
-        eos_mask = torch.ones(2, 5)
-        adv, ret = compute_gae_advantages(rewards, values, eos_mask)
-        assert adv.shape == (2, 5)
-        assert ret.shape == (2, 5)
-
-    def test_zero_rewards_zero_values_zero_advantages(self):
-        rewards = torch.zeros(1, 4)
-        values = torch.zeros(1, 4)
-        eos_mask = torch.ones(1, 4)
-        adv, ret = compute_gae_advantages(rewards, values, eos_mask)
-        assert adv.abs().max().item() < 1e-6
-
-    def test_positive_reward_produces_positive_advantage(self):
-        rewards = torch.zeros(1, 4)
-        rewards[0, 3] = 1.0  # reward at last step
-        values = torch.zeros(1, 4)
-        eos_mask = torch.ones(1, 4)
-        adv, _ = compute_gae_advantages(rewards, values, eos_mask, gamma=1.0, lam=1.0)
-        # All earlier positions should accumulate positive advantage
-        assert adv[0, 0].item() > 0
-
-    def test_eos_mask_zeroes_out_padded_positions(self):
-        rewards = torch.ones(1, 4)
-        values = torch.zeros(1, 4)
-        eos_mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]])
-        adv, _ = compute_gae_advantages(rewards, values, eos_mask)
-        assert adv[0, 2].item() == pytest.approx(0.0)
-        assert adv[0, 3].item() == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
