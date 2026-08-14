@@ -159,6 +159,10 @@ class AppSettings:
     # answer mid-word long before the token budget is reached. 0 disables it.
     generation_timeout_seconds: float = 120.0
     intent_index_path: Path | None = None
+    # Score every auto-routed request and record what the router WOULD have
+    # decided, without acting on it. Turns promotion from a bet into a
+    # measurement: the artifact stays dark while production data accumulates.
+    intent_shadow_mode: bool = False
     # Cosine similarity to the best-matching route, not a softmax probability,
     # and the scale moves with the encoder: these are the pair the 2026-08-13
     # sweep selected on the *tuning* slice under intfloat/e5-small-v2, at a
@@ -212,6 +216,9 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         source, "AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE", 0.8215
     )
     intent_top_k = get_env_int(source, "AGENTIC_SEARCH_INTENT_TOP_K", 8)
+    intent_shadow_mode = get_env_bool(
+        source, "AGENTIC_SEARCH_INTENT_SHADOW_MODE", False
+    )
     intent_index_path_value = get_env_str(
         source, "AGENTIC_SEARCH_INTENT_INDEX_PATH", None
     )
@@ -301,6 +308,7 @@ def load_app_settings(env: EnvMapping | None = None) -> AppSettings:
         intent_index_path=(
             Path(intent_index_path_value) if intent_index_path_value else None
         ),
+        intent_shadow_mode=intent_shadow_mode,
         intent_min_route_margin=intent_min_route_margin,
         intent_min_module_score=intent_min_module_score,
         intent_top_k=intent_top_k,

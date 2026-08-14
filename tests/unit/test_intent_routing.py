@@ -349,3 +349,99 @@ def test_margin_abstention_still_defers_to_the_classifier(tmp_path, monkeypatch)
 
     assert decision.strategy is RouteStrategy.CHAT
     assert telemetry["route_mechanism"] == "classifier"
+
+
+# --- shadow mode: observe without acting ---
+
+
+def test_shadow_mode_records_the_prediction_without_acting_on_it(tmp_path, monkeypatch):
+    """The whole point: production data on a router that is still dark.
+
+    A vector that would be served confidently must still reach the LLM
+    classifier, while the prediction it would have made is recorded. Asserting
+    both halves matters — recording without the fall-through would be a silent
+    promotion, and falling through without recording would gather nothing.
+    """
+    ml_intent._INTENT_INDEXES.clear()
+    monkeypatch.setattr(
+        ml_intent,
+        "encode_texts",
+        lambda texts: np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+    )
+    settings = AppSettings(
+        intent_index_path=_write_routing_index(tmp_path),
+        intent_min_route_margin=0.05,
+        intent_min_module_score=0.4,
+        intent_shadow_mode=True,
+    )
+    telemetry: dict = {}
+    try:
+        decision = route_request(
+            _MODEL_STAGE_QUERY,
+            llm=_ChatLLM(),
+            explicit_source=False,
+            settings=settings,
+            telemetry=telemetry,
+        )
+    finally:
+        ml_intent._INTENT_INDEXES.clear()
+
+    # Observed: the router would have said "search".
+    assert telemetry["route_shadow_intent"] == "search"
+    assert telemetry["route_shadow_abstained"] is False
+    # Not acted on: the classifier decided, and it answers "chat".
+    assert decision.strategy is RouteStrategy.CHAT
+    assert telemetry["route_mechanism"] == "classifier"
+    assert telemetry["route_fallback_reason"] == "shadow_mode"
+
+
+def test_shadow_fields_are_distinct_from_served_fields(tmp_path, monkeypatch):
+    """A shadow run must never be readable as a served one.
+
+    Both modes populate `route_predicted_intent`, because the prediction is
+    genuinely made either way. Only shadow populates `route_shadow_intent`, and
+    only a served route reaches `route_mechanism == "model"` — so the two are
+    separable when the telemetry is read back in aggregate.
+    """
+    ml_intent._INTENT_INDEXES.clear()
+    monkeypatch.setattr(
+        ml_intent,
+        "encode_texts",
+        lambda texts: np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+    )
+    index_path = _write_routing_index(tmp_path)
+    common = {
+        "intent_index_path": index_path,
+        "intent_min_route_margin": 0.05,
+        "intent_min_module_score": 0.4,
+    }
+    served: dict = {}
+    shadow: dict = {}
+    try:
+        route_request(
+            _MODEL_STAGE_QUERY,
+            llm=_ChatLLM(),
+            explicit_source=False,
+            settings=AppSettings(**common),
+            telemetry=served,
+        )
+        ml_intent._INTENT_INDEXES.clear()
+        route_request(
+            _MODEL_STAGE_QUERY,
+            llm=_ChatLLM(),
+            explicit_source=False,
+            settings=AppSettings(**common, intent_shadow_mode=True),
+            telemetry=shadow,
+        )
+    finally:
+        ml_intent._INTENT_INDEXES.clear()
+
+    assert served["route_mechanism"] == "model"
+    assert "route_shadow_intent" not in served
+    assert shadow["route_mechanism"] == "classifier"
+    assert shadow["route_shadow_intent"] == served["route_predicted_intent"]
+
+
+def test_shadow_mode_is_off_by_default():
+    """Promotion-adjacent machinery must never arrive switched on."""
+    assert AppSettings().intent_shadow_mode is False
