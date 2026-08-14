@@ -20,25 +20,35 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class _StubJudge:
-    """Minimal judge: score is the word count, ground truth ignored."""
+    """Minimal reference-based judge: score is the word count of the gold."""
 
-    def score(self, answer: str) -> float:
-        return float(len(answer.split()))
+    def score(self, answer: str, gold: str) -> float:
+        return float(len(answer.split()) + len(gold.split()))
 
 
-def test_make_judge_fn_ignores_ground_truth_and_returns_score():
+def test_make_judge_fn_passes_the_ground_truth_through():
+    """It used to discard the gold, which is why the signal ignored correctness.
+
+    ``make_judge_fn`` adapted ``score(answer)`` and dropped the ground truth on
+    the floor, so nothing downstream of it could depend on whether the answer
+    was right. The seam now forwards both arguments.
+    """
     judge_fn = make_judge_fn(_StubJudge())
-    assert judge_fn("two words", "IGNORED GOLD") == 2.0
-    assert judge_fn("one two three", "") == 3.0
+
+    assert judge_fn("two words", "one") == 3.0
+    assert judge_fn("two words", "one two") == 4.0
+    # Same answer, different gold -> different score. The old seam could not.
+    assert judge_fn("two words", "a") != judge_fn("two words", "a b")
 
 
-def test_make_judge_fn_matches_real_judge_pointwise():
-    from src.training.judge import SimulatedPreferenceJudge
+def test_make_judge_fn_matches_the_gold_aware_judge_pointwise():
+    from src.training.judge import GoldAgreementJudge
 
-    judge = SimulatedPreferenceJudge()
+    judge = GoldAgreementJudge()
     judge_fn = make_judge_fn(judge)
     answer = "Paris is the capital of France."
-    assert judge_fn(answer, "whatever") == judge.score(answer)
+
+    assert judge_fn(answer, "Paris") == judge.score(answer, "Paris")
 
 
 def test_cycle_prompt_batches_no_wrap():

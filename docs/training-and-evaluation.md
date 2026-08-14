@@ -585,7 +585,26 @@ python3 -m examples.run_sft_grpo \
 
 Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` | `retriever_aware` (see `SearchRewardConfig` in `src/training/reward.py`). The Bamboogle eval CLI (`run_bamboogle_eval --reward_preset`) exposes the shorthand `sparse_final_only | simple_sparse | second_pass | third_pass`, which map to the first four config presets; `retriever_aware` is config-only.
 
-**The judge.** The `correctness` term is `judge_fn(answer, gold)`. The example trainers pass `simple_sparse_correctness_reward` (exact-normalized match → 1.0, gold contained in prediction → 0.7, else 0.0), which is what the "EM / contains-match" row above refers to. `SimulatedPreferenceJudge` (`src/training/judge.py`) is a separate, **deterministic reference-free heuristic** (length + lexical diversity − hedging) that stands in for a real LLM-as-judge — it ignores the gold answer and is used by the `run_bamboogle_grpo_train` / `run_bamboogle_synthetic_grpo` examples. There is no trained reward model or LLM judge; a real judge would slot in behind the same `BatchJudgeFn` interface.
+**The judge reads the gold answer now.** The `correctness` term is `judge_fn(answer, gold)`, and until recently the GRPO examples passed a judge that ignored the second argument entirely.
+
+`SimulatedPreferenceJudge` scores an answer from its own text — length, lexical diversity, absence of hedging. A policy trained against it optimises *answer shape*, so **a confidently worded wrong answer outscored a correct terse one by construction**. It is still available (`--judge simulated`) for comparison, and it is no longer any script's default.
+
+Two judges now read the reference:
+
+| judge | what it does | when |
+|---|---|---|
+| `GoldAgreementJudge` | normalised exact match → `1.0`, gold contained → `0.7`, else scaled token-F1 | **default**; no network, fully deterministic |
+| `LLMJudge` | LLM-as-judge over `(answer, gold)` behind the existing `GEN_AI_*` config | `--judge llm`; falls back to `GoldAgreementJudge` per item |
+
+Three details that are load-bearing rather than incidental:
+
+- **Partial credit is graded, not binary.** GRPO normalises advantages *within* a rollout group, so if every rollout for a prompt scores `0.0` then every advantage is `0.0` and the prompt contributes no gradient — while still logging as a completed step. Token-F1 partial credit keeps near-misses informative.
+- **An unparseable LLM reply raises rather than defaulting.** A judge that quietly returns a middling constant gives every rollout in a group the same score, which is the same silent no-op. `LLMJudge` catches it, falls back for that item only, and increments `parse_failures` so a degraded run is visible.
+- **`is_degenerate_group`** names the all-equal-scores condition directly, so it can be asserted on rather than discovered later as "training ran but the model did not move".
+
+Scores are cached by `(answer, gold)` — GRPO scores G rollouts per prompt against one gold, and prompts recur across steps.
+
+There is still no *trained* reward model; that remains a separate design.
 
 **Four reward dimensions** — `reward_components()` also groups every term into four subtotals via `REWARD_DIMENSIONS`, emitted as `dim_correctness`, `dim_citation_support`, `dim_retrieval_quality`, `dim_search_efficiency` (and available directly via `reward_dimensions()` or the pure `group_reward_components(components)`). Pre-scale, so `sum(dims) == terminal_reward + shaping_total == total / reward_scale`. The rollup is purely additive — no weight, preset, or `total` formula changed.
 

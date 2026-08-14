@@ -28,14 +28,42 @@ from typing import Any, Callable
 def make_judge_fn(judge: Any) -> Callable[[str, str], float]:
     """Adapt a pointwise judge to the ``(pred, ground_truth) -> float`` seam.
 
-    ``judge`` must expose ``score(answer: str) -> float``. The ground-truth
-    argument is ignored because the judge is reference-free.
+    ``judge`` must expose ``score(answer, gold)``. It used to expose
+    ``score(answer)`` and the ground truth was discarded here, which meant the
+    training signal could not depend on correctness at all -- a fluent wrong
+    answer outscored a terse right one. Reference-free judges are still usable
+    via ``--judge simulated``; they are adapted at the call site instead.
     """
 
-    def _judge_fn(pred: str, _ground_truth: str) -> float:
-        return float(judge.score(pred))
+    def _judge_fn(pred: str, ground_truth: str) -> float:
+        return float(judge.score(pred, ground_truth))
 
     return _judge_fn
+
+
+def _build_judge_llm():
+    """Build a judge LLM from the same GEN_AI_* variables the app uses.
+
+    Returns None when no key is configured, which makes ``LLMJudge`` behave as
+    the deterministic gold judge rather than failing — the no-network smoke
+    path has to keep working.
+    """
+    import os
+
+    if not (os.environ.get("GEN_AI_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        return None
+    from src.internal.llm.interfaces import LLMConfig
+    from src.internal.llm.providers import OpenAICompatibleLLM
+
+    return OpenAICompatibleLLM(
+        LLMConfig(
+            model_provider=os.environ.get("GEN_AI_MODEL_PROVIDER", "openai"),
+            model_name=os.environ.get("GEN_AI_MODEL_VERSION", "gpt-4o-mini"),
+            api_key=os.environ.get("GEN_AI_API_KEY")
+            or os.environ.get("OPENAI_API_KEY"),
+            api_base=os.environ.get("GEN_AI_API_BASE"),
+        )
+    )
 
 
 def cycle_prompt_batches(
@@ -85,6 +113,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cpu", help="cpu / mps / cuda")
     parser.add_argument("--allow_remote_model_downloads", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--judge",
+        choices=("gold", "llm", "simulated"),
+        default="gold",
+        help="gold (default): deterministic reference-based scoring, no "
+        "network. llm: LLM-as-judge over (answer, gold) via GEN_AI_*, falling "
+        "back to gold per item on any parse or provider failure. simulated: "
+        "the reference-free shape heuristic — ignores the gold entirely and is "
+        "kept only for comparison.",
+    )
     return parser
 
 
@@ -92,7 +130,10 @@ def _run(args: argparse.Namespace) -> None:
     import torch
 
     from src.training.eval.bamboogle import load_bamboogle
-    from src.training.judge import SimulatedPreferenceJudge
+    from src.training.judge import (
+        LLMJudge,
+        SimulatedPreferenceJudge,
+    )
     from src.training.ppo.llm_grpo_trainer import LLMGRPOConfig, LLMGRPOTrainer
 
     torch.manual_seed(args.seed)
@@ -102,8 +143,14 @@ def _run(args: argparse.Namespace) -> None:
     if not prompts:
         raise SystemExit("No Bamboogle prompts loaded; check --limit / network.")
 
-    judge = SimulatedPreferenceJudge()
-    judge_fn = make_judge_fn(judge)
+    if args.judge == "simulated":
+        # Reference-free: scores answer shape, ignores the gold. Kept reachable
+        # for comparison against the old behaviour, never the default.
+        simulated = SimulatedPreferenceJudge()
+        judge_fn = lambda pred, _gold: float(simulated.score(pred))  # noqa: E731
+    else:
+        judge = LLMJudge(llm=_build_judge_llm() if args.judge == "llm" else None)
+        judge_fn = make_judge_fn(judge)
 
     trainer = LLMGRPOTrainer.from_pretrained(
         args.model,
