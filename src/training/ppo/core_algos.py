@@ -122,54 +122,6 @@ def compute_grpo_outcome_advantage(
     return advantages, advantages
 
 
-def compute_gae_advantages(
-    rewards: torch.Tensor,
-    values: torch.Tensor,
-    eos_mask: torch.Tensor,
-    gamma: float = 0.99,
-    lam: float = 0.95,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Generalized Advantage Estimation (GAE-λ) for PPO with a value model.
-
-    Computes per-token advantages and λ-returns (targets for the value head):
-
-        δ_t   = r_t + γ · V(s_{t+1}) - V(s_t)
-        A_t   = Σ_{l≥0} (γλ)^l · δ_{t+l}
-        R_t   = A_t + V(s_t)          ← value regression target
-
-    All tensors must be ``(batch, seq_len)`` and on the same device.
-
-    Args:
-        rewards: Per-token reward tensor.
-        values: Per-token value estimates from the critic head.
-        eos_mask: Binary mask — 1 for valid response tokens, 0 for padding /
-            prompt positions.
-        gamma: Discount factor.
-        lam: GAE-λ smoothing coefficient.
-
-    Returns:
-        ``(advantages, returns)`` — both ``(batch, seq_len)``, masked to 0 at
-        invalid positions.
-    """
-    batch_size, seq_len = rewards.shape
-    advantages = torch.zeros_like(rewards)
-    last_gae = torch.zeros(batch_size, device=rewards.device, dtype=rewards.dtype)
-
-    with torch.no_grad():
-        for t in range(seq_len - 1, -1, -1):
-            next_val = (
-                values[:, t + 1] if t + 1 < seq_len else torch.zeros_like(last_gae)
-            )
-            delta = rewards[:, t] + gamma * next_val - values[:, t]
-            last_gae = delta + gamma * lam * last_gae
-            advantages[:, t] = last_gae
-
-    advantages = advantages * eos_mask.to(dtype=advantages.dtype)
-    returns = advantages + values
-    returns = returns * eos_mask.to(dtype=returns.dtype)
-    return advantages, returns
-
-
 def compute_rewards(
     token_level_scores: torch.Tensor,
     old_log_prob: torch.Tensor,
@@ -231,29 +183,6 @@ def compute_reinforce_policy_loss_core(
 def compute_entropy_loss(logits: torch.Tensor, eos_mask: torch.Tensor) -> torch.Tensor:
     """Masked mean policy entropy."""
     return masked_mean(entropy_from_logits(logits), eos_mask)
-
-
-def compute_value_loss(
-    vpreds: torch.Tensor,
-    returns: torch.Tensor,
-    values: torch.Tensor,
-    eos_mask: torch.Tensor,
-    cliprange_value: float,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Clipped value-function loss used by PPO."""
-    vpred_clipped = clip_by_value(
-        vpreds,
-        values - float(cliprange_value),
-        values + float(cliprange_value),
-    )
-    vf_losses1 = (vpreds - returns).square()
-    vf_losses2 = (vpred_clipped - returns).square()
-    vf_loss = 0.5 * masked_mean(torch.maximum(vf_losses1, vf_losses2), eos_mask)
-    vf_clipfrac = masked_mean(
-        (vf_losses2 > vf_losses1).to(dtype=vpreds.dtype),
-        eos_mask,
-    )
-    return vf_loss, vf_clipfrac
 
 
 def kl_penalty(

@@ -5,7 +5,6 @@ try:
     from .grpo import compute_grpo_outcome_advantage as compute_grpo_outcome_advantage
     from .grpo import score_prompt_group as score_prompt_group
     from .ppo import PPORewardManager as PPORewardManager
-    from .ppo import compute_gae_advantages as compute_gae_advantages
     from .ppo import compute_grpo_policy_loss as compute_grpo_policy_loss
     from .reward import BatchJudgeFn as BatchJudgeFn
     from .reward import CompositeRewardConfig as CompositeRewardConfig

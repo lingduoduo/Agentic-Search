@@ -17,7 +17,6 @@ from src.model.generation import (  # noqa: E402
     SearchBatch,
     compute_grpo_outcome_advantage,
     compute_ppo_policy_loss_core,
-    compute_value_loss,
     kl_penalty,
     masked_mean,
     masked_whiten,
@@ -1289,18 +1288,13 @@ def test_grpo_outcome_advantage_normalizes_within_prompt_group():
     assert torch.allclose(returns, advantages)
 
 
-def test_value_loss_and_kl_penalty_variants():
-    vpreds = torch.tensor([[2.0, 10.0]], dtype=torch.float32)
-    returns = torch.tensor([[4.0, 0.0]], dtype=torch.float32)
-    values = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
-    mask = torch.tensor([[1, 0]], dtype=torch.long)
+def test_kl_penalty_variants():
+    """Was ``test_value_loss_and_kl_penalty_variants``.
 
-    vf_loss, vf_clipfrac = compute_value_loss(
-        vpreds, returns, values, mask, cliprange_value=0.5
-    )
-
-    assert torch.allclose(vf_loss, torch.tensor(3.125), atol=1e-5)
-    assert torch.allclose(vf_clipfrac, torch.tensor(1.0), atol=1e-5)
+    The value-loss half went with ``compute_value_loss``, which was removed as
+    part of the unreachable PPO-with-critic path. The KL penalties are live and
+    keep their coverage.
+    """
     logprob = torch.tensor([[-1.0]], dtype=torch.float32)
     ref_logprob = torch.tensor([[-1.5]], dtype=torch.float32)
     assert torch.allclose(kl_penalty(logprob, ref_logprob, "kl"), torch.tensor([[0.5]]))
