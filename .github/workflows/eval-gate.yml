@@ -145,3 +145,76 @@ jobs:
             --metrics faithfulness answer_relevancy \
             --output /tmp/ragas_current.json \
             --baseline data/eval/ragas_baseline.json
+
+  intent-routing-gate:
+    name: Intent Routing Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The encoder is ~130MB and the install pulls torch. Both are why this
+      # lives here rather than in the fast unit-test lane, which deliberately
+      # excludes heavy ML packages (see requirements-unit-test.txt).
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-e5-small-v2
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install -r requirements.txt
+
+      # Everything this gate needs is committed: the canonical set, the
+      # evaluation queries, and the out-of-scope probes. The index is a
+      # gitignored artifact regenerable from them, so unlike the retrieval and
+      # RAGAS gates above there is no baseline to commit and no secret to set —
+      # this gate is active from its first run.
+      - name: Build the intent index
+        run: |
+          python -m src.model.intent_index_cli build \
+            --canonical data/intent_canonical.json \
+            --output data/intent_index
+
+      - name: Run the pinned routing bars
+        run: |
+          python -m pytest \
+            tests/unit/test_intent_index_eval.py \
+            tests/unit/test_intent_canonical_data.py \
+            -v --junitxml=/tmp/intent-bars.xml
+
+      # The bars skip themselves when sentence-transformers or the index is
+      # absent, so a job that merely runs them would stay green in exactly the
+      # situation it exists to catch. A skip here means the environment is wrong,
+      # which is a gate failure, not a pass.
+      - name: Fail if any bar skipped
+        if: always()
+        run: |
+          python - <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          tree = ET.parse("/tmp/intent-bars.xml")
+          skipped = [
+              case.get("name")
+              for case in tree.iter("testcase")
+              if case.find("skipped") is not None
+          ]
+          if skipped:
+              print("::error title=Intent gate did not actually run::")
+              for name in skipped:
+                  print(f"  SKIPPED: {name}")
+              print(
+                  "\nThese bars skip when sentence-transformers or data/intent_index/ "
+                  "is missing. A skip means the gate did not measure anything."
+              )
+              sys.exit(1)
+          print(f"All {len(list(tree.iter('testcase')))} bars ran; none skipped.")
+          EOF
