@@ -427,25 +427,59 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
     assert shipped["separation_margin"] == pytest.approx(0.85 - (0.1 + 0.2) / 2)
 
 
-def test_the_threshold_sweep_never_chooses_top_k(tmp_path, monkeypatch):
-    """Pinning k is what leaves the threshold grid free to be re-derived.
+def test_the_sweep_searches_top_k_only_over_the_pre_registered_grid(
+    tmp_path, monkeypatch
+):
+    """Replaces ``test_the_threshold_sweep_never_chooses_top_k``.
 
-    The reported headline is argmax route accuracy, which is abstention-blind:
-    it depends on ``top_k`` and on nothing else the sweep selects. A sweep that
-    also chose ``k`` would couple a tuning-slice search to the held-out number,
-    so widening the grid after seeing that number could move it. With ``k``
-    pinned, no threshold this sweep picks can change ``test_slice.accuracy`` by
-    any amount -- so this assertion is the one guarding that property.
+    That test guarded a property this repo deliberately gave up in #522: with
+    ``k`` pinned, no threshold the sweep chose could move the abstention-blind
+    argmax headline, which is what let the margin grid be re-derived in #512
+    *after* the headline was known. Selecting ``k`` on the split couples the
+    two again.
+
+    What replaces the guarantee is that the search space is **fixed in
+    advance**. ``_SWEEP_TOP_K`` has been `(3, 5, 8, 15, 25)` since #511 and was
+    not widened when it became a selection grid. Widening it after seeing a
+    headline it now influences is precisely the fitting the split exists to
+    prevent, so this asserts the sweep searches that grid and nothing else --
+    if someone extends the constant, they must do it deliberately and
+    re-register it, not discover it by watching a number improve.
     """
     report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
 
     rows = report["threshold_tuning"]["sweep"]
-    assert {row["top_k"] for row in rows} == {intent_index_eval.TOP_K}
-    assert len(rows) == len(intent_index_eval._SWEEP_MIN_CONFIDENCES) * len(
-        intent_index_eval._SWEEP_MIN_MARGINS
-    )
+    assert {row["top_k"] for row in rows} == set(intent_index_eval._SWEEP_TOP_K)
+    assert len(rows) == len(intent_index_eval._SWEEP_TOP_K) * len(
+        intent_index_eval._SWEEP_MIN_CONFIDENCES
+    ) * len(intent_index_eval._SWEEP_MIN_MARGINS)
     selected = report["threshold_tuning"]["selected"]
-    assert selected is None or selected["top_k"] == intent_index_eval.TOP_K
+    assert selected is None or selected["top_k"] in intent_index_eval._SWEEP_TOP_K
+
+
+def test_the_sweep_breaks_accuracy_ties_toward_the_lower_top_k(tmp_path, monkeypatch):
+    """The tie-break is what keeps a noise-sized gain from churning everything.
+
+    Changing ``k`` re-measures every published number, so the pre-registered
+    rule resolves ties toward lower ``k`` (and, before that, toward better
+    out-of-scope deferral). Verified directly on the sweep rows rather than
+    through a contrived fixture: among rows tied with the winner on served
+    accuracy and deferral, none may carry a smaller ``k``.
+    """
+    report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
+    selected = report["threshold_tuning"]["selected"]
+    if selected is None:
+        pytest.skip("no combination cleared the coverage floor on this fixture")
+
+    tied = [
+        row
+        for row in report["threshold_tuning"]["sweep"]
+        if row["coverage"] >= intent_index_eval._MIN_COVERAGE
+        and row["served_accuracy"] == selected["served_accuracy"]
+        and row["oos_deferral"] == selected["oos_deferral"]
+    ]
+    assert tied, "the selected row must appear among the eligible rows"
+    assert selected["top_k"] == min(row["top_k"] for row in tied)
 
 
 def test_the_module_sweep_never_changes_the_route(tmp_path, monkeypatch):
@@ -479,7 +513,10 @@ def test_the_module_sweep_never_changes_the_route(tmp_path, monkeypatch):
     # 0.0 emits every module, 1.0 emits none and falls back to the single best
     # -- the two extremes the grid interpolates between.
     baseline = routes_at(intent_index_eval._DEFAULT_MIN_MODULE_SCORE)
-    for min_module_score in intent_index_eval._SWEEP_MIN_MODULE_SCORES + (0.0, 1.0):
+    grid = intent_index_eval._module_score_grid(
+        index, index.vectors, top_k=intent_index_eval.TOP_K
+    )
+    for min_module_score in grid + (0.0, 1.0):
         assert routes_at(min_module_score) == baseline, (
             f"min_module_score={min_module_score} moved a route"
         )
@@ -520,14 +557,24 @@ def test_the_module_sweep_is_tuning_only_and_records_its_rule(tmp_path, monkeypa
     in advance. ``joint_accuracy`` is recorded on every row but must never be
     the selector: it is an exact-set match and peaks where emission collapses
     to the top-1 fallback, which macro-F1 correctly declines to choose.
+
+    The grid is computed, not constant, so the assertion is on its *shape*: a
+    legacy row plus ``_MODULE_GRID_STEPS`` derived ones. A hardcoded grid is
+    what broke when ``top_k`` moved — at k=15 the k=3 constants excluded all
+    but three candidate scores.
     """
     report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
     block = report["module_threshold_tuning"]
 
     assert block["tuned_on"] is True
-    assert [row["min_module_score"] for row in block["sweep"]] == list(
-        intent_index_eval._SWEEP_MIN_MODULE_SCORES
-    )
+    rows = block["sweep"]
+    assert len(rows) == 1 + intent_index_eval._MODULE_GRID_STEPS
+    assert rows[0]["min_module_score"] == intent_index_eval._LEGACY_MIN_MODULE_SCORE
+    # Derived rows are ascending. Not asserted: that they exceed the legacy
+    # row — true of the real e5 index, but this fixture's toy vectors score
+    # arbitrarily low, and the grid must track whatever the data actually is.
+    derived = [row["min_module_score"] for row in rows[1:]]
+    assert derived == sorted(derived)
     selected = block["selected"]
     best = max(row["macro_f1"] for row in block["sweep"])
     assert selected["macro_f1"] == best
@@ -554,13 +601,18 @@ def test_the_module_sweep_is_tuning_only_and_records_its_rule(tmp_path, monkeypa
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 
-# Re-measured 2026-08-13 on the intfloat/e5-small-v2 index over the same
-# 280-example canonical set (Task 3 of
-# docs/superpowers/plans/2026-08-13-intent-encoder-e5.md), pinned ~0.02 below
-# the measurement so ordinary encoder/float drift cannot trip them:
-#   test-slice route accuracy  0.7928 (111 queries, split seed 17) -> floor 0.77
-#   out-of-scope AUC           0.8551                              -> floor 0.83
-#   p95 routing latency       11.47 ms                             -> ceiling 25.0 ms
+# Re-measured 2026-08-14 on the intfloat/e5-small-v2 index over the same
+# 280-example canonical set, at the top_k selected on the split in #522
+# (docs/superpowers/plans/2026-08-14-intent-top-k-selection.md), pinned ~0.02
+# below the measurement so ordinary encoder/float drift cannot trip them:
+#   test-slice route accuracy  0.8018 (111 queries, split seed 17) -> floor 0.78
+#   out-of-scope AUC           0.8622                              -> floor 0.84
+#   p95 routing latency       12.20 ms                             -> ceiling 25.0 ms
+#
+# Both floors rose with k=15 (from 0.77/0.83, measured at k=3's 0.7928/0.8551).
+# Raising them is the point of the convention: a floor left at the old value
+# would let the router silently regress all the way back to the setting this
+# change replaced.
 #
 # The accuracy bar reads report["test_slice"], not report["bulk"]: `bulk` is
 # the *mixed* tuning+test set, so a floor there would quietly re-admit the
@@ -573,8 +625,8 @@ DATA = Path(__file__).resolve().parents[2] / "data"
 # rejects an encoder for its cosine range rather than for its separation. AUC
 # and Cohen's d are scale-free; raw margin stays in the report as
 # encoder-specific context only and must not be compared across encoders.
-_TEST_SLICE_ACCURACY_FLOOR = 0.77
-_OUT_OF_SCOPE_AUC_FLOOR = 0.83
+_TEST_SLICE_ACCURACY_FLOOR = 0.78
+_OUT_OF_SCOPE_AUC_FLOOR = 0.84
 _P95_LATENCY_CEILING_MS = 25.0
 
 

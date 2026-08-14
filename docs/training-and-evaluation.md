@@ -41,16 +41,16 @@ Each canonical example is encoded once by `intfloat/e5-small-v2` and L2-normaliz
 
 **Every index built before this change is invalidated.** Rebuild with command 2 above. What catches a stale index is the **encoder-name check** — `IntentIndex` records the encoder that built it, and both `run_index_evaluation` and `ml_intent.load_intent_index` reject a mismatch by name — **not** a dimension mismatch, because `all-MiniLM-L6-v2` and `e5-small-v2` are **both 384-wide**. A stale index therefore loads, scores, and reports confident, meaningless numbers with no other symptom. That is not hypothetical: it happened once on this branch, and the name check is what turned it into one loud failure naming the rebuild command.
 
-`k` (`TOP_K` in `src/model/intent_knn.py`) is `3` by default and is what serves today, but it is a parameter of `IntentIndex.decide()`, not a hardcoded constant — see [the ceiling finding, corrected](#the-ceiling-finding-corrected-top_k-was-never-swept) below for why that distinction matters and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var.
+`k` (`TOP_K` in `src/model/intent_knn.py`) is `15`, chosen on the tuning slice rather than inherited — see [`top_k` chosen on the split](#top_k-chosen-on-the-split) below, and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var. It was an unswept `3` from #511 to #521.
 
 Two thresholds gate the answer, because two different things go wrong:
 
 - `AGENTIC_SEARCH_INTENT_MODEL_MIN_CONFIDENCE` (default `0.30`) — a low **absolute** similarity means nothing canonical resembles this request at all. That is an out-of-scope request.
-- `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` (default `0.015`) — a small **gap** between the best and second-best route means two routes fit equally well. That is an ambiguous request.
+- `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` (default `0.010`) — a small **gap** between the best and second-best route means two routes fit equally well. That is an ambiguous request.
 
 Either one abstains, and abstention defers to the LLM classifier and the clarification path exactly as before. This is the concrete reason the softmax head was replaced: probabilities sum to one by construction, so a softmax router cannot express "none of these" — it can only say which of the three is least bad.
 
-**These two thresholds are cosines, and their scale moves with the encoder** — see [the units trap](#the-units-trap). Measured on the e5 index: in-scope confidences span `0.792`–`0.896` and out-of-scope probes span `0.782`–`0.850`, so the `0.30` confidence floor **never fires for anything**, in scope or out, and no single value could separate the two overlapping ranges. All the abstaining is done by the margin, re-derived on the tuning slice for this encoder: at `0.015` the router serves 50 of the 111 test-slice queries (coverage `0.450`) at `0.960` served accuracy. The MiniLM-era `0.02` would have served only 38 of them.
+**These two thresholds are cosines, and their scale moves with the encoder** — see [the units trap](#the-units-trap). Measured on the e5 index at the serving `k=15`: in-scope confidences span `0.776`–`0.857` and out-of-scope probes span `0.767`–`0.829`, so the `0.30` confidence floor **never fires for anything**, in scope or out, and no single value could separate the two overlapping ranges. All the abstaining is done by the margin, re-derived on the tuning slice for this encoder and this `top_k`: at `0.010` the router serves 57 of the 111 test-slice queries (coverage `0.514`) at `0.9825` served accuracy.
 
 ### Changing routing behavior
 
@@ -77,26 +77,32 @@ Unless a row says otherwise, "test slice" means the 111 queries left after the s
 
 | Measure | e5-small-v2 (now) | all-MiniLM-L6-v2 (before) |
 |---|---|---|
-| **Route accuracy, test slice (111 queries; seed 17, tuning 70 / test 111)** | **0.7928** | **0.6216** (re-measured on the same 111) |
+| **Route accuracy, test slice (111 queries; seed 17, tuning 70 / test 111)** | **0.8018** | **0.6216** (re-measured on the same 111) |
 | — the same, on the older clean_151 instrument | `0.7881` | `0.6225` (as published by #511) |
-| hard_40 (adversarial, never tuned on) | `0.6750` | `0.6250` |
-| Out-of-scope **AUC**, test_111 vs. 24 probes | `0.8551` | **`0.8848`** (re-measured on the same 111) |
+| hard_40 (adversarial, never tuned on) | `0.7500` | `0.6250` |
+| Out-of-scope **AUC**, test_111 vs. 24 probes | `0.8622` | **`0.8848`** (re-measured on the same 111) |
 | — the same, on clean_151 vs. 24 probes | `0.8626` | `0.8681` |
-| Out-of-scope Cohen's d, test_111 vs. 24 probes | `1.4852` | `1.6365` |
-| Leave-one-out over the 280 canonical anchors (diagnostic, never a selector) | `0.7321` (205/280) | `0.6643` (186/280) |
-| p50 / p95 routing latency, encode + decide | `9.73ms` / `11.47ms` | `5.51ms` / `5.88ms` |
-| Out-of-scope raw margin, test_111 *(encoder-specific — do not compare across this row)* | `0.0278` | `0.1210` |
-| Module macro-F1 / joint accuracy (diagnostic; both on the mixed `bulk_181`, like-for-like with the before column — the test slice alone gives `0.5454` / `0.3964`) | `0.5447` / `0.3591` | `0.3471` / `0.2318` |
-| Per-route accuracy, test slice (111) | search 25/37, chat 33/37, tool 30/37 | chat 24/51, search 25/50, tool 45/50 (on clean_151) |
-| Serving hyperparameters | `top_k=3`, `min_confidence=0.30`, `min_margin=0.015` | `top_k=3`, `min_confidence=0.30`, `min_margin=0.02` |
+| Out-of-scope Cohen's d, test_111 vs. 24 probes | `1.6030` | `1.6365` |
+| Leave-one-out over the 280 canonical anchors (diagnostic, never a selector) | `0.8393` (235/280) | `0.6643` (186/280) |
+| p50 / p95 routing latency, encode + decide | `10.35ms` / `12.20ms` | `5.51ms` / `5.88ms` |
+| Out-of-scope raw margin, test_111 *(encoder-specific — do not compare across this row)* | `0.0234` | `0.1210` |
+| Module macro-F1 / joint accuracy (diagnostic; both on the mixed `bulk_181`, like-for-like with the before column — the test slice alone gives `0.6048` / `0.4595`) | `0.6268` / `0.4751` | `0.3471` / `0.2318` |
+| Per-route accuracy, test slice (111) | search 25/37, chat 34/37, tool 30/37 | chat 24/51, search 25/50, tool 45/50 (on clean_151) |
+| Serving hyperparameters | `top_k=15`, `min_confidence=0.30`, `min_margin=0.010` | `top_k=3`, `min_confidence=0.30`, `min_margin=0.02` |
 
-**What `0.7928` is, precisely.** It is **argmax route accuracy with no abstention**: the fraction of the 111 test queries whose best-scoring route is the right one, counted whether or not the thresholds would have served an answer. It is *not* the accuracy a caller sees. With the shipped `min_margin=0.015` the router **serves 50 of those 111 (coverage `0.450`) at `0.960` served accuracy**, and defers the rest to the LLM classifier. Argmax is the number the decision rule was written against and the only one comparable to the `0.6225`/`0.6216` before-figures, which are argmax too; the served pair is what promotion would actually deliver. Both are reported for every slice in `evaluation_report.json`.
+**What `0.8018` is, precisely.** It is **argmax route accuracy with no abstention**: the fraction of the 111 test queries whose best-scoring route is the right one, counted whether or not the thresholds would have served an answer. It is *not* the accuracy a caller sees. With the shipped `min_margin=0.010` the router **serves 57 of those 111 (coverage `0.514`) at `0.9825` served accuracy**, and defers the rest to the LLM classifier. Argmax is the number the decision rule was written against and the only one comparable to the `0.6225`/`0.6216` before-figures, which are argmax too; the served pair is what promotion would actually deliver. Both are reported for every slice in `evaluation_report.json`.
 
-**The margin gate abstains hardest exactly where the router is weakest**, which is the behavior you want and is not visible in either headline. Broken out by route on the test slice: `search` is the weak route at 25/37 argmax, and it is also the route that serves least — 11 of its 37 queries, 10 of them correct. `chat` serves 18 of 37 with **no** errors, `tool` 20 of 37 with one. So the two surviving wrong routes are one `search` and one `tool`, and the route whose representation is worst contributes most of the deferrals rather than most of the mistakes. Abstention is not spread evenly over the slice; it is concentrated on the queries the index genuinely cannot place.
+**The margin gate abstains hardest exactly where the router is weakest**, which is the behavior you want and is not visible in either headline. Broken out by route on the test slice: `search` is the weak route at 25/37 argmax, and it is also the route that serves least — 11 of its 37 queries, 10 of them correct. `chat` serves 24 of 37 and `tool` 22 of 37, both with **no** errors at all. So the single surviving wrong route on the whole slice is a `search` query, and the route whose representation is worst contributes essentially all of the deferrals *and* the only mistake. Abstention is not spread evenly over the slice; it is concentrated on the queries the index genuinely cannot place.
 
 For older context, on the retired clean-151 instrument the previous MLP scored `0.4768`, the production regex cascade `0.4238`, and the majority-class floor `0.3377`. Those are different queries under a different encoder — context, not a like-for-like comparison with the column above.
 
-**+0.17 on route accuracy, measured against MiniLM on the identical 111 queries, at roughly 2x the latency and well inside the 25ms ceiling.** The instrument is smaller than #511's, not harder or cleaner: MiniLM scores `0.6216` on these 111 against `0.6225` on the clean 151, so the slice itself is of ordinary difficulty and the whole gain is the encoder's. The decision rule fixed in advance had three bands: `≥ 0.80` clears the promotion bar, `0.75`–`0.80` is a real improvement, below `0.75` is a hard stop. `0.7928` lands in the **middle band** — a real improvement over `0.6225`, short of the promotion bar. **The artifact stays dark.** `AGENTIC_SEARCH_INTENT_INDEX_PATH` remains unset by default and every request falls through the existing LLM/rule cascade. Promotion is a separate change, reviewed on its own terms.
+**+0.18 on route accuracy against MiniLM on the identical 111 queries**, at roughly 2x the latency and well inside the 25ms ceiling. The instrument is smaller than #511's, not harder or cleaner: MiniLM scores `0.6216` on these 111 against `0.6225` on the clean 151, so the slice itself is of ordinary difficulty.
+
+**The decision rule fixed in advance had three bands: `≥ 0.80` clears the promotion bar, `0.75`–`0.80` is a real improvement, below `0.75` is a hard stop. `0.8018` clears the bar.** It did not at `k=3`, where the same index scored `0.7928` and sat in the middle band; choosing `top_k` on the split (see [below](#top_k-chosen-on-the-split)) is what moved it.
+
+**Read that margin honestly before acting on it.** `0.8018` against a `0.80` bar is **89 of 111 correct against 88** — one query. On a 111-query slice the confidence interval swamps that difference entirely, so what the number supports is "this is no longer clearly below the bar", not "this is above the bar". A bar cleared by one query is a prompt to build a bigger instrument, which is exactly what [canonical coverage](#known-limitations) would produce.
+
+**The artifact still ships dark.** `AGENTIC_SEARCH_INTENT_INDEX_PATH` remains unset by default and every request falls through the existing LLM/rule cascade. Promotion was always specified as a separate change reviewed on its own terms, and a one-query bar crossing is not a reason to skip that review — if anything it is a reason to hold it more carefully.
 
 One result did **not** improve, and it matters more than the headline:
 
@@ -104,7 +110,7 @@ One result did **not** improve, and it matters more than the headline:
 
 **It does not survive being measured at the operating point** — e5 makes 2 wrong routes against MiniLM's 21 at each model's own tuned threshold, and 7 against 21 at matched coverage. AUC ranks over the whole score range; the margin gate only needs separation at the boundary. See [The out-of-scope regression, measured where it bites](#the-out-of-scope-regression-measured-where-it-bites) below. The `0.90` bar is still missed and the ranking regression is still real — what changed is that neither costs anything at any threshold this router would run at.
 
-**The threshold grid had to be re-derived, because it was in MiniLM's units.** The original grid started at `min_margin=0.02`, which under e5 abstains on more than half the tuning slice; no combination cleared the sweep's `coverage ≥ 0.60` floor, so the first run selected nothing at all. The grid's low end is now derived from the **tuning slice's own margin quantiles** under e5 (min `0.0008`, p25 `0.0116`, median `0.0188`, p75 `0.0274`, max `0.0676`), and it selects `min_margin=0.015` — the shipped default. **Derive any future re-tuning from the tuning slice too. Never from the test slice**, whose quantiles (median `0.0129`) are a different distribution and are off-limits: reading them to choose a threshold is test-set fitting even when no code does it.
+**The threshold grid had to be re-derived, because it was in MiniLM's units.** The original grid started at `min_margin=0.02`, which under e5 abstains on more than half the tuning slice; no combination cleared the sweep's `coverage ≥ 0.60` floor, so the first run selected nothing at all. The grid's low end is now derived from the **tuning slice's own margin quantiles** under e5 (min `0.0008`, p25 `0.0116`, median `0.0188`, p75 `0.0274`, max `0.0676`), and at the then-shipped `k=3` it selected `min_margin=0.015`. (Those quantiles are `k=3`'s; the joint `(k, margin)` sweep later moved the shipped pair to `k=15, min_margin=0.010` — see [`top_k` chosen on the split](#top_k-chosen-on-the-split). Margins compress as `k` rises, so a quantile table is specific to its `k` as well as its encoder.) **Derive any future re-tuning from the tuning slice too. Never from the test slice**, whose quantiles (median `0.0129`) are a different distribution and are off-limits: reading them to choose a threshold is test-set fitting even when no code does it.
 
 **Why widening that grid is safe, and would not have been before.** `top_k` is **not** swept for selection — it is pinned at the shipped `3`, and `_select_thresholds` searches only `(min_confidence, min_margin)`. That matters because the reported headline is argmax accuracy, which is abstention-blind: it depends on `top_k` and on nothing else the sweep chooses. A sweep that also chose `k` would couple a tuning-slice search to the held-out number, and widening it after seeing that number could move the number. With `k` pinned, **no threshold this sweep selects can change `test_slice.accuracy` by any amount** — a property, not a promise, and the one `test_the_threshold_sweep_never_chooses_top_k` guards. Choosing a different `k` remains possible, but it is a deliberate, separately-reviewed decision, not a side effect of re-tuning thresholds. `min_module_score` has now had the same treatment — see [the module threshold](#the-module-threshold-derived-and-no-longer-dead).
 
@@ -116,6 +122,8 @@ One result did **not** improve, and it matters more than the headline:
 Also note the instrument itself: 111 test queries is a small slice, and it is deliberately smaller than the 151 the "before" column used — that is the honest cost of holding 40 queries back for tuning, and it widens the confidence interval on every number in the column.
 
 ### The out-of-scope regression, measured where it bites
+
+**Every number in this section was measured at `k=3`**, the setting shipped when #513 ran it. The reasoning is what matters and it generalizes — indeed [`top_k` chosen on the split](#top_k-chosen-on-the-split) reaches the same conclusion by the same route — but do not read these as current serving figures.
 
 The AUC row above says e5 is *worse* at separating out-of-scope requests (`0.8551` against MiniLM's `0.8848` on the same slice), and #512 called that the single strongest argument against promoting it. **Measured at the operating point each encoder would actually run at, the ordering reverses.**
 
@@ -150,7 +158,7 @@ python -m examples.measure_intent_operating_point
 
 One limit worth stating: the slice is 111 queries, so `2` versus `21` has a wide interval on the low end — the direction is solid, the ratio is not precise.
 
-**A fitted observation that did not survive checking, recorded because the checking is the point.** On the test slice, `min_margin 0.012` scores the same 2 wrong routes as the shipped `0.015` while covering 6 more queries — apparently strictly better. It is not in the swept grid, which steps `0.010 → 0.015`, so it was never evaluated on tuning data. Checking the tuning curve settles it:
+**A fitted observation that did not survive checking, recorded because the checking is the point.** (Also `k=3`-era: `0.015` was the shipped margin then, `0.010` is now.) On the test slice, `min_margin 0.012` scored the same 2 wrong routes as the then-shipped `0.015` while covering 6 more queries — apparently strictly better. It is not in the swept grid, which steps `0.010 → 0.015`, so it was never evaluated on tuning data. Checking the tuning curve settles it:
 
 | `min_margin` | coverage | served accuracy | clears the 0.60 floor |
 |---|---|---|---|
@@ -162,38 +170,49 @@ Served accuracy rises monotonically with margin while coverage falls, so the sel
 
 ### The module threshold, derived and no longer dead
 
-`AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` sat at `0.45` from the MiniLM era through six PRs. Under e5 that value is below *every* module score the encoder produces — measured over the 111-query test slice, all 1554 module scores fall in `0.7428`–`0.8943`, so the gate **fired for none of them**. It was not mistuned; it could not fire at all.
+`AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` sat at `0.45` from the MiniLM era through six PRs. Under e5 that value is below *every* module score the encoder produces — measured over the 111-query test slice at the then-shipped `k=3`, all 1554 module scores fall in `0.7428`–`0.8943`, so the gate **fired for none of them**. It was not mistuned; it could not fire at all.
 
 The consequence was that `_emit_modules` returned every well-supported module of the winning route: recall ≈ `1.0`, precision ≈ `0.2`, and **joint accuracy `0.0`** on all three slices — not one query in 181 got its full module set right.
 
-**The rule was registered before the sweep ran** (`docs/superpowers/plans/2026-08-14-intent-module-threshold.md`, committed in its own commit ahead of any measurement): highest module macro-F1 on the **tuning** slice, ties to the lower threshold. The grid is derived from that slice's own module-score quantiles, for the same reason the margin grid was re-derived in #512 — a grid in the old encoder's units selects nothing.
+**The rule was registered before the sweep ran** (`docs/superpowers/plans/2026-08-14-intent-module-threshold.md`, committed in its own commit ahead of any measurement): highest module macro-F1 on the **tuning** slice, ties to the lower threshold. The grid is **computed** from that slice's own module-score quantiles at the `top_k` in force, not written down — see [the grid that must not be a constant](#the-grid-that-must-not-be-a-constant).
+
+The sweep at the serving `top_k=15` — tuning numbers, abridged:
 
 | `min_module_score` | macro-F1 (tuning) | joint (tuning) | mean modules emitted |
 |---|---|---|---|
-| `0.45` *(the status quo it replaces)* | 0.3549 | 0.0000 | 4.61 |
-| 0.80 | 0.3857 | 0.0286 | 3.71 |
-| 0.82 | 0.4556 | 0.1429 | 2.47 |
-| **0.84 — selected** | **0.5412** | 0.3000 | 1.41 |
-| 0.86 | 0.4747 | 0.3429 | 1.09 |
-| 0.88 / 0.90 | 0.4575 | 0.3714 | 1.00 |
+| `0.4500` *(the status quo it replaces)* | 0.3774 | 0.0000 | 4.69 |
+| 0.7931 | 0.4751 | 0.0571 | 2.87 |
+| 0.8024 | 0.5707 | 0.2143 | 1.99 |
+| 0.8117 | 0.5991 | 0.3571 | 1.49 |
+| **0.8210 — selected** | **0.6531** | 0.5000 | 1.17 |
+| 0.8303 | 0.6169 | 0.4714 | 1.06 |
+| 0.8396 | 0.6107 | 0.5000 | 1.00 |
 
-**Why the rule excluded joint accuracy is visible in that table.** Joint accuracy keeps climbing to `0.3714` at `0.88`, where `mean modules emitted` is exactly `1.00` — emission has collapsed to `_emit_modules`'s top-1 fallback for every query. It scores well only because most queries carry a single gold module, so "always guess one" wins an exact-set match. Macro-F1 declines to choose it. Had joint accuracy been the selector, the sweep would have shipped a threshold that emits one module always and calls it an improvement.
+**Why the rule excluded joint accuracy is visible in that table.** Joint accuracy reaches `0.5000` at both `0.8210` and `0.8396` — but at `0.8396` `mean modules emitted` is exactly `1.00`, meaning emission has collapsed to `_emit_modules`'s top-1 fallback for every query. It ties only because most queries carry a single gold module, so "always guess one" wins an exact-set match on them. Macro-F1 separates the two cleanly (`0.6531` against `0.6107`). Had joint accuracy been the selector, the tie-break to the lower threshold would have saved it here by luck — but at `k=3` the same table peaked at the collapsed setting outright, and it would have shipped.
 
-Held out on the test slice, at the shipped `0.84`:
+Held out on the test slice, at the shipped `0.821`:
 
-| | before (`0.45`) | after (`0.84`) |
+| | before (`0.45`) | after (`0.821`) |
 |---|---|---|
-| module macro-F1, test slice | `0.3492` | **`0.5454`** |
-| module joint accuracy, test slice | `0.0` | **`0.3964`** |
-| mean module precision | ≈ `0.2` | `0.596` |
-| mean module recall | ≈ `1.0` | `0.567` |
-| **route accuracy, test slice** | **`0.7928`** | **`0.7928`** — unchanged |
+| module macro-F1, test slice | `0.3492` | **`0.6048`** |
+| module joint accuracy, test slice | `0.0` | **`0.4595`** |
+| **route accuracy, test slice** | **`0.8018`** | **`0.8018`** — unchanged |
 
-The test slice scores slightly *above* the tuning slice that selected the value (`0.5454` against `0.5412`), which is the shape you want: no sign of the threshold having been fitted to its selection set.
+The test slice scores slightly *below* the tuning slice that selected the value (`0.6048` against `0.6531`), which is the ordinary direction for a held-out number and small enough to be noise on 111 queries.
+
+### The grid that must not be a constant
+
+#520 derived `0.84` by hand from the tuning quantiles **at `k=3`**. When `top_k` moved to `15`, that constant excluded **325 of 328** candidate module scores — module emission would have collapsed to the top-1 fallback for nearly every query, silently, with no error.
+
+Module scores fall as `k` rises, because a wider `k` averages in more distant same-module neighbours. So the threshold is a function of *two* things that change: the encoder **and** `top_k`.
+
+This is the third time a grid written in the wrong units has bitten. The margin grid in #512 was in MiniLM's units and selected **nothing at all** — that one failed loudly. The module grid here would have selected something meaningless instead, which is worse. `_module_score_grid` now computes the endpoints from the tuning slice at whatever `top_k` is in force, which removes the whole class rather than fixing this instance of it.
+
+The one grid still written down is `_SWEEP_TOP_K`, and that is deliberate: it is the pre-registration that keeps `k`-selection honest, so it must *not* adapt to data.
 
 **Route accuracy is unchanged to the digit, and that is a property rather than a lucky result.** `_emit_modules` runs *after* `decide()` has taken its argmax over `route_scores`, so no module threshold can move a route. That is why this gate could sit dead for six PRs without a single request being routed wrongly, and why re-deriving it needed no re-litigation of the headline. `test_the_module_sweep_never_changes_the_route` asserts it across the whole grid plus both extremes rather than trusting the argument.
 
-**What it cost.** Recall fell from ~`1.0` to `0.567` — roughly two in five gold modules are now missed. Before, every gold module was emitted, buried among three or four wrong ones. Macro-F1 says the trade is clearly net-positive, but it *is* a trade, and a consumer that needs recall over precision should re-run the sweep under a rule that says so rather than treating `0.84` as settled.
+**What it cost.** Emission fell from ~4.7 modules per query to ~1.2, so gold modules are now missed where before every one was emitted, buried among three or four wrong ones. Macro-F1 says the trade is clearly net-positive, but it *is* a trade, and a consumer that needs recall over precision should re-run the sweep under a rule that says so rather than treating `0.821` as settled.
 
 ### The ceiling finding, corrected: `TOP_K` was never swept
 
@@ -215,26 +234,51 @@ At `k=15`, leave-one-out reaches `0.7464` and clean_151 accuracy reaches `0.6887
 
 **What survives:** the hard stop still stands at every `k` tested. `bulk_181` — the decision-rule input, not clean_151 — lands near `0.72` at `k=15`, still under the `0.75` promotion bar. A stronger encoder and a swept `k` both remain live levers; `k` is the cheaper one to try first, because it costs a config change and a re-run of the evaluation CLI, not a new model.
 
-**How `k` is chosen now.** That table above is MiniLM's, and it is history: it was read off a fitting curve computed over the very queries it reported. Since the e5 swap, `_sweep_top_k`'s table is computed on the **tuning slice**, never the test slice, so that reading the report cannot hand test-set fitting back to a human — and `k` is **deliberately not** something `_select_thresholds` picks, for the reason given [above](#what-it-scores-and-why-it-is-still-dark). It stays at the pre-existing `3`; moving it is a separate decision made on its own terms. For reference, e5's tuning-slice curve — **tuning numbers, not results**:
+### `top_k` chosen on the split
 
-| `top_k` | tuning accuracy (tuned-on) | leave-one-out | raw separation margin *(encoder-specific)* |
-|---|---|---|---|
-| **3 (shipped)** | 0.8286 | 0.7321 | 0.0416 |
-| 5 | 0.8571 | 0.7893 | 0.0392 |
-| 8 | 0.8714 | 0.8071 | 0.0363 |
-| 15 | 0.8714 | 0.8393 | 0.0328 |
-| 25 | 0.8714 | 0.8464 | 0.0303 |
+`TOP_K` was `3` from #511 to #521 — an arbitrary constant, never swept for selection. It is now `15`, chosen on the tuning slice by a rule registered before the sweep ran: **highest served accuracy at coverage ≥ `0.60`, ties to higher out-of-scope deferral then to lower `k`.** That is the existing `_select_thresholds` rule extended to a second dimension, not a new one invented for the occasion, and `_select_thresholds` now searches `(top_k, min_confidence, min_margin)` jointly.
 
-The same accuracy-versus-abstention trade holds under e5, and leave-one-out keeps climbing monotonically to `k=25` — past where tuning accuracy plateaus at `0.8714` from `k=8` on — which is exactly why it is reported and never used to select. Note that no column here is reliably monotonic in `k`; nothing about a larger `k` is guaranteed to be better. `hard_40` (adversarial, held-out) is deliberately not shown here: `evaluation_report.json`'s `top_k_sweep` never publishes a per-`k` curve over held-out data, only over the tuning slice and out-of-scope probes.
+**Jointly is the important word.** Raising `k` compresses margins, so a `k` evaluated at the old `min_margin=0.015` is evaluated at the wrong threshold for itself. The pair that won is `k=15, min_margin=0.010`.
+
+Best eligible row per `k` on the **tuning** slice — tuning numbers, not results:
+
+| `top_k` | served accuracy | coverage | `min_margin` | out-of-scope deferral |
+|---|---|---|---|---|
+| 3 *(previous)* | 0.9130 | 0.657 | 0.015 | 0.500 |
+| 5 | 0.9762 | 0.600 | 0.015 | 0.583 |
+| 8 | 0.9583 | 0.686 | 0.010 | 0.583 |
+| **15 — selected** | **0.9783** | 0.657 | **0.010** | **0.667** |
+| 25 | 0.9778 | 0.643 | 0.010 | 0.667 |
+
+**The accuracy-versus-abstention trade this document has asserted since #511 does not survive being measured at the operating point.** The raw separation margin does fall monotonically with `k` (`0.0416` → `0.0303`), which is what the earlier tables showed and why "no `k` improves both" looked true. But raw margin is a ranking statistic over the whole score range; the gate only needs separation at the boundary. At each `k`'s own tuned threshold, out-of-scope *deferral* **rises** with `k`, from `0.500` at `k=3` to `0.667` at `k=15`.
+
+This is the same lesson as [the out-of-scope regression](#the-out-of-scope-regression-measured-where-it-bites): a scale-free ranking statistic and the behavior at the operating point can point in opposite directions, and only one of them is what serving does.
+
+Every held-out number improved together, which is not what a genuine trade looks like:
+
+| | `k=3` (previous) | `k=15` (selected) |
+|---|---|---|
+| argmax accuracy, test slice | `0.7928` | **`0.8018`** |
+| coverage / served accuracy | `0.4505` / `0.9600` | **`0.5135` / `0.9825`** |
+| wrong routes served | 2 | **1** |
+| hard_40 | `0.6750` | **`0.7500`** |
+| out-of-scope AUC | `0.8551` | **`0.8622`** |
+| Cohen's d | `1.4852` | **`1.6030`** |
+| leave-one-out | `0.7321` | **`0.8393`** |
+| p95 latency | `11.47ms` | `12.20ms` (ceiling 25ms) |
+
+**What giving up the pin cost.** Pinning `k` used to guarantee arithmetically that no threshold the sweep chose could move the abstention-blind argmax headline — which is what let the margin grid be re-derived in #512 *after* the headline was known. Selecting `k` couples them again. Three things replace that guarantee, and all three are load-bearing: `_SWEEP_TOP_K` is **pre-existing** from #511 and was not widened when it became a selection grid; selection still reads the tuning slice only; and the test slice was read once, at the selected pair. Widening that grid in future means re-registering it *before* re-running, never after seeing a number it would influence. `test_the_sweep_searches_top_k_only_over_the_pre_registered_grid` replaces the old pin-guard and asserts exactly that.
+
+`hard_40` is deliberately absent from the per-`k` table: `evaluation_report.json`'s `top_k_sweep` never publishes a per-`k` curve over held-out data, only over the tuning slice and out-of-scope probes.
 
 ### Known limitations
 
-- **`top_k` is a live parameter with a measured trade, not a settled constant.** `TOP_K = 3` ships unchanged, but it is now a parameter of `IntentIndex.decide()` (`AGENTIC_SEARCH_INTENT_TOP_K`). [The corrected ceiling finding](#the-ceiling-finding-corrected-top_k-was-never-swept) above shows the trade under **MiniLM**: sweeping `k` reaches `0.7464` leave-one-out and `0.6887` clean_151 accuracy at `k=15`, against `0.1188` out-of-scope separation falling to `0.0767`. Under **e5**, the same `k=15` reaches `0.8393` leave-one-out (see the tuning-slice curve above — a different encoder, not comparable number-for-number). `evaluation_report.json`'s `top_k_sweep` carries the full table for `k ∈ {3, 5, 8, 15, 25}`. The tuning/test split now exists, and `k` still has not been chosen on it — that decision remains deferred, alongside whatever encoder change is tried next.
+- **`top_k` is settled at `15`, but only over a five-value grid.** It is [chosen on the split](#top_k-chosen-on-the-split) now rather than inherited, and every held-out number improved. What is *not* established is that 15 is optimal: `_SWEEP_TOP_K` is `{3, 5, 8, 15, 25}`, tuning accuracy plateaus at `0.8714` from `k=8` onward, and `k=25` is within `0.0005` of the winner on served accuracy. The grid is deliberately not widened — doing so after seeing the headline it now influences is the fitting the split exists to prevent — so a finer search is possible but must re-register the grid first.
 - **Topical concentration.** 47% of the canonical examples carry IR/ML vocabulary, because they were curated from this project's own example set. Of 16 held-out in-scope probes drawn from outside that vocabulary, **13 abstained** rather than routing at all, and **9 had a wrong best-guess route underneath**. The two counts overlap and are not a partition — an abstaining query still has a nearest route; it just does not clear the thresholds. The failure is safe, because abstention defers to the LLM classifier, but off-domain traffic abstains more often than it should.
 - **The compose-versus-dispatch boundary.** "write an email to the vendor about the overage" sits at `0.963` cosine (MiniLM-measured) to the canonical "email the vendor about the overage". One verb apart, so it routes to `tool` without abstaining, when composing text is arguably `chat`. Adding more compose anchors did not fix it: the two phrasings are near-identical to the encoder and genuinely ambiguous to a human reader.
 - **Route imbalance, and it moved with the encoder.** Under MiniLM the `tool` route scored 45/50 on the clean slice while `search` and `chat` sat near 25/50. Under e5 the imbalance inverts: on the test slice `chat` is 33/37 and `tool` 30/37, while **`search` is the weak route at 25/37**. Route-level error is therefore a property of the encoder's representation at least as much as of the route, and any conclusion drawn from one encoder's per-route table does not carry to another's.
-- **Module emission is now derived, but recall paid for it.** The threshold moved `0.45` → `0.84` (see [below](#the-module-threshold-derived-and-no-longer-dead)), which took mean module recall on the test slice from ~`1.0` down to `0.567` while precision rose from ~`0.2` to `0.596`. That is a deliberate trade selected by macro-F1, not a free win: roughly two in five gold modules are now missed, where before every one was emitted alongside three or four wrong ones. If a future consumer needs recall over precision, re-run the sweep under a rule that says so — the grid and the selector are in `_select_module_threshold`.
-- **Module recall is the open question, not observability.** Margin abstentions, module labels and the composite flag now reach production telemetry as `route_fallback_reason="margin_below_threshold"`, `route_modules` and `route_composite` — no debug panel required. What is still unknown is whether the abstention pattern measured on the test slice (`search` serving 11 of 37, `chat` 18 of 37 cleanly) holds on real traffic; that needs the telemetry to actually accumulate before it can be answered.
+- **Module emission is derived now, and recall paid for it.** The threshold moved `0.45` → `0.821` (see [the module threshold](#the-module-threshold-derived-and-no-longer-dead)), trading recall for precision: mean modules emitted falls from ~4.7 to ~1.2. Macro-F1 on the test slice roughly doubles (`0.3492` → `0.6048`) and joint accuracy goes `0.0` → `0.4595`, so the trade is clearly net-positive — but it *is* a trade, and a consumer that needs recall over precision should re-run the sweep under a rule that says so rather than treating `0.821` as settled.
+- **Module recall is the open question, not observability.** Margin abstentions, module labels and the composite flag now reach production telemetry as `route_fallback_reason="margin_below_threshold"`, `route_modules` and `route_composite` — no debug panel required. What is still unknown is whether the abstention pattern measured on the test slice (`search` serving 11 of 37, `chat` 24 of 37 and `tool` 22 of 37 with no errors at all) holds on real traffic; that needs the telemetry to actually accumulate before it can be answered.
 - **The evaluation set is partly contaminated, and 40 more queries are now spent on tuning.** The legacy 30 were used as feedback while the canonical set was being curated, so their score is optimistic and must never be quoted as the router's accuracy; they are spent on the tuning slice for exactly that reason. A further 40 clean queries join them there, which leaves **111** for the honest measurement — a smaller instrument than the 151 the MiniLM numbers used, and the reason those two numbers are not the same measurement even where they look comparable.
 - **The pinned bars now run in CI, in their own lane.** `tests/unit/test_intent_index_eval.py` and the near-duplicate bar in `tests/unit/test_intent_canonical_data.py` need `sentence-transformers` and a built `data/intent_index/`, so they skip in the fast unit-test job — which deliberately excludes heavy ML packages, and adding them there would reinstate the torch-in-CI collection failures this repo has fixed twice. The `Intent Routing Gate` job in `.github/workflows/eval-gate.yml` installs the encoder, rebuilds the index from the committed canonical set, and runs the bars for real on every pull request. **It fails if any bar reports SKIPPED, and if the bar count drops below a floor** — a bar that skips measured nothing, and a bar that quietly disappears measured nothing either, so a job that let either pass would stay green in exactly the situation it exists to catch. Unlike the retrieval and RAGAS gates, this one needs no committed baseline and no secret: everything it reads is in the repo already, so it is active from its first run.
 
@@ -261,11 +305,11 @@ The e5-small-v2 encoder itself loads lazily on the first auto-routed request, se
 |---|---|---|
 | retired MLP (softmax) | above `0.9` | pass almost everything |
 | all-MiniLM-L6-v2 (cosine) | mean `0.378` | abstain on almost every request |
-| **intfloat/e5-small-v2 (cosine)** | **`0.792`–`0.896`, probes `0.782`–`0.850`** | **pass everything, in scope or not** |
+| **intfloat/e5-small-v2 (cosine), `k=15`** | **`0.776`–`0.857`, probes `0.767`–`0.829`** | **pass everything, in scope or not** |
 
-A value carried over from either earlier configuration is meaningless. Under e5 the shipped `0.30` is so far below the whole distribution that the confidence gate never fires at all, and no single value can separate in-scope from out-of-scope requests, because the two ranges overlap. The abstention that survives is the margin gate: `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` is re-derived for this encoder at `0.015` (serving 50 of 111 test-slice queries at `0.960`), where the MiniLM-era `0.02` would have served 38. `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` is cosine-scaled the same way, shifted the same way, and **has now been re-derived** — `0.45` → `0.84`, from the tuning slice's own module-score quantiles. All three thresholds are now in this encoder's units.
+A value carried over from either earlier configuration is meaningless. Under e5 the shipped `0.30` is so far below the whole distribution that the confidence gate never fires at all, and no single value can separate in-scope from out-of-scope requests, because the two ranges overlap. The abstention that survives is the margin gate: `AGENTIC_SEARCH_INTENT_MIN_ROUTE_MARGIN` is re-derived at `0.010` (serving 57 of 111 test-slice queries at `0.9825`). `AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE` is cosine-scaled the same way and has been re-derived to `0.821`. All three thresholds are now in this encoder's units **at this `top_k`** — and that second qualifier is not decoration: every one of these scales moves with `k` as well as with the encoder, which is why the module grid is [computed rather than written down](#the-grid-that-must-not-be-a-constant).
 
-Re-derive rather than reuse — and re-derive on the **tuning slice**, never on the test slice. `evaluation_report.json` carries the full 54-row sweep (6 confidence values × 9 margin values) under `threshold_tuning.sweep`, with the winner — `min_margin=0.015`, shipped as the app default — under `threshold_tuning.selected`. The sweep's own margin grid was already re-derived for e5's scale (see [above](#what-it-scores-and-why-it-is-still-dark)); a future encoder swap will need the same re-derivation, made and reviewed **before** looking at what it does to the headline, before the grid can select anything meaningful again.
+Re-derive rather than reuse — and re-derive on the **tuning slice**, never on the test slice. `evaluation_report.json` carries the full 270-row sweep (5 `top_k` × 6 confidence × 9 margin values) under `threshold_tuning.sweep`, with the winner — `top_k=15, min_margin=0.010`, shipped as the app defaults — under `threshold_tuning.selected`. The sweep's own margin grid was already re-derived for e5's scale (see [above](#what-it-scores-and-why-it-is-still-dark)); a future encoder swap will need the same re-derivation, made and reviewed **before** looking at what it does to the headline, before the grid can select anything meaningful again.
 
 `AGENTIC_SEARCH_INTENT_MODEL_PATH` no longer exists. Serving reads `AGENTIC_SEARCH_INTENT_INDEX_PATH`, a directory holding an `index.npz`. Building or evaluating an index never changes a serving setting.
 

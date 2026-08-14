@@ -63,8 +63,15 @@ def test_query_on_a_route_axis_picks_that_route_with_full_confidence():
     assert decision.abstained is False
 
 
-def test_route_score_is_the_mean_of_the_top_three_not_of_all_examples():
-    """One near neighbor must not be diluted by distant same-route examples."""
+def test_route_score_is_a_top_k_mean_not_a_mean_of_all_examples():
+    """One near neighbor must not be diluted by distant same-route examples.
+
+    ``top_k`` is passed explicitly rather than relying on the shipped default:
+    this asserts the top-k-mean *mechanism*, which must hold at any k, and
+    pinning it to whatever ``TOP_K`` currently is would make the test fail
+    every time that constant is re-selected — as it was in #522, for reasons
+    that have nothing to do with this property.
+    """
     examples = [
         CanonicalExample(f"s-{i}", f"t{i}", "search", ("lookup_fact",))
         for i in range(5)
@@ -73,11 +80,12 @@ def test_route_score_is_the_mean_of_the_top_three_not_of_all_examples():
     vectors = np.stack([_unit(1, 0, 0)] * 3 + [_unit(0, 0, 1)] * 2 + [_unit(0, 1, 0)])
     index = IntentIndex(examples, vectors, "test-encoder", "sha256:test")
 
-    scores = index.route_scores(_unit(1, 0, 0))
-
     # Top 3 of search are the three exact matches; the two distant ones do not
     # drag the mean down.
-    assert scores["search"] == pytest.approx(1.0)
+    assert index.route_scores(_unit(1, 0, 0), top_k=3)["search"] == pytest.approx(1.0)
+    # At a k wide enough to reach them, they do — which is the same mechanism
+    # seen from the other side, and the reason a larger k trades separation.
+    assert index.route_scores(_unit(1, 0, 0), top_k=5)["search"] == pytest.approx(0.6)
 
 
 def test_fewer_than_three_examples_averages_what_exists():
