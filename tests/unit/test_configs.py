@@ -92,7 +92,7 @@ def test_default_config_documents_intent_model_configuration():
     assert (
         DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_MIN_MODULE_SCORE"]
         == settings.intent_min_module_score
-        == 0.45
+        == 0.84
     )
     assert DEFAULT_CONFIG["AGENTIC_SEARCH_INTENT_TOP_K"] == settings.intent_top_k == 3
 

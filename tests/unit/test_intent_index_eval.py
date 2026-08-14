@@ -448,6 +448,97 @@ def test_the_threshold_sweep_never_chooses_top_k(tmp_path, monkeypatch):
     assert selected is None or selected["top_k"] == intent_index_eval.TOP_K
 
 
+def test_the_module_sweep_never_changes_the_route(tmp_path, monkeypatch):
+    """No ``min_module_score`` may move a single routing decision.
+
+    ``_emit_modules`` runs *after* ``decide()`` has already taken its argmax
+    over ``route_scores``, so the module threshold is structurally incapable of
+    changing a route. That is the entire reason this threshold could be left
+    dead at 0.45 for six PRs without any request being routed wrongly -- and
+    the reason re-deriving it is safe to ship without re-litigating the
+    headline. Asserting it beats assuming it: if module emission ever leaked
+    into the routing path, every module number in the report would silently
+    become a hyperparameter of the headline accuracy.
+    """
+    # Run the evaluation for its side effect of building the index on disk.
+    _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
+    index = IntentIndex.load(tmp_path / "index" / intent_index_eval.INDEX_FILENAME)
+
+    def routes_at(min_module_score):
+        return [
+            index.decide(
+                vector,
+                min_confidence=0.0,
+                min_margin=0.0,
+                min_module_score=min_module_score,
+                top_k=intent_index_eval.TOP_K,
+            ).route
+            for vector in index.vectors
+        ]
+
+    # 0.0 emits every module, 1.0 emits none and falls back to the single best
+    # -- the two extremes the grid interpolates between.
+    baseline = routes_at(intent_index_eval._DEFAULT_MIN_MODULE_SCORE)
+    for min_module_score in intent_index_eval._SWEEP_MIN_MODULE_SCORES + (0.0, 1.0):
+        assert routes_at(min_module_score) == baseline, (
+            f"min_module_score={min_module_score} moved a route"
+        )
+
+    # Non-vacuousness. Every route in the shared fixture carries exactly one
+    # module, so emission there cannot vary with the threshold no matter what
+    # the code does -- the loop above would pass even against a broken
+    # implementation. A route with two modules is what makes the threshold
+    # observable, and the route still must not move.
+    # The two search modules must score *differently* or no threshold can
+    # separate them: [0.8, 0.6, 0.0] is unit-norm and scores 0.8 against the
+    # query, against lookup_fact's 1.0.
+    off_axis = [0.8, 0.6, 0.0]
+    multi = IntentIndex(
+        examples=[
+            CanonicalExample("m0", "m zero", "search", ("lookup_fact",)),
+            CanonicalExample("m1", "m one", "search", ("lookup_document",)),
+            CanonicalExample("m2", "m two", "chat", ("explain",)),
+        ],
+        vectors=np.array([_SEARCH, off_axis, _CHAT], dtype=np.float32),
+        encoder="test",
+        fingerprint="test",
+    )
+    query = np.array(_SEARCH, dtype=np.float32)
+    wide = multi.decide(query, min_confidence=0.0, min_margin=0.0, min_module_score=0.0)
+    narrow = multi.decide(
+        query, min_confidence=0.0, min_margin=0.0, min_module_score=0.9
+    )
+    assert set(wide.modules) == {"lookup_fact", "lookup_document"}
+    assert set(narrow.modules) == {"lookup_fact"}
+    assert wide.route == narrow.route == "search"
+
+
+def test_the_module_sweep_is_tuning_only_and_records_its_rule(tmp_path, monkeypatch):
+    """The module threshold is chosen on the tuning slice, like the other two.
+
+    Selection is highest macro-F1 with ties to the lower threshold, registered
+    in advance. ``joint_accuracy`` is recorded on every row but must never be
+    the selector: it is an exact-set match and peaks where emission collapses
+    to the top-1 fallback, which macro-F1 correctly declines to choose.
+    """
+    report = _run(tmp_path, monkeypatch=monkeypatch, out_of_scope=True)
+    block = report["module_threshold_tuning"]
+
+    assert block["tuned_on"] is True
+    assert [row["min_module_score"] for row in block["sweep"]] == list(
+        intent_index_eval._SWEEP_MIN_MODULE_SCORES
+    )
+    selected = block["selected"]
+    best = max(row["macro_f1"] for row in block["sweep"])
+    assert selected["macro_f1"] == best
+    # Ties resolve downward, so nothing below the winner may match its score.
+    assert all(
+        row["min_module_score"] >= selected["min_module_score"]
+        for row in block["sweep"]
+        if row["macro_f1"] == best
+    )
+
+
 # ---------------------------------------------------------------------------
 # The pinned bars.
 #
