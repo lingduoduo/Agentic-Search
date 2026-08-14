@@ -9,7 +9,6 @@ from pathlib import Path
 from time import perf_counter
 
 from src.internal.configs import AppSettings, load_app_settings
-from src.internal.servers.web import request_capture as _capture
 from src.internal.servers.web.intent_routing import RouteStrategy
 from src.model.intent_encoder import DEFAULT_ENCODER, encode_texts
 
@@ -22,7 +21,17 @@ _ROUTE_VALUES = {s.value for s in RouteStrategy}
 
 @dataclass(frozen=True)
 class IntentModelDecision:
-    """A valid route prediction with serving diagnostics."""
+    """A valid route prediction with serving diagnostics.
+
+    ``abstain_reason`` is set only for ``margin_below_threshold``. Confidence
+    abstention is deliberately left ``None``: ``route_request`` already derives
+    it from ``confidence < threshold`` and reports it as
+    ``model_below_threshold``, and re-labelling that path here would change an
+    existing production signal for no reason.
+
+    Both new fields default, so a construction without them means "served" —
+    which is what every existing caller and test double intends.
+    """
 
     strategy: RouteStrategy
     confidence: float
@@ -30,6 +39,8 @@ class IntentModelDecision:
     latency_ms: float
     modules: tuple[str, ...] = ()
     composite: bool = False
+    margin: float = 0.0
+    abstain_reason: str | None = None
 
 
 def intent_min_confidence(settings: AppSettings | None = None) -> float:
@@ -86,12 +97,25 @@ def load_intent_index(settings: AppSettings | None = None) -> object | None:
 def predict_route(
     query: str, *, settings: AppSettings | None = None
 ) -> IntentModelDecision | None:
-    """Return a supported route decision, or None to defer to the classifier.
+    """Return a route decision, or None when there is nothing to say at all.
 
-    Confidence abstention is *not* handled here: the decision is returned and
-    ``route_request`` applies its existing confidence-versus-threshold rule
-    unchanged. Margin abstention has no equivalent there, so it returns None
-    after recording its own capture stage. Both paths end at the LLM classifier.
+    **Neither** abstention is decided here. Confidence abstention is left to
+    ``route_request``'s existing confidence-versus-threshold rule, and margin
+    abstention is reported on the returned decision's ``abstain_reason`` for
+    the same caller to act on. Both paths end at the LLM classifier.
+
+    Margin abstention used to return ``None`` after recording its own capture
+    stage, which is why it was invisible to production telemetry: ``None`` is
+    indistinguishable from "no index configured", so ``route_request`` could
+    not tell a deferral from an absent model. Returning the decision makes the
+    two abstentions symmetric and lets one caller own the reporting.
+
+    This function records **no** capture stage. ``route_request`` records
+    exactly one per decision; recording here as well would emit two stages with
+    conflicting payloads for any request that abstains.
+
+    ``None`` now means only: no index, an unsupported route, a failed encode, or
+    a confidence outside the valid cosine range.
     """
     resolved = settings or load_app_settings()
     index = load_intent_index(resolved)
@@ -122,23 +146,6 @@ def predict_route(
         )
         return None
 
-    if decision.abstain_reason == "margin_below_threshold":
-        _capture.record_stage(
-            "intent_model",
-            "evaluation",
-            {
-                "predicted_intent": decision.route,
-                "confidence": confidence,
-                "threshold": resolved.intent_model_min_confidence,
-                "margin": float(decision.margin),
-                "abstained": True,
-                "fallback_reason": "margin_below_threshold",
-                "composite": decision.composite,
-                "latency_ms": latency_ms,
-            },
-        )
-        return None
-
     return IntentModelDecision(
         strategy=RouteStrategy(decision.route),
         confidence=confidence,
@@ -146,4 +153,10 @@ def predict_route(
         latency_ms=latency_ms,
         modules=decision.modules,
         composite=decision.composite,
+        margin=float(decision.margin),
+        abstain_reason=(
+            "margin_below_threshold"
+            if decision.abstain_reason == "margin_below_threshold"
+            else None
+        ),
     )
