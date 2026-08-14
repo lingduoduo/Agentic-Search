@@ -1,189 +1,2214 @@
 [
-  {"id": "eval-search-01", "text": "where did we land on the index rebuild last week", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "eval-search-02", "text": "I can't find the rollout checklist anywhere", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-03", "text": "anyone remember which dashboard has the p95 numbers", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-04", "text": "the onboarding doc for new retrieval engineers", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-05", "text": "we must have written something about chunk sizes somewhere", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-06", "text": "which config file has the reranker timeout in it", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-07", "text": "the postmortem from the outage in March", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-08", "text": "I'm looking for the latest benchmark spreadsheet", "label": "search", "modules": ["lookup_document", "current_info"]},
-  {"id": "eval-search-09", "text": "do we have anything written up on hybrid retrieval tuning", "label": "search", "modules": ["lookup_document"]},
-  {"id": "eval-search-10", "text": "the slide deck the team used at the quarterly review", "label": "search", "modules": ["lookup_document"]},
-
-  {"id": "eval-chat-01", "text": "does reranking actually help if recall is already high", "label": "chat", "modules": ["explain"]},
-  {"id": "eval-chat-02", "text": "I never really got how RRF combines the two rankings", "label": "chat", "modules": ["explain"]},
-  {"id": "eval-chat-03", "text": "is it worth switching to a bigger embedding model or not", "label": "chat", "modules": ["compare"]},
-  {"id": "eval-chat-04", "text": "talk me through why dense retrieval struggles with rare terms", "label": "chat", "modules": ["explain"]},
-  {"id": "eval-chat-05", "text": "what would break if we dropped the sparse leg entirely", "label": "chat", "modules": ["explain"]},
-  {"id": "eval-chat-06", "text": "my mental model of the chunking step is probably wrong", "label": "chat", "modules": ["explain", "converse"]},
-  {"id": "eval-chat-07", "text": "how would you explain BM25 to someone new on the team", "label": "chat", "modules": ["explain"]},
-  {"id": "eval-chat-08", "text": "I'd like to understand the tradeoff between latency and recall here", "label": "chat", "modules": ["explain", "compare"]},
-  {"id": "eval-chat-09", "text": "any thoughts on whether we need a cross-encoder at all", "label": "chat", "modules": ["converse", "explain"]},
-  {"id": "eval-chat-10", "text": "the difference between semantic and lexical search still confuses me", "label": "chat", "modules": ["compare", "explain"]},
-
-  {"id": "eval-tool-01", "text": "ping the on-call engineer about the failing job", "label": "tool", "modules": ["send"]},
-  {"id": "eval-tool-02", "text": "put a reminder on my calendar for the retro", "label": "tool", "modules": ["schedule"]},
-  {"id": "eval-tool-03", "text": "let the platform team know the index finished rebuilding", "label": "tool", "modules": ["send"]},
-  {"id": "eval-tool-04", "text": "raise a ticket for the reranker timeout please", "label": "tool", "modules": ["create"]},
-  {"id": "eval-tool-05", "text": "get this summary over to my manager before standup", "label": "tool", "modules": ["send"]},
-  {"id": "eval-tool-06", "text": "can someone kick off the nightly job again", "label": "tool", "modules": ["execute"]},
-  {"id": "eval-tool-07", "text": "add the new corpus to the weekly report", "label": "tool", "modules": ["modify"]},
-  {"id": "eval-tool-08", "text": "drop a note in the channel that the deploy is done", "label": "tool", "modules": ["send"]},
-  {"id": "eval-tool-09", "text": "book thirty minutes with the legal team this week", "label": "tool", "modules": ["schedule"]},
-  {"id": "eval-tool-10", "text": "close out the stale issues from last quarter", "label": "tool", "modules": ["modify"]},
-
-  {"id": "bulk-001", "text": "where's the parental leave policy pdf", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-002", "text": "how many days of carryover vacation are we allowed", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-003", "text": "the signed nda with brightline media", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-004", "text": "when does the office lease actually expire", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-005", "text": "what's the current headcount in the support org", "label": "search", "modules": ["lookup_fact", "current_info"]},
-  {"id": "bulk-006", "text": "the expense reimbursement form for travel", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-007", "text": "who signed off on the vendor security review for datalake", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-008", "text": "acme logistics", "label": "search", "modules": ["bare_entity", "lookup_fact"]},
-  {"id": "bulk-009", "text": "the q2 board deck somewhere in drive", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-010", "text": "what did we quote them for the enterprise tier last time", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-011", "text": "still hunting for the fire drill evacuation map", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-012", "text": "latest status on the soc2 audit", "label": "search", "modules": ["current_info", "lookup_fact"]},
-  {"id": "bulk-013", "text": "the interview scorecard template for backend roles", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-014", "text": "how much did we pay pagerduty last year", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-015", "text": "the escalation matrix for sev1s", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-016", "text": "anything in the wiki about the badge reader replacement", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-017", "text": "which slack channel do refund requests go to", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-018", "text": "the churn numbers from the november qbr", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-019", "text": "helios migration", "label": "search", "modules": ["bare_entity", "lookup_fact"]},
-  {"id": "bulk-020", "text": "current sprint board for the payments squad", "label": "search", "modules": ["lookup_document", "current_info"]},
-  {"id": "bulk-021", "text": "is the checkout service still degraded", "label": "search", "modules": ["current_info", "lookup_fact"]},
-  {"id": "bulk-022", "text": "the offer letter template legal approved", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-023", "text": "what's the sla we promised northwind", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-024", "text": "data retention policy", "label": "search", "modules": ["bare_entity", "lookup_document"]},
-  {"id": "bulk-025", "text": "today's fx rate we're booking eur revenue at", "label": "search", "modules": ["current_info", "lookup_fact"]},
-  {"id": "bulk-026", "text": "the runbook for rotating the api keys", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-027", "text": "who's the account manager on the zendesk contract now", "label": "search", "modules": ["lookup_fact", "current_info"]},
-  {"id": "bulk-028", "text": "last month's aws bill broken down by service", "label": "search", "modules": ["lookup_document", "lookup_fact"]},
-  {"id": "bulk-029", "text": "the desk booking rules for hybrid days", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-030", "text": "quarterly bonus formula, where is that written down", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-031", "text": "openai enterprise agreement", "label": "search", "modules": ["bare_entity", "lookup_document"]},
-  {"id": "bulk-032", "text": "what version of the reranker is in prod right now", "label": "search", "modules": ["current_info", "lookup_fact"]},
-  {"id": "bulk-033", "text": "the ticket where the customer complained about duplicate charges", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-034", "text": "how long is the probation period here", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-035", "text": "the incident report for the january outage", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-036", "text": "our travel policy on business class flights", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-037", "text": "who's on call for the data platform this weekend", "label": "search", "modules": ["lookup_fact", "current_info"]},
-  {"id": "bulk-038", "text": "the pentest findings from last cycle", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-039", "text": "what's the notice period in the salesforce renewal", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-040", "text": "seating plan for the third floor", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-041", "text": "how much is left in the marketing budget", "label": "search", "modules": ["lookup_fact", "current_info"]},
-  {"id": "bulk-042", "text": "the diversity hiring guidelines doc", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-043", "text": "how many support tickets came in yesterday", "label": "search", "modules": ["lookup_fact", "current_info"]},
-  {"id": "bulk-044", "text": "the chunk overlap we settled on for the pdf pipeline", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-045", "text": "northwind renewal deck", "label": "search", "modules": ["bare_entity", "lookup_document"]},
-  {"id": "bulk-046", "text": "where do i file a workplace injury report", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-047", "text": "the mutual termination clause in the brightline contract", "label": "search", "modules": ["lookup_fact"]},
-  {"id": "bulk-048", "text": "any writeup on why we moved off elasticsearch", "label": "search", "modules": ["lookup_document"]},
-  {"id": "bulk-049", "text": "price of the pro plan as of today", "label": "search", "modules": ["current_info", "lookup_fact"]},
-  {"id": "bulk-050", "text": "the security questionnaire we send to vendors", "label": "search", "modules": ["lookup_document"]},
-
-  {"id": "bulk-051", "text": "why do we even need a two week notice period", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-052", "text": "give me the gist of the new expense policy", "label": "chat", "modules": ["summarize"]},
-  {"id": "bulk-053", "text": "draft a rejection note for the candidate we passed on", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-054", "text": "sso or plain saml, which headache is smaller", "label": "chat", "modules": ["compare"]},
-  {"id": "bulk-055", "text": "i'm not sure how the commission tiers actually work", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-056", "text": "write a short blurb for the careers page", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-057", "text": "honestly wondering if we're over-hiring in support", "label": "chat", "modules": ["converse"]},
-  {"id": "bulk-058", "text": "tl;dr of yesterday's incident review please", "label": "chat", "modules": ["summarize"]},
-  {"id": "bulk-059", "text": "what's the difference between a sev2 and a sev3 for us", "label": "chat", "modules": ["compare", "explain"]},
-  {"id": "bulk-060", "text": "explain the 409a valuation like i'm new to startups", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-061", "text": "put together a polite reply to the angry customer thread", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-062", "text": "how does the visa sponsorship process work here", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-063", "text": "summarize the vendor's answers to our security questionnaire", "label": "chat", "modules": ["summarize"]},
-  {"id": "bulk-064", "text": "just thinking out loud about whether the offsite is worth it", "label": "chat", "modules": ["converse"]},
-  {"id": "bulk-065", "text": "rewrite this sentence so it sounds less legal", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-066", "text": "zendesk or intercom for a team our size", "label": "chat", "modules": ["compare"]},
-  {"id": "bulk-067", "text": "i still don't get why cogs went up when volume was flat", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-068", "text": "condense the 40 page rfp into something i can skim", "label": "chat", "modules": ["summarize", "generate"]},
-  {"id": "bulk-069", "text": "come up with three names for the new onboarding flow", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-070", "text": "is it normal for offer acceptance to drop in december", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-071", "text": "walk me through what a soc2 type 2 actually proves", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-072", "text": "compare the two office quotes on cost per seat", "label": "chat", "modules": ["compare"]},
-  {"id": "bulk-073", "text": "give me talking points for the all hands on the reorg", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-074", "text": "the short version of the q3 marketing results", "label": "chat", "modules": ["summarize"]},
-  {"id": "bulk-075", "text": "why does dense retrieval do worse on product codes", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-076", "text": "how do you think about build vs buy for the crm", "label": "chat", "modules": ["converse", "compare"]},
-  {"id": "bulk-077", "text": "draft an email to the team about the new pto rules", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-078", "text": "summarize what changed in the updated msa", "label": "chat", "modules": ["summarize"]},
-  {"id": "bulk-079", "text": "hybrid three days a week versus two, what actually changes", "label": "chat", "modules": ["compare", "explain"]},
-  {"id": "bulk-080", "text": "i've never understood how our arr is recognized", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-081", "text": "any opinion on whether we should sunset the free tier", "label": "chat", "modules": ["converse", "explain"]},
-  {"id": "bulk-082", "text": "recap the customer call in a few bullets", "label": "chat", "modules": ["summarize", "generate"]},
-  {"id": "bulk-083", "text": "what does a chargeback actually cost us end to end", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-084", "text": "write the job description for a staff sre", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-085", "text": "bm25 or a cross encoder if latency is the constraint", "label": "chat", "modules": ["compare", "explain"]},
-  {"id": "bulk-086", "text": "help me think through the on-call fairness complaints", "label": "chat", "modules": ["converse"]},
-  {"id": "bulk-087", "text": "explain why the badge system needs its own vlan", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-088", "text": "boil the pentest report down for the exec summary", "label": "chat", "modules": ["summarize", "generate"]},
-  {"id": "bulk-089", "text": "salaried designer versus a contractor for this work", "label": "chat", "modules": ["compare"]},
-  {"id": "bulk-090", "text": "put a few sentences together for the status update", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-091", "text": "why would our refund rate creep up after a price change", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-092", "text": "give me a two line summary of the board minutes", "label": "chat", "modules": ["summarize", "generate"]},
-  {"id": "bulk-093", "text": "how would you pitch our security posture to a skeptical buyer", "label": "chat", "modules": ["generate", "explain"]},
-  {"id": "bulk-094", "text": "not sure the new interview loop is fair to junior folks", "label": "chat", "modules": ["converse"]},
-  {"id": "bulk-095", "text": "what makes a good runbook, in your view", "label": "chat", "modules": ["explain", "converse"]},
-  {"id": "bulk-096", "text": "shorten the customer facing changelog entry", "label": "chat", "modules": ["generate"]},
-  {"id": "bulk-097", "text": "insourcing the helpdesk versus keeping the msp", "label": "chat", "modules": ["compare"]},
-  {"id": "bulk-098", "text": "why is our p95 so much worse than p50", "label": "chat", "modules": ["explain"]},
-  {"id": "bulk-099", "text": "sum up the last three weeks of standup notes", "label": "chat", "modules": ["summarize"]},
-  {"id": "bulk-100", "text": "so what do you make of the flat renewal numbers", "label": "chat", "modules": ["converse"]},
-
-  {"id": "bulk-101", "text": "someone should open a ticket with facilities about the broken ac", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-102", "text": "email the offer to priya before end of day", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-103", "text": "block an hour friday for the budget review", "label": "tool", "modules": ["schedule"]},
-  {"id": "bulk-104", "text": "bump the support sla field to 4 hours in the crm", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-105", "text": "run the payroll preview for this cycle", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-106", "text": "file an expense for the client dinner", "label": "tool", "modules": ["create", "send"]},
-  {"id": "bulk-107", "text": "the cloudkite invoice still needs to get over to finance", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-108", "text": "set up the debrief with the hiring panel next tuesday", "label": "tool", "modules": ["schedule"]},
-  {"id": "bulk-109", "text": "change my emergency contact in workday", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-110", "text": "kick off the nightly reindex now", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-111", "text": "create a shared folder for the audit evidence", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-112", "text": "send the renewal reminder to the northwind contact", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-113", "text": "would be great if the retro moved to thursday morning", "label": "tool", "modules": ["schedule", "modify"]},
-  {"id": "bulk-114", "text": "revoke dan's github access, he left friday", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-115", "text": "the staging creds need rotating before friday", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-116", "text": "start a new onboarding checklist for the two contractors", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-117", "text": "share the pricing one pager with the acme team", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-118", "text": "put the quarterly compliance training on everyone's calendar", "label": "tool", "modules": ["schedule"]},
-  {"id": "bulk-119", "text": "update the on-call rotation so maya covers next week", "label": "tool", "modules": ["modify", "schedule"]},
-  {"id": "bulk-120", "text": "can someone restart the payments worker in prod", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-121", "text": "spin up a channel for the launch", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-122", "text": "text the on-call about the failing backup", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-123", "text": "reschedule the vendor demo for after the holidays", "label": "tool", "modules": ["schedule", "modify"]},
-  {"id": "bulk-124", "text": "the analytics bucket is going to need a bigger quota", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-125", "text": "run the payroll variance report", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-126", "text": "draft a po for the new laptops and submit it", "label": "tool", "modules": ["create", "send"]},
-  {"id": "bulk-127", "text": "cc legal on the brightline thread", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-128", "text": "set a reminder to chase the signed sow on monday", "label": "tool", "modules": ["schedule"]},
-  {"id": "bulk-129", "text": "mark the duplicate tickets as merged", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-130", "text": "kick the failed sync job again", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-131", "text": "log a security incident for the phishing email", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-132", "text": "ship the weekly digest to the whole company", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-133", "text": "we'll want the big conference room for the offsite planning", "label": "tool", "modules": ["schedule"]},
-  {"id": "bulk-134", "text": "swap the reranker timeout to 800ms in the config", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-135", "text": "carry out the data deletion request for that customer", "label": "tool", "modules": ["execute", "modify"]},
-  {"id": "bulk-136", "text": "add a new vendor record for cloudkite", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-137", "text": "push the customer status update out to the affected accounts", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-138", "text": "line up interviews for the three shortlisted candidates", "label": "tool", "modules": ["schedule", "send"]},
-  {"id": "bulk-139", "text": "archive last year's closed support queues", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-140", "text": "rerun the invoice export for december", "label": "tool", "modules": ["execute"]},
-  {"id": "bulk-141", "text": "open a jira for the flaky checkout test", "label": "tool", "modules": ["create"]},
-  {"id": "bulk-142", "text": "let the whole support team know the refund tool is fixed", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-143", "text": "put the board meeting on the calendar for the 12th", "label": "tool", "modules": ["schedule"]},
-  {"id": "bulk-144", "text": "that shared drive folder should really say fy26 planning", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-145", "text": "run the backfill for the missing crm contacts", "label": "tool", "modules": ["execute", "modify"]},
-  {"id": "bulk-146", "text": "set up a desk for the intern starting monday", "label": "tool", "modules": ["create", "schedule"]},
-  {"id": "bulk-147", "text": "the landlord still hasn't heard about the parking passes", "label": "tool", "modules": ["send"]},
-  {"id": "bulk-148", "text": "push my 1:1 with sam to next week", "label": "tool", "modules": ["schedule", "modify"]},
-  {"id": "bulk-149", "text": "turn off the auto renewal on the figma seat", "label": "tool", "modules": ["modify"]},
-  {"id": "bulk-150", "text": "we need the nps survey out to the enterprise segment today", "label": "tool", "modules": ["send", "execute"]},
-
-  {"id": "bulk-151", "text": "curious what you'd do about the renewal pushback from acme", "label": "chat", "modules": ["converse"]}
+  {
+    "id": "eval-search-01",
+    "text": "where did we land on the index rebuild last week",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "eval-search-02",
+    "text": "I can't find the rollout checklist anywhere",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-03",
+    "text": "anyone remember which dashboard has the p95 numbers",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-04",
+    "text": "the onboarding doc for new retrieval engineers",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-05",
+    "text": "we must have written something about chunk sizes somewhere",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-06",
+    "text": "which config file has the reranker timeout in it",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-07",
+    "text": "the postmortem from the outage in March",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-08",
+    "text": "I'm looking for the latest benchmark spreadsheet",
+    "label": "search",
+    "modules": [
+      "lookup_document",
+      "current_info"
+    ]
+  },
+  {
+    "id": "eval-search-09",
+    "text": "do we have anything written up on hybrid retrieval tuning",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-search-10",
+    "text": "the slide deck the team used at the quarterly review",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "eval-chat-01",
+    "text": "does reranking actually help if recall is already high",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-chat-02",
+    "text": "I never really got how RRF combines the two rankings",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-chat-03",
+    "text": "is it worth switching to a bigger embedding model or not",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "eval-chat-04",
+    "text": "talk me through why dense retrieval struggles with rare terms",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-chat-05",
+    "text": "what would break if we dropped the sparse leg entirely",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-chat-06",
+    "text": "my mental model of the chunking step is probably wrong",
+    "label": "chat",
+    "modules": [
+      "explain",
+      "converse"
+    ]
+  },
+  {
+    "id": "eval-chat-07",
+    "text": "how would you explain BM25 to someone new on the team",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-chat-08",
+    "text": "I'd like to understand the tradeoff between latency and recall here",
+    "label": "chat",
+    "modules": [
+      "explain",
+      "compare"
+    ]
+  },
+  {
+    "id": "eval-chat-09",
+    "text": "any thoughts on whether we need a cross-encoder at all",
+    "label": "chat",
+    "modules": [
+      "converse",
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-chat-10",
+    "text": "the difference between semantic and lexical search still confuses me",
+    "label": "chat",
+    "modules": [
+      "compare",
+      "explain"
+    ]
+  },
+  {
+    "id": "eval-tool-01",
+    "text": "ping the on-call engineer about the failing job",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "eval-tool-02",
+    "text": "put a reminder on my calendar for the retro",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "eval-tool-03",
+    "text": "let the platform team know the index finished rebuilding",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "eval-tool-04",
+    "text": "raise a ticket for the reranker timeout please",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "eval-tool-05",
+    "text": "get this summary over to my manager before standup",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "eval-tool-06",
+    "text": "can someone kick off the nightly job again",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "eval-tool-07",
+    "text": "add the new corpus to the weekly report",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "eval-tool-08",
+    "text": "drop a note in the channel that the deploy is done",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "eval-tool-09",
+    "text": "book thirty minutes with the legal team this week",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "eval-tool-10",
+    "text": "close out the stale issues from last quarter",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-001",
+    "text": "where's the parental leave policy pdf",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-002",
+    "text": "how many days of carryover vacation are we allowed",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-003",
+    "text": "the signed nda with brightline media",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-004",
+    "text": "when does the office lease actually expire",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-005",
+    "text": "what's the current headcount in the support org",
+    "label": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-006",
+    "text": "the expense reimbursement form for travel",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-007",
+    "text": "who signed off on the vendor security review for datalake",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-008",
+    "text": "acme logistics",
+    "label": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-009",
+    "text": "the q2 board deck somewhere in drive",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-010",
+    "text": "what did we quote them for the enterprise tier last time",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-011",
+    "text": "still hunting for the fire drill evacuation map",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-012",
+    "text": "latest status on the soc2 audit",
+    "label": "search",
+    "modules": [
+      "current_info",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-013",
+    "text": "the interview scorecard template for backend roles",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-014",
+    "text": "how much did we pay pagerduty last year",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-015",
+    "text": "the escalation matrix for sev1s",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-016",
+    "text": "anything in the wiki about the badge reader replacement",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-017",
+    "text": "which slack channel do refund requests go to",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-018",
+    "text": "the churn numbers from the november qbr",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-019",
+    "text": "helios migration",
+    "label": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-020",
+    "text": "current sprint board for the payments squad",
+    "label": "search",
+    "modules": [
+      "lookup_document",
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-021",
+    "text": "is the checkout service still degraded",
+    "label": "search",
+    "modules": [
+      "current_info",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-022",
+    "text": "the offer letter template legal approved",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-023",
+    "text": "what's the sla we promised northwind",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-024",
+    "text": "data retention policy",
+    "label": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-025",
+    "text": "today's fx rate we're booking eur revenue at",
+    "label": "search",
+    "modules": [
+      "current_info",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-026",
+    "text": "the runbook for rotating the api keys",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-027",
+    "text": "who's the account manager on the zendesk contract now",
+    "label": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-028",
+    "text": "last month's aws bill broken down by service",
+    "label": "search",
+    "modules": [
+      "lookup_document",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-029",
+    "text": "the desk booking rules for hybrid days",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-030",
+    "text": "quarterly bonus formula, where is that written down",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-031",
+    "text": "openai enterprise agreement",
+    "label": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-032",
+    "text": "what version of the reranker is in prod right now",
+    "label": "search",
+    "modules": [
+      "current_info",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-033",
+    "text": "the ticket where the customer complained about duplicate charges",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-034",
+    "text": "how long is the probation period here",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-035",
+    "text": "the incident report for the january outage",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-036",
+    "text": "our travel policy on business class flights",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-037",
+    "text": "who's on call for the data platform this weekend",
+    "label": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-038",
+    "text": "the pentest findings from last cycle",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-039",
+    "text": "what's the notice period in the salesforce renewal",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-040",
+    "text": "seating plan for the third floor",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-041",
+    "text": "how much is left in the marketing budget",
+    "label": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-042",
+    "text": "the diversity hiring guidelines doc",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-043",
+    "text": "how many support tickets came in yesterday",
+    "label": "search",
+    "modules": [
+      "lookup_fact",
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-044",
+    "text": "the chunk overlap we settled on for the pdf pipeline",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-045",
+    "text": "northwind renewal deck",
+    "label": "search",
+    "modules": [
+      "bare_entity",
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-046",
+    "text": "where do i file a workplace injury report",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-047",
+    "text": "the mutual termination clause in the brightline contract",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-048",
+    "text": "any writeup on why we moved off elasticsearch",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-049",
+    "text": "price of the pro plan as of today",
+    "label": "search",
+    "modules": [
+      "current_info",
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-050",
+    "text": "the security questionnaire we send to vendors",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-051",
+    "text": "why do we even need a two week notice period",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-052",
+    "text": "give me the gist of the new expense policy",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-053",
+    "text": "draft a rejection note for the candidate we passed on",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-054",
+    "text": "sso or plain saml, which headache is smaller",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-055",
+    "text": "i'm not sure how the commission tiers actually work",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-056",
+    "text": "write a short blurb for the careers page",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-057",
+    "text": "honestly wondering if we're over-hiring in support",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-058",
+    "text": "tl;dr of yesterday's incident review please",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-059",
+    "text": "what's the difference between a sev2 and a sev3 for us",
+    "label": "chat",
+    "modules": [
+      "compare",
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-060",
+    "text": "explain the 409a valuation like i'm new to startups",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-061",
+    "text": "put together a polite reply to the angry customer thread",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-062",
+    "text": "how does the visa sponsorship process work here",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-063",
+    "text": "summarize the vendor's answers to our security questionnaire",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-064",
+    "text": "just thinking out loud about whether the offsite is worth it",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-065",
+    "text": "rewrite this sentence so it sounds less legal",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-066",
+    "text": "zendesk or intercom for a team our size",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-067",
+    "text": "i still don't get why cogs went up when volume was flat",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-068",
+    "text": "condense the 40 page rfp into something i can skim",
+    "label": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-069",
+    "text": "come up with three names for the new onboarding flow",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-070",
+    "text": "is it normal for offer acceptance to drop in december",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-071",
+    "text": "walk me through what a soc2 type 2 actually proves",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-072",
+    "text": "compare the two office quotes on cost per seat",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-073",
+    "text": "give me talking points for the all hands on the reorg",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-074",
+    "text": "the short version of the q3 marketing results",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-075",
+    "text": "why does dense retrieval do worse on product codes",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-076",
+    "text": "how do you think about build vs buy for the crm",
+    "label": "chat",
+    "modules": [
+      "converse",
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-077",
+    "text": "draft an email to the team about the new pto rules",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-078",
+    "text": "summarize what changed in the updated msa",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-079",
+    "text": "hybrid three days a week versus two, what actually changes",
+    "label": "chat",
+    "modules": [
+      "compare",
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-080",
+    "text": "i've never understood how our arr is recognized",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-081",
+    "text": "any opinion on whether we should sunset the free tier",
+    "label": "chat",
+    "modules": [
+      "converse",
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-082",
+    "text": "recap the customer call in a few bullets",
+    "label": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-083",
+    "text": "what does a chargeback actually cost us end to end",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-084",
+    "text": "write the job description for a staff sre",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-085",
+    "text": "bm25 or a cross encoder if latency is the constraint",
+    "label": "chat",
+    "modules": [
+      "compare",
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-086",
+    "text": "help me think through the on-call fairness complaints",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-087",
+    "text": "explain why the badge system needs its own vlan",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-088",
+    "text": "boil the pentest report down for the exec summary",
+    "label": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-089",
+    "text": "salaried designer versus a contractor for this work",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-090",
+    "text": "put a few sentences together for the status update",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-091",
+    "text": "why would our refund rate creep up after a price change",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-092",
+    "text": "give me a two line summary of the board minutes",
+    "label": "chat",
+    "modules": [
+      "summarize",
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-093",
+    "text": "how would you pitch our security posture to a skeptical buyer",
+    "label": "chat",
+    "modules": [
+      "generate",
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-094",
+    "text": "not sure the new interview loop is fair to junior folks",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-095",
+    "text": "what makes a good runbook, in your view",
+    "label": "chat",
+    "modules": [
+      "explain",
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-096",
+    "text": "shorten the customer facing changelog entry",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-097",
+    "text": "insourcing the helpdesk versus keeping the msp",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-098",
+    "text": "why is our p95 so much worse than p50",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-099",
+    "text": "sum up the last three weeks of standup notes",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-100",
+    "text": "so what do you make of the flat renewal numbers",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-101",
+    "text": "someone should open a ticket with facilities about the broken ac",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-102",
+    "text": "email the offer to priya before end of day",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-103",
+    "text": "block an hour friday for the budget review",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-104",
+    "text": "bump the support sla field to 4 hours in the crm",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-105",
+    "text": "run the payroll preview for this cycle",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-106",
+    "text": "file an expense for the client dinner",
+    "label": "tool",
+    "modules": [
+      "create",
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-107",
+    "text": "the cloudkite invoice still needs to get over to finance",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-108",
+    "text": "set up the debrief with the hiring panel next tuesday",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-109",
+    "text": "change my emergency contact in workday",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-110",
+    "text": "kick off the nightly reindex now",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-111",
+    "text": "create a shared folder for the audit evidence",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-112",
+    "text": "send the renewal reminder to the northwind contact",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-113",
+    "text": "would be great if the retro moved to thursday morning",
+    "label": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-114",
+    "text": "revoke dan's github access, he left friday",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-115",
+    "text": "the staging creds need rotating before friday",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-116",
+    "text": "start a new onboarding checklist for the two contractors",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-117",
+    "text": "share the pricing one pager with the acme team",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-118",
+    "text": "put the quarterly compliance training on everyone's calendar",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-119",
+    "text": "update the on-call rotation so maya covers next week",
+    "label": "tool",
+    "modules": [
+      "modify",
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-120",
+    "text": "can someone restart the payments worker in prod",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-121",
+    "text": "spin up a channel for the launch",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-122",
+    "text": "text the on-call about the failing backup",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-123",
+    "text": "reschedule the vendor demo for after the holidays",
+    "label": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-124",
+    "text": "the analytics bucket is going to need a bigger quota",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-125",
+    "text": "run the payroll variance report",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-126",
+    "text": "draft a po for the new laptops and submit it",
+    "label": "tool",
+    "modules": [
+      "create",
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-127",
+    "text": "cc legal on the brightline thread",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-128",
+    "text": "set a reminder to chase the signed sow on monday",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-129",
+    "text": "mark the duplicate tickets as merged",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-130",
+    "text": "kick the failed sync job again",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-131",
+    "text": "log a security incident for the phishing email",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-132",
+    "text": "ship the weekly digest to the whole company",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-133",
+    "text": "we'll want the big conference room for the offsite planning",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-134",
+    "text": "swap the reranker timeout to 800ms in the config",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-135",
+    "text": "carry out the data deletion request for that customer",
+    "label": "tool",
+    "modules": [
+      "execute",
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-136",
+    "text": "add a new vendor record for cloudkite",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-137",
+    "text": "push the customer status update out to the affected accounts",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-138",
+    "text": "line up interviews for the three shortlisted candidates",
+    "label": "tool",
+    "modules": [
+      "schedule",
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-139",
+    "text": "archive last year's closed support queues",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-140",
+    "text": "rerun the invoice export for december",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-141",
+    "text": "open a jira for the flaky checkout test",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-142",
+    "text": "let the whole support team know the refund tool is fixed",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-143",
+    "text": "put the board meeting on the calendar for the 12th",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-144",
+    "text": "that shared drive folder should really say fy26 planning",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-145",
+    "text": "run the backfill for the missing crm contacts",
+    "label": "tool",
+    "modules": [
+      "execute",
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-146",
+    "text": "set up a desk for the intern starting monday",
+    "label": "tool",
+    "modules": [
+      "create",
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-147",
+    "text": "the landlord still hasn't heard about the parking passes",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-148",
+    "text": "push my 1:1 with sam to next week",
+    "label": "tool",
+    "modules": [
+      "schedule",
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-149",
+    "text": "turn off the auto renewal on the figma seat",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-150",
+    "text": "we need the nps survey out to the enterprise segment today",
+    "label": "tool",
+    "modules": [
+      "send",
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-151",
+    "text": "curious what you'd do about the renewal pushback from acme",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-152",
+    "text": "where's the updated remote work policy",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-153",
+    "text": "what's our current pto accrual rate",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-154",
+    "text": "the msa with northwind consulting",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-155",
+    "text": "how much did we spend on the sales offsite",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-156",
+    "text": "find the incident postmortem from the march outage",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-157",
+    "text": "who owns the vendor relationship with tealeaf",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-158",
+    "text": "the data processing agreement for the eu customers",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-159",
+    "text": "when's the next board meeting",
+    "label": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-160",
+    "text": "what's the headcount plan for q4",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-161",
+    "text": "pull the security questionnaire we sent brightline",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-162",
+    "text": "is the vpn down right now",
+    "label": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-163",
+    "text": "how long do we retain support tickets",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-164",
+    "text": "the onboarding deck for account execs",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-165",
+    "text": "what did legal say about the arbitration clause",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-166",
+    "text": "northwind consulting",
+    "label": "search",
+    "modules": [
+      "bare_entity"
+    ]
+  },
+  {
+    "id": "bulk-167",
+    "text": "where do i find the travel booking tool docs",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-168",
+    "text": "what discount did we give cloudkite last renewal",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-169",
+    "text": "the q2 churn analysis",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-170",
+    "text": "who's covering support over the holiday",
+    "label": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-171",
+    "text": "what's the notice period on the london office",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-172",
+    "text": "dig out the old comp bands doc",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-173",
+    "text": "how many open reqs does engineering have",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-174",
+    "text": "the signed w9 for the contractor",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-175",
+    "text": "what's blocking the soc2 audit right now",
+    "label": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-176",
+    "text": "tealeaf renewal terms",
+    "label": "search",
+    "modules": [
+      "bare_entity"
+    ]
+  },
+  {
+    "id": "bulk-177",
+    "text": "where's the incident response runbook",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-178",
+    "text": "what's our average time to hire",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-179",
+    "text": "the slides from the customer advisory board",
+    "label": "search",
+    "modules": [
+      "lookup_document"
+    ]
+  },
+  {
+    "id": "bulk-180",
+    "text": "is the badge system working today",
+    "label": "search",
+    "modules": [
+      "current_info"
+    ]
+  },
+  {
+    "id": "bulk-181",
+    "text": "how much runway do we have per the last board deck",
+    "label": "search",
+    "modules": [
+      "lookup_fact"
+    ]
+  },
+  {
+    "id": "bulk-182",
+    "text": "why does the commission plan reset quarterly",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-183",
+    "text": "tl;dr of the security review please",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-184",
+    "text": "draft a note to the team about the office move",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-185",
+    "text": "contractor or full time for this role, thoughts",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-186",
+    "text": "i keep second guessing the pricing change",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-187",
+    "text": "explain how the equity refresh works",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-188",
+    "text": "summarize where we landed on the vendor shortlist",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-189",
+    "text": "write a short update for the investor email",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-190",
+    "text": "which is worse, missing the date or shipping it rough",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-191",
+    "text": "honestly not sure we should renew with tealeaf",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-192",
+    "text": "walk me through the expense approval chain",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-193",
+    "text": "give me the highlights from the customer call",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-194",
+    "text": "put together an agenda for the offsite",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-195",
+    "text": "self serve or sales led, where do we actually make money",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-196",
+    "text": "i'm torn on whether to backfill the role",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-197",
+    "text": "why do we need legal review for every nda",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-198",
+    "text": "recap the decisions from the pricing meeting",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-199",
+    "text": "draft the rejection for the vendor we didn't pick",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-200",
+    "text": "remote first or hybrid, which hurts hiring less",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-201",
+    "text": "been going back and forth on the org change",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-202",
+    "text": "how does the referral bonus actually pay out",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-203",
+    "text": "quick summary of the churn analysis",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-204",
+    "text": "write the changelog entry for this release",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-205",
+    "text": "annual or monthly billing, which do customers prefer",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-206",
+    "text": "not sure how to break this news to the team",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-207",
+    "text": "explain why we cap pto carryover",
+    "label": "chat",
+    "modules": [
+      "explain"
+    ]
+  },
+  {
+    "id": "bulk-208",
+    "text": "sum up what happened in the outage",
+    "label": "chat",
+    "modules": [
+      "summarize"
+    ]
+  },
+  {
+    "id": "bulk-209",
+    "text": "draft talking points for the all hands",
+    "label": "chat",
+    "modules": [
+      "generate"
+    ]
+  },
+  {
+    "id": "bulk-210",
+    "text": "build or buy for the billing system",
+    "label": "chat",
+    "modules": [
+      "compare"
+    ]
+  },
+  {
+    "id": "bulk-211",
+    "text": "thinking out loud about the support model",
+    "label": "chat",
+    "modules": [
+      "converse"
+    ]
+  },
+  {
+    "id": "bulk-212",
+    "text": "open a ticket for the flaky badge reader",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-213",
+    "text": "email the revised sow to northwind",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-214",
+    "text": "block two hours thursday for interviews",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-215",
+    "text": "change the renewal date on the tealeaf account",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-216",
+    "text": "run the month end close report",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-217",
+    "text": "create a req for the senior designer role",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-218",
+    "text": "send the signed msa back to their legal team",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-219",
+    "text": "put the quarterly review on everyone's calendar",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-220",
+    "text": "update the support sla to 8 hours",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-221",
+    "text": "approve priya's expense report",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-222",
+    "text": "file a ticket with it about the vpn",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-223",
+    "text": "forward the renewal quote to procurement",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-224",
+    "text": "schedule the candidate debrief for monday",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-225",
+    "text": "move the all hands to wednesday",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-226",
+    "text": "kick off the payroll run",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-227",
+    "text": "put a calendar hold on the board prep",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-228",
+    "text": "open a purchase request for the new laptops",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-229",
+    "text": "ping facilities about the broken ac",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-230",
+    "text": "bump the deal stage to closed won",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-231",
+    "text": "submit the vendor security questionnaire",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-232",
+    "text": "set up a call with the cloudkite team next week",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-233",
+    "text": "cancel the friday sync",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-234",
+    "text": "create a shared folder for the audit docs",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-235",
+    "text": "send the countersigned contract to the agency",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-236",
+    "text": "process the refund for the duplicate charge",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  },
+  {
+    "id": "bulk-237",
+    "text": "add the contractor to the payroll system",
+    "label": "tool",
+    "modules": [
+      "modify"
+    ]
+  },
+  {
+    "id": "bulk-238",
+    "text": "book the large room for the customer visit",
+    "label": "tool",
+    "modules": [
+      "schedule"
+    ]
+  },
+  {
+    "id": "bulk-239",
+    "text": "raise a ticket for the printer on three",
+    "label": "tool",
+    "modules": [
+      "create"
+    ]
+  },
+  {
+    "id": "bulk-240",
+    "text": "email the board deck to the investors",
+    "label": "tool",
+    "modules": [
+      "send"
+    ]
+  },
+  {
+    "id": "bulk-241",
+    "text": "archive the closed reqs",
+    "label": "tool",
+    "modules": [
+      "execute"
+    ]
+  }
 ]
