@@ -1,15 +1,15 @@
 """Route a request by similarity to curated canonical examples.
 
 The route is the argmax of a per-route score: the mean of the top-k cosine
-similarities among that route's canonical examples, k=3 (``TOP_K``) by
-default. ``top_k`` is a parameter, not a hardcoded constant, because a swept
-value moves both accuracy and out-of-scope separation (see
-docs/training-and-evaluation.md); the shipped default is unchanged. Two
-thresholds gate the result, because two different things go wrong. A low
-absolute score means
-nothing canonical resembles the request — out of scope. A low margin between
-the best and second-best route means two routes fit equally well — ambiguous.
-Either one abstains, and the caller falls through to the LLM classifier.
+similarities among that route's canonical examples, ``TOP_K`` by default.
+``top_k`` is a parameter, not a hardcoded constant, and is selected on the
+tuning slice (see docs/training-and-evaluation.md).
+
+**One** threshold gates the result: a low margin between the best and
+second-best route means two routes fit equally well, so the request is
+ambiguous and the caller falls through to the LLM classifier. There used to be
+a second, absolute-confidence gate for out-of-scope requests; it was removed
+after measurement showed it changed 3 decisions out of 416 — see ``decide``.
 
 Cosine is deliberately not normalized across routes. A softmax head sums to one
 by construction and so cannot express "none of these", which is why the previous
@@ -180,24 +180,36 @@ class IntentIndex:
         self,
         vector: np.ndarray,
         *,
-        min_confidence: float,
         min_margin: float,
         min_module_score: float,
         top_k: int = TOP_K,
     ) -> KnnDecision:
-        """Score *vector*, apply both routing thresholds, and report modules."""
+        """Score *vector*, apply the margin threshold, and report modules.
+
+        **There was a second gate here** -- an absolute ``min_confidence``
+        floor, meant to catch requests that resemble nothing canonical. It was
+        removed after being swept on the tuning slice: the rule selected a value
+        below the lowest in-scope score, and across every evaluation set
+        available (416 decisions) the floor changed **3** of them, two of which
+        were the tuning probes it had been selected from.
+
+        The reason it earned nothing is that the two gates overlap. Under this
+        encoder in-scope and out-of-scope scores occupy the same narrow band, so
+        anything far enough from one route to fail an absolute floor is already
+        close to two routes and fails the margin. Keeping a knob that looks like
+        out-of-scope protection but never fires is worse than not having it,
+        because it invites tuning that does nothing and hides the absence of the
+        control it appears to offer.
+
+        A future encoder that separates absolute scores cleanly would need it
+        back; the git history has it.
+        """
         routes = self.route_scores(vector, top_k=top_k)
         ranked = sorted(routes.items(), key=lambda item: item[1], reverse=True)
         (best_route, confidence), (runner_up, runner_up_score) = ranked[0], ranked[1]
         margin = confidence - runner_up_score
 
-        # Confidence is checked first: a request far from everything is out of
-        # scope, which is a more useful thing to say than "ambiguous".
-        abstain_reason: str | None = None
-        if confidence < min_confidence:
-            abstain_reason = "confidence_below_threshold"
-        elif margin < min_margin:
-            abstain_reason = "margin_below_threshold"
+        abstain_reason = "margin_below_threshold" if margin < min_margin else None
 
         modules = self._emit_modules(vector, best_route, min_module_score, top_k=top_k)
         return KnnDecision(

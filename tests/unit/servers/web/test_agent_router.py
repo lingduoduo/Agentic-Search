@@ -270,7 +270,7 @@ class _SpyLLM:
 
 
 def test_route_query_uses_model_when_confident(monkeypatch):
-    settings = AppSettings(intent_model_min_confidence=0.75)
+    settings = AppSettings()
     observed_settings = []
 
     def _predict(_query, *, settings=None):
@@ -278,7 +278,6 @@ def test_route_query_uses_model_when_confident(monkeypatch):
         return IntentModelDecision(
             strategy=RouteStrategy.SEARCH,
             confidence=0.9,
-            threshold=0.75,
             latency_ms=1.25,
         )
 
@@ -295,15 +294,22 @@ def test_route_query_uses_model_when_confident(monkeypatch):
     assert observed_settings == [settings]
 
 
-def test_route_query_defers_to_llm_when_model_low_confidence(monkeypatch):
+def test_route_query_defers_to_llm_when_the_model_abstains(monkeypatch):
+    """Abstention now arrives on the decision rather than as low confidence.
+
+    This asserted a confidence-below-threshold deferral until that gate was
+    removed for changing 3 decisions in 416. The property under test is
+    unchanged -- an abstaining model must reach the LLM classifier -- only the
+    way abstention is signalled has moved.
+    """
     monkeypatch.setattr(
         ir,
         "predict_route",
         lambda q, *, settings=None: IntentModelDecision(
             strategy=RouteStrategy.SEARCH,
             confidence=0.3,
-            threshold=0.75,
             latency_ms=1.25,
+            abstain_reason="margin_below_threshold",
         ),
     )
     llm = _SpyLLM()
@@ -312,7 +318,7 @@ def test_route_query_defers_to_llm_when_model_low_confidence(monkeypatch):
         llm=llm,
         explicit_source=False,
     )
-    assert llm.called is True  # low confidence -> LLM fallback
+    assert llm.called is True  # abstained -> LLM fallback
     assert strategy is RouteStrategy.CHAT  # spy LLM returns "chat"
 
 
@@ -336,7 +342,6 @@ def test_regex_still_wins_over_model(monkeypatch):
         return IntentModelDecision(
             strategy=RouteStrategy.CHAT,
             confidence=0.99,
-            threshold=0.6,
             latency_ms=1.25,
         )
 
@@ -372,7 +377,6 @@ def test_route_query_reports_deciding_mechanism_outside_debug_captures(monkeypat
         lambda query, settings=None: IntentModelDecision(
             strategy=RouteStrategy.TOOL,
             confidence=0.91,
-            threshold=0.6,
             latency_ms=1.5,
         ),
     )
@@ -387,7 +391,6 @@ def test_route_query_reports_deciding_mechanism_outside_debug_captures(monkeypat
     assert strategy is RouteStrategy.TOOL
     assert telemetry["route_mechanism"] == "model"
     assert telemetry["route_confidence"] == 0.91
-    assert telemetry["route_threshold"] == 0.6
     assert telemetry["route_abstained"] is False
 
 
@@ -473,7 +476,6 @@ def test_route_request_never_clarifies_on_a_confident_model(monkeypatch):
         lambda query, settings=None: IntentModelDecision(
             strategy=RouteStrategy.TOOL,
             confidence=0.91,
-            threshold=0.6,
             latency_ms=1.5,
         ),
     )

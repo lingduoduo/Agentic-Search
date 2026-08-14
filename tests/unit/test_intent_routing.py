@@ -218,32 +218,36 @@ class _ChatLLM:
 
 
 @pytest.mark.parametrize(
-    "vector, min_confidence, expect_composite",
+    "vector, expect_composite",
     [
-        # Confidence-only abstention: clear margin, low absolute confidence.
-        pytest.param([0.9950, 0.1005, 0.0], 1.0, False, id="confidence_only"),
-        # Margin abstention: confidence clears the (low) bar, but the top two
-        # routes tie, failing the margin gate. predict_route returns the
+        # Served: clear margin, no abstention.
+        pytest.param([0.9950, 0.1005, 0.0], False, id="served"),
+        # Margin abstention: the top two routes tie. predict_route returns the
         # decision with abstain_reason set, and route_request records the one
         # stage -- previously predict_route returned None and recorded its own,
         # which is what kept this deferral out of production telemetry.
-        pytest.param([0.707, 0.707, 0.0], 0.5, False, id="margin_only"),
-        # Both gates trip together: confidence 0.71 < 0.8, and margin 0.01
-        # against the "tool" runner-up (whose only module is an action) is
-        # composite.
-        pytest.param([0.71, 0.0, 0.70], 0.8, True, id="confidence_and_composite"),
+        pytest.param([0.707, 0.707, 0.0], False, id="margin_only"),
+        # Margin abstention where the close runner-up ("tool") has an action
+        # module, which is the composite signature.
+        pytest.param([0.71, 0.0, 0.70], True, id="margin_and_composite"),
     ],
 )
 def test_route_request_records_exactly_one_intent_model_stage(
-    tmp_path, monkeypatch, vector, min_confidence, expect_composite
+    tmp_path, monkeypatch, vector, expect_composite
 ):
+    """Parametrisation lost its confidence-abstention case with that gate.
+
+    Two of the three cases used to be driven by an absolute-confidence floor.
+    That gate was removed for changing 3 decisions in 416, so the cases are now
+    served / margin-abstained / margin-abstained-and-composite -- which is the
+    full set of shapes a decision can still take.
+    """
     ml_intent._INTENT_INDEXES.clear()
     monkeypatch.setattr(
         ml_intent, "encode_texts", lambda texts: np.array([vector], dtype=np.float32)
     )
     settings = AppSettings(
         intent_index_path=_write_routing_index(tmp_path),
-        intent_model_min_confidence=min_confidence,
         intent_min_route_margin=0.05,
         intent_min_module_score=0.4,
     )
@@ -308,32 +312,13 @@ def test_margin_abstention_is_distinguishable_in_production_telemetry(
     why" was therefore unanswerable from production data.
     """
     # Confidence clears the default floor; the top two routes tie on margin.
-    _, telemetry = _route_with_telemetry(
-        tmp_path, monkeypatch, [0.707, 0.707, 0.0], intent_model_min_confidence=0.5
-    )
+    _, telemetry = _route_with_telemetry(tmp_path, monkeypatch, [0.707, 0.707, 0.0])
 
     assert telemetry["route_abstained"] is True
     assert telemetry["route_fallback_reason"] == "margin_below_threshold"
-    # Not the confidence label: these are different failures and conflating
-    # them would make the counts useless.
-    assert telemetry["route_fallback_reason"] != "model_below_threshold"
-
-
-def test_confidence_abstention_keeps_its_existing_production_label(
-    tmp_path, monkeypatch
-):
-    """The confidence path must be untouched by the margin path's plumbing.
-
-    ``decide()`` labels this one "confidence_below_threshold" internally, but
-    only the margin reason is propagated onto the decision, so route_request
-    still derives and reports ``model_below_threshold`` exactly as before.
-    """
-    _, telemetry = _route_with_telemetry(
-        tmp_path, monkeypatch, [0.9950, 0.1005, 0.0], intent_model_min_confidence=1.0
-    )
-
-    assert telemetry["route_abstained"] is True
-    assert telemetry["route_fallback_reason"] == "model_below_threshold"
+    # The only reason there is: the confidence gate that produced the other
+    # was removed for changing 3 decisions in 416.
+    assert telemetry["route_fallback_reason"] == "margin_below_threshold"
 
 
 def test_modules_and_composite_reach_production_telemetry(tmp_path, monkeypatch):
@@ -343,9 +328,7 @@ def test_modules_and_composite_reach_production_telemetry(tmp_path, monkeypatch)
     designed against measured data; observable only under a debug panel, it
     gathered none.
     """
-    _, telemetry = _route_with_telemetry(
-        tmp_path, monkeypatch, [1.0, 0.0, 0.0], intent_model_min_confidence=0.1
-    )
+    _, telemetry = _route_with_telemetry(tmp_path, monkeypatch, [1.0, 0.0, 0.0])
 
     assert telemetry["route_abstained"] is False
     assert telemetry["route_modules"] == list(telemetry["route_modules"])
@@ -361,7 +344,7 @@ def test_margin_abstention_still_defers_to_the_classifier(tmp_path, monkeypatch)
     (search) answer.
     """
     decision, telemetry = _route_with_telemetry(
-        tmp_path, monkeypatch, [0.707, 0.707, 0.0], intent_model_min_confidence=0.5
+        tmp_path, monkeypatch, [0.707, 0.707, 0.0]
     )
 
     assert decision.strategy is RouteStrategy.CHAT
