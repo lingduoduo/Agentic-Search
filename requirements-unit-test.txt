@@ -32,4 +32,11 @@ pyarrow>=14
 tqdm==4.66.4
 google-api-python-client
 python-dateutil
-openai>=1.0.0
+# Capped below 3.0.0: that release vendors httpx_aiohttp, whose transport names
+# aiohttp.SocketTimeoutError -- an attribute aiohttp only added in 3.10, while
+# this repo pins aiohttp==3.9.3 (here and in requirements.txt). With openai 3.x
+# resolved against that pin, `import openai` raises AttributeError at import
+# time, so every test that touches the embedding cache fails on collection.
+# Raising the aiohttp pin instead would adopt a major SDK release repo-wide with
+# nothing verifying it; lift this cap deliberately, with aiohttp, not by drift.
+openai>=1.0.0,<3
