@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 
 from src.context import ChatMessage
 from src.internal.auth import AuthenticatedUser
+from src.internal.servers._auth import caller_may_use_session
 from src.internal.db import AgenticSearchStore
 from src.internal.servers.query_and_chat.models import ChatFeedbackRequest
 from src.internal.servers.query_and_chat.models import ChatMessageDetail
@@ -73,6 +74,21 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
     def _get_user(request: Request) -> AuthenticatedUser | None:
         return resolve_active_user(request, store)
 
+    def _session_or_404(session_id: str, request: Request):
+        """Fetch a session the caller is entitled to, or 404.
+
+        404 rather than 403 on refusal: a 403 confirms the id exists, which is
+        the one bit an id-guessing caller does not already have.
+
+        These endpoints duplicate the `/api/sessions` surface and shipped with
+        the same missing check, which is why the guard now lives in
+        `servers/_auth.py` rather than in either router.
+        """
+        session = store.get_chat_session(session_id)
+        if session is None or not caller_may_use_session(session, _get_user(request)):
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        return session
+
     @router.get("/get-user-chat-sessions")
     def get_user_chat_sessions(
         request: Request,
@@ -101,9 +117,7 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
         session_id: str,
         request: Request,
     ) -> ChatSessionDetailResponse:
-        session = store.get_chat_session(session_id)
-        if session is None:
-            raise HTTPException(status_code=404, detail="Chat session not found")
+        session = _session_or_404(session_id, request)
         messages = store.list_chat_messages(session_id)
         return ChatSessionDetailResponse(
             session_id=session_id,
@@ -137,6 +151,7 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
         req: ChatRenameRequest,
         request: Request,
     ) -> RenameChatSessionResponse:
+        _session_or_404(req.chat_session_id, request)
         found = store.update_chat_session_title(req.chat_session_id, req.name)
         if not found:
             raise HTTPException(status_code=404, detail="Chat session not found")
@@ -147,6 +162,7 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
         session_id: str,
         request: Request,
     ) -> None:
+        _session_or_404(session_id, request)
         found = store.delete_chat_session(session_id)
         if not found:
             raise HTTPException(status_code=404, detail="Chat session not found")
