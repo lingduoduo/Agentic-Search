@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from src.internal.auth import AuthenticatedUser
+from src.internal.db.models import ChatSessionRecord
 from src.internal.configs import AppSettings
 from src.internal.configs import load_app_settings
 from src.internal.llm.interfaces import LLMConfig
@@ -1440,9 +1441,15 @@ def create_web_app(
         )
 
     @app.get("/api/sessions/{session_id}")
-    def get_session(session_id: str) -> ChatSessionView:
+    def get_session(session_id: str, http_request: Request) -> ChatSessionView:
         session = db.get_chat_session(session_id)
         if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if not _caller_may_use_session(
+            session, _optional_user_from_request(http_request, db)
+        ):
+            # 404 rather than 403: a 403 confirms the id exists, which is the
+            # one bit an id-guessing caller does not already have.
             raise HTTPException(status_code=404, detail="Session not found")
         return ChatSessionView(
             id=session.id,
@@ -1502,7 +1509,7 @@ def create_web_app(
         forced_route = _normalize_route(request.route) if request.route else None
 
         session_request = _copy_agent_request(request, user_id=user_id)
-        session_id = _ensure_session(db, session_request)
+        session_id = _ensure_session(db, session_request, auth_user)
         history = _trim_history(
             [
                 ChatMessage(role=message.role, content=message.content)
@@ -1996,9 +2003,17 @@ def create_web_app(
 def _ensure_session(
     store: AgenticSearchStore,
     request: AgentExperienceRequest,
+    caller: "AuthenticatedUser | None" = None,
 ) -> str:
-    if request.session_id and store.get_chat_session(request.session_id):
-        return request.session_id
+    if request.session_id:
+        existing = store.get_chat_session(request.session_id)
+        if existing is not None:
+            if not _caller_may_use_session(existing, caller):
+                # Reusing someone else's session is worse than reading it: the
+                # handler loads its history into the model context and appends
+                # the caller's message to it.
+                raise HTTPException(status_code=404, detail="Session not found")
+            return request.session_id
     # Only attribute the session to a user the store actually knows. `user_id`
     # can arrive from the request body as well as from a token, and a session
     # row for an unknown user violates the chat_sessions.user_id foreign key.
@@ -2632,6 +2647,36 @@ def _document_view(document: ContextDocument) -> SourceDocumentView:
         score=document.score,
         metadata=document.metadata,
     )
+
+
+def _caller_may_use_session(
+    session: ChatSessionRecord, caller: AuthenticatedUser | None
+) -> bool:
+    """May *caller* read or continue *session*?
+
+    Two cases, deliberately different:
+
+    - **An owned session** (``user_id`` set) is readable only by that user.
+      Before this check, `GET /api/sessions/{id}` returned a signed-in user's
+      full transcript -- owner id and every message body -- to a caller with no
+      credentials at all, and `_ensure_session` let one *append* to it.
+
+    - **An anonymous session** (``user_id`` is ``NULL``) stays readable by
+      anyone holding its id. That is unchanged, and it is a deliberate
+      narrowing of this fix rather than an oversight: signed-out use has no
+      identity to compare against, so the id is the only capability there is,
+      and the CLI and local research flows depend on it. Giving anonymous
+      callers a per-caller identity is the separate piece of work #500's revert
+      left unbuilt -- until then, two signed-out callers sharing an id share a
+      session.
+
+    Session ids are ``session_<uuid4hex>``, so neither case is brute-forceable;
+    what this closes is a plain IDOR, where an id leaked through a URL, a log
+    line or a shared link became someone else's transcript.
+    """
+    if session.user_id is None:
+        return True
+    return caller is not None and caller.id == session.user_id
 
 
 def _optional_user_from_request(
