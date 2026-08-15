@@ -401,7 +401,7 @@ def _register_routers(
     # --- Admin: OAuth, settings, SCIM ---
     app.include_router(create_oauth_router(settings))
     app.include_router(create_settings_router(settings))
-    app.include_router(create_scim_router(db))
+    app.include_router(create_scim_router(db, settings))
     register_scim_exception_handlers(app)
 
     # --- Analytics ---

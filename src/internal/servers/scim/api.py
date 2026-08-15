@@ -26,6 +26,9 @@ from fastapi.responses import JSONResponse
 from src.internal.db import AgenticSearchStore
 from src.internal.servers.scim.auth import ScimAuthError
 from src.internal.servers.scim.auth import generate_scim_token
+from src.internal.auth import AuthenticatedUser
+from src.internal.configs import AppSettings
+from src.internal.servers._auth import make_require_admin
 from src.internal.servers.scim.auth import make_verify_scim_token
 from src.internal.servers.scim.dal import ScimDAL
 from src.internal.servers.scim.filtering import parse_scim_filter
@@ -185,11 +188,22 @@ def _parse_members(
     return uuids, None
 
 
-def create_scim_router(store: AgenticSearchStore) -> APIRouter:
-    """Return a SCIM 2.0 APIRouter bound to *store*."""
+def create_scim_router(
+    store: AgenticSearchStore, app_settings: AppSettings | None = None
+) -> APIRouter:
+    """Return a SCIM 2.0 APIRouter bound to *store*.
+
+    ``app_settings`` supplies the admin guard for the token-admin endpoints
+    below. It is optional only so existing callers that build a router for
+    directory operations alone keep working; when it is ``None`` those three
+    endpoints are **not registered at all** rather than registered unguarded,
+    because an unauthenticated token mint is a full authentication bypass of
+    everything else in this router.
+    """
 
     scim_router = APIRouter(prefix="/scim/v2", tags=["SCIM"])
     _verify_token = make_verify_scim_token(store)
+    _require_admin = make_require_admin(app_settings) if app_settings else None
     dal = ScimDAL(store)
 
     def _auth(request: Request) -> dict:
@@ -641,8 +655,17 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
     # Token admin endpoints (internal)
     # ---------------------------------------------------------------------------
 
+    if _require_admin is None:
+        # No admin guard available, so the token-admin endpoints are omitted.
+        # Registering them unguarded is what allowed an anonymous caller to
+        # mint a working bearer token and bypass every other route here.
+        return scim_router
+
     @scim_router.post("/tokens", status_code=201)
-    def create_token(req: ScimTokenCreate) -> ScimTokenCreatedResponse:
+    def create_token(
+        req: ScimTokenCreate,
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> ScimTokenCreatedResponse:
         raw, hashed, display = generate_scim_token()
         token = dal.create_token(
             name=req.name, token_hash=hashed, token_display=display
@@ -658,7 +681,9 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         )
 
     @scim_router.get("/tokens")
-    def list_tokens() -> list[ScimTokenResponse]:
+    def list_tokens(
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> list[ScimTokenResponse]:
         return [
             ScimTokenResponse(
                 id=int(hash(t["id"])) & 0x7FFFFFFF,
@@ -677,7 +702,10 @@ def create_scim_router(store: AgenticSearchStore) -> APIRouter:
         response_class=Response,
         response_model=None,
     )
-    def revoke_token(token_id: str) -> Response:
+    def revoke_token(
+        token_id: str,
+        _: AuthenticatedUser = Depends(_require_admin),
+    ) -> Response:
         dal.revoke_token(token_id)
         return Response(status_code=204)
 
