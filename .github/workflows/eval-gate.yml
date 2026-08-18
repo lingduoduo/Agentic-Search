@@ -194,9 +194,9 @@ jobs:
       - name: Run the pinned routing bars
         run: |
           python -m pytest \
-            tests/unit/test_intent_index_eval.py \
+            tests/unit/test_intent_evaluation.py \
             tests/unit/test_intent_canonical_data.py \
-            --deselect tests/unit/test_intent_index_eval.py::test_routing_one_request_stays_under_the_latency_ceiling \
+            --deselect tests/unit/test_intent_evaluation.py::test_routing_one_request_stays_under_the_latency_ceiling \
             -v --junitxml=/tmp/intent-bars.xml
 
       # The bars skip themselves when sentence-transformers or the index is
