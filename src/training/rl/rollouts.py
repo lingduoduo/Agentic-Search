@@ -8,9 +8,9 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable
 from uuid import uuid4
 
-from ..agents.core.base import AgentLoopBase, AgentLoopOutput
-from .data import PromptBatch
-from .reward import BatchJudgeFn, JudgeFn, SearchRewardFunction, _score_answers
+from ...agents.core.base import AgentLoopBase, AgentLoopOutput
+from ..data import PromptBatch
+from ..reward import BatchJudgeFn, JudgeFn, SearchRewardFunction, _score_answers
 
 
 @dataclass(frozen=True)

@@ -27,7 +27,7 @@ from src.context.search import (
     SearchResult,
     citation_prefix,
 )
-from src.training.evaluation import (
+from src.agents.components.result_evaluation import (
     SearchEvaluationConfig,
     SearchResultEvaluator,
     SearchRoundEvaluation,

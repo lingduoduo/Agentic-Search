@@ -222,4 +222,16 @@ Typed dataclasses loaded from environment variables. Key env vars:
 - `AGENTIC_SEARCH_WEB_DB_PATH` (default `:memory:`)
 
 **Training** (`src/training/`)
-SFT data builders, PPO/GRPO reward helpers — standalone scripts for fine-tuning, not part of the serving stack.
+Post-training and fine-tuning. Not part of the serving stack. Grouped by method,
+with the shared building blocks at the top level:
+- `data.py` — prompt/dataset construction, shared by SFT and RL
+- `reward.py`, `judge.py` — reward functions and RLAIF judges, shared by RL and eval
+- `sft/` — supervised fine-tuning (`SFTTrainer`, trajectory → supervised example)
+- `rl/` — the GRPO stack: three trainers (bandit, HF causal-LM, live SearchAgentLoop),
+  a controller, a durable train loop, and `core_algos.py` (shared PPO/GRPO tensor math,
+  also used by `src/model/generation.py`). Also holds the standalone tabular
+  Q-learning demo (`qlearning.py` + `search_environment.py`)
+- `eval/` — Bamboogle and action-policy benchmark harnesses
+- `train_query_router.py` — offline scikit-learn trainer for the QueryRouter, not LLM post-training
+
+There is no DPO trainer; if one is added it belongs in a sibling `dpo/` package.

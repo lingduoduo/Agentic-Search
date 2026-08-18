@@ -9,7 +9,7 @@ pytest.importorskip("torch")
 
 from src.internal.db import AgenticSearchStore
 from src.training.data import load_sft_examples
-from src.training.sft import SFTExample
+from src.training.sft.trainer import SFTExample
 
 
 def _seed_store(db_path: str, rows: list[dict]) -> None:

@@ -13,7 +13,7 @@ This example requires the full stack merged into the working tree:
   - web/vdb retriever action in SearchAgentLoop      (PR #325)
   - train_loop + trainer save/load                    (PR #326)
   - retriever_aware() reward + action_eval            (PR #327)
-`train_loop` lives in ``src.training.ppo.train_loop`` (PR #326); until that
+`train_loop` lives in ``src.training.rl.train_loop`` (PR #326); until that
 merges, this script will not import.
 
 Usage
@@ -148,9 +148,9 @@ async def _run(args: argparse.Namespace) -> None:
         compare_action_evals,
         format_comparison_table,
     )
-    from src.training.ppo.llm_grpo_trainer import LLMGRPOConfig
-    from src.training.ppo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
-    from src.training.ppo.train_loop import TrainLoopConfig, train_loop
+    from src.training.rl.llm_grpo_trainer import LLMGRPOConfig
+    from src.training.rl.search_agent_grpo_trainer import SearchAgentGRPOTrainer
+    from src.training.rl.train_loop import TrainLoopConfig, train_loop
     from src.training.reward import (
         SearchRewardConfig,
         SearchRewardFunction,

@@ -9,15 +9,15 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from src.training.grpo import (
+from src.training.rl.rollouts import (
     GRPOAdvantageConfig,
     compute_dapo_advantages,
     score_prompt_group,
 )
-from src.training.ppo.core_algos import (
+from src.training.rl.core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage_tensor,
 )
-from src.training.ppo.core_algos import (
+from src.training.rl.core_algos import (
     PPOPolicyLossConfig,
     compute_grpo_policy_loss,
 )
@@ -417,7 +417,7 @@ class TestComputeDapoAdvantages:
 class TestReinforceBaselineMode:
     def _make_sample(self, answer: str, group_id: str = "g0"):
         from src.agents.core.base import AgentLoopOutput
-        from src.training.grpo import GRPORolloutSample
+        from src.training.rl.rollouts import GRPORolloutSample
 
         output = AgentLoopOutput(
             prompt_ids=[0],
@@ -526,7 +526,7 @@ class TestComputeGRPOPolicyLoss:
         assert "clip_fraction" in result
 
     def test_no_kl_no_entropy_matches_base(self):
-        from src.training.ppo.core_algos import compute_trajectory_policy_loss
+        from src.training.rl.core_algos import compute_trajectory_policy_loss
 
         new_lp, old_lp, adv, mask = self._basic_inputs()
         base = compute_trajectory_policy_loss(

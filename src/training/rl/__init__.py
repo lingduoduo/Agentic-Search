@@ -1,4 +1,16 @@
-"""PPO / GRPO core training algorithms."""
+"""Reinforcement learning: the GRPO stack, and the shared PPO/GRPO math.
+
+Despite the historical ``ppo`` name this package carried, almost everything
+here is GRPO: three trainers (bandit, HuggingFace causal-LM, and one backed by
+a live SearchAgentLoop), a controller, and a durable train loop. ``core_algos``
+holds the genuinely shared PPO/GRPO tensor math, which ``src/model/generation``
+also uses.
+
+``rollouts`` (grouped sampling and scoring), ``qlearning`` and
+``search_environment`` are deliberately not re-exported here: the first pulls in
+the agent loop, and the last two are a self-contained tabular Q-learning demo
+unrelated to the LLM post-training stack. Import them by module path.
+"""
 
 from .core_algos import (
     AdaptiveKLController,

@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("torch")
 
 from src.agents.core.base import AgentLoopOutput
-from src.training.grpo import GRPORolloutSample, score_prompt_group
+from src.training.rl.rollouts import GRPORolloutSample, score_prompt_group
 from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement
 
 
@@ -113,7 +113,7 @@ def test_sim_judge_drives_nondegenerate_grpo_advantages():
 
 
 def _scored(idx: int, answer: str, reward: float, advantage: float):
-    from src.training.grpo import ScoredGRPORollout
+    from src.training.rl.rollouts import ScoredGRPORollout
 
     output = AgentLoopOutput(
         prompt_ids=[],

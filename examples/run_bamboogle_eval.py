@@ -56,7 +56,7 @@ def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
 
 def _build_agent(args: argparse.Namespace, tokenizer: Any, server_manager: Any) -> Any:
     from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    from src.training.evaluation import SearchEvaluationConfig
+    from src.agents.components.result_evaluation import SearchEvaluationConfig
 
     class _SyncAgent:
         def invoke(self, state: dict) -> SimpleNamespace:
