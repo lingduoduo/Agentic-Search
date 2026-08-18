@@ -1,9 +1,10 @@
-"""Route a request by similarity to curated canonical examples.
+"""The intent routing model: its taxonomy, its encoder, and its index.
 
-The route is the argmax of a per-route score: the mean of the top-k cosine
-similarities among that route's canonical examples, ``TOP_K`` by default.
-``top_k`` is a parameter, not a hardcoded constant, and is selected on the
-tuning slice (see docs/training-and-evaluation.md).
+Routing is nearest-neighbour over curated canonical examples. The route is the
+argmax of a per-route score: the mean of the top-k cosine similarities among
+that route's canonical examples, ``TOP_K`` by default. ``top_k`` is a
+parameter, not a hardcoded constant, and is selected on the tuning slice (see
+docs/training-and-evaluation.md).
 
 **One** threshold gates the result: a low margin between the best and
 second-best route means two routes fit equally well, so the request is
@@ -15,8 +16,19 @@ Cosine is deliberately not normalized across routes. A softmax head sums to one
 by construction and so cannot express "none of these", which is why the previous
 model's out-of-scope separation was only +0.059.
 
-This module imports numpy and nothing heavier: all routing math must run in a
-CI job that installs neither torch nor sentence-transformers.
+The three sections below were three modules until they were merged here. The
+layering they encoded still holds and still matters:
+
+* **Taxonomy** depends on nothing. It is the vocabulary everything else speaks.
+* **Encoder** is the only place a sentence encoder is loaded, and its
+  ``sentence_transformers`` import stays function-local. Every other part of the
+  routing path must stay importable in a CI job that installs neither torch nor
+  sentence-transformers, and this repo has twice shipped collection failures
+  from unguarded imports (#356, re-fixed in #418).
+* **Index** is the scoring itself, and imports numpy and nothing heavier.
+
+Keeping the encoder dependency behind one function is what makes the rest of
+the routing path testable without it.
 """
 
 from __future__ import annotations
@@ -28,13 +40,187 @@ from pathlib import Path
 
 import numpy as np
 
-from .intent_taxonomy import (
-    ACTION_MODULES,
-    INTENT_LABELS,
-    modules_for_route,
-    validate_modules,
+# ---------------------------------------------------------------------------
+# Taxonomy — the two-level intent taxonomy: three routes, each with its own
+# modules.
+#
+# Modules are route-scoped rather than orthogonal primitives. At a few hundred
+# canonical examples a small hierarchical taxonomy is labelable consistently and
+# explainable; orthogonal primitives are the right end state at several thousand.
+#
+# The module names are not invented. Each is drawn from a regex cue already used
+# by ``src/internal/servers/web/intent_routing.py``, so the taxonomy describes
+# distinctions the router already makes.
+# ---------------------------------------------------------------------------
+INTENT_LABELS: tuple[str, ...] = ("chat", "search", "tool")
+
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    """One module: its route, and whether it names an intent or an utterance form."""
+
+    name: str
+    route: str
+    kind: str
+
+
+_SPECS: tuple[ModuleSpec, ...] = (
+    # search — _SEARCH_LOOKUP_RE, _CURRENCY_RE, _is_bare_lookup
+    ModuleSpec("lookup_document", "search", "intent"),
+    ModuleSpec("lookup_fact", "search", "intent"),
+    ModuleSpec("current_info", "search", "intent"),
+    # A form label, not an intent: "OpenAI" is a bare entity, "OpenAI CEO" is a
+    # fact lookup. It is excluded from module macro-F1, and _is_bare_lookup
+    # routes such queries at cascade step 2, before this model ever runs.
+    ModuleSpec("bare_entity", "search", "form"),
+    # chat — _CHAT_START_RE, _GENERATIVE_RE
+    ModuleSpec("explain", "chat", "intent"),
+    ModuleSpec("summarize", "chat", "intent"),
+    ModuleSpec("compare", "chat", "intent"),
+    ModuleSpec("generate", "chat", "intent"),
+    ModuleSpec("converse", "chat", "intent"),
+    # tool — _TOOL_ACTION_RE, _TOOL_OBJECT_RE
+    ModuleSpec("create", "tool", "intent"),
+    ModuleSpec("send", "tool", "intent"),
+    ModuleSpec("schedule", "tool", "intent"),
+    ModuleSpec("modify", "tool", "intent"),
+    ModuleSpec("execute", "tool", "intent"),
 )
 
+MODULES: dict[str, ModuleSpec] = {spec.name: spec for spec in _SPECS}
+
+SEMANTIC_MODULES: tuple[str, ...] = tuple(
+    spec.name for spec in _SPECS if spec.kind == "intent"
+)
+
+# Composite detection keys off these: a runner-up route whose best module is an
+# action is the signature of "find X and book it".
+ACTION_MODULES: frozenset[str] = frozenset(
+    spec.name for spec in _SPECS if spec.route == "tool"
+)
+
+
+def modules_for_route(route: str) -> tuple[str, ...]:
+    """Every module belonging to *route*, in taxonomy order."""
+    return tuple(spec.name for spec in _SPECS if spec.route == route)
+
+
+def route_of_module(module: str) -> str:
+    """The route *module* belongs to. Raises KeyError if unknown."""
+    return MODULES[module].route
+
+
+def validate_modules(route: str, modules: Sequence[str]) -> None:
+    """Check a label's modules: nonempty, known, unique, and all in *route*."""
+    if not modules:
+        raise ValueError(f"Route {route!r} needs at least one module")
+    seen: set[str] = set()
+    for module in modules:
+        if module in seen:
+            raise ValueError(f"Found duplicate module {module!r} for route {route!r}")
+        seen.add(module)
+        spec = MODULES.get(module)
+        if spec is None:
+            raise ValueError(f"Unknown module {module!r}")
+        if spec.route != route:
+            raise ValueError(
+                f"Module {module!r} belongs to route {spec.route!r}, not {route!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Encoder — the only place a sentence encoder is loaded. The
+# ``sentence_transformers`` import below is function-local on purpose; see the
+# module docstring.
+# ---------------------------------------------------------------------------
+DEFAULT_ENCODER = "intfloat/e5-small-v2"
+
+# E5 models are trained with instruction prefixes and degrade *silently*
+# without them — no error, just worse vectors. The prefix is therefore a
+# property of the model, derived from its name rather than passed by callers,
+# so no call site can omit it. Deriving rather than storing it also means the
+# index needs no new field: it already records the encoder name, and
+# ml_intent.load_intent_index already rejects a mismatch, which covers the
+# prefix for free. That matters here because e5-small-v2 is also 384-wide, so
+# an index built with the previous encoder would otherwise load and score
+# without any error at all.
+#
+# Both sides of the comparison use "query: ": this is symmetric short-text
+# similarity, not the asymmetric query/passage retrieval "passage: " is for.
+MODEL_PREFIXES: dict[str, str] = {
+    "intfloat/e5-small-v2": "query: ",
+    "intfloat/e5-base-v2": "query: ",
+    "sentence-transformers/all-MiniLM-L6-v2": "",
+}
+
+
+def prefix_for(model_name: str) -> str:
+    """The instruction prefix *model_name* requires.
+
+    Raises rather than defaulting to "": an unregistered model is far more
+    likely to be one whose prefix nobody looked up than one that genuinely
+    needs none, and guessing wrong is invisible.
+    """
+    try:
+        return MODEL_PREFIXES[model_name]
+    except KeyError:
+        raise ValueError(
+            f"No instruction prefix registered for encoder {model_name!r}. "
+            f"Add it to MODEL_PREFIXES — encoders that need a prefix degrade "
+            f"silently without one. Known: {sorted(MODEL_PREFIXES)}"
+        ) from None
+
+
+# Keyed by model name; holds either a loaded model or an Exception. A failed
+# load is cached too — lru_cache does not cache exceptions, and retrying a
+# broken or unreachable model download on every call would block whichever
+# request triggers it, forever. See ml_intent._INTENT_INDEXES for the same
+# policy one layer up.
+_MODEL_CACHE: dict[str, object] = {}
+
+
+def _model(model_name: str):
+    """Load and cache the encoder. Loading costs seconds; encoding costs ms."""
+    cached = _MODEL_CACHE.get(model_name)
+    if isinstance(cached, Exception):
+        raise RuntimeError(
+            f"intent encoder {model_name!r} failed to load previously; not retrying"
+        ) from cached
+    if cached is not None:
+        return cached
+
+    from sentence_transformers import SentenceTransformer
+
+    try:
+        model = SentenceTransformer(model_name, device="cpu")
+    except Exception as exc:
+        _MODEL_CACHE[model_name] = exc
+        raise
+    _MODEL_CACHE[model_name] = model
+    return model
+
+
+def encode_texts(
+    texts: Sequence[str], *, model_name: str = DEFAULT_ENCODER
+) -> np.ndarray:
+    """Encode *texts* to L2-normalized float32 rows.
+
+    Normalizing here means every consumer can treat a dot product as a cosine,
+    and the index constructor can reject anything that is not normalized.
+    """
+    prefix = prefix_for(model_name)
+    vectors = _model(model_name).encode(
+        [prefix + text for text in texts],
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+    return np.asarray(vectors, dtype=np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Index — canonical example vectors and the scoring rules over them.
+# ---------------------------------------------------------------------------
 TOP_K = 8
 MIN_MODULE_SUPPORT = 10
 INDEX_FILENAME = "index.npz"
@@ -318,7 +504,7 @@ class IntentIndex:
         if not path.exists():
             raise FileNotFoundError(
                 f"Intent index is missing {path.name}: {path}. Run "
-                "`python -m src.model.intent_index_cli build` to create it."
+                "`python -m src.model.intent.cli build` to create it."
             )
         payload = np.load(path, allow_pickle=False)
         records = json.loads(str(payload["examples"]))

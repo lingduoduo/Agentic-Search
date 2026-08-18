@@ -1401,8 +1401,12 @@ def test_generative_query_routes_to_chat_and_dispatches(monkeypatch, tmp_path):
 def _write_dispatch_index(tmp_path):
     import numpy as np
 
-    from src.model.intent_encoder import DEFAULT_ENCODER
-    from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+    from src.model.intent.model import (
+        DEFAULT_ENCODER,
+        INDEX_FILENAME,
+        CanonicalExample,
+        IntentIndex,
+    )
 
     axis = {"search": 0, "chat": 1, "tool": 2}
     module = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}

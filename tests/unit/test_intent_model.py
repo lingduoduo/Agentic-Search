@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.model.intent_knn import (
+from src.model.intent.model import (
     MIN_MODULE_SUPPORT,
     TOP_K,
     CanonicalExample,

@@ -2,8 +2,8 @@ from collections import Counter
 
 import pytest
 
-from src.model.intent_data import IntentEvalQuery
-from src.model.intent_eval_split import split_eval_queries
+from src.model.intent.data import IntentEvalQuery
+from src.model.intent.evaluation import split_eval_queries
 
 
 def _queries(n_clean: int = 151, n_legacy: int = 30):
@@ -129,7 +129,7 @@ def test_probe_split_is_stratified_across_categories():
     measure something quite different from one holding the reverse, and the
     reported AUC would silently depend on which.
     """
-    from src.model.intent_eval_split import split_out_of_scope_probes
+    from src.model.intent.evaluation import split_out_of_scope_probes
 
     split = split_out_of_scope_probes(_probes({"personal": 6, "injection": 6}))
 
@@ -140,7 +140,7 @@ def test_probe_split_is_stratified_across_categories():
 
 def test_probe_split_never_empties_a_half_on_small_categories():
     """A category of 2 must contribute to both halves, not vanish from one."""
-    from src.model.intent_eval_split import split_out_of_scope_probes
+    from src.model.intent.evaluation import split_out_of_scope_probes
 
     split = split_out_of_scope_probes(_probes({"personal": 2, "smalltalk": 2}))
 
@@ -149,7 +149,7 @@ def test_probe_split_never_empties_a_half_on_small_categories():
 
 
 def test_probe_split_rejects_duplicate_ids():
-    from src.model.intent_eval_split import split_out_of_scope_probes
+    from src.model.intent.evaluation import split_out_of_scope_probes
 
     duplicated = (("oos-a-01", "one"), ("oos-a-01", "two"), ("oos-b-01", "three"))
     with pytest.raises(ValueError, match="duplicate probe id"):
@@ -157,7 +157,7 @@ def test_probe_split_rejects_duplicate_ids():
 
 
 def test_probe_split_rejects_a_share_that_cannot_produce_two_halves():
-    from src.model.intent_eval_split import split_out_of_scope_probes
+    from src.model.intent.evaluation import split_out_of_scope_probes
 
     for share in (0.0, 1.0, -0.1, 1.5):
         with pytest.raises(ValueError, match="tuning_share"):

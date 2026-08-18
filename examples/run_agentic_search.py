@@ -179,8 +179,16 @@ def _load_intent_prediction(index_dir: str, question: str) -> IntentPrediction |
     switching a generation model on.
     """
     from src.internal.configs import load_app_settings
-    from src.model.intent_encoder import DEFAULT_ENCODER, encode_texts
-    from src.model.intent_knn import INDEX_FILENAME, IntentIndex
+
+    # Imported from the defining submodule, not the package: the package
+    # __init__ re-exports bind their own reference at import time, so patching
+    # `intent.model.encode_texts` would not reach a package-level alias.
+    from src.model.intent.model import (
+        DEFAULT_ENCODER,
+        INDEX_FILENAME,
+        IntentIndex,
+        encode_texts,
+    )
 
     settings = load_app_settings()
     index = IntentIndex.load(Path(index_dir) / INDEX_FILENAME)
@@ -194,7 +202,7 @@ def _load_intent_prediction(index_dir: str, question: str) -> IntentPrediction |
             f"--intent_index at {index_dir} was built with encoder "
             f"{index.encoder!r}, but this CLI encodes queries with "
             f"{DEFAULT_ENCODER!r}. Rebuild the index with the current "
-            "encoder (`python -m src.model.intent_index_cli build`) before "
+            "encoder (`python -m src.model.intent.cli build`) before "
             "using --intent_index."
         )
     decision = index.decide(
@@ -759,7 +767,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Directory holding a canonical-example intent index (index.npz), "
-        "built with `python -m src.model.intent_index_cli build`. Nothing is "
+        "built with `python -m src.model.intent.cli build`. Nothing is "
         "trained; routing compares the question against curated examples.",
     )
     parser.add_argument(
