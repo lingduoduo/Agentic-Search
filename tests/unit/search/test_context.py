@@ -1,5 +1,5 @@
 from src.context import ChatMessage
-from src.internal.search_pipeline.context import build_retrieval_context
+from src.internal.search.context import build_retrieval_context
 import pytest
 
 

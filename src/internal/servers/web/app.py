@@ -57,12 +57,12 @@ from src.internal.hooks import HookPoint
 from src.internal.hooks import HookRegistry
 from src.internal.hooks import HookSoftFailed
 from src.internal.hooks import execute_hook
-from src.internal.search_pipeline.models import CandidateSet
-from src.internal.search_pipeline.models import GeneratedAnswer
-from src.internal.search_pipeline.models import RankedEvidence
-from src.internal.search_pipeline.pipeline import SearchPipeline
-from src.internal.search_pipeline.ranking import DefaultRankingStage
-from src.internal.search_pipeline.stages import RerankHTTPRankingStage
+from src.internal.search.models import CandidateSet
+from src.internal.search.models import GeneratedAnswer
+from src.internal.search.models import RankedEvidence
+from src.internal.search.pipeline import SearchPipeline
+from src.internal.search.ranking import DefaultRankingStage
+from src.internal.search.stages import RerankHTTPRankingStage
 from src.internal.servers.admin_surface.api import create_admin_surface_router
 from src.internal.servers.analytics.api import create_analytics_router
 from src.internal.servers.web import request_capture as _capture

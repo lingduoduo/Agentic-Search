@@ -4,12 +4,12 @@ import asyncio
 
 from src.context import ChatMessage, ContextDocument
 from src.context.search import SearchResult
-from src.internal.search_pipeline.models import (
+from src.internal.search.models import (
     CandidateSet,
     GeneratedAnswer,
     RankedEvidence,
 )
-from src.internal.search_pipeline.stages import (
+from src.internal.search.stages import (
     FusionRankingStage,
     InferenceStage,
     RankingStage,
@@ -177,9 +177,7 @@ def test_rerank_http_adapter_preserves_original_fields_and_translates_payload(
     monkeypatch,
 ):
     _HTTPClient.calls = []
-    monkeypatch.setattr(
-        "src.internal.search_pipeline.stages.httpx.AsyncClient", _HTTPClient
-    )
+    monkeypatch.setattr("src.internal.search.stages.httpx.AsyncClient", _HTTPClient)
     candidates = CandidateSet(
         query="q",
         candidates=[

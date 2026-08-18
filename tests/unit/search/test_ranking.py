@@ -5,8 +5,8 @@ import pytest
 
 from src.context import ContextDocument
 from src.context.search import SearchResult
-from src.internal.search_pipeline.models import CandidateSet, RankedEvidence
-from src.internal.search_pipeline.ranking import DefaultRankingStage
+from src.internal.search.models import CandidateSet, RankedEvidence
+from src.internal.search.ranking import DefaultRankingStage
 
 
 def _candidates(*rows: tuple[str, str, float]) -> CandidateSet:
