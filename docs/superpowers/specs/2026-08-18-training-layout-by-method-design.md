@@ -65,6 +65,22 @@ no connection to the LLM stack. This preserves the existing import weight of
 `evaluation.py` moves to `src/agents/components/result_evaluation.py`, beside
 `evidence_judge.py`, which wraps it.
 
+**`rl/__init__.py` re-exports lazily.** This is the one deliberate behaviour
+change, and it is forced by the move. Importing any submodule of a package runs
+that package's `__init__` first, so the eager `from .core_algos import ...` the
+old `ppo/__init__.py` carried would put `import torch` in front of *every*
+module in `rl/` — including the torch-free Q-learning demo that moved in. The
+unit-test CI job installs no heavy ML packages, so collection died with
+`ModuleNotFoundError: No module named 'torch'` before a test ran. The re-export
+surface is unchanged (same 32 names in `__all__`); only the moment of import
+moves.
+
+Deferring via `__getattr__` rather than `try/except ImportError` is deliberate:
+a swallowed ImportError turns a typo in `core_algos` into a silently missing
+export, whereas `__getattr__` raises the real error when a torch-backed name is
+actually requested. Both properties are pinned by tests in
+`tests/unit/test_rl_search_agent.py`.
+
 ## What this does not change
 
 Behaviour. Every function, signature, threshold, and training script is
