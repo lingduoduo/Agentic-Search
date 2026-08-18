@@ -1,45 +1,232 @@
 """Score a built index against the held-out query sets.
 
-Reuses the existing report machinery: IntentPredictionRecord and the metric
-functions in intent_evaluation take prediction records rather than a model, so
-none of it needed to change to score a different kind of model.
+Reuses the metric functions in ``metrics``: they take prediction records rather
+than a model, so none of it needed to change to score a different kind of model.
+
+The tuning/test split lives here too, immediately above the harness that is its
+only consumer. Three hyperparameters need values — top_k and the two abstention
+thresholds — and choosing any of them on the queries used to report accuracy
+inflates that accuracy. The split spends the cheapest data first: the legacy
+queries are already contaminated (the canonical set was iterated against them
+during curation), so they are worthless as a gate and free to tune on, which
+preserves the clean queries as an untouched test set.
 """
 
 from __future__ import annotations
 
 import json
+import random
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 import numpy as np
 
-from .intent_data import load_intent_eval_queries, load_out_of_scope_probes
-from .intent_encoder import DEFAULT_ENCODER, encode_texts
-from .intent_eval_split import (
-    DEFAULT_SEED,
-    DEFAULT_SLICE_SIZE,
-    LEGACY_PREFIX,
-    split_eval_queries,
-    split_out_of_scope_probes,
-)
-from .intent_evaluation import (
+from .data import fingerprint, load_intent_eval_queries, load_out_of_scope_probes
+from .metrics import (
     IntentPredictionRecord,
     ModulePredictionRecord,
     module_metrics_report,
     realistic_accuracy_report,
     separability_report,
 )
-from .intent_index_cli import _fingerprint, check_leakage
-from .intent_knn import INDEX_FILENAME, TOP_K, IntentIndex, KnnDecision
-from .intent_taxonomy import modules_for_route
+from .model import (
+    INDEX_FILENAME,
+    TOP_K,
+    DEFAULT_ENCODER,
+    IntentIndex,
+    KnnDecision,
+    encode_texts,
+    modules_for_route,
+)
+
+# ---------------------------------------------------------------------------
+# Split — the tuning/test split that keeps hyperparameters off the reported
+# number. Pure Python: no numpy, no encoder. It must be reproducible anywhere.
+# ---------------------------------------------------------------------------
+LEGACY_PREFIX = "eval-"
+DEFAULT_SLICE_SIZE = 40
+DEFAULT_SEED = 17
+# Fraction of the out-of-scope probes reserved for tuning. The rest denominate
+# the reported separability and are never consulted by a sweep.
+DEFAULT_PROBE_TUNING_SHARE = 0.5
+
+
+@dataclass(frozen=True)
+class EvalSplit:
+    """Queries hyperparameters may see, and queries they may not."""
+
+    tuning: tuple
+    test: tuple
+
+
+@dataclass(frozen=True)
+class ProbeSplit:
+    """Out-of-scope probes a sweep may see, and probes it may not."""
+
+    tuning: tuple
+    reporting: tuple
+
+
+def split_out_of_scope_probes(
+    probes: Sequence[tuple[str, str]],
+    *,
+    tuning_share: float = DEFAULT_PROBE_TUNING_SHARE,
+    seed: int = DEFAULT_SEED,
+) -> ProbeSplit:
+    """Split probes into (tuning, reporting), stratified by category.
+
+    Closes a caveat this repo has carried since #512: the *same* out-of-scope
+    probes both tie-broke the threshold sweep and denominated the reported AUC
+    and Cohen's d, so the headline separability figure was never fully held out
+    from what selected the thresholds it was measured at.
+
+    Stratified by the category encoded in the probe id (``oos-<category>-NN``),
+    because the categories are not interchangeable — a reporting half that drew
+    all the gibberish and none of the injections would measure something quite
+    different from one that drew the reverse.
+
+    Ids are sorted before sampling for the same reason ``split_eval_queries``
+    sorts: the result must depend only on (probes, tuning_share, seed), never on
+    the order the file happens to be written in.
+    """
+    if not 0.0 < tuning_share < 1.0:
+        raise ValueError(f"tuning_share must be in (0, 1), got {tuning_share}")
+
+    seen: dict[str, int] = {}
+    for probe_id, _ in probes:
+        seen[probe_id] = seen.get(probe_id, 0) + 1
+    duplicates = sorted(pid for pid, count in seen.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"duplicate probe id(s) in input: {duplicates}")
+
+    by_category: dict[str, list[tuple[str, str]]] = {}
+    for probe in sorted(probes, key=lambda p: p[0]):
+        by_category.setdefault(probe[0].rsplit("-", 1)[0], []).append(probe)
+
+    rng = random.Random(seed)
+    tuning: list[tuple[str, str]] = []
+    reporting: list[tuple[str, str]] = []
+    for _, group in sorted(by_category.items()):
+        shuffled = rng.sample(group, len(group))
+        # round() rather than int(): with an odd group the half that gets the
+        # extra probe should alternate with the count, not always be reporting.
+        take = round(len(shuffled) * tuning_share)
+        take = min(max(take, 1), len(shuffled) - 1) if len(shuffled) > 1 else 0
+        tuning.extend(shuffled[:take])
+        reporting.extend(shuffled[take:])
+
+    if not tuning or not reporting:
+        raise ValueError(
+            f"probe split left an empty half: {len(tuning)} tuning, "
+            f"{len(reporting)} reporting, from {len(probes)} probes"
+        )
+    return ProbeSplit(tuning=tuple(tuning), reporting=tuple(reporting))
+
+
+def split_eval_queries(
+    queries: Sequence,
+    *,
+    slice_size: int = DEFAULT_SLICE_SIZE,
+    seed: int = DEFAULT_SEED,
+) -> EvalSplit:
+    """Split into (tuning, test).
+
+    Tuning is every legacy query plus a seeded, route-stratified *slice_size*
+    sample of the clean ones. Test is the remaining clean queries.
+    """
+    if slice_size <= 0:
+        raise ValueError(f"slice_size must be positive, got {slice_size}")
+
+    seen_ids: dict[str, int] = {}
+    for query in queries:
+        seen_ids[query.id] = seen_ids.get(query.id, 0) + 1
+    duplicates = sorted(qid for qid, count in seen_ids.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"duplicate query id(s) in input: {duplicates}")
+
+    legacy = [q for q in queries if q.id.startswith(LEGACY_PREFIX)]
+    # Sorted by id, not left in input order: the split must depend only on
+    # (queries, slice_size, seed), and rng.sample's output depends on the
+    # order of the sequence it draws from.
+    clean = sorted(
+        (q for q in queries if not q.id.startswith(LEGACY_PREFIX)), key=lambda q: q.id
+    )
+    if slice_size >= len(clean):
+        raise ValueError(
+            f"slice_size {slice_size} leaves no test queries: only "
+            f"{len(clean)} clean queries available"
+        )
+
+    by_route: dict[str, list] = {}
+    for query in clean:
+        by_route.setdefault(query.label, []).append(query)
+
+    rng = random.Random(seed)
+    sampled: list = []
+    # Round-robin across routes so the slice is stratified even when
+    # slice_size is not divisible by the number of routes.
+    pools = {
+        route: rng.sample(group, len(group))
+        for route, group in sorted(by_route.items())
+    }
+    while len(sampled) < slice_size:
+        for route in sorted(pools):
+            if len(sampled) == slice_size:
+                break
+            if pools[route]:
+                sampled.append(pools[route].pop())
+
+    chosen = {query.id for query in sampled}
+    return EvalSplit(
+        tuning=tuple(legacy + sampled),
+        test=tuple(q for q in clean if q.id not in chosen),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Leakage — with nearest-neighbor routing the index *is* the model, so an eval
+# query that also sits in the index scores against itself and manufactures
+# accuracy that no user would ever see.
+# ---------------------------------------------------------------------------
+LEAKAGE_COSINE = 0.95
+
+
+def check_leakage(
+    index: IntentIndex, eval_texts: Sequence[str], eval_vectors: np.ndarray
+) -> list[str]:
+    """Report evaluation queries that duplicate a canonical example."""
+    canonical_texts = [example.text for example in index.examples]
+    normalized = {text.casefold().strip(): text for text in canonical_texts}
+    similarities = eval_vectors @ index.vectors.T
+    leaks: list[str] = []
+    for position, text in enumerate(eval_texts):
+        exact = normalized.get(text.casefold().strip())
+        if exact is not None:
+            leaks.append(f"{text!r} exactly matches canonical {exact!r}")
+            continue
+        best = int(np.argmax(similarities[position]))
+        score = float(similarities[position][best])
+        if score >= LEAKAGE_COSINE:
+            leaks.append(
+                f"{text!r} is {score:.3f} similar to canonical "
+                f"{canonical_texts[best]!r}"
+            )
+    return leaks
+
+
+# ---------------------------------------------------------------------------
+# Harness
+# ---------------------------------------------------------------------------
 
 # Legacy ids are `eval-<route>-NN`; queries added later use `bulk-NNN`. The
 # legacy 30 were iterated against during canonical-set curation, so they are
 # contaminated -- worthless as a gate and therefore free to tune on. Every
-# legacy query lands in the tuning split (see intent_eval_split), which is
+# legacy query lands in the tuning split (see the split section above), which is
 # what preserves the bulk-prefixed queries not drawn into that split as an
-# untouched test set. Imported from intent_eval_split, the module that owns
+# untouched test set. Defined in the split section above, which owns
 # the split, so the two definitions cannot drift apart.
 
 # The tuning-slice threshold sweep, fixed by the spec: never touch the test
@@ -587,16 +774,16 @@ def run_index_evaluation(
             f"intent-index at {index_path} was built with encoder "
             f"{index.encoder!r}, but this evaluation is embedding queries "
             f"with {model_name!r}. Rebuild the index with the current "
-            "encoder (`python -m src.model.intent_index_cli build`) before "
+            "encoder (`python -m src.model.intent.cli build`) before "
             "evaluating."
         )
-    canonical_fingerprint = _fingerprint(canonical_path)
+    canonical_fingerprint = fingerprint(canonical_path)
     if canonical_fingerprint != index.fingerprint:
         raise ValueError(
             f"canonical file {canonical_path} has fingerprint "
             f"{canonical_fingerprint!r}, but the index at {index_path} was built "
             f"from fingerprint {index.fingerprint!r}. The canonical set changed "
-            "since the index was built; run `intent_index_cli build` again "
+            "since the index was built; run `intent.cli build` again "
             "before evaluating."
         )
     thresholds = {

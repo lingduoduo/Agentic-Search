@@ -3,8 +3,10 @@ from pathlib import Path
 
 import numpy as np
 
-from src.model import intent_index_cli
-from src.model.intent_knn import INDEX_FILENAME, IntentIndex
+from src.model.intent import cli as intent_index_cli
+from src.model.intent import data as intent_index_data
+from src.model.intent import evaluation as intent_index_eval
+from src.model.intent.model import INDEX_FILENAME, IntentIndex
 
 _AXIS = {"search": 0, "chat": 1, "tool": 2}
 _MODULE = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
@@ -38,7 +40,7 @@ def _canonical(tmp_path: Path, count: int = 3) -> Path:
 def test_build_writes_a_loadable_index(tmp_path):
     output = tmp_path / "index"
 
-    index = intent_index_cli.build_index(
+    index = intent_index_data.build_index(
         _canonical(tmp_path), output, model_name="test-encoder", encode=_fake_encode
     )
 
@@ -51,14 +53,14 @@ def test_build_writes_a_loadable_index(tmp_path):
 def test_build_fingerprints_the_canonical_file(tmp_path):
     """A stale index against an edited canonical file must be detectable."""
     canonical = _canonical(tmp_path)
-    first = intent_index_cli.build_index(
+    first = intent_index_data.build_index(
         canonical, tmp_path / "a", model_name="test-encoder", encode=_fake_encode
     )
 
     records = json.loads(canonical.read_text(encoding="utf-8"))
     records[0]["text"] = "search canonical text edited"
     canonical.write_text(json.dumps(records), encoding="utf-8")
-    second = intent_index_cli.build_index(
+    second = intent_index_data.build_index(
         canonical, tmp_path / "b", model_name="test-encoder", encode=_fake_encode
     )
 
@@ -66,7 +68,7 @@ def test_build_fingerprints_the_canonical_file(tmp_path):
 
 
 def test_leakage_check_flags_an_eval_query_identical_to_a_canonical_example(tmp_path):
-    index = intent_index_cli.build_index(
+    index = intent_index_data.build_index(
         _canonical(tmp_path),
         tmp_path / "index",
         model_name="test-encoder",
@@ -74,14 +76,14 @@ def test_leakage_check_flags_an_eval_query_identical_to_a_canonical_example(tmp_
     )
     texts = ["search canonical text 0"]
 
-    leaks = intent_index_cli.check_leakage(index, texts, _fake_encode(texts))
+    leaks = intent_index_eval.check_leakage(index, texts, _fake_encode(texts))
 
     assert leaks and "search canonical text 0" in leaks[0]
 
 
 def test_leakage_check_flags_a_near_duplicate_above_the_cosine_bar(tmp_path):
     """With kNN the index IS the model, so overlap manufactures accuracy."""
-    index = intent_index_cli.build_index(
+    index = intent_index_data.build_index(
         _canonical(tmp_path),
         tmp_path / "index",
         model_name="test-encoder",
@@ -89,13 +91,13 @@ def test_leakage_check_flags_a_near_duplicate_above_the_cosine_bar(tmp_path):
     )
     texts = ["search something else entirely"]
 
-    leaks = intent_index_cli.check_leakage(index, texts, _fake_encode(texts))
+    leaks = intent_index_eval.check_leakage(index, texts, _fake_encode(texts))
 
     assert leaks
 
 
 def test_leakage_check_passes_for_a_genuinely_distinct_query(tmp_path):
-    index = intent_index_cli.build_index(
+    index = intent_index_data.build_index(
         _canonical(tmp_path),
         tmp_path / "index",
         model_name="test-encoder",
@@ -104,11 +106,11 @@ def test_leakage_check_passes_for_a_genuinely_distinct_query(tmp_path):
     texts = ["unrelated"]
     vectors = np.array([[0.0, 0.6, 0.8]], dtype=np.float32)
 
-    assert intent_index_cli.check_leakage(index, texts, vectors) == []
+    assert intent_index_eval.check_leakage(index, texts, vectors) == []
 
 
 def test_build_command_reports_low_support_modules(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(intent_index_cli, "encode_texts", _fake_encode)
+    monkeypatch.setattr(intent_index_data, "encode_texts", _fake_encode)
     output = tmp_path / "index"
 
     exit_code = intent_index_cli.main(

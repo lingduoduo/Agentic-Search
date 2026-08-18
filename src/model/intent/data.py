@@ -1,21 +1,33 @@
-"""Validated intent inputs: canonical anchors, labelled examples, eval queries.
+"""Validated intent inputs, and the build that turns them into an index.
 
 ``load_canonical_examples`` reads the curated set the router is built from.
 The labelled-example loader predates it and survives the retired classifier
-because ``intent_seed`` still reads it to draft canonical candidates. The
-train/validation/test split went with the classifier — nothing splits, and
-nothing here trains anything.
+because the ``seed`` command still reads it to draft canonical candidates.
+Nothing here trains anything.
+
+``build_index`` lives here rather than in ``cli`` so that ``cli`` is only an
+entry point: with the build here the package is a clean DAG (model <- data <-
+evaluation <- cli) and no module needs a function-local import to break a
+cycle.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from .intent_knn import CanonicalExample
-from .intent_taxonomy import INTENT_LABELS, validate_modules
+from .model import (
+    DEFAULT_ENCODER,
+    INDEX_FILENAME,
+    INTENT_LABELS,
+    CanonicalExample,
+    IntentIndex,
+    encode_texts,
+    validate_modules,
+)
 
 
 @dataclass(frozen=True)
@@ -248,3 +260,36 @@ def _tags(record: Mapping[str, object], index: int) -> tuple[str, ...]:
     ):
         raise ValueError(f"Intent example at index {index} has invalid tags")
     return tuple(value)
+
+
+def fingerprint(path: Path) -> str:
+    """Hash the canonical file so a stale index is detectable."""
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def build_index(
+    canonical_path: Path,
+    output_dir: Path,
+    *,
+    model_name: str = DEFAULT_ENCODER,
+    encode=None,
+) -> IntentIndex:
+    """Encode the canonical examples and write the index.
+
+    ``encode`` is injectable so the build is testable without an encoder; it is
+    not a production knob. It defaults to None rather than to ``encode_texts``
+    so the module attribute is resolved at call time — a default argument binds
+    at definition, which would put the real encoder beyond reach of a test's
+    monkeypatch.
+    """
+    encoder = encode if encode is not None else encode_texts
+    examples = load_canonical_examples(canonical_path)
+    vectors = encoder([example.text for example in examples], model_name=model_name)
+    index = IntentIndex(
+        examples=examples,
+        vectors=vectors,
+        encoder=model_name,
+        fingerprint=fingerprint(canonical_path),
+    )
+    index.save(output_dir / INDEX_FILENAME)
+    return index

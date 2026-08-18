@@ -8,8 +8,8 @@ import pytest
 from src.internal.configs import AppSettings
 from src.internal.servers.web import ml_intent
 from src.internal.servers.web.intent_routing import RouteStrategy
-from src.model.intent_encoder import DEFAULT_ENCODER
-from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+from src.model.intent.model import DEFAULT_ENCODER
+from src.model.intent.model import INDEX_FILENAME, CanonicalExample, IntentIndex
 
 _AXIS = {"search": 0, "chat": 1, "tool": 2}
 _MODULE = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
@@ -256,7 +256,7 @@ def test_an_index_built_with_the_previous_encoder_is_rejected(tmp_path, monkeypa
     """
     import numpy as np
 
-    from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+    from src.model.intent.model import INDEX_FILENAME, CanonicalExample, IntentIndex
 
     basis = np.eye(384, dtype=np.float32)
     examples, rows = [], []

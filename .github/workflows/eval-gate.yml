@@ -179,7 +179,7 @@ jobs:
       # this gate is active from its first run.
       - name: Build the intent index
         run: |
-          python -m src.model.intent_index_cli build \
+          python -m src.model.intent.cli build \
             --canonical data/intent_canonical.json \
             --output data/intent_index
 

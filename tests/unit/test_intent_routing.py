@@ -21,8 +21,8 @@ from src.internal.tools.routing_tools import (
     build_search_routing_tool,
 )
 from src.internal.tools import ToolEffect
-from src.model.intent_encoder import DEFAULT_ENCODER
-from src.model.intent_knn import INDEX_FILENAME, CanonicalExample, IntentIndex
+from src.model.intent.model import DEFAULT_ENCODER
+from src.model.intent.model import INDEX_FILENAME, CanonicalExample, IntentIndex
 
 
 def _make_output(

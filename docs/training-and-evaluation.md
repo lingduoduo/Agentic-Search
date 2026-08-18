@@ -14,15 +14,15 @@ Serving still uses indexes built offline by the `index_builder`. Filter-aware an
 
 ```bash
 # 1. Seed a canonical draft from existing labelled examples (optional; run once).
-python -m src.model.intent_index_cli seed \
+python -m src.model.intent.cli seed \
   --examples data/intent_examples.json --output data/intent_canonical.draft.json
 
 # 2. Build the index the router serves from.
-python -m src.model.intent_index_cli build \
+python -m src.model.intent.cli build \
   --canonical data/intent_canonical.json --output data/intent_index
 
 # 3. Measure it. Never skip this after editing the canonical set.
-python -m src.model.intent_index_cli evaluate \
+python -m src.model.intent.cli evaluate \
   --index data/intent_index \
   --eval-queries data/intent_eval_queries.json \
   --hard-queries data/intent_eval_hard.json \
@@ -37,11 +37,11 @@ python -m src.model.intent_index_cli evaluate \
 
 Each canonical example is encoded once by `intfloat/e5-small-v2` and L2-normalized. At serving time the request is encoded the same way, and each route scores as the **mean of its top-k cosine similarities** to that request. The best route wins; the module labels reported alongside it are diagnostics and can never change the route.
 
-**The prefix contract.** E5 models are trained with instruction prefixes and **degrade silently without them** — no error, no warning, just worse vectors. Every text gets `"query: "`, applied **symmetrically** to canonical anchors and to incoming requests: this is symmetric short-text similarity, not the asymmetric retrieval E5's `"passage: "` prefix is for. The prefix is a property of the encoder, not an argument, so it lives in `MODEL_PREFIXES` in `src/model/intent_encoder.py` and is applied inside `encode_texts` — no call site can forget it. An encoder with no registered prefix raises rather than defaulting to `""`: an unregistered model is far likelier to be one whose prefix nobody looked up than one that genuinely needs none, and guessing wrong is invisible.
+**The prefix contract.** E5 models are trained with instruction prefixes and **degrade silently without them** — no error, no warning, just worse vectors. Every text gets `"query: "`, applied **symmetrically** to canonical anchors and to incoming requests: this is symmetric short-text similarity, not the asymmetric retrieval E5's `"passage: "` prefix is for. The prefix is a property of the encoder, not an argument, so it lives in `MODEL_PREFIXES` in `src/model/intent/model.py` and is applied inside `encode_texts` — no call site can forget it. An encoder with no registered prefix raises rather than defaulting to `""`: an unregistered model is far likelier to be one whose prefix nobody looked up than one that genuinely needs none, and guessing wrong is invisible.
 
 **Every index built before this change is invalidated.** Rebuild with command 2 above. What catches a stale index is the **encoder-name check** — `IntentIndex` records the encoder that built it, and both `run_index_evaluation` and `ml_intent.load_intent_index` reject a mismatch by name — **not** a dimension mismatch, because `all-MiniLM-L6-v2` and `e5-small-v2` are **both 384-wide**. A stale index therefore loads, scores, and reports confident, meaningless numbers with no other symptom. That is not hypothetical: it happened once on this branch, and the name check is what turned it into one loud failure naming the rebuild command.
 
-`k` (`TOP_K` in `src/model/intent_knn.py`) is `15`, chosen on the tuning slice rather than inherited — see [`top_k` chosen on the split](#top_k-chosen-on-the-split) below, and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var. It was an unswept `3` from #511 to #521.
+`k` (`TOP_K` in `src/model/intent/model.py`) is `15`, chosen on the tuning slice rather than inherited — see [`top_k` chosen on the split](#top_k-chosen-on-the-split) below, and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var. It was an unswept `3` from #511 to #521.
 
 **One** threshold gates the answer:
 
@@ -61,7 +61,7 @@ Always **append, rebuild, re-measure**, in that order. A badly-phrased canonical
 
 ### The tuning/test split
 
-Three hyperparameters need values — `top_k`, `min_margin`, `min_module_score` — and **none of them may be chosen on the queries the result is reported from**. All are swept on the tuning slice. `src/model/intent_eval_split.py` enforces the rest:
+Three hyperparameters need values — `top_k`, `min_margin`, `min_module_score` — and **none of them may be chosen on the queries the result is reported from**. All are swept on the tuning slice. The split section of `src/model/intent/evaluation.py` enforces the rest:
 
 - **Tuning slice, 70 queries** — all 30 `eval-` legacy queries (already contaminated: they were used as feedback while curating the canonical set, so they are worthless as a gate and free to spend here) plus a route-stratified sample of **40** of the 151 clean `bulk-` queries, drawn with **seed `17`**.
 - **Test slice, 111 queries** — every clean query the tuning sample did not take. Untouched by every sweep. Plus `hard-40`, which is likewise never tuned on.

@@ -33,17 +33,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.model.intent_data import (
+from src.model.intent import (
+    DEFAULT_ENCODER,
+    TOP_K,
+    IntentIndex,
+    encode_texts,
     load_canonical_examples,
     load_intent_eval_queries,
 )
-from src.model.intent_eval_split import (
+from src.model.intent.evaluation import (
     DEFAULT_SEED,
     DEFAULT_SLICE_SIZE,
     split_eval_queries,
 )
-from src.model.intent_encoder import DEFAULT_ENCODER, encode_texts
-from src.model.intent_knn import TOP_K, IntentIndex
 
 PREVIOUS_ENCODER = "sentence-transformers/all-MiniLM-L6-v2"
 

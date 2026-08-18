@@ -1,6 +1,6 @@
 import pytest
 
-from src.model.intent_taxonomy import (
+from src.model.intent.model import (
     ACTION_MODULES,
     INTENT_LABELS,
     MODULES,
