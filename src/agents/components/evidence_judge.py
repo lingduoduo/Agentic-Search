@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...context.search import SearchContext
-from ...training.evaluation import (
+from ...agents.components.result_evaluation import (
     SearchEvaluationConfig,
     SearchResultEvaluator,
     SearchRoundEvaluation,

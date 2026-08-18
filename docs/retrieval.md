@@ -401,7 +401,7 @@ Two decisions — *keep searching?* and *how to answer?* — are computed by thr
 collaborating pieces, split into a stateless policy over a snapshot of mutable
 loop state:
 
-- **`SearchResultEvaluator`** (`src/training/evaluation.py`) — the boolean
+- **`SearchResultEvaluator`** (`src/agents/components/result_evaluation.py`) — the boolean
   threshold gate. A round is sufficient iff total results ≥ `min_total_results`
   and every query individually clears result-count / content-length / score
   thresholds. Emits human-readable reasons that become the `<search_evaluation>`

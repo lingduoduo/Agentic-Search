@@ -3,7 +3,7 @@
 The judge scores an answer's quality/form from the answer text alone
 (reference-free) and returns a scalar in ``[0, 1]``.  It is a drop-in for the
 ``BatchJudgeFn`` seam GRPO already consumes (``score_prompt_group`` /
-``score_prompt_batch`` in :mod:`src.training.grpo`); a real LLM judge can
+``score_prompt_batch`` in :mod:`src.training.rl.rollouts`); a real LLM judge can
 replace it behind the same :meth:`SimulatedPreferenceJudge.as_batch_judge_fn`
 interface.
 

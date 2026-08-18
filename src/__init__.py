@@ -72,14 +72,23 @@ from .internal.tools.parsers import ToolParser as ToolParser
 
 # Torch-heavy modules — loaded on first access, never at import time.
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
-    # training.evaluation (pulls torch transitively — keep lazy)
-    "QueryEvaluation": (".training.evaluation", "QueryEvaluation"),
-    "SearchEvaluationConfig": (".training.evaluation", "SearchEvaluationConfig"),
-    "SearchResultEvaluator": (".training.evaluation", "SearchResultEvaluator"),
-    "SearchRoundEvaluation": (".training.evaluation", "SearchRoundEvaluation"),
+    # agents.components.result_evaluation (pulls torch transitively — keep lazy)
+    "QueryEvaluation": (".agents.components.result_evaluation", "QueryEvaluation"),
+    "SearchEvaluationConfig": (
+        ".agents.components.result_evaluation",
+        "SearchEvaluationConfig",
+    ),
+    "SearchResultEvaluator": (
+        ".agents.components.result_evaluation",
+        "SearchResultEvaluator",
+    ),
+    "SearchRoundEvaluation": (
+        ".agents.components.result_evaluation",
+        "SearchRoundEvaluation",
+    ),
     # training.sft (imports torch at module level)
-    "SFTExample": (".training.sft", "SFTExample"),
-    "build_search_sft_example": (".training.sft", "build_search_sft_example"),
+    "SFTExample": (".training.sft.trainer", "SFTExample"),
+    "build_search_sft_example": (".training.sft.trainer", "build_search_sft_example"),
     # training.data
     "DEFAULT_TOOL_SYSTEM_PROMPT": (".training.data", "DEFAULT_TOOL_SYSTEM_PROMPT"),
     "PromptBatch": (".training.data", "PromptBatch"),
@@ -106,26 +115,32 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "normalize_question_text": (".training.data", "normalize_question_text"),
     "prompt_batch_to_search_batch": (".training.data", "prompt_batch_to_search_batch"),
-    # training.grpo
-    "GRPOAdvantageConfig": (".training.grpo", "GRPOAdvantageConfig"),
-    "GRPORolloutSample": (".training.grpo", "GRPORolloutSample"),
-    "PromptGroupSamplingConfig": (".training.grpo", "PromptGroupSamplingConfig"),
-    "ScoredGRPORollout": (".training.grpo", "ScoredGRPORollout"),
-    "build_grpo_sampling_params": (".training.grpo", "build_grpo_sampling_params"),
+    # training.rl.rollouts
+    "GRPOAdvantageConfig": (".training.rl.rollouts", "GRPOAdvantageConfig"),
+    "GRPORolloutSample": (".training.rl.rollouts", "GRPORolloutSample"),
+    "PromptGroupSamplingConfig": (".training.rl.rollouts", "PromptGroupSamplingConfig"),
+    "ScoredGRPORollout": (".training.rl.rollouts", "ScoredGRPORollout"),
+    "build_grpo_sampling_params": (
+        ".training.rl.rollouts",
+        "build_grpo_sampling_params",
+    ),
     "compute_grpo_outcome_advantage": (
-        ".training.grpo",
+        ".training.rl.rollouts",
         "compute_grpo_outcome_advantage",
     ),
-    "sample_prompt_group": (".training.grpo", "sample_prompt_group"),
-    "sample_prompt_batch": (".training.grpo", "sample_prompt_batch"),
-    "score_prompt_group": (".training.grpo", "score_prompt_group"),
-    "score_prompt_batch": (".training.grpo", "score_prompt_batch"),
-    "OnPolicyGRPOConfig": (".training.grpo", "OnPolicyGRPOConfig"),
-    "OnPolicyBatchStats": (".training.grpo", "OnPolicyBatchStats"),
-    "filter_zero_advantage_groups": (".training.grpo", "filter_zero_advantage_groups"),
-    "assemble_on_policy_batch": (".training.grpo", "assemble_on_policy_batch"),
+    "sample_prompt_group": (".training.rl.rollouts", "sample_prompt_group"),
+    "sample_prompt_batch": (".training.rl.rollouts", "sample_prompt_batch"),
+    "score_prompt_group": (".training.rl.rollouts", "score_prompt_group"),
+    "score_prompt_batch": (".training.rl.rollouts", "score_prompt_batch"),
+    "OnPolicyGRPOConfig": (".training.rl.rollouts", "OnPolicyGRPOConfig"),
+    "OnPolicyBatchStats": (".training.rl.rollouts", "OnPolicyBatchStats"),
+    "filter_zero_advantage_groups": (
+        ".training.rl.rollouts",
+        "filter_zero_advantage_groups",
+    ),
+    "assemble_on_policy_batch": (".training.rl.rollouts", "assemble_on_policy_batch"),
     "compute_on_policy_batch_stats": (
-        ".training.grpo",
+        ".training.rl.rollouts",
         "compute_on_policy_batch_stats",
     ),
     # training.reward
@@ -190,11 +205,11 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "compute_trajectory_policy_loss",
     ),
     "compute_reinforce_policy_loss": (
-        ".training.ppo.core_algos",
+        ".training.rl.core_algos",
         "compute_reinforce_policy_loss",
     ),
     "compute_reinforce_policy_loss_core": (
-        ".training.ppo.core_algos",
+        ".training.rl.core_algos",
         "compute_reinforce_policy_loss_core",
     ),
     "format_group_rollout": (".model.generation", "format_group_rollout"),
@@ -319,17 +334,17 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ChatSessionRecord": (".internal.db", "ChatSessionRecord"),
     "GroupRecord": (".internal.db", "GroupRecord"),
     "UserRecord": (".internal.db", "UserRecord"),
-    # training.ppo.controller
-    "LocalGRPOController": (".training.ppo.controller", "LocalGRPOController"),
-    "RolloutResult": (".training.ppo.controller", "RolloutResult"),
-    # training.ppo.reward_manager
-    "PPORewardManager": (".training.ppo.reward_manager", "PPORewardManager"),
+    # training.rl.controller
+    "LocalGRPOController": (".training.rl.controller", "LocalGRPOController"),
+    "RolloutResult": (".training.rl.controller", "RolloutResult"),
+    # training.rl.reward_manager
+    "PPORewardManager": (".training.rl.reward_manager", "PPORewardManager"),
     "qa_exact_match_score": (
-        ".training.ppo.reward_manager",
+        ".training.rl.reward_manager",
         "qa_exact_match_score",
     ),
     "select_reward_score_fn": (
-        ".training.ppo.reward_manager",
+        ".training.rl.reward_manager",
         "select_reward_score_fn",
     ),
     # model.tensor_helper

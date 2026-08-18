@@ -595,10 +595,10 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
 | Reward function | `src/training/reward.py` |
 | Simulated preference judge | `src/training/judge.py` |
-| GRPO helpers | `src/training/grpo.py` |
-| Online GRPO for HF LMs | `src/training/ppo/llm_grpo_trainer.py` |
-| Agent-loop GRPO (full reward) | `src/training/ppo/search_agent_grpo_trainer.py` |
-| PPO core | `src/training/ppo/core_algos.py` |
+| GRPO helpers | `src/training/rl/rollouts.py` |
+| Online GRPO for HF LMs | `src/training/rl/llm_grpo_trainer.py` |
+| Agent-loop GRPO (full reward) | `src/training/rl/search_agent_grpo_trainer.py` |
+| PPO core | `src/training/rl/core_algos.py` |
 | Generation and policy loss | `src/model/generation.py` |
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
@@ -669,9 +669,9 @@ There is still no *trained* reward model; that remains a separate design.
 
 **Four reward dimensions** — `reward_components()` also groups every term into four subtotals via `REWARD_DIMENSIONS`, emitted as `dim_correctness`, `dim_citation_support`, `dim_retrieval_quality`, `dim_search_efficiency` (and available directly via `reward_dimensions()` or the pure `group_reward_components(components)`). Pre-scale, so `sum(dims) == terminal_reward + shaping_total == total / reward_scale`. The rollup is purely additive — no weight, preset, or `total` formula changed.
 
-**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo.py`.
+**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/rl/rollouts.py`.
 
-**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/ppo/core_algos.py`.
+**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/rl/core_algos.py`.
 
 The PPO-**with-critic** path (`compute_value_loss`, `compute_gae_advantages`) used to live alongside it, exported from three surfaces and called only from tests. It was removed: training here is critic-free GRPO, there is no value model, value head, or critic anywhere in the repo to produce the `values` those helpers consume, and so the path could never be exercised end to end. Exported-but-unreachable code reads as supported API and its test coverage implies a path that is exercised rather than merely arithmetic-checked. If a critic is ever wanted, the git history has both functions.
 

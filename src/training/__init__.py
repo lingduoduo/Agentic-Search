@@ -1,19 +1,34 @@
+"""Post-training and fine-tuning for the search agent.
+
+Shared building blocks live at this level -- ``data`` (prompt and dataset
+construction), ``reward`` (reward functions) and ``judge`` (RLAIF judges) are
+used by more than one method. Each method gets its own package: ``sft`` for
+supervised fine-tuning, ``rl`` for the GRPO/PPO stack, and ``eval`` for the
+benchmark harnesses. There is no DPO trainer in this repo; if one is added it
+belongs in a sibling ``dpo`` package.
+
+``train_query_router`` is the odd one out: an offline scikit-learn trainer for
+the QueryRouter, not LLM post-training.
+"""
+
 try:
-    from .grpo import GRPOAdvantageConfig as GRPOAdvantageConfig
-    from .grpo import PromptGroupSamplingConfig as PromptGroupSamplingConfig
-    from .grpo import compute_dapo_advantages as compute_dapo_advantages
-    from .grpo import compute_grpo_outcome_advantage as compute_grpo_outcome_advantage
-    from .grpo import score_prompt_group as score_prompt_group
-    from .ppo import PPORewardManager as PPORewardManager
-    from .ppo import compute_grpo_policy_loss as compute_grpo_policy_loss
+    from .rl.rollouts import GRPOAdvantageConfig as GRPOAdvantageConfig
+    from .rl.rollouts import PromptGroupSamplingConfig as PromptGroupSamplingConfig
+    from .rl.rollouts import compute_dapo_advantages as compute_dapo_advantages
+    from .rl.rollouts import (
+        compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
+    )
+    from .rl.rollouts import score_prompt_group as score_prompt_group
+    from .rl import PPORewardManager as PPORewardManager
+    from .rl import compute_grpo_policy_loss as compute_grpo_policy_loss
     from .reward import BatchJudgeFn as BatchJudgeFn
     from .reward import CompositeRewardConfig as CompositeRewardConfig
     from .reward import JudgeFn as JudgeFn
     from .reward import SearchRewardFunction as SearchRewardFunction
     from .reward import format_compliance_reward as format_compliance_reward
     from .reward import token_f1_score as token_f1_score
-    from .sft import SFTExample as SFTExample
-    from .sft import build_search_sft_example as build_search_sft_example
+    from .sft.trainer import SFTExample as SFTExample
+    from .sft.trainer import build_search_sft_example as build_search_sft_example
     from .judge import GoldAgreementJudge as GoldAgreementJudge
     from .judge import LLMJudge as LLMJudge
     from .judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
@@ -28,8 +43,7 @@ try:
     from .data import make_search_rag_map_fn as make_search_rag_map_fn
     from .data import make_search_qa_map_fn as make_search_qa_map_fn
     from .data import normalize_question_text as normalize_question_text
-    from .rl_agent import QLearningAgent as QLearningAgent
-    from .search_environment import SearchEnvironment as SearchEnvironment
+    from .rl.qlearning import QLearningAgent as QLearningAgent
+    from .rl.search_environment import SearchEnvironment as SearchEnvironment
 except ImportError:
     pass
-from .evaluation import SearchEvaluationConfig as SearchEvaluationConfig

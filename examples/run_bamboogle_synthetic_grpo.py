@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.training.grpo import ScoredGRPORollout
+    from src.training.rl.rollouts import ScoredGRPORollout
     from src.training.judge import SimulatedPreferenceJudge
 
 
@@ -57,7 +57,7 @@ def build_synthetic_record(
 def _build_loop_factory(args: argparse.Namespace, tokenizer: Any):
     from examples.run_bamboogle_eval import _build_server_manager
     from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    from src.training.evaluation import SearchEvaluationConfig
+    from src.agents.components.result_evaluation import SearchEvaluationConfig
 
     server_manager = _build_server_manager(args, tokenizer)
 
@@ -82,7 +82,7 @@ def _build_loop_factory(args: argparse.Namespace, tokenizer: Any):
 
 async def _run(args: argparse.Namespace) -> None:
     from src.training.eval.bamboogle import load_bamboogle
-    from src.training.grpo import sample_prompt_group, score_prompt_group
+    from src.training.rl.rollouts import sample_prompt_group, score_prompt_group
     from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement
     from transformers import AutoTokenizer
 

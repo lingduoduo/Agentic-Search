@@ -307,7 +307,7 @@ def test_grpo_advantage_config_outcome_only_preset_uses_terminal_reward():
 
 
 def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
-    from src.training.ppo import compute_reinforce_policy_loss
+    from src.training.rl import compute_reinforce_policy_loss
 
     result = compute_reinforce_policy_loss(
         log_probs=[-0.2, -0.4, -0.8],
@@ -324,7 +324,7 @@ def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
 
 
 def test_compute_reinforce_policy_loss_rejects_length_mismatch():
-    from src.training.ppo import compute_reinforce_policy_loss
+    from src.training.rl import compute_reinforce_policy_loss
 
     with pytest.raises(ValueError, match="same length"):
         compute_reinforce_policy_loss(

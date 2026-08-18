@@ -46,7 +46,7 @@ import torch
 import torch.nn as nn
 
 from src.agents.core.base import AgentLoopBase
-from src.training.grpo import (
+from src.training.rl.rollouts import (
     GRPOAdvantageConfig,
     score_prompt_group,
     sample_prompt_group,

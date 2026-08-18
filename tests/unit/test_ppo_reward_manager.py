@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from src.training.ppo import (
+from src.training.rl import (
     PPORewardManager,
     qa_exact_match_score,
     select_reward_score_fn,
