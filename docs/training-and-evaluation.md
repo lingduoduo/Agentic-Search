@@ -593,6 +593,8 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Training data (shell) | `bin/generate_training_data.sh` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
+| DPO trainer | `src/training/dpo/trainer.py` |
+| DPO preference pairs | `src/training/dpo/data.py` |
 | Reward function | `src/training/reward.py` |
 | Simulated preference judge | `src/training/judge.py` |
 | GRPO helpers | `src/training/rl/rollouts.py` |
@@ -603,6 +605,60 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
 | Simulated-judge GRPO (policy update) | `python3 -m examples.run_bamboogle_grpo_train` |
+
+### Direct Preference Optimization (DPO)
+
+`src/training/dpo/` trains a policy directly on preference pairs — no reward
+model, no critic, no online sampling. The reference policy plays the role GRPO's
+KL penalty plays, anchoring the policy to where it started.
+
+**There is no CLI entry point yet.** DPO is used as a library:
+
+```python
+from src.training.dpo import load_preference_pairs
+from src.training.dpo.trainer import DPOConfig, DPOTrainer
+
+pairs = load_preference_pairs("data/dpo_pairs.jsonl")
+trainer = DPOTrainer(
+    policy=model,                 # initialized from your SFT checkpoint
+    tokenizer=tokenizer,
+    optimizer=torch.optim.AdamW(model.parameters(), lr=5e-7),
+    config=DPOConfig(beta=0.1, epochs=1),
+)
+history = trainer.train(pairs)     # list[DPOStep]: loss, margin, accuracy
+trainer.save("checkpoints/dpo")
+```
+
+The reference defaults to a frozen `deepcopy` of the policy at construction,
+which is correct when the policy was initialized from the SFT checkpoint — the
+usual DPO setup. Pass `reference_policy=` to point at a different one.
+
+**Input format.** One JSON object per line:
+
+```json
+{"prompt": "What is FAISS?", "chosen": "A library for efficient similarity search.", "rejected": "A database from Google."}
+```
+
+The loader is strict — malformed JSON, a missing or blank field, an empty file,
+or `chosen` equal to `rejected` all raise, naming the offending line. These pairs
+*are* the training signal, so a silently skipped row changes what the model
+learns with no later symptom. (An identical chosen/rejected pair contributes
+exactly `log 2` of constant loss and zero gradient, so it can never teach
+anything.)
+
+**Reading the metrics.** `loss` alone cannot distinguish learning from collapse.
+Watch `margin` (the implicit reward gap) and `accuracy` (the fraction of pairs
+whose gap is positive). Both start at **0** by construction, because the policy
+starts equal to the reference — a first-step loss of `log 2` ≈ 0.693 is the
+expected, correct starting point, not a bug.
+
+**Where pairs come from.** Today: a file you supply. The `retrieval_feedback`
+table records one thumbs-up/down *per session* and has no notion of two
+competing answers to a prompt, so it cannot yield pairs directly; and
+`SimulatedPreferenceJudge` is a deterministic heuristic placeholder, so
+judge-labelled pairs would be exactly as good as that heuristic. `DPOTrainer`
+takes `list[PreferenceExample]` and never reads a file, so either source can feed
+it later without changing the trainer.
 
 ### Fine-tune from user feedback
 
