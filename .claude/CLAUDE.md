@@ -231,10 +231,12 @@ with the shared building blocks at the top level:
 - `data.py` — prompt/dataset construction, shared by SFT and RL
 - `reward.py`, `judge.py` — reward functions and RLAIF judges, shared by RL and eval
 - `sft/` — supervised fine-tuning (`SFTTrainer`, trajectory → supervised example)
+- `dpo/` — Direct Preference Optimization: `PreferenceExample` + a JSONL loader, and
+  `DPOTrainer` training a policy against a frozen reference on preference pairs (no
+  reward model, no critic, no online sampling). Pairs come from a JSONL file; there
+  is no judge-backed or feedback-backed loader yet
 - `rl/` — the GRPO stack: three trainers (bandit, HF causal-LM, live SearchAgentLoop),
   a controller, a durable train loop, and `core_algos.py` (shared PPO/GRPO tensor math,
   also used by `src/model/generation.py`). Also holds the standalone tabular
   Q-learning demo (`qlearning.py` + `search_environment.py`)
 - `eval/` — Bamboogle and action-policy benchmark harnesses
-
-There is no DPO trainer; if one is added it belongs in a sibling `dpo/` package.
