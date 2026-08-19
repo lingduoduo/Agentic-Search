@@ -4,20 +4,21 @@ Shared building blocks live at this level -- ``data`` (prompt and dataset
 construction), ``reward`` (reward functions) and ``judge`` (RLAIF judges) are
 used by more than one method. Each method gets its own package: ``sft`` for
 supervised fine-tuning, ``dpo`` for Direct Preference Optimization over
-preference pairs, ``rl`` for the GRPO/PPO stack, and ``eval`` for the benchmark
-harnesses.
+preference pairs, ``grpo`` for the GRPO stack, ``ppo`` for the clipped-surrogate
+base layer it builds on, ``qlearning`` for the classical-RL demo, and ``eval``
+for the benchmark harnesses.
 """
 
 try:
-    from .rl.rollouts import GRPOAdvantageConfig as GRPOAdvantageConfig
-    from .rl.rollouts import PromptGroupSamplingConfig as PromptGroupSamplingConfig
-    from .rl.rollouts import compute_dapo_advantages as compute_dapo_advantages
-    from .rl.rollouts import (
+    from .grpo.rollouts import GRPOAdvantageConfig as GRPOAdvantageConfig
+    from .grpo.rollouts import PromptGroupSamplingConfig as PromptGroupSamplingConfig
+    from .grpo.rollouts import compute_dapo_advantages as compute_dapo_advantages
+    from .grpo.rollouts import (
         compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
     )
-    from .rl.rollouts import score_prompt_group as score_prompt_group
-    from .rl import PPORewardManager as PPORewardManager
-    from .rl import compute_grpo_policy_loss as compute_grpo_policy_loss
+    from .grpo.rollouts import score_prompt_group as score_prompt_group
+    from .grpo import PPORewardManager as PPORewardManager
+    from .grpo import compute_grpo_policy_loss as compute_grpo_policy_loss
     from .reward import BatchJudgeFn as BatchJudgeFn
     from .reward import CompositeRewardConfig as CompositeRewardConfig
     from .reward import JudgeFn as JudgeFn
@@ -40,7 +41,7 @@ try:
     from .data import make_search_rag_map_fn as make_search_rag_map_fn
     from .data import make_search_qa_map_fn as make_search_qa_map_fn
     from .data import normalize_question_text as normalize_question_text
-    from .rl.qlearning import QLearningAgent as QLearningAgent
-    from .rl.search_environment import SearchEnvironment as SearchEnvironment
+    from .qlearning import QLearningAgent as QLearningAgent
+    from .qlearning import SearchEnvironment as SearchEnvironment
 except ImportError:
     pass

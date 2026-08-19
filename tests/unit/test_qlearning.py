@@ -5,8 +5,8 @@ import random
 import numpy as np
 import pytest
 
-from src.training.rl.qlearning import QLearningAgent
-from src.training.rl.search_environment import SearchEnvironment
+from src.training.qlearning.agent import QLearningAgent
+from src.training.qlearning.environment import SearchEnvironment
 
 
 def _env(**kw):
@@ -133,7 +133,7 @@ def test_stochastic_relevant_retrieval_can_fail():
 
 
 def test_dqn_agent_is_gone():
-    import src.training.rl.qlearning as mod
+    import src.training.qlearning.agent as mod
 
     assert not hasattr(mod, "DQNAgent")
 
@@ -221,13 +221,16 @@ def test_save_and_load_round_trips(tmp_path):
 def test_qlearning_demo_imports_without_torch():
     """The tabular demo must not drag torch in via its package ``__init__``.
 
-    This is a CI-shaped regression, not a hypothetical: the unit-test job
-    installs no heavy ML packages, and when these two modules moved under
-    ``src/training/rl/`` they landed behind a package ``__init__`` that eagerly
-    imported ``core_algos`` -> ``torch``. Importing *any* submodule runs the
-    package ``__init__`` first, so collection died with ``ModuleNotFoundError:
-    No module named 'torch'`` before a single test ran. The repo has shipped
-    torch-in-CI collection failures twice before (#356, re-fixed in #418).
+    This is a CI-shaped regression, not a hypothetical. These two modules used
+    to live inside the RL package (now ``grpo``), behind an ``__init__`` that
+    eagerly imported ``core_algos`` -> ``torch``. Importing *any* submodule runs
+    its package ``__init__`` first, so the unit-test job -- which installs no
+    heavy ML packages -- died at collection with ``ModuleNotFoundError: No
+    module named 'torch'`` before a single test ran (#536). They now have their
+    own package, which must stay torch-free; ``grpo`` is imported here too,
+    because it is the neighbour whose ``__init__`` caused the original break.
+
+    The repo has shipped torch-in-CI collection failures four times.
 
     Run in a subprocess with torch blocked at the meta-path, because the
     in-process module cache would otherwise hand back an already-imported torch
@@ -248,9 +251,9 @@ class _Blocker:
 
 sys.meta_path.insert(0, _Blocker())
 
-import src.training.rl                      # the package __init__ itself
-import src.training.rl.qlearning            # the demo agent
-import src.training.rl.search_environment   # the demo environment
+import src.training.grpo                      # the package __init__ itself
+import src.training.qlearning.agent            # the demo agent
+import src.training.qlearning.environment   # the demo environment
 print("OK")
 """
     result = subprocess.run(
@@ -263,44 +266,3 @@ print("OK")
         "the Q-learning demo no longer imports without torch:\n" + result.stderr
     )
     assert "OK" in result.stdout
-
-
-def test_rl_package_reports_a_real_error_for_torch_backed_names():
-    """A missing torch must surface as ImportError, never a silent AttributeError.
-
-    ``src/training/rl/__init__`` defers its re-exports rather than wrapping them
-    in ``try/except ImportError``. That choice is what this test pins: a
-    swallowed ImportError would turn a typo in ``core_algos`` into a name that
-    simply is not there, which reads as "that export was removed" rather than
-    "your environment is missing a dependency".
-    """
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    program = """
-import sys
-
-class _Blocker:
-    def find_spec(self, name, path=None, target=None):
-        if name == "torch" or name.startswith("torch."):
-            raise ImportError("No module named %r (blocked)" % name)
-        return None
-
-sys.meta_path.insert(0, _Blocker())
-
-import src.training.rl as rl
-try:
-    rl.LocalGRPOController
-except ImportError:
-    print("REAL_IMPORT_ERROR")
-except AttributeError:
-    print("SILENTLY_MISSING")
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", program],
-        capture_output=True,
-        text=True,
-        cwd=Path(__file__).resolve().parents[2],
-    )
-    assert "REAL_IMPORT_ERROR" in result.stdout, result.stdout + result.stderr

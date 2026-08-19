@@ -597,11 +597,12 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | DPO preference pairs | `src/training/dpo/data.py` |
 | Reward function | `src/training/reward.py` |
 | Simulated preference judge | `src/training/judge.py` |
-| GRPO helpers | `src/training/rl/rollouts.py` |
-| Online GRPO for HF LMs | `src/training/rl/llm_grpo_trainer.py` |
-| Agent-loop GRPO (full reward) | `src/training/rl/search_agent_grpo_trainer.py` |
+| GRPO helpers | `src/training/grpo/rollouts.py` |
+| Online GRPO for HF LMs | `src/training/grpo/llm_grpo_trainer.py` |
+| Agent-loop GRPO (full reward) | `src/training/grpo/search_agent_grpo_trainer.py` |
 | PPO core (clipped surrogate, KL controllers) | `src/training/ppo/core_algos.py` |
-| GRPO/REINFORCE advantages and losses | `src/training/rl/core_algos.py` |
+| GRPO/REINFORCE advantages and losses | `src/training/grpo/core_algos.py` |
+| Tabular Q-learning demo | `src/training/qlearning/` |
 | Generation and policy loss | `src/model/generation.py` |
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
@@ -726,7 +727,7 @@ There is still no *trained* reward model; that remains a separate design.
 
 **Four reward dimensions** — `reward_components()` also groups every term into four subtotals via `REWARD_DIMENSIONS`, emitted as `dim_correctness`, `dim_citation_support`, `dim_retrieval_quality`, `dim_search_efficiency` (and available directly via `reward_dimensions()` or the pure `group_reward_components(components)`). Pre-scale, so `sum(dims) == terminal_reward + shaping_total == total / reward_scale`. The rollup is purely additive — no weight, preset, or `total` formula changed.
 
-**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/rl/rollouts.py`.
+**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo/rollouts.py`.
 
 **PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/ppo/core_algos.py` — `ppo/` is a **base algorithm layer, not a training method**: it has no trainer, no critic and no GAE, and `rl/` depends on it because GRPO *is* this surrogate with a group-relative advantage substituted in.
 

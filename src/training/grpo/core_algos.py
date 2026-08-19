@@ -2,7 +2,7 @@
 
 The clipped surrogate itself, the KL controllers and the masked-tensor
 primitives live one layer down in `src/training/ppo`; this module holds what is
-specific to the algorithms `rl` actually trains with -- GRPO's group-relative
+specific to the algorithms this package actually trains with -- GRPO's group-relative
 advantage and its config wrapper, and the REINFORCE losses.
 
 `compute_grpo_policy_loss` delegates the arithmetic to

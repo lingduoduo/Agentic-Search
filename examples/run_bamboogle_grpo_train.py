@@ -134,7 +134,7 @@ def _run(args: argparse.Namespace) -> None:
         LLMJudge,
         SimulatedPreferenceJudge,
     )
-    from src.training.rl.llm_grpo_trainer import LLMGRPOConfig, LLMGRPOTrainer
+    from src.training.grpo.llm_grpo_trainer import LLMGRPOConfig, LLMGRPOTrainer
 
     torch.manual_seed(args.seed)
 

@@ -307,7 +307,7 @@ def test_grpo_advantage_config_outcome_only_preset_uses_terminal_reward():
 
 
 def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
-    from src.training.rl import compute_reinforce_policy_loss
+    from src.training.grpo import compute_reinforce_policy_loss
 
     result = compute_reinforce_policy_loss(
         log_probs=[-0.2, -0.4, -0.8],
@@ -324,7 +324,7 @@ def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
 
 
 def test_compute_reinforce_policy_loss_rejects_length_mismatch():
-    from src.training.rl import compute_reinforce_policy_loss
+    from src.training.grpo import compute_reinforce_policy_loss
 
     with pytest.raises(ValueError, match="same length"):
         compute_reinforce_policy_loss(
@@ -593,3 +593,44 @@ def test_compute_on_policy_batch_stats_empty_batch():
     assert stats.n_rollouts_kept == 0
     assert stats.mean_reward == 0.0
     assert stats.reward_std == 0.0
+
+
+def test_grpo_package_reports_a_real_error_for_torch_backed_names():
+    """A missing torch must surface as ImportError, never a silent AttributeError.
+
+    ``src/training/grpo/__init__`` defers its re-exports rather than wrapping them
+    in ``try/except ImportError``. That choice is what this test pins: a
+    swallowed ImportError would turn a typo in ``core_algos`` into a name that
+    simply is not there, which reads as "that export was removed" rather than
+    "your environment is missing a dependency".
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    program = """
+import sys
+
+class _Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError("No module named %r (blocked)" % name)
+        return None
+
+sys.meta_path.insert(0, _Blocker())
+
+import src.training.grpo as rl
+try:
+    rl.LocalGRPOController
+except ImportError:
+    print("REAL_IMPORT_ERROR")
+except AttributeError:
+    print("SILENTLY_MISSING")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert "REAL_IMPORT_ERROR" in result.stdout, result.stdout + result.stderr

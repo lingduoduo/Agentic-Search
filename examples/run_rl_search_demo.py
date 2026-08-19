@@ -12,7 +12,7 @@ import random
 
 import numpy as np
 
-from src.training.rl.qlearning import QLearningAgent
+from src.training.qlearning.agent import QLearningAgent
 
 
 def main() -> None:

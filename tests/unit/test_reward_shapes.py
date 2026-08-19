@@ -9,16 +9,16 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from src.training.rl.rollouts import (
+from src.training.grpo.rollouts import (
     GRPOAdvantageConfig,
     compute_dapo_advantages,
     score_prompt_group,
 )
-from src.training.rl.core_algos import (
+from src.training.grpo.core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage_tensor,
 )
 from src.training.ppo.core_algos import PPOPolicyLossConfig
-from src.training.rl.core_algos import compute_grpo_policy_loss
+from src.training.grpo.core_algos import compute_grpo_policy_loss
 from src.training.reward import (
     CompositeRewardConfig,
     REWARD_DIMENSIONS,
@@ -415,7 +415,7 @@ class TestComputeDapoAdvantages:
 class TestReinforceBaselineMode:
     def _make_sample(self, answer: str, group_id: str = "g0"):
         from src.agents.core.base import AgentLoopOutput
-        from src.training.rl.rollouts import GRPORolloutSample
+        from src.training.grpo.rollouts import GRPORolloutSample
 
         output = AgentLoopOutput(
             prompt_ids=[0],

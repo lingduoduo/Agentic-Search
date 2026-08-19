@@ -236,11 +236,14 @@ with the shared building blocks at the top level:
   reward model, no critic, no online sampling). Pairs come from a JSONL file; there
   is no judge-backed or feedback-backed loader yet
 - `ppo/` — the clipped-surrogate **base algorithm layer, not a method**: PPO loss,
-  KL controllers, `PPOPolicyLossConfig`, and the masked-tensor primitives. No trainer,
-  no critic, no GAE. `rl/` and `src/model/generation.py` both depend on it, since GRPO
-  is this surrogate with a group-relative advantage in place of GAE
-- `rl/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
-  SearchAgentLoop), a controller, a durable train loop, and `core_algos.py` (GRPO
-  advantage + GRPO/REINFORCE losses). Also holds the standalone tabular Q-learning
-  demo (`qlearning.py` + `search_environment.py`)
+  KL controllers, `PPOPolicyLossConfig`, the masked-tensor primitives, and
+  `PPORewardManager`. No trainer, no critic, no GAE. `grpo/` and
+  `src/model/generation.py` both depend on it, since GRPO is this surrogate with a
+  group-relative advantage in place of GAE
+- `grpo/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
+  SearchAgentLoop), grouped rollout sampling, a controller, a durable train loop, and
+  `core_algos.py` (GRPO advantage + the REINFORCE losses, kept as the ancestor
+  policy-gradient algorithm)
+- `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
+  the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
 - `eval/` — Bamboogle and action-policy benchmark harnesses

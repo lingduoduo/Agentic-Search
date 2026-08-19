@@ -5,14 +5,14 @@ critic, no value head and no GAE -- that path was deliberately removed, since
 training here is critic-free. What lives here is the clipped surrogate itself
 plus the small numerical primitives it is built from.
 
-`rl` depends on this package, and that direction is deliberate: GRPO *is* the
+`grpo` depends on this package, and that direction is deliberate: GRPO *is* the
 PPO clipped surrogate with a group-relative advantage substituted for GAE, so
-`rl/llm_grpo_trainer.py` and `rl/controller.py` call straight into
+`grpo/llm_grpo_trainer.py` and `grpo/controller.py` call straight into
 `compute_ppo_policy_loss_core` and `PPOPolicyLossConfig`. `src/model/generation`
 uses this layer directly too, and the two KL controllers have no consumer inside
 `src/training` at all.
 
-So do not read `ppo/` as a sibling of `sft/`, `dpo/` and `rl/`. Those are
+So do not read `ppo/` as a sibling of `sft/`, `dpo/` and `grpo/`. Those are
 methods you run; this is the arithmetic they run on.
 
 One naming wart, preserved rather than fixed: `compute_trajectory_policy_loss`

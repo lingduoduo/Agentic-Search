@@ -15,7 +15,7 @@ tokens only. Summed, not averaged: length-normalizing turns this into SimPO,
 which is a different method with different behaviour, not a refinement.
 
 Per-token log probabilities come from ``get_response_log_probs`` in
-``src.training.rl.llm_grpo_trainer`` rather than a second implementation here.
+``src.training.grpo.llm_grpo_trainer`` rather than a second implementation here.
 That function owns the ``logits[:, prompt_len - 1 : -1]`` shift aligning logits
 with the tokens they predict; an off-by-one there is silent and ruins training,
 so it must exist in exactly one place.
@@ -33,7 +33,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..rl.llm_grpo_trainer import get_response_log_probs
+from ..grpo.llm_grpo_trainer import get_response_log_probs
 from .data import PreferenceExample
 
 

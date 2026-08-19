@@ -115,32 +115,35 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "normalize_question_text": (".training.data", "normalize_question_text"),
     "prompt_batch_to_search_batch": (".training.data", "prompt_batch_to_search_batch"),
-    # training.rl.rollouts
-    "GRPOAdvantageConfig": (".training.rl.rollouts", "GRPOAdvantageConfig"),
-    "GRPORolloutSample": (".training.rl.rollouts", "GRPORolloutSample"),
-    "PromptGroupSamplingConfig": (".training.rl.rollouts", "PromptGroupSamplingConfig"),
-    "ScoredGRPORollout": (".training.rl.rollouts", "ScoredGRPORollout"),
+    # training.grpo.rollouts
+    "GRPOAdvantageConfig": (".training.grpo.rollouts", "GRPOAdvantageConfig"),
+    "GRPORolloutSample": (".training.grpo.rollouts", "GRPORolloutSample"),
+    "PromptGroupSamplingConfig": (
+        ".training.grpo.rollouts",
+        "PromptGroupSamplingConfig",
+    ),
+    "ScoredGRPORollout": (".training.grpo.rollouts", "ScoredGRPORollout"),
     "build_grpo_sampling_params": (
-        ".training.rl.rollouts",
+        ".training.grpo.rollouts",
         "build_grpo_sampling_params",
     ),
     "compute_grpo_outcome_advantage": (
-        ".training.rl.rollouts",
+        ".training.grpo.rollouts",
         "compute_grpo_outcome_advantage",
     ),
-    "sample_prompt_group": (".training.rl.rollouts", "sample_prompt_group"),
-    "sample_prompt_batch": (".training.rl.rollouts", "sample_prompt_batch"),
-    "score_prompt_group": (".training.rl.rollouts", "score_prompt_group"),
-    "score_prompt_batch": (".training.rl.rollouts", "score_prompt_batch"),
-    "OnPolicyGRPOConfig": (".training.rl.rollouts", "OnPolicyGRPOConfig"),
-    "OnPolicyBatchStats": (".training.rl.rollouts", "OnPolicyBatchStats"),
+    "sample_prompt_group": (".training.grpo.rollouts", "sample_prompt_group"),
+    "sample_prompt_batch": (".training.grpo.rollouts", "sample_prompt_batch"),
+    "score_prompt_group": (".training.grpo.rollouts", "score_prompt_group"),
+    "score_prompt_batch": (".training.grpo.rollouts", "score_prompt_batch"),
+    "OnPolicyGRPOConfig": (".training.grpo.rollouts", "OnPolicyGRPOConfig"),
+    "OnPolicyBatchStats": (".training.grpo.rollouts", "OnPolicyBatchStats"),
     "filter_zero_advantage_groups": (
-        ".training.rl.rollouts",
+        ".training.grpo.rollouts",
         "filter_zero_advantage_groups",
     ),
-    "assemble_on_policy_batch": (".training.rl.rollouts", "assemble_on_policy_batch"),
+    "assemble_on_policy_batch": (".training.grpo.rollouts", "assemble_on_policy_batch"),
     "compute_on_policy_batch_stats": (
-        ".training.rl.rollouts",
+        ".training.grpo.rollouts",
         "compute_on_policy_batch_stats",
     ),
     # training.reward
@@ -205,11 +208,11 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "compute_trajectory_policy_loss",
     ),
     "compute_reinforce_policy_loss": (
-        ".training.rl.core_algos",
+        ".training.grpo.core_algos",
         "compute_reinforce_policy_loss",
     ),
     "compute_reinforce_policy_loss_core": (
-        ".training.rl.core_algos",
+        ".training.grpo.core_algos",
         "compute_reinforce_policy_loss_core",
     ),
     "format_group_rollout": (".model.generation", "format_group_rollout"),
@@ -334,17 +337,17 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ChatSessionRecord": (".internal.db", "ChatSessionRecord"),
     "GroupRecord": (".internal.db", "GroupRecord"),
     "UserRecord": (".internal.db", "UserRecord"),
-    # training.rl.controller
-    "LocalGRPOController": (".training.rl.controller", "LocalGRPOController"),
-    "RolloutResult": (".training.rl.controller", "RolloutResult"),
-    # training.rl.reward_manager
-    "PPORewardManager": (".training.rl.reward_manager", "PPORewardManager"),
+    # training.grpo.controller
+    "LocalGRPOController": (".training.grpo.controller", "LocalGRPOController"),
+    "RolloutResult": (".training.grpo.controller", "RolloutResult"),
+    # training.ppo.reward_manager
+    "PPORewardManager": (".training.ppo.reward_manager", "PPORewardManager"),
     "qa_exact_match_score": (
-        ".training.rl.reward_manager",
+        ".training.ppo.reward_manager",
         "qa_exact_match_score",
     ),
     "select_reward_score_fn": (
-        ".training.rl.reward_manager",
+        ".training.ppo.reward_manager",
         "select_reward_score_fn",
     ),
     # model.tensor_helper

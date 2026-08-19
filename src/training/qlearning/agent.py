@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from .search_environment import SearchEnvironment
+from .environment import SearchEnvironment
 
 
 class QLearningAgent:
