@@ -17,7 +17,7 @@ try:
         compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
     )
     from .grpo.rollouts import score_prompt_group as score_prompt_group
-    from .grpo import PPORewardManager as PPORewardManager
+    from .ppo import PPORewardManager as PPORewardManager
     from .grpo import compute_grpo_policy_loss as compute_grpo_policy_loss
     from .reward import BatchJudgeFn as BatchJudgeFn
     from .reward import CompositeRewardConfig as CompositeRewardConfig
@@ -27,10 +27,10 @@ try:
     from .reward import token_f1_score as token_f1_score
     from .sft.trainer import SFTExample as SFTExample
     from .sft.trainer import build_search_sft_example as build_search_sft_example
-    from .judge import GoldAgreementJudge as GoldAgreementJudge
-    from .judge import LLMJudge as LLMJudge
-    from .judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
-    from .judge import judge_gold_agreement as judge_gold_agreement
+    from .grpo.judge import GoldAgreementJudge as GoldAgreementJudge
+    from .grpo.judge import LLMJudge as LLMJudge
+    from .grpo.judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
+    from .grpo.judge import judge_gold_agreement as judge_gold_agreement
     from .data import PromptBatch as PromptBatch
     from .data import PromptTrainingExample as PromptTrainingExample
     from .data import build_search_rag_record as build_search_rag_record
