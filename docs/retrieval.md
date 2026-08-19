@@ -612,7 +612,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 
 **Train the learned router offline:**
 ```bash
-python -m src.training.train_query_router --out data/query_router.joblib
+python -m src.internal.retrieval.train_query_router --out data/query_router.joblib
 # → wrote data/query_router.joblib
 # Predicts 7 transform labels: decompose, hyde, step_back, keywords, construct_filters, multi_query, rewrite
 ```

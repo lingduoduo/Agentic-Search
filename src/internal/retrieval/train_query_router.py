@@ -1,13 +1,13 @@
 """Offline trainer for the QueryRouter. Produces a joblib sklearn Pipeline.
 
-Usage: python -m src.training.train_query_router --out data/query_router.joblib
+Usage: python -m src.internal.retrieval.train_query_router --out data/query_router.joblib
 """
 
 from __future__ import annotations
 
 import argparse
 
-from src.internal.retrieval.query_router import ROUTER_LABELS
+from .query_router import ROUTER_LABELS
 
 # Labels order: decompose, hyde, step_back, keywords, construct_filters, multi_query, rewrite
 # Each row must have exactly one positive AND one negative across the corpus per column
