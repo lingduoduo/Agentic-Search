@@ -314,7 +314,14 @@ class AgenticRAGLoop:
                 ]
 
         t_syn = time.perf_counter()
-        gen_result = generate_answer(
+        # Offloaded, like the sufficiency and gap-analysis calls below it.
+        # `generate_answer` is synchronous and calls `llm.complete`, a blocking
+        # `requests` call -- awaiting it inline froze the whole event loop for
+        # the full completion, stalling every other in-flight session behind one
+        # user's answer. This is the most expensive call in the loop, so it was
+        # the worst one to leave unprotected.
+        gen_result = await asyncio.to_thread(
+            generate_answer,
             AnswerGenerationRequest(
                 question=question,
                 context=merged,
