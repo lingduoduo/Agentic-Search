@@ -8,9 +8,8 @@ plus the small numerical primitives it is built from.
 `grpo` depends on this package, and that direction is deliberate: GRPO *is* the
 PPO clipped surrogate with a group-relative advantage substituted for GAE, so
 `grpo/llm_grpo_trainer.py` and `grpo/controller.py` call straight into
-`compute_ppo_policy_loss_core` and `PPOPolicyLossConfig`. `src/model/generation`
-uses this layer directly too, and the two KL controllers have no consumer inside
-`src/training` at all.
+`compute_ppo_policy_loss_core` and `PPOPolicyLossConfig`. `grpo/generation.py`
+uses this layer directly too.
 
 So do not read `ppo/` as a sibling of `sft/`, `dpo/` and `grpo/`. Those are
 methods you run; this is the arithmetic they run on.
@@ -18,7 +17,7 @@ methods you run; this is the arithmetic they run on.
 One naming wart, preserved rather than fixed: `compute_trajectory_policy_loss`
 returns its loss under a `"grpo_policy_loss"` key. It is the PPO surrogate --
 GRPO only supplies different advantages -- but the key is a published contract
-that `examples/run_grpo_training_pipeline.py` and `src/model/generation.py` read,
+that `examples/run_grpo_training_pipeline.py` and `grpo/generation.py` read,
 so renaming it belongs in its own change.
 
 Contains no rollout-manager or search-agent state.

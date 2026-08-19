@@ -603,7 +603,7 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | PPO core (clipped surrogate, KL controllers) | `src/training/ppo/core_algos.py` |
 | GRPO/REINFORCE advantages and losses | `src/training/grpo/core_algos.py` |
 | Tabular Q-learning demo | `src/training/qlearning/` |
-| Generation and policy loss | `src/model/generation.py` |
+| Generation and policy loss | `src/training/grpo/generation.py` |
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
 | Simulated-judge GRPO (policy update) | `python3 -m examples.run_bamboogle_grpo_train` |

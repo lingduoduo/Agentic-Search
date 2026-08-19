@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 import torch
 
-from src.training.ppo.core_algos import (
+from ..ppo.core_algos import (
     LOG_RATIO_CLAMP as _LOG_RATIO_CLAMP,
     AdaptiveKLController as AdaptiveKLController,
     FixedKLController as FixedKLController,
@@ -29,7 +29,7 @@ from src.training.ppo.core_algos import (
     masked_mean,
     masked_whiten,
 )
-from src.training.grpo.core_algos import (
+from .core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
 )
 
@@ -689,8 +689,8 @@ def score_group_rollout(
         advantage_config: Optional :class:`GRPOAdvantageConfig`.
         batch_judge_fn:   Optional batch judge for LLM-based scoring.
     """
-    from src.training.grpo.rollouts import GRPORolloutSample, score_prompt_group
-    from src.training.reward import SearchRewardFunction
+    from .rollouts import GRPORolloutSample, score_prompt_group
+    from ..reward import SearchRewardFunction
 
     if not grouped_rollouts:
         return []
@@ -1150,7 +1150,7 @@ async def async_run_prompt_rollout_group(
     import asyncio
     import copy
 
-    from src.training.grpo.rollouts import build_grpo_sampling_params
+    from .rollouts import build_grpo_sampling_params
 
     n_prompts = len(prompt_batches)
     if n_prompts == 0:
@@ -1231,7 +1231,7 @@ async def async_run_grpo_training_step(
     ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
     search I/O, then performs one learner-side update.
     """
-    from src.training.grpo.controller import LocalGRPOController
+    from .controller import LocalGRPOController
 
     return await LocalGRPOController(
         manager, num_rollouts=num_rollouts, max_workers=max_workers
@@ -1258,7 +1258,7 @@ async def async_run_grpo_training_step(
 
 def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
     """Slice one prompt out of a PromptBatch, preserving batch structure."""
-    from src.training.data import PromptBatch
+    from ..data import PromptBatch
 
     return PromptBatch(
         input_ids=prompt_batch.input_ids[index : index + 1].clone(),
@@ -3211,7 +3211,7 @@ class LLMGenerationManager:
         generates its own search / reasoning / stopping / answer trajectory
         inside the loop.
         """
-        from src.training.data import prompt_batch_to_search_batch
+        from ..data import prompt_batch_to_search_batch
 
         gen_batch = prompt_batch_to_search_batch(prompt_batch)
         return self.run_llm_loop(
@@ -3255,7 +3255,7 @@ class LLMGenerationManager:
         metadata on the returned rollout batch so custom backends can consume
         them if needed.
         """
-        from src.training.grpo.rollouts import build_grpo_sampling_params
+        from .rollouts import build_grpo_sampling_params
 
         if num_rollouts <= 0:
             raise ValueError("num_rollouts must be positive.")
@@ -3325,7 +3325,7 @@ class LLMGenerationManager:
             current_step:  Training step for curriculum scheduling.
             total_steps:   Total training steps for curriculum scheduling.
         """
-        from src.training.data import prompt_batch_to_search_batch
+        from ..data import prompt_batch_to_search_batch
 
         old_temperature = float(self.config.temperature)
         try:
@@ -3567,7 +3567,7 @@ class LLMGenerationManager:
         Kept as the public compatibility entrypoint; orchestration lives in the
         local PPO controller layer.
         """
-        from src.training.grpo.controller import LocalGRPOController
+        from .controller import LocalGRPOController
 
         return LocalGRPOController(self, num_rollouts=num_rollouts).training_step(
             prompt_batch,

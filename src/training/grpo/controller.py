@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from src.model.generation import LLMGenerationManager
+    from .generation import LLMGenerationManager
 
 from ..ppo.core_algos import PPOPolicyLossConfig
 
@@ -69,7 +69,7 @@ class LocalGRPOController:
         return group
 
     def _build_single_batches(self, prompt_batch: Any) -> list[Any]:
-        from src.model.generation import _single_prompt_batch
+        from .generation import _single_prompt_batch
 
         return [
             _single_prompt_batch(prompt_batch, i)
@@ -83,7 +83,7 @@ class LocalGRPOController:
     ) -> tuple[Any, Any, bool]:
         """Return (advantage_config, safety_config, normalize_advantages)."""
         from src import GRPOAdvantageConfig
-        from src.model.generation import GRPORolloutSafetyConfig
+        from .generation import GRPORolloutSafetyConfig
 
         resolved_adv = advantage_config or GRPOAdvantageConfig(
             mode="group_outcome",
@@ -114,7 +114,7 @@ class LocalGRPOController:
         Shared by both the sync and async collect paths so scoring logic
         lives in exactly one place.
         """
-        from src.model.generation import (
+        from .generation import (
             GRPOPromptGroupResult,
             apply_safety_penalties_to_scored_rollouts,
             score_group_rollout,
@@ -166,7 +166,7 @@ class LocalGRPOController:
         optimizer: Any,
     ) -> Any:
         """Collate trajectories, compute log-probs + policy loss, step optimizer."""
-        from src.model.generation import GRPOTrainingStepResult
+        from .generation import GRPOTrainingStepResult
 
         training_batch = self.manager.collate_scored_rollouts_for_training(
             scored_rollouts
@@ -243,7 +243,7 @@ class LocalGRPOController:
         All ``N_prompts × N_rollouts`` trajectories run in parallel, overlapping
         HTTP search I/O.  Returns ``(group_results, scored_rollouts)``.
         """
-        from src.model.generation import async_run_prompt_rollout_group
+        from .generation import async_run_prompt_rollout_group
 
         resolved_num = int(num_rollouts or self.num_rollouts)
         single_batches = self._build_single_batches(prompt_batch)
