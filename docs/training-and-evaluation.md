@@ -596,7 +596,7 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | DPO trainer | `src/training/dpo/trainer.py` |
 | DPO preference pairs | `src/training/dpo/data.py` |
 | Reward function | `src/training/reward.py` |
-| Simulated preference judge | `src/training/judge.py` |
+| Simulated preference judge | `src/training/grpo/judge.py` |
 | GRPO helpers | `src/training/grpo/rollouts.py` |
 | Online GRPO for HF LMs | `src/training/grpo/llm_grpo_trainer.py` |
 | Agent-loop GRPO (full reward) | `src/training/grpo/search_agent_grpo_trainer.py` |

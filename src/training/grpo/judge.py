@@ -7,6 +7,18 @@ The judge scores an answer's quality/form from the answer text alone
 replace it behind the same :meth:`SimulatedPreferenceJudge.as_batch_judge_fn`
 interface.
 
+**Why this lives under ``grpo``.** No method package imported it -- its real
+consumers are the GRPO example scripts -- so it moved here from the shared top
+level, next to the flow that uses it.
+
+That choice accepts a known future cost, recorded here so it does not later read
+as an oversight. A judge-backed DPO pair loader -- the natural follow-up to the
+DPO trainer, which was deliberately built source-agnostic for exactly that --
+would make ``dpo`` import ``grpo``: a method package depending on another method
+package, the edge that keeps ``data`` and ``reward`` at the top level. It was
+weighed and accepted. If that loader is built and the edge bites, moving this
+module back up one level is the whole fix.
+
 Scores are deterministic: identical answers always produce identical scores.
 Tie-break jitter is derived from a SHA-256 digest, never the salted built-in
 ``hash`` (which varies per process) and never ``random`` — so tests and cached
@@ -20,7 +32,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from src.training.reward import BatchJudgeFn
+from ..reward import BatchJudgeFn
 
 _HEDGES = (
     "i don't know",
@@ -127,7 +139,7 @@ class GoldAgreementJudge:
     partial_weight: float = 0.6
 
     def score(self, answer: str, gold: str) -> float:
-        from src.training.reward import normalize_answer_text, token_f1_score
+        from ..reward import normalize_answer_text, token_f1_score
 
         pred_norm = normalize_answer_text(answer)
         gold_norm = normalize_answer_text(gold)

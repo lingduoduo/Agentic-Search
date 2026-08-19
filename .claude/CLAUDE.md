@@ -229,7 +229,7 @@ Typed dataclasses loaded from environment variables. Key env vars:
 Post-training and fine-tuning. Not part of the serving stack. Grouped by method,
 with the shared building blocks at the top level:
 - `data.py` — prompt/dataset construction, shared by SFT and RL
-- `reward.py`, `judge.py` — reward functions and RLAIF judges, shared by RL and eval
+- `reward.py` — reward functions, shared by `grpo/` and `eval/`
 - `sft/` — supervised fine-tuning (`SFTTrainer`, trajectory → supervised example)
 - `dpo/` — Direct Preference Optimization: `PreferenceExample` + a JSONL loader, and
   `DPOTrainer` training a policy against a frozen reference on preference pairs (no
@@ -243,7 +243,9 @@ with the shared building blocks at the top level:
 - `grpo/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
   SearchAgentLoop), grouped rollout sampling, a controller, a durable train loop, and
   `core_algos.py` (GRPO advantage + the REINFORCE losses, kept as the ancestor
-  policy-gradient algorithm)
+  policy-gradient algorithm), and `judge.py` (RLAIF judges — moved here because its
+  only consumers are GRPO scripts; a future judge-backed DPO loader would make
+  `dpo/` import `grpo/`, a cost accepted deliberately)
 - `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
   the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
 - `eval/` — Bamboogle and action-policy benchmark harnesses

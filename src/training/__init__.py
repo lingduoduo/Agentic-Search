@@ -1,8 +1,9 @@
 """Post-training and fine-tuning for the search agent.
 
 Shared building blocks live at this level -- ``data`` (prompt and dataset
-construction), ``reward`` (reward functions) and ``judge`` (RLAIF judges) are
-used by more than one method. Each method gets its own package: ``sft`` for
+construction) and ``reward`` (reward functions) are used by more than one
+method. The RLAIF judges moved into ``grpo``, whose scripts are their only
+consumers. Each method gets its own package: ``sft`` for
 supervised fine-tuning, ``dpo`` for Direct Preference Optimization over
 preference pairs, ``grpo`` for the GRPO stack, ``ppo`` for the clipped-surrogate
 base layer it builds on, ``qlearning`` for the classical-RL demo, and ``eval``
@@ -27,10 +28,10 @@ try:
     from .reward import token_f1_score as token_f1_score
     from .sft.trainer import SFTExample as SFTExample
     from .sft.trainer import build_search_sft_example as build_search_sft_example
-    from .judge import GoldAgreementJudge as GoldAgreementJudge
-    from .judge import LLMJudge as LLMJudge
-    from .judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
-    from .judge import judge_gold_agreement as judge_gold_agreement
+    from .grpo.judge import GoldAgreementJudge as GoldAgreementJudge
+    from .grpo.judge import LLMJudge as LLMJudge
+    from .grpo.judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
+    from .grpo.judge import judge_gold_agreement as judge_gold_agreement
     from .data import PromptBatch as PromptBatch
     from .data import PromptTrainingExample as PromptTrainingExample
     from .data import build_search_rag_record as build_search_rag_record
