@@ -76,8 +76,8 @@ async def _train(args: argparse.Namespace) -> None:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    from src.training.data import load_sft_examples
-    from src.training.sft.trainer import SFTConfig, SFTTrainer
+    from src.model.post_training.data import load_sft_examples
+    from src.model.post_training.sft.trainer import SFTConfig, SFTTrainer
 
     device = torch.device(args.device)
 

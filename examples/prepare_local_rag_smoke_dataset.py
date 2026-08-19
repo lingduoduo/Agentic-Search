@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from src.internal.servers.retrieval.demo import TfidfRetriever
-from src.training.data import build_search_rag_record, format_rag_reference
+from src.model.post_training.data import build_search_rag_record, format_rag_reference
 
 
 SMOKE_EXAMPLES: tuple[dict[str, object], ...] = (

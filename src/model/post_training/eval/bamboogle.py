@@ -8,8 +8,8 @@ contains-match, and (optionally) shaped GRPO reward metrics.
 Quick start::
 
     from src.agents.core.graph_base import BaseAgent          # your subclass
-    from src.training.eval.bamboogle import evaluate_bamboogle
-    from src.training.reward import SearchRewardFunction, SearchRewardConfig
+    from src.model.post_training.eval.bamboogle import evaluate_bamboogle
+    from src.model.post_training.reward import SearchRewardFunction, SearchRewardConfig
 
     summary, rows = evaluate_bamboogle(
         agent,
@@ -44,7 +44,7 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
 if TYPE_CHECKING:
-    from src.training.reward import SearchRewardFunction
+    from src.model.post_training.reward import SearchRewardFunction
 
 BAMBOOGLE_URL = (
     "https://huggingface.co/datasets/RUC-NLPIR/FlashRAG_datasets/"
@@ -260,7 +260,7 @@ def evaluate_bamboogle(
     Args:
         agent: Any object with an ``invoke(state: dict) -> Any`` method.
             Compatible with :class:`~src.agents.core.graph_base.BaseAgent`.
-        reward_fn: Optional :class:`~src.training.reward.SearchRewardFunction`.
+        reward_fn: Optional :class:`~src.model.post_training.reward.SearchRewardFunction`.
             When provided, ``reward_components()`` is called on each result and
             the per-component breakdown is stored alongside accuracy scores.
         limit: Number of examples to evaluate.  ``None`` evaluates all 125.

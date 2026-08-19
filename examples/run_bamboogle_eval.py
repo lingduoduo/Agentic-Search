@@ -113,7 +113,7 @@ def _build_agent(args: argparse.Namespace, tokenizer: Any, server_manager: Any) 
 def _build_reward_fn(preset: str | None) -> Any:
     if preset is None:
         return None
-    from src.training.reward import SearchRewardConfig, SearchRewardFunction
+    from src.model.post_training.reward import SearchRewardConfig, SearchRewardFunction
 
     presets = {
         "sparse_final_only": SearchRewardConfig.sparse_final_only,
@@ -215,7 +215,7 @@ def main() -> None:
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    from src.training.eval.bamboogle import evaluate_bamboogle
+    from src.model.post_training.eval.bamboogle import evaluate_bamboogle
 
     server_manager = _build_server_manager(args, tokenizer)
     agent = _build_agent(args, tokenizer, server_manager)

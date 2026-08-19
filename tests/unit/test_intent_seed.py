@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from src.model.intent.cli import propose_modules, write_seed_canonical
+from src.model.pre_training.intents.cli import propose_modules, write_seed_canonical
 
 
 def test_imperative_send_proposes_the_send_module():
@@ -34,7 +34,7 @@ def test_a_proposal_may_carry_several_modules():
 
 
 def test_every_proposal_is_valid_for_its_route():
-    from src.model.intent.model import modules_for_route
+    from src.model.pre_training.intents.model import modules_for_route
 
     for route in ("chat", "search", "tool"):
         for text in ("something entirely unmatched by any cue", "the thing"):
@@ -44,7 +44,7 @@ def test_every_proposal_is_valid_for_its_route():
 
 
 def test_write_seed_produces_a_file_the_canonical_loader_accepts(tmp_path: Path):
-    from src.model.intent.data import load_canonical_examples
+    from src.model.pre_training.intents.data import load_canonical_examples
 
     examples = [
         {"id": f"e-{i}", "text": t, "label": lbl, "source": "s"}

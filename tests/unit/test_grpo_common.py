@@ -14,14 +14,16 @@ async def test_run_feedback_grpo_step_wires_and_saves(monkeypatch, tmp_path):
         types.SimpleNamespace(question="q1", ground_truth="a1", metadata={"m": 1}),
         types.SimpleNamespace(question="q2", ground_truth="a2", metadata={"m": 2}),
     ]
-    monkeypatch.setattr("src.training.data.load_feedback_examples", lambda *a, **k: ex)
+    monkeypatch.setattr(
+        "src.model.post_training.data.load_feedback_examples", lambda *a, **k: ex
+    )
 
     trainer = MagicMock()
     trainer.step_async = AsyncMock(return_value={"loss": 0.1})
     trainer.policy = MagicMock()
     trainer.tokenizer = MagicMock()
     monkeypatch.setattr(
-        "src.training.grpo.search_agent_grpo_trainer.SearchAgentGRPOTrainer.from_pretrained",
+        "src.model.post_training.grpo.search_agent_grpo_trainer.SearchAgentGRPOTrainer.from_pretrained",
         lambda *a, **k: trainer,
     )
 

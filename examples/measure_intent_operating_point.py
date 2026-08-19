@@ -33,7 +33,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.model.intent import (
+from src.model.pre_training.intents import (
     DEFAULT_ENCODER,
     TOP_K,
     IntentIndex,
@@ -41,7 +41,7 @@ from src.model.intent import (
     load_canonical_examples,
     load_intent_eval_queries,
 )
-from src.model.intent.evaluation import (
+from src.model.pre_training.intents.evaluation import (
     DEFAULT_SEED,
     DEFAULT_SLICE_SIZE,
     split_eval_queries,

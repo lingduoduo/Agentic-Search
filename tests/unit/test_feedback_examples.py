@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("torch")
 
 from src.internal.db import AgenticSearchStore
-from src.training.data import PromptTrainingExample, load_feedback_examples
+from src.model.post_training.data import PromptTrainingExample, load_feedback_examples
 
 
 def _seed_store(db_path: str, rows: list[dict]) -> None:

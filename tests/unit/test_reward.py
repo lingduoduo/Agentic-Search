@@ -19,7 +19,7 @@ from src import (
     normalize_answer_text,
     simple_sparse_correctness_reward,
 )
-from src.training.reward import format_compliance_reward
+from src.model.post_training.reward import format_compliance_reward
 
 
 # ---------------------------------------------------------------------------

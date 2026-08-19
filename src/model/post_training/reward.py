@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
-from ..agents.core.base import AgentLoopOutput
-from ..context.search import AgentContext
+from ...agents.core.base import AgentLoopOutput
+from ...context.search import AgentContext
 
 # Type aliases for judge callables.
 JudgeFn = Callable[[str, str], float]

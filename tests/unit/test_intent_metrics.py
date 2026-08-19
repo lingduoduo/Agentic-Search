@@ -1,6 +1,6 @@
 import pytest
 
-from src.model.intent.metrics import (
+from src.model.pre_training.intents.metrics import (
     IntentPredictionRecord,
     ModulePredictionRecord,
     module_metrics_report,
@@ -47,7 +47,7 @@ def test_module_macro_f1_excludes_the_form_label():
 
 def test_macro_f1_divides_by_every_semantic_module_not_only_those_that_appear():
     """The denominator is fixed at len(SEMANTIC_MODULES) == 13, always."""
-    from src.model.intent.model import SEMANTIC_MODULES
+    from src.model.pre_training.intents.model import SEMANTIC_MODULES
 
     records = [
         ModulePredictionRecord("a", ("lookup_fact",), ("lookup_fact",), True),

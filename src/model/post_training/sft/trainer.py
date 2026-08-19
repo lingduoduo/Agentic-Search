@@ -10,7 +10,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from ...agents.core.base import AgentLoopOutput
+from ....agents.core.base import AgentLoopOutput
 
 
 @dataclass(frozen=True)

@@ -307,7 +307,7 @@ def test_grpo_advantage_config_outcome_only_preset_uses_terminal_reward():
 
 
 def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
-    from src.training.grpo import compute_reinforce_policy_loss
+    from src.model.post_training.grpo import compute_reinforce_policy_loss
 
     result = compute_reinforce_policy_loss(
         log_probs=[-0.2, -0.4, -0.8],
@@ -324,7 +324,7 @@ def test_compute_reinforce_policy_loss_masks_and_baselines_tokens():
 
 
 def test_compute_reinforce_policy_loss_rejects_length_mismatch():
-    from src.training.grpo import compute_reinforce_policy_loss
+    from src.model.post_training.grpo import compute_reinforce_policy_loss
 
     with pytest.raises(ValueError, match="same length"):
         compute_reinforce_policy_loss(
@@ -598,7 +598,7 @@ def test_compute_on_policy_batch_stats_empty_batch():
 def test_grpo_package_reports_a_real_error_for_torch_backed_names():
     """A missing torch must surface as ImportError, never a silent AttributeError.
 
-    ``src/training/grpo/__init__`` defers its re-exports rather than wrapping them
+    ``src/model/post_training/grpo/__init__`` defers its re-exports rather than wrapping them
     in ``try/except ImportError``. That choice is what this test pins: a
     swallowed ImportError would turn a typo in ``core_algos`` into a name that
     simply is not there, which reads as "that export was removed" rather than
@@ -619,7 +619,7 @@ class _Blocker:
 
 sys.meta_path.insert(0, _Blocker())
 
-import src.training.grpo as rl
+import src.model.post_training.grpo as rl
 try:
     rl.LocalGRPOController
 except ImportError:

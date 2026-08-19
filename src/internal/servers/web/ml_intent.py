@@ -10,7 +10,7 @@ from time import perf_counter
 
 from src.internal.configs import AppSettings, load_app_settings
 from src.internal.servers.web.intent_routing import RouteStrategy
-from src.model.intent.model import DEFAULT_ENCODER, encode_texts
+from src.model.pre_training.intents.model import DEFAULT_ENCODER, encode_texts
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def load_intent_index(settings: AppSettings | None = None) -> object | None:
     if directory in _INTENT_INDEXES:
         return _INTENT_INDEXES[directory]
     try:
-        from src.model.intent.model import INDEX_FILENAME, IntentIndex
+        from src.model.pre_training.intents.model import INDEX_FILENAME, IntentIndex
 
         index = IntentIndex.load(directory / INDEX_FILENAME)
         if index.encoder != DEFAULT_ENCODER:

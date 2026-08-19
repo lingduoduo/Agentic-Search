@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from src.training.dpo.data import PreferenceExample, load_preference_pairs
+from src.model.post_training.dpo.data import PreferenceExample, load_preference_pairs
 
 
 def _write(tmp_path, lines):

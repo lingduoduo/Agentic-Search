@@ -41,7 +41,7 @@ from ..ppo.core_algos import (
 from .core_algos import compute_grpo_outcome_advantage
 
 if TYPE_CHECKING:
-    from src.training.reward import JudgeFn, SearchRewardFunction
+    from src.model.post_training.reward import JudgeFn, SearchRewardFunction
 
 
 # ---------------------------------------------------------------------------

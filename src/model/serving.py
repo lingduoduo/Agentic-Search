@@ -1,6 +1,7 @@
 """Serving-side LLM backend: the ServerManager protocol, concrete managers, and
 a factory selecting between them. The training-side LLMGenerationManager
-(model/generation.py) is a separate concern and intentionally not here.
+(``src/model/post_training/grpo/generation.py``) is a separate concern and intentionally
+not here.
 """
 
 from __future__ import annotations

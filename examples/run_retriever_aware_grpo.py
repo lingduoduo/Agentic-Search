@@ -13,7 +13,7 @@ This example requires the full stack merged into the working tree:
   - web/vdb retriever action in SearchAgentLoop      (PR #325)
   - train_loop + trainer save/load                    (PR #326)
   - retriever_aware() reward + action_eval            (PR #327)
-`train_loop` lives in ``src.training.grpo.train_loop`` (PR #326); until that
+`train_loop` lives in ``src.model.post_training.grpo.train_loop`` (PR #326); until that
 merges, this script will not import.
 
 Usage
@@ -143,15 +143,17 @@ async def _run(args: argparse.Namespace) -> None:
     import torch
 
     from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    from src.training.eval.action_eval import (
+    from src.model.post_training.eval.action_eval import (
         aggregate_action_metrics,
         compare_action_evals,
         format_comparison_table,
     )
-    from src.training.grpo.llm_grpo_trainer import LLMGRPOConfig
-    from src.training.grpo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
-    from src.training.grpo.train_loop import TrainLoopConfig, train_loop
-    from src.training.reward import (
+    from src.model.post_training.grpo.llm_grpo_trainer import LLMGRPOConfig
+    from src.model.post_training.grpo.search_agent_grpo_trainer import (
+        SearchAgentGRPOTrainer,
+    )
+    from src.model.post_training.grpo.train_loop import TrainLoopConfig, train_loop
+    from src.model.post_training.reward import (
         SearchRewardConfig,
         SearchRewardFunction,
         simple_sparse_correctness_reward,

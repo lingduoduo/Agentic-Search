@@ -3,10 +3,10 @@ from pathlib import Path
 
 import numpy as np
 
-from src.model.intent import cli as intent_index_cli
-from src.model.intent import data as intent_index_data
-from src.model.intent import evaluation as intent_index_eval
-from src.model.intent.model import INDEX_FILENAME, IntentIndex
+from src.model.pre_training.intents import cli as intent_index_cli
+from src.model.pre_training.intents import data as intent_index_data
+from src.model.pre_training.intents import evaluation as intent_index_eval
+from src.model.pre_training.intents.model import INDEX_FILENAME, IntentIndex
 
 _AXIS = {"search": 0, "chat": 1, "tool": 2}
 _MODULE = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}

@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.training.data import make_search_rag_map_fn
+from src.model.post_training.data import make_search_rag_map_fn
 
 
 def parse_args() -> argparse.Namespace:

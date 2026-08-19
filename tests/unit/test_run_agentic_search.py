@@ -245,8 +245,12 @@ def _canonical_index(tmp_path: Path):
     """A three-route index on the basis axes, so every cosine is exact."""
     import numpy as np
 
-    from src.model.intent.model import DEFAULT_ENCODER
-    from src.model.intent.model import INDEX_FILENAME, CanonicalExample, IntentIndex
+    from src.model.pre_training.intents.model import DEFAULT_ENCODER
+    from src.model.pre_training.intents.model import (
+        INDEX_FILENAME,
+        CanonicalExample,
+        IntentIndex,
+    )
 
     axes = {"search": 0, "chat": 1, "tool": 2}
     modules = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}
@@ -275,7 +279,7 @@ def _canonical_index(tmp_path: Path):
 def _stub_encoder(monkeypatch, vector):
     import numpy as np
 
-    from src.model.intent import model as encoder
+    from src.model.pre_training.intents import model as encoder
 
     monkeypatch.setattr(
         encoder,
@@ -329,7 +333,11 @@ def test_load_intent_prediction_rejects_an_index_built_with_a_different_encoder(
     """
     import numpy as np
 
-    from src.model.intent.model import INDEX_FILENAME, CanonicalExample, IntentIndex
+    from src.model.pre_training.intents.model import (
+        INDEX_FILENAME,
+        CanonicalExample,
+        IntentIndex,
+    )
 
     axes = {"search": 0, "chat": 1, "tool": 2}
     modules = {"search": "lookup_fact", "chat": "explain", "tool": "schedule"}

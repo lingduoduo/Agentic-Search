@@ -21,7 +21,7 @@ Typical usage::
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from src.agents.search import SearchAgentLoop
-    from src.training.reward import SearchRewardFunction, SearchRewardConfig
+    from src.model.post_training.reward import SearchRewardFunction, SearchRewardConfig
 
     def loop_factory() -> SearchAgentLoop:
         return SearchAgentLoop(tokenizer=tok, server_manager=server)
@@ -46,7 +46,7 @@ import torch
 import torch.nn as nn
 
 from src.agents.core.base import AgentLoopBase
-from src.training.grpo.rollouts import (
+from src.model.post_training.grpo.rollouts import (
     GRPOAdvantageConfig,
     score_prompt_group,
     sample_prompt_group,
@@ -62,7 +62,7 @@ from .llm_grpo_trainer import (
 )
 
 if TYPE_CHECKING:
-    from src.training.reward import JudgeFn, SearchRewardFunction
+    from src.model.post_training.reward import JudgeFn, SearchRewardFunction
 
 
 # Default ceiling on concurrent agent rollouts. Bounding this (rather than

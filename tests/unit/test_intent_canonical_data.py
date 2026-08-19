@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from src.model.intent.data import load_canonical_examples
-from src.model.intent.model import MIN_MODULE_SUPPORT
-from src.model.intent.model import INTENT_LABELS, SEMANTIC_MODULES
+from src.model.pre_training.intents.data import load_canonical_examples
+from src.model.pre_training.intents.model import MIN_MODULE_SUPPORT
+from src.model.pre_training.intents.model import INTENT_LABELS, SEMANTIC_MODULES
 
 CANONICAL = Path(__file__).resolve().parents[2] / "data" / "intent_canonical.json"
 
@@ -121,7 +121,7 @@ def test_no_two_canonical_examples_are_near_duplicates(examples):
     pytest.importorskip("sentence_transformers")
     import numpy as np
 
-    from src.model.intent.model import encode_texts
+    from src.model.pre_training.intents.model import encode_texts
 
     vectors = encode_texts([example.text for example in examples])
     similarities = vectors @ vectors.T

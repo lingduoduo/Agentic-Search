@@ -14,15 +14,15 @@ Serving still uses indexes built offline by the `index_builder`. Filter-aware an
 
 ```bash
 # 1. Seed a canonical draft from existing labelled examples (optional; run once).
-python -m src.model.intent.cli seed \
+python -m src.model.pre_training.intents.cli seed \
   --examples data/intent_examples.json --output data/intent_canonical.draft.json
 
 # 2. Build the index the router serves from.
-python -m src.model.intent.cli build \
+python -m src.model.pre_training.intents.cli build \
   --canonical data/intent_canonical.json --output data/intent_index
 
 # 3. Measure it. Never skip this after editing the canonical set.
-python -m src.model.intent.cli evaluate \
+python -m src.model.pre_training.intents.cli evaluate \
   --index data/intent_index \
   --eval-queries data/intent_eval_queries.json \
   --hard-queries data/intent_eval_hard.json \
@@ -37,11 +37,11 @@ python -m src.model.intent.cli evaluate \
 
 Each canonical example is encoded once by `intfloat/e5-small-v2` and L2-normalized. At serving time the request is encoded the same way, and each route scores as the **mean of its top-k cosine similarities** to that request. The best route wins; the module labels reported alongside it are diagnostics and can never change the route.
 
-**The prefix contract.** E5 models are trained with instruction prefixes and **degrade silently without them** — no error, no warning, just worse vectors. Every text gets `"query: "`, applied **symmetrically** to canonical anchors and to incoming requests: this is symmetric short-text similarity, not the asymmetric retrieval E5's `"passage: "` prefix is for. The prefix is a property of the encoder, not an argument, so it lives in `MODEL_PREFIXES` in `src/model/intent/model.py` and is applied inside `encode_texts` — no call site can forget it. An encoder with no registered prefix raises rather than defaulting to `""`: an unregistered model is far likelier to be one whose prefix nobody looked up than one that genuinely needs none, and guessing wrong is invisible.
+**The prefix contract.** E5 models are trained with instruction prefixes and **degrade silently without them** — no error, no warning, just worse vectors. Every text gets `"query: "`, applied **symmetrically** to canonical anchors and to incoming requests: this is symmetric short-text similarity, not the asymmetric retrieval E5's `"passage: "` prefix is for. The prefix is a property of the encoder, not an argument, so it lives in `MODEL_PREFIXES` in `src/model/pre_training/intents/model.py` and is applied inside `encode_texts` — no call site can forget it. An encoder with no registered prefix raises rather than defaulting to `""`: an unregistered model is far likelier to be one whose prefix nobody looked up than one that genuinely needs none, and guessing wrong is invisible.
 
 **Every index built before this change is invalidated.** Rebuild with command 2 above. What catches a stale index is the **encoder-name check** — `IntentIndex` records the encoder that built it, and both `run_index_evaluation` and `ml_intent.load_intent_index` reject a mismatch by name — **not** a dimension mismatch, because `all-MiniLM-L6-v2` and `e5-small-v2` are **both 384-wide**. A stale index therefore loads, scores, and reports confident, meaningless numbers with no other symptom. That is not hypothetical: it happened once on this branch, and the name check is what turned it into one loud failure naming the rebuild command.
 
-`k` (`TOP_K` in `src/model/intent/model.py`) is `15`, chosen on the tuning slice rather than inherited — see [`top_k` chosen on the split](#top_k-chosen-on-the-split) below, and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var. It was an unswept `3` from #511 to #521.
+`k` (`TOP_K` in `src/model/pre_training/intents/model.py`) is `15`, chosen on the tuning slice rather than inherited — see [`top_k` chosen on the split](#top_k-chosen-on-the-split) below, and `AGENTIC_SEARCH_INTENT_TOP_K` in [Configuration](configuration.md) for the env var. It was an unswept `3` from #511 to #521.
 
 **One** threshold gates the answer:
 
@@ -61,7 +61,7 @@ Always **append, rebuild, re-measure**, in that order. A badly-phrased canonical
 
 ### The tuning/test split
 
-Three hyperparameters need values — `top_k`, `min_margin`, `min_module_score` — and **none of them may be chosen on the queries the result is reported from**. All are swept on the tuning slice. The split section of `src/model/intent/evaluation.py` enforces the rest:
+Three hyperparameters need values — `top_k`, `min_margin`, `min_module_score` — and **none of them may be chosen on the queries the result is reported from**. All are swept on the tuning slice. The split section of `src/model/pre_training/intents/evaluation.py` enforces the rest:
 
 - **Tuning slice, 70 queries** — all 30 `eval-` legacy queries (already contaminated: they were used as feedback while curating the canonical set, so they are worthless as a gate and free to spend here) plus a route-stratified sample of **40** of the 151 clean `bulk-` queries, drawn with **seed `17`**.
 - **Test slice, 111 queries** — every clean query the tuning sample did not take. Untouched by every sweep. Plus `hard-40`, which is likewise never tuned on.
@@ -593,32 +593,32 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | Training data (shell) | `bin/generate_training_data.sh` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
-| DPO trainer | `src/training/dpo/trainer.py` |
-| DPO preference pairs | `src/training/dpo/data.py` |
-| Reward function | `src/training/reward.py` |
-| Simulated preference judge | `src/training/grpo/judge.py` |
-| GRPO helpers | `src/training/grpo/rollouts.py` |
-| Online GRPO for HF LMs | `src/training/grpo/llm_grpo_trainer.py` |
-| Agent-loop GRPO (full reward) | `src/training/grpo/search_agent_grpo_trainer.py` |
-| PPO core (clipped surrogate, KL controllers) | `src/training/ppo/core_algos.py` |
-| GRPO/REINFORCE advantages and losses | `src/training/grpo/core_algos.py` |
-| Tabular Q-learning demo | `src/training/qlearning/` |
-| Generation and policy loss | `src/model/generation.py` |
+| DPO trainer | `src/model/post_training/dpo/trainer.py` |
+| DPO preference pairs | `src/model/post_training/dpo/data.py` |
+| Reward function | `src/model/post_training/reward.py` |
+| Simulated preference judge | `src/model/post_training/grpo/judge.py` |
+| GRPO helpers | `src/model/post_training/grpo/rollouts.py` |
+| Online GRPO for HF LMs | `src/model/post_training/grpo/llm_grpo_trainer.py` |
+| Agent-loop GRPO (full reward) | `src/model/post_training/grpo/search_agent_grpo_trainer.py` |
+| PPO core (clipped surrogate, KL controllers) | `src/model/post_training/ppo/core_algos.py` |
+| GRPO/REINFORCE advantages and losses | `src/model/post_training/grpo/core_algos.py` |
+| Tabular Q-learning demo | `src/model/post_training/qlearning/` |
+| Generation and policy loss | `src/model/post_training/grpo/generation.py` |
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
 | Simulated-judge GRPO (policy update) | `python3 -m examples.run_bamboogle_grpo_train` |
 
 ### Direct Preference Optimization (DPO)
 
-`src/training/dpo/` trains a policy directly on preference pairs — no reward
+`src/model/post_training/dpo/` trains a policy directly on preference pairs — no reward
 model, no critic, no online sampling. The reference policy plays the role GRPO's
 KL penalty plays, anchoring the policy to where it started.
 
 **There is no CLI entry point yet.** DPO is used as a library:
 
 ```python
-from src.training.dpo import load_preference_pairs
-from src.training.dpo.trainer import DPOConfig, DPOTrainer
+from src.model.post_training.dpo import load_preference_pairs
+from src.model.post_training.dpo.trainer import DPOConfig, DPOTrainer
 
 pairs = load_preference_pairs("data/dpo_pairs.jsonl")
 trainer = DPOTrainer(
@@ -702,7 +702,7 @@ python3 -m examples.run_sft_grpo \
 | Format compliance | `format_reward_weight` | Structural compliance in the final answer |
 | Human feedback | `human_feedback_weight` | `human_signal` (±1.0) from thumbs-up/down sessions; `0.0` by default (off) |
 
-Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` | `retriever_aware` (see `SearchRewardConfig` in `src/training/reward.py`). The Bamboogle eval CLI (`run_bamboogle_eval --reward_preset`) exposes the shorthand `sparse_final_only | simple_sparse | second_pass | third_pass`, which map to the first four config presets; `retriever_aware` is config-only.
+Reward preset names: `sparse_final_only` | `simple_sparse_with_search_penalty` | `second_pass` | `third_pass_with_format` | `retriever_aware` (see `SearchRewardConfig` in `src/model/post_training/reward.py`). The Bamboogle eval CLI (`run_bamboogle_eval --reward_preset`) exposes the shorthand `sparse_final_only | simple_sparse | second_pass | third_pass`, which map to the first four config presets; `retriever_aware` is config-only.
 
 **The judge reads the gold answer now.** The `correctness` term is `judge_fn(answer, gold)`, and until recently the GRPO examples passed a judge that ignored the second argument entirely.
 
@@ -727,9 +727,9 @@ There is still no *trained* reward model; that remains a separate design.
 
 **Four reward dimensions** — `reward_components()` also groups every term into four subtotals via `REWARD_DIMENSIONS`, emitted as `dim_correctness`, `dim_citation_support`, `dim_retrieval_quality`, `dim_search_efficiency` (and available directly via `reward_dimensions()` or the pure `group_reward_components(components)`). Pre-scale, so `sum(dims) == terminal_reward + shaping_total == total / reward_scale`. The rollup is purely additive — no weight, preset, or `total` formula changed.
 
-**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/grpo/rollouts.py`.
+**GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/model/post_training/grpo/rollouts.py`.
 
-**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/ppo/core_algos.py` — `ppo/` is a **base algorithm layer, not a training method**: it has no trainer, no critic and no GAE, and `rl/` depends on it because GRPO *is* this surrogate with a group-relative advantage substituted in.
+**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/model/post_training/ppo/core_algos.py` — `ppo/` is a **base algorithm layer, not a training method**: it has no trainer, no critic and no GAE, and `rl/` depends on it because GRPO *is* this surrogate with a group-relative advantage substituted in.
 
 The PPO-**with-critic** path (`compute_value_loss`, `compute_gae_advantages`) used to live alongside it, exported from three surfaces and called only from tests. It was removed: training here is critic-free GRPO, there is no value model, value head, or critic anywhere in the repo to produce the `values` those helpers consume, and so the path could never be exercised end to end. Exported-but-unreachable code reads as supported API and its test coverage implies a path that is exercised rather than merely arithmetic-checked. If a critic is ever wanted, the git history has both functions.
 

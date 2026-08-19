@@ -5,15 +5,15 @@ SearchAgentLoop -- plus grouped rollout sampling, a controller and a durable
 train loop.
 
 This package was called ``rl`` until the things in it that were not GRPO moved
-out: the tabular Q-learning demo to ``src.training.qlearning`` and
-``PPORewardManager`` to ``src.training.ppo``, where its name already pointed.
+out: the tabular Q-learning demo to ``src.model.post_training.qlearning`` and
+``PPORewardManager`` to ``src.model.post_training.ppo``, where its name already pointed.
 What remains that is not strictly GRPO is the pair of REINFORCE losses in
 ``core_algos`` -- kept here deliberately, as the ancestor policy-gradient
 algorithm the group-relative variant descends from, and far too small to earn a
 package.
 
 The clipped surrogate itself, the KL controllers and the masked-tensor
-primitives live one layer down in ``src.training.ppo``: GRPO is that surrogate
+primitives live one layer down in ``src.model.post_training.ppo``: GRPO is that surrogate
 with a group-relative advantage in place of GAE. They are deliberately not
 re-exported here -- a variant should not advertise its base layer's API as its
 own.
@@ -36,7 +36,7 @@ from typing import Any
 _LAZY_EXPORTS: dict[str, str] = {
     # core_algos — the GRPO/REINFORCE variants. The clipped surrogate itself,
     # the KL controllers and the masked-tensor primitives are one layer down in
-    # `src.training.ppo`, and are NOT re-exported here: a variant should not
+    # `src.model.post_training.ppo`, and are NOT re-exported here: a variant should not
     # advertise its base layer's API as its own.
     "compute_grpo_outcome_advantage": "core_algos",
     "compute_grpo_policy_loss": "core_algos",

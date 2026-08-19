@@ -13,9 +13,11 @@ import torch
 import torch.nn as nn
 
 from src.agents.core.base import AgentLoopOutput
-from src.training.grpo.llm_grpo_trainer import LLMGRPOConfig
-from src.training.grpo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
-from src.training.reward import SearchRewardFunction, SearchRewardConfig
+from src.model.post_training.grpo.llm_grpo_trainer import LLMGRPOConfig
+from src.model.post_training.grpo.search_agent_grpo_trainer import (
+    SearchAgentGRPOTrainer,
+)
+from src.model.post_training.reward import SearchRewardFunction, SearchRewardConfig
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +277,7 @@ def test_grpo_smoke_step_with_retriever_aware_reward():
     """A real GRPO step runs end-to-end with the retriever-aware reward + action metrics."""
     import math
 
-    from src.training.reward import SearchRewardConfig
+    from src.model.post_training.reward import SearchRewardConfig
 
     policy = _ToyLM()
     reference = copy.deepcopy(policy)
@@ -314,7 +316,7 @@ def test_grpo_smoke_step_with_retriever_aware_reward():
 
 def test_resolve_max_concurrent_defaults_when_none():
     """Concurrency is always bounded so rollouts can't saturate the search server."""
-    from src.training.grpo.search_agent_grpo_trainer import (
+    from src.model.post_training.grpo.search_agent_grpo_trainer import (
         DEFAULT_MAX_CONCURRENT,
         _resolve_max_concurrent,
     )

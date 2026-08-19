@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 pytest.importorskip("torch")
-from src.training.eval.bamboogle import (
+from src.model.post_training.eval.bamboogle import (
     contains_match,
     evaluate_bamboogle,
     exact_match,
@@ -235,7 +235,9 @@ class _WrongAgent:
         return result
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_evaluate_perfect_agent(mock_load, tmp_path):
     summary, rows = evaluate_bamboogle(
         _PerfectAgent(),
@@ -249,7 +251,9 @@ def test_evaluate_perfect_agent(mock_load, tmp_path):
     assert summary.avg_reward is None
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_evaluate_wrong_agent(mock_load, tmp_path):
     summary, rows = evaluate_bamboogle(
         _WrongAgent(),
@@ -261,7 +265,9 @@ def test_evaluate_wrong_agent(mock_load, tmp_path):
     assert summary.contains_match == pytest.approx(0.0)
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_evaluate_writes_jsonl(mock_load, tmp_path):
     out = tmp_path / "sub" / "out.jsonl"
     evaluate_bamboogle(_PerfectAgent(), limit=2, output_path=out, verbose=False)
@@ -273,9 +279,11 @@ def test_evaluate_writes_jsonl(mock_load, tmp_path):
     assert "reward_components" in row
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_evaluate_with_reward_fn(mock_load, tmp_path):
-    from src.training.reward import SearchRewardFunction, SearchRewardConfig
+    from src.model.post_training.reward import SearchRewardFunction, SearchRewardConfig
 
     reward_fn = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
     summary, rows = evaluate_bamboogle(
@@ -293,7 +301,9 @@ def test_evaluate_with_reward_fn(mock_load, tmp_path):
         assert "correctness" in row.reward_components
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_evaluate_parallel_same_results(mock_load, tmp_path):
     """Concurrency > 1 must produce identical results to concurrency=1."""
     serial_summary, serial_rows = evaluate_bamboogle(
@@ -307,7 +317,9 @@ def test_evaluate_parallel_same_results(mock_load, tmp_path):
     assert [r.question for r in serial_rows] == [r.question for r in parallel_rows]
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_resume_skips_completed(mock_load, tmp_path):
     """With resume=True, already-completed examples are skipped."""
     out = tmp_path / "out.jsonl"
@@ -347,7 +359,9 @@ def test_resume_skips_completed(mock_load, tmp_path):
     assert len(lines) == 2
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_resume_false_reruns_all(mock_load, tmp_path):
     """With resume=False (default), all examples run even if output exists."""
     out = tmp_path / "out.jsonl"
@@ -387,7 +401,7 @@ def test_resume_false_reruns_all(mock_load, tmp_path):
 
 def test_write_summary_json(tmp_path):
     from examples.run_bamboogle_eval import write_summary_json
-    from src.training.eval.bamboogle import BamboogleSummary
+    from src.model.post_training.eval.bamboogle import BamboogleSummary
 
     out = tmp_path / "bamboogle_results.jsonl"
     summary = BamboogleSummary(
@@ -407,10 +421,12 @@ def test_write_summary_json(tmp_path):
     }
 
 
-@patch("src.training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET)
+@patch(
+    "src.model.post_training.eval.bamboogle.load_bamboogle", return_value=_FAKE_DATASET
+)
 def test_evaluate_reward_uses_gold_list(mock_load):
     """judge_fn must check against all gold answers, not just the first."""
-    from src.training.reward import SearchRewardFunction, SearchRewardConfig
+    from src.model.post_training.reward import SearchRewardFunction, SearchRewardConfig
 
     dataset = [
         {
