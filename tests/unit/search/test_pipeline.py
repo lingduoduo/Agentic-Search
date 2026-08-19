@@ -4,12 +4,12 @@ import asyncio
 
 from src.context import ChatMessage, ContextDocument
 from src.context.search import SearchResult
-from src.internal.search_pipeline.models import (
+from src.internal.search.models import (
     CandidateSet,
     GeneratedAnswer,
     RankedEvidence,
 )
-from src.internal.search_pipeline.pipeline import SearchPipeline
+from src.internal.search.pipeline import SearchPipeline
 
 
 class Retrieval:
