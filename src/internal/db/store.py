@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import sqlite3
+import threading
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -83,11 +85,65 @@ def get_session_with_current_tenant():
     yield _NullSession()
 
 
+def _synchronized(cls):
+    """Serialize every public method of *cls* on the instance's ``_lock``.
+
+    The store shares ONE sqlite3 connection opened with
+    ``check_same_thread=False``, and that connection is reached from more than
+    one thread in production: ``_finalize_response`` writes from the event-loop
+    thread while ``POST /api/sessions`` and ``GET /api/sessions/{id}`` are plain
+    ``def`` handlers, which FastAPI runs in its anyio worker threadpool.
+    Unserialized, that combination raises -- ``InterfaceError``, "cannot start a
+    transaction within a transaction", and rows arriving as bare tuples -- rather
+    than merely contending.
+
+    **Method-level, not statement-level.** The store issues 39 ``commit()``
+    calls, so locking each ``execute`` would still let a second thread commit
+    between two statements of another thread's transaction, which is the
+    transaction error above. The lock has to span the whole operation.
+
+    **A lock rather than a connection pool.** One store operation measures
+    ~0.45ms at a 120-turn transcript, so serializing costs nothing against a
+    request budget -- and the default DB path is ``:memory:``, where per-thread
+    connections would hand every thread its own empty database.
+    """
+
+    def wrap(method):
+        @functools.wraps(method)
+        def guarded(self, *args, **kwargs):
+            with self._lock:
+                return method(self, *args, **kwargs)
+
+        return guarded
+
+    for name, attr in list(vars(cls).items()):
+        if callable(attr) and not name.startswith("_"):
+            setattr(cls, name, wrap(attr))
+    return cls
+
+
+@_synchronized
 class AgenticSearchStore:
-    """Small SQLite repository for user, group, chat, and admin state."""
+    """Small SQLite repository for user, group, chat, and admin state.
+
+    Public methods are serialized on ``self._lock`` by ``_synchronized`` above;
+    see that decorator for why the lock spans whole methods rather than single
+    statements.
+
+    **The guarantee has one hole, and it is deliberate.** Anything that reaches
+    ``store._conn`` directly bypasses the lock entirely. Today that is
+    ``src/model/post_training/data.py`` (``load_feedback_examples`` and
+    ``load_sft_examples``) and a handful of analytics tests. Those run offline,
+    single-threaded, never on the request path, so they are safe as written --
+    but code added to the serving path must go through a public method, not the
+    connection.
+    """
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
+        # Reentrant: public methods call other public methods, and a plain Lock
+        # would deadlock on the second acquire rather than fail visibly.
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._configure_connection()
