@@ -229,18 +229,23 @@ Typed dataclasses loaded from environment variables. Key env vars:
 Post-training and fine-tuning. Not part of the serving stack. Grouped by method,
 with the shared building blocks at the top level:
 - `data.py` — prompt/dataset construction, shared by SFT and RL
-- `reward.py`, `judge.py` — reward functions and RLAIF judges, shared by RL and eval
+- `reward.py` — reward functions, shared by `grpo/` and `eval/`
 - `sft/` — supervised fine-tuning (`SFTTrainer`, trajectory → supervised example)
 - `dpo/` — Direct Preference Optimization: `PreferenceExample` + a JSONL loader, and
   `DPOTrainer` training a policy against a frozen reference on preference pairs (no
   reward model, no critic, no online sampling). Pairs come from a JSONL file; there
   is no judge-backed or feedback-backed loader yet
 - `ppo/` — the clipped-surrogate **base algorithm layer, not a method**: PPO loss,
-  KL controllers, `PPOPolicyLossConfig`, and the masked-tensor primitives. No trainer,
-  no critic, no GAE. `rl/` and `src/model/generation.py` both depend on it, since GRPO
-  is this surrogate with a group-relative advantage in place of GAE
-- `rl/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
-  SearchAgentLoop), a controller, a durable train loop, and `core_algos.py` (GRPO
-  advantage + GRPO/REINFORCE losses). Also holds the standalone tabular Q-learning
-  demo (`qlearning.py` + `search_environment.py`)
+  KL controllers, `PPOPolicyLossConfig`, the masked-tensor primitives, and
+  `PPORewardManager`. No trainer, no critic, no GAE. `grpo/` and
+  `src/model/generation.py` both depend on it, since GRPO is this surrogate with a
+  group-relative advantage in place of GAE
+- `grpo/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
+  SearchAgentLoop), grouped rollout sampling, a controller, a durable train loop, and
+  `core_algos.py` (GRPO advantage + the REINFORCE losses, kept as the ancestor
+  policy-gradient algorithm), and `judge.py` (RLAIF judges — moved here because its
+  only consumers are GRPO scripts; a future judge-backed DPO loader would make
+  `dpo/` import `grpo/`, a cost accepted deliberately)
+- `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
+  the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
 - `eval/` — Bamboogle and action-policy benchmark harnesses

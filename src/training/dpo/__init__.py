@@ -1,6 +1,6 @@
 """Direct Preference Optimization: train on preference pairs, no reward model.
 
-Two modules, mirroring how ``sft`` and ``rl`` are shaped:
+Two modules, mirroring how ``sft`` and ``grpo`` are shaped:
 
 * ``data``    — ``PreferenceExample`` and the JSONL loader. Standard library only,
                 so a dataset can be validated without torch installed.

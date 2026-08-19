@@ -29,7 +29,7 @@ from src.training.ppo.core_algos import (
     masked_mean,
     masked_whiten,
 )
-from src.training.rl.core_algos import (
+from src.training.grpo.core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
 )
 
@@ -689,7 +689,7 @@ def score_group_rollout(
         advantage_config: Optional :class:`GRPOAdvantageConfig`.
         batch_judge_fn:   Optional batch judge for LLM-based scoring.
     """
-    from src.training.rl.rollouts import GRPORolloutSample, score_prompt_group
+    from src.training.grpo.rollouts import GRPORolloutSample, score_prompt_group
     from src.training.reward import SearchRewardFunction
 
     if not grouped_rollouts:
@@ -1150,7 +1150,7 @@ async def async_run_prompt_rollout_group(
     import asyncio
     import copy
 
-    from src.training.rl.rollouts import build_grpo_sampling_params
+    from src.training.grpo.rollouts import build_grpo_sampling_params
 
     n_prompts = len(prompt_batches)
     if n_prompts == 0:
@@ -1231,7 +1231,7 @@ async def async_run_grpo_training_step(
     ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
     search I/O, then performs one learner-side update.
     """
-    from src.training.rl.controller import LocalGRPOController
+    from src.training.grpo.controller import LocalGRPOController
 
     return await LocalGRPOController(
         manager, num_rollouts=num_rollouts, max_workers=max_workers
@@ -3255,7 +3255,7 @@ class LLMGenerationManager:
         metadata on the returned rollout batch so custom backends can consume
         them if needed.
         """
-        from src.training.rl.rollouts import build_grpo_sampling_params
+        from src.training.grpo.rollouts import build_grpo_sampling_params
 
         if num_rollouts <= 0:
             raise ValueError("num_rollouts must be positive.")
@@ -3567,7 +3567,7 @@ class LLMGenerationManager:
         Kept as the public compatibility entrypoint; orchestration lives in the
         local PPO controller layer.
         """
-        from src.training.rl.controller import LocalGRPOController
+        from src.training.grpo.controller import LocalGRPOController
 
         return LocalGRPOController(self, num_rollouts=num_rollouts).training_step(
             prompt_batch,

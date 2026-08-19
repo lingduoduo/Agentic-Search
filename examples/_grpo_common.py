@@ -24,9 +24,9 @@ async def run_feedback_grpo_step(
     checkpoint to ``output_dir``, and return the step metrics."""
     from src.agents.search import SearchAgentLoop
     from src.training.data import load_feedback_examples
-    from src.training.rl.rollouts import GRPOAdvantageConfig
-    from src.training.rl.llm_grpo_trainer import LLMGRPOConfig
-    from src.training.rl.search_agent_grpo_trainer import SearchAgentGRPOTrainer
+    from src.training.grpo.rollouts import GRPOAdvantageConfig
+    from src.training.grpo.llm_grpo_trainer import LLMGRPOConfig
+    from src.training.grpo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
     from src.training.reward import (
         SearchRewardConfig,
         SearchRewardFunction,

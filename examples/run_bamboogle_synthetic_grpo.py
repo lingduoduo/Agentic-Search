@@ -25,8 +25,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.training.rl.rollouts import ScoredGRPORollout
-    from src.training.judge import SimulatedPreferenceJudge
+    from src.training.grpo.rollouts import ScoredGRPORollout
+    from src.training.grpo.judge import SimulatedPreferenceJudge
 
 
 def build_synthetic_record(
@@ -82,8 +82,8 @@ def _build_loop_factory(args: argparse.Namespace, tokenizer: Any):
 
 async def _run(args: argparse.Namespace) -> None:
     from src.training.eval.bamboogle import load_bamboogle
-    from src.training.rl.rollouts import sample_prompt_group, score_prompt_group
-    from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement
+    from src.training.grpo.rollouts import sample_prompt_group, score_prompt_group
+    from src.training.grpo.judge import SimulatedPreferenceJudge, judge_gold_agreement
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(
