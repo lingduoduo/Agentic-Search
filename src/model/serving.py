@@ -23,7 +23,21 @@ _TRUNCATION_RECORD_LIMIT = 256
 
 @runtime_checkable
 class ServerManager(Protocol):
-    """The model boundary every agent loop calls: tokens in, tokens out."""
+    """The model boundary every agent loop calls: tokens in, tokens out.
+
+    Implementations MAY also offer::
+
+        async def generate_stream(
+            self, request_id, prompt_ids, sampling_params, on_token
+        ) -> list[int]
+
+    which awaits ``on_token(text)`` for each decoded chunk and returns the same
+    token ids ``generate`` would. It is deliberately NOT part of this Protocol:
+    managers are structurally typed, so requiring it would break every existing
+    implementation and test double -- including the training stack's, which
+    never streams. ``AgentLoopBase.generate_response_ids`` probes for it and
+    falls back to ``generate``.
+    """
 
     async def generate(
         self,
@@ -290,6 +304,71 @@ class OpenAIServerManager:
         completion_text = data["choices"][0]["text"]
         return list(self.tokenizer.encode(completion_text))
 
+    async def generate_stream(
+        self,
+        request_id: str,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        on_token,
+    ) -> list[int]:
+        """Stream completion chunks over SSE, awaiting ``on_token`` for each.
+
+        Genuinely async end to end: the transport is already ``aiohttp``, so
+        adding ``stream: true`` and reading the response line by line adds no
+        blocking work and no thread.
+
+        Returns the same token ids ``generate`` would, re-encoded from the
+        accumulated text, so a caller gets an identical result whether or not it
+        streamed.
+        """
+        import json as _json
+
+        import aiohttp
+
+        prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "prompt": prompt_text,
+            "max_tokens": sampling_params.get("max_tokens", 512),
+            "temperature": sampling_params.get("temperature", 0.7),
+            "top_p": sampling_params.get("top_p", 1.0),
+            "stream": True,
+        }
+        stop = sampling_params.get("stop")
+        if stop is not None:
+            payload["stop"] = stop
+
+        parts: list[str] = []
+        try:
+            session = self._get_session()
+            async with session.post(
+                f"{self.base_url}/v1/completions", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for raw in resp.content:
+                    line = raw.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    body = line[len("data:") :].strip()
+                    if body == "[DONE]":
+                        break
+                    try:
+                        chunk = _json.loads(body)
+                    except ValueError:
+                        # A malformed frame is a delivery problem, not a reason
+                        # to abandon a generation already in flight.
+                        continue
+                    text = (chunk.get("choices") or [{}])[0].get("text") or ""
+                    if text:
+                        parts.append(text)
+                        await on_token(text)
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
+            raise RuntimeError(
+                f"Cannot connect to inference server at {self.base_url}. "
+                f"Start one first, e.g.: mlx_lm.server --model {self.model} --port 8080"
+            )
+        return list(self.tokenizer.encode("".join(parts)))
+
 
 class LocalServerManager:
     """Runs generation in-process using a loaded HuggingFace model.
@@ -490,6 +569,58 @@ class LocalServerManager:
             )
         return response_ids
 
+    async def generate_stream(
+        self,
+        request_id: str,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        on_token,
+    ) -> list[int]:
+        """Generate while awaiting ``on_token(text)`` for each decoded chunk.
+
+        HF's ``generate()`` is blocking, so it runs in a worker thread exactly as
+        the non-streaming path does; ``TextIteratorStreamer`` is the supported
+        way to pull text out of that thread while it runs. The event loop drains
+        the streamer's queue via ``run_in_executor``, so a slow consumer never
+        blocks the loop and never stalls generation.
+
+        Returns the same token ids ``generate`` would, so callers that also want
+        the full response are unaffected by whether streaming happened.
+        """
+        import asyncio as _asyncio
+        import queue as _queue
+
+        from transformers import TextIteratorStreamer
+
+        loop = _asyncio.get_running_loop()
+        streamer = TextIteratorStreamer(
+            self._tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
+        result: dict[str, list[int]] = {}
+
+        def _run() -> None:
+            result["ids"] = self._generate_sync(
+                prompt_ids, sampling_params, request_id, streamer=streamer
+            )
+
+        task = loop.run_in_executor(None, _run)
+
+        # Drain in the executor too: TextIteratorStreamer.__next__ blocks.
+        def _next() -> "str | None":
+            try:
+                return next(streamer)
+            except (StopIteration, _queue.Empty):
+                return None
+
+        while True:
+            chunk = await loop.run_in_executor(None, _next)
+            if chunk is None:
+                break
+            if chunk:
+                await on_token(chunk)
+        await task
+        return result.get("ids", [])
+
     def _record_truncation(self, request_id: str | None) -> None:
         """Note that *request_id*'s generation was cut short by the wall clock.
 
@@ -511,6 +642,7 @@ class LocalServerManager:
         prompt_ids: list[int],
         sampling_params: dict[str, Any],
         request_id: str | None = None,
+        streamer: Any = None,
     ) -> list[int]:
         import torch
 
@@ -528,6 +660,10 @@ class LocalServerManager:
             temperature=temp,
             top_p=top_p,
         )
+        if streamer is not None:
+            # HF pushes each decoded chunk onto the streamer's queue as it
+            # generates; the caller drains it from the event loop.
+            generate_kwargs["streamer"] = streamer
         generation_start = time.perf_counter()
         out = self._run_generate_with_heartbeat(inputs, generate_kwargs)
         elapsed = time.perf_counter() - generation_start
