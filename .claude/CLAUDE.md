@@ -178,6 +178,10 @@ Retrieval (`src/internal/servers/retrieval/`):
 - `server.py` — full `RetrievalService` (BM25 / dense via FAISS / hybrid, env-configured via `RETRIEVAL_BACKEND`) with per-mode + admin endpoints
 - `rerank.py` — standalone cross-encoder reranker
 
+The QueryRouter's offline scikit-learn trainer lives beside it at
+`src/internal/retrieval/train_query_router.py` (it is not LLM post-training, so it is
+not under `src/training/`).
+
 Web search (`src/internal/servers/web_search/`):
 - `google.py` — Google Custom Search API proxy (requires `GOOGLE_API_KEY` + `GOOGLE_CSE_ID`)
 - `serp.py` — SerpAPI proxy (requires `SERP_API_KEY`)
@@ -232,6 +236,5 @@ with the shared building blocks at the top level:
   also used by `src/model/generation.py`). Also holds the standalone tabular
   Q-learning demo (`qlearning.py` + `search_environment.py`)
 - `eval/` — Bamboogle and action-policy benchmark harnesses
-- `train_query_router.py` — offline scikit-learn trainer for the QueryRouter, not LLM post-training
 
 There is no DPO trainer; if one is added it belongs in a sibling `dpo/` package.

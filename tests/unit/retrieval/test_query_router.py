@@ -27,7 +27,7 @@ def test_from_env_disabled(monkeypatch):
 
 
 def test_trained_artifact_round_trips(tmp_path):
-    from src.training.train_query_router import train
+    from src.internal.retrieval.train_query_router import train
 
     path = str(tmp_path / "router.joblib")
     train(path)

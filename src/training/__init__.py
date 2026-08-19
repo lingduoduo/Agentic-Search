@@ -6,9 +6,6 @@ used by more than one method. Each method gets its own package: ``sft`` for
 supervised fine-tuning, ``rl`` for the GRPO/PPO stack, and ``eval`` for the
 benchmark harnesses. There is no DPO trainer in this repo; if one is added it
 belongs in a sibling ``dpo`` package.
-
-``train_query_router`` is the odd one out: an offline scikit-learn trainer for
-the QueryRouter, not LLM post-training.
 """
 
 try:
