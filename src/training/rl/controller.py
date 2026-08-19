@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     from src.model.generation import LLMGenerationManager
 
-from .core_algos import PPOPolicyLossConfig
+from ..ppo.core_algos import PPOPolicyLossConfig
 
 
 @dataclass

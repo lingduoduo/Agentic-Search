@@ -17,10 +17,8 @@ from src.training.rl.rollouts import (
 from src.training.rl.core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage_tensor,
 )
-from src.training.rl.core_algos import (
-    PPOPolicyLossConfig,
-    compute_grpo_policy_loss,
-)
+from src.training.ppo.core_algos import PPOPolicyLossConfig
+from src.training.rl.core_algos import compute_grpo_policy_loss
 from src.training.reward import (
     CompositeRewardConfig,
     REWARD_DIMENSIONS,
@@ -526,7 +524,7 @@ class TestComputeGRPOPolicyLoss:
         assert "clip_fraction" in result
 
     def test_no_kl_no_entropy_matches_base(self):
-        from src.training.rl.core_algos import compute_trajectory_policy_loss
+        from src.training.ppo.core_algos import compute_trajectory_policy_loss
 
         new_lp, old_lp, adv, mask = self._basic_inputs()
         base = compute_trajectory_policy_loss(

@@ -600,7 +600,8 @@ The training pipeline is modular: generate trajectories → score with rewards �
 | GRPO helpers | `src/training/rl/rollouts.py` |
 | Online GRPO for HF LMs | `src/training/rl/llm_grpo_trainer.py` |
 | Agent-loop GRPO (full reward) | `src/training/rl/search_agent_grpo_trainer.py` |
-| PPO core | `src/training/rl/core_algos.py` |
+| PPO core (clipped surrogate, KL controllers) | `src/training/ppo/core_algos.py` |
+| GRPO/REINFORCE advantages and losses | `src/training/rl/core_algos.py` |
 | Generation and policy loss | `src/model/generation.py` |
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
@@ -727,7 +728,7 @@ There is still no *trained* reward model; that remains a separate design.
 
 **GRPO** — `score_prompt_group` scores G rollouts for one prompt and normalises within-group advantages. `compute_grpo_outcome_advantage` computes `reward_i - mean(group)` for a flat rewards list. See `src/training/rl/rollouts.py`.
 
-**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/rl/core_algos.py`.
+**PPO core** — `compute_ppo_policy_loss_core` returns `(pg_loss, pg_clipfrac, ppo_kl, surrogate)` and is the clipped surrogate the GRPO trainers use, with a group-relative advantage in place of GAE. It requires an `eos_mask` tensor. See `src/training/ppo/core_algos.py` — `ppo/` is a **base algorithm layer, not a training method**: it has no trainer, no critic and no GAE, and `rl/` depends on it because GRPO *is* this surrogate with a group-relative advantage substituted in.
 
 The PPO-**with-critic** path (`compute_value_loss`, `compute_gae_advantages`) used to live alongside it, exported from three surfaces and called only from tests. It was removed: training here is critic-free GRPO, there is no value model, value head, or critic anywhere in the repo to produce the `values` those helpers consume, and so the path could never be exercised end to end. Exported-but-unreachable code reads as supported API and its test coverage implies a path that is exercised rather than merely arithmetic-checked. If a critic is ever wanted, the git history has both functions.
 

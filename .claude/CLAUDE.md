@@ -235,8 +235,12 @@ with the shared building blocks at the top level:
   `DPOTrainer` training a policy against a frozen reference on preference pairs (no
   reward model, no critic, no online sampling). Pairs come from a JSONL file; there
   is no judge-backed or feedback-backed loader yet
-- `rl/` — the GRPO stack: three trainers (bandit, HF causal-LM, live SearchAgentLoop),
-  a controller, a durable train loop, and `core_algos.py` (shared PPO/GRPO tensor math,
-  also used by `src/model/generation.py`). Also holds the standalone tabular
-  Q-learning demo (`qlearning.py` + `search_environment.py`)
+- `ppo/` — the clipped-surrogate **base algorithm layer, not a method**: PPO loss,
+  KL controllers, `PPOPolicyLossConfig`, and the masked-tensor primitives. No trainer,
+  no critic, no GAE. `rl/` and `src/model/generation.py` both depend on it, since GRPO
+  is this surrogate with a group-relative advantage in place of GAE
+- `rl/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
+  SearchAgentLoop), a controller, a durable train loop, and `core_algos.py` (GRPO
+  advantage + GRPO/REINFORCE losses). Also holds the standalone tabular Q-learning
+  demo (`qlearning.py` + `search_environment.py`)
 - `eval/` — Bamboogle and action-policy benchmark harnesses
