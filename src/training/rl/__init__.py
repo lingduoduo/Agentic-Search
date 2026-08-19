@@ -33,23 +33,14 @@ from importlib import import_module
 from typing import Any
 
 _LAZY_EXPORTS: dict[str, str] = {
-    # core_algos — shared PPO/GRPO tensor math (torch)
-    "AdaptiveKLController": "core_algos",
-    "FixedKLController": "core_algos",
-    "PPOPolicyLossConfig": "core_algos",
-    "clip_by_value": "core_algos",
-    "compute_entropy_loss": "core_algos",
+    # core_algos — the GRPO/REINFORCE variants. The clipped surrogate itself,
+    # the KL controllers and the masked-tensor primitives are one layer down in
+    # `src.training.ppo`, and are NOT re-exported here: a variant should not
+    # advertise its base layer's API as its own.
     "compute_grpo_outcome_advantage": "core_algos",
     "compute_grpo_policy_loss": "core_algos",
-    "compute_ppo_policy_loss_core": "core_algos",
     "compute_reinforce_policy_loss": "core_algos",
     "compute_reinforce_policy_loss_core": "core_algos",
-    "compute_rewards": "core_algos",
-    "compute_trajectory_policy_loss": "core_algos",
-    "entropy_from_logits": "core_algos",
-    "kl_penalty": "core_algos",
-    "masked_mean": "core_algos",
-    "masked_whiten": "core_algos",
     # controller
     "LocalGRPOController": "controller",
     "RolloutResult": "controller",

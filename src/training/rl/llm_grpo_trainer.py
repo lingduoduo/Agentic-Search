@@ -33,12 +33,12 @@ from typing import TYPE_CHECKING, Any
 import torch
 import torch.nn as nn
 
-from .core_algos import (
-    compute_grpo_outcome_advantage,
+from ..ppo.core_algos import (
     compute_ppo_policy_loss_core,
     kl_penalty,
     masked_mean,
 )
+from .core_algos import compute_grpo_outcome_advantage
 
 if TYPE_CHECKING:
     from src.training.reward import JudgeFn, SearchRewardFunction
