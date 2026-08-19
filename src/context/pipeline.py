@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from .models import AnswerGenerationRequest
 from .models import AnswerGenerationResult
 from .models import AnswerClaim
@@ -336,7 +338,13 @@ async def answer_with_retrieval(
             num_docs=len(context.documents),
             has_llm=llm is not None,
         ):
-            result = generate_answer(
+            # `generate_answer` is synchronous and calls `llm.complete`, a
+            # blocking `requests` call. Awaiting it inline from this async
+            # handler froze the event loop for the full completion -- seconds,
+            # not milliseconds -- so every other concurrent session stalled
+            # behind one user's answer.
+            result = await asyncio.to_thread(
+                generate_answer,
                 AnswerGenerationRequest(
                     question=question,
                     context=context,
