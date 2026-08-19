@@ -1,4 +1,4 @@
-"""Unit tests for src.training.grpo.tensor_helper."""
+"""Unit tests for src.model.post_training.grpo.tensor_helper."""
 
 import pytest
 

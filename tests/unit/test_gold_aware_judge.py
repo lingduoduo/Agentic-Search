@@ -11,7 +11,7 @@ with introducing an LLM into a training loop.
 
 import pytest
 
-from src.training.grpo.judge import (
+from src.model.post_training.grpo.judge import (
     GoldAgreementJudge,
     JudgeParseError,
     LLMJudge,

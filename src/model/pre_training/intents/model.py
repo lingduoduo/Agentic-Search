@@ -504,7 +504,7 @@ class IntentIndex:
         if not path.exists():
             raise FileNotFoundError(
                 f"Intent index is missing {path.name}: {path}. Run "
-                "`python -m src.model.intent.cli build` to create it."
+                "`python -m src.model.pre_training.intents.cli build` to create it."
             )
         payload = np.load(path, allow_pickle=False)
         records = json.loads(str(payload["examples"]))

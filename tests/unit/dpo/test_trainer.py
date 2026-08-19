@@ -16,8 +16,8 @@ pytest.importorskip("torch")
 import torch
 import torch.nn as nn
 
-from src.training.dpo.data import PreferenceExample
-from src.training.dpo.trainer import DPOConfig, DPOTrainer, dpo_loss
+from src.model.post_training.dpo.data import PreferenceExample
+from src.model.post_training.dpo.trainer import DPOConfig, DPOTrainer, dpo_loss
 
 _VOCAB = 64
 _DIM = 8

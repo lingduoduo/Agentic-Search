@@ -10,7 +10,7 @@ import re
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 if TYPE_CHECKING:
-    from src.training.sft.trainer import SFTExample
+    from src.model.post_training.sft.trainer import SFTExample
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -876,7 +876,7 @@ def load_sft_examples(
     Raises ValueError if total count < min_ratings.
     """
     from src.internal.db import AgenticSearchStore
-    from src.training.sft.trainer import SFTExample
+    from src.model.post_training.sft.trainer import SFTExample
 
     examples: list[SFTExample] = []
 

@@ -1,4 +1,4 @@
-"""`src/training/__init__` must actually export what it claims to.
+"""`src/model/post_training/__init__` must actually export what it claims to.
 
 That module wraps its re-exports in `try/except ImportError` so the package stays
 importable in a CI job with no torch. The cost is that a *wrong* import inside
@@ -8,7 +8,7 @@ skipped too.
 
 That is not hypothetical. When `PPORewardManager` moved from the RL package to
 `ppo` (#542), the stale `from .grpo import PPORewardManager` raised, and seven
-exports silently vanished from `src.training` -- `SearchRewardFunction`,
+exports silently vanished from `src.model.post_training` -- `SearchRewardFunction`,
 `SFTExample`, `SimulatedPreferenceJudge`, `PromptBatch`, `QLearningAgent`,
 `SearchEnvironment` and the manager itself. Every test still passed, because
 nothing asserted on the re-export surface.
@@ -26,13 +26,19 @@ import pytest
 
 pytest.importorskip("torch")
 
-import src.training as training
+import src.model.post_training as training
 
-_INIT = Path(__file__).resolve().parents[2] / "src" / "training" / "__init__.py"
+_INIT = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "model"
+    / "post_training"
+    / "__init__.py"
+)
 
 
 def _guarded_export_names() -> list[str]:
-    """Every name the `try` block in src/training/__init__ imports."""
+    """Every name the `try` block in src/model/post_training/__init__ imports."""
     tree = ast.parse(_INIT.read_text(encoding="utf-8"))
     names: list[str] = []
     for node in tree.body:
@@ -53,8 +59,8 @@ def test_the_guarded_block_actually_imports_something():
 def test_guarded_export_resolves(name: str):
     """Each name survives the try/except rather than being silently swallowed."""
     assert hasattr(training, name), (
-        f"src.training.{name} is missing. An ImportError inside the try/except "
-        f"in src/training/__init__.py was swallowed -- and because the block is "
+        f"src.model.post_training.{name} is missing. An ImportError inside the try/except "
+        f"in src/model/post_training/__init__.py was swallowed -- and because the block is "
         f"a single `try`, every import after the failing line was skipped too. "
         f"Check that the module {name!r} is imported from still holds it."
     )

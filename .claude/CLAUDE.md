@@ -180,7 +180,7 @@ Retrieval (`src/internal/servers/retrieval/`):
 
 The QueryRouter's offline scikit-learn trainer lives beside it at
 `src/internal/retrieval/train_query_router.py` (it is not LLM post-training, so it is
-not under `src/training/`).
+not under `src/model/post_training/`).
 
 Web search (`src/internal/servers/web_search/`):
 - `google.py` — Google Custom Search API proxy (requires `GOOGLE_API_KEY` + `GOOGLE_CSE_ID`)
@@ -225,7 +225,15 @@ Typed dataclasses loaded from environment variables. Key env vars:
 - `AGENTIC_SEARCH_WEB_PORT` (default 8080 in config; run on 7860 by convention)
 - `AGENTIC_SEARCH_WEB_DB_PATH` (default `:memory:`)
 
-**Training** (`src/training/`)
+**Models** (`src/model/`)
+Split by when the training happens. `serving.py` is neither half — it is the
+backend that loads and runs a model, whatever produced it.
+
+- `pre_training/intents/` — the nearest-canonical-example intent router, built offline
+  by `python -m src.model.pre_training.intents.cli build` and loaded read-only on the
+  request path
+
+**Post-training** (`src/model/post_training/`)
 Post-training and fine-tuning. Not part of the serving stack. Grouped by method,
 with the shared building blocks at the top level:
 - `data.py` — prompt/dataset construction, shared by SFT and RL

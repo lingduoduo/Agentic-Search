@@ -23,11 +23,13 @@ async def run_feedback_grpo_step(
     """Load feedback examples, run one GRPO step from ``model_path``, save a
     checkpoint to ``output_dir``, and return the step metrics."""
     from src.agents.search import SearchAgentLoop
-    from src.training.data import load_feedback_examples
-    from src.training.grpo.rollouts import GRPOAdvantageConfig
-    from src.training.grpo.llm_grpo_trainer import LLMGRPOConfig
-    from src.training.grpo.search_agent_grpo_trainer import SearchAgentGRPOTrainer
-    from src.training.reward import (
+    from src.model.post_training.data import load_feedback_examples
+    from src.model.post_training.grpo.rollouts import GRPOAdvantageConfig
+    from src.model.post_training.grpo.llm_grpo_trainer import LLMGRPOConfig
+    from src.model.post_training.grpo.search_agent_grpo_trainer import (
+        SearchAgentGRPOTrainer,
+    )
+    from src.model.post_training.reward import (
         SearchRewardConfig,
         SearchRewardFunction,
         simple_sparse_correctness_reward,

@@ -116,7 +116,7 @@ def _optional_policy_loss() -> dict[str, Any]:
             compute_trajectory_policy_loss,
             trajectory_log_prob_pack,
         )
-        from src.training.grpo.generation import RolloutTrajectory
+        from src.model.post_training.grpo.generation import RolloutTrajectory
     except ModuleNotFoundError as exc:
         if exc.name == "torch":
             return {"skipped": "torch is not installed"}

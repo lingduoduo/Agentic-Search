@@ -9,17 +9,17 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from src.training.grpo.rollouts import (
+from src.model.post_training.grpo.rollouts import (
     GRPOAdvantageConfig,
     compute_dapo_advantages,
     score_prompt_group,
 )
-from src.training.grpo.core_algos import (
+from src.model.post_training.grpo.core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage_tensor,
 )
-from src.training.ppo.core_algos import PPOPolicyLossConfig
-from src.training.grpo.core_algos import compute_grpo_policy_loss
-from src.training.reward import (
+from src.model.post_training.ppo.core_algos import PPOPolicyLossConfig
+from src.model.post_training.grpo.core_algos import compute_grpo_policy_loss
+from src.model.post_training.reward import (
     CompositeRewardConfig,
     REWARD_DIMENSIONS,
     SearchRewardConfig,
@@ -415,7 +415,7 @@ class TestComputeDapoAdvantages:
 class TestReinforceBaselineMode:
     def _make_sample(self, answer: str, group_id: str = "g0"):
         from src.agents.core.base import AgentLoopOutput
-        from src.training.grpo.rollouts import GRPORolloutSample
+        from src.model.post_training.grpo.rollouts import GRPORolloutSample
 
         output = AgentLoopOutput(
             prompt_ids=[0],
@@ -524,7 +524,9 @@ class TestComputeGRPOPolicyLoss:
         assert "clip_fraction" in result
 
     def test_no_kl_no_entropy_matches_base(self):
-        from src.training.ppo.core_algos import compute_trajectory_policy_loss
+        from src.model.post_training.ppo.core_algos import (
+            compute_trajectory_policy_loss,
+        )
 
         new_lp, old_lp, adv, mask = self._basic_inputs()
         base = compute_trajectory_policy_loss(

@@ -12,8 +12,8 @@ Only ``model`` and ``data`` are re-exported here. ``metrics`` and ``evaluation``
 are import-only-on-demand on purpose: ``metrics`` pulls in scikit-learn, and
 nothing on the request path should pay for that. Import them by module::
 
-    from src.model.intent.metrics import IntentPredictionRecord
-    from src.model.intent.evaluation import run_index_evaluation
+    from src.model.pre_training.intents.metrics import IntentPredictionRecord
+    from src.model.pre_training.intents.evaluation import run_index_evaluation
 """
 
 from __future__ import annotations

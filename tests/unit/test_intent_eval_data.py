@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from src.model.intent.data import load_intent_eval_queries
-from src.model.intent.model import SEMANTIC_MODULES
+from src.model.pre_training.intents.data import load_intent_eval_queries
+from src.model.pre_training.intents.model import SEMANTIC_MODULES
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 BULK = DATA / "intent_eval_queries.json"

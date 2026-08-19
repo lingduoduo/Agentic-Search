@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from src.model.intent import model as intent_encoder
-from src.model.intent.model import DEFAULT_ENCODER
+from src.model.pre_training.intents import model as intent_encoder
+from src.model.pre_training.intents.model import DEFAULT_ENCODER
 
 
 @pytest.fixture(autouse=True)
@@ -19,14 +19,14 @@ def test_default_encoder_is_e5_small():
 
 
 def test_the_default_encoder_has_a_registered_prefix():
-    from src.model.intent.model import DEFAULT_ENCODER, prefix_for
+    from src.model.pre_training.intents.model import DEFAULT_ENCODER, prefix_for
 
     assert prefix_for(DEFAULT_ENCODER) == "query: "
 
 
 def test_an_unregistered_model_raises_rather_than_using_no_prefix():
     """A silently missing prefix degrades e5 vectors without erroring."""
-    from src.model.intent.model import prefix_for
+    from src.model.pre_training.intents.model import prefix_for
 
     with pytest.raises(ValueError, match="prefix"):
         prefix_for("some/unregistered-model")
@@ -34,7 +34,7 @@ def test_an_unregistered_model_raises_rather_than_using_no_prefix():
 
 def test_minilm_is_still_registered_with_an_empty_prefix():
     """Old indexes are rejected by name, but the mapping must stay honest."""
-    from src.model.intent.model import prefix_for
+    from src.model.pre_training.intents.model import prefix_for
 
     assert prefix_for("sentence-transformers/all-MiniLM-L6-v2") == ""
 
@@ -44,7 +44,11 @@ def test_encode_applies_the_prefix():
     pytest.importorskip("sentence_transformers")
     import numpy as np
 
-    from src.model.intent.model import DEFAULT_ENCODER, _model, encode_texts
+    from src.model.pre_training.intents.model import (
+        DEFAULT_ENCODER,
+        _model,
+        encode_texts,
+    )
 
     through_seam = encode_texts(["find the runbook"])
     raw = _model(DEFAULT_ENCODER).encode(
@@ -61,7 +65,11 @@ def test_the_prefix_actually_changes_the_vector():
     """Proves the assertion above is not vacuous."""
     pytest.importorskip("sentence_transformers")
 
-    from src.model.intent.model import DEFAULT_ENCODER, _model, encode_texts
+    from src.model.pre_training.intents.model import (
+        DEFAULT_ENCODER,
+        _model,
+        encode_texts,
+    )
 
     unprefixed = _model(DEFAULT_ENCODER).encode(
         ["find the runbook"],
@@ -76,14 +84,14 @@ def test_the_prefix_actually_changes_the_vector():
 def test_encoded_width_is_unchanged_at_384():
     """Same width as the previous encoder, so index.npz's format is unchanged."""
     pytest.importorskip("sentence_transformers")
-    from src.model.intent.model import encode_texts
+    from src.model.pre_training.intents.model import encode_texts
 
     assert encode_texts(["find the runbook"]).shape == (1, 384)
 
 
 def test_encode_returns_normalized_float32_rows():
     pytest.importorskip("sentence_transformers")
-    from src.model.intent.model import encode_texts
+    from src.model.pre_training.intents.model import encode_texts
 
     vectors = encode_texts(["find the runbook", "send an email to the team"])
 
@@ -95,7 +103,7 @@ def test_encode_returns_normalized_float32_rows():
 def test_encoding_is_deterministic():
     """Routing must not flip between requests for a fixed query."""
     pytest.importorskip("sentence_transformers")
-    from src.model.intent.model import encode_texts
+    from src.model.pre_training.intents.model import encode_texts
 
     first = encode_texts(["find the runbook"])
     second = encode_texts(["find the runbook"])
@@ -106,7 +114,7 @@ def test_encoding_is_deterministic():
 def test_word_order_changes_the_vector():
     """The whole point of the encoder: a bag of embeddings could not do this."""
     pytest.importorskip("sentence_transformers")
-    from src.model.intent.model import encode_texts
+    from src.model.pre_training.intents.model import encode_texts
 
     vectors = encode_texts(["how to send an email", "send an email to how"])
 

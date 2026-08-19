@@ -774,7 +774,7 @@ def run_index_evaluation(
             f"intent-index at {index_path} was built with encoder "
             f"{index.encoder!r}, but this evaluation is embedding queries "
             f"with {model_name!r}. Rebuild the index with the current "
-            "encoder (`python -m src.model.intent.cli build`) before "
+            "encoder (`python -m src.model.pre_training.intents.cli build`) before "
             "evaluating."
         )
     canonical_fingerprint = fingerprint(canonical_path)

@@ -1,6 +1,6 @@
 import pytest
 
-from src.model.intent.model import (
+from src.model.pre_training.intents.model import (
     ACTION_MODULES,
     INTENT_LABELS,
     MODULES,

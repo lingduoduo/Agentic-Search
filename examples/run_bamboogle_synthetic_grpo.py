@@ -25,8 +25,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.training.grpo.rollouts import ScoredGRPORollout
-    from src.training.grpo.judge import SimulatedPreferenceJudge
+    from src.model.post_training.grpo.rollouts import ScoredGRPORollout
+    from src.model.post_training.grpo.judge import SimulatedPreferenceJudge
 
 
 def build_synthetic_record(
@@ -36,7 +36,7 @@ def build_synthetic_record(
     scored: list[ScoredGRPORollout],
 ) -> dict[str, Any]:
     """Build one synthetic-preference JSONL record for a prompt group."""
-    from src.training.eval.bamboogle import contains_match, exact_match
+    from src.model.post_training.eval.bamboogle import contains_match, exact_match
 
     rollouts = []
     for s in scored:
@@ -81,9 +81,15 @@ def _build_loop_factory(args: argparse.Namespace, tokenizer: Any):
 
 
 async def _run(args: argparse.Namespace) -> None:
-    from src.training.eval.bamboogle import load_bamboogle
-    from src.training.grpo.rollouts import sample_prompt_group, score_prompt_group
-    from src.training.grpo.judge import SimulatedPreferenceJudge, judge_gold_agreement
+    from src.model.post_training.eval.bamboogle import load_bamboogle
+    from src.model.post_training.grpo.rollouts import (
+        sample_prompt_group,
+        score_prompt_group,
+    )
+    from src.model.post_training.grpo.judge import (
+        SimulatedPreferenceJudge,
+        judge_gold_agreement,
+    )
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(

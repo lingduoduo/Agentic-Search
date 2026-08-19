@@ -1,7 +1,7 @@
 """GRPO and REINFORCE: the variants built on the PPO surrogate.
 
 The clipped surrogate itself, the KL controllers and the masked-tensor
-primitives live one layer down in `src/training/ppo`; this module holds what is
+primitives live one layer down in `src/model/post_training/ppo`; this module holds what is
 specific to the algorithms this package actually trains with -- GRPO's group-relative
 advantage and its config wrapper, and the REINFORCE losses.
 

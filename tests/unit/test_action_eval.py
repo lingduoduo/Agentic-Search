@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.training.eval.action_eval import (
+from src.model.post_training.eval.action_eval import (
     aggregate_action_metrics,
     compare_action_evals,
     format_comparison_table,

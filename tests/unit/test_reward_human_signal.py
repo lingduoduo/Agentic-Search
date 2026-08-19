@@ -7,8 +7,8 @@ import pytest
 pytest.importorskip("torch")
 
 from src import AgentLoopOutput, SearchRewardConfig, SearchRewardFunction
-from src.training.grpo.rollouts import GRPORolloutSample, score_prompt_group
-from src.training.reward import simple_sparse_correctness_reward
+from src.model.post_training.grpo.rollouts import GRPORolloutSample, score_prompt_group
+from src.model.post_training.reward import simple_sparse_correctness_reward
 
 
 def _make_output(answer: str = "test answer") -> AgentLoopOutput:

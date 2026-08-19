@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from src.model.intent.data import (
+from src.model.pre_training.intents.data import (
     IntentEvalQuery,
     load_canonical_examples,
     load_intent_eval_queries,
@@ -29,7 +29,7 @@ def test_load_rejects_conflicting_duplicate_text(tmp_path: Path):
 
 
 def test_load_out_of_scope_probes_rejects_labels_and_duplicates(tmp_path):
-    from src.model.intent.data import load_out_of_scope_probes
+    from src.model.pre_training.intents.data import load_out_of_scope_probes
 
     path = tmp_path / "oos.json"
     path.write_text('[{"id": "a", "text": "my cat knocked over the plant"}]')

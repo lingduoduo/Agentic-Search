@@ -6,9 +6,9 @@ from time import perf_counter
 import numpy as np
 import pytest
 
-from src.model.intent import data as intent_index_data
-from src.model.intent import evaluation as intent_index_eval
-from src.model.intent.model import CanonicalExample, IntentIndex
+from src.model.pre_training.intents import data as intent_index_data
+from src.model.pre_training.intents import evaluation as intent_index_eval
+from src.model.pre_training.intents.model import CanonicalExample, IntentIndex
 
 # Orthogonal one-hot vectors in (search, chat, tool) component order, so
 # top-3-mean cosine similarity is exactly 0.0 or 1.0 for a clean match and any
@@ -235,7 +235,7 @@ def test_out_of_scope_separability_is_reported_on_held_out_probes_only(
 
 def test_the_probe_split_halves_are_disjoint_and_cover_every_probe(tmp_path):
     """A probe leaking into both halves would silently undo the split."""
-    from src.model.intent.evaluation import split_out_of_scope_probes
+    from src.model.pre_training.intents.evaluation import split_out_of_scope_probes
 
     probes = tuple((p["id"], p["text"]) for p in _PROBES)
     split = split_out_of_scope_probes(probes)
@@ -445,7 +445,7 @@ def test_top_k_sweep_reports_every_configured_k_without_changing_the_shipped_rep
     # The probe side is the TUNING half only, since this sweep is a tuning
     # artifact -- derived here rather than hardcoded so the assertion tracks the
     # split instead of a value that changes whenever the split does.
-    from src.model.intent.evaluation import split_out_of_scope_probes
+    from src.model.pre_training.intents.evaluation import split_out_of_scope_probes
 
     tuning_probes = split_out_of_scope_probes(
         tuple((probe["id"], probe["text"]) for probe in _PROBES)
@@ -671,14 +671,14 @@ _P95_LATENCY_CEILING_MS = 25.0
 @functools.lru_cache(maxsize=1)
 def _report():
     pytest.importorskip("sentence_transformers")
-    from src.model.intent.model import DEFAULT_ENCODER
-    from src.model.intent.evaluation import run_index_evaluation
-    from src.model.intent.model import INDEX_FILENAME, IntentIndex
+    from src.model.pre_training.intents.model import DEFAULT_ENCODER
+    from src.model.pre_training.intents.evaluation import run_index_evaluation
+    from src.model.pre_training.intents.model import INDEX_FILENAME, IntentIndex
 
     index = DATA / "intent_index"
     if not (index / INDEX_FILENAME).exists():
         pytest.skip(
-            "run `python -m src.model.intent.cli build --canonical "
+            "run `python -m src.model.pre_training.intents.cli build --canonical "
             f"data/intent_canonical.json --output {index}` to measure the bars"
         )
     on_disk_encoder = IntentIndex.load(index / INDEX_FILENAME).encoder
@@ -690,7 +690,7 @@ def _report():
         pytest.skip(
             f"data/intent_index was built with encoder {on_disk_encoder!r}, "
             f"but the current encoder is {DEFAULT_ENCODER!r}; run "
-            "`python -m src.model.intent.cli build --canonical "
+            "`python -m src.model.pre_training.intents.cli build --canonical "
             f"data/intent_canonical.json --output {index}` to re-measure "
             "the bars"
         )
@@ -729,9 +729,9 @@ def test_every_module_has_enough_canonical_support_to_be_emitted():
     """
     from collections import Counter
 
-    from src.model.intent.data import load_canonical_examples
-    from src.model.intent.model import MIN_MODULE_SUPPORT
-    from src.model.intent.model import INTENT_LABELS, modules_for_route
+    from src.model.pre_training.intents.data import load_canonical_examples
+    from src.model.pre_training.intents.model import MIN_MODULE_SUPPORT
+    from src.model.pre_training.intents.model import INTENT_LABELS, modules_for_route
 
     canonical_path = DATA / "intent_canonical.json"
     if not canonical_path.exists():
@@ -751,7 +751,7 @@ def test_the_report_covers_the_whole_bulk_set():
     encoder -- read it directly rather than through ``_report()``, for the
     same reason as the module-support test above.
     """
-    from src.model.intent.data import load_intent_eval_queries
+    from src.model.pre_training.intents.data import load_intent_eval_queries
 
     queries_path = DATA / "intent_eval_queries.json"
     if not queries_path.exists():
@@ -768,8 +768,8 @@ def test_routing_one_request_stays_under_the_latency_ceiling():
     pytest.importorskip("sentence_transformers")
     _report()  # skips for the same reasons as the bars above
 
-    from src.model.intent.model import encode_texts
-    from src.model.intent.model import INDEX_FILENAME, IntentIndex
+    from src.model.pre_training.intents.model import encode_texts
+    from src.model.pre_training.intents.model import INDEX_FILENAME, IntentIndex
 
     index = IntentIndex.load(DATA / "intent_index" / INDEX_FILENAME)
     query = "book the meeting room for tomorrow afternoon"

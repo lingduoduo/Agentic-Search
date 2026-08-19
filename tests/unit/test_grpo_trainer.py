@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from src.training.grpo.grpo_trainer import (
+from src.model.post_training.grpo.grpo_trainer import (
     Policy,
     compute_group_advantages,
     grpo_clipped_policy_loss,

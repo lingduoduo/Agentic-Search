@@ -5,8 +5,8 @@ import random
 import numpy as np
 import pytest
 
-from src.training.qlearning.agent import QLearningAgent
-from src.training.qlearning.environment import SearchEnvironment
+from src.model.post_training.qlearning.agent import QLearningAgent
+from src.model.post_training.qlearning.environment import SearchEnvironment
 
 
 def _env(**kw):
@@ -133,7 +133,7 @@ def test_stochastic_relevant_retrieval_can_fail():
 
 
 def test_dqn_agent_is_gone():
-    import src.training.qlearning.agent as mod
+    import src.model.post_training.qlearning.agent as mod
 
     assert not hasattr(mod, "DQNAgent")
 
@@ -251,9 +251,9 @@ class _Blocker:
 
 sys.meta_path.insert(0, _Blocker())
 
-import src.training.grpo                      # the package __init__ itself
-import src.training.qlearning.agent            # the demo agent
-import src.training.qlearning.environment   # the demo environment
+import src.model.post_training.grpo                      # the package __init__ itself
+import src.model.post_training.qlearning.agent            # the demo agent
+import src.model.post_training.qlearning.environment   # the demo environment
 print("OK")
 """
     result = subprocess.run(

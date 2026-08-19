@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from src.training.sft.trainer import SFTConfig, SFTExample, SFTTrainer
+from src.model.post_training.sft.trainer import SFTConfig, SFTExample, SFTTrainer
 
 
 def _make_example(prompt: str = "Q?", completion: str = "A.") -> SFTExample:
