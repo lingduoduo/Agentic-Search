@@ -1473,6 +1473,7 @@ def create_web_app(
         on_turn: "OnTurnCallback | None" = None,
         on_trace: EventSink | None = None,
         on_approval=None,
+        on_token=None,
     ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:

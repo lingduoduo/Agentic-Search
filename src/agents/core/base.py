@@ -44,6 +44,29 @@ def _crop_prompt_ids(
 
 # Signature: (turn_number, tool_name_or_None, doc_count) -> awaitable
 OnTurnCallback = Callable[[int, "str | None", int], Awaitable[None]]
+# One decoded chunk of the answer as the model produces it. Optional everywhere:
+# passing None keeps the non-streaming path, which is what every trainer and
+# offline script uses.
+OnTokenCallback = Callable[[str], Awaitable[None]]
+
+
+def _guarded_token_callback(on_token: "OnTokenCallback") -> "OnTokenCallback":
+    """Wrap *on_token* so a failing consumer cannot abort the generation.
+
+    The callback is a delivery detail -- an SSE client that has gone away. By
+    the time tokens flow the run has already done the expensive work, so losing
+    the answer to a disconnected browser would be the wrong trade. Failures are
+    swallowed per token and the run completes normally.
+    """
+
+    async def guarded(text: str) -> None:
+        try:
+            await on_token(text)
+        except Exception:  # noqa: BLE001 - delivery failure, not a run failure
+            pass
+
+    return guarded
+
 
 _REGISTERED_AGENT_LOOPS: dict[str, type["AgentLoopBase"]] = {}
 
@@ -237,13 +260,31 @@ class AgentLoopBase:
         prompt_ids: list[int],
         sampling_params: dict[str, Any],
         request_id: str | None = None,
+        on_token: "OnTokenCallback | None" = None,
     ) -> list[int]:
+        """Generate response token ids, optionally streaming decoded chunks.
+
+        ``on_token`` is used only when the configured manager implements
+        ``generate_stream``. Managers are structurally typed (``ServerManager``
+        is a Protocol), so probing for the method rather than adding a required
+        argument keeps every existing implementation and test double working --
+        including the ones in the training stack, which never stream.
+        """
         request_id = request_id or uuid4().hex
-        generate_result = self.server_manager.generate(
-            request_id=request_id,
-            prompt_ids=prompt_ids,
-            sampling_params=sampling_params,
-        )
+        streamer = getattr(self.server_manager, "generate_stream", None)
+        if on_token is not None and streamer is not None:
+            generate_result = streamer(
+                request_id=request_id,
+                prompt_ids=prompt_ids,
+                sampling_params=sampling_params,
+                on_token=_guarded_token_callback(on_token),
+            )
+        else:
+            generate_result = self.server_manager.generate(
+                request_id=request_id,
+                prompt_ids=prompt_ids,
+                sampling_params=sampling_params,
+            )
         response_ids = (
             await generate_result
             if inspect.isawaitable(generate_result)
@@ -283,6 +324,7 @@ class AgentLoopBase:
         metric_name: str,
         request_id: str,
         sampling_params: dict[str, Any],
+        on_token: "OnTokenCallback | None" = None,
     ) -> tuple[list[int], list[int], str]:
         with simple_timer(metric_name, metrics):
             prompt_ids = await self.build_prompt_ids(messages)
@@ -290,6 +332,7 @@ class AgentLoopBase:
                 request_id=request_id,
                 prompt_ids=prompt_ids,
                 sampling_params=sampling_params,
+                on_token=on_token,
             )
         return prompt_ids, response_ids, self.decode_response_ids(response_ids)
 

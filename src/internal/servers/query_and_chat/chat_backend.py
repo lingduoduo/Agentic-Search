@@ -6,6 +6,7 @@ The send-message flow is handled by POST /api/agent in the web app.
 
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 from collections.abc import AsyncGenerator
@@ -222,14 +223,47 @@ def create_chat_router(store: AgenticSearchStore) -> APIRouter:
             def _sse(data: dict) -> str:
                 return f"data: {_json.dumps(data)}\n\n"
 
+            # Tokens are produced inside the run and consumed here, so they need
+            # a hand-off. Unbounded on purpose: bounding it would mean either
+            # dropping answer text or back-pressuring generation itself, and
+            # neither is acceptable for the user-visible answer. The producer is
+            # rate-limited by the model, which is far slower than the drain.
+            tokens: asyncio.Queue = asyncio.Queue()
+            _SENTINEL = object()
+
+            async def on_token(text: str) -> None:
+                await tokens.put(text)
+
+            async def _run() -> str:
+                try:
+                    return await _run_plain_chat(
+                        body.message,
+                        manager=manager,
+                        tokenizer=tokenizer,
+                        history=history,
+                        on_token=on_token,
+                    )
+                finally:
+                    await tokens.put(_SENTINEL)
+
+            task = asyncio.create_task(_run())
             try:
-                answer = await _run_plain_chat(
-                    body.message, manager=manager, tokenizer=tokenizer, history=history
-                )
+                while True:
+                    item = await tokens.get()
+                    if item is _SENTINEL:
+                        break
+                    yield _sse({"type": "token", "text": item})
+                answer = await task
                 store.add_chat_message(session_id, role="assistant", content=answer)
+                # The authoritative text still arrives whole: a client that
+                # ignores `token` events is unaffected, and any divergence
+                # between the streamed chunks and the final answer is visible
+                # rather than silent.
                 yield _sse({"type": "answer", "text": answer})
                 yield _sse({"type": "done", "session_id": session_id})
             except Exception as exc:  # noqa: BLE001
+                if not task.done():
+                    task.cancel()
                 logger.exception("Streaming chat failed for: %r", body.message)
                 yield _sse({"type": "error", "detail": str(exc)})
 

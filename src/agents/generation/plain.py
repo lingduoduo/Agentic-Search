@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from src.agents.core.base import (
+    OnTokenCallback,
     AgentLoopBase,
     AgentLoopConfig,
     AgentLoopOutput,
@@ -35,7 +36,15 @@ class PlainGenerationLoop(AgentLoopBase):
         sampling_params: dict[str, Any],
         *,
         on_turn: "OnTurnCallback | None" = None,
+        on_token: "OnTokenCallback | None" = None,
     ) -> AgentLoopOutput:
+        """Run one generation.
+
+        ``on_token`` streams decoded chunks as the model produces them. This
+        loop is a single generation, so every token maps one-to-one onto
+        user-visible answer text -- unlike ``SearchAgentLoop``, whose XML
+        protocol would leak if streamed raw.
+        """
         metrics: dict[str, float] = {}
         request_id = uuid4().hex
         prompt_ids, response_ids, answer = await self._generate_text(
@@ -44,6 +53,7 @@ class PlainGenerationLoop(AgentLoopBase):
             metric_name="generate_sequences",
             request_id=request_id,
             sampling_params=sampling_params,
+            on_token=on_token,
         )
         return AgentLoopOutput(
             prompt_ids=prompt_ids,

@@ -19,6 +19,7 @@ async def _run_plain_chat(
     tokenizer,
     history: list,
     on_turn=None,
+    on_token=None,
 ) -> str:
     """Run one PlainGenerationLoop turn over history + the new user message."""
     loop = PlainGenerationLoop(
@@ -33,5 +34,6 @@ async def _run_plain_chat(
         messages,
         sampling_params={"temperature": 0.7, "max_tokens": 512},
         on_turn=on_turn,
+        on_token=on_token,
     )
     return output.final_answer or ""
