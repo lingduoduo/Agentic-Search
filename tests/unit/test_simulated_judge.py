@@ -4,7 +4,7 @@ pytest.importorskip("torch")
 
 from src.agents.core.base import AgentLoopOutput
 from src.training.grpo.rollouts import GRPORolloutSample, score_prompt_group
-from src.training.judge import SimulatedPreferenceJudge, judge_gold_agreement
+from src.training.grpo.judge import SimulatedPreferenceJudge, judge_gold_agreement
 
 
 def test_empty_answer_scores_zero():

@@ -59,6 +59,16 @@ _LAZY_EXPORTS: dict[str, str] = {
     "get_response_log_probs": "llm_grpo_trainer",
     # search_agent_grpo_trainer — live SearchAgentLoop rollouts
     "SearchAgentGRPOTrainer": "search_agent_grpo_trainer",
+    # judge — RLAIF scoring, moved in from the shared top level. Deferred
+    # like everything else here: it reaches ``reward``, which reaches the
+    # agent loop.
+    "GoldAgreementJudge": "judge",
+    "JudgeParseError": "judge",
+    "LLMJudge": "judge",
+    "SimulatedPreferenceJudge": "judge",
+    "is_degenerate_group": "judge",
+    "judge_gold_agreement": "judge",
+    "parse_judge_score": "judge",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
