@@ -151,6 +151,11 @@ export function AssistPage() {
             ...current.filter((approval) => approval.id !== event.approval.id),
             event.approval,
           ]);
+        } else if (event.type === "claim") {
+          accumulatedAnswer = accumulatedAnswer
+            ? `${accumulatedAnswer} ${event.text}`
+            : event.text;
+          setStreamingAnswer(accumulatedAnswer);
         } else if (event.type === "answer") {
           accumulatedAnswer = event.text;
           setStreamingAnswer(event.text);

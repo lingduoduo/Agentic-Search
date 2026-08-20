@@ -238,6 +238,11 @@ export interface SSEAnswerEvent {
   text: string;
 }
 
+export interface SSEClaimEvent {
+  type: "claim";
+  text: string;
+}
+
 export interface SSETraceEvent {
   type: "trace";
   event: ControlFlowEventView;
@@ -277,6 +282,7 @@ export interface SSEErrorEvent {
 export type SSEEvent =
   | SSEProgressEvent
   | SSEAnswerEvent
+  | SSEClaimEvent
   | SSETraceEvent
   | SSEApprovalRequiredEvent
   | SSEDoneEvent
