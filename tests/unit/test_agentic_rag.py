@@ -471,3 +471,42 @@ async def test_run_threads_user_memory_into_answer_request():
         )
 
     assert captured["user_memory"] == "\n\nUser memory:\n- allergic to peanuts"
+
+
+def _stub_generation_result():
+    """Minimal AnswerGenerationResult: run() reads only .answer/.citations/.context."""
+    from src.context.models import AnswerGenerationResult, PromptBundle
+
+    context = SearchContextBundle(query="q", documents=[])
+    return AnswerGenerationResult(
+        answer="stub",
+        citations=[],
+        context=context,
+        prompt=PromptBundle(system="", user="", messages=[]),
+    )
+
+
+@pytest.mark.asyncio
+async def test_agentic_rag_forwards_on_claim():
+    """run(on_claim=...) is forwarded to generate_answer unchanged."""
+    seen: dict = {}
+
+    def _fake_generate_answer(request, *, llm=None, on_claim=None):
+        seen["on_claim"] = on_claim
+        return _stub_generation_result()
+
+    callback = lambda text: None  # noqa: E731
+    bundle = _make_bundle(["d1"])
+    llm = _llm_responses("sub", "hyde", "broader")
+
+    with (
+        patch(
+            "src.agents.search.agentic_rag.retrieve_context",
+            AsyncMock(return_value=bundle),
+        ),
+        patch("src.agents.search.agentic_rag.generate_answer", _fake_generate_answer),
+    ):
+        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)
+        await loop.run("q", on_claim=callback)
+
+    assert seen["on_claim"] is callback

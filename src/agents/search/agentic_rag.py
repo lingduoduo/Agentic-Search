@@ -7,6 +7,7 @@ import hashlib
 import logging
 import time
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -195,6 +196,7 @@ class AgenticRAGLoop:
         chat_history: list[ChatMessage] | None = None,
         recorder: "ControlFlowRecorder | None" = None,
         user_memory: str | None = None,
+        on_claim: Callable[[str], None] | None = None,
     ) -> AgenticRAGResult:
         def _emit(
             component: str,
@@ -320,6 +322,9 @@ class AgenticRAGLoop:
         # the full completion, stalling every other in-flight session behind one
         # user's answer. This is the most expensive call in the loop, so it was
         # the worst one to leave unprotected.
+        gen_kwargs: dict[str, object] = {"llm": self.llm}
+        if on_claim is not None:
+            gen_kwargs["on_claim"] = on_claim
         gen_result = await asyncio.to_thread(
             generate_answer,
             AnswerGenerationRequest(
@@ -328,7 +333,7 @@ class AgenticRAGLoop:
                 chat_history=chat_history or [],
                 user_memory=user_memory,
             ),
-            llm=self.llm,
+            **gen_kwargs,
         )
         _emit(
             "answer_generator",
