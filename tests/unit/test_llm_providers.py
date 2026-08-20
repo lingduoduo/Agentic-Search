@@ -384,3 +384,69 @@ def test_plain_connection_error_still_propagates():
     ):
         with pytest.raises(requests.ConnectionError):
             llm.complete([{"role": "user", "content": "hi"}])
+
+
+# ---------------------------------------------------------------------------
+# stream() / stream_complete() timeout handling — Findings 1 and 3
+# ---------------------------------------------------------------------------
+
+
+def test_stream_default_timeout_matches_complete():
+    """complete() defaults to 30s; stream() must match, not 120s (Finding 3)."""
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session, "post", return_value=_mock_response("data: [DONE]")
+    ) as mock_post:
+        list(llm.stream(prompt="hi"))
+    assert mock_post.call_args.kwargs["timeout"] == 30
+
+
+def test_stream_timeout_at_call_time_is_normalized_to_llm_timeout_error():
+    """A timeout raised while opening the connection must become LLMTimeoutError,
+    exactly as complete() already does."""
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session,
+        "post",
+        side_effect=requests.ReadTimeout("read timed out"),
+    ):
+        with pytest.raises(LLMTimeoutError):
+            list(llm.stream(prompt="hi"))
+
+
+def test_stream_timeout_during_iteration_is_normalized_to_llm_timeout_error():
+    """Critical placement check: stream() is a generator, so its body — the
+    initial POST included — only runs on first iteration. A timeout raised
+    later, while reading subsequent chunks, must ALSO become LLMTimeoutError,
+    not just one raised by the initial call."""
+
+    def _lines_then_timeout():
+        yield 'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}'
+        raise requests.ReadTimeout("read timed out mid-stream")
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = _lines_then_timeout()
+
+    llm = _timeout_llm()
+    with patch.object(llm._session, "post", return_value=resp):
+        with pytest.raises(LLMTimeoutError):
+            list(llm.stream(prompt="hi"))
+
+
+def test_stream_complete_timeout_during_iteration_is_normalized_to_llm_timeout_error():
+    """The pipeline calls stream_complete, not stream, directly — pin that the
+    conversion is visible through that entry point too."""
+
+    def _lines_then_timeout():
+        yield 'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}'
+        raise requests.ReadTimeout("read timed out mid-stream")
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = _lines_then_timeout()
+
+    llm = _timeout_llm()
+    with patch.object(llm._session, "post", return_value=resp):
+        with pytest.raises(LLMTimeoutError):
+            list(llm.stream_complete([{"role": "user", "content": "hi"}]))

@@ -108,6 +108,28 @@ def _parse_sse_chunk(line: str, chunk_id: str = "") -> ModelResponseStream | Non
     )
 
 
+def _is_schema_unsupported_response(response: requests.Response | None) -> bool:
+    """True when a 400 response indicates the provider rejects response_format/json_schema.
+
+    Shared by `complete` and `stream_complete` so the detection regex has one
+    copy instead of drifting between the streaming and non-streaming paths.
+    """
+    if response is None or response.status_code != 400:
+        return False
+    provider_error = response.text.lower()
+    return bool(
+        re.search(
+            r"(?:unknown|unsupported)\s+"
+            r"(?:(?:parameter|field)\s*)?[:=]?\s*[\"'`]?"
+            r"(?:response_format|json_schema)\b"
+            r"|\b(?:response_format|json_schema)\b"
+            r"(?:\s+\w+){0,3}\s+"
+            r"(?:unknown|unsupported|not\s+supported)\b",
+            provider_error,
+        )
+    )
+
+
 class OpenAICompatibleLLM(LLM):
     """LLM implementation that streams from any OpenAI-compatible endpoint.
 
@@ -174,7 +196,7 @@ class OpenAICompatibleLLM(LLM):
         if structured_response_format:
             body["response_format"] = structured_response_format
 
-        timeout = timeout_override or 120
+        timeout = timeout_override or 30
         chunk_id = f"chatcmpl-{uuid.uuid4().hex}"
         resp: requests.Response | None = None
         try:
@@ -186,6 +208,8 @@ class OpenAICompatibleLLM(LLM):
                 timeout=timeout,
             )
             resp.raise_for_status()
+        except requests.Timeout:
+            raise LLMTimeoutError("LLM request timed out") from None
         except requests.HTTPError as exc:
             logger.error(
                 "LLM HTTP error %s from %s: %s",
@@ -202,6 +226,8 @@ class OpenAICompatibleLLM(LLM):
                 chunk = _parse_sse_chunk(raw_line, chunk_id)
                 if chunk is not None:
                     yield chunk
+        except requests.Timeout:
+            raise LLMTimeoutError("LLM request timed out") from None
         finally:
             resp.close()
 
@@ -219,12 +245,13 @@ class OpenAICompatibleLLM(LLM):
         never handle provider chunk objects. Probed by name in the answer
         pipeline; absent implementations simply fall back to `complete`.
         """
-        response_format: dict | None = None
-        if (
+        schema_applied = bool(
             structured_output
             and self.structured_output_capability
             is StructuredOutputCapability.JSON_SCHEMA
-        ):
+        )
+        response_format: dict | None = None
+        if schema_applied:
             response_format = {
                 "type": "json_schema",
                 "json_schema": {
@@ -233,14 +260,21 @@ class OpenAICompatibleLLM(LLM):
                     "schema": structured_output.schema,
                 },
             }
-        for chunk in self.stream(
-            messages,
-            structured_response_format=response_format,
-            timeout_override=timeout_override,
-        ):
-            content = chunk.choice.delta.content
-            if content:
-                yield content
+        try:
+            for chunk in self.stream(
+                messages,
+                structured_response_format=response_format,
+                timeout_override=timeout_override,
+            ):
+                content = chunk.choice.delta.content
+                if content:
+                    yield content
+        except requests.HTTPError as exc:
+            if schema_applied and _is_schema_unsupported_response(exc.response):
+                raise SchemaUnsupportedError(
+                    "Provider does not support JSON Schema response formatting"
+                ) from None
+            raise
 
     @staticmethod
     def _normalise_messages(prompt: LanguageModelInput) -> list[dict]:
@@ -334,25 +368,7 @@ class OpenAICompatibleLLM(LLM):
         except requests.Timeout:
             raise LLMTimeoutError("LLM request timed out") from None
         except requests.HTTPError as exc:
-            response = exc.response
-            provider_error = response.text.lower() if response is not None else ""
-            schema_parameter_unsupported = bool(
-                re.search(
-                    r"(?:unknown|unsupported)\s+"
-                    r"(?:(?:parameter|field)\s*)?[:=]?\s*[\"'`]?"
-                    r"(?:response_format|json_schema)\b"
-                    r"|\b(?:response_format|json_schema)\b"
-                    r"(?:\s+\w+){0,3}\s+"
-                    r"(?:unknown|unsupported|not\s+supported)\b",
-                    provider_error,
-                )
-            )
-            if (
-                schema_applied
-                and response is not None
-                and response.status_code == 400
-                and schema_parameter_unsupported
-            ):
+            if schema_applied and _is_schema_unsupported_response(exc.response):
                 raise SchemaUnsupportedError(
                     "Provider does not support JSON Schema response formatting"
                 ) from None

@@ -680,6 +680,55 @@ def test_timeout_after_emission_still_returns_committed_claims():
     assert result.answer != "I couldn't complete an answer in time. Please try again."
 
 
+def test_transport_timeout_after_emission_still_returns_committed_claims():
+    """Finding 1: the double above raises LLMTimeoutError directly, which the
+    real transport never does — it never reaches pipeline.py's except
+    LLMTimeoutError handler on the actual streaming path unless providers.py
+    converts a real requests.Timeout itself. This drives the real
+    OpenAICompatibleLLM.stream_complete over a mocked HTTP transport that
+    raises requests.ReadTimeout mid-stream, and proves the committed claims
+    still come back as the answer end to end."""
+    import requests
+    from unittest.mock import MagicMock, patch
+
+    from src.internal.llm.interfaces import LLMConfig
+    from src.internal.llm.providers import OpenAICompatibleLLM
+
+    draft = _draft_json(
+        abstain=False,
+        claims=[("FAISS is a vector similarity search library.", ["D1"])],
+    )
+
+    def _sse_lines(text: str) -> list[str]:
+        lines = []
+        for index in range(0, len(text), 5):
+            piece = text[index : index + 5]
+            payload = json.dumps(
+                {"choices": [{"delta": {"content": piece}, "finish_reason": None}]}
+            )
+            lines.append(f"data: {payload}")
+        return lines
+
+    def _iter_lines_then_timeout():
+        yield from _sse_lines(draft)
+        raise requests.ReadTimeout("read timed out mid-stream")
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.iter_lines.return_value = _iter_lines_then_timeout()
+
+    llm = OpenAICompatibleLLM(
+        LLMConfig(model_provider="openai_compatible", model_name="test-model")
+    )
+    emitted: list[str] = []
+    with patch.object(llm._session, "post", return_value=mock_resp):
+        result = generate_answer(_request(), llm=llm, on_claim=emitted.append)
+
+    assert emitted
+    assert result.answer == " ".join(emitted)
+    assert result.answer != "I couldn't complete an answer in time. Please try again."
+
+
 def test_refusal_after_emission_still_returns_committed_claims():
     """Critical 2: a downgrade-then-refusal on retry must not discard claims."""
     first = _draft_json(

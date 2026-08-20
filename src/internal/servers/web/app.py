@@ -1913,6 +1913,7 @@ def create_web_app(
 
         queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
         dropped_trace_events = 0
+        dropped_claim_events = 0
         auth_user = _optional_user_from_request(http_request, db)
         request_id = _uuid.uuid4().hex
         loop = asyncio.get_running_loop()
@@ -1924,10 +1925,13 @@ def create_web_app(
             await queue.put({"type": "progress", "turn": turn, "text": text})
 
         def _offer(item: dict) -> None:
+            # The terminal answer event still carries the full text, so a
+            # dropped claim doesn't lose data — but it's worth counting.
+            nonlocal dropped_claim_events
             try:
                 queue.put_nowait(item)
             except asyncio.QueueFull:
-                pass  # the terminal answer event still carries the full text
+                dropped_claim_events += 1
 
         def on_claim(text: str) -> None:
             # Called from the generate_answer worker thread (see #547's
@@ -2000,6 +2004,11 @@ def create_web_app(
                     logger.warning(
                         "dropped %d live control-flow trace events",
                         dropped_trace_events,
+                    )
+                if dropped_claim_events:
+                    logger.warning(
+                        "dropped %d live claim events",
+                        dropped_claim_events,
                     )
             except BaseException as exc:
                 if not task.done():
