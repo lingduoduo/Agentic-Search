@@ -28,6 +28,19 @@ from src.internal.servers._auth import make_require_admin
 
 logger = logging.getLogger(__name__)
 
+# `asyncio` holds only weak references to running tasks, so a fire-and-forget
+# background eval could be garbage-collected mid-flight -- silently, since the
+# log line it writes on completion is the route's only observable output. Hold
+# a strong reference for the task's lifetime and drop it when it finishes.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _run_detached(coro) -> asyncio.Task:
+    task = asyncio.ensure_future(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -166,7 +179,7 @@ def create_evals_router(
             except Exception as exc:
                 logger.error("Background eval failed: %s", exc)
 
-        asyncio.ensure_future(_run_background())
+        _run_detached(_run_background())
         return EvalRunAck(success=True, message="Eval queued.")
 
     @router.get("/api/admin/evals/summary", response_model=EvalsSummary)
