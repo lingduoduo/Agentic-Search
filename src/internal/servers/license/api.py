@@ -16,6 +16,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -224,10 +225,15 @@ def create_license_router(app_settings: AppSettings) -> APIRouter:
                 ),
             )
 
+        # These are blocking `requests` calls with a 30s timeout. Awaited inline
+        # from this async handler they froze the event loop for the whole
+        # round-trip, so one slow or hanging license server stalled every other
+        # request the backend was serving.
         try:
             if session_id:
                 url = f"{base_url.rstrip('/')}/proxy/claim-license"
-                resp = requests.post(
+                resp = await asyncio.to_thread(
+                    requests.post,
                     url,
                     json={"session_id": session_id},
                     headers={"Content-Type": "application/json"},
@@ -244,7 +250,8 @@ def create_license_router(app_settings: AppSettings) -> APIRouter:
                 url = (
                     f"{base_url.rstrip('/')}/proxy/license/{payload_existing.tenant_id}"
                 )
-                resp = requests.get(
+                resp = await asyncio.to_thread(
+                    requests.get,
                     url,
                     headers={"Authorization": f"Bearer {existing}"},
                     timeout=30,
