@@ -100,9 +100,9 @@ def build_structured_answer_prompt(
     system = (
         "You are a retrieval-grounded research assistant.\n"
         f"{build_agent_behavior_prompt(config)}\n\n"
-        "Return only one JSON object with exactly these keys: claims, "
-        "missing_information, abstain. Each claim must contain exactly text and "
-        "evidence_ids. evidence_ids must be a non-empty array of IDs present in "
+        "Return only one JSON object with exactly these keys, in this order: "
+        "abstain, missing_information, claims. Each claim must contain exactly "
+        "text and evidence_ids. evidence_ids must be a non-empty array of IDs present in "
         "the supplied evidence. Do not emit markdown or extra keys. Every factual "
         "claim must be supported by every evidence ID it cites. If evidence is "
         "missing or you are uncertain, record the gap in missing_information or "
