@@ -16,10 +16,14 @@ from src.context.models import (
 )
 from src.context.safety import (
     CANONICAL_ABSTENTION,
+    build_claim,
     evidence_from_context,
     parse_answer_draft,
+    render_claim,
+    render_claims,
     render_verified_answer,
     verify_answer_draft,
+    verify_claim,
 )
 
 
@@ -131,6 +135,30 @@ def test_parse_answer_draft_rejects_unknown_evidence_ids():
         parse_answer_draft(payload, _evidence())
 
 
+def test_build_claim_matches_the_batch_parse():
+    known_ids = {item.id for item in _evidence()}
+    raw_claim = {"text": "FAISS supports similarity search.", "evidence_ids": ["D1"]}
+
+    single = build_claim(raw_claim, known_ids)
+    batch = parse_answer_draft(
+        json.dumps(
+            {
+                "claims": [raw_claim],
+                "missing_information": [],
+                "abstain": False,
+            }
+        ),
+        _evidence(),
+    )
+
+    assert single == batch.claims[0]
+
+
+def test_build_claim_rejects_unknown_evidence_ids():
+    with pytest.raises(ValueError, match="D99"):
+        build_claim({"text": "An invented fact.", "evidence_ids": ["D99"]}, set())
+
+
 def test_verify_answer_draft_marks_supported_and_unsupported_claims():
     draft = AnswerDraft(
         claims=[
@@ -149,6 +177,27 @@ def test_verify_answer_draft_marks_supported_and_unsupported_claims():
     assert result.verdicts[0].supported is True
     assert result.verdicts[1].supported is False
     assert result.verdicts[1].reason == "insufficient lexical support"
+
+
+def test_verify_claim_matches_the_batch_verdict():
+    evidence = _evidence()
+    by_id = {item.id: item for item in evidence}
+    claim = AnswerClaim(
+        text="FAISS is a vector similarity search library.", evidence_ids=["D1"]
+    )
+
+    single = verify_claim(claim, by_id)
+    batch = verify_answer_draft(AnswerDraft(claims=[claim]), evidence)
+
+    assert single.supported is batch.verdicts[0].supported
+    assert single.overlap_scores == batch.verdicts[0].overlap_scores
+    assert single.reason == batch.verdicts[0].reason
+
+
+def test_verify_claim_rejects_unknown_evidence_ids():
+    verdict = verify_claim(AnswerClaim(text="Anything.", evidence_ids=["NOPE"]), {})
+    assert verdict.supported is False
+    assert "unknown evidence IDs" in verdict.reason
 
 
 def test_render_verified_answer_includes_only_supported_claims_and_citations():
@@ -181,6 +230,15 @@ def test_render_verified_answer_uses_canonical_abstention_without_support():
     assert result.confidence == 0.0
     assert render_verified_answer(result) == CANONICAL_ABSTENTION
     assert CANONICAL_ABSTENTION == "I don't know based on the available evidence."
+
+
+def test_render_claim_matches_what_the_full_render_produces():
+    claim = AnswerClaim(text="FAISS is a library.", evidence_ids=["D1", "T1"])
+    assert render_claim(claim) == "FAISS is a library. [D1] [T1]"
+
+
+def test_render_claims_abstains_when_empty():
+    assert render_claims([]) == CANONICAL_ABSTENTION
 
 
 def test_explicit_abstention_suppresses_supported_claims():
