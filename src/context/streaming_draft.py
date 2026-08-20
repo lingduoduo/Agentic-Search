@@ -27,15 +27,21 @@ def _next_object(text: str, start: int) -> tuple[str, int] | None:
     """Return (object_text, end_index) for the first complete {...} at or after start.
 
     Returns None when the text is merely incomplete, so the caller waits for more.
-    String-aware, so braces and escaped quotes inside claim text do not confuse
-    the depth count.
+    Raises ValueError when the next element in the claims array is neither an
+    object nor the array's closing `]` -- e.g. a bare string, number, or literal
+    -- since `parse_answer_draft` only ever accepts claim objects there, and
+    leaving the cursor stuck on such a token would otherwise stall forever
+    instead of giving up. String-aware, so braces and escaped quotes inside
+    claim text do not confuse the depth count.
     """
     index = start
     length = len(text)
     while index < length and text[index] in ", \t\r\n":
         index += 1
-    if index >= length or text[index] != "{":
+    if index >= length or text[index] == "]":
         return None
+    if text[index] != "{":
+        raise ValueError("claims array element is not an object")
 
     depth = 0
     in_string = False
@@ -112,7 +118,11 @@ class IncrementalDraftReader:
 
         claims: list[AnswerClaim] = []
         while True:
-            found = _next_object(self._buffer, self._cursor)
+            try:
+                found = _next_object(self._buffer, self._cursor)
+            except ValueError:
+                self._gave_up = True
+                return claims
             if found is None:
                 return claims
             object_text, self._cursor = found

@@ -61,6 +61,20 @@ def test_claims_before_abstain_yields_nothing():
     assert reader.gave_up is True
 
 
+def test_old_key_order_with_abstain_true_gives_up_before_emitting():
+    """Dangerous case: claims appear before abstain in the buffer, but abstain
+    is true. The refusal is gated on abstain's presence, not its position, so
+    this must give up before emitting -- and it must hold in a single feed()
+    call, with no chunk boundary to hide behind."""
+    reader = IncrementalDraftReader(IDS)
+    claims = reader.feed(
+        '{"claims": [{"text": "Discarded.", "evidence_ids": ["D1"]}], '
+        '"missing_information": [], "abstain": true}'
+    )
+    assert claims == []
+    assert reader.gave_up is True
+
+
 def test_unknown_evidence_ids_give_up():
     """The whole-draft parse rejects these, so streaming must not race ahead."""
     reader = IncrementalDraftReader(IDS)
@@ -82,6 +96,31 @@ def test_malformed_claim_gives_up_without_raising():
     )
     assert claims == []
     assert reader.gave_up is True
+
+
+def test_non_object_claims_element_gives_up_instead_of_stalling():
+    """A bare string (or any non-object) in the claims array must not leave the
+    cursor stuck forever -- that would silently drop every claim after it while
+    reporting gave_up as False."""
+    reader = IncrementalDraftReader(IDS)
+    claims = reader.feed(
+        '{"abstain": false, "missing_information": [], "claims": '
+        '["oops", {"text": "ok", "evidence_ids": ["D1"]}]}'
+    )
+    assert claims == []
+    assert reader.gave_up is True
+
+
+def test_incomplete_object_tail_does_not_give_up():
+    """A well-formed claim object that has not finished arriving yet must be
+    treated as merely incomplete, not as unrecognised input."""
+    reader = IncrementalDraftReader(IDS)
+    claims = reader.feed(
+        '{"abstain": false, "missing_information": [], "claims": '
+        '[{"text": "Not done yet'
+    )
+    assert claims == []
+    assert reader.gave_up is False
 
 
 def test_braces_inside_claim_text_do_not_split_the_object():
