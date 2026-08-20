@@ -1271,9 +1271,9 @@ the authoritative text, reconciling any drift."
 
 Unit tests cannot prove the model actually emits `abstain` first, which is the assumption the whole streaming path rests on. This task checks it against a real provider.
 
-**Files:** none — this is verification.
+**Files:** `examples/verify_claim_streaming.py`, `tests/unit/test_verify_claim_streaming.py` — the checks below turned out to be worth keeping as a runnable script rather than a one-off shell session.
 
-- [ ] **Step 1: Start the stack**
+- [x] **Step 1: Start the stack**
 
 ```bash
 python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus.jsonl
@@ -1283,7 +1283,7 @@ cd web && npm run dev
 
 `OPENAI_API_KEY` must be set, or `llm` is `None` at `app.py:1258` and Assist never reaches the grounded path at all.
 
-- [ ] **Step 2: Confirm claims stream**
+- [x] **Step 2: Confirm claims stream**
 
 ```bash
 curl -N -X POST http://127.0.0.1:7860/api/agent/stream \
@@ -1293,24 +1293,58 @@ curl -N -X POST http://127.0.0.1:7860/api/agent/stream \
 
 Expected: one or more `{"type":"claim",...}` events arriving **before** the `answer` event, and the concatenation of their `text` fields, space-joined, equalling the `answer` event's `text`. That equality is the invariant — check it explicitly rather than eyeballing that text appeared.
 
-- [ ] **Step 3: Confirm the ordering assumption holds**
+- [x] **Step 3: Confirm the ordering assumption holds**
 
 Check the server log or the Dev Console Request Inspector for the raw draft. Confirm the model emitted `abstain` before `claims`. **If it did not**, the reader gives up every time and claims never stream — the feature is silently inert. Report that rather than working around it: it means the schema ordering did not reach the provider, which is a Task 2 problem, not a reason to weaken the reader.
 
-- [ ] **Step 4: Confirm the browser renders incrementally**
+- [x] **Step 4: Confirm the browser renders incrementally**
 
 Open `http://127.0.0.1:5173/assist`, ask a question, and confirm text appears progressively rather than all at once, and that no text visibly disappears or is rewritten once shown.
 
-- [ ] **Step 5: Report findings**
+- [x] **Step 5: Report findings**
 
 Report measured time-to-first-claim against time-to-completion. If they are equal, streaming is not working end to end regardless of what the unit tests say.
+
+**Findings (run 2026-08-20 against a live OpenAI provider + demo retrieval on :8001).**
+
+`python -m examples.verify_claim_streaming --query "..."` now performs Steps 2 and 3
+and exits non-zero if the invariant breaks. Five timed runs plus one browser run,
+all passing:
+
+| query | claims | time-to-first-claim | time-to-answer | lead |
+|---|---|---|---|---|
+| "What is FAISS?" | 2 | 5.72s | 6.24s | 0.52s |
+| "What is FAISS?" | 2 | 7.96s | 8.32s | 0.36s |
+| "What is FAISS and how does it index vectors?" | 4 | 6.63s | 7.73s | 1.10s |
+| hybrid retrieval / RRF / cross-encoder reranking | 2 | 8.50s | 11.86s | 3.36s |
+| compare dense and sparse retrieval | 3 | 17.13s | 17.90s | 0.77s |
+
+- **The invariant held on every run**: `answer == " ".join(claims)`, checked
+  programmatically rather than by eye.
+- **The abstain-first assumption holds on the live provider.** It needs no separate
+  probe: the reader gives up unless `abstain` precedes `claims`, so claims arriving
+  at all is the proof. Step 3 is therefore satisfied by Step 2 passing.
+- **Step 4, the browser:** sampling the Answer region in-page at 100ms during a real
+  `/assist` query gave three distinct growth states (171 → 383 → 573 chars over
+  ~0.8s), each a strict prefix of the final text. Nothing is rewritten or removed
+  once shown.
+- **Time-to-first-claim is below time-to-completion on every run**, so the Definition
+  of Done is met — but the honest headline is that the win is ~0.5-3.4s. Answer
+  generation is only ~1s of a 6-18s request; **most Assist latency is upstream
+  query-enhancement and retrieval**, not answer generation. That is where the next
+  latency work belongs.
+
+Two things that cost time and are worth writing down: the local `SEARCH_AGENT_MODEL`
+(Qwen) fails to load without HF connectivity and that is **fine** — the grounded path
+uses the OpenAI `llm`, not it. And in the UI, Enter in the Question textarea does not
+submit; the Search button does.
 
 ---
 
 ## Definition of Done
 
-- [ ] `pytest` passes with no pre-existing test modified except where Task 2 changed a key-order or prompt-string assertion.
-- [ ] `cd web && npm run typecheck && npx vitest run` passes.
-- [ ] `ruff check . && ruff format --check .` clean.
-- [ ] Task 8 confirms claims stream from a live provider and that time-to-first-claim is materially below time-to-completion.
-- [ ] A PR is opened against `main` with both the spec and this plan referenced.
+- [x] `pytest` passes with no pre-existing test modified except where Task 2 changed a key-order or prompt-string assertion.
+- [x] `cd web && npm run typecheck && npx vitest run` passes.
+- [x] `ruff check . && ruff format --check .` clean.
+- [x] Task 8 confirms claims stream from a live provider and that time-to-first-claim is materially below time-to-completion.
+- [x] A PR is opened against `main` with both the spec and this plan referenced.
