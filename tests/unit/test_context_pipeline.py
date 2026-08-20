@@ -12,9 +12,12 @@ from src.context import AnswerStyle
 from src.context import CANONICAL_ABSTENTION
 from src.context import ChatMessage
 from src.context import LLMResponse
+from src.context import LLMTimeoutError
 from src.context import GroundedGenerationConfig
+from src.context import SchemaUnsupportedError
 from src.context import SearchRequest
 from src.context import SearchFilters
+from src.context import StructuredCompletionMetadata
 from src.context import StructuredOutputCapability
 from src.context import build_answer_prompt
 from src.context import build_context_bundle
@@ -592,3 +595,171 @@ def test_on_claim_none_uses_the_blocking_path():
     llm = _StreamingLLM([draft])
     generate_answer(_request(), llm=llm)
     assert llm.complete_calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression coverage for the review findings on Task 5:
+#   - every early exit from the attempt loop must respect the invariant, not
+#     just the final Step-5 return
+#   - dedup must not depend on evidence_ids order
+# These are written so that deleting the enforcement (`_committed_answer`
+# calls) in src/context/pipeline.py turns them red.
+# ---------------------------------------------------------------------------
+
+
+def test_committed_claim_survives_a_retry_that_drops_it_entirely():
+    """Attempt 2's draft doesn't even restate attempt 1's committed claim."""
+    first = _draft_json(
+        abstain=False,
+        claims=[
+            ("FAISS is a vector similarity search library.", ["D1"]),
+            ("Unrelated invented assertion about nothing.", ["D1"]),
+        ],
+    )
+    second = _draft_json(
+        abstain=False,
+        claims=[("The service currently has 12 active indexes.", ["T1"])],
+    )
+    emitted: list[str] = []
+    result = generate_answer(
+        _request(), llm=_StreamingLLM([first, second]), on_claim=emitted.append
+    )
+
+    assert result.answer == " ".join(emitted)
+    assert "FAISS is a vector similarity search library." in result.answer
+
+
+def test_committed_claim_survives_a_retry_after_a_parse_failure():
+    """Attempt 1 commits via streaming, then its full draft fails to parse."""
+    malformed_first = (
+        '{"abstain": false, "missing_information": [], "claims": '
+        '[{"text": "FAISS is a vector similarity search library.", '
+        '"evidence_ids": ["D1"]}, }'
+    )
+    second = _draft_json(
+        abstain=False,
+        claims=[("The service currently has 12 active indexes.", ["T1"])],
+    )
+    emitted: list[str] = []
+    result = generate_answer(
+        _request(),
+        llm=_StreamingLLM([malformed_first, second]),
+        on_claim=emitted.append,
+    )
+
+    assert emitted
+    assert result.answer == " ".join(emitted)
+    assert "FAISS is a vector similarity search library." in result.answer
+
+
+def test_timeout_after_emission_still_returns_committed_claims():
+    """Critical 1: a mid-stream timeout must not discard already-shown claims."""
+    draft = _draft_json(
+        abstain=False,
+        claims=[("FAISS is a vector similarity search library.", ["D1"])],
+    )
+
+    class _TimeoutAfterEmissionLLM:
+        structured_output_capability = StructuredOutputCapability.PROMPT_ONLY
+
+        def complete(self, messages, **kwargs):
+            raise AssertionError("blocking path should not be used")
+
+        def stream_complete(self, messages, **kwargs):
+            for index in range(0, len(draft), 5):
+                yield draft[index : index + 5]
+            raise LLMTimeoutError("stream timed out mid-response")
+
+    emitted: list[str] = []
+    result = generate_answer(
+        _request(), llm=_TimeoutAfterEmissionLLM(), on_claim=emitted.append
+    )
+
+    assert emitted
+    assert result.answer == " ".join(emitted)
+    assert result.answer != "I couldn't complete an answer in time. Please try again."
+
+
+def test_refusal_after_emission_still_returns_committed_claims():
+    """Critical 2: a downgrade-then-refusal on retry must not discard claims."""
+    first = _draft_json(
+        abstain=False,
+        claims=[
+            ("FAISS is a vector similarity search library.", ["D1"]),
+            ("Unrelated invented assertion about nothing.", ["D1"]),
+        ],
+    )
+
+    class _RefuseOnRetryLLM:
+        structured_output_capability = StructuredOutputCapability.JSON_SCHEMA
+
+        def __init__(self) -> None:
+            self._drafts = [first]
+
+        def complete(self, messages, **kwargs):
+            return LLMResponse(
+                text="", structured=StructuredCompletionMetadata(refused=True)
+            )
+
+        def stream_complete(self, messages, **kwargs):
+            if self._drafts:
+                draft = self._drafts.pop(0)
+                for index in range(0, len(draft), 5):
+                    yield draft[index : index + 5]
+                return
+            raise SchemaUnsupportedError("provider rejected json schema")
+
+    emitted: list[str] = []
+    result = generate_answer(
+        _request(), llm=_RefuseOnRetryLLM(), on_claim=emitted.append
+    )
+
+    assert emitted
+    assert result.answer == " ".join(emitted)
+    assert result.answer != CANONICAL_ABSTENTION
+
+
+def _dual_evidence_request() -> AnswerGenerationRequest:
+    bundle = build_context_bundle("faiss embeddings", _results())
+    evidence = [
+        EvidenceSource(
+            id="D1",
+            text="FAISS supports vector similarity search over embeddings.",
+            title="FAISS",
+            provenance="retrieval",
+        ),
+        EvidenceSource(
+            id="T1",
+            text="FAISS supports fast retrieval across large embeddings.",
+            title="Index status",
+            provenance="tool",
+            tool_name="index_status",
+        ),
+    ]
+    return AnswerGenerationRequest(
+        question="faiss embeddings", context=bundle, evidence=evidence
+    )
+
+
+def test_dedup_ignores_evidence_id_order():
+    """A restatement with reordered evidence_ids must not be emitted twice."""
+    first = _draft_json(
+        abstain=False,
+        claims=[
+            ("FAISS supports embeddings.", ["D1", "T1"]),
+            ("Unrelated invented assertion about nothing.", ["D1"]),
+        ],
+    )
+    second = _draft_json(
+        abstain=False,
+        claims=[("FAISS supports embeddings.", ["T1", "D1"])],
+    )
+    emitted: list[str] = []
+    result = generate_answer(
+        _dual_evidence_request(),
+        llm=_StreamingLLM([first, second]),
+        on_claim=emitted.append,
+    )
+
+    assert len(emitted) == 1
+    assert result.answer.count("FAISS supports embeddings.") == 1

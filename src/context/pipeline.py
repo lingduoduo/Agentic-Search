@@ -192,17 +192,44 @@ def _generate_guarded_answer(
 
     evidence_by_id = {item.id: item for item in evidence}
     committed: list[AnswerClaim] = []
-    committed_keys: set[tuple[str, tuple[str, ...]]] = set()
+    committed_keys: set[tuple[str, frozenset[str]]] = set()
     stream_fn = getattr(llm, "stream_complete", None) if on_claim else None
 
     def _commit(claim: AnswerClaim) -> None:
         """Emit a supported claim once. Emitted claims are permanent."""
-        key = (claim.text, tuple(claim.evidence_ids))
+        key = (claim.text, frozenset(claim.evidence_ids))
         if key in committed_keys:
             return
         committed_keys.add(key)
         committed.append(claim)
         on_claim(render_claim(claim))
+
+    def _committed_answer(
+        category: str | None,
+    ) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
+        """Build the return tuple from `committed`, not from `result`.
+
+        The invariant: the answer is exactly what the user was shown. Every
+        early exit from the attempt loop below routes through this one
+        function when `committed` is non-empty, so there is a single place
+        that enforces "emitted claims are never dropped" rather than several
+        copies that can drift out of sync.
+        """
+        status = (
+            VerificationStatus.VERIFIED
+            if result is not None and not result.unsupported_claims
+            else VerificationStatus.PARTIAL
+        )
+        return (
+            render_claims(committed),
+            result.confidence if result is not None else 0.0,
+            status,
+            attempt,
+            requested,
+            applied,
+            downgraded,
+            category,
+        )
 
     for attempt in range(max_attempts):
         active_prompt = prompt
@@ -241,6 +268,8 @@ def _generate_guarded_answer(
                     **({"structured_output": schema_request} if schema_request else {}),
                 )
         except LLMTimeoutError:
+            if committed:
+                return _committed_answer("timeout")
             return (
                 TIMEOUT_DEGRADED_ANSWER,
                 0.0,
@@ -260,6 +289,8 @@ def _generate_guarded_answer(
         if isinstance(raw, LLMResponse):
             applied = applied or raw.structured.applied
             if raw.structured.refused:
+                if committed:
+                    return _committed_answer("refused")
                 return (
                     _canonical_abstention(),
                     0.0,
@@ -294,26 +325,8 @@ def _generate_guarded_answer(
             break
         feedback = _verifier_feedback(result)
 
-    if on_claim is not None and committed:
-        # The invariant: the answer is exactly what the user was shown. Built
-        # from the committed list rather than the last attempt's result, because
-        # a later attempt that parsed differently must not silently drop text
-        # already on the user's screen.
-        status = (
-            VerificationStatus.VERIFIED
-            if result is not None and not result.unsupported_claims
-            else VerificationStatus.PARTIAL
-        )
-        return (
-            render_claims(committed),
-            result.confidence if result is not None else 0.0,
-            status,
-            attempt,
-            requested,
-            applied,
-            downgraded,
-            category,
-        )
+    if committed:
+        return _committed_answer(category)
 
     if result is None:
         return (
