@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 
 from src.context.models import LLMTimeoutError
+from src.context.structured_output import StructuredOutputRequest
 from src.internal.llm.interfaces import LLMConfig, ToolChoiceOptions
 from src.internal.llm.providers import (
     OpenAICompatibleLLM,
@@ -177,6 +178,66 @@ def test_stream_no_tools_omits_tool_fields():
     body = mock_post.call_args.kwargs["json"]
     assert "tools" not in body
     assert "tool_choice" not in body
+
+
+def test_stream_puts_the_json_schema_in_the_request_body():
+    """structured_response_format was accepted and silently dropped."""
+    config = _make_config()
+    llm = OpenAICompatibleLLM(config)
+    lines = [
+        'data: {"choices":[{"delta":{"content":"hi"}}]}',
+        "data: [DONE]",
+    ]
+    schema_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "answer_draft"},
+    }
+    with patch(
+        "requests.Session.post", return_value=_mock_response(*lines)
+    ) as mock_post:
+        list(llm.stream(prompt="hi", structured_response_format=schema_format))
+    body = mock_post.call_args.kwargs["json"]
+    assert body["response_format"]["json_schema"]["name"] == "answer_draft"
+
+
+def test_stream_complete_yields_text_deltas_and_applies_the_schema():
+    config = _make_config()
+    llm = OpenAICompatibleLLM(config)
+    lines = [
+        'data: {"choices":[{"delta":{"content":"{\\"abstain\\""}}]}',
+        'data: {"choices":[{"delta":{"content":": false}"}}]}',
+        "data: [DONE]",
+    ]
+    request = StructuredOutputRequest(name="answer_draft", schema={"type": "object"})
+    with patch(
+        "requests.Session.post", return_value=_mock_response(*lines)
+    ) as mock_post:
+        chunks = list(
+            llm.stream_complete(
+                [{"role": "user", "content": "q"}], structured_output=request
+            )
+        )
+    body = mock_post.call_args.kwargs["json"]
+    assert "".join(chunks) == '{"abstain": false}'
+    assert body["response_format"]["json_schema"]["name"] == "answer_draft"
+    assert body["stream"] is True
+
+
+def test_stream_complete_omits_the_schema_when_the_provider_cannot_enforce_it():
+    """PROMPT_ONLY providers must not receive a response_format they will reject."""
+    config = LLMConfig(model_provider="ollama", model_name="llama3")
+    llm = OpenAICompatibleLLM(config)
+    with patch(
+        "requests.Session.post", return_value=_mock_response("data: [DONE]")
+    ) as mock_post:
+        list(
+            llm.stream_complete(
+                [{"role": "user", "content": "q"}],
+                structured_output=StructuredOutputRequest(name="d", schema={}),
+            )
+        )
+    body = mock_post.call_args.kwargs["json"]
+    assert "response_format" not in body
 
 
 def test_stream_custom_base_url():

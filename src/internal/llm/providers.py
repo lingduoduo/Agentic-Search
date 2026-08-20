@@ -171,6 +171,8 @@ class OpenAICompatibleLLM(LLM):
             body["tools"] = tools
             tc = tool_choice or ToolChoiceOptions.AUTO
             body["tool_choice"] = _TOOL_CHOICE_MAP.get(tc, "auto")
+        if structured_response_format:
+            body["response_format"] = structured_response_format
 
         timeout = timeout_override or 120
         chunk_id = f"chatcmpl-{uuid.uuid4().hex}"
@@ -202,6 +204,43 @@ class OpenAICompatibleLLM(LLM):
                     yield chunk
         finally:
             resp.close()
+
+    def stream_complete(
+        self,
+        messages: LanguageModelInput,
+        *,
+        structured_output: StructuredOutputRequest | None = None,
+        timeout_override: int | None = None,
+    ) -> Iterator[str]:
+        """Stream a completion as plain text deltas.
+
+        The `LLMClient`-shaped counterpart to `stream`: it takes the same
+        `structured_output` request `complete` does and yields text, so callers
+        never handle provider chunk objects. Probed by name in the answer
+        pipeline; absent implementations simply fall back to `complete`.
+        """
+        response_format: dict | None = None
+        if (
+            structured_output
+            and self.structured_output_capability
+            is StructuredOutputCapability.JSON_SCHEMA
+        ):
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": structured_output.name,
+                    "strict": structured_output.strict,
+                    "schema": structured_output.schema,
+                },
+            }
+        for chunk in self.stream(
+            messages,
+            structured_response_format=response_format,
+            timeout_override=timeout_override,
+        ):
+            content = chunk.choice.delta.content
+            if content:
+                yield content
 
     @staticmethod
     def _normalise_messages(prompt: LanguageModelInput) -> list[dict]:
