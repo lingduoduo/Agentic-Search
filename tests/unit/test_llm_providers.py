@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 
 from src.context.models import LLMTimeoutError
+from src.context.structured_output import StructuredOutputRequest
 from src.internal.llm.interfaces import LLMConfig, ToolChoiceOptions
 from src.internal.llm.providers import (
     OpenAICompatibleLLM,
@@ -179,6 +180,66 @@ def test_stream_no_tools_omits_tool_fields():
     assert "tool_choice" not in body
 
 
+def test_stream_puts_the_json_schema_in_the_request_body():
+    """structured_response_format was accepted and silently dropped."""
+    config = _make_config()
+    llm = OpenAICompatibleLLM(config)
+    lines = [
+        'data: {"choices":[{"delta":{"content":"hi"}}]}',
+        "data: [DONE]",
+    ]
+    schema_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "answer_draft"},
+    }
+    with patch(
+        "requests.Session.post", return_value=_mock_response(*lines)
+    ) as mock_post:
+        list(llm.stream(prompt="hi", structured_response_format=schema_format))
+    body = mock_post.call_args.kwargs["json"]
+    assert body["response_format"]["json_schema"]["name"] == "answer_draft"
+
+
+def test_stream_complete_yields_text_deltas_and_applies_the_schema():
+    config = _make_config()
+    llm = OpenAICompatibleLLM(config)
+    lines = [
+        'data: {"choices":[{"delta":{"content":"{\\"abstain\\""}}]}',
+        'data: {"choices":[{"delta":{"content":": false}"}}]}',
+        "data: [DONE]",
+    ]
+    request = StructuredOutputRequest(name="answer_draft", schema={"type": "object"})
+    with patch(
+        "requests.Session.post", return_value=_mock_response(*lines)
+    ) as mock_post:
+        chunks = list(
+            llm.stream_complete(
+                [{"role": "user", "content": "q"}], structured_output=request
+            )
+        )
+    body = mock_post.call_args.kwargs["json"]
+    assert "".join(chunks) == '{"abstain": false}'
+    assert body["response_format"]["json_schema"]["name"] == "answer_draft"
+    assert body["stream"] is True
+
+
+def test_stream_complete_omits_the_schema_when_the_provider_cannot_enforce_it():
+    """PROMPT_ONLY providers must not receive a response_format they will reject."""
+    config = LLMConfig(model_provider="ollama", model_name="llama3")
+    llm = OpenAICompatibleLLM(config)
+    with patch(
+        "requests.Session.post", return_value=_mock_response("data: [DONE]")
+    ) as mock_post:
+        list(
+            llm.stream_complete(
+                [{"role": "user", "content": "q"}],
+                structured_output=StructuredOutputRequest(name="d", schema={}),
+            )
+        )
+    body = mock_post.call_args.kwargs["json"]
+    assert "response_format" not in body
+
+
 def test_stream_custom_base_url():
     config = LLMConfig(
         model_provider="ollama_chat",
@@ -323,3 +384,69 @@ def test_plain_connection_error_still_propagates():
     ):
         with pytest.raises(requests.ConnectionError):
             llm.complete([{"role": "user", "content": "hi"}])
+
+
+# ---------------------------------------------------------------------------
+# stream() / stream_complete() timeout handling — Findings 1 and 3
+# ---------------------------------------------------------------------------
+
+
+def test_stream_default_timeout_matches_complete():
+    """complete() defaults to 30s; stream() must match, not 120s (Finding 3)."""
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session, "post", return_value=_mock_response("data: [DONE]")
+    ) as mock_post:
+        list(llm.stream(prompt="hi"))
+    assert mock_post.call_args.kwargs["timeout"] == 30
+
+
+def test_stream_timeout_at_call_time_is_normalized_to_llm_timeout_error():
+    """A timeout raised while opening the connection must become LLMTimeoutError,
+    exactly as complete() already does."""
+    llm = _timeout_llm()
+    with patch.object(
+        llm._session,
+        "post",
+        side_effect=requests.ReadTimeout("read timed out"),
+    ):
+        with pytest.raises(LLMTimeoutError):
+            list(llm.stream(prompt="hi"))
+
+
+def test_stream_timeout_during_iteration_is_normalized_to_llm_timeout_error():
+    """Critical placement check: stream() is a generator, so its body — the
+    initial POST included — only runs on first iteration. A timeout raised
+    later, while reading subsequent chunks, must ALSO become LLMTimeoutError,
+    not just one raised by the initial call."""
+
+    def _lines_then_timeout():
+        yield 'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}'
+        raise requests.ReadTimeout("read timed out mid-stream")
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = _lines_then_timeout()
+
+    llm = _timeout_llm()
+    with patch.object(llm._session, "post", return_value=resp):
+        with pytest.raises(LLMTimeoutError):
+            list(llm.stream(prompt="hi"))
+
+
+def test_stream_complete_timeout_during_iteration_is_normalized_to_llm_timeout_error():
+    """The pipeline calls stream_complete, not stream, directly — pin that the
+    conversion is visible through that entry point too."""
+
+    def _lines_then_timeout():
+        yield 'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}'
+        raise requests.ReadTimeout("read timed out mid-stream")
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = _lines_then_timeout()
+
+    llm = _timeout_llm()
+    with patch.object(llm._session, "post", return_value=resp):
+        with pytest.raises(LLMTimeoutError):
+            list(llm.stream_complete([{"role": "user", "content": "hi"}]))

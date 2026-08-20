@@ -186,6 +186,134 @@ def test_stream_done_event_includes_route(monkeypatch, tmp_path):
     assert done_event["intent"] == "chat"
 
 
+def test_stream_chat_loop_emits_claim_events_before_answer(monkeypatch, tmp_path):
+    """AgenticRAGLoop's on_claim callback (via _run_agentic_rag) surfaces as SSE
+    claim events, arriving before the terminal answer event."""
+
+    async def fake_rag(query, *, on_claim=None, **kw):
+        if on_claim is not None:
+            on_claim("FAISS is a vector search library. [D1]")
+            on_claim("It supports approximate nearest neighbor search. [D2]")
+        return "stub answer", ["D1", "D2"], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
+
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/agent/stream",
+        json={"query": "what is faiss?", "mode": "chat_loop"},
+    )
+    assert resp.status_code == 200
+
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "claim" in types
+    assert types.index("claim") < types.index("answer")
+    assert all(isinstance(e["text"], str) for e in events if e["type"] == "claim")
+
+
+def test_stream_claim_from_worker_thread_uses_the_threadsafe_hop(monkeypatch, tmp_path):
+    """Finding 5: the real path calls on_claim from a worker thread.
+
+    generate_answer runs inside asyncio.to_thread (AgenticRAGLoop.run, see
+    src/agents/search/agentic_rag.py:328), so on_claim fires off the event
+    loop thread and must hop back via loop.call_soon_threadsafe before
+    touching the queue — asyncio.Queue.put_nowait is not thread-safe. The
+    tests above call on_claim synchronously from inside the fake coroutine,
+    i.e. from the loop thread itself, where that hop is a no-op — so they
+    pass even if the hop is deleted. Timing-based assertions on a bare
+    `_offer(...)` call are unreliable here: CPython's GIL keeps
+    deque.append effectively atomic and the endpoint's own poll-then-drain
+    consumer loop masks the delay, so the claim still arrives even without
+    the hop. This test instead asserts the invariant directly: patch
+    asyncio.Queue.put_nowait to record which thread called it, drive
+    on_claim from a genuine asyncio.to_thread worker thread, and require
+    every call to originate from the loop's own thread.
+    """
+    loop_thread_id: list[int] = []
+    violations: list[int] = []
+    real_put_nowait = asyncio.Queue.put_nowait
+
+    def _guarded_put_nowait(self, item):
+        tid = threading.get_ident()
+        if loop_thread_id and tid != loop_thread_id[0]:
+            violations.append(tid)
+        return real_put_nowait(self, item)
+
+    monkeypatch.setattr(asyncio.Queue, "put_nowait", _guarded_put_nowait)
+
+    async def fake_rag(query, *, on_claim=None, **kw):
+        loop_thread_id.append(threading.get_ident())
+
+        def _emit_from_worker_thread() -> None:
+            if on_claim is not None:
+                on_claim("FAISS is a vector search library. [D1]")
+
+        await asyncio.to_thread(_emit_from_worker_thread)
+        return "stub answer", ["D1"], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
+
+    app = create_web_app(SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"))
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/agent/stream",
+        json={"query": "what is faiss?", "mode": "chat_loop"},
+    )
+    assert resp.status_code == 200
+
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "claim" in types
+    assert types.index("claim") < types.index("answer")
+    assert violations == []
+
+
+def test_stream_auto_routed_chat_emits_claim_events_before_answer(
+    monkeypatch, tmp_path
+):
+    """The real browser never sends `mode` (see web/src/pages/AssistPage.tsx), so
+    every live request goes through the auto-routing path (`_run_auto_routed`),
+    not the explicit `chat_loop` mode covered above. This pins on_claim's
+    forwarding through that path's CHAT branch specifically."""
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.CHAT),
+    )
+
+    async def fake_rag(query, *, on_claim=None, **kw):
+        if on_claim is not None:
+            on_claim("FAISS is a vector search library. [D1]")
+            on_claim("It supports approximate nearest neighbor search. [D2]")
+        return "stub answer", ["D1", "D2"], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
+
+    class _LLM:
+        def complete(self, messages, **_):
+            return "unused"
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"), llm=_LLM()
+    )
+    client = TestClient(app)
+
+    # No "mode" key — exactly what AssistPage.tsx sends.
+    resp = client.post("/api/agent/stream", json={"query": "what is faiss?"})
+    assert resp.status_code == 200
+
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "claim" in types
+    assert types.index("claim") < types.index("answer")
+    assert all(isinstance(e["text"], str) for e in events if e["type"] == "claim")
+
+
 def test_stream_emits_error_event_on_failure(monkeypatch, tmp_path):
     async def bad_answer(question, **kw):
         raise RuntimeError("simulated backend failure")

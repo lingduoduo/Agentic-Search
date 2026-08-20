@@ -49,4 +49,33 @@ describe("streamAgent", () => {
     const gen = streamAgent({ query: "q" });
     await expect(gen.next()).rejects.toThrow("502");
   });
+
+  it("yields claim events", async () => {
+    mockFetchStream([
+      'data: {"type":"claim","text":"FAISS is a library. [D1]"}\n\n',
+      'data: {"type":"answer","text":"FAISS is a library. [D1]"}\n\n',
+    ]);
+    const types: string[] = [];
+    for await (const event of streamAgent({ query: "q" })) types.push(event.type);
+    expect(types).toEqual(["claim", "answer"]);
+  });
 });
+
+/** Mocks `fetch` to return an SSE body streaming the given raw chunks. */
+function mockFetchStream(chunks: string[]) {
+  const encoder = new TextEncoder();
+  let index = 0;
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    body: {
+      getReader: () => ({
+        read: async () => {
+          if (index >= chunks.length) return { done: true, value: undefined };
+          const value = encoder.encode(chunks[index]);
+          index += 1;
+          return { done: false, value };
+        },
+      }),
+    },
+  });
+}

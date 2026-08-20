@@ -35,8 +35,16 @@ class SchemaUnsupportedError(RuntimeError):
 _ANSWER_DRAFT_JSON_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["claims", "missing_information", "abstain"],
+    # Order is load-bearing: under strict structured output the provider emits
+    # properties in schema order, and a streaming reader must know whether the
+    # draft abstained before it reads the claims that abstaining discards.
+    "required": ["abstain", "missing_information", "claims"],
     "properties": {
+        "abstain": {"type": "boolean"},
+        "missing_information": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
         "claims": {
             "type": "array",
             "items": {
@@ -53,11 +61,6 @@ _ANSWER_DRAFT_JSON_SCHEMA: dict[str, object] = {
                 },
             },
         },
-        "missing_information": {
-            "type": "array",
-            "items": {"type": "string"},
-        },
-        "abstain": {"type": "boolean"},
     },
 }
 

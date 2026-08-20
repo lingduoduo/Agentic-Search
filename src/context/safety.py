@@ -35,6 +35,30 @@ def evidence_from_context(context: SearchContextBundle) -> list[EvidenceSource]:
     ]
 
 
+def build_claim(raw_claim: object, known_ids: set[str]) -> AnswerClaim:
+    """Validate and build one claim from parsed JSON.
+
+    Extracted from `parse_answer_draft`'s loop so a streaming reader parsing a
+    partially-received draft can validate a claim using exactly the code the
+    full parse uses, rather than a parallel implementation that could drift.
+    """
+    if not isinstance(raw_claim, dict) or set(raw_claim) != {
+        "text",
+        "evidence_ids",
+    }:
+        raise ValueError("each claim must contain exactly text and evidence_ids")
+    text = raw_claim["text"]
+    evidence_ids = raw_claim["evidence_ids"]
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("claim text must be a non-empty string")
+    if not _is_string_list(evidence_ids) or not evidence_ids:
+        raise ValueError("claim evidence_ids must be a non-empty list of strings")
+    unknown = sorted(set(evidence_ids) - known_ids)
+    if unknown:
+        raise ValueError(f"unknown evidence IDs: {', '.join(unknown)}")
+    return AnswerClaim(text=text.strip(), evidence_ids=list(evidence_ids))
+
+
 def parse_answer_draft(
     payload: str | dict[str, object], evidence: list[EvidenceSource]
 ) -> AnswerDraft:
@@ -58,28 +82,48 @@ def parse_answer_draft(
         raise ValueError("abstain must be a boolean")
 
     known_ids = {item.id for item in evidence}
-    claims: list[AnswerClaim] = []
-    for raw_claim in value["claims"]:
-        if not isinstance(raw_claim, dict) or set(raw_claim) != {
-            "text",
-            "evidence_ids",
-        }:
-            raise ValueError("each claim must contain exactly text and evidence_ids")
-        text = raw_claim["text"]
-        evidence_ids = raw_claim["evidence_ids"]
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("claim text must be a non-empty string")
-        if not _is_string_list(evidence_ids) or not evidence_ids:
-            raise ValueError("claim evidence_ids must be a non-empty list of strings")
-        unknown = sorted(set(evidence_ids) - known_ids)
-        if unknown:
-            raise ValueError(f"unknown evidence IDs: {', '.join(unknown)}")
-        claims.append(AnswerClaim(text=text.strip(), evidence_ids=list(evidence_ids)))
+    claims = [build_claim(raw_claim, known_ids) for raw_claim in value["claims"]]
 
     return AnswerDraft(
         claims=claims,
         missing_information=list(value["missing_information"]),
         abstain=value["abstain"],
+    )
+
+
+def verify_claim(
+    claim: AnswerClaim,
+    evidence_by_id: dict[str, EvidenceSource],
+    *,
+    overlap_threshold: float = 0.15,
+) -> ClaimVerdict:
+    """Verify one claim against the evidence map.
+
+    Extracted from `verify_answer_draft`'s loop so the streaming path can judge a
+    claim the moment it arrives using the same code the batch path uses. Verdicts
+    carry no cross-claim dependency, which is what makes this safe to split out.
+    """
+    missing = sorted(set(claim.evidence_ids) - evidence_by_id.keys())
+    if missing:
+        return ClaimVerdict(
+            claim=claim,
+            supported=False,
+            reason=f"unknown evidence IDs: {', '.join(missing)}",
+        )
+
+    claim_tokens = _tokenize(claim.text)
+    scores = {
+        evidence_id: _overlap(claim_tokens, _tokenize(evidence_by_id[evidence_id].text))
+        for evidence_id in claim.evidence_ids
+    }
+    supported = bool(scores) and all(
+        score >= overlap_threshold for score in scores.values()
+    )
+    return ClaimVerdict(
+        claim=claim,
+        supported=supported,
+        overlap_scores=scores,
+        reason=None if supported else "insufficient lexical support",
     )
 
 
@@ -111,40 +155,15 @@ def verify_answer_draft(
         )
 
     evidence_by_id = {item.id: item for item in evidence}
-    verdicts: list[ClaimVerdict] = []
-    unknown_ids: set[str] = set()
-
-    for claim in draft.claims:
-        missing = sorted(set(claim.evidence_ids) - evidence_by_id.keys())
-        if missing:
-            unknown_ids.update(missing)
-            verdicts.append(
-                ClaimVerdict(
-                    claim=claim,
-                    supported=False,
-                    reason=f"unknown evidence IDs: {', '.join(missing)}",
-                )
-            )
-            continue
-
-        claim_tokens = _tokenize(claim.text)
-        scores = {
-            evidence_id: _overlap(
-                claim_tokens, _tokenize(evidence_by_id[evidence_id].text)
-            )
-            for evidence_id in claim.evidence_ids
-        }
-        supported = bool(scores) and all(
-            score >= overlap_threshold for score in scores.values()
-        )
-        verdicts.append(
-            ClaimVerdict(
-                claim=claim,
-                supported=supported,
-                overlap_scores=scores,
-                reason=None if supported else "insufficient lexical support",
-            )
-        )
+    verdicts = [
+        verify_claim(claim, evidence_by_id, overlap_threshold=overlap_threshold)
+        for claim in draft.claims
+    ]
+    unknown_ids = {
+        evidence_id
+        for verdict in verdicts
+        for evidence_id in set(verdict.claim.evidence_ids) - evidence_by_id.keys()
+    }
 
     supported_claims = [item.claim for item in verdicts if item.supported]
     unsupported_claims = [item.claim for item in verdicts if not item.supported]
@@ -184,14 +203,21 @@ def verify_answer_draft(
     )
 
 
+def render_claim(claim: AnswerClaim) -> str:
+    """Render one claim exactly as it appears in the final answer."""
+    return f"{claim.text} {' '.join(f'[{item}]' for item in claim.evidence_ids)}"
+
+
+def render_claims(claims: list[AnswerClaim]) -> str:
+    """Join rendered claims, or abstain when there are none."""
+    if not claims:
+        return CANONICAL_ABSTENTION
+    return " ".join(render_claim(claim) for claim in claims)
+
+
 def render_verified_answer(result: VerificationResult) -> str:
     """Render only supported claims, or the canonical abstention."""
-    if not result.supported_claims:
-        return CANONICAL_ABSTENTION
-    return " ".join(
-        f"{claim.text} {' '.join(f'[{item}]' for item in claim.evidence_ids)}"
-        for claim in result.supported_claims
-    )
+    return render_claims(result.supported_claims)
 
 
 def _is_string_list(value: object) -> bool:

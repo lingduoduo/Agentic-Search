@@ -12,11 +12,18 @@ def test_answer_draft_schema_is_strict_and_copy_safe():
     first = answer_draft_json_schema()
 
     assert first["additionalProperties"] is False
-    assert first["required"] == ["claims", "missing_information", "abstain"]
+    assert first["required"] == ["abstain", "missing_information", "claims"]
     assert first["properties"]["claims"]["items"]["additionalProperties"] is False
 
     first["properties"]["abstain"]["type"] = "string"
     assert answer_draft_json_schema()["properties"]["abstain"]["type"] == "boolean"
+
+
+def test_answer_draft_schema_puts_abstain_before_claims():
+    """Streaming must decide abstain before any claim it would discard."""
+    schema = answer_draft_json_schema()
+    assert list(schema["properties"]) == ["abstain", "missing_information", "claims"]
+    assert list(schema["required"]) == ["abstain", "missing_information", "claims"]
 
 
 def test_structured_metadata_defaults_preserve_legacy_clients():

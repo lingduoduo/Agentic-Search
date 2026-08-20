@@ -255,6 +255,31 @@ def test_incidental_schema_error_substrings_propagate_unchanged(schema_request):
     assert caught.value is error
 
 
+def test_stream_complete_downgrades_on_explicit_unsupported_schema_400(schema_request):
+    """Finding 2: a provider that rejects response_format only while
+    streaming must trigger the same downgrade `complete` gets, reusing the
+    shared detection helper rather than a second copy of the regex."""
+    llm = configured_llm()
+    error = http_error(400, "unknown parameter: response_format json_schema SECRET")
+    response = MagicMock()
+    response.raise_for_status.side_effect = error
+    with patch.object(llm._session, "post", return_value=response):
+        with pytest.raises(SchemaUnsupportedError) as caught:
+            list(llm.stream_complete(MESSAGES, structured_output=schema_request))
+    assert "SECRET" not in str(caught.value)
+
+
+def test_stream_complete_other_http_errors_propagate_unchanged(schema_request):
+    llm = configured_llm()
+    error = http_error(500, "internal error")
+    response = MagicMock()
+    response.raise_for_status.side_effect = error
+    with patch.object(llm._session, "post", return_value=response):
+        with pytest.raises(requests.HTTPError) as caught:
+            list(llm.stream_complete(MESSAGES, structured_output=schema_request))
+    assert caught.value is error
+
+
 @pytest.mark.parametrize(
     ("provider", "custom_config", "expected_forwarded"),
     [

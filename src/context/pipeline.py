@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from .models import AnswerGenerationRequest
 from .models import AnswerGenerationResult
@@ -26,6 +27,7 @@ from .prompts import build_corrective_answer_prompt
 from .prompts import build_chat_prompt
 from .prompts import build_structured_answer_prompt
 from .retrieval.search_runner import build_search_context
+from .streaming_draft import IncrementalDraftReader
 from .tool_evidence import ToolRegistry
 from .tool_evidence import ToolSelector
 from .utils import extract_citations
@@ -52,6 +54,7 @@ def generate_answer(
     request: AnswerGenerationRequest,
     *,
     llm: LLMClient | None = None,
+    on_claim: Callable[[str], None] | None = None,
 ) -> AnswerGenerationResult:
     legacy_prompt = build_chat_prompt(
         request.question,
@@ -122,7 +125,7 @@ def generate_answer(
             structured_output_applied,
             structured_output_downgraded,
             structured_output_category,
-        ) = _generate_guarded_answer(request, llm, prompt, evidence)
+        ) = _generate_guarded_answer(request, llm, prompt, evidence, on_claim)
         abstained = verification_status is VerificationStatus.ABSTAINED
 
     grounding_report = None
@@ -158,12 +161,16 @@ def _generate_guarded_answer(
     llm: LLMClient,
     prompt: PromptBundle,
     evidence: list[EvidenceSource],
+    on_claim: Callable[[str], None] | None = None,
 ) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
     from .safety import (
         TIMEOUT_DEGRADED_ANSWER,
         parse_answer_draft,
+        render_claim,
+        render_claims,
         render_verified_answer,
         verify_answer_draft,
+        verify_claim,
     )
 
     max_attempts = 1 + min(max(request.grounded_generation.max_retries, 0), 1)
@@ -182,6 +189,48 @@ def _generate_guarded_answer(
     downgraded = False
     applied = False
     category = None
+
+    evidence_by_id = {item.id: item for item in evidence}
+    committed: list[AnswerClaim] = []
+    committed_keys: set[tuple[str, frozenset[str]]] = set()
+    stream_fn = getattr(llm, "stream_complete", None) if on_claim else None
+
+    def _commit(claim: AnswerClaim) -> None:
+        """Emit a supported claim once. Emitted claims are permanent."""
+        key = (claim.text, frozenset(claim.evidence_ids))
+        if key in committed_keys:
+            return
+        committed_keys.add(key)
+        committed.append(claim)
+        on_claim(render_claim(claim))
+
+    def _committed_answer(
+        category: str | None,
+    ) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
+        """Build the return tuple from `committed`, not from `result`.
+
+        The invariant: the answer is exactly what the user was shown. Every
+        early exit from the attempt loop below routes through this one
+        function when `committed` is non-empty, so there is a single place
+        that enforces "emitted claims are never dropped" rather than several
+        copies that can drift out of sync.
+        """
+        status = (
+            VerificationStatus.VERIFIED
+            if result is not None and not result.unsupported_claims
+            else VerificationStatus.PARTIAL
+        )
+        return (
+            render_claims(committed),
+            result.confidence if result is not None else 0.0,
+            status,
+            attempt,
+            requested,
+            applied,
+            downgraded,
+            category,
+        )
+
     for attempt in range(max_attempts):
         active_prompt = prompt
         if attempt:
@@ -196,11 +245,31 @@ def _generate_guarded_answer(
                 user_memory=request.user_memory,
             )
         try:
-            raw = llm.complete(
-                active_prompt.messages,
-                **({"structured_output": schema_request} if schema_request else {}),
-            )
+            if stream_fn is not None:
+                reader = IncrementalDraftReader(set(evidence_by_id))
+                parts: list[str] = []
+                for delta in stream_fn(
+                    active_prompt.messages,
+                    **({"structured_output": schema_request} if schema_request else {}),
+                ):
+                    parts.append(delta)
+                    for claim in reader.feed(delta):
+                        verdict = verify_claim(
+                            claim,
+                            evidence_by_id,
+                            overlap_threshold=request.grounded_generation.overlap_threshold,
+                        )
+                        if verdict.supported:
+                            _commit(claim)
+                raw = "".join(parts)
+            else:
+                raw = llm.complete(
+                    active_prompt.messages,
+                    **({"structured_output": schema_request} if schema_request else {}),
+                )
         except LLMTimeoutError:
+            if committed:
+                return _committed_answer("timeout")
             return (
                 TIMEOUT_DEGRADED_ANSWER,
                 0.0,
@@ -220,6 +289,8 @@ def _generate_guarded_answer(
         if isinstance(raw, LLMResponse):
             applied = applied or raw.structured.applied
             if raw.structured.refused:
+                if committed:
+                    return _committed_answer("refused")
                 return (
                     _canonical_abstention(),
                     0.0,
@@ -247,9 +318,15 @@ def _generate_guarded_answer(
             evidence_sufficiency=request.evidence_sufficiency,
             retry_occurred=bool(attempt),
         )
+        if on_claim is not None:
+            for claim in result.supported_claims:
+                _commit(claim)
         if draft.abstain or not result.unsupported_claims:
             break
         feedback = _verifier_feedback(result)
+
+    if committed:
+        return _committed_answer(category)
 
     if result is None:
         return (

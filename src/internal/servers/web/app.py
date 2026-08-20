@@ -646,6 +646,7 @@ async def _run_agentic_rag(
     filters=None,
     history: list,
     user_memory: str | None = None,
+    on_claim=None,
 ) -> tuple:
     """Run the AgenticRAGLoop (decompose + HyDE). Assumes an LLM is configured."""
     rag_loop = AgenticRAGLoop(
@@ -661,7 +662,11 @@ async def _run_agentic_rag(
 
     recorder = ControlFlowRecorder(uuid4().hex)
     rag = await rag_loop.run(
-        query, chat_history=history, recorder=recorder, user_memory=user_memory
+        query,
+        chat_history=history,
+        recorder=recorder,
+        user_memory=user_memory,
+        on_claim=on_claim,
     )
     documents = [
         _document_with_metadata(
@@ -1092,6 +1097,7 @@ async def _run_auto_routed(
     source_provider: str = "retrieval",
     on_turn=None,
     on_approval=None,
+    on_claim=None,
     user_memory: str | None = None,
     user_present: bool = False,
     forced_route: RouteStrategy | None = None,
@@ -1207,6 +1213,7 @@ async def _run_auto_routed(
                 filters=filters,
                 history=history,
                 user_memory=user_memory,
+                on_claim=on_claim,
             )
             extra.update(run_extra)
             return answer, citations, documents, intent, extra
@@ -1474,6 +1481,7 @@ def create_web_app(
         on_trace: EventSink | None = None,
         on_approval=None,
         on_token=None,
+        on_claim=None,
     ) -> AgentExperienceResponse:
         query = request.query.strip()
         if not query:
@@ -1571,6 +1579,7 @@ def create_web_app(
                         ),
                         on_turn=on_turn,
                         on_approval=on_approval,
+                        on_claim=on_claim,
                         user_memory=user_memory,
                         user_present=capabilities.user_present,
                         forced_route=forced_route,
@@ -1696,6 +1705,7 @@ def create_web_app(
                         filters=filters,
                         history=history,
                         user_memory=user_memory,
+                        on_claim=on_claim,
                     )
                     return _finalize_response(
                         db,
@@ -1892,6 +1902,7 @@ def create_web_app(
 
         Emits:
           {"type": "progress", "turn": N, "text": "..."}  — per-turn progress
+          {"type": "claim",    "text": "..."}             — one verified claim
           {"type": "answer",   "text": "..."}             — final answer text
           {"type": "done",     "session_id": "...", "citations": [...], "documents": [...], "intent": "..."}
           {"type": "error",    "detail": "..."}           — on failure
@@ -1902,14 +1913,32 @@ def create_web_app(
 
         queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
         dropped_trace_events = 0
+        dropped_claim_events = 0
         auth_user = _optional_user_from_request(http_request, db)
         request_id = _uuid.uuid4().hex
+        loop = asyncio.get_running_loop()
 
         async def on_turn(turn: int, tool_name: "str | None", doc_count: int) -> None:
             text = (
                 f"{tool_name} · {doc_count} docs" if tool_name else "writing answer..."
             )
             await queue.put({"type": "progress", "turn": turn, "text": text})
+
+        def _offer(item: dict) -> None:
+            # The terminal answer event still carries the full text, so a
+            # dropped claim doesn't lose data — but it's worth counting.
+            nonlocal dropped_claim_events
+            try:
+                queue.put_nowait(item)
+            except asyncio.QueueFull:
+                dropped_claim_events += 1
+
+        def on_claim(text: str) -> None:
+            # Called from the generate_answer worker thread (see #547's
+            # asyncio.to_thread offload in AgenticRAGLoop.run), so hop back to
+            # the loop before touching the queue — put_nowait is not
+            # thread-safe.
+            loop.call_soon_threadsafe(_offer, {"type": "claim", "text": text})
 
         async def on_trace(event: ControlFlowEvent) -> None:
             nonlocal dropped_trace_events
@@ -1940,6 +1969,7 @@ def create_web_app(
                     on_turn=on_turn,
                     on_trace=on_trace,
                     on_approval=on_approval if auth_user is not None else None,
+                    on_claim=on_claim,
                 )
             )
             try:
@@ -1974,6 +2004,11 @@ def create_web_app(
                     logger.warning(
                         "dropped %d live control-flow trace events",
                         dropped_trace_events,
+                    )
+                if dropped_claim_events:
+                    logger.warning(
+                        "dropped %d live claim events",
+                        dropped_claim_events,
                     )
             except BaseException as exc:
                 if not task.done():
