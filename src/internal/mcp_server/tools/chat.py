@@ -7,6 +7,8 @@ inline citations — without needing to chain search + open_urls manually.
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import os
 from typing import Any
@@ -142,7 +144,13 @@ async def ask_agentic_search(
         llm = _build_llm()
         if llm is None:
             logger.info("MCP Server: no LLM configured — using extractive fallback")
-        result = generate_answer(
+        # `generate_answer` is synchronous and calls `llm.complete`, a blocking
+        # `requests` call. Awaited inline from this async tool it froze the MCP
+        # server's event loop for the full completion -- seconds, not
+        # milliseconds -- stalling every other in-flight tool call behind one
+        # question. #547 fixed this shape on the web path and missed this site.
+        result = await asyncio.to_thread(
+            generate_answer,
             AnswerGenerationRequest(
                 question=question,
                 context=context,

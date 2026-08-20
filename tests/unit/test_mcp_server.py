@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from unittest.mock import Mock
@@ -314,6 +315,48 @@ async def test_retrieve_documents_authentication_error_has_no_raw_fallback():
 # ---------------------------------------------------------------------------
 # tools/chat — ask_agentic_search
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ask_agentic_search_synthesizes_off_the_event_loop_thread():
+    """Answer synthesis must not block the MCP server's event loop.
+
+    `generate_answer` is synchronous and calls `llm.complete`, a blocking
+    `requests` call that takes seconds. Awaited inline from this async tool it
+    stalls every other MCP request behind one question — the defect fixed for
+    the web path in #547, which left this call site untouched.
+    """
+    from src.internal.mcp_server.tools.chat import ask_agentic_search
+
+    calling_thread: dict[str, int] = {}
+
+    def synthesize(request: object, *, llm: object) -> Mock:
+        calling_thread["id"] = threading.get_ident()
+        return Mock(
+            answer="Dense retrieval is supported [D1].",
+            citations=["D1"],
+            context=request.context,
+            confidence=0.8,
+            verification_status="verified",
+            abstained=False,
+            tool_evidence=[],
+        )
+
+    with (
+        patch(
+            "src.internal.mcp_server.tools.chat.authenticated_retrieve",
+            AsyncMock(return_value=_AUTHENTICATED_DOCUMENTS),
+            create=True,
+        ),
+        patch(
+            "src.internal.mcp_server.tools.chat.generate_answer",
+            side_effect=synthesize,
+            create=True,
+        ),
+    ):
+        await ask_agentic_search("Which retrieval methods?", top_k=2)
+
+    assert calling_thread["id"] != threading.get_ident()
 
 
 @pytest.mark.asyncio
