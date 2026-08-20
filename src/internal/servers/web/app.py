@@ -1097,6 +1097,7 @@ async def _run_auto_routed(
     source_provider: str = "retrieval",
     on_turn=None,
     on_approval=None,
+    on_claim=None,
     user_memory: str | None = None,
     user_present: bool = False,
     forced_route: RouteStrategy | None = None,
@@ -1212,6 +1213,7 @@ async def _run_auto_routed(
                 filters=filters,
                 history=history,
                 user_memory=user_memory,
+                on_claim=on_claim,
             )
             extra.update(run_extra)
             return answer, citations, documents, intent, extra
@@ -1577,6 +1579,7 @@ def create_web_app(
                         ),
                         on_turn=on_turn,
                         on_approval=on_approval,
+                        on_claim=on_claim,
                         user_memory=user_memory,
                         user_present=capabilities.user_present,
                         forced_route=forced_route,

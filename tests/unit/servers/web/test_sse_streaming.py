@@ -214,6 +214,48 @@ def test_stream_chat_loop_emits_claim_events_before_answer(monkeypatch, tmp_path
     assert all(isinstance(e["text"], str) for e in events if e["type"] == "claim")
 
 
+def test_stream_auto_routed_chat_emits_claim_events_before_answer(
+    monkeypatch, tmp_path
+):
+    """The real browser never sends `mode` (see web/src/pages/AssistPage.tsx), so
+    every live request goes through the auto-routing path (`_run_auto_routed`),
+    not the explicit `chat_loop` mode covered above. This pins on_claim's
+    forwarding through that path's CHAT branch specifically."""
+    from src.internal.servers.web.intent_routing import RouteDecision, RouteStrategy
+
+    monkeypatch.setattr(
+        "src.internal.servers.web.app.route_request",
+        lambda *a, **k: RouteDecision(RouteStrategy.CHAT),
+    )
+
+    async def fake_rag(query, *, on_claim=None, **kw):
+        if on_claim is not None:
+            on_claim("FAISS is a vector search library. [D1]")
+            on_claim("It supports approximate nearest neighbor search. [D2]")
+        return "stub answer", ["D1", "D2"], [], "chat", {}
+
+    monkeypatch.setattr("src.internal.servers.web.app._run_agentic_rag", fake_rag)
+
+    class _LLM:
+        def complete(self, messages, **_):
+            return "unused"
+
+    app = create_web_app(
+        SearchExperienceSettings(db_path=tmp_path / "s.sqlite3"), llm=_LLM()
+    )
+    client = TestClient(app)
+
+    # No "mode" key — exactly what AssistPage.tsx sends.
+    resp = client.post("/api/agent/stream", json={"query": "what is faiss?"})
+    assert resp.status_code == 200
+
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "claim" in types
+    assert types.index("claim") < types.index("answer")
+    assert all(isinstance(e["text"], str) for e in events if e["type"] == "claim")
+
+
 def test_stream_emits_error_event_on_failure(monkeypatch, tmp_path):
     async def bad_answer(question, **kw):
         raise RuntimeError("simulated backend failure")
