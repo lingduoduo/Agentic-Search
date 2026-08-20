@@ -181,6 +181,41 @@ async def test_run_agentic_rag_threads_access_filters_into_loop(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_agentic_rag_forwards_on_claim_to_the_loop(monkeypatch):
+    """_run_agentic_rag must forward on_claim into AgenticRAGLoop.run.
+
+    This pins the hop at app.py's _run_agentic_rag -> rag_loop.run(on_claim=...)
+    call. The SSE-layer tests (test_sse_streaming.py) stub _run_agentic_rag
+    wholesale, so they cannot catch on_claim being silently dropped between
+    _run_agentic_rag and the loop; this test is the layer that can.
+    """
+    observed = {}
+
+    async def fake_run(self, question, **kwargs):
+        observed["on_claim"] = kwargs.get("on_claim")
+        return AgenticRAGResult(
+            answer="synth",
+            citations=[],
+            rounds_used=1,
+            context=SearchContextBundle(query=question, documents=[]),
+        )
+
+    monkeypatch.setattr("src.agents.search.agentic_rag.AgenticRAGLoop.run", fake_run)
+    callback = lambda text: None  # noqa: E731
+
+    await web_app._run_agentic_rag(
+        "q",
+        llm=MagicMock(),
+        search_url="http://x/retrieve",
+        top_k=5,
+        history=[],
+        on_claim=callback,
+    )
+
+    assert observed["on_claim"] is callback
+
+
+@pytest.mark.asyncio
 async def test_run_tool_agent_exposes_assistant_fallback(monkeypatch):
     output = AgentLoopOutput(
         prompt_ids=[],
