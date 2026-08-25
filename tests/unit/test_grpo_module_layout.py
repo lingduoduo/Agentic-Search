@@ -53,3 +53,11 @@ def test_consolidated_training_module_owns_orchestration():
 )
 def test_replaced_training_modules_are_removed(module_name: str):
     assert find_spec(module_name) is None
+
+
+def test_generation_owns_its_tensor_helpers():
+    from src.model.post_training.grpo.generation import TensorConfig, TensorHelper
+
+    assert TensorConfig.__module__ == "src.model.post_training.grpo.generation"
+    assert TensorHelper.__module__ == "src.model.post_training.grpo.generation"
+    assert find_spec("src.model.post_training.grpo.tensor_helper") is None

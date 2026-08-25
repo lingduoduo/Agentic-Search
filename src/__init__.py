@@ -428,9 +428,9 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".model.post_training.ppo.reward_manager",
         "select_reward_score_fn",
     ),
-    # training.grpo.tensor_helper
-    "TensorConfig": (".model.post_training.grpo.tensor_helper", "TensorConfig"),
-    "TensorHelper": (".model.post_training.grpo.tensor_helper", "TensorHelper"),
+    # training.grpo.generation tensor helpers
+    "TensorConfig": (".model.post_training.grpo.generation", "TensorConfig"),
+    "TensorHelper": (".model.post_training.grpo.generation", "TensorHelper"),
 }
 
 __all__ = sorted(

@@ -1,10 +1,10 @@
-"""Unit tests for src.model.post_training.grpo.tensor_helper."""
+"""Unit tests for generation-owned tensor helpers."""
 
 import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
-from src import TensorConfig, TensorHelper  # noqa: E402
+from src.model.post_training.grpo.generation import TensorConfig, TensorHelper  # noqa: E402
 
 
 def _helper() -> TensorHelper:
