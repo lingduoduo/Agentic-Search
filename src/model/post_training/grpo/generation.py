@@ -1231,7 +1231,7 @@ async def async_run_grpo_training_step(
     ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
     search I/O, then performs one learner-side update.
     """
-    from .controller import LocalGRPOController
+    from .training import LocalGRPOController
 
     return await LocalGRPOController(
         manager, num_rollouts=num_rollouts, max_workers=max_workers
@@ -3567,7 +3567,7 @@ class LLMGenerationManager:
         Kept as the public compatibility entrypoint; orchestration lives in the
         local PPO controller layer.
         """
-        from .controller import LocalGRPOController
+        from .training import LocalGRPOController
 
         return LocalGRPOController(self, num_rollouts=num_rollouts).training_step(
             prompt_batch,

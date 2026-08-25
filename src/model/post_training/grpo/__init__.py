@@ -42,9 +42,9 @@ _LAZY_EXPORTS: dict[str, str] = {
     "compute_grpo_policy_loss": "core_algos",
     "compute_reinforce_policy_loss": "core_algos",
     "compute_reinforce_policy_loss_core": "core_algos",
-    # controller
-    "LocalGRPOController": "controller",
-    "RolloutResult": "controller",
+    # training — local controller and durable loop
+    "LocalGRPOController": "training",
+    "RolloutResult": "training",
     # trainers — bandit, HuggingFace causal-LM, and live SearchAgentLoop rollouts
     "GRPOTrainer": "trainers",
     "Policy": "trainers",

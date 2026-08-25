@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("torch")
 
-from src.model.post_training.grpo.train_loop import TrainLoopConfig, train_loop
+from src.model.post_training.grpo.training import TrainLoopConfig, train_loop
 
 
 class FakeTrainer:

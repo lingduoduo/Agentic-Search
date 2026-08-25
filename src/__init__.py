@@ -412,12 +412,12 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ChatSessionRecord": (".internal.db", "ChatSessionRecord"),
     "GroupRecord": (".internal.db", "GroupRecord"),
     "UserRecord": (".internal.db", "UserRecord"),
-    # training.grpo.controller
+    # training.grpo.training
     "LocalGRPOController": (
-        ".model.post_training.grpo.controller",
+        ".model.post_training.grpo.training",
         "LocalGRPOController",
     ),
-    "RolloutResult": (".model.post_training.grpo.controller", "RolloutResult"),
+    "RolloutResult": (".model.post_training.grpo.training", "RolloutResult"),
     # training.ppo.reward_manager
     "PPORewardManager": (".model.post_training.ppo.reward_manager", "PPORewardManager"),
     "qa_exact_match_score": (

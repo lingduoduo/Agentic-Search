@@ -30,3 +30,26 @@ def test_consolidated_trainer_module_owns_the_full_hierarchy():
 )
 def test_replaced_trainer_modules_are_removed(module_name: str):
     assert find_spec(module_name) is None
+
+
+def test_consolidated_training_module_owns_orchestration():
+    from src.model.post_training.grpo.training import (
+        LocalGRPOController,
+        TrainLoopConfig,
+        train_loop,
+    )
+
+    assert LocalGRPOController.__module__ == "src.model.post_training.grpo.training"
+    assert TrainLoopConfig.__module__ == "src.model.post_training.grpo.training"
+    assert train_loop.__module__ == "src.model.post_training.grpo.training"
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "src.model.post_training.grpo.controller",
+        "src.model.post_training.grpo.train_loop",
+    ],
+)
+def test_replaced_training_modules_are_removed(module_name: str):
+    assert find_spec(module_name) is None
