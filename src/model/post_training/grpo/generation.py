@@ -1296,59 +1296,6 @@ async def async_run_prompt_rollout_group(
     return result
 
 
-async def async_run_grpo_training_step(
-    manager: "LLMGenerationManager",
-    prompt_batch: Any,
-    *,
-    search_mode: str,
-    sampling_params: dict[str, Any],
-    judge_fn: Callable[[str, str], float],
-    num_rollouts: int = 4,
-    reward_fn: Any = None,
-    advantage_config: Any = None,
-    batch_judge_fn: Any = None,
-    old_backend: LogProbCapable | None = None,
-    new_backend: LogProbCapable | None = None,
-    ref_backend: LogProbCapable | None = None,
-    loss_config: PPOPolicyLossConfig | None = None,
-    safety_config: GRPORolloutSafetyConfig | None = None,
-    optimizer: Any = None,
-    base_seed: int | None = None,
-    current_step: int = 0,
-    total_steps: int = 1,
-    max_workers: int | None = None,
-) -> GRPOTrainingStepResult:
-    """Run one GRPO trainer step with concurrent rollout collection.
-
-    Delegates to ``LocalGRPOController.async_training_step`` which runs all
-    ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
-    search I/O, then performs one learner-side update.
-    """
-    from .training import LocalGRPOController
-
-    return await LocalGRPOController(
-        manager, num_rollouts=num_rollouts, max_workers=max_workers
-    ).async_training_step(
-        prompt_batch,
-        search_mode=search_mode,
-        sampling_params=sampling_params,
-        judge_fn=judge_fn,
-        num_rollouts=num_rollouts,
-        reward_fn=reward_fn,
-        advantage_config=advantage_config,
-        batch_judge_fn=batch_judge_fn,
-        old_backend=old_backend,
-        new_backend=new_backend,
-        ref_backend=ref_backend,
-        loss_config=loss_config,
-        safety_config=safety_config,
-        optimizer=optimizer,
-        base_seed=base_seed,
-        current_step=current_step,
-        total_steps=total_steps,
-    )
-
-
 def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
     """Slice one prompt out of a PromptBatch, preserving batch structure."""
     from ..data import PromptBatch

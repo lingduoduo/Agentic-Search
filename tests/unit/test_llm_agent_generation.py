@@ -4547,7 +4547,7 @@ def test_async_run_prompt_rollout_group_results_sorted_by_rollout_index():
 def test_async_run_grpo_training_step_parallelizes_rollouts_then_updates_once():
     import asyncio
     from src import SearchRewardConfig, SearchRewardFunction
-    from src.model.post_training.grpo.generation import async_run_grpo_training_step
+    from src.model.post_training.grpo.training import async_run_grpo_training_step
 
     tokenizer = DummyTokenizer()
     actor_backend = TokenWeightedLogProbBackend(initial_scale=-0.05)

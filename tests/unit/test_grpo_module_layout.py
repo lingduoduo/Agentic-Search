@@ -208,6 +208,27 @@ print("torch-free OK")
     assert "torch-free OK" in result.stdout
 
 
+def test_training_owns_the_async_step_and_generation_does_not_import_training():
+    """The controller entrypoint lives with the controller.
+
+    It was a pure delegator sitting in generation.py, which forced a
+    generation <-> training cycle papered over with function-local imports.
+    """
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    from src.model.post_training.grpo import generation, training
+
+    assert (
+        training.async_run_grpo_training_step.__module__
+        == "src.model.post_training.grpo.training"
+    )
+    assert not hasattr(generation, "async_run_grpo_training_step")
+
+    import src as root
+
+    assert root.async_run_grpo_training_step is training.async_run_grpo_training_step
+
+
 def test_outcome_advantage_name_resolves_to_exactly_one_function():
     """One public name, one function, whatever the import path.
 
