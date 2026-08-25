@@ -39,7 +39,17 @@ def compute_group_advantages(
     Returns:
         ``(batch_size, group_size)`` advantages detached from the graph.
     """
-    mask = mask.float()
+    if rewards.ndim != 2 or mask.ndim != 2:
+        raise ValueError("rewards and mask must both be 2-D grouped tensors")
+    if rewards.shape != mask.shape:
+        raise ValueError("rewards and mask must have the same shape")
+    if rewards.shape[0] == 0 or rewards.shape[1] == 0:
+        raise ValueError("rewards and mask must have non-empty group dimensions")
+
+    mask = mask.to(device=rewards.device, dtype=rewards.dtype)
+    if torch.any(mask.sum(dim=1) <= 0):
+        raise ValueError("each group must contain at least one valid rollout")
+
     group_mean = _group_masked_mean(rewards, mask)
     centered = (rewards - group_mean) * mask
     group_var = _group_masked_mean(centered.pow(2), mask)
@@ -162,13 +172,21 @@ class GRPOTrainer:
         Returns:
             ``(mean_loss, metrics_dict)``
         """
-        flat_mask = mask.reshape(-1).float()
+        expected_rollouts = rewards.numel()
+        if (
+            states.shape[0] != expected_rollouts
+            or actions.shape != (expected_rollouts,)
+            or old_log_probs.shape != (expected_rollouts,)
+        ):
+            raise ValueError(
+                "states, actions, and old_log_probs must contain "
+                "batch_size * group_size rollouts"
+            )
+
+        flat_mask = mask.reshape(-1).to(device=rewards.device, dtype=rewards.dtype)
         advantages = compute_group_advantages(rewards, mask).reshape(-1)
 
         new_log_probs = self.policy.get_log_probs(states, actions)
-
-        with torch.no_grad():
-            ref_log_probs = self.reference_policy.get_log_probs(states, actions)
 
         policy_loss, ratios = grpo_clipped_policy_loss(
             new_log_probs=new_log_probs,
@@ -176,7 +194,12 @@ class GRPOTrainer:
             advantages=advantages,
             clip_epsilon=self.clip_epsilon,
         )
-        kl = reverse_kl_penalty(new_log_probs, ref_log_probs)
+        if self.beta == 0:
+            kl = torch.zeros_like(new_log_probs)
+        else:
+            with torch.no_grad():
+                ref_log_probs = self.reference_policy.get_log_probs(states, actions)
+            kl = reverse_kl_penalty(new_log_probs, ref_log_probs)
         total = policy_loss + self.beta * kl
         normalizer = flat_mask.sum().clamp_min(1e-8)
         mean_loss = (total * flat_mask).sum() / normalizer
@@ -203,7 +226,7 @@ class GRPOTrainer:
     ) -> dict[str, float]:
         """Run one gradient step; returns the metrics dict."""
         loss, metrics = self.compute_loss(states, actions, old_log_probs, rewards, mask)
-        self.policy.optimizer.zero_grad()
+        self.policy.optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.grad_clip)
         self.policy.optimizer.step()
