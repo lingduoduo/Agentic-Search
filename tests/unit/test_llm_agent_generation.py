@@ -5,6 +5,9 @@ import pytest
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
 from src import build_prompt_dataloader  # noqa: E402
+from src.model.post_training.grpo.core_algos import (  # noqa: E402
+    compute_grpo_token_advantages,
+)
 from src.model.post_training.grpo.generation import (  # noqa: E402
     AgentLoopState,
     AdaptiveKLController,
@@ -15,7 +18,6 @@ from src.model.post_training.grpo.generation import (  # noqa: E402
     RetrievedDocument,
     RolloutTrajectory,
     SearchBatch,
-    compute_grpo_outcome_advantage,
     compute_ppo_policy_loss_core,
     kl_penalty,
     masked_mean,
@@ -1293,7 +1295,7 @@ def test_grpo_outcome_advantage_normalizes_within_prompt_group():
     eos_mask = torch.ones_like(rewards)
     index = torch.tensor([0, 0, 1], dtype=torch.long)
 
-    advantages, returns = compute_grpo_outcome_advantage(rewards, eos_mask, index)
+    advantages, returns = compute_grpo_token_advantages(rewards, eos_mask, index)
 
     assert torch.allclose(advantages[0], torch.tensor([-1.0, -1.0]), atol=1e-5)
     assert torch.allclose(advantages[1], torch.tensor([1.0, 1.0]), atol=1e-5)

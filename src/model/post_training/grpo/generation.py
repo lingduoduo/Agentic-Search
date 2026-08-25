@@ -30,9 +30,6 @@ from ..ppo.core_algos import (
     masked_whiten,
 )
 from ..reward import group_relative_advantages
-from .core_algos import (
-    compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
-)
 
 
 @dataclass(frozen=True)

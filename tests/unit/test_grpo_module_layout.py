@@ -206,3 +206,44 @@ print("torch-free OK")
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "torch-free OK" in result.stdout
+
+
+def test_outcome_advantage_name_resolves_to_exactly_one_function():
+    """One public name, one function, whatever the import path.
+
+    Before this, `from ...grpo import compute_grpo_outcome_advantage` gave a
+    torch tensor function while `from src import` (and `from
+    src.model.post_training import`) gave a list[float] one, with
+    incompatible signatures -- so a wrong import failed at call time, not
+    import time. Now the torch function has its own name
+    (`compute_grpo_token_advantages`), and the `grpo` package's own lazy-export
+    path for the old name is gone entirely rather than repointed -- accessing
+    it raises `AttributeError` immediately instead of silently resolving to
+    something.
+    """
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    import src as root
+    import src.model.post_training as post_training
+    from src.model.post_training.grpo import core_algos, rollouts
+
+    assert not hasattr(core_algos, "compute_grpo_outcome_advantage")
+    assert hasattr(core_algos, "compute_grpo_token_advantages")
+
+    assert (
+        root.compute_grpo_outcome_advantage is rollouts.compute_grpo_outcome_advantage
+    )
+    assert (
+        post_training.compute_grpo_outcome_advantage
+        is rollouts.compute_grpo_outcome_advantage
+    )
+
+    import src.model.post_training.grpo as grpo
+
+    with pytest.raises(AttributeError):
+        grpo.compute_grpo_outcome_advantage
+
+    # Python's import machinery turns a module `__getattr__` AttributeError
+    # into an ImportError for the `from ... import ...` form specifically.
+    with pytest.raises(ImportError):
+        from src.model.post_training.grpo import compute_grpo_outcome_advantage  # noqa: F401
