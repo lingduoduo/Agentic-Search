@@ -230,7 +230,8 @@ On top of it:
   LocalGRPOController` inside the retained
   `LLMGenerationManager.run_grpo_training_step` compat shim, the only
   survivor; `training.py` has zero function-local imports of `generation`.
-- Net line count in `src/`: 166 insertions / 170 deletions, a net −4 lines,
+- Net line count in `src/` (measured at `0960039`, the branch's last
+  source-touching commit): 165 insertions / 170 deletions, a net −5 lines,
   not the roughly −180 LOC originally estimated. The estimate was wrong
   because each duplicate body was only ~10-15 lines and its one-line
   replacement keeps the full docstring, while the new primitive adds ~60

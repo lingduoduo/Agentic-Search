@@ -876,8 +876,9 @@ Then confirm the diff size:
 git diff --stat main...HEAD
 ```
 
-Expected (measured after the fact): `src/` diffs to 166 insertions / 170
-deletions, a net −4 lines, not the roughly 180 originally estimated here.
+Expected (measured after the fact, at `0960039`, the branch's last
+source-touching commit): `src/` diffs to 165 insertions / 170
+deletions, a net −5 lines, not the roughly 180 originally estimated here.
 Each duplicate body was only ~10-15 lines and its one-line replacement keeps
 the full docstring, while the new primitive adds ~60 documented lines of its
 own -- the real reduction is structural (8 implementations → 3, one
