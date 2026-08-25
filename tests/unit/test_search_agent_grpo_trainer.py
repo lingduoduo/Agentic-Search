@@ -13,8 +13,8 @@ import torch
 import torch.nn as nn
 
 from src.agents.core.base import AgentLoopOutput
-from src.model.post_training.grpo.llm_grpo_trainer import LLMGRPOConfig
-from src.model.post_training.grpo.search_agent_grpo_trainer import (
+from src.model.post_training.grpo.trainers import (
+    LLMGRPOConfig,
     SearchAgentGRPOTrainer,
 )
 from src.model.post_training.reward import SearchRewardFunction, SearchRewardConfig
@@ -316,7 +316,7 @@ def test_grpo_smoke_step_with_retriever_aware_reward():
 
 def test_resolve_max_concurrent_defaults_when_none():
     """Concurrency is always bounded so rollouts can't saturate the search server."""
-    from src.model.post_training.grpo.search_agent_grpo_trainer import (
+    from src.model.post_training.grpo.trainers import (
         DEFAULT_MAX_CONCURRENT,
         _resolve_max_concurrent,
     )

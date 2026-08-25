@@ -148,8 +148,8 @@ async def _run(args: argparse.Namespace) -> None:
         compare_action_evals,
         format_comparison_table,
     )
-    from src.model.post_training.grpo.llm_grpo_trainer import LLMGRPOConfig
-    from src.model.post_training.grpo.search_agent_grpo_trainer import (
+    from src.model.post_training.grpo.trainers import (
+        LLMGRPOConfig,
         SearchAgentGRPOTrainer,
     )
     from src.model.post_training.grpo.train_loop import TrainLoopConfig, train_loop

@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from importlib.util import find_spec
+
+import pytest
+
+pytest.importorskip("torch")
+
+
+def test_consolidated_trainer_module_owns_the_full_hierarchy():
+    from src.model.post_training.grpo.trainers import (
+        GRPOTrainer,
+        LLMGRPOTrainer,
+        SearchAgentGRPOTrainer,
+    )
+
+    assert LLMGRPOTrainer in SearchAgentGRPOTrainer.__mro__
+    assert GRPOTrainer.__module__ == "src.model.post_training.grpo.trainers"
+    assert LLMGRPOTrainer.__module__ == "src.model.post_training.grpo.trainers"
+    assert SearchAgentGRPOTrainer.__module__ == "src.model.post_training.grpo.trainers"
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "src.model.post_training.grpo.grpo_trainer",
+        "src.model.post_training.grpo.llm_grpo_trainer",
+        "src.model.post_training.grpo.search_agent_grpo_trainer",
+    ],
+)
+def test_replaced_trainer_modules_are_removed(module_name: str):
+    assert find_spec(module_name) is None
