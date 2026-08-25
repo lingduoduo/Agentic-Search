@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
@@ -486,6 +487,65 @@ class SearchRewardConfig:
             evidence_gain_weight=evidence_gain_weight,
             early_stop_bonus=early_stop_bonus,
         )
+
+
+def group_relative_advantages(
+    rewards: Sequence[float], *, normalize: bool = False
+) -> list[float]:
+    """Mean-center one prompt group's rewards; optionally divide by population std.
+
+    This is the critic-free core signal GRPO trains on:
+
+        advantage_i = reward_i - mean(group_rewards)
+
+    With ``normalize=True`` the centered values are divided by the group's
+    population standard deviation, which is what keeps the objective stable
+    across groups whose reward scales differ:
+
+        advantage_i = (reward_i - mean) / (std + 1e-8)
+
+    A single-sample group has no relative comparison, so it gets ``0.0``.
+    All-equal rewards give a zero std; the epsilon is what keeps the result
+    finite rather than NaN.
+    """
+    n = len(rewards)
+    if n <= 1:
+        return [0.0] * n
+    mean = sum(rewards) / n
+    centered = [float(r) - mean for r in rewards]
+    if not normalize:
+        return centered
+    std = math.sqrt(sum(c * c for c in centered) / n)
+    return [c / (std + 1e-8) for c in centered]
+
+
+def grouped_relative_advantages(
+    rewards: Sequence[float],
+    group_ids: Sequence[str],
+    *,
+    normalize: bool = False,
+) -> list[float]:
+    """Apply :func:`group_relative_advantages` per prompt group, in input order.
+
+    Rollouts sharing a ``group_id`` were sampled from the same prompt and are
+    the only ones compared against each other -- there is no cross-prompt
+    mixing. The returned list is aligned with *rewards*.
+    """
+    if len(rewards) != len(group_ids):
+        raise ValueError("rewards and group_ids must have the same length.")
+
+    groups: dict[str, list[int]] = {}
+    for index, group_id in enumerate(group_ids):
+        groups.setdefault(group_id, []).append(index)
+
+    advantages = [0.0] * len(rewards)
+    for indices in groups.values():
+        group_advantages = group_relative_advantages(
+            [rewards[i] for i in indices], normalize=normalize
+        )
+        for index, advantage in zip(indices, group_advantages):
+            advantages[index] = advantage
+    return advantages
 
 
 class SearchRewardFunction:

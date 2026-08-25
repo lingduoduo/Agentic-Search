@@ -168,3 +168,41 @@ raise SystemExit(pytest.main([
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "7 passed" in result.stdout
+
+
+def test_reward_and_rollouts_import_without_torch():
+    """reward.py and rollouts.py must never acquire a torch dependency.
+
+    They are the torch-free half of the post-training package, and the shared
+    advantage primitive lives in reward.py precisely so that stays true.
+    """
+    import subprocess
+    import sys
+
+    program = """
+import sys
+
+class _Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError("No module named %r (blocked)" % name)
+        return None
+
+sys.meta_path.insert(0, _Blocker())
+
+import src.model.post_training.reward as reward
+import src.model.post_training.grpo.rollouts as rollouts
+
+assert reward.group_relative_advantages([1.0, 0.0]) == [0.5, -0.5]
+assert rollouts.compute_grpo_outcome_advantage([1.0, 0.0]) == [0.5, -0.5]
+print("torch-free OK")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "torch-free OK" in result.stdout
