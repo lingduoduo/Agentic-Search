@@ -251,8 +251,10 @@ with the shared building blocks at the top level:
   SearchAgentLoop), `generation.py` (the rollout/generation manager, moved here from
   `src/model/` so the serving layer no longer depends on training) + `tensor_helper.py`,
   grouped rollout sampling, a controller, a durable train loop, and
-  `core_algos.py` (GRPO advantage + the REINFORCE losses, kept as the ancestor
-  policy-gradient algorithm), and `judge.py` (RLAIF judges — moved here because its
+  `core_algos.py` (the token-level GRPO advantage `compute_grpo_token_advantages`
+  + the REINFORCE losses, kept as the ancestor policy-gradient algorithm; the
+  scalar group-relative advantage primitive shared by every trainer lives in
+  `post_training/reward.py`, which is torch-free), and `judge.py` (RLAIF judges — moved here because its
   only consumers are GRPO scripts; a future judge-backed DPO loader would make
   `dpo/` import `grpo/`, a cost accepted deliberately)
 - `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),

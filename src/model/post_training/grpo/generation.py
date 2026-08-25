@@ -1444,22 +1444,6 @@ class Retriever(Protocol):
 
 
 @runtime_checkable
-class BatchRetriever(Protocol):
-    """Retrieval backend that can serve multiple queries in a single call.
-
-    Backends that implement this avoid N separate HTTP round-trips when the
-    agent loop runs several trajectories in parallel.  Check with
-    ``isinstance(retriever, BatchRetriever)`` before using.
-    """
-
-    def retrieve_batch(
-        self, queries: list[str], topk: int
-    ) -> list[list[RetrievedDocument]]:
-        """Return per-query document lists for all queries in one request."""
-        ...
-
-
-@runtime_checkable
 class Fetcher(Protocol):
     """Uniform interface for page-fetch backends used after a model emits <fetch>."""
 

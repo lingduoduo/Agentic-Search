@@ -25,7 +25,11 @@ this package broke CI when the Q-learning demo still lived in it (#536), and the
 repo has shipped that failure four times.
 
 ``rollouts`` is not re-exported at all -- it pulls in the agent loop. Import it
-by module path.
+by module path. The scalar group-relative advantage formula that every trainer
+here needs lives in ``src.model.post_training.reward`` rather than in this
+package: ``reward`` and ``rollouts`` are the torch-free half of post-training,
+and importing ``core_algos`` from them would put ``import torch`` in front of
+both.
 """
 
 from __future__ import annotations
