@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from importlib.util import find_spec
+from pathlib import Path
 
 import pytest
 
@@ -61,3 +62,20 @@ def test_generation_owns_its_tensor_helpers():
     assert TensorConfig.__module__ == "src.model.post_training.grpo.generation"
     assert TensorHelper.__module__ == "src.model.post_training.grpo.generation"
     assert find_spec("src.model.post_training.grpo.tensor_helper") is None
+
+
+def test_grpo_package_has_only_the_approved_implementation_modules():
+    package_dir = (
+        Path(__file__).resolve().parents[2] / "src" / "model" / "post_training" / "grpo"
+    )
+    actual = {path.name for path in package_dir.glob("*.py")}
+    assert actual == {
+        "__init__.py",
+        "core_algos.py",
+        "generation.py",
+        "judge.py",
+        "plot_rollouts.py",
+        "rollouts.py",
+        "trainers.py",
+        "training.py",
+    }

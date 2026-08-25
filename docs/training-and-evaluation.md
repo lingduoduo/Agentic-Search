@@ -598,8 +598,8 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | Reward function | `src/model/post_training/reward.py` |
 | Simulated preference judge | `src/model/post_training/grpo/judge.py` |
 | GRPO helpers | `src/model/post_training/grpo/rollouts.py` |
-| Online GRPO for HF LMs | `src/model/post_training/grpo/llm_grpo_trainer.py` |
-| Agent-loop GRPO (full reward) | `src/model/post_training/grpo/search_agent_grpo_trainer.py` |
+| Online GRPO for HF LMs | `src/model/post_training/grpo/trainers.py` |
+| Agent-loop GRPO (full reward) | `src/model/post_training/grpo/trainers.py` |
 | PPO core (clipped surrogate, KL controllers) | `src/model/post_training/ppo/core_algos.py` |
 | GRPO/REINFORCE advantages and losses | `src/model/post_training/grpo/core_algos.py` |
 | Tabular Q-learning demo | `src/model/post_training/qlearning/` |

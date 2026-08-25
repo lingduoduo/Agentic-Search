@@ -397,7 +397,7 @@ def _sparse_reward_at_eos(
 class LLMGRPOTrainer:
     """HuggingFace-native online GRPO trainer.
 
-    Mirrors GRPOTrainer (grpo_trainer.py) but operates on token sequences:
+    Mirrors the bandit ``GRPOTrainer`` above but operates on token sequences:
 
         policy         — AutoModelForCausalLM being optimized
         reference      — frozen SFT copy (deepcopy at init)
@@ -704,7 +704,7 @@ class LLMGRPOTrainer:
     ) -> dict[str, float]:
         """One complete online GRPO step: rollout → loss → gradient update.
 
-        Analogous to ``GRPOTrainer.update`` in grpo_trainer.py.
+        Analogous to ``GRPOTrainer.update`` above.
 
         Args:
             prompts: B raw text prompts.
