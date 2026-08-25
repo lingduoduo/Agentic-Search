@@ -25,8 +25,8 @@ async def run_feedback_grpo_step(
     from src.agents.search import SearchAgentLoop
     from src.model.post_training.data import load_feedback_examples
     from src.model.post_training.grpo.rollouts import GRPOAdvantageConfig
-    from src.model.post_training.grpo.llm_grpo_trainer import LLMGRPOConfig
-    from src.model.post_training.grpo.search_agent_grpo_trainer import (
+    from src.model.post_training.grpo.trainers import (
+        LLMGRPOConfig,
         SearchAgentGRPOTrainer,
     )
     from src.model.post_training.reward import (

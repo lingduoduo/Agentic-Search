@@ -134,7 +134,7 @@ def _run(args: argparse.Namespace) -> None:
         LLMJudge,
         SimulatedPreferenceJudge,
     )
-    from src.model.post_training.grpo.llm_grpo_trainer import (
+    from src.model.post_training.grpo.trainers import (
         LLMGRPOConfig,
         LLMGRPOTrainer,
     )

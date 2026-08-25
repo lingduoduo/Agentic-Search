@@ -14,7 +14,7 @@ pytest.importorskip("torch")
 import torch
 import torch.nn as nn
 
-from src.model.post_training.grpo.llm_grpo_trainer import (
+from src.model.post_training.grpo.trainers import (
     LLMGRPOConfig,
     LLMGRPOTrainer,
     LLMRolloutResult,

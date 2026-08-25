@@ -23,7 +23,7 @@ async def test_run_feedback_grpo_step_wires_and_saves(monkeypatch, tmp_path):
     trainer.policy = MagicMock()
     trainer.tokenizer = MagicMock()
     monkeypatch.setattr(
-        "src.model.post_training.grpo.search_agent_grpo_trainer.SearchAgentGRPOTrainer.from_pretrained",
+        "src.model.post_training.grpo.trainers.SearchAgentGRPOTrainer.from_pretrained",
         lambda *a, **k: trainer,
     )
 

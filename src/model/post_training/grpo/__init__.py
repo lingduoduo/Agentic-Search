@@ -42,23 +42,21 @@ _LAZY_EXPORTS: dict[str, str] = {
     "compute_grpo_policy_loss": "core_algos",
     "compute_reinforce_policy_loss": "core_algos",
     "compute_reinforce_policy_loss_core": "core_algos",
-    # controller
-    "LocalGRPOController": "controller",
-    "RolloutResult": "controller",
-    # grpo_trainer — bandit / grouped-rollout
-    "GRPOTrainer": "grpo_trainer",
-    "Policy": "grpo_trainer",
-    "compute_group_advantages": "grpo_trainer",
-    "grpo_clipped_policy_loss": "grpo_trainer",
-    "make_grpo_trainer": "grpo_trainer",
-    "reverse_kl_penalty": "grpo_trainer",
-    # llm_grpo_trainer — HuggingFace causal-LM policies
-    "LLMGRPOConfig": "llm_grpo_trainer",
-    "LLMGRPOTrainer": "llm_grpo_trainer",
-    "LLMRolloutResult": "llm_grpo_trainer",
-    "get_response_log_probs": "llm_grpo_trainer",
-    # search_agent_grpo_trainer — live SearchAgentLoop rollouts
-    "SearchAgentGRPOTrainer": "search_agent_grpo_trainer",
+    # training — local controller and durable loop
+    "LocalGRPOController": "training",
+    "RolloutResult": "training",
+    # trainers — bandit, HuggingFace causal-LM, and live SearchAgentLoop rollouts
+    "GRPOTrainer": "trainers",
+    "Policy": "trainers",
+    "compute_group_advantages": "trainers",
+    "grpo_clipped_policy_loss": "trainers",
+    "make_grpo_trainer": "trainers",
+    "reverse_kl_penalty": "trainers",
+    "LLMGRPOConfig": "trainers",
+    "LLMGRPOTrainer": "trainers",
+    "LLMRolloutResult": "trainers",
+    "get_response_log_probs": "trainers",
+    "SearchAgentGRPOTrainer": "trainers",
     # judge — RLAIF scoring, moved in from the shared top level. Deferred
     # like everything else here: it reaches ``reward``, which reaches the
     # agent loop.
