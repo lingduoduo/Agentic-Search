@@ -177,8 +177,8 @@ to `from .rollouts import GRPOAdvantageConfig`.
 
 ### Dead code
 
-- `generation.py::BatchRetriever` — a `Protocol` referenced only from a
-  docstring in `Retriever`. Deleted, and the referring sentence with it.
+- `generation.py::BatchRetriever` — a `Protocol` referenced nowhere outside
+  its own definition. Deleted.
 - `generation.py` line 32 — the unused `compute_grpo_outcome_advantage`
   re-export. Deleted.
 
@@ -225,7 +225,17 @@ On top of it:
 
 - 8 advantage implementations → 3 (one scalar, two torch).
 - 1 ambiguous public name → 0.
-- 7 function-local imports in the `generation`/`training` pair → 2.
-- Roughly −180 LOC, and no new file: the shared primitive lands in a module all
-  six sites already depend on.
+- 7 function-local imports in the `generation`/`training` pair → 1: the
+  measured result is `generation.py`'s `from .training import
+  LocalGRPOController` inside the retained
+  `LLMGenerationManager.run_grpo_training_step` compat shim, the only
+  survivor; `training.py` has zero function-local imports of `generation`.
+- Net line count in `src/`: 166 insertions / 170 deletions, a net −4 lines,
+  not the roughly −180 LOC originally estimated. The estimate was wrong
+  because each duplicate body was only ~10-15 lines and its one-line
+  replacement keeps the full docstring, while the new primitive adds ~60
+  documented lines of its own. The real reduction is structural, not in line
+  count: 8 implementations → 3, one ambiguous public name → 0, 7 deferred
+  imports → 1. No new file: the shared primitive lands in a module all six
+  sites already depend on.
 - `rollouts.py` and `reward.py` remain torch-free, verifiably so.

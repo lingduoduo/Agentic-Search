@@ -1,8 +1,14 @@
 """The shared scalar advantage primitive, pinned against every implementation it replaces.
 
-These equivalence tests run BEFORE the call sites are repointed. They are what
-makes the dedupe safe: if any of the six implementations turns out to differ
-from the primitive on any input, that shows up here rather than in a training run.
+These tests originally pinned the primitive against six independent
+implementations at the moment of replacement -- that comparison is what made
+the dedupe safe. The call sites have since been repointed to delegate to the
+primitive, so now most `test_matches_*` cases compare a wrapper to the
+primitive through the same code and are retained as delegation-wiring checks
+rather than formula checks. The formula itself is pinned by the hand-derived
+tests earlier in this file (the ones that re-derive mean/std in the test
+body) and by independent pins in `tests/unit/test_reward.py` and
+`tests/unit/test_grpo.py`.
 """
 
 from __future__ import annotations

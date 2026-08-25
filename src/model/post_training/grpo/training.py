@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..ppo.core_algos import PPOPolicyLossConfig
+from ..reward import group_relative_advantages
 from .generation import (
     GRPOPromptGroupResult,
     GRPORolloutSafetyConfig,
@@ -27,9 +29,6 @@ from .generation import (
     score_group_rollout,
 )
 from .rollouts import GRPOAdvantageConfig
-
-from ..ppo.core_algos import PPOPolicyLossConfig
-from ..reward import group_relative_advantages
 
 logger = logging.getLogger(__name__)
 

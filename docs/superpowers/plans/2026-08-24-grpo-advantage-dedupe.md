@@ -781,8 +781,9 @@ Add to `tests/unit/test_grpo_module_layout.py`:
 
 ```python
 def test_unused_batch_retriever_protocol_is_gone():
-    """BatchRetriever was referenced only from a docstring -- nothing implemented
-    or isinstance-checked it."""
+    """BatchRetriever was referenced nowhere outside its own definition --
+    nothing implemented it, nothing isinstance-checked it, and no other
+    docstring named it."""
     pytest.importorskip("torch", exc_type=ImportError)
 
     from src.model.post_training.grpo import generation
@@ -875,7 +876,12 @@ Then confirm the diff size:
 git diff --stat main...HEAD
 ```
 
-Expected: a net reduction in `src/` of roughly 180 lines.
+Expected (measured after the fact): `src/` diffs to 166 insertions / 170
+deletions, a net −4 lines, not the roughly 180 originally estimated here.
+Each duplicate body was only ~10-15 lines and its one-line replacement keeps
+the full docstring, while the new primitive adds ~60 documented lines of its
+own -- the real reduction is structural (8 implementations → 3, one
+ambiguous public name → 0, 7 deferred imports → 1), not in line count.
 
 - [ ] **Step 9: Commit and open the PR**
 
@@ -900,7 +906,10 @@ collapse into one primitive. No behavior change.
   functions depending on import path. The torch one is now
   `compute_grpo_token_advantages`.
 - `async_run_grpo_training_step` moves to `training.py`, breaking the
-  `generation` <-> `training` cycle. Seven function-local imports become two.
+  `generation` <-> `training` cycle. Seven function-local imports become one
+  (the `from .training import LocalGRPOController` inside the retained
+  `LLMGenerationManager.run_grpo_training_step` compat shim; `training.py`
+  now has zero function-local imports of `generation`).
 - Drops the unused `BatchRetriever` protocol and an unused re-export.
 
 Explicit non-goals: splitting `LLMGenerationManager`, and unifying the two

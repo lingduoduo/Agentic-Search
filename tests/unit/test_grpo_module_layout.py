@@ -271,8 +271,9 @@ def test_outcome_advantage_name_resolves_to_exactly_one_function():
 
 
 def test_unused_batch_retriever_protocol_is_gone():
-    """BatchRetriever was referenced only from a docstring -- nothing implemented
-    or isinstance-checked it."""
+    """BatchRetriever was referenced nowhere outside its own definition --
+    nothing implemented it, nothing isinstance-checked it, and no other
+    docstring named it."""
     pytest.importorskip("torch", exc_type=ImportError)
 
     from src.model.post_training.grpo import generation
