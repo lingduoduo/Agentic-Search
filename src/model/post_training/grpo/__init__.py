@@ -25,7 +25,11 @@ this package broke CI when the Q-learning demo still lived in it (#536), and the
 repo has shipped that failure four times.
 
 ``rollouts`` is not re-exported at all -- it pulls in the agent loop. Import it
-by module path.
+by module path. The scalar group-relative advantage formula that every trainer
+here needs lives in ``src.model.post_training.reward`` rather than in this
+package: ``reward`` and ``rollouts`` are the torch-free half of post-training,
+and importing ``core_algos`` from them would put ``import torch`` in front of
+both.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     # the KL controllers and the masked-tensor primitives are one layer down in
     # `src.model.post_training.ppo`, and are NOT re-exported here: a variant should not
     # advertise its base layer's API as its own.
-    "compute_grpo_outcome_advantage": "core_algos",
+    "compute_grpo_token_advantages": "core_algos",
     "compute_grpo_policy_loss": "core_algos",
     "compute_reinforce_policy_loss": "core_algos",
     "compute_reinforce_policy_loss_core": "core_algos",

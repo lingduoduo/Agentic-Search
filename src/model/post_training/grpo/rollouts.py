@@ -5,12 +5,20 @@ from __future__ import annotations
 import asyncio
 import math
 from dataclasses import dataclass, replace
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
 from ....agents.core.base import AgentLoopBase, AgentLoopOutput
-from ..data import PromptBatch
-from ..reward import BatchJudgeFn, JudgeFn, SearchRewardFunction, _score_answers
+from ..reward import (
+    BatchJudgeFn,
+    JudgeFn,
+    SearchRewardFunction,
+    _score_answers,
+    group_relative_advantages,
+)
+
+if TYPE_CHECKING:
+    from ..data import PromptBatch
 
 
 @dataclass(frozen=True)
@@ -365,12 +373,7 @@ def compute_grpo_outcome_advantage(rewards: list[float]) -> list[float]:
     For a single trajectory there is no relative comparison, so the returned
     advantage is `0.0`.
     """
-    if not rewards:
-        return []
-    if len(rewards) == 1:
-        return [0.0]
-    mean = sum(rewards) / len(rewards)
-    return [reward - mean for reward in rewards]
+    return group_relative_advantages(rewards)
 
 
 def compute_dapo_advantages(

@@ -253,7 +253,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "assign_group_relative_advantages",
     ),
     "async_run_grpo_training_step": (
-        ".model.post_training.grpo.generation",
+        ".model.post_training.grpo.training",
         "async_run_grpo_training_step",
     ),
     "async_run_prompt_rollout_group": (

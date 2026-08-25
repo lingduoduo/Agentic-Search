@@ -18,7 +18,7 @@ from ..ppo.core_algos import (
     kl_penalty,
     masked_mean,
 )
-from .core_algos import compute_grpo_outcome_advantage
+from .core_algos import compute_grpo_token_advantages
 from .rollouts import (
     GRPOAdvantageConfig,
     score_prompt_group,
@@ -605,7 +605,7 @@ class LLMGRPOTrainer:
             self.device
         )
 
-        advantages, _ = compute_grpo_outcome_advantage(
+        advantages, _ = compute_grpo_token_advantages(
             token_rewards,
             response_mask,
             group_ids,
@@ -996,7 +996,7 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
             self.device
         )  # (B*G, T)
 
-        advantages, _ = compute_grpo_outcome_advantage(
+        advantages, _ = compute_grpo_token_advantages(
             token_rewards,
             response_mask,
             group_ids,

@@ -22,7 +22,7 @@ from ..ppo.core_algos import (
 )
 
 
-def compute_grpo_outcome_advantage(
+def compute_grpo_token_advantages(
     token_level_rewards: torch.Tensor,
     eos_mask: torch.Tensor,
     index: torch.Tensor,
@@ -30,6 +30,11 @@ def compute_grpo_outcome_advantage(
     clip_advantages: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Group-normalized outcome advantages expanded over response tokens.
+
+    Named for its shape: unlike the scalar ``compute_grpo_outcome_advantage``
+    in :mod:`src.model.post_training.grpo.rollouts`, this returns a
+    ``(batch, seq_len)`` tensor with each rollout's advantage broadcast across
+    its response tokens.
 
     Args:
         token_level_rewards: ``(batch, seq_len)`` sparse reward tensor.
