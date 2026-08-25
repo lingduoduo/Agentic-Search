@@ -49,6 +49,31 @@ def test_compute_group_advantages_detached():
     assert not adv.requires_grad
 
 
+def test_compute_group_advantages_rejects_mismatched_shapes():
+    rewards = torch.ones(2, 3)
+    mask = torch.ones(1, 3)
+
+    with pytest.raises(ValueError, match="same shape"):
+        compute_group_advantages(rewards, mask)
+
+
+def test_compute_group_advantages_rejects_groups_without_valid_rollouts():
+    rewards = torch.ones(2, 3)
+    mask = torch.tensor([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]])
+
+    with pytest.raises(ValueError, match="at least one valid rollout"):
+        compute_group_advantages(rewards, mask)
+
+
+@pytest.mark.parametrize("shape", [(0, 3), (2, 0)])
+def test_compute_group_advantages_rejects_empty_grouped_dimensions(shape):
+    rewards = torch.empty(shape)
+    mask = torch.empty(shape)
+
+    with pytest.raises(ValueError, match="non-empty group dimensions"):
+        compute_group_advantages(rewards, mask)
+
+
 def test_grpo_clipped_policy_loss_no_clip_when_ratio_in_range():
     log_p_new = torch.tensor([0.1])
     log_p_old = torch.tensor([0.0])
@@ -107,6 +132,56 @@ def test_grpo_trainer_update_returns_metrics():
     for key in ("loss", "mean_reward", "mean_advantage", "mean_ratio", "mean_kl"):
         assert key in metrics
         assert isinstance(metrics[key], float)
+
+
+def test_grpo_trainer_rejects_inconsistent_flat_batch_size():
+    trainer = make_grpo_trainer(state_dim=4, action_dim=3)
+
+    with pytest.raises(ValueError, match=r"batch_size \* group_size"):
+        trainer.compute_loss(
+            states=torch.randn(5, 4),
+            actions=torch.randint(0, 3, (5,)),
+            old_log_probs=torch.full((5,), -1.0),
+            rewards=torch.rand(2, 3),
+            mask=torch.ones(2, 3),
+        )
+
+
+def test_grpo_trainer_rejects_an_empty_grouped_batch_before_policy_inference():
+    trainer = make_grpo_trainer(state_dim=4, action_dim=3)
+
+    with pytest.raises(ValueError, match="non-empty group dimensions"):
+        trainer.compute_loss(
+            states=torch.empty(0, 4),
+            actions=torch.empty(0, dtype=torch.long),
+            old_log_probs=torch.empty(0),
+            rewards=torch.empty(0, 3),
+            mask=torch.empty(0, 3),
+        )
+
+
+def test_grpo_trainer_skips_reference_policy_when_kl_is_disabled():
+    trainer = make_grpo_trainer(state_dim=4, action_dim=3, beta=0.0)
+
+    def fail_if_called(states, actions):
+        raise AssertionError("reference policy should not run when beta is zero")
+
+    trainer.reference_policy.get_log_probs = fail_if_called
+    states = torch.randn(6, 4)
+    actions = torch.randint(0, 3, (6,))
+    with torch.no_grad():
+        old_log_probs = trainer.policy.get_log_probs(states, actions)
+
+    loss, metrics = trainer.compute_loss(
+        states=states,
+        actions=actions,
+        old_log_probs=old_log_probs,
+        rewards=torch.rand(2, 3),
+        mask=torch.ones(2, 3),
+    )
+
+    assert torch.isfinite(loss)
+    assert metrics["mean_kl"] == 0.0
 
 
 def test_grpo_trainer_loss_decreases_over_steps():
