@@ -29,6 +29,7 @@ from ..ppo.core_algos import (
     masked_mean,
     masked_whiten,
 )
+from ..reward import group_relative_advantages
 from .core_algos import (
     compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
 )
@@ -842,23 +843,6 @@ def score_group_rollout(
     ]
 
 
-def _grpo_advantages(rewards: list[float], *, normalize: bool) -> list[float]:
-    """Mean-center rewards; optionally divide by within-group std.
-
-    Single-sample groups get advantage 0.0 — no relative comparison exists.
-    """
-    n = len(rewards)
-    if n <= 1:
-        return [0.0] * n
-    mean = sum(rewards) / n
-    centered = [r - mean for r in rewards]
-    if not normalize:
-        return centered
-    variance = sum(c * c for c in centered) / n
-    std = math.sqrt(variance)
-    return [c / (std + 1e-8) for c in centered]
-
-
 def assign_group_relative_advantages(
     grouped_rollouts: "list[GroupedRolloutBatch]",
     *,
@@ -909,7 +893,7 @@ def assign_group_relative_advantages(
             f"{len(resolved_components)} and {len(rewards)}."
         )
 
-    advantages = _grpo_advantages(list(rewards), normalize=normalize)
+    advantages = group_relative_advantages(list(rewards), normalize=normalize)
     return [
         ScoredGroupedRollout(
             group_id=grb.group_id,
@@ -1133,7 +1117,9 @@ def apply_safety_penalties_to_scored_rollouts(
         penalized.append((reward, components))
 
     penalized_rewards = [r for r, _ in penalized]
-    advantages = _grpo_advantages(penalized_rewards, normalize=normalize_advantages)
+    advantages = group_relative_advantages(
+        penalized_rewards, normalize=normalize_advantages
+    )
     return [
         ScoredGroupedRollout(
             group_id=scored.group_id,

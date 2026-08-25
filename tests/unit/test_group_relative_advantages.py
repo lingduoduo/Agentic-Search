@@ -112,17 +112,6 @@ def test_matches_reward_function_batch_advantages():
 
 
 @pytest.mark.parametrize("rewards", CASES)
-@pytest.mark.parametrize("normalize", [False, True])
-def test_matches_generation_grpo_advantages(rewards: list[float], normalize: bool):
-    pytest.importorskip("torch", exc_type=ImportError)
-    from src.model.post_training.grpo.generation import _grpo_advantages
-
-    assert group_relative_advantages(rewards, normalize=normalize) == pytest.approx(
-        _grpo_advantages(list(rewards), normalize=normalize)
-    )
-
-
-@pytest.mark.parametrize("rewards", CASES)
 def test_matches_controller_assign_group_advantages(rewards: list[float]):
     pytest.importorskip("torch", exc_type=ImportError)
     from src.model.post_training.grpo.training import (

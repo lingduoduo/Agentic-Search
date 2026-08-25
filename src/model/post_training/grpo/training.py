@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from .generation import LLMGenerationManager
 
 from ..ppo.core_algos import PPOPolicyLossConfig
+from ..reward import group_relative_advantages
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +67,11 @@ class LocalGRPOController:
         """Assign std-normalized advantages to a simple rollout group."""
         if not group:
             return group
-        rewards = [float(item.reward) for item in group]
-        mean_reward = sum(rewards) / len(rewards)
-        variance = sum((r - mean_reward) ** 2 for r in rewards) / max(len(rewards), 1)
-        std = variance**0.5
-        for item in group:
-            item.advantage = (float(item.reward) - mean_reward) / (std + 1e-8)
+        advantages = group_relative_advantages(
+            [float(item.reward) for item in group], normalize=True
+        )
+        for item, advantage in zip(group, advantages):
+            item.advantage = advantage
         return group
 
     def _build_single_batches(self, prompt_batch: Any) -> list[Any]:

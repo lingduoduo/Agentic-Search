@@ -985,22 +985,7 @@ class SearchRewardFunction:
         Single-sample groups get advantage 0.0 because there is no relative
         within-group comparison signal.
         """
-        if len(rewards) != len(group_ids):
-            raise ValueError("rewards and group_ids must have the same length.")
-
-        groups: dict[str, list[tuple[int, float]]] = {}
-        for idx, (gid, reward) in enumerate(zip(group_ids, rewards)):
-            groups.setdefault(gid, []).append((idx, reward))
-
-        advantages = [0.0] * len(rewards)
-        for group in groups.values():
-            if len(group) == 1:
-                continue
-            indices, group_rewards = zip(*group)
-            mean = sum(group_rewards) / len(group_rewards)
-            for idx, reward in zip(indices, group_rewards):
-                advantages[idx] = reward - mean
-        return advantages
+        return grouped_relative_advantages(rewards, group_ids)
 
     def compute_batch_advantages(
         self,
@@ -1016,29 +1001,8 @@ class SearchRewardFunction:
         Groups with a single sample get advantage 0.0 (no within-group signal).
         Variance uses the population formula (N denominator).  If your trainer
         uses sample variance (N-1), normalise at that layer instead.
-
-        Single-pass: mean and std are computed together in one traversal of each
-        group rather than first centering then re-scanning for std.
         """
-        if len(rewards) != len(group_ids):
-            raise ValueError("rewards and group_ids must have the same length.")
-
-        groups: dict[str, list[tuple[int, float]]] = {}
-        for idx, (gid, reward) in enumerate(zip(group_ids, rewards)):
-            groups.setdefault(gid, []).append((idx, reward))
-
-        advantages = [0.0] * len(rewards)
-        for group in groups.values():
-            if len(group) == 1:
-                continue
-            indices, group_rewards = zip(*group)
-            n = len(group_rewards)
-            mean = sum(group_rewards) / n
-            variance = sum((r - mean) ** 2 for r in group_rewards) / n
-            std = math.sqrt(variance)
-            for idx, reward in zip(indices, group_rewards):
-                advantages[idx] = (reward - mean) / (std + 1e-8)
-        return advantages
+        return grouped_relative_advantages(rewards, group_ids, normalize=True)
 
     # ------------------------------------------------------------------
     # Internal helpers
