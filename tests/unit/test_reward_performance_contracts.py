@@ -27,7 +27,7 @@ from dataclasses import replace  # noqa: E402
 from src.model.post_training.reward import (  # noqa: E402
     SearchRewardConfig,
     SearchRewardFunction,
-    compute_group_relative_advantages,
+    grouped_relative_advantages,
     token_f1_score,
 )
 
@@ -162,7 +162,11 @@ def _pre_refactor_outcome_advantages(
 def _pre_refactor_batch_advantages(
     rewards: list[float], group_ids: list[str]
 ) -> list[float]:
-    """`SearchRewardFunction.compute_batch_advantages` as of 4abdf48."""
+    """`SearchRewardFunction.compute_batch_advantages` as of 4abdf48.
+
+    Note the `** 2`: this is the historical arithmetic, deliberately not the
+    `c * c` the current kernel uses. See the one-ULP test below.
+    """
     if len(rewards) != len(group_ids):
         raise ValueError("rewards and group_ids must have the same length.")
     groups: dict[str, list[tuple[int, float]]] = {}
@@ -200,13 +204,23 @@ def test_outcome_advantages_are_bit_identical_to_the_pre_refactor_code():
         )
 
 
-def test_normalized_advantages_are_bit_identical_to_the_pre_refactor_code():
+def test_normalized_advantages_match_the_pre_refactor_code_to_one_ulp():
+    """The normalized path is equal to within one unit in the last place.
+
+    Not bit-identical, and the gap is not this branch's: #554's shared kernel
+    squares the *pre-centered* values (`c * c`) where the code it replaced wrote
+    `(r - mean) ** 2`. Those are mathematically the same, but CPython routes
+    `** 2` through libm's `pow`, which is not always bit-equal to a multiply, so
+    about 0.2% of random groups land one ULP apart. Asserting exact equality
+    here would fail against `main` itself. The centering path above *is* exact,
+    and is asserted as such.
+    """
     reward_fn = SearchRewardFunction()
 
     for rewards, group_ids in _random_groups(seed=4507):
-        assert reward_fn.compute_batch_advantages(rewards, group_ids) == (
-            _pre_refactor_batch_advantages(rewards, group_ids)
-        )
+        actual = reward_fn.compute_batch_advantages(rewards, group_ids)
+        expected = _pre_refactor_batch_advantages(rewards, group_ids)
+        assert actual == pytest.approx(expected, rel=1e-12, abs=1e-15)
 
 
 def test_the_kernel_uses_compensated_summation_like_the_code_it_replaced():
@@ -222,7 +236,7 @@ def test_the_kernel_uses_compensated_summation_like_the_code_it_replaced():
         naive += value
     assert naive != sum(values)
 
-    actual = compute_group_relative_advantages(values, ["g"] * 4, normalize=False)
+    actual = grouped_relative_advantages(values, ["g"] * 4, normalize=False)
     expected = [value - sum(values) / 4 for value in values]
     assert actual == expected
 
@@ -233,7 +247,7 @@ def test_outcome_advantages_delegate_to_the_canonical_kernel():
     reward_fn = SearchRewardFunction()
 
     assert reward_fn.compute_grpo_outcome_advantages(rewards, groups) == (
-        compute_group_relative_advantages(rewards, groups, normalize=False)
+        grouped_relative_advantages(rewards, groups, normalize=False)
     )
 
 
@@ -243,7 +257,7 @@ def test_normalized_advantages_delegate_to_the_canonical_kernel():
     reward_fn = SearchRewardFunction()
 
     assert reward_fn.compute_batch_advantages(rewards, groups) == (
-        compute_group_relative_advantages(rewards, groups, normalize=True)
+        grouped_relative_advantages(rewards, groups, normalize=True)
     )
 
 
@@ -251,22 +265,20 @@ def test_list_advantage_entry_point_delegates_to_the_canonical_kernel():
     rewards = [1.0, 0.4, 0.1]
 
     assert compute_grpo_outcome_advantage(rewards) == (
-        compute_group_relative_advantages(rewards, ["g"] * 3, normalize=False)
+        grouped_relative_advantages(rewards, ["g"] * 3, normalize=False)
     )
 
 
 @pytest.mark.parametrize("normalize", [False, True])
 def test_singleton_groups_have_no_within_group_signal(normalize: bool):
-    result = compute_group_relative_advantages(
-        [3.0, -1.0], ["a", "b"], normalize=normalize
-    )
+    result = grouped_relative_advantages([3.0, -1.0], ["a", "b"], normalize=normalize)
 
     assert result == [0.0, 0.0]
 
 
 @pytest.mark.parametrize("normalize", [False, True])
 def test_zero_variance_groups_produce_zero_advantages(normalize: bool):
-    result = compute_group_relative_advantages(
+    result = grouped_relative_advantages(
         [0.5, 0.5, 0.5], ["a"] * 3, normalize=normalize
     )
 
@@ -274,7 +286,7 @@ def test_zero_variance_groups_produce_zero_advantages(normalize: bool):
 
 
 def test_groups_do_not_leak_into_one_another():
-    interleaved = compute_group_relative_advantages(
+    interleaved = grouped_relative_advantages(
         [1.0, 10.0, 0.0, 20.0], ["a", "b", "a", "b"], normalize=False
     )
 
@@ -282,7 +294,7 @@ def test_groups_do_not_leak_into_one_another():
 
 
 def test_results_stay_in_input_order_not_group_order():
-    result = compute_group_relative_advantages(
+    result = grouped_relative_advantages(
         [0.0, 5.0, 1.0], ["b", "a", "b"], normalize=False
     )
 
@@ -291,11 +303,11 @@ def test_results_stay_in_input_order_not_group_order():
 
 def test_the_kernel_rejects_mismatched_lengths():
     with pytest.raises(ValueError, match="same length"):
-        compute_group_relative_advantages([1.0, 2.0], ["a"], normalize=False)
+        grouped_relative_advantages([1.0, 2.0], ["a"], normalize=False)
 
 
 def test_the_kernel_handles_empty_input():
-    assert compute_group_relative_advantages([], [], normalize=True) == []
+    assert grouped_relative_advantages([], [], normalize=True) == []
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +486,7 @@ def test_token_advantages_and_batch_rewards_share_group_statistics():
     )
 
     rewards = [reward_fn.config.correctness_weight * s for s in scores]
-    expected = compute_group_relative_advantages(
+    expected = grouped_relative_advantages(
         rewards, ["x", "x", "y", "y"], normalize=True
     )
     assert [row[5] for row in token_advs] == pytest.approx(expected)

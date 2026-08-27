@@ -9,13 +9,12 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
-from typing import Any, Callable, overload
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
 import torch
 
 from ....agents.core.base import AgentLoopBase, AgentLoopOutput
-from ..data import PromptBatch
 from ..ppo.core_algos import (
     PPOPolicyLossConfig,
     compute_trajectory_policy_loss,
@@ -27,11 +26,16 @@ from ..reward import (
     JudgeFn,
     SearchRewardFunction,
     _score_answers,
-    compute_group_relative_advantages,
+    group_relative_advantages,
 )
 
+if TYPE_CHECKING:
+    # data.py imports torch eagerly, and PromptBatch is only ever an
+    # annotation here; a runtime import would break the torch-blocked guard.
+    from ..data import PromptBatch
 
-def _compute_grpo_outcome_advantage_tensor(
+
+def compute_grpo_token_advantages(
     token_level_rewards: torch.Tensor,
     eos_mask: torch.Tensor,
     index: torch.Tensor,
@@ -39,6 +43,10 @@ def _compute_grpo_outcome_advantage_tensor(
     clip_advantages: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Group-normalized outcome advantages expanded over response tokens.
+
+    Named for its shape: unlike the scalar ``compute_grpo_outcome_advantage``
+    below, this returns a ``(batch, seq_len)`` tensor with each rollout's
+    advantage broadcast across its response tokens.
 
     Args:
         token_level_rewards: ``(batch, seq_len)`` sparse reward tensor.
@@ -774,7 +782,7 @@ def score_prompt_group(
     ]
 
 
-def _compute_grpo_outcome_advantage_list(rewards: list[float]) -> list[float]:
+def compute_grpo_outcome_advantage(rewards: list[float]) -> list[float]:
     """Compute outcome-based GRPO advantages for one prompt group.
 
     This is the critic-free core signal used by GRPO:
@@ -787,76 +795,7 @@ def _compute_grpo_outcome_advantage_list(rewards: list[float]) -> list[float]:
     Every rollout here belongs to the same prompt group, so this is the shared
     kernel over one group.
     """
-    rewards = [float(reward) for reward in rewards]
-    return compute_group_relative_advantages(
-        rewards, ["_"] * len(rewards), normalize=False
-    )
-
-
-_NOT_GIVEN = object()
-
-
-@overload
-def compute_grpo_outcome_advantage(rewards: list[float]) -> list[float]: ...
-
-
-@overload
-def compute_grpo_outcome_advantage(
-    token_level_rewards: torch.Tensor,
-    eos_mask: torch.Tensor,
-    index: torch.Tensor,
-    epsilon: float = 1e-6,
-    clip_advantages: float | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]: ...
-
-
-def compute_grpo_outcome_advantage(
-    rewards: list[float] | torch.Tensor | object = _NOT_GIVEN,
-    eos_mask: torch.Tensor | object = _NOT_GIVEN,
-    index: torch.Tensor | object = _NOT_GIVEN,
-    epsilon: float | object = _NOT_GIVEN,
-    clip_advantages: float | None | object = _NOT_GIVEN,
-    *,
-    token_level_rewards: torch.Tensor | object = _NOT_GIVEN,
-) -> list[float] | tuple[torch.Tensor, torch.Tensor]:
-    """Compute the established list- or tensor-native GRPO advantages.
-
-    The former rollout and loss modules exposed two call shapes under this
-    name. Consolidation keeps both forms accepted by one public owner.
-    """
-    if token_level_rewards is not _NOT_GIVEN:
-        if rewards is not _NOT_GIVEN:
-            raise TypeError(
-                "compute_grpo_outcome_advantage received both rewards and "
-                "token_level_rewards"
-            )
-        rewards = token_level_rewards
-
-    if rewards is _NOT_GIVEN:
-        raise TypeError("compute_grpo_outcome_advantage missing required rewards")
-
-    if isinstance(rewards, torch.Tensor):
-        if eos_mask is _NOT_GIVEN or index is _NOT_GIVEN:
-            raise TypeError(
-                "tensor GRPO advantages require eos_mask and index arguments"
-            )
-        resolved_epsilon = 1e-6 if epsilon is _NOT_GIVEN else epsilon
-        resolved_clip_advantages = (
-            None if clip_advantages is _NOT_GIVEN else clip_advantages
-        )
-        return _compute_grpo_outcome_advantage_tensor(
-            rewards,
-            eos_mask,
-            index,
-            epsilon=resolved_epsilon,
-            clip_advantages=resolved_clip_advantages,
-        )
-
-    if any(
-        value is not _NOT_GIVEN for value in (eos_mask, index, epsilon, clip_advantages)
-    ):
-        raise TypeError("list GRPO advantages accept only the rewards argument")
-    return _compute_grpo_outcome_advantage_list(rewards)
+    return group_relative_advantages(rewards)
 
 
 def compute_dapo_advantages(

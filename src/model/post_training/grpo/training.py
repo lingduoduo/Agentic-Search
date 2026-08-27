@@ -18,6 +18,7 @@ import torch.optim as optim
 from src.agents.core.base import AgentLoopBase
 
 from ..log_probs import get_response_log_probs
+from ..reward import group_relative_advantages
 from ..ppo.core_algos import (
     PPOPolicyLossConfig,
     compute_ppo_policy_loss_core,
@@ -26,11 +27,14 @@ from ..ppo.core_algos import (
 )
 from .algorithms import (
     GRPOAdvantageConfig,
-    compute_grpo_outcome_advantage,
+    compute_grpo_token_advantages,
     sample_prompt_group,
     score_prompt_group,
 )
 from .generation import (
+    GRPORolloutSafetyConfig,
+    GRPOTrainingStepResult,
+    LogProbCapable,
     _async_collect_grpo_rollouts_core,
     _async_run_grpo_training_step_core,
     _collect_grpo_rollouts_core,
@@ -39,6 +43,7 @@ from .generation import (
 
 if TYPE_CHECKING:
     from src.model.post_training.reward import JudgeFn, SearchRewardFunction
+
     from .generation import LLMGenerationManager
 
 logger = logging.getLogger(__name__)
@@ -584,7 +589,7 @@ class LLMGRPOTrainer:
             self.device
         )
 
-        advantages, _ = compute_grpo_outcome_advantage(
+        advantages, _ = compute_grpo_token_advantages(
             token_rewards,
             response_mask,
             group_ids,
@@ -978,7 +983,7 @@ class SearchAgentGRPOTrainer(LLMGRPOTrainer):
             self.device
         )  # (B*G, T)
 
-        advantages, _ = compute_grpo_outcome_advantage(
+        advantages, _ = compute_grpo_token_advantages(
             token_rewards,
             response_mask,
             group_ids,
@@ -1075,14 +1080,11 @@ class LocalGRPOController:
         """Assign std-normalized advantages to a simple rollout group."""
         if not group:
             return group
-        rewards = [float(item.reward) for item in group]
-        mean_reward = sum(rewards) / len(rewards)
-        variance = sum((reward - mean_reward) ** 2 for reward in rewards) / max(
-            len(rewards), 1
+        advantages = group_relative_advantages(
+            [float(item.reward) for item in group], normalize=True
         )
-        std = variance**0.5
-        for item in group:
-            item.advantage = (float(item.reward) - mean_reward) / (std + 1e-8)
+        for item, advantage in zip(group, advantages):
+            item.advantage = advantage
         return group
 
     async def async_collect_rollouts(
@@ -1101,7 +1103,11 @@ class LocalGRPOController:
         current_step: int = 0,
         total_steps: int = 1,
     ) -> tuple[list[Any], list[Any]]:
-        """Collect all rollouts for every prompt concurrently."""
+        """Collect all rollouts for every prompt concurrently.
+
+        All ``N_prompts × N_rollouts`` trajectories run in parallel, overlapping
+        HTTP search I/O.  Returns ``(group_results, scored_rollouts)``.
+        """
         return await _async_collect_grpo_rollouts_core(
             self.manager,
             prompt_batch,
@@ -1238,6 +1244,57 @@ class LocalGRPOController:
             current_step=current_step,
             total_steps=total_steps,
         )
+
+
+async def async_run_grpo_training_step(
+    manager: LLMGenerationManager,
+    prompt_batch: Any,
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    judge_fn: Callable[[str, str], float],
+    num_rollouts: int = 4,
+    reward_fn: Any = None,
+    advantage_config: Any = None,
+    batch_judge_fn: Any = None,
+    old_backend: LogProbCapable | None = None,
+    new_backend: LogProbCapable | None = None,
+    ref_backend: LogProbCapable | None = None,
+    loss_config: PPOPolicyLossConfig | None = None,
+    safety_config: GRPORolloutSafetyConfig | None = None,
+    optimizer: Any = None,
+    base_seed: int | None = None,
+    current_step: int = 0,
+    total_steps: int = 1,
+    max_workers: int | None = None,
+) -> GRPOTrainingStepResult:
+    """Run one GRPO trainer step with concurrent rollout collection.
+
+    Delegates to ``LocalGRPOController.async_training_step`` which runs all
+    ``N_prompts × N_rollouts`` trajectories in parallel, overlapping HTTP
+    search I/O, then performs one learner-side update.
+    """
+    return await LocalGRPOController(
+        manager, num_rollouts=num_rollouts, max_workers=max_workers
+    ).async_training_step(
+        prompt_batch,
+        search_mode=search_mode,
+        sampling_params=sampling_params,
+        judge_fn=judge_fn,
+        num_rollouts=num_rollouts,
+        reward_fn=reward_fn,
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+        old_backend=old_backend,
+        new_backend=new_backend,
+        ref_backend=ref_backend,
+        loss_config=loss_config,
+        safety_config=safety_config,
+        optimizer=optimizer,
+        base_seed=base_seed,
+        current_step=current_step,
+        total_steps=total_steps,
+    )
 
 
 @dataclass

@@ -29,8 +29,9 @@ from ..ppo.core_algos import (
     masked_mean,
     masked_whiten,
 )
+from ..reward import group_relative_advantages
 from .algorithms import (
-    compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
+    compute_grpo_token_advantages as compute_grpo_token_advantages,
 )
 
 
@@ -842,23 +843,6 @@ def score_group_rollout(
     ]
 
 
-def _grpo_advantages(rewards: list[float], *, normalize: bool) -> list[float]:
-    """Mean-center rewards; optionally divide by within-group std.
-
-    Single-sample groups get advantage 0.0 — no relative comparison exists.
-    """
-    n = len(rewards)
-    if n <= 1:
-        return [0.0] * n
-    mean = sum(rewards) / n
-    centered = [r - mean for r in rewards]
-    if not normalize:
-        return centered
-    variance = sum(c * c for c in centered) / n
-    std = math.sqrt(variance)
-    return [c / (std + 1e-8) for c in centered]
-
-
 def assign_group_relative_advantages(
     grouped_rollouts: "list[GroupedRolloutBatch]",
     *,
@@ -909,7 +893,7 @@ def assign_group_relative_advantages(
             f"{len(resolved_components)} and {len(rewards)}."
         )
 
-    advantages = _grpo_advantages(list(rewards), normalize=normalize)
+    advantages = group_relative_advantages(list(rewards), normalize=normalize)
     return [
         ScoredGroupedRollout(
             group_id=grb.group_id,
@@ -1133,7 +1117,9 @@ def apply_safety_penalties_to_scored_rollouts(
         penalized.append((reward, components))
 
     penalized_rewards = [r for r, _ in penalized]
-    advantages = _grpo_advantages(penalized_rewards, normalize=normalize_advantages)
+    advantages = group_relative_advantages(
+        penalized_rewards, normalize=normalize_advantages
+    )
     return [
         ScoredGroupedRollout(
             group_id=scored.group_id,
@@ -1311,56 +1297,6 @@ async def async_run_prompt_rollout_group(
     for group in result:
         group.sort(key=lambda g: g.rollout_index)
     return result
-
-
-async def async_run_grpo_training_step(
-    manager: "LLMGenerationManager",
-    prompt_batch: Any,
-    *,
-    search_mode: str,
-    sampling_params: dict[str, Any],
-    judge_fn: Callable[[str, str], float],
-    num_rollouts: int = 4,
-    reward_fn: Any = None,
-    advantage_config: Any = None,
-    batch_judge_fn: Any = None,
-    old_backend: LogProbCapable | None = None,
-    new_backend: LogProbCapable | None = None,
-    ref_backend: LogProbCapable | None = None,
-    loss_config: PPOPolicyLossConfig | None = None,
-    safety_config: GRPORolloutSafetyConfig | None = None,
-    optimizer: Any = None,
-    base_seed: int | None = None,
-    current_step: int = 0,
-    total_steps: int = 1,
-    max_workers: int | None = None,
-) -> GRPOTrainingStepResult:
-    """Run one GRPO trainer step with concurrent rollout collection.
-
-    Runs all ``N_prompts × N_rollouts`` trajectories in parallel, overlapping
-    HTTP search I/O, then performs one learner-side update.
-    """
-    return await _async_run_grpo_training_step_core(
-        manager,
-        prompt_batch,
-        search_mode=search_mode,
-        sampling_params=sampling_params,
-        judge_fn=judge_fn,
-        num_rollouts=num_rollouts,
-        reward_fn=reward_fn,
-        advantage_config=advantage_config,
-        batch_judge_fn=batch_judge_fn,
-        old_backend=old_backend,
-        new_backend=new_backend,
-        ref_backend=ref_backend,
-        loss_config=loss_config,
-        safety_config=safety_config,
-        optimizer=optimizer,
-        base_seed=base_seed,
-        current_step=current_step,
-        total_steps=total_steps,
-        max_workers=max_workers,
-    )
 
 
 def _left_pad_rows(rows: list[torch.Tensor], pad_id: int) -> torch.Tensor:
@@ -1830,22 +1766,6 @@ class Retriever(Protocol):
 
     def search(self, query: str, topk: int) -> str:
         """Return retrieved documents formatted for prompt injection."""
-        ...
-
-
-@runtime_checkable
-class BatchRetriever(Protocol):
-    """Retrieval backend that can serve multiple queries in a single call.
-
-    Backends that implement this avoid N separate HTTP round-trips when the
-    agent loop runs several trajectories in parallel.  Check with
-    ``isinstance(retriever, BatchRetriever)`` before using.
-    """
-
-    def retrieve_batch(
-        self, queries: list[str], topk: int
-    ) -> list[list[RetrievedDocument]]:
-        """Return per-query document lists for all queries in one request."""
         ...
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
@@ -51,58 +52,6 @@ REWARD_DIMENSIONS: dict[str, tuple[str, ...]] = {
 _NON_DIMENSION_KEYS: frozenset[str] = frozenset(
     {"reward_mode", "terminal_reward", "shaping_total", "total", "human_feedback"}
 )
-
-
-def compute_group_relative_advantages(
-    rewards: list[float],
-    group_ids: list[str],
-    *,
-    normalize: bool,
-    epsilon: float = 1e-8,
-) -> list[float]:
-    """The one group-relative advantage kernel every caller in the repo shares.
-
-    Centers each reward on the mean of the prompt group it was sampled from —
-    the critic-free GRPO signal — and, when *normalize* is set, divides by that
-    group's population standard deviation (N denominator, stabilised by
-    *epsilon*).  Clipping is deliberately *not* done here: the one place
-    advantages are clipped is ``algorithms._compute_advantages``.
-
-    Groups of one get ``0.0``: a single trajectory has nothing to be relative
-    to.  Results are returned in the caller's input order, never grouped order,
-    so a reward vector and its advantage vector stay index-aligned.
-
-    ``group_ids`` partitions the batch; rewards never mix across prompts.
-    """
-    if len(rewards) != len(group_ids):
-        raise ValueError("rewards and group_ids must have the same length.")
-
-    grouped: dict[str, list[int]] = {}
-    for index, group_id in enumerate(group_ids):
-        grouped.setdefault(group_id, []).append(index)
-
-    advantages = [0.0] * len(rewards)
-    for indices in grouped.values():
-        size = len(indices)
-        if size == 1:
-            continue
-        values = [rewards[index] for index in indices]
-        # `sum()` and not a hand-rolled accumulator: on CPython 3.12+ the
-        # builtin uses compensated (Neumaier) summation over floats, so a
-        # manual `total += ...` loop returns *different* results. The two
-        # implementations this kernel replaced both used `sum()`, and swapping
-        # it out moved roughly 40% of random groups by ~1e-12 relative.
-        mean = sum(values) / size
-        if normalize:
-            variance = sum((value - mean) ** 2 for value in values) / size
-            scale = math.sqrt(variance) + epsilon
-            for index, value in zip(indices, values):
-                advantages[index] = (value - mean) / scale
-        else:
-            for index, value in zip(indices, values):
-                advantages[index] = value - mean
-
-    return advantages
 
 
 def group_reward_components(components: dict[str, float]) -> dict[str, float]:
@@ -538,6 +487,65 @@ class SearchRewardConfig:
             evidence_gain_weight=evidence_gain_weight,
             early_stop_bonus=early_stop_bonus,
         )
+
+
+def group_relative_advantages(
+    rewards: Sequence[float], *, normalize: bool = False
+) -> list[float]:
+    """Mean-center one prompt group's rewards; optionally divide by population std.
+
+    This is the critic-free core signal GRPO trains on:
+
+        advantage_i = reward_i - mean(group_rewards)
+
+    With ``normalize=True`` the centered values are divided by the group's
+    population standard deviation, which is what keeps the objective stable
+    across groups whose reward scales differ:
+
+        advantage_i = (reward_i - mean) / (std + 1e-8)
+
+    A single-sample group has no relative comparison, so it gets ``0.0``.
+    All-equal rewards give a zero std; the epsilon is what keeps the result
+    finite rather than NaN.
+    """
+    n = len(rewards)
+    if n <= 1:
+        return [0.0] * n
+    mean = sum(rewards) / n
+    centered = [float(r) - mean for r in rewards]
+    if not normalize:
+        return centered
+    std = math.sqrt(sum(c * c for c in centered) / n)
+    return [c / (std + 1e-8) for c in centered]
+
+
+def grouped_relative_advantages(
+    rewards: Sequence[float],
+    group_ids: Sequence[str],
+    *,
+    normalize: bool = False,
+) -> list[float]:
+    """Apply :func:`group_relative_advantages` per prompt group, in input order.
+
+    Rollouts sharing a ``group_id`` were sampled from the same prompt and are
+    the only ones compared against each other -- there is no cross-prompt
+    mixing. The returned list is aligned with *rewards*.
+    """
+    if len(rewards) != len(group_ids):
+        raise ValueError("rewards and group_ids must have the same length.")
+
+    groups: dict[str, list[int]] = {}
+    for index, group_id in enumerate(group_ids):
+        groups.setdefault(group_id, []).append(index)
+
+    advantages = [0.0] * len(rewards)
+    for indices in groups.values():
+        group_advantages = group_relative_advantages(
+            [rewards[i] for i in indices], normalize=normalize
+        )
+        for index, advantage in zip(indices, group_advantages):
+            advantages[index] = advantage
+    return advantages
 
 
 class SearchRewardFunction:
@@ -1062,10 +1070,10 @@ class SearchRewardFunction:
         token-level critic targets, and no cross-prompt mixing.
         Single-sample groups get advantage 0.0 because there is no relative
         within-group comparison signal.  The arithmetic itself lives in
-        :func:`compute_group_relative_advantages`, the one kernel every
-        advantage path in the repo shares.
+        :func:`grouped_relative_advantages`, the one kernel every advantage
+        path in the repo shares.
         """
-        return compute_group_relative_advantages(rewards, group_ids, normalize=False)
+        return grouped_relative_advantages(rewards, group_ids)
 
     def compute_batch_advantages(
         self,
@@ -1081,11 +1089,8 @@ class SearchRewardFunction:
         Groups with a single sample get advantage 0.0 (no within-group signal).
         Variance uses the population formula (N denominator).  If your trainer
         uses sample variance (N-1), normalise at that layer instead.
-
-        The arithmetic lives in :func:`compute_group_relative_advantages`, the
-        one kernel every advantage path in the repo shares.
         """
-        return compute_group_relative_advantages(rewards, group_ids, normalize=True)
+        return grouped_relative_advantages(rewards, group_ids, normalize=True)
 
     # ------------------------------------------------------------------
     # Internal helpers

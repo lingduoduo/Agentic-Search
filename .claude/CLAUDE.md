@@ -249,13 +249,15 @@ with the shared building blocks at the top level:
   GRPO is this surrogate with a group-relative advantage in place of GAE
 - `grpo/` — the GRPO stack built on `ppo/`, exactly three implementation modules
   layered `training -> generation -> algorithms` (never the reverse):
-  `algorithms.py` (GRPO advantage + the REINFORCE losses, grouped rollout
-  sampling/scoring, RLAIF judges, on-policy batch assembly), `generation.py`
-  (the rollout/generation manager and trajectory/tensor assembly, moved here
-  from `src/model/` so the serving layer no longer depends on training), and
-  `training.py` (all three trainers — bandit, HF causal-LM, live SearchAgentLoop
-  — plus the local controller, checkpointing, and the durable train loop). The
-  judges live here because their only consumers are GRPO scripts; a future
+  `algorithms.py` (the token-level GRPO advantage `compute_grpo_token_advantages`
+  + the REINFORCE losses, grouped rollout sampling/scoring, RLAIF judges,
+  on-policy batch assembly), `generation.py` (the rollout/generation manager and
+  trajectory/tensor assembly, moved here from `src/model/` so the serving layer
+  no longer depends on training), and `training.py` (all three trainers — bandit,
+  HF causal-LM, live SearchAgentLoop — plus the local controller, checkpointing,
+  and the durable train loop). The scalar group-relative advantage primitive
+  shared by every trainer lives in `post_training/reward.py`, which is torch-free.
+  The judges live here because their only consumers are GRPO scripts; a future
   judge-backed DPO loader would make `dpo/` import `grpo/`, a cost accepted
   deliberately
 - `log_probs.py` — causal-LM response-token log-probs, shared by DPO and GRPO.

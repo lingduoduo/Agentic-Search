@@ -15,10 +15,10 @@ from src.model.post_training.grpo.algorithms import (
     score_prompt_group,
 )
 from src.model.post_training.grpo.algorithms import (
-    compute_grpo_outcome_advantage as compute_grpo_outcome_advantage_tensor,
+    compute_grpo_policy_loss,
+    compute_grpo_token_advantages,
 )
 from src.model.post_training.ppo.core_algos import PPOPolicyLossConfig
-from src.model.post_training.grpo.algorithms import compute_grpo_policy_loss
 from src.model.post_training.reward import (
     CompositeRewardConfig,
     REWARD_DIMENSIONS,
@@ -472,7 +472,7 @@ class TestReinforceBaselineMode:
 
 
 # ---------------------------------------------------------------------------
-# compute_grpo_outcome_advantage — clip_advantages
+# compute_grpo_token_advantages — clip_advantages
 # ---------------------------------------------------------------------------
 
 
@@ -481,7 +481,7 @@ class TestComputeGRPOOutcomeAdvantageClipping:
         rewards = torch.tensor([[0.0, 1.0], [0.0, 0.0]])
         eos_mask = torch.ones(2, 2)
         index = torch.tensor([0, 0])
-        adv, _ = compute_grpo_outcome_advantage_tensor(rewards, eos_mask, index)
+        adv, _ = compute_grpo_token_advantages(rewards, eos_mask, index)
         # Both rollouts in same group → advantages should be non-zero at last token
         assert adv.shape == (2, 2)
 
@@ -490,7 +490,7 @@ class TestComputeGRPOOutcomeAdvantageClipping:
         rewards = torch.tensor([[0.0, 10.0], [0.0, -10.0]])
         eos_mask = torch.ones(2, 2)
         index = torch.tensor([0, 0])
-        adv_clipped, _ = compute_grpo_outcome_advantage_tensor(
+        adv_clipped, _ = compute_grpo_token_advantages(
             rewards, eos_mask, index, clip_advantages=0.5
         )
         assert adv_clipped.abs().max().item() <= 0.5 + 1e-5

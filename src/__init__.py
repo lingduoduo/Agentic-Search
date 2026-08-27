@@ -146,6 +146,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".model.post_training.grpo.algorithms",
         "compute_grpo_outcome_advantage",
     ),
+    "compute_grpo_token_advantages": (
+        ".model.post_training.grpo.algorithms",
+        "compute_grpo_token_advantages",
+    ),
     "sample_prompt_group": (
         ".model.post_training.grpo.algorithms",
         "sample_prompt_group",
@@ -265,7 +269,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "assign_group_relative_advantages",
     ),
     "async_run_grpo_training_step": (
-        ".model.post_training.grpo.generation",
+        ".model.post_training.grpo.training",
         "async_run_grpo_training_step",
     ),
     "async_run_prompt_rollout_group": (

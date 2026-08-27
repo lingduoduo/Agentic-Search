@@ -9,6 +9,7 @@ import pytest
 
 ALGORITHM_EXPORTS = [
     "compute_grpo_outcome_advantage",
+    "compute_grpo_token_advantages",
     "compute_reinforce_policy_loss_core",
     "compute_reinforce_policy_loss",
     "compute_grpo_policy_loss",
@@ -36,8 +37,11 @@ ALGORITHM_EXPORTS = [
     "LLMJudge",
 ]
 
+# The grpo package deliberately does NOT export the scalar
+# `compute_grpo_outcome_advantage`: that name resolves to the list form from
+# the root and post_training only, so one name never means two functions.
 GRPO_PACKAGE_ALGORITHM_EXPORTS = [
-    "compute_grpo_outcome_advantage",
+    "compute_grpo_token_advantages",
     "compute_grpo_policy_loss",
     "compute_reinforce_policy_loss",
     "compute_reinforce_policy_loss_core",
@@ -275,7 +279,7 @@ def test_grpo_package_has_only_the_minimal_implementation_modules():
         "src.model.post_training.grpo.core_algos",
         "src.model.post_training.grpo.rollouts",
         "src.model.post_training.grpo.judge",
-        "src.model.post_training.grpo." + "trainers",
+        "src.model.post_training.grpo.trainers",
         "src.model.post_training.grpo.plot_rollouts",
     ],
 )
@@ -341,3 +345,124 @@ raise SystemExit(pytest.main([
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "6 passed" in result.stdout
+
+
+def test_reward_imports_without_torch():
+    """reward.py must never acquire a torch dependency.
+
+    It is the torch-free half of the post-training package, and the shared
+    advantage primitive lives there precisely so that stays true.
+
+    Note what consolidation cost: ``rollouts.py`` used to be torch-free too and
+    was covered by this guard. Merging it with ``core_algos.py`` — which is
+    tensor math and cannot be — into ``algorithms.py`` gives that up. The
+    package ``__init__`` stays lazy, so importing
+    ``src.model.post_training.grpo`` still does not pull torch; only the
+    submodule does.
+    """
+    import subprocess
+    import sys
+
+    program = """
+import sys
+
+class _Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError("No module named %r (blocked)" % name)
+        return None
+
+sys.meta_path.insert(0, _Blocker())
+
+import src.model.post_training.reward as reward
+import src.model.post_training.grpo as grpo
+
+assert reward.group_relative_advantages([1.0, 0.0]) == [0.5, -0.5]
+assert reward.grouped_relative_advantages([1.0, 0.0], ["g", "g"]) == [0.5, -0.5]
+assert "torch" not in sys.modules
+print("torch-free OK")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "torch-free OK" in result.stdout
+
+
+def test_training_owns_the_async_step_and_generation_does_not_import_training():
+    """The controller entrypoint lives with the controller.
+
+    It was a pure delegator sitting in generation.py, which forced a
+    generation <-> training cycle papered over with function-local imports.
+    """
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    from src.model.post_training.grpo import generation, training
+
+    assert (
+        training.async_run_grpo_training_step.__module__
+        == "src.model.post_training.grpo.training"
+    )
+    assert not hasattr(generation, "async_run_grpo_training_step")
+
+    import src as root
+
+    assert root.async_run_grpo_training_step is training.async_run_grpo_training_step
+
+
+def test_outcome_advantage_name_resolves_to_exactly_one_function():
+    """One public name, one function, whatever the import path.
+
+    Before this, `from ...grpo import compute_grpo_outcome_advantage` gave a
+    torch tensor function while `from src import` (and `from
+    src.model.post_training import`) gave a list[float] one, with
+    incompatible signatures -- so a wrong import failed at call time, not
+    import time. Now the torch function has its own name
+    (`compute_grpo_token_advantages`), and the `grpo` package's own lazy-export
+    path for the old name is gone entirely rather than repointed -- accessing
+    it raises `AttributeError` immediately instead of silently resolving to
+    something.
+
+    Consolidation put both functions in one module, which is only safe because
+    they no longer share a name.
+    """
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    import src as root
+    import src.model.post_training as post_training
+    from src.model.post_training.grpo import algorithms
+
+    assert hasattr(algorithms, "compute_grpo_token_advantages")
+
+    assert (
+        root.compute_grpo_outcome_advantage is algorithms.compute_grpo_outcome_advantage
+    )
+    assert (
+        post_training.compute_grpo_outcome_advantage
+        is algorithms.compute_grpo_outcome_advantage
+    )
+
+    import src.model.post_training.grpo as grpo
+
+    with pytest.raises(AttributeError):
+        grpo.compute_grpo_outcome_advantage
+
+    # Python's import machinery turns a module `__getattr__` AttributeError
+    # into an ImportError for the `from ... import ...` form specifically.
+    with pytest.raises(ImportError):
+        from src.model.post_training.grpo import compute_grpo_outcome_advantage  # noqa: F401
+
+
+def test_unused_batch_retriever_protocol_is_gone():
+    """BatchRetriever was referenced nowhere outside its own definition --
+    nothing implemented it, nothing isinstance-checked it, and no other
+    docstring named it."""
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    from src.model.post_training.grpo import generation
+
+    assert not hasattr(generation, "BatchRetriever")

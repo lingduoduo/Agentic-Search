@@ -24,8 +24,11 @@ would put ``import torch`` in front of every module here. That is exactly how
 this package broke CI when the Q-learning demo still lived in it (#536), and the
 repo has shipped that failure four times.
 
-Rollout helpers remain available by their root exports and consolidated module
-path.
+Rollout helpers remain available by their root exports and the consolidated
+``algorithms`` module path. The scalar group-relative advantage formula that
+every trainer here needs lives in ``src.model.post_training.reward`` rather
+than in this package: ``reward`` is the torch-free half of post-training, and
+importing ``algorithms`` from it would put ``import torch`` in front of both.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     # the KL controllers and the masked-tensor primitives are one layer down in
     # `src.model.post_training.ppo`, and are NOT re-exported here: a variant should not
     # advertise its base layer's API as its own.
-    "compute_grpo_outcome_advantage": "algorithms",
+    "compute_grpo_token_advantages": "algorithms",
     "compute_grpo_policy_loss": "algorithms",
     "compute_reinforce_policy_loss": "algorithms",
     "compute_reinforce_policy_loss_core": "algorithms",
