@@ -118,21 +118,55 @@ def test_root_lazy_tensor_helper_exports_resolve_to_generation_by_identity(
     assert getattr(root, export_name) is getattr(implementation_module, export_name)
 
 
-def test_grpo_package_has_only_the_approved_implementation_modules():
+def test_grpo_package_has_only_the_minimal_implementation_modules():
     package_dir = (
         Path(__file__).resolve().parents[2] / "src" / "model" / "post_training" / "grpo"
     )
-    actual = {path.name for path in package_dir.glob("*.py")}
-    assert actual == {
+    assert {path.name for path in package_dir.glob("*.py")} == {
         "__init__.py",
-        "core_algos.py",
         "generation.py",
-        "judge.py",
-        "plot_rollouts.py",
-        "rollouts.py",
-        "trainers.py",
+        "algorithms.py",
         "training.py",
     }
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "src.model.post_training.grpo.core_algos",
+        "src.model.post_training.grpo.rollouts",
+        "src.model.post_training.grpo.judge",
+        "src.model.post_training.grpo.trainers",
+        "src.model.post_training.grpo.plot_rollouts",
+    ],
+)
+def test_second_stage_replaced_modules_are_removed(module_name: str):
+    assert find_spec(module_name) is None
+
+
+def test_representative_symbols_have_final_owners():
+    pytest.importorskip("torch", exc_type=ImportError)
+    from src.model.post_training.grpo.algorithms import (
+        GRPOAdvantageConfig,
+        LLMJudge,
+        compute_grpo_policy_loss,
+        score_prompt_group,
+    )
+    from src.model.post_training.grpo.training import (
+        LLMGRPOTrainer,
+        LocalGRPOController,
+        SearchAgentGRPOTrainer,
+    )
+
+    for value in (
+        GRPOAdvantageConfig,
+        LLMJudge,
+        compute_grpo_policy_loss,
+        score_prompt_group,
+    ):
+        assert value.__module__ == "src.model.post_training.grpo.algorithms"
+    for value in (LLMGRPOTrainer, LocalGRPOController, SearchAgentGRPOTrainer):
+        assert value.__module__ == "src.model.post_training.grpo.training"
 
 
 def test_filesystem_layout_checks_run_without_torch():
