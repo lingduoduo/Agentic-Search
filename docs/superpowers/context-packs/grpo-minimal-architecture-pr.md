@@ -34,9 +34,10 @@ runs, 128 rollouts, same host and fixtures.
 | case | change |
 | --- | ---: |
 | `reward_components_sparse` | **−75%** |
-| `group_advantages` | **−45%** |
-| `group_advantages_normalized` | **−39%** |
-| `training_batch_assembly` | **−13.5%** time, **−99%** peak Python allocation |
+| `log_prob_row_collection` | **−81%** |
+| `group_advantages` | **−29%** |
+| `group_advantages_normalized` | **−17%** |
+| `left_pad_prompt_rows` | **−13.5%** time, **−99%** peak Python allocation |
 | everything else | ±3% (noise) |
 
 What changed:
@@ -61,6 +62,12 @@ Recorded so they are not re-proposed:
 - An intermediate `all(getattr(cfg, name) == 0.0 ...)` form of the zero-weight
   guards cost the shaped path a repeatable +1.9%; rewritten as a
   short-circuiting `and` chain.
+- **A hand-rolled accumulator in place of `sum()`** in the advantage kernel. It
+  benchmarked 16 points better (−45%/−39% rather than −29%/−17%) and was
+  reverted: on CPython 3.12+ `sum()` applies Neumaier compensation over floats,
+  so the manual loop moved 8,745/20,000 random groups on centering and
+  10,634/20,000 on the normalized path. The divergence is Python-version
+  dependent, so "identical" would not have been a stable property either.
 
 The harness itself had a measurement bug — it timed samples with `tracemalloc`
 running, inflating every median roughly threefold. Timing and allocation are now
@@ -84,9 +91,28 @@ separate passes and the first baseline was discarded.
 - Preset breakdowns are pinned against a golden file captured from the previous
   implementation (`tests/unit/reward_breakdown_baseline.json`).
 
+## Review
+
+Reviewed before merge; findings applied in `3e67ac4`. Three were substantive:
+
+- The `sum()` regression above, plus the fact that the two tests meant to police
+  it asserted only that the wrapper delegates to the kernel — both sides moved
+  together, so any arithmetic change stayed green. Replaced with differential
+  oracles against the pre-refactor implementations, mutation-checked.
+- The log-prob row change had shipped with **no measurement**; the benchmark
+  case named `training_batch_assembly` only ever exercised the padding helper.
+  Split into `left_pad_prompt_rows` and `log_prob_row_collection`, both measured.
+- A 1,088-line scratch file was swept into a commit by `git add -A` in a shared
+  worktree. Removed.
+
+One known cosmetic divergence, deliberately accepted: where a whole dimension is
+zero-weighted and a metric is negative, the old path produced `-0.0` and the
+constant dict now yields `0.0`. `==`, `approx`, and every sum are unaffected;
+only `repr`/JSON text differ.
+
 ## Verification
 
-- `pytest` — 3522 passed, 3 skipped, no new warnings
+- `pytest` — 3547 passed, 3 skipped, no new warnings
 - `ruff check` / `ruff format --check` / `git diff --check` — clean
 - No live import or doc references a deleted module; the package contains
   exactly `__init__.py`, `algorithms.py`, `generation.py`, `training.py`
