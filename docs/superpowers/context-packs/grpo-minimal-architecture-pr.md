@@ -73,12 +73,47 @@ The harness itself had a measurement bug — it timed samples with `tracemalloc`
 running, inflating every median roughly threefold. Timing and allocation are now
 separate passes and the first baseline was discarded.
 
+## Merged with #554
+
+`#554` landed a competing refactor of this code while this PR was open. Where it
+solved the same problem, **main wins**:
+
+| | this branch had | merged to |
+| --- | --- | --- |
+| shared advantage kernel | `compute_group_relative_advantages` | main's `group_relative_advantages` / `grouped_relative_advantages` |
+| `compute_grpo_outcome_advantage` collision | one function dispatching on argument type | main's rename to `compute_grpo_token_advantages` |
+| `async_run_grpo_training_step` | in `generation.py` | `training.py`, beside the controller |
+
+Main's rename is the better fix and **deletes this PR's `_NOT_GIVEN` dispatcher
+and its two `@overload` stubs outright** — the piece of this branch that was
+hardest to defend.
+
+Kept from this branch: the seven-to-three consolidation, `log_probs.py`, the
+plotting relocation, the reward fast paths, and the benchmarks. Also kept its
+*complete* cycle break: main's is partial, still carrying a deferred
+`from .training import LocalGRPOController` inside a generation method, which
+the AST test here rejects.
+
+**One property is lost.** `rollouts.py` was torch-free; merging it with
+`core_algos.py`, which is tensor math and cannot be, gives that up for the
+submodule. The package `__init__` stays lazy, so importing
+`src.model.post_training.grpo` still does not pull torch — only the submodule
+does. The torch-free guard test records this explicitly rather than quietly
+narrowing.
+
+**One numeric note, not this PR's doing.** #554's kernel squares pre-centered
+values (`c * c`) where the code it replaced wrote `(r - mean) ** 2`. CPython
+routes `** 2` through libm's `pow`, so ~0.2% of random groups land one ULP
+apart from the pre-refactor arithmetic. The differential test here asserts
+exact equality on the centering path and one-ULP tolerance on the normalized
+one, with the reason written down.
+
 ## Corrections to the plan
 
 1. `compute_grpo_outcome_advantage` existed **twice** with different signatures,
-   exported from different places (package = tensor form, root = list form).
-   Both are public API, so neither could be renamed. `algorithms.py` now owns one
-   dispatching entry point with a typed overload per call shape.
+   exported from different places (package = tensor form, root = list form), so
+   the plan's ownership assertion was unsatisfiable as written. Resolved by
+   adopting #554's rename (see above).
 2. `plot_rollouts.py` had been **deleted without being relocated** by an earlier
    commit on this branch. Restored, with its real `--jsonl/--out` interface.
 3. `torch.inference_mode()` was proposed as an optimization; it does not pay.
@@ -112,7 +147,7 @@ only `repr`/JSON text differ.
 
 ## Verification
 
-- `pytest` — 3547 passed, 3 skipped, no new warnings
+- `pytest` — 3582 passed, 3 skipped, no new warnings
 - `ruff check` / `ruff format --check` / `git diff --check` — clean
 - No live import or doc references a deleted module; the package contains
   exactly `__init__.py`, `algorithms.py`, `generation.py`, `training.py`
