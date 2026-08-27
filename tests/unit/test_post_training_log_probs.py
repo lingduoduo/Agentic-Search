@@ -46,10 +46,10 @@ def test_response_log_probs_align_logits_with_the_tokens_they_predict():
 def test_dpo_and_grpo_use_the_shared_helper():
     from src.model.post_training import log_probs
     from src.model.post_training.dpo import trainer as dpo_trainer
-    from src.model.post_training.grpo import trainers as grpo_trainers
+    from src.model.post_training.grpo import training as grpo_training
 
     assert dpo_trainer.get_response_log_probs is log_probs.get_response_log_probs
-    assert grpo_trainers.get_response_log_probs is log_probs.get_response_log_probs
+    assert grpo_training.get_response_log_probs is log_probs.get_response_log_probs
 
 
 def test_grpo_lazy_export_accepts_input_ids_keyword():

@@ -42,21 +42,21 @@ _LAZY_EXPORTS: dict[str, str] = {
     "compute_grpo_policy_loss": "algorithms",
     "compute_reinforce_policy_loss": "algorithms",
     "compute_reinforce_policy_loss_core": "algorithms",
-    # training — local controller and durable loop
+    # training — trainers, local controller, and durable loop
     "LocalGRPOController": "training",
     "RolloutResult": "training",
-    # trainers — bandit, HuggingFace causal-LM, and live SearchAgentLoop rollouts
-    "GRPOTrainer": "trainers",
-    "Policy": "trainers",
-    "compute_group_advantages": "trainers",
-    "grpo_clipped_policy_loss": "trainers",
-    "make_grpo_trainer": "trainers",
-    "reverse_kl_penalty": "trainers",
-    "LLMGRPOConfig": "trainers",
-    "LLMGRPOTrainer": "trainers",
-    "LLMRolloutResult": "trainers",
+    # bandit, HuggingFace causal-LM, and live SearchAgentLoop rollouts
+    "GRPOTrainer": "training",
+    "Policy": "training",
+    "compute_group_advantages": "training",
+    "grpo_clipped_policy_loss": "training",
+    "make_grpo_trainer": "training",
+    "reverse_kl_penalty": "training",
+    "LLMGRPOConfig": "training",
+    "LLMGRPOTrainer": "training",
+    "LLMRolloutResult": "training",
     "get_response_log_probs": "..log_probs",
-    "SearchAgentGRPOTrainer": "trainers",
+    "SearchAgentGRPOTrainer": "training",
     # judge — RLAIF scoring, moved in from the shared top level. Deferred
     # like everything else here: it reaches ``reward``, which reaches the
     # agent loop.

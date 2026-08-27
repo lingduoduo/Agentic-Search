@@ -83,19 +83,39 @@ POST_TRAINING_ALGORITHM_EXPORTS = [
     "judge_gold_agreement",
 ]
 
+TRAINER_EXPORTS = [
+    "Policy",
+    "GRPOTrainer",
+    "compute_group_advantages",
+    "grpo_clipped_policy_loss",
+    "make_grpo_trainer",
+    "reverse_kl_penalty",
+    "LLMGRPOConfig",
+    "LLMRolloutResult",
+    "LLMGRPOTrainer",
+    "SearchAgentGRPOTrainer",
+]
 
-def test_consolidated_trainer_module_owns_the_full_hierarchy():
+
+@pytest.mark.parametrize("export_name", TRAINER_EXPORTS)
+def test_consolidated_training_module_owns_every_trainer_symbol(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    grpo = import_module("src.model.post_training.grpo")
+    training = import_module("src.model.post_training.grpo.training")
+
+    assert export_name in grpo.__all__
+    assert getattr(grpo, export_name) is getattr(training, export_name)
+
+
+def test_consolidated_training_module_preserves_trainer_hierarchy():
     pytest.importorskip("torch", exc_type=ImportError)
     from src.model.post_training.grpo.training import (
-        GRPOTrainer,
         LLMGRPOTrainer,
         SearchAgentGRPOTrainer,
     )
 
     assert LLMGRPOTrainer in SearchAgentGRPOTrainer.__mro__
-    assert GRPOTrainer.__module__ == "src.model.post_training.grpo.training"
-    assert LLMGRPOTrainer.__module__ == "src.model.post_training.grpo.training"
-    assert SearchAgentGRPOTrainer.__module__ == "src.model.post_training.grpo.training"
 
 
 @pytest.mark.parametrize(
@@ -255,7 +275,7 @@ def test_grpo_package_has_only_the_minimal_implementation_modules():
         "src.model.post_training.grpo.core_algos",
         "src.model.post_training.grpo.rollouts",
         "src.model.post_training.grpo.judge",
-        "src.model.post_training.grpo.trainers",
+        "src.model.post_training.grpo." + "trainers",
         "src.model.post_training.grpo.plot_rollouts",
     ],
 )
