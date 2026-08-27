@@ -147,7 +147,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "compute_grpo_outcome_advantage",
     ),
     "compute_grpo_token_advantages": (
-        ".model.post_training.grpo.algorithms",
+        ".model.post_training.grpo.core_algos",
         "compute_grpo_token_advantages",
     ),
     "sample_prompt_group": (
@@ -281,11 +281,11 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "compute_trajectory_policy_loss",
     ),
     "compute_reinforce_policy_loss": (
-        ".model.post_training.grpo.algorithms",
+        ".model.post_training.grpo.core_algos",
         "compute_reinforce_policy_loss",
     ),
     "compute_reinforce_policy_loss_core": (
-        ".model.post_training.grpo.algorithms",
+        ".model.post_training.grpo.core_algos",
         "compute_reinforce_policy_loss_core",
     ),
     "format_group_rollout": (

@@ -38,9 +38,9 @@ from src.model.post_training.grpo.generation import _left_pad_rows
 from src.model.post_training.grpo.algorithms import (
     GRPOAdvantageConfig,
     GRPORolloutSample,
-    compute_grpo_token_advantages,
     score_prompt_group,
 )
+from src.model.post_training.grpo.core_algos import compute_grpo_token_advantages
 from src.model.post_training.log_probs import get_response_log_probs
 from src.model.post_training.reward import (
     SearchRewardConfig,

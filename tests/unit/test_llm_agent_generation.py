@@ -5,7 +5,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="torch not installed", exc_type=ImportError)
 
 from src import build_prompt_dataloader  # noqa: E402
-from src.model.post_training.grpo.algorithms import (  # noqa: E402
+from src.model.post_training.grpo.core_algos import (  # noqa: E402
     compute_grpo_token_advantages,
 )
 from src.model.post_training.grpo.generation import (  # noqa: E402

@@ -30,7 +30,7 @@ from ..ppo.core_algos import (
     masked_whiten,
 )
 from ..reward import group_relative_advantages
-from .algorithms import (
+from .core_algos import (
     compute_grpo_token_advantages as compute_grpo_token_advantages,
 )
 

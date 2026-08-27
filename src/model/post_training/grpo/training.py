@@ -27,10 +27,10 @@ from ..ppo.core_algos import (
 )
 from .algorithms import (
     GRPOAdvantageConfig,
-    compute_grpo_token_advantages,
     sample_prompt_group,
     score_prompt_group,
 )
+from .core_algos import compute_grpo_token_advantages
 from .generation import (
     GRPORolloutSafetyConfig,
     GRPOTrainingStepResult,

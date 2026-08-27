@@ -7,12 +7,9 @@ from pathlib import Path
 import pytest
 
 
+# Torch-free: grouped sampling, scoring and the judges.
 ALGORITHM_EXPORTS = [
     "compute_grpo_outcome_advantage",
-    "compute_grpo_token_advantages",
-    "compute_reinforce_policy_loss_core",
-    "compute_reinforce_policy_loss",
-    "compute_grpo_policy_loss",
     "PromptGroupSamplingConfig",
     "GRPORolloutSample",
     "ScoredGRPORollout",
@@ -40,11 +37,15 @@ ALGORITHM_EXPORTS = [
 # The grpo package deliberately does NOT export the scalar
 # `compute_grpo_outcome_advantage`: that name resolves to the list form from
 # the root and post_training only, so one name never means two functions.
-GRPO_PACKAGE_ALGORITHM_EXPORTS = [
+# Tensor math, and therefore the package's torch boundary.
+CORE_ALGO_EXPORTS = [
     "compute_grpo_token_advantages",
-    "compute_grpo_policy_loss",
-    "compute_reinforce_policy_loss",
     "compute_reinforce_policy_loss_core",
+    "compute_reinforce_policy_loss",
+    "compute_grpo_policy_loss",
+]
+
+GRPO_PACKAGE_ALGORITHM_EXPORTS = [
     "GoldAgreementJudge",
     "JudgeParseError",
     "LLMJudge",
@@ -70,8 +71,6 @@ ROOT_ALGORITHM_EXPORTS = [
     "filter_zero_advantage_groups",
     "assemble_on_policy_batch",
     "compute_on_policy_batch_stats",
-    "compute_reinforce_policy_loss",
-    "compute_reinforce_policy_loss_core",
 ]
 
 POST_TRAINING_ALGORITHM_EXPORTS = [
@@ -80,7 +79,6 @@ POST_TRAINING_ALGORITHM_EXPORTS = [
     "compute_dapo_advantages",
     "compute_grpo_outcome_advantage",
     "score_prompt_group",
-    "compute_grpo_policy_loss",
     "GoldAgreementJudge",
     "LLMJudge",
     "SimulatedPreferenceJudge",
@@ -221,6 +219,71 @@ def test_grpo_package_algorithm_exports_resolve_by_identity(export_name: str):
     assert getattr(grpo, export_name) is getattr(algorithms, export_name)
 
 
+@pytest.mark.parametrize("export_name", CORE_ALGO_EXPORTS)
+def test_core_algos_owns_every_tensor_level_loss(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    core_algos = import_module("src.model.post_training.grpo.core_algos")
+
+    value = getattr(core_algos, export_name)
+    assert value.__module__ == "src.model.post_training.grpo.core_algos"
+
+
+@pytest.mark.parametrize("export_name", CORE_ALGO_EXPORTS)
+def test_grpo_package_core_algo_exports_resolve_by_identity(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    grpo = import_module("src.model.post_training.grpo")
+    core_algos = import_module("src.model.post_training.grpo.core_algos")
+
+    assert export_name in grpo.__all__
+    assert getattr(grpo, export_name) is getattr(core_algos, export_name)
+
+
+def test_algorithms_imports_without_torch():
+    """The judges and rollout scoring must stay importable with no torch.
+
+    This is why `core_algos.py` is a separate module rather than folded into
+    `algorithms.py`: the CI unit-test job installs no torch, and merging the two
+    silently dropped 17 judge tests from it.
+    """
+    import subprocess
+    import sys
+
+    program = """
+import sys
+
+class _Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError("No module named %r (blocked)" % name)
+        return None
+
+sys.meta_path.insert(0, _Blocker())
+
+from src.model.post_training.grpo.algorithms import (
+    GoldAgreementJudge,
+    LLMJudge,
+    SimulatedPreferenceJudge,
+    compute_grpo_outcome_advantage,
+    score_prompt_group,
+)
+
+assert compute_grpo_outcome_advantage([1.0, 0.0]) == [0.5, -0.5]
+assert "torch" not in sys.modules
+print("algorithms is torch-free")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "algorithms is torch-free" in result.stdout
+
+
 @pytest.mark.parametrize("export_name", ROOT_ALGORITHM_EXPORTS)
 def test_root_algorithm_exports_resolve_by_identity(export_name: str):
     pytest.importorskip("torch", exc_type=ImportError)
@@ -262,13 +325,21 @@ def test_root_lazy_tensor_helper_exports_resolve_to_generation_by_identity(
 
 
 def test_grpo_package_has_only_the_minimal_implementation_modules():
+    """Four implementation modules, and the fourth earns its place.
+
+    The design targeted three. `core_algos.py` is split back out because it is
+    the torch boundary: folding its tensor math into `algorithms.py` made the
+    judges and rollout scoring unimportable without torch, which silently
+    dropped 17 tests from the torch-free CI job. Module count lost to that.
+    """
     package_dir = (
         Path(__file__).resolve().parents[2] / "src" / "model" / "post_training" / "grpo"
     )
     assert {path.name for path in package_dir.glob("*.py")} == {
         "__init__.py",
-        "generation.py",
         "algorithms.py",
+        "core_algos.py",
+        "generation.py",
         "training.py",
     }
 
@@ -276,7 +347,6 @@ def test_grpo_package_has_only_the_minimal_implementation_modules():
 @pytest.mark.parametrize(
     "module_name",
     [
-        "src.model.post_training.grpo.core_algos",
         "src.model.post_training.grpo.rollouts",
         "src.model.post_training.grpo.judge",
         "src.model.post_training.grpo.trainers",
@@ -292,22 +362,20 @@ def test_representative_symbols_have_final_owners():
     from src.model.post_training.grpo.algorithms import (
         GRPOAdvantageConfig,
         LLMJudge,
-        compute_grpo_policy_loss,
         score_prompt_group,
     )
+    from src.model.post_training.grpo.core_algos import compute_grpo_policy_loss
     from src.model.post_training.grpo.training import (
         LLMGRPOTrainer,
         LocalGRPOController,
         SearchAgentGRPOTrainer,
     )
 
-    for value in (
-        GRPOAdvantageConfig,
-        LLMJudge,
-        compute_grpo_policy_loss,
-        score_prompt_group,
-    ):
+    for value in (GRPOAdvantageConfig, LLMJudge, score_prompt_group):
         assert value.__module__ == "src.model.post_training.grpo.algorithms"
+    assert (
+        compute_grpo_policy_loss.__module__ == "src.model.post_training.grpo.core_algos"
+    )
     for value in (LLMGRPOTrainer, LocalGRPOController, SearchAgentGRPOTrainer):
         assert value.__module__ == "src.model.post_training.grpo.training"
 
@@ -344,7 +412,7 @@ raise SystemExit(pytest.main([
     )
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert "6 passed" in result.stdout
+    assert "5 passed" in result.stdout
 
 
 def test_reward_imports_without_torch():
@@ -436,7 +504,10 @@ def test_outcome_advantage_name_resolves_to_exactly_one_function():
     import src.model.post_training as post_training
     from src.model.post_training.grpo import algorithms
 
-    assert hasattr(algorithms, "compute_grpo_token_advantages")
+    from src.model.post_training.grpo import core_algos
+
+    assert hasattr(core_algos, "compute_grpo_token_advantages")
+    assert not hasattr(algorithms, "compute_grpo_token_advantages")
 
     assert (
         root.compute_grpo_outcome_advantage is algorithms.compute_grpo_outcome_advantage

@@ -247,11 +247,15 @@ with the shared building blocks at the top level:
   KL controllers, `PPOPolicyLossConfig`, the masked-tensor primitives, and
   `PPORewardManager`. No trainer, no critic, no GAE. `grpo/` depends on it, since
   GRPO is this surrogate with a group-relative advantage in place of GAE
-- `grpo/` — the GRPO stack built on `ppo/`, exactly three implementation modules
-  layered `training -> generation -> algorithms` (never the reverse):
-  `algorithms.py` (the token-level GRPO advantage `compute_grpo_token_advantages`
-  + the REINFORCE losses, grouped rollout sampling/scoring, RLAIF judges,
-  on-policy batch assembly), `generation.py` (the rollout/generation manager and
+- `grpo/` — the GRPO stack built on `ppo/`, four implementation modules layered
+  `training -> generation -> {algorithms, core_algos}` (never the reverse):
+  `algorithms.py` (grouped rollout sampling/scoring, RLAIF judges, on-policy
+  batch assembly — **torch-free**, like `reward.py`), `core_algos.py` (the
+  token-level GRPO advantage `compute_grpo_token_advantages` + the REINFORCE
+  losses; this is the package's torch boundary and is split out for exactly
+  that reason — folding it into `algorithms.py` made the judges unimportable
+  without torch and silently dropped 17 tests from the torch-free CI job),
+  `generation.py` (the rollout/generation manager and
   trajectory/tensor assembly, moved here from `src/model/` so the serving layer
   no longer depends on training), and `training.py` (all three trainers — bandit,
   HF causal-LM, live SearchAgentLoop — plus the local controller, checkpointing,

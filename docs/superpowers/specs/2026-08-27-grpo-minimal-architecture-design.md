@@ -306,8 +306,15 @@ Implementation follows test-driven development:
 
 ## Acceptance Criteria
 
-- `src/model/post_training/grpo` contains only `__init__.py`,
-  `algorithms.py`, `generation.py`, and `training.py`.
+- `src/model/post_training/grpo` contains only `__init__.py`, `algorithms.py`,
+  `core_algos.py`, `generation.py`, and `training.py`. **This is four
+  implementation modules, not the three targeted.** `core_algos.py` is split
+  back out because it is the package's torch boundary: everything in it needs
+  torch and everything in `algorithms.py` — grouped sampling, scoring, the
+  judges — does not. Merging them made `algorithms.py` unimportable without
+  torch, and the CI unit-test job installs no torch, so 17 judge tests were
+  silently skipped rather than run. The torch-free seam is load-bearing (the
+  repo has shipped that CI failure five times) and outranks the module count.
 - DPO and GRPO import `get_response_log_probs` from the neutral post-training
   utility and pass the shared token-alignment contract tests.
 - `plot_rollouts.py` is available from `examples/plot_grpo_rollouts.py`.

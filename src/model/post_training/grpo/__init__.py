@@ -41,10 +41,10 @@ _LAZY_EXPORTS: dict[str, str] = {
     # the KL controllers and the masked-tensor primitives are one layer down in
     # `src.model.post_training.ppo`, and are NOT re-exported here: a variant should not
     # advertise its base layer's API as its own.
-    "compute_grpo_token_advantages": "algorithms",
-    "compute_grpo_policy_loss": "algorithms",
-    "compute_reinforce_policy_loss": "algorithms",
-    "compute_reinforce_policy_loss_core": "algorithms",
+    "compute_grpo_token_advantages": "core_algos",
+    "compute_grpo_policy_loss": "core_algos",
+    "compute_reinforce_policy_loss": "core_algos",
+    "compute_reinforce_policy_loss_core": "core_algos",
     # training — trainers, local controller, and durable loop
     "LocalGRPOController": "training",
     "RolloutResult": "training",

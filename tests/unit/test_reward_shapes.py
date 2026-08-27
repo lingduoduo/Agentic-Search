@@ -14,7 +14,7 @@ from src.model.post_training.grpo.algorithms import (
     compute_dapo_advantages,
     score_prompt_group,
 )
-from src.model.post_training.grpo.algorithms import (
+from src.model.post_training.grpo.core_algos import (
     compute_grpo_policy_loss,
     compute_grpo_token_advantages,
 )
