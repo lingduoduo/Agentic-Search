@@ -5,7 +5,9 @@
 Reduce `src/model/post_training/grpo` from seven implementation modules to the
 smallest practical architecture while simplifying duplicated GRPO paths and
 improving runtime and memory efficiency where benchmarks demonstrate a gain.
-Preserve public package/root exports, training semantics, deterministic
+The optimization scope includes the shared
+`src/model/post_training/reward.py` layer used by GRPO. Preserve public
+package/root exports, reward outputs, training semantics, deterministic
 behavior, and checkpoint compatibility.
 
 ## Current Structure
@@ -46,6 +48,9 @@ The GRPO package will contain three implementation modules:
 
 `plot_rollouts.py` will move to `examples/plot_grpo_rollouts.py`. The package
 will therefore contain only `__init__.py` plus the three implementation files.
+The shared `src/model/post_training/reward.py` module remains outside the GRPO
+package because evaluation and other post-training methods also consume it; it
+is nevertheless part of this refactor's profiling and optimization scope.
 
 The dependency direction is:
 
@@ -96,10 +101,13 @@ The refactor preserves:
 
 ## Algorithm and Scoring Simplification
 
-`algorithms.py` will own one canonical group-relative advantage kernel. Thin
-adapters may accept Python sequences or tensors, but there will be one source
-of truth for centering, optional standard-deviation normalization, epsilon,
-clipping, DAPO behavior, and zero-variance behavior.
+`reward.py` will expose one dependency-light canonical group-relative advantage
+kernel because both GRPO and non-GRPO reward consumers already depend on that
+layer. `algorithms.py` and `SearchRewardFunction` methods will use thin adapters
+around it. There will be one source of truth for centering, optional
+standard-deviation normalization, epsilon, clipping, DAPO behavior, and
+zero-variance behavior. Tensor-native loss paths may retain vectorized tensor
+arithmetic, but equivalence tests will pin them to the same numerical contract.
 
 Rollout scoring will follow one explicit flow:
 
@@ -155,9 +163,39 @@ An optimization will not land solely because it appears faster. It must show a
 repeatable improvement in wall-clock time, peak allocation, model-forward
 count, or tensor-construction count and pass equivalence tests.
 
+### Reward-function optimization
+
+The 1,088-line shared reward module is explicitly in scope. Optimization will
+preserve every public `SearchRewardConfig` preset and the exact component keys,
+weights, totals, sparse-token placement, group isolation, and output ordering.
+The work will target:
+
+- Normalize and tokenize each answer/gold string no more than once per scoring
+  pass when token-F1 or multiple composite judges reuse the same text.
+- Score correctness once, preferably through `BatchJudgeFn`, and pass the
+  resulting scalar into reward-component arithmetic without invoking the judge
+  again.
+- Build group membership and group statistics once, then reuse them for scalar
+  and sparse token-level advantages.
+- Share sparse terminal-vector construction between batch reward and advantage
+  APIs while retaining the current last-action-token fallback rules.
+- Avoid computing disabled reward dimensions and expensive evidence/citation
+  features when their configured weights are zero and their values are not
+  requested for a public breakdown.
+- Reuse extracted answer text, cited/fetched URL sets, evidence deltas, and
+  grouped dimension totals within one `reward_components` call.
+- Validate batch lengths before invoking a remote or expensive judge so invalid
+  input cannot consume external work.
+
+Any memoization will be bounded to a single scoring call unless profiling and
+correctness tests prove that a longer-lived cache is safe. Mutable agent output,
+configuration changes, and judge results must never be cached across calls.
+
 Representative benchmarks cover:
 
 - list and tensor group-advantage calculation;
+- token-F1 and composite reward calculation;
+- scalar, breakdown, batched, and sparse-token reward paths;
 - prompt-group scoring and on-policy batch assembly;
 - causal-LM policy/reference log-prob evaluation;
 - generation training-batch tensor assembly;
@@ -189,12 +227,15 @@ must not replace a documented public exception type.
    `trainers.py`.
 4. Move the plotting utility to `examples/plot_grpo_rollouts.py` and delete the
    package copy.
-5. Establish focused performance baselines.
-6. Simplify duplicate advantage, scoring, update, and tensor-assembly paths one
-   at a time with equivalence tests.
-7. Apply only benchmark-supported runtime or memory improvements.
-8. Update documentation, examples, monkeypatch targets, and lazy registries.
-9. Search for stale module paths and run focused and full verification.
+5. Establish focused GRPO and reward-function performance baselines.
+6. Consolidate the reward layer's correctness scoring, group statistics,
+   sparse-vector construction, and enabled-component calculation with
+   equivalence tests.
+7. Simplify duplicate advantage, rollout scoring, policy-update, and
+   tensor-assembly paths one at a time with equivalence tests.
+8. Apply only benchmark-supported runtime or memory improvements.
+9. Update documentation, examples, monkeypatch targets, and lazy registries.
+10. Search for stale module paths and run focused and full verification.
 
 ## Testing
 
@@ -204,6 +245,9 @@ Implementation follows test-driven development:
 - Run focused tests after each deleted module and redirected dependency.
 - Add numerical equivalence tests for advantages, rewards, losses, masks, and
   batch tensors.
+- Assert reward scalar totals, breakdown dictionaries, batch results, sparse
+  token placement, and judge invocation counts across every configuration
+  preset and disabled-component fast path.
 - Round-trip existing and newly saved checkpoints through the consolidated
   trainer/controller paths.
 - Assert rollout order and fixed-seed behavior.
@@ -223,6 +267,8 @@ Implementation follows test-driven development:
 - Package-level and root exports preserve their current names and laziness.
 - There is one canonical group-advantage implementation and one rollout
   scoring pipeline.
+- Reward computation invokes each judge no more than once per answer, skips
+  provably unused component work, and preserves scalar and breakdown outputs.
 - The generation/training dependency is acyclic.
 - Checkpoint, numerical, ordering, seed, and error-semantics tests pass.
 - Every performance claim is backed by recorded before/after evidence.
