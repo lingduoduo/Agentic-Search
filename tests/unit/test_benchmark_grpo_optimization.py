@@ -94,7 +94,8 @@ def test_smoke_benchmarks_cover_the_paths_this_work_optimizes():
         "reward_components_sparse",
         "reward_batch",
         "reward_token_advantages",
-        "training_batch_assembly",
+        "left_pad_prompt_rows",
+        "log_prob_row_collection",
         "response_log_probs",
         "policy_update_loss",
     } <= names

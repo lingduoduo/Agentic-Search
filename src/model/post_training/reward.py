@@ -59,14 +59,14 @@ def compute_group_relative_advantages(
     *,
     normalize: bool,
     epsilon: float = 1e-8,
-    clip_range: tuple[float, float] | None = None,
 ) -> list[float]:
     """The one group-relative advantage kernel every caller in the repo shares.
 
     Centers each reward on the mean of the prompt group it was sampled from —
     the critic-free GRPO signal — and, when *normalize* is set, divides by that
     group's population standard deviation (N denominator, stabilised by
-    *epsilon*).  Clipping, when requested, is applied after normalization.
+    *epsilon*).  Clipping is deliberately *not* done here: the one place
+    advantages are clipped is ``algorithms._compute_advantages``.
 
     Groups of one get ``0.0``: a single trajectory has nothing to be relative
     to.  Results are returned in the caller's input order, never grouped order,
@@ -86,24 +86,22 @@ def compute_group_relative_advantages(
         size = len(indices)
         if size == 1:
             continue
-        total = 0.0
-        for index in indices:
-            total += rewards[index]
-        mean = total / size
+        values = [rewards[index] for index in indices]
+        # `sum()` and not a hand-rolled accumulator: on CPython 3.12+ the
+        # builtin uses compensated (Neumaier) summation over floats, so a
+        # manual `total += ...` loop returns *different* results. The two
+        # implementations this kernel replaced both used `sum()`, and swapping
+        # it out moved roughly 40% of random groups by ~1e-12 relative.
+        mean = sum(values) / size
         if normalize:
-            variance = 0.0
-            for index in indices:
-                variance += (rewards[index] - mean) ** 2
-            scale = math.sqrt(variance / size) + epsilon
-            for index in indices:
-                advantages[index] = (rewards[index] - mean) / scale
+            variance = sum((value - mean) ** 2 for value in values) / size
+            scale = math.sqrt(variance) + epsilon
+            for index, value in zip(indices, values):
+                advantages[index] = (value - mean) / scale
         else:
-            for index in indices:
-                advantages[index] = rewards[index] - mean
+            for index, value in zip(indices, values):
+                advantages[index] = value - mean
 
-    if clip_range is not None:
-        low, high = clip_range
-        advantages = [max(low, min(high, value)) for value in advantages]
     return advantages
 
 

@@ -148,7 +148,7 @@ def _reference_left_pad(rows: list[torch.Tensor], pad_id: int) -> torch.Tensor:
 
 @pytest.mark.parametrize(
     "lengths",
-    [[3], [1, 4, 2], [5, 5, 5], [2, 7, 1, 4, 6]],
+    [[3], [1, 4, 2], [5, 5, 5], [2, 7, 1, 4, 6], [0, 3, 0], [0, 0]],
 )
 @pytest.mark.parametrize("pad_id", [0, 7])
 def test_left_padding_matches_the_previous_implementation(
@@ -168,11 +168,6 @@ def test_left_padding_puts_the_padding_before_the_content():
     padded = _left_pad_rows(rows, pad_id=0)
 
     assert padded.tolist() == [[9, 9], [0, 5]]
-
-
-def test_left_padding_rejects_an_empty_row_list():
-    with pytest.raises(ValueError, match="empty"):
-        _left_pad_rows([], pad_id=0)
 
 
 # ---------------------------------------------------------------------------

@@ -62,7 +62,8 @@ REQUIRED_CASES = (
     "reward_token_advantages",
     "score_prompt_group",
     "response_log_probs",
-    "training_batch_assembly",
+    "left_pad_prompt_rows",
+    "log_prob_row_collection",
     "policy_update_loss",
 )
 
@@ -354,13 +355,22 @@ def _build_cases(f: dict[str, Any]) -> list[tuple[str, Callable[[], object]]]:
         torch.arange(PROMPT_LEN - (i % 8), dtype=torch.long)
         for i in range(NUM_ROLLOUTS)
     ]
+    stored_log_probs = [
+        torch.zeros(1, RESPONSE_LEN, dtype=torch.float32) for _ in range(NUM_ROLLOUTS)
+    ]
 
-    def _training_batch_assembly() -> object:
+    def _left_pad_prompt_rows() -> object:
         # The prompt-side left-pad that collate_scored_rollouts_for_training
         # performs, called through the shipped helper so this case measures the
         # real implementation rather than a copy of it. Rows are ragged: equal
         # lengths would hide the padding cost entirely.
         return _left_pad_rows(prompt_rows, 0)
+
+    def _log_prob_row_collection() -> object:
+        # The per-rollout old/ref log-prob extraction in the same function.
+        # Stored rows arrive as tensors, so this measures slicing them out
+        # against the list round-trip the shipped code replaced.
+        return [row[0].detach().to(dtype=torch.float32) for row in stored_log_probs]
 
     trainer, rollout = _build_trainer_fixture()
 
@@ -420,7 +430,8 @@ def _build_cases(f: dict[str, Any]) -> list[tuple[str, Callable[[], object]]]:
                 f["model"], f["full_ids"], PROMPT_LEN, f["response_mask"]
             ),
         ),
-        ("training_batch_assembly", _training_batch_assembly),
+        ("left_pad_prompt_rows", _left_pad_prompt_rows),
+        ("log_prob_row_collection", _log_prob_row_collection),
         # One full policy+reference loss: the path the frozen reference's grad
         # mode actually affects.
         ("policy_update_loss", lambda: trainer.compute_loss(rollout)),

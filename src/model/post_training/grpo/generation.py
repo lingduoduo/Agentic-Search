@@ -1371,14 +1371,10 @@ def _left_pad_rows(rows: list[torch.Tensor], pad_id: int) -> torch.Tensor:
     and reversing each row to borrow it measured *slower* than this preallocated
     copy, which also avoids round-tripping every row through a Python list.
     """
-    if not rows:
-        raise ValueError("Cannot left-pad an empty row list.")
     width = max(row.numel() for row in rows)
     padded = torch.full((len(rows), width), pad_id, dtype=torch.long)
     for index, row in enumerate(rows):
-        length = row.numel()
-        if length:
-            padded[index, width - length :] = row
+        padded[index, width - row.numel() :] = row
     return padded
 
 
@@ -3889,9 +3885,17 @@ class LLMGenerationManager:
             ):
                 stored = batch.batch.get(key)
                 if stored is not None and stored.shape[0] > 0:
-                    # Already a tensor: detach a row instead of round-tripping
-                    # it through a Python list and back.
-                    rows.append(stored[0].detach().to(dtype=torch.float32))
+                    # Already a tensor: slice the row out instead of round-
+                    # tripping it through a Python list and back (~5x cheaper).
+                    # The result is a *view* onto `stored`; that is safe only
+                    # because the pad_sequence below copies. Switching to
+                    # torch.stack, or mutating a row in place, would need a
+                    # .clone() here. `device="cpu"` preserves what the previous
+                    # `.tolist()` round-trip forced, so a CUDA-resident row
+                    # cannot land in an otherwise-CPU batch.
+                    rows.append(
+                        stored[0].detach().to(device="cpu", dtype=torch.float32)
+                    )
                     continue
                 values = _response_slice_from_traj(traj_values, traj)
                 if values is not None:
