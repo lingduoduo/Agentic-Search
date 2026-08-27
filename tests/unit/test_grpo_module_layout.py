@@ -9,16 +9,16 @@ import pytest
 
 def test_consolidated_trainer_module_owns_the_full_hierarchy():
     pytest.importorskip("torch", exc_type=ImportError)
-    from src.model.post_training.grpo.trainers import (
+    from src.model.post_training.grpo.training import (
         GRPOTrainer,
         LLMGRPOTrainer,
         SearchAgentGRPOTrainer,
     )
 
     assert LLMGRPOTrainer in SearchAgentGRPOTrainer.__mro__
-    assert GRPOTrainer.__module__ == "src.model.post_training.grpo.trainers"
-    assert LLMGRPOTrainer.__module__ == "src.model.post_training.grpo.trainers"
-    assert SearchAgentGRPOTrainer.__module__ == "src.model.post_training.grpo.trainers"
+    assert GRPOTrainer.__module__ == "src.model.post_training.grpo.training"
+    assert LLMGRPOTrainer.__module__ == "src.model.post_training.grpo.training"
+    assert SearchAgentGRPOTrainer.__module__ == "src.model.post_training.grpo.training"
 
 
 @pytest.mark.parametrize(
@@ -74,17 +74,17 @@ def test_replaced_tensor_helper_module_is_removed():
     [
         ("LocalGRPOController", "training"),
         ("RolloutResult", "training"),
-        ("GRPOTrainer", "trainers"),
-        ("Policy", "trainers"),
-        ("compute_group_advantages", "trainers"),
-        ("grpo_clipped_policy_loss", "trainers"),
-        ("make_grpo_trainer", "trainers"),
-        ("reverse_kl_penalty", "trainers"),
-        ("LLMGRPOConfig", "trainers"),
-        ("LLMGRPOTrainer", "trainers"),
-        ("LLMRolloutResult", "trainers"),
-        ("get_response_log_probs", "trainers"),
-        ("SearchAgentGRPOTrainer", "trainers"),
+        ("GRPOTrainer", "training"),
+        ("Policy", "training"),
+        ("compute_group_advantages", "training"),
+        ("grpo_clipped_policy_loss", "training"),
+        ("make_grpo_trainer", "training"),
+        ("reverse_kl_penalty", "training"),
+        ("LLMGRPOConfig", "training"),
+        ("LLMGRPOTrainer", "training"),
+        ("LLMRolloutResult", "training"),
+        ("get_response_log_probs", "training"),
+        ("SearchAgentGRPOTrainer", "training"),
     ],
 )
 def test_grpo_package_lazy_exports_resolve_to_the_consolidated_modules(
@@ -190,7 +190,7 @@ raise SystemExit(pytest.main([
     "-q",
     "tests/unit/test_grpo_module_layout.py",
     "-k",
-    "replaced or approved_implementation_modules",
+    "minimal_implementation_modules or second_stage_replaced_modules_are_removed",
 ]))
 """
     result = subprocess.run(
@@ -201,4 +201,4 @@ raise SystemExit(pytest.main([
     )
 
     assert result.returncode == 0, result.stderr + result.stdout
-    assert "7 passed" in result.stdout
+    assert "6 passed" in result.stdout
