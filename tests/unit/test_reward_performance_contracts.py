@@ -20,6 +20,8 @@ from src.context.search import AgentContext, SearchResult  # noqa: E402
 from src.model.post_training.grpo.algorithms import (  # noqa: E402
     compute_grpo_outcome_advantage,
 )
+from dataclasses import replace  # noqa: E402
+
 from src.model.post_training.reward import (  # noqa: E402
     SearchRewardConfig,
     SearchRewardFunction,
@@ -379,6 +381,137 @@ def test_token_advantages_and_batch_rewards_share_group_statistics():
     )
     assert [row[5] for row in token_advs] == pytest.approx(expected)
     assert judge  # fixture guard: scores consumed in order
+
+
+# ---------------------------------------------------------------------------
+# Context shapes the fast paths must handle identically
+# ---------------------------------------------------------------------------
+
+
+def _output_with(context, answer="Cites [R1Q1D1].", **metric_overrides):
+    output = _output(answer)
+    output.context = context
+    output.metrics.update(metric_overrides)
+    return output
+
+
+@pytest.mark.parametrize("preset_name", sorted(PRESETS))
+def test_a_missing_context_produces_the_same_keys_and_no_error(preset_name: str):
+    reward_fn = SearchRewardFunction(PRESETS[preset_name])
+
+    with_ctx = reward_fn.reward_components(_output(), "gold", token_f1_score)
+    without_ctx = reward_fn.reward_components(
+        _output_with(None), "gold", token_f1_score
+    )
+
+    assert set(without_ctx) == set(with_ctx)
+    assert without_ctx["citation_support"] == 0.0
+    assert without_ctx["fetch_usefulness_reward"] == 0.0
+    assert without_ctx["unsupported_claim_penalty"] == 0.0
+
+
+@pytest.mark.parametrize("preset_name", sorted(PRESETS))
+def test_an_empty_context_produces_the_same_keys_and_no_error(preset_name: str):
+    reward_fn = SearchRewardFunction(PRESETS[preset_name])
+
+    components = reward_fn.reward_components(
+        _output_with(AgentContext()), "gold", token_f1_score
+    )
+
+    assert set(components) == set(
+        reward_fn.reward_components(_output(), "gold", token_f1_score)
+    )
+    assert components["citation_support"] == 0.0
+
+
+def test_an_uncited_answer_still_fires_the_unsupported_claim_penalty():
+    reward_fn = SearchRewardFunction(SearchRewardConfig.third_pass_with_format())
+    assert reward_fn.config.unsupported_claim_penalty != 0.0
+
+    cited = reward_fn.reward_components(_output(), "gold", token_f1_score)
+    uncited = reward_fn.reward_components(
+        _output("No citations at all here."), "gold", token_f1_score
+    )
+
+    assert cited["unsupported_claim_penalty"] == 0.0
+    assert uncited["unsupported_claim_penalty"] == pytest.approx(
+        reward_fn.config.unsupported_claim_penalty
+    )
+
+
+def test_the_penalty_needs_a_search_to_have_happened():
+    reward_fn = SearchRewardFunction(SearchRewardConfig.third_pass_with_format())
+
+    never_searched = reward_fn.reward_components(
+        _output_with(_context(), "No citations.", rounds_used=0.0),
+        "gold",
+        token_f1_score,
+    )
+
+    assert never_searched["unsupported_claim_penalty"] == 0.0
+
+
+def test_fetch_usefulness_needs_the_fetched_url_to_be_cited():
+    config = PRESETS["default"]
+    reward_fn = SearchRewardFunction(config)
+    assert config.fetch_usefulness_reward != 0.0
+
+    ctx = _context()
+    ctx.fetched_pages = [SearchResult(contents="p", url="https://unrelated.test/z")]
+    unrelated = reward_fn.reward_components(_output_with(ctx), "gold", token_f1_score)
+    cited = reward_fn.reward_components(_output(), "gold", token_f1_score)
+
+    assert unrelated["fetch_usefulness_reward"] == 0.0
+    assert cited["fetch_usefulness_reward"] == pytest.approx(
+        config.fetch_usefulness_reward
+    )
+
+
+def test_zeroed_dimensions_report_every_key_the_full_path_reports():
+    full = SearchRewardFunction(SearchRewardConfig()).reward_components(
+        _output(), "gold", token_f1_score
+    )
+    zeroed = SearchRewardFunction(
+        SearchRewardConfig.sparse_final_only()
+    ).reward_components(_output(), "gold", token_f1_score)
+
+    assert set(zeroed) == set(full)
+    assert all(
+        isinstance(value, float)
+        for key, value in zeroed.items()
+        if key != "reward_mode"
+    )
+
+
+@pytest.mark.parametrize(
+    ("weight_name", "component_key"),
+    [
+        ("citation_support_weight", "citation_support"),
+        ("unsupported_claim_penalty", "unsupported_claim_penalty"),
+        ("fetch_usefulness_reward", "fetch_usefulness_reward"),
+        ("format_reward_weight", "format_reward"),
+    ],
+)
+def test_each_citation_term_alone_still_defeats_the_zero_weight_fast_path(
+    weight_name: str, component_key: str
+):
+    """One non-zero weight is enough to require the full citation path.
+
+    No shipped preset enables `fetch_usefulness_reward` on its own, so without
+    this case the guard clause for it is never exercised and could be dropped
+    without a test noticing.
+    """
+    config = replace(
+        SearchRewardConfig.sparse_final_only(),
+        **{weight_name: 0.5 if "penalty" not in weight_name else -0.5},
+    )
+    answer = "No citations here." if "unsupported" in weight_name else None
+
+    components = SearchRewardFunction(config).reward_components(
+        _output(answer) if answer else _output(), "gold", token_f1_score
+    )
+
+    assert components[component_key] != 0.0
 
 
 def _write_baseline() -> None:
