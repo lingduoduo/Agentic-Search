@@ -34,6 +34,7 @@ import torch
 
 from src.agents.core.base import AgentLoopOutput
 from src.context.search import AgentContext, SearchResult
+from src.model.post_training.grpo.generation import _left_pad_rows
 from src.model.post_training.grpo.algorithms import (
     GRPOAdvantageConfig,
     GRPORolloutSample,
@@ -62,6 +63,7 @@ REQUIRED_CASES = (
     "score_prompt_group",
     "response_log_probs",
     "training_batch_assembly",
+    "policy_update_loss",
 )
 
 # Fixture dimensions. Recorded in every report: a median is meaningless
@@ -304,6 +306,43 @@ def _fixture_metadata() -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
+def _build_trainer_fixture():
+    """A causal-LM GRPO trainer over stub models, for the policy-update path."""
+    from src.model.post_training.grpo.training import (
+        LLMGRPOConfig,
+        LLMGRPOTrainer,
+        LLMRolloutResult,
+    )
+
+    vocab = 64
+    prompts, group = 4, 4
+    total = prompts * group
+    policy = _PositionLogitModel(vocab)
+    policy.weight = torch.nn.Parameter(torch.zeros(1))
+    reference = _PositionLogitModel(vocab)
+    trainer = LLMGRPOTrainer(
+        policy=policy,
+        reference_policy=reference,
+        tokenizer=None,
+        optimizer=torch.optim.SGD(policy.parameters(), lr=0.0),
+        judge_fn=lambda answer, gold: 0.0,
+        config=LLMGRPOConfig(num_rollouts=group),
+    )
+    generator = torch.Generator().manual_seed(SEED)
+    rollout = LLMRolloutResult(
+        prompt_ids=torch.randint(0, vocab, (prompts, PROMPT_LEN), generator=generator),
+        response_ids=torch.randint(
+            0, vocab, (total, RESPONSE_LEN), generator=generator
+        ),
+        response_mask=torch.ones(total, RESPONSE_LEN, dtype=torch.long),
+        rewards=torch.rand(total, generator=generator),
+        advantages=torch.rand(total, RESPONSE_LEN, generator=generator),
+        old_log_probs=torch.zeros(total, RESPONSE_LEN),
+        group_ids=torch.arange(prompts).repeat_interleave(group),
+    )
+    return trainer, rollout
+
+
 def _build_cases(f: dict[str, Any]) -> list[tuple[str, Callable[[], object]]]:
     shaped = SearchRewardFunction()
     sparse = SearchRewardFunction(SearchRewardConfig.sparse_final_only())
@@ -311,16 +350,19 @@ def _build_cases(f: dict[str, Any]) -> list[tuple[str, Callable[[], object]]]:
     outputs = f["outputs"]
     truths = f["ground_truths"]
 
+    prompt_rows = [
+        torch.arange(PROMPT_LEN - (i % 8), dtype=torch.long)
+        for i in range(NUM_ROLLOUTS)
+    ]
+
     def _training_batch_assembly() -> object:
-        # The prompt-side left-pad in collate_scored_rollouts_for_training,
-        # isolated from the generation manager so the measurement is about
-        # tensor construction and not about mocking an agent loop.
-        rows = [torch.tensor(o.prompt_ids, dtype=torch.long) for o in outputs]
-        width = max(row.numel() for row in rows)
-        return torch.tensor(
-            [[0] * (width - row.numel()) + row.tolist() for row in rows],
-            dtype=torch.long,
-        )
+        # The prompt-side left-pad that collate_scored_rollouts_for_training
+        # performs, called through the shipped helper so this case measures the
+        # real implementation rather than a copy of it. Rows are ragged: equal
+        # lengths would hide the padding cost entirely.
+        return _left_pad_rows(prompt_rows, 0)
+
+    trainer, rollout = _build_trainer_fixture()
 
     return [
         (
@@ -379,6 +421,9 @@ def _build_cases(f: dict[str, Any]) -> list[tuple[str, Callable[[], object]]]:
             ),
         ),
         ("training_batch_assembly", _training_batch_assembly),
+        # One full policy+reference loss: the path the frozen reference's grad
+        # mode actually affects.
+        ("policy_update_loss", lambda: trainer.compute_loss(rollout)),
     ]
 
 

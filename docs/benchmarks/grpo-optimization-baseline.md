@@ -93,3 +93,58 @@ An intermediate version of the zero-weight guards used
 a repeatable **+1.9%** — the guard ran on every rollout that could never take
 the fast path. Rewriting it as a short-circuiting `and` chain ordered by the
 default config's first non-zero weight returned the shaped path to parity.
+
+## After online-path optimization
+
+- Python 3.12.2, torch 2.11.0
+- Platform: macOS-26.6.2-arm64-arm-64bit (cpu)
+- Warmup 5, iterations 25
+- Fixtures: num_groups=16, rollouts_per_group=8, num_rollouts=128, prompt_len=32, response_len=96, retrieved_docs=24, seed=20260827
+
+| case | median (µs) | min (µs) | max (µs) | peak alloc (KiB) |
+| --- | ---: | ---: | ---: | ---: |
+| `group_advantages` | 10.9 | 10.7 | 11.2 | 3.2 |
+| `group_advantages_normalized` | 19.3 | 19.1 | 19.6 | 3.3 |
+| `group_advantages_tensor` | 393.8 | 382.4 | 410.2 | 1.0 |
+| `token_f1` | 918.4 | 903.1 | 949.4 | 4.4 |
+| `reward_components_shaped` | 5585.8 | 5532.0 | 5839.9 | 194.4 |
+| `reward_components_sparse` | 1374.0 | 1372.0 | 1393.7 | 155.3 |
+| `reward_batch` | 989.7 | 967.0 | 1019.5 | 106.7 |
+| `reward_token_advantages` | 1008.0 | 992.5 | 1042.4 | 111.9 |
+| `score_prompt_group` | 366.9 | 364.2 | 374.1 | 14.1 |
+| `response_log_probs` | 90.4 | 86.0 | 136.1 | 3.5 |
+| `training_batch_assembly` | 182.0 | 181.1 | 184.4 | 0.4 |
+| `policy_update_loss` | 299.2 | 281.1 | 410.8 | 6.4 |
+
+### Online-path results
+
+Measured against the same fixtures with only the online-path changes reverted,
+median of three runs each:
+
+| case | time | peak alloc | verdict |
+| --- | ---: | ---: | --- |
+| `training_batch_assembly` | **−13.5%** | **−99%** (36.1 → 0.4 KiB) | Kept. Left-padding writes into a preallocated tensor instead of building a nested Python list. |
+| `policy_update_loss` | +3.0% | −2.3% | See below. |
+
+**`torch.inference_mode()` for the frozen reference was measured and rejected.**
+The plan proposed it as a candidate optimization. It is correct — every
+supported KL type still backpropagates through the policy — but it is not
+faster. On a toy model it wins 18%; at realistic sizes it loses, repeatably:
+
+| hidden | vocab | seq | batch | `no_grad` | `inference_mode` | change |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64 | 512 | 64 | 8 | 250.6 µs | 205.4 µs | −18.0% |
+| 256 | 4096 | 128 | 8 | 6250.0 µs | 6713.4 µs | **+7.4%** |
+| 512 | 8192 | 256 | 16 | 81680.0 µs | 91501.8 µs | **+12.0%** |
+
+Training runs at the bottom two rows, not the top one, so the reference stays
+under `torch.no_grad()`. The contract test asserts the reference runs with grad
+*disabled* — the invariant that actually matters — rather than pinning the
+specific mechanism.
+
+Reference forward count is unchanged at exactly one per optimization step; the
+`policy_update_loss` case exists to keep that measurable.
+
+**Left-padding via `pad_sequence` was also measured and rejected**: reversing
+each row, right-padding, and reversing back ran 18% *slower* than the nested
+list it replaced, and 25% slower than the preallocated copy that shipped.

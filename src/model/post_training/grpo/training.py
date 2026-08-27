@@ -637,7 +637,10 @@ class LLMGRPOTrainer:
         # Current policy: new_log_probs
         new_log_probs = get_response_log_probs(self.policy, full_ids, prompt_len, mask)
 
-        # Reference policy: ref_log_probs (no grad)
+        # Reference policy: ref_log_probs. Frozen, so no grad is recorded.
+        # `torch.inference_mode()` was measured here and is deliberately not
+        # used: it is faster only on toy models and was repeatably 7-12% slower
+        # at realistic hidden/vocab sizes. See docs/benchmarks/.
         with torch.no_grad():
             ref_log_probs = get_response_log_probs(
                 self.reference, full_ids, prompt_len, mask

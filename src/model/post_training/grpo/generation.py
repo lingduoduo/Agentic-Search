@@ -1363,6 +1363,25 @@ async def async_run_grpo_training_step(
     )
 
 
+def _left_pad_rows(rows: list[torch.Tensor], pad_id: int) -> torch.Tensor:
+    """Stack variable-length 1-D rows into a left-padded ``(N, max_len)`` tensor.
+
+    Prompts are left-padded so every sequence ends at the same position and the
+    response tokens line up across the batch.  ``pad_sequence`` only right-pads,
+    and reversing each row to borrow it measured *slower* than this preallocated
+    copy, which also avoids round-tripping every row through a Python list.
+    """
+    if not rows:
+        raise ValueError("Cannot left-pad an empty row list.")
+    width = max(row.numel() for row in rows)
+    padded = torch.full((len(rows), width), pad_id, dtype=torch.long)
+    for index, row in enumerate(rows):
+        length = row.numel()
+        if length:
+            padded[index, width - length :] = row
+    return padded
+
+
 def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
     """Slice one prompt out of a PromptBatch, preserving batch structure."""
     from ..data import PromptBatch
@@ -3864,36 +3883,21 @@ class LLMGenerationManager:
                 token_advantages[action_positions[-1]] = float(scored.advantage)
             advantage_rows.append(token_advantages)
 
-            old_row = batch.batch.get("old_log_probs")
-            old_values = (
-                old_row[0].tolist()
-                if old_row is not None and old_row.shape[0] > 0
-                else None
-            )
-            if old_values is None:
-                old_values = _response_slice_from_traj(traj.old_log_probs, traj)
-            if old_values is not None:
-                old_log_prob_rows.append(torch.tensor(old_values, dtype=torch.float32))
+            for key, traj_values, rows in (
+                ("old_log_probs", traj.old_log_probs, old_log_prob_rows),
+                ("ref_log_probs", traj.ref_log_probs, ref_log_prob_rows),
+            ):
+                stored = batch.batch.get(key)
+                if stored is not None and stored.shape[0] > 0:
+                    # Already a tensor: detach a row instead of round-tripping
+                    # it through a Python list and back.
+                    rows.append(stored[0].detach().to(dtype=torch.float32))
+                    continue
+                values = _response_slice_from_traj(traj_values, traj)
+                if values is not None:
+                    rows.append(torch.tensor(values, dtype=torch.float32))
 
-            ref_row = batch.batch.get("ref_log_probs")
-            ref_values = (
-                ref_row[0].tolist()
-                if ref_row is not None and ref_row.shape[0] > 0
-                else None
-            )
-            if ref_values is None:
-                ref_values = _response_slice_from_traj(traj.ref_log_probs, traj)
-            if ref_values is not None:
-                ref_log_prob_rows.append(torch.tensor(ref_values, dtype=torch.float32))
-
-        max_prompt_len = max(row.numel() for row in prompt_rows)
-        prompts = torch.tensor(
-            [
-                [pad_id] * (max_prompt_len - row.numel()) + row.tolist()
-                for row in prompt_rows
-            ],
-            dtype=torch.long,
-        )
+        prompts = _left_pad_rows(prompt_rows, pad_id)
         prompt_attention = (prompts != pad_id).long()
         responses = torch.nn.utils.rnn.pad_sequence(
             response_rows,
