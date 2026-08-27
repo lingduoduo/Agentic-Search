@@ -12,12 +12,21 @@ rollout ordering, or checkpoint key changes.
 
 ## Architecture
 
-| Before (7 modules) | After (3 modules) |
+| Before (7 modules) | After (4 modules) |
 | --- | --- |
-| `core_algos.py`, `rollouts.py`, `judge.py` | `algorithms.py` |
+| `rollouts.py`, `judge.py` | `algorithms.py` — **torch-free** |
+| `core_algos.py` | `core_algos.py` — the torch boundary |
 | `generation.py` | `generation.py` |
 | `trainers.py`, `training.py` | `training.py` |
 | `plot_rollouts.py` | → `examples/plot_grpo_rollouts.py` |
+
+**Four modules, not the three the design targeted.** Folding `core_algos.py`
+into `algorithms.py` made the judges unimportable without torch — and the CI
+unit-test job installs no torch, so `test_gold_aware_judge.py`'s 17 tests were
+silently skipped rather than failing. That is the fifth torch-import regression
+this repo has shipped, so the seam wins over the module count. A subprocess test
+now pins `algorithms.py` as torch-free; torch-free collection is **2940 tests**,
+up from 2926 on main.
 
 Dependencies are now acyclic — `training → generation → algorithms`, enforced by
 an AST test. The controller/generation cycle is gone: the step mechanics live in
@@ -94,13 +103,6 @@ plotting relocation, the reward fast paths, and the benchmarks. Also kept its
 `from .training import LocalGRPOController` inside a generation method, which
 the AST test here rejects.
 
-**One property is lost.** `rollouts.py` was torch-free; merging it with
-`core_algos.py`, which is tensor math and cannot be, gives that up for the
-submodule. The package `__init__` stays lazy, so importing
-`src.model.post_training.grpo` still does not pull torch — only the submodule
-does. The torch-free guard test records this explicitly rather than quietly
-narrowing.
-
 **One numeric note, not this PR's doing.** #554's kernel squares pre-centered
 values (`c * c`) where the code it replaced wrote `(r - mean) ** 2`. CPython
 routes `** 2` through libm's `pow`, so ~0.2% of random groups land one ULP
@@ -147,9 +149,11 @@ only `repr`/JSON text differ.
 
 ## Verification
 
-- `pytest` — 3582 passed, 3 skipped, no new warnings
+- `pytest` — 3579 passed, 3 skipped, no new warnings
+- Torch-free collection — 2940 tests, no collection errors
 - `ruff check` / `ruff format --check` / `git diff --check` — clean
 - No live import or doc references a deleted module; the package contains
-  exactly `__init__.py`, `algorithms.py`, `generation.py`, `training.py`
+  exactly `__init__.py`, `algorithms.py`, `core_algos.py`, `generation.py`,
+  `training.py`
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
