@@ -247,13 +247,19 @@ with the shared building blocks at the top level:
   KL controllers, `PPOPolicyLossConfig`, the masked-tensor primitives, and
   `PPORewardManager`. No trainer, no critic, no GAE. `grpo/` depends on it, since
   GRPO is this surrogate with a group-relative advantage in place of GAE
-- `grpo/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
-  SearchAgentLoop), `generation.py` (the rollout/generation manager, moved here from
-  `src/model/` so the serving layer no longer depends on training), and
+- `grpo/` — the GRPO stack built on `ppo/`, exactly three implementation modules
+  layered `training -> generation -> algorithms` (never the reverse):
   `algorithms.py` (GRPO advantage + the REINFORCE losses, grouped rollout
-  sampling/scoring, RLAIF judges, and on-policy batch assembly). The judges live
-  here because their only consumers are GRPO scripts; a future judge-backed DPO
-  loader would make `dpo/` import `grpo/`, a cost accepted deliberately
+  sampling/scoring, RLAIF judges, on-policy batch assembly), `generation.py`
+  (the rollout/generation manager and trajectory/tensor assembly, moved here
+  from `src/model/` so the serving layer no longer depends on training), and
+  `training.py` (all three trainers — bandit, HF causal-LM, live SearchAgentLoop
+  — plus the local controller, checkpointing, and the durable train loop). The
+  judges live here because their only consumers are GRPO scripts; a future
+  judge-backed DPO loader would make `dpo/` import `grpo/`, a cost accepted
+  deliberately
+- `log_probs.py` — causal-LM response-token log-probs, shared by DPO and GRPO.
+  Neutral on purpose: DPO must not import a GRPO trainer for token alignment
 - `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
   the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
 - `eval/` — Bamboogle and action-policy benchmark harnesses

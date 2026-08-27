@@ -97,7 +97,26 @@ from src.model.post_training.log_probs import get_response_log_probs
 
 The deleted `core_algos`, `rollouts`, `judge`, and `trainers` module paths will
 not receive compatibility shims. The plotting command's supported path becomes
-`python -m examples.plot_grpo_rollouts`.
+`python -m examples.plot_grpo_rollouts`, keeping its existing `--jsonl` /
+`--out` / `--max_records` / `--title` flags.
+
+### The two `compute_grpo_outcome_advantage` functions
+
+`core_algos.py` and `rollouts.py` each export a public function under this name,
+and they are not duplicates: the first takes token-level reward tensors with an
+eos mask and returns tensors; the second takes `list[float]` and returns scalar
+per-rollout advantages. They are also exported from *different* places —
+`src.model.post_training.grpo` re-exports the tensor form, while the `src` root
+re-exports the list form — so both names are load-bearing public API and neither
+may be renamed.
+
+Merging both owners into one `algorithms.py` therefore requires a decision the
+migration cannot avoid. `algorithms.py` keeps a single public
+`compute_grpo_outcome_advantage` that dispatches on whether its first argument
+is a tensor, with a typed overload for each call shape, delegating to two
+private implementations. Both existing call contracts keep working unchanged.
+The list form delegates to the canonical kernel described below; the tensor form
+retains its vectorized path and is pinned to the same numerical contract.
 
 The refactor preserves:
 
@@ -158,8 +177,11 @@ benchmark or profiler measurement before and after the change.
 
 Candidate improvements are:
 
-- Keep reference-policy inference conditional and execute it under
-  `torch.inference_mode()`.
+- Keep reference-policy inference conditional. Executing it under
+  `torch.inference_mode()` rather than `torch.no_grad()` is a *candidate*, not a
+  conclusion: it must clear the same benchmark bar as everything else here, and
+  the KL term consuming the reference output must still backpropagate into the
+  policy.
 - Reuse tokenization, response masks, attention masks, and padded tensors
   within one optimization step.
 - Avoid repeated Python-list-to-tensor conversions during generation batch
@@ -176,6 +198,14 @@ Candidate improvements are:
 An optimization will not land solely because it appears faster. It must show a
 repeatable improvement in wall-clock time, peak allocation, model-forward
 count, or tensor-construction count and pass equivalence tests.
+
+Two consequences of taking that rule literally:
+
+- The benchmark harness must not time samples while `tracemalloc` is running.
+  Doing so inflates every median several-fold and measures the profiler.
+- A candidate that fails its benchmark is reverted and the measurement is
+  recorded, so the next reader does not re-propose it. Rejected candidates are
+  as much a deliverable as accepted ones.
 
 ### Reward-function optimization
 
@@ -289,7 +319,8 @@ Implementation follows test-driven development:
   provably unused component work, and preserves scalar and breakdown outputs.
 - The generation/training dependency is acyclic.
 - Checkpoint, numerical, ordering, seed, and error-semantics tests pass.
-- Every performance claim is backed by recorded before/after evidence.
+- Every performance claim is backed by recorded before/after evidence, and every
+  rejected candidate is recorded with the measurement that rejected it.
 - Focused and full repository verification complete without new failures or
   warnings caused by the consolidation.
 
