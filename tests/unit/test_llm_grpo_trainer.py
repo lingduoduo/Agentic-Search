@@ -145,6 +145,13 @@ def test_get_response_log_probs_shape_and_masking():
     assert (lp <= 0).all(), "Log-probs must be non-positive"
 
 
+def test_grpo_package_lazy_export_uses_the_shared_log_prob_helper():
+    from src.model.post_training import log_probs
+    from src.model.post_training.grpo import get_response_log_probs as package_helper
+
+    assert package_helper is log_probs.get_response_log_probs
+
+
 def test_llm_grpo_trainer_reference_is_frozen():
     trainer = _make_trainer()
     for p in trainer.reference.parameters():

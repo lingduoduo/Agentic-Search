@@ -18,6 +18,7 @@ from ..ppo.core_algos import (
     kl_penalty,
     masked_mean,
 )
+from ..log_probs import get_response_log_probs
 from .core_algos import compute_grpo_outcome_advantage
 from .rollouts import (
     GRPOAdvantageConfig,
@@ -318,42 +319,6 @@ class LLMRolloutResult:
     advantages: torch.Tensor
     group_ids: torch.Tensor
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Token log-probability helper
-# ---------------------------------------------------------------------------
-
-
-def get_response_log_probs(
-    model: nn.Module,
-    input_ids: torch.Tensor,
-    prompt_len: int,
-    response_mask: torch.Tensor,
-) -> torch.Tensor:
-    """Forward pass through *model* and return per-token log probs over the response.
-
-    Args:
-        model: Causal-LM model.  Called in whatever grad context the caller sets.
-        input_ids: ``(B, prompt_len + response_len)`` — concatenated prompt + response.
-        prompt_len: Number of prompt tokens to skip in the output.
-        response_mask: ``(B, response_len)`` — 1 for valid response tokens.
-
-    Returns:
-        ``(B, response_len)`` — masked log probabilities (0 at padding positions).
-    """
-    outputs = model(input_ids=input_ids)
-    # Logits at position t predict token t+1.
-    # Slice prompt positions so response logits align with response_ids.
-    logits = outputs.logits[:, prompt_len - 1 : -1, :]  # (B, response_len, vocab)
-    log_probs = torch.log_softmax(logits.float(), dim=-1)
-
-    response_ids = input_ids[:, prompt_len:]  # (B, response_len)
-    token_log_probs = log_probs.gather(
-        dim=-1, index=response_ids.unsqueeze(-1)
-    ).squeeze(-1)  # (B, response_len)
-
-    return token_log_probs * response_mask.to(dtype=token_log_probs.dtype)
 
 
 # ---------------------------------------------------------------------------

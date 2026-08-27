@@ -55,7 +55,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "LLMGRPOConfig": "trainers",
     "LLMGRPOTrainer": "trainers",
     "LLMRolloutResult": "trainers",
-    "get_response_log_probs": "trainers",
+    "get_response_log_probs": "..log_probs",
     "SearchAgentGRPOTrainer": "trainers",
     # judge — RLAIF scoring, moved in from the shared top level. Deferred
     # like everything else here: it reaches ``reward``, which reaches the
@@ -77,6 +77,7 @@ def __getattr__(name: str) -> Any:
         module_name = _LAZY_EXPORTS[name]
     except KeyError as exc:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
-    value = getattr(import_module(f".{module_name}", __name__), name)
+    module_path = module_name if module_name.startswith("..") else f".{module_name}"
+    value = getattr(import_module(module_path, __name__), name)
     globals()[name] = value
     return value
