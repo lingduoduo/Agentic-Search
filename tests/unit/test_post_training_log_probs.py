@@ -50,3 +50,23 @@ def test_dpo_and_grpo_use_the_shared_helper():
 
     assert dpo_trainer.get_response_log_probs is log_probs.get_response_log_probs
     assert grpo_trainers.get_response_log_probs is log_probs.get_response_log_probs
+
+
+def test_grpo_lazy_export_accepts_input_ids_keyword():
+    from src.model.post_training.grpo import get_response_log_probs
+
+    model = PositionLogitModel(vocab_size=7)
+    input_ids = torch.tensor([[1, 2, 3, 4, 0]])
+    response_mask = torch.tensor([[1, 1, 0]])
+
+    actual = get_response_log_probs(
+        model,
+        input_ids=input_ids,
+        prompt_len=2,
+        response_mask=response_mask,
+    )
+    expected = torch.log_softmax(model(input_ids).logits[:, 1:-1], dim=-1)
+    expected = (
+        expected.gather(-1, input_ids[:, 2:].unsqueeze(-1)).squeeze(-1) * response_mask
+    )
+    torch.testing.assert_close(actual, expected)
