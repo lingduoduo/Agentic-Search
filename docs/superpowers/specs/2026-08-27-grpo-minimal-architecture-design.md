@@ -51,6 +51,10 @@ will therefore contain only `__init__.py` plus the three implementation files.
 The shared `src/model/post_training/reward.py` module remains outside the GRPO
 package because evaluation and other post-training methods also consume it; it
 is nevertheless part of this refactor's profiling and optimization scope.
+The causal-LM response log-probability helper currently owned by GRPO will move
+to `src/model/post_training/log_probs.py`. DPO and GRPO will both consume this
+neutral utility; DPO must not depend on a GRPO trainer module for shared token
+alignment arithmetic.
 
 The dependency direction is:
 
@@ -83,6 +87,12 @@ Repository imports will move to the consolidated paths:
 ```python
 from src.model.post_training.grpo.algorithms import GRPOAdvantageConfig
 from src.model.post_training.grpo.training import SearchAgentGRPOTrainer
+```
+
+Shared causal-LM code will use:
+
+```python
+from src.model.post_training.log_probs import get_response_log_probs
 ```
 
 The deleted `core_algos`, `rollouts`, `judge`, and `trainers` module paths will
@@ -129,6 +139,10 @@ loop definitions. Causal-LM and search-agent trainers will share internal
 helpers for behavior that is already identical, including response masks,
 sparse terminal reward placement, log-prob extraction, reference-policy
 handling, and policy-update bookkeeping.
+
+`get_response_log_probs` itself will live in the shared post-training utility
+module. Its logits/target shift and response-mask contract remain unchanged,
+and its DPO and GRPO callers will share focused off-by-one alignment tests.
 
 The local controller will consume generation results through stable data
 interfaces and call the shared policy-update path. Checkpoint helpers remain at
@@ -220,22 +234,24 @@ must not replace a documented public exception type.
 
 1. Add a literal package-inventory contract for the three-module target and
    ownership tests for representative public symbols.
-2. Create `algorithms.py`, redirect imports/exports, and delete
+2. Move `get_response_log_probs` to the neutral post-training utility, redirect
+   DPO and GRPO callers, and preserve its root/package export behavior.
+3. Create `algorithms.py`, redirect imports/exports, and delete
    `core_algos.py`, `rollouts.py`, and `judge.py`.
-3. Merge `trainers.py` into `training.py`, remove the reverse
+4. Merge `trainers.py` into `training.py`, remove the reverse
    generation/training dependency, redirect imports/exports, and delete
    `trainers.py`.
-4. Move the plotting utility to `examples/plot_grpo_rollouts.py` and delete the
+5. Move the plotting utility to `examples/plot_grpo_rollouts.py` and delete the
    package copy.
-5. Establish focused GRPO and reward-function performance baselines.
-6. Consolidate the reward layer's correctness scoring, group statistics,
+6. Establish focused GRPO and reward-function performance baselines.
+7. Consolidate the reward layer's correctness scoring, group statistics,
    sparse-vector construction, and enabled-component calculation with
    equivalence tests.
-7. Simplify duplicate advantage, rollout scoring, policy-update, and
+8. Simplify duplicate advantage, rollout scoring, policy-update, and
    tensor-assembly paths one at a time with equivalence tests.
-8. Apply only benchmark-supported runtime or memory improvements.
-9. Update documentation, examples, monkeypatch targets, and lazy registries.
-10. Search for stale module paths and run focused and full verification.
+9. Apply only benchmark-supported runtime or memory improvements.
+10. Update documentation, examples, monkeypatch targets, and lazy registries.
+11. Search for stale module paths and run focused and full verification.
 
 ## Testing
 
@@ -262,6 +278,8 @@ Implementation follows test-driven development:
 
 - `src/model/post_training/grpo` contains only `__init__.py`,
   `algorithms.py`, `generation.py`, and `training.py`.
+- DPO and GRPO import `get_response_log_probs` from the neutral post-training
+  utility and pass the shared token-alignment contract tests.
 - `plot_rollouts.py` is available from `examples/plot_grpo_rollouts.py`.
 - No live repository import or documentation targets a deleted module.
 - Package-level and root exports preserve their current names and laziness.
