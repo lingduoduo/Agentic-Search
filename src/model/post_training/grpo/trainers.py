@@ -19,8 +19,8 @@ from ..ppo.core_algos import (
     masked_mean,
 )
 from ..log_probs import get_response_log_probs
-from .core_algos import compute_grpo_outcome_advantage
-from .rollouts import (
+from .algorithms import (
+    compute_grpo_outcome_advantage,
     GRPOAdvantageConfig,
     score_prompt_group,
     sample_prompt_group,

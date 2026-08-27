@@ -127,47 +127,59 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         ".model.post_training.data",
         "prompt_batch_to_search_batch",
     ),
-    # training.grpo.rollouts
+    # training.grpo.algorithms
     "GRPOAdvantageConfig": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "GRPOAdvantageConfig",
     ),
-    "GRPORolloutSample": (".model.post_training.grpo.rollouts", "GRPORolloutSample"),
+    "GRPORolloutSample": (".model.post_training.grpo.algorithms", "GRPORolloutSample"),
     "PromptGroupSamplingConfig": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "PromptGroupSamplingConfig",
     ),
-    "ScoredGRPORollout": (".model.post_training.grpo.rollouts", "ScoredGRPORollout"),
+    "ScoredGRPORollout": (".model.post_training.grpo.algorithms", "ScoredGRPORollout"),
     "build_grpo_sampling_params": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "build_grpo_sampling_params",
     ),
     "compute_grpo_outcome_advantage": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "compute_grpo_outcome_advantage",
     ),
     "sample_prompt_group": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "sample_prompt_group",
     ),
     "sample_prompt_batch": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "sample_prompt_batch",
     ),
-    "score_prompt_group": (".model.post_training.grpo.rollouts", "score_prompt_group"),
-    "score_prompt_batch": (".model.post_training.grpo.rollouts", "score_prompt_batch"),
-    "OnPolicyGRPOConfig": (".model.post_training.grpo.rollouts", "OnPolicyGRPOConfig"),
-    "OnPolicyBatchStats": (".model.post_training.grpo.rollouts", "OnPolicyBatchStats"),
+    "score_prompt_group": (
+        ".model.post_training.grpo.algorithms",
+        "score_prompt_group",
+    ),
+    "score_prompt_batch": (
+        ".model.post_training.grpo.algorithms",
+        "score_prompt_batch",
+    ),
+    "OnPolicyGRPOConfig": (
+        ".model.post_training.grpo.algorithms",
+        "OnPolicyGRPOConfig",
+    ),
+    "OnPolicyBatchStats": (
+        ".model.post_training.grpo.algorithms",
+        "OnPolicyBatchStats",
+    ),
     "filter_zero_advantage_groups": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "filter_zero_advantage_groups",
     ),
     "assemble_on_policy_batch": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "assemble_on_policy_batch",
     ),
     "compute_on_policy_batch_stats": (
-        ".model.post_training.grpo.rollouts",
+        ".model.post_training.grpo.algorithms",
         "compute_on_policy_batch_stats",
     ),
     # training.reward
@@ -265,11 +277,11 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "compute_trajectory_policy_loss",
     ),
     "compute_reinforce_policy_loss": (
-        ".model.post_training.grpo.core_algos",
+        ".model.post_training.grpo.algorithms",
         "compute_reinforce_policy_loss",
     ),
     "compute_reinforce_policy_loss_core": (
-        ".model.post_training.grpo.core_algos",
+        ".model.post_training.grpo.algorithms",
         "compute_reinforce_policy_loss_core",
     ),
     "format_group_rollout": (

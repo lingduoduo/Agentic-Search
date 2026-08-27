@@ -42,7 +42,7 @@ def test_make_judge_fn_passes_the_ground_truth_through():
 
 
 def test_make_judge_fn_matches_the_gold_aware_judge_pointwise():
-    from src.model.post_training.grpo.judge import GoldAgreementJudge
+    from src.model.post_training.grpo.algorithms import GoldAgreementJudge
 
     judge = GoldAgreementJudge()
     judge_fn = make_judge_fn(judge)

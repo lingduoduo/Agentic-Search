@@ -7,6 +7,83 @@ from pathlib import Path
 import pytest
 
 
+ALGORITHM_EXPORTS = [
+    "compute_grpo_outcome_advantage",
+    "compute_reinforce_policy_loss_core",
+    "compute_reinforce_policy_loss",
+    "compute_grpo_policy_loss",
+    "PromptGroupSamplingConfig",
+    "GRPORolloutSample",
+    "ScoredGRPORollout",
+    "GRPOAdvantageConfig",
+    "build_grpo_sampling_params",
+    "sample_prompt_group",
+    "sample_prompt_batch",
+    "score_prompt_group",
+    "compute_dapo_advantages",
+    "score_prompt_batch",
+    "OnPolicyGRPOConfig",
+    "OnPolicyBatchStats",
+    "filter_zero_advantage_groups",
+    "assemble_on_policy_batch",
+    "compute_on_policy_batch_stats",
+    "SimulatedPreferenceJudge",
+    "judge_gold_agreement",
+    "GoldAgreementJudge",
+    "JudgeParseError",
+    "parse_judge_score",
+    "is_degenerate_group",
+    "LLMJudge",
+]
+
+GRPO_PACKAGE_ALGORITHM_EXPORTS = [
+    "compute_grpo_outcome_advantage",
+    "compute_grpo_policy_loss",
+    "compute_reinforce_policy_loss",
+    "compute_reinforce_policy_loss_core",
+    "GoldAgreementJudge",
+    "JudgeParseError",
+    "LLMJudge",
+    "SimulatedPreferenceJudge",
+    "is_degenerate_group",
+    "judge_gold_agreement",
+    "parse_judge_score",
+]
+
+ROOT_ALGORITHM_EXPORTS = [
+    "GRPOAdvantageConfig",
+    "GRPORolloutSample",
+    "PromptGroupSamplingConfig",
+    "ScoredGRPORollout",
+    "build_grpo_sampling_params",
+    "compute_grpo_outcome_advantage",
+    "sample_prompt_group",
+    "sample_prompt_batch",
+    "score_prompt_group",
+    "score_prompt_batch",
+    "OnPolicyGRPOConfig",
+    "OnPolicyBatchStats",
+    "filter_zero_advantage_groups",
+    "assemble_on_policy_batch",
+    "compute_on_policy_batch_stats",
+    "compute_reinforce_policy_loss",
+    "compute_reinforce_policy_loss_core",
+]
+
+POST_TRAINING_ALGORITHM_EXPORTS = [
+    "GRPOAdvantageConfig",
+    "PromptGroupSamplingConfig",
+    "compute_dapo_advantages",
+    "compute_grpo_outcome_advantage",
+    "score_prompt_group",
+    "compute_grpo_policy_loss",
+    "GoldAgreementJudge",
+    "LLMJudge",
+    "SimulatedPreferenceJudge",
+    "judge_gold_agreement",
+]
+
+
 def test_consolidated_trainer_module_owns_the_full_hierarchy():
     pytest.importorskip("torch", exc_type=ImportError)
     from src.model.post_training.grpo.training import (
@@ -97,6 +174,48 @@ def test_grpo_package_lazy_exports_resolve_to_the_consolidated_modules(
 
     assert export_name in grpo.__all__
     assert getattr(grpo, export_name) is getattr(implementation_module, export_name)
+
+
+@pytest.mark.parametrize("export_name", ALGORITHM_EXPORTS)
+def test_algorithms_module_owns_every_moved_public_symbol(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    algorithms = import_module("src.model.post_training.grpo.algorithms")
+
+    value = getattr(algorithms, export_name)
+    assert value.__module__ == "src.model.post_training.grpo.algorithms"
+
+
+@pytest.mark.parametrize("export_name", GRPO_PACKAGE_ALGORITHM_EXPORTS)
+def test_grpo_package_algorithm_exports_resolve_by_identity(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    grpo = import_module("src.model.post_training.grpo")
+    algorithms = import_module("src.model.post_training.grpo.algorithms")
+
+    assert export_name in grpo.__all__
+    assert getattr(grpo, export_name) is getattr(algorithms, export_name)
+
+
+@pytest.mark.parametrize("export_name", ROOT_ALGORITHM_EXPORTS)
+def test_root_algorithm_exports_resolve_by_identity(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    root = import_module("src")
+    algorithms = import_module("src.model.post_training.grpo.algorithms")
+
+    assert export_name in root.__all__
+    assert getattr(root, export_name) is getattr(algorithms, export_name)
+
+
+@pytest.mark.parametrize("export_name", POST_TRAINING_ALGORITHM_EXPORTS)
+def test_post_training_algorithm_exports_resolve_by_identity(export_name: str):
+    pytest.importorskip("torch", exc_type=ImportError)
+
+    post_training = import_module("src.model.post_training")
+    algorithms = import_module("src.model.post_training.grpo.algorithms")
+
+    assert getattr(post_training, export_name) is getattr(algorithms, export_name)
 
 
 @pytest.mark.parametrize(

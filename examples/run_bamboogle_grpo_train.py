@@ -130,7 +130,7 @@ def _run(args: argparse.Namespace) -> None:
     import torch
 
     from src.model.post_training.eval.bamboogle import load_bamboogle
-    from src.model.post_training.grpo.judge import (
+    from src.model.post_training.grpo.algorithms import (
         LLMJudge,
         SimulatedPreferenceJudge,
     )
