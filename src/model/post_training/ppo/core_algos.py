@@ -7,7 +7,7 @@ plus the small numerical primitives it is built from.
 
 `grpo` depends on this package, and that direction is deliberate: GRPO *is* the
 PPO clipped surrogate with a group-relative advantage substituted for GAE, so
-`grpo/trainers.py` and `grpo/training.py` call straight into
+`grpo/training.py` calls straight into
 `compute_ppo_policy_loss_core` and `PPOPolicyLossConfig`. `grpo/generation.py`
 uses this layer directly too.
 

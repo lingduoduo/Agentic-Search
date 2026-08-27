@@ -247,16 +247,25 @@ with the shared building blocks at the top level:
   KL controllers, `PPOPolicyLossConfig`, the masked-tensor primitives, and
   `PPORewardManager`. No trainer, no critic, no GAE. `grpo/` depends on it, since
   GRPO is this surrogate with a group-relative advantage in place of GAE
-- `grpo/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
-  SearchAgentLoop), `generation.py` (the rollout/generation manager, moved here from
-  `src/model/` so the serving layer no longer depends on training) + `tensor_helper.py`,
-  grouped rollout sampling, a controller, a durable train loop, and
-  `core_algos.py` (the token-level GRPO advantage `compute_grpo_token_advantages`
-  + the REINFORCE losses, kept as the ancestor policy-gradient algorithm; the
-  scalar group-relative advantage primitive shared by every trainer lives in
-  `post_training/reward.py`, which is torch-free), and `judge.py` (RLAIF judges — moved here because its
-  only consumers are GRPO scripts; a future judge-backed DPO loader would make
-  `dpo/` import `grpo/`, a cost accepted deliberately)
+- `grpo/` — the GRPO stack built on `ppo/`, four implementation modules layered
+  `training -> generation -> {algorithms, core_algos}` (never the reverse):
+  `algorithms.py` (grouped rollout sampling/scoring, RLAIF judges, on-policy
+  batch assembly — **torch-free**, like `reward.py`), `core_algos.py` (the
+  token-level GRPO advantage `compute_grpo_token_advantages` + the REINFORCE
+  losses; this is the package's torch boundary and is split out for exactly
+  that reason — folding it into `algorithms.py` made the judges unimportable
+  without torch and silently dropped 17 tests from the torch-free CI job),
+  `generation.py` (the rollout/generation manager and
+  trajectory/tensor assembly, moved here from `src/model/` so the serving layer
+  no longer depends on training), and `training.py` (all three trainers — bandit,
+  HF causal-LM, live SearchAgentLoop — plus the local controller, checkpointing,
+  and the durable train loop). The scalar group-relative advantage primitive
+  shared by every trainer lives in `post_training/reward.py`, which is torch-free.
+  The judges live here because their only consumers are GRPO scripts; a future
+  judge-backed DPO loader would make `dpo/` import `grpo/`, a cost accepted
+  deliberately
+- `log_probs.py` — causal-LM response-token log-probs, shared by DPO and GRPO.
+  Neutral on purpose: DPO must not import a GRPO trainer for token alignment
 - `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
   the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
 - `eval/` — Bamboogle and action-policy benchmark harnesses

@@ -1,13 +1,21 @@
-"""GRPO and REINFORCE: the variants built on the PPO surrogate.
+"""GRPO and REINFORCE: the tensor-level variants built on the PPO surrogate.
 
 The clipped surrogate itself, the KL controllers and the masked-tensor
-primitives live one layer down in `src/model/post_training/ppo`; this module holds what is
-specific to the algorithms this package actually trains with -- GRPO's group-relative
-advantage and its config wrapper, and the REINFORCE losses.
+primitives live one layer down in ``src/model/post_training/ppo``; this module
+holds what is specific to the algorithms this package trains with -- GRPO's
+token-level group-relative advantage and the REINFORCE losses.
 
-`compute_grpo_policy_loss` delegates the arithmetic to
-`compute_trajectory_policy_loss` in that base layer, which is the honest shape:
-GRPO is the PPO surrogate with a different advantage.
+**Why this is not in `algorithms.py`.** It was, briefly. Everything here needs
+torch, and everything in ``algorithms.py`` -- grouped rollout sampling, scoring
+and the judges -- does not. Merging them made ``algorithms.py`` unimportable
+without torch, which silently dropped 17 judge tests from the torch-free CI
+gate. The module count is not worth that: this file is the torch boundary, and
+the split is what keeps ``algorithms.py`` and ``reward.py`` the torch-free half
+of post-training.
+
+``compute_grpo_policy_loss`` delegates the arithmetic to
+``compute_trajectory_policy_loss`` in that base layer, which is the honest
+shape: GRPO is the PPO surrogate with a different advantage.
 """
 
 from __future__ import annotations
@@ -32,9 +40,8 @@ def compute_grpo_token_advantages(
     """Group-normalized outcome advantages expanded over response tokens.
 
     Named for its shape: unlike the scalar ``compute_grpo_outcome_advantage``
-    in :mod:`src.model.post_training.grpo.rollouts`, this returns a
-    ``(batch, seq_len)`` tensor with each rollout's advantage broadcast across
-    its response tokens.
+    below, this returns a ``(batch, seq_len)`` tensor with each rollout's
+    advantage broadcast across its response tokens.
 
     Args:
         token_level_rewards: ``(batch, seq_len)`` sparse reward tensor.

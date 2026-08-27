@@ -804,24 +804,67 @@ class SearchRewardFunction:
         """Correctness dimension: the terminal judge-scored reward."""
         return {"correctness": self.config.correctness_weight * correctness}
 
+    _ZERO_CITATION_COMPONENTS: dict[str, float] = {
+        "citation_support": 0.0,
+        "unsupported_claim_penalty": 0.0,
+        "fetch_usefulness_reward": 0.0,
+        "format_reward": 0.0,
+    }
+
     def _citation_components(
         self,
         answer: str,
         ctx: AgentContext | None,
         metrics: dict[str, float],
     ) -> dict[str, float]:
-        """Citation-support dimension: grounding of claims in retrieved evidence."""
+        """Citation-support dimension: grounding of claims in retrieved evidence.
+
+        The three grounding terms all ask the same question of the answer text —
+        which retrieved results does it cite? — so the citation keys are
+        resolved once here and shared, rather than re-parsed by each term.
+        """
         cfg = self.config
+        cites_weighted = (
+            cfg.citation_support_weight != 0.0
+            or cfg.fetch_usefulness_reward != 0.0
+            or cfg.unsupported_claim_penalty != 0.0
+        )
+        if not cites_weighted and cfg.format_reward_weight == 0.0:
+            # Every term in this dimension is switched off; resolving citations
+            # could only produce zeros.
+            return dict(self._ZERO_CITATION_COMPONENTS)
+
+        cited_ids: frozenset[str] = frozenset()
+        num_results = 0
+        if cites_weighted and answer and ctx is not None:
+            num_results = ctx.num_results
+            if num_results:
+                cited_ids = ctx.cited_result_ids(answer)
+
         return {
             # Fraction of retrieved docs cited in the answer.
-            "citation_support": cfg.citation_support_weight
-            * self._citation_support(answer, ctx),
+            "citation_support": (
+                cfg.citation_support_weight * (len(cited_ids) / num_results)
+                if cfg.citation_support_weight != 0.0 and num_results
+                else 0.0
+            ),
             # Fires when the agent searched, got results, and cited none.
-            "unsupported_claim_penalty": self._unsupported_claim_penalty(
-                answer, ctx, metrics
+            "unsupported_claim_penalty": (
+                cfg.unsupported_claim_penalty
+                if (
+                    cfg.unsupported_claim_penalty != 0.0
+                    and num_results
+                    and not cited_ids
+                    and metrics.get("rounds_used", 0) > 0
+                )
+                else 0.0
             ),
             # Fetched pages help only when their URLs end up cited.
-            "fetch_usefulness_reward": self._fetch_usefulness_reward(answer, ctx),
+            "fetch_usefulness_reward": (
+                self._fetch_usefulness_reward(answer, ctx, cited_ids)
+                if cfg.fetch_usefulness_reward != 0.0
+                else 0.0
+            ),
             # Reward for inline citation labels in the answer.
             "format_reward": (
                 cfg.format_reward_weight * format_compliance_reward(answer)
@@ -830,9 +873,31 @@ class SearchRewardFunction:
             ),
         }
 
+    _ZERO_RETRIEVAL_COMPONENTS: dict[str, float] = {
+        "search_quality": 0.0,
+        "subquestion_coverage": 0.0,
+        "evidence_gain": 0.0,
+        "early_stop_bonus": 0.0,
+        "answer_when_evidence_insufficient_penalty": 0.0,
+        "forced_final_answer_penalty": 0.0,
+        "search_budget_exhausted_without_answer_penalty": 0.0,
+    }
+
     def _retrieval_components(self, metrics: dict[str, float]) -> dict[str, float]:
         """Retrieval-quality dimension: sufficiency of the gathered evidence."""
         cfg = self.config
+        # Ordered so a shaped config exits on its first weighted term; a fully
+        # zeroed preset falls through to the constant and skips the arithmetic.
+        if (
+            cfg.search_quality_weight == 0.0
+            and cfg.subquestion_coverage_weight == 0.0
+            and cfg.answer_when_evidence_insufficient_penalty == 0.0
+            and cfg.forced_final_answer_penalty == 0.0
+            and cfg.search_budget_exhausted_without_answer_penalty == 0.0
+            and cfg.evidence_gain_weight == 0.0
+            and cfg.early_stop_bonus == 0.0
+        ):
+            return dict(self._ZERO_RETRIEVAL_COMPONENTS)
         return {
             # Evaluator sufficiency verdict blended with per-round query quality.
             "search_quality": cfg.search_quality_weight * self._search_quality(metrics),
@@ -859,9 +924,30 @@ class SearchRewardFunction:
             ),
         }
 
+    _ZERO_EFFICIENCY_COMPONENTS: dict[str, float] = {
+        "per_search_penalty": 0.0,
+        "unnecessary_search_penalty": 0.0,
+        "duplicate_query_penalty": 0.0,
+        "budget_penalty": 0.0,
+        "unnecessary_fetch_penalty": 0.0,
+        "retriever_cost": 0.0,
+        "rerank_cost": 0.0,
+    }
+
     def _efficiency_components(self, metrics: dict[str, float]) -> dict[str, float]:
         """Search-efficiency dimension: cost of the search/fetch/rerank actions."""
         cfg = self.config
+        if (
+            cfg.unnecessary_search_penalty == 0.0
+            and cfg.duplicate_query_penalty == 0.0
+            and cfg.budget_penalty == 0.0
+            and cfg.unnecessary_fetch_penalty == 0.0
+            and cfg.per_search_penalty == 0.0
+            and cfg.retriever_cost_web == 0.0
+            and cfg.retriever_cost_vdb == 0.0
+            and cfg.rerank_cost == 0.0
+        ):
+            return dict(self._ZERO_EFFICIENCY_COMPONENTS)
         rounds_used = int(metrics.get("rounds_used", 0))
         budget_fraction = rounds_used / max(cfg.max_search_rounds, 1)
         budget_pen = (
@@ -983,7 +1069,9 @@ class SearchRewardFunction:
         This is the core outcome-based GRPO signal: no separate value model, no
         token-level critic targets, and no cross-prompt mixing.
         Single-sample groups get advantage 0.0 because there is no relative
-        within-group comparison signal.
+        within-group comparison signal.  The arithmetic itself lives in
+        :func:`grouped_relative_advantages`, the one kernel every advantage
+        path in the repo shares.
         """
         return grouped_relative_advantages(rewards, group_ids)
 
@@ -1024,14 +1112,6 @@ class SearchRewardFunction:
         )
 
     @staticmethod
-    def _citation_support(answer: str, ctx: AgentContext | None) -> float:
-        """Fraction of retrieved results that are cited in *answer*."""
-        if ctx is None or ctx.num_results == 0 or not answer:
-            return 0.0
-        cited = len(ctx.cited_result_ids(answer))
-        return cited / ctx.num_results
-
-    @staticmethod
     def _search_quality(metrics: dict[str, float]) -> float:
         """Blend final evidence sufficiency with average per-round query quality."""
         final_sufficient = metrics.get("final_evidence_sufficient", 0.0)
@@ -1042,42 +1122,19 @@ class SearchRewardFunction:
             return metrics.get("answer_allowed", 0.0)
         return (final_sufficient + avg_quality) / 2.0
 
-    def _unsupported_claim_penalty(
-        self,
-        answer: str,
-        ctx: AgentContext | None,
-        metrics: dict,
-    ) -> float:
-        """Penalty fired when the agent searched but cited none of the results.
-
-        Conditions for the penalty to fire (all must be true):
-        - The answer is non-empty.
-        - The agent issued at least one search (rounds_used > 0).
-        - Retrieved results exist (ctx.num_results > 0).
-        - The answer cites zero of those results.
-
-        This catches the fabrication pattern: the model searched, received
-        documents, and then wrote an answer that ignores all of them — a sign
-        that it is drawing on prior knowledge (or hallucinating) rather than
-        grounding claims in the retrieved evidence.
-        """
-        if not answer or self.config.unsupported_claim_penalty == 0.0:
-            return 0.0
-        if metrics.get("rounds_used", 0) <= 0:
-            return 0.0
-        if ctx is None or ctx.num_results == 0:
-            return 0.0
-        if len(ctx.cited_result_ids(answer)) > 0:
-            return 0.0
-        return self.config.unsupported_claim_penalty
-
     def _fetch_usefulness_reward(
         self,
         answer: str,
         ctx: AgentContext | None,
+        cited_ids: frozenset[str],
     ) -> float:
-        """Reward fetches only when fetched URLs are actually used in cited evidence."""
-        if not answer or ctx is None or not ctx.fetched_pages:
+        """Reward fetches only when fetched URLs are actually used in cited evidence.
+
+        *cited_ids* is the already-resolved citation set for *answer*.  An answer
+        that cites nothing cannot cite a fetched page, so the second context
+        traversal is skipped entirely in that case.
+        """
+        if not answer or not cited_ids or ctx is None or not ctx.fetched_pages:
             return 0.0
 
         fetched_urls = {page.url for page in ctx.fetched_pages if page.url}

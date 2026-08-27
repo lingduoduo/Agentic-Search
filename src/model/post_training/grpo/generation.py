@@ -30,6 +30,9 @@ from ..ppo.core_algos import (
     masked_whiten,
 )
 from ..reward import group_relative_advantages
+from .core_algos import (
+    compute_grpo_token_advantages as compute_grpo_token_advantages,
+)
 
 
 @dataclass(frozen=True)
@@ -797,7 +800,7 @@ def score_group_rollout(
         advantage_config: Optional :class:`GRPOAdvantageConfig`.
         batch_judge_fn:   Optional batch judge for LLM-based scoring.
     """
-    from .rollouts import GRPORolloutSample, score_prompt_group
+    from .algorithms import GRPORolloutSample, score_prompt_group
     from ..reward import SearchRewardFunction
 
     if not grouped_rollouts:
@@ -1243,7 +1246,7 @@ async def async_run_prompt_rollout_group(
     import asyncio
     import copy
 
-    from .rollouts import build_grpo_sampling_params
+    from .algorithms import build_grpo_sampling_params
 
     n_prompts = len(prompt_batches)
     if n_prompts == 0:
@@ -1296,6 +1299,21 @@ async def async_run_prompt_rollout_group(
     return result
 
 
+def _left_pad_rows(rows: list[torch.Tensor], pad_id: int) -> torch.Tensor:
+    """Stack variable-length 1-D rows into a left-padded ``(N, max_len)`` tensor.
+
+    Prompts are left-padded so every sequence ends at the same position and the
+    response tokens line up across the batch.  ``pad_sequence`` only right-pads,
+    and reversing each row to borrow it measured *slower* than this preallocated
+    copy, which also avoids round-tripping every row through a Python list.
+    """
+    width = max(row.numel() for row in rows)
+    padded = torch.full((len(rows), width), pad_id, dtype=torch.long)
+    for index, row in enumerate(rows):
+        padded[index, width - row.numel() :] = row
+    return padded
+
+
 def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
     """Slice one prompt out of a PromptBatch, preserving batch structure."""
     from ..data import PromptBatch
@@ -1309,6 +1327,314 @@ def _single_prompt_batch(prompt_batch: Any, index: int) -> Any:
         ground_truths=[prompt_batch.ground_truths[index]],
         tools=[list(prompt_batch.tools[index])],
         metadata=[dict(prompt_batch.metadata[index])],
+    )
+
+
+def _score_grouped_rollouts_core(
+    manager: "LLMGenerationManager",
+    prompt_batch: Any,
+    single_batches: list[Any],
+    grouped_results: list[list[GroupedRolloutBatch]],
+    *,
+    judge_fn: Callable[[str, str], float],
+    reward_fn: Any,
+    advantage_config: Any,
+    batch_judge_fn: Any,
+    safety_config: GRPORolloutSafetyConfig | None,
+) -> tuple[list[GRPOPromptGroupResult], list[ScoredGroupedRollout]]:
+    """Score grouped rollouts and apply safety penalties once per group."""
+    from .algorithms import GRPOAdvantageConfig
+
+    resolved_advantage = advantage_config or GRPOAdvantageConfig(
+        mode="group_outcome",
+        reward_component="total",
+    )
+    resolved_safety = safety_config or GRPORolloutSafetyConfig(
+        max_search_rounds=manager.config.max_search_rounds,
+        max_total_rounds=manager.config.max_total_rounds,
+        allowed_actions=tuple(manager.config.allowed_actions),
+    )
+    normalize_advantages = resolved_advantage.mode == "group_std_normalized"
+
+    group_results: list[GRPOPromptGroupResult] = []
+    scored_rollouts: list[ScoredGroupedRollout] = []
+    for question, single_batch, grouped in zip(
+        prompt_batch.questions, single_batches, grouped_results
+    ):
+        scored = score_group_rollout(
+            grouped,
+            ground_truth=single_batch.ground_truths[0],
+            judge_fn=judge_fn,
+            reward_fn=reward_fn,
+            advantage_config=resolved_advantage,
+            batch_judge_fn=batch_judge_fn,
+        )
+        scored = apply_safety_penalties_to_scored_rollouts(
+            scored,
+            config=resolved_safety,
+            normalize_advantages=normalize_advantages,
+        )
+        group_results.append(
+            GRPOPromptGroupResult(
+                question=question,
+                ground_truth=single_batch.ground_truths[0],
+                grouped_rollouts=grouped,
+                scored_rollouts=scored,
+            )
+        )
+        scored_rollouts.extend(scored)
+    return group_results, scored_rollouts
+
+
+def _collect_grpo_rollouts_core(
+    manager: "LLMGenerationManager",
+    prompt_batch: Any,
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    judge_fn: Callable[[str, str], float],
+    num_rollouts: int,
+    reward_fn: Any,
+    advantage_config: Any,
+    batch_judge_fn: Any,
+    safety_config: GRPORolloutSafetyConfig | None,
+    base_seed: int | None,
+    current_step: int,
+    total_steps: int,
+) -> tuple[list[GRPOPromptGroupResult], list[ScoredGroupedRollout]]:
+    """Collect and score rollouts sequentially for one prompt batch."""
+    single_batches = [
+        _single_prompt_batch(prompt_batch, i)
+        for i in range(len(prompt_batch.questions))
+    ]
+    grouped_results = []
+    for index, single_batch in enumerate(single_batches):
+        seed = None if base_seed is None else base_seed + index * num_rollouts
+        grouped_results.append(
+            manager.run_prompt_rollout_group(
+                single_batch,
+                search_mode=search_mode,
+                sampling_params=sampling_params,
+                num_rollouts=num_rollouts,
+                base_seed=seed,
+                current_step=current_step,
+                total_steps=total_steps,
+            )
+        )
+    return _score_grouped_rollouts_core(
+        manager,
+        prompt_batch,
+        single_batches,
+        grouped_results,
+        judge_fn=judge_fn,
+        reward_fn=reward_fn,
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+        safety_config=safety_config,
+    )
+
+
+async def _async_collect_grpo_rollouts_core(
+    manager: "LLMGenerationManager",
+    prompt_batch: Any,
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    judge_fn: Callable[[str, str], float],
+    num_rollouts: int,
+    reward_fn: Any,
+    advantage_config: Any,
+    batch_judge_fn: Any,
+    safety_config: GRPORolloutSafetyConfig | None,
+    base_seed: int | None,
+    current_step: int,
+    total_steps: int,
+    max_workers: int | None,
+) -> tuple[list[GRPOPromptGroupResult], list[ScoredGroupedRollout]]:
+    """Collect and score all prompt rollouts concurrently."""
+    single_batches = [
+        _single_prompt_batch(prompt_batch, i)
+        for i in range(len(prompt_batch.questions))
+    ]
+    grouped_results = await async_run_prompt_rollout_group(
+        manager,
+        single_batches,
+        search_mode=search_mode,
+        sampling_params=sampling_params,
+        num_rollouts=num_rollouts,
+        base_seed=base_seed,
+        current_step=current_step,
+        total_steps=total_steps,
+        max_workers=max_workers,
+    )
+    return _score_grouped_rollouts_core(
+        manager,
+        prompt_batch,
+        single_batches,
+        grouped_results,
+        judge_fn=judge_fn,
+        reward_fn=reward_fn,
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+        safety_config=safety_config,
+    )
+
+
+def _apply_grpo_loss_and_step_core(
+    manager: "LLMGenerationManager",
+    group_results: list[GRPOPromptGroupResult],
+    scored_rollouts: list[ScoredGroupedRollout],
+    *,
+    old_backend: LogProbCapable | None,
+    new_backend: LogProbCapable | None,
+    ref_backend: LogProbCapable | None,
+    loss_config: PPOPolicyLossConfig | None,
+    optimizer: Any,
+) -> GRPOTrainingStepResult:
+    """Assemble one learner batch, compute its loss, and optionally update."""
+    training_batch = manager.collate_scored_rollouts_for_training(scored_rollouts)
+    if "old_log_probs" not in training_batch.batch or old_backend is not None:
+        manager.compute_log_prob(
+            training_batch,
+            backend=old_backend or manager.generation_backend,
+            store_key="old_log_probs",
+            overwrite=(
+                old_backend is not None or "old_log_probs" not in training_batch.batch
+            ),
+        )
+    manager.compute_log_prob(
+        training_batch,
+        backend=new_backend or manager.generation_backend,
+        store_key="new_log_probs",
+    )
+    if ref_backend is not None:
+        manager.compute_log_prob(
+            training_batch,
+            backend=ref_backend,
+            store_key="ref_log_probs",
+        )
+
+    loss = manager.compute_policy_loss(training_batch, config=loss_config)
+    optimizer_stepped = False
+    if optimizer is not None:
+        try:
+            optimizer.zero_grad(set_to_none=True)
+        except TypeError:
+            optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        optimizer_stepped = True
+
+    rewards = [rollout.reward for rollout in scored_rollouts]
+    advantages = [rollout.advantage for rollout in scored_rollouts]
+    return GRPOTrainingStepResult(
+        group_results=group_results,
+        scored_rollouts=scored_rollouts,
+        training_batch=training_batch,
+        loss=loss,
+        optimizer_stepped=optimizer_stepped,
+        mean_reward=(sum(rewards) / len(rewards)) if rewards else 0.0,
+        mean_advantage=(sum(advantages) / len(advantages)) if advantages else 0.0,
+    )
+
+
+def _run_grpo_training_step_core(
+    manager: "LLMGenerationManager",
+    prompt_batch: Any,
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    judge_fn: Callable[[str, str], float],
+    num_rollouts: int,
+    reward_fn: Any,
+    advantage_config: Any,
+    batch_judge_fn: Any,
+    old_backend: LogProbCapable | None,
+    new_backend: LogProbCapable | None,
+    ref_backend: LogProbCapable | None,
+    loss_config: PPOPolicyLossConfig | None,
+    safety_config: GRPORolloutSafetyConfig | None,
+    optimizer: Any,
+    base_seed: int | None,
+    current_step: int,
+    total_steps: int,
+) -> GRPOTrainingStepResult:
+    """Generation-owned mechanics for a sequential GRPO training step."""
+    group_results, scored_rollouts = _collect_grpo_rollouts_core(
+        manager,
+        prompt_batch,
+        search_mode=search_mode,
+        sampling_params=sampling_params,
+        judge_fn=judge_fn,
+        num_rollouts=num_rollouts,
+        reward_fn=reward_fn,
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+        safety_config=safety_config,
+        base_seed=base_seed,
+        current_step=current_step,
+        total_steps=total_steps,
+    )
+    return _apply_grpo_loss_and_step_core(
+        manager,
+        group_results,
+        scored_rollouts,
+        old_backend=old_backend,
+        new_backend=new_backend,
+        ref_backend=ref_backend,
+        loss_config=loss_config,
+        optimizer=optimizer,
+    )
+
+
+async def _async_run_grpo_training_step_core(
+    manager: "LLMGenerationManager",
+    prompt_batch: Any,
+    *,
+    search_mode: str,
+    sampling_params: dict[str, Any],
+    judge_fn: Callable[[str, str], float],
+    num_rollouts: int,
+    reward_fn: Any,
+    advantage_config: Any,
+    batch_judge_fn: Any,
+    old_backend: LogProbCapable | None,
+    new_backend: LogProbCapable | None,
+    ref_backend: LogProbCapable | None,
+    loss_config: PPOPolicyLossConfig | None,
+    safety_config: GRPORolloutSafetyConfig | None,
+    optimizer: Any,
+    base_seed: int | None,
+    current_step: int,
+    total_steps: int,
+    max_workers: int | None,
+) -> GRPOTrainingStepResult:
+    """Generation-owned mechanics for a concurrent GRPO training step."""
+    group_results, scored_rollouts = await _async_collect_grpo_rollouts_core(
+        manager,
+        prompt_batch,
+        search_mode=search_mode,
+        sampling_params=sampling_params,
+        judge_fn=judge_fn,
+        num_rollouts=num_rollouts,
+        reward_fn=reward_fn,
+        advantage_config=advantage_config,
+        batch_judge_fn=batch_judge_fn,
+        safety_config=safety_config,
+        base_seed=base_seed,
+        current_step=current_step,
+        total_steps=total_steps,
+        max_workers=max_workers,
+    )
+    return _apply_grpo_loss_and_step_core(
+        manager,
+        group_results,
+        scored_rollouts,
+        old_backend=old_backend,
+        new_backend=new_backend,
+        ref_backend=ref_backend,
+        loss_config=loss_config,
+        optimizer=optimizer,
     )
 
 
@@ -3279,7 +3605,7 @@ class LLMGenerationManager:
         metadata on the returned rollout batch so custom backends can consume
         them if needed.
         """
-        from .rollouts import build_grpo_sampling_params
+        from .algorithms import build_grpo_sampling_params
 
         if num_rollouts <= 0:
             raise ValueError("num_rollouts must be positive.")
@@ -3473,36 +3799,29 @@ class LLMGenerationManager:
                 token_advantages[action_positions[-1]] = float(scored.advantage)
             advantage_rows.append(token_advantages)
 
-            old_row = batch.batch.get("old_log_probs")
-            old_values = (
-                old_row[0].tolist()
-                if old_row is not None and old_row.shape[0] > 0
-                else None
-            )
-            if old_values is None:
-                old_values = _response_slice_from_traj(traj.old_log_probs, traj)
-            if old_values is not None:
-                old_log_prob_rows.append(torch.tensor(old_values, dtype=torch.float32))
+            for key, traj_values, rows in (
+                ("old_log_probs", traj.old_log_probs, old_log_prob_rows),
+                ("ref_log_probs", traj.ref_log_probs, ref_log_prob_rows),
+            ):
+                stored = batch.batch.get(key)
+                if stored is not None and stored.shape[0] > 0:
+                    # Already a tensor: slice the row out instead of round-
+                    # tripping it through a Python list and back (~5x cheaper).
+                    # The result is a *view* onto `stored`; that is safe only
+                    # because the pad_sequence below copies. Switching to
+                    # torch.stack, or mutating a row in place, would need a
+                    # .clone() here. `device="cpu"` preserves what the previous
+                    # `.tolist()` round-trip forced, so a CUDA-resident row
+                    # cannot land in an otherwise-CPU batch.
+                    rows.append(
+                        stored[0].detach().to(device="cpu", dtype=torch.float32)
+                    )
+                    continue
+                values = _response_slice_from_traj(traj_values, traj)
+                if values is not None:
+                    rows.append(torch.tensor(values, dtype=torch.float32))
 
-            ref_row = batch.batch.get("ref_log_probs")
-            ref_values = (
-                ref_row[0].tolist()
-                if ref_row is not None and ref_row.shape[0] > 0
-                else None
-            )
-            if ref_values is None:
-                ref_values = _response_slice_from_traj(traj.ref_log_probs, traj)
-            if ref_values is not None:
-                ref_log_prob_rows.append(torch.tensor(ref_values, dtype=torch.float32))
-
-        max_prompt_len = max(row.numel() for row in prompt_rows)
-        prompts = torch.tensor(
-            [
-                [pad_id] * (max_prompt_len - row.numel()) + row.tolist()
-                for row in prompt_rows
-            ],
-            dtype=torch.long,
-        )
+        prompts = _left_pad_rows(prompt_rows, pad_id)
         prompt_attention = (prompts != pad_id).long()
         responses = torch.nn.utils.rnn.pad_sequence(
             response_rows,
@@ -3588,12 +3907,11 @@ class LLMGenerationManager:
     ) -> GRPOTrainingStepResult:
         """Run one end-to-end GRPO trainer step over a PromptBatch.
 
-        Kept as the public compatibility entrypoint; orchestration lives in the
-        local PPO controller layer.
+        Kept as the public compatibility entrypoint over generation-owned
+        lower-level step mechanics.
         """
-        from .training import LocalGRPOController
-
-        return LocalGRPOController(self, num_rollouts=num_rollouts).training_step(
+        return _run_grpo_training_step_core(
+            self,
             prompt_batch,
             search_mode=search_mode,
             sampling_params=sampling_params,

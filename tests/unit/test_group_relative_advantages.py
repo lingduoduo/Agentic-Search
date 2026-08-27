@@ -94,7 +94,7 @@ def test_grouped_rejects_mismatched_lengths():
 
 @pytest.mark.parametrize("rewards", CASES)
 def test_matches_rollouts_compute_grpo_outcome_advantage(rewards: list[float]):
-    from src.model.post_training.grpo.rollouts import compute_grpo_outcome_advantage
+    from src.model.post_training.grpo.algorithms import compute_grpo_outcome_advantage
 
     assert group_relative_advantages(rewards) == pytest.approx(
         compute_grpo_outcome_advantage(list(rewards))

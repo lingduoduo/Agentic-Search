@@ -1,8 +1,14 @@
 """Render collected PPO / GRPO rollout traces as lightweight HTML plots.
 
 The training pipeline can already write rollout JSONL via
-``save_training_batch_jsonl``.  This module turns those records into a
+``save_training_batch_jsonl``.  This script turns those records into a
 shareable, screenshot-friendly trace view without extra plotting dependencies.
+
+It lives here rather than under ``src/model/post_training/grpo`` because it is a
+command-line utility, not a training concern: nothing in the library imports it,
+and it needs neither torch nor the agent loop.
+
+    python -m examples.plot_grpo_rollouts --jsonl rollouts.jsonl --out trace.html
 """
 
 from __future__ import annotations
@@ -185,7 +191,7 @@ def save_rollout_plot(
     return len(records if max_records is None else records[:max_records])
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jsonl", required=True, help="Path to rollout JSONL.")
     parser.add_argument("--out", required=True, help="Output HTML path.")
@@ -196,7 +202,11 @@ def main() -> None:
         help="Number of rollout records to render. Use 0 for all records.",
     )
     parser.add_argument("--title", default="Rollout Trace")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
     max_records = None if args.max_records == 0 else args.max_records
     count = save_rollout_plot(
         args.jsonl,

@@ -11,13 +11,13 @@ for the benchmark harnesses.
 """
 
 try:
-    from .grpo.rollouts import GRPOAdvantageConfig as GRPOAdvantageConfig
-    from .grpo.rollouts import PromptGroupSamplingConfig as PromptGroupSamplingConfig
-    from .grpo.rollouts import compute_dapo_advantages as compute_dapo_advantages
-    from .grpo.rollouts import (
+    from .grpo.algorithms import GRPOAdvantageConfig as GRPOAdvantageConfig
+    from .grpo.algorithms import PromptGroupSamplingConfig as PromptGroupSamplingConfig
+    from .grpo.algorithms import compute_dapo_advantages as compute_dapo_advantages
+    from .grpo.algorithms import (
         compute_grpo_outcome_advantage as compute_grpo_outcome_advantage,
     )
-    from .grpo.rollouts import score_prompt_group as score_prompt_group
+    from .grpo.algorithms import score_prompt_group as score_prompt_group
     from .ppo import PPORewardManager as PPORewardManager
     from .grpo import compute_grpo_policy_loss as compute_grpo_policy_loss
     from .reward import BatchJudgeFn as BatchJudgeFn
@@ -28,10 +28,10 @@ try:
     from .reward import token_f1_score as token_f1_score
     from .sft.trainer import SFTExample as SFTExample
     from .sft.trainer import build_search_sft_example as build_search_sft_example
-    from .grpo.judge import GoldAgreementJudge as GoldAgreementJudge
-    from .grpo.judge import LLMJudge as LLMJudge
-    from .grpo.judge import SimulatedPreferenceJudge as SimulatedPreferenceJudge
-    from .grpo.judge import judge_gold_agreement as judge_gold_agreement
+    from .grpo.algorithms import GoldAgreementJudge as GoldAgreementJudge
+    from .grpo.algorithms import LLMJudge as LLMJudge
+    from .grpo.algorithms import SimulatedPreferenceJudge as SimulatedPreferenceJudge
+    from .grpo.algorithms import judge_gold_agreement as judge_gold_agreement
     from .data import PromptBatch as PromptBatch
     from .data import PromptTrainingExample as PromptTrainingExample
     from .data import build_search_rag_record as build_search_rag_record
