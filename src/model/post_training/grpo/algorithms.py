@@ -807,8 +807,8 @@ def compute_grpo_outcome_advantage(
     rewards: list[float] | torch.Tensor | object = _NOT_GIVEN,
     eos_mask: torch.Tensor | object = _NOT_GIVEN,
     index: torch.Tensor | object = _NOT_GIVEN,
-    epsilon: float = 1e-6,
-    clip_advantages: float | None = None,
+    epsilon: float | object = _NOT_GIVEN,
+    clip_advantages: float | None | object = _NOT_GIVEN,
     *,
     token_level_rewards: torch.Tensor | object = _NOT_GIVEN,
 ) -> list[float] | tuple[torch.Tensor, torch.Tensor]:
@@ -833,15 +833,21 @@ def compute_grpo_outcome_advantage(
             raise TypeError(
                 "tensor GRPO advantages require eos_mask and index arguments"
             )
+        resolved_epsilon = 1e-6 if epsilon is _NOT_GIVEN else epsilon
+        resolved_clip_advantages = (
+            None if clip_advantages is _NOT_GIVEN else clip_advantages
+        )
         return _compute_grpo_outcome_advantage_tensor(
             rewards,
             eos_mask,
             index,
-            epsilon=epsilon,
-            clip_advantages=clip_advantages,
+            epsilon=resolved_epsilon,
+            clip_advantages=resolved_clip_advantages,
         )
 
-    if eos_mask is not _NOT_GIVEN or index is not _NOT_GIVEN:
+    if any(
+        value is not _NOT_GIVEN for value in (eos_mask, index, epsilon, clip_advantages)
+    ):
         raise TypeError("list GRPO advantages accept only the rewards argument")
     return _compute_grpo_outcome_advantage_list(rewards)
 

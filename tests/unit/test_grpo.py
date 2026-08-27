@@ -81,6 +81,21 @@ def test_compute_grpo_outcome_advantage_single_sample_group_returns_zero():
     assert compute_grpo_outcome_advantage([2.0]) == [0.0]
 
 
+@pytest.mark.parametrize(
+    "tensor_only_option",
+    [
+        {"epsilon": 1e-6},
+        {"clip_advantages": None},
+    ],
+    ids=["epsilon", "clip_advantages"],
+)
+def test_compute_grpo_outcome_advantage_rejects_tensor_options_for_list_rewards(
+    tensor_only_option: dict[str, float | None],
+):
+    with pytest.raises(TypeError):
+        compute_grpo_outcome_advantage([1.0, 0.0], **tensor_only_option)
+
+
 def test_sample_prompt_group_assigns_shared_group_id_and_rollout_indices():
     answers = iter(["direct", "search once", "decompose", "fetch"])
 

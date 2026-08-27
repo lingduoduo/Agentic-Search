@@ -249,12 +249,11 @@ with the shared building blocks at the top level:
   GRPO is this surrogate with a group-relative advantage in place of GAE
 - `grpo/` — the GRPO stack built on `ppo/`: three trainers (bandit, HF causal-LM, live
   SearchAgentLoop), `generation.py` (the rollout/generation manager, moved here from
-  `src/model/` so the serving layer no longer depends on training) + `tensor_helper.py`,
-  grouped rollout sampling, a controller, a durable train loop, and
-  `core_algos.py` (GRPO advantage + the REINFORCE losses, kept as the ancestor
-  policy-gradient algorithm), and `judge.py` (RLAIF judges — moved here because its
-  only consumers are GRPO scripts; a future judge-backed DPO loader would make
-  `dpo/` import `grpo/`, a cost accepted deliberately)
+  `src/model/` so the serving layer no longer depends on training), and
+  `algorithms.py` (GRPO advantage + the REINFORCE losses, grouped rollout
+  sampling/scoring, RLAIF judges, and on-policy batch assembly). The judges live
+  here because their only consumers are GRPO scripts; a future judge-backed DPO
+  loader would make `dpo/` import `grpo/`, a cost accepted deliberately
 - `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
   the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
 - `eval/` — Bamboogle and action-policy benchmark harnesses
