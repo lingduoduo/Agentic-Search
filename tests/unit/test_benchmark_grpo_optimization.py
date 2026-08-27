@@ -33,7 +33,8 @@ def test_measure_case_runs_warmups_outside_recorded_samples():
 
     result = measure_case("operation", operation, warmup=2, iterations=5)
 
-    assert calls == 7
+    # 2 warmups + 5 timed samples + 1 allocation pass.
+    assert calls == 8
     assert result.name == "operation"
     assert len(result.samples_ns) == 5
     assert result.median_ns > 0

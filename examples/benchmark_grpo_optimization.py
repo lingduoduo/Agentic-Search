@@ -124,12 +124,17 @@ def measure_case(
     for _ in range(warmup):
         fn()
 
-    tracemalloc.start()
+    # Timing and allocation are measured in separate passes on purpose:
+    # tracemalloc hooks every allocation and inflates wall-clock several-fold,
+    # which would make the timings measure the profiler rather than the code.
     samples: list[int] = []
     for _ in range(iterations):
         start = time.perf_counter_ns()
         fn()
         samples.append(time.perf_counter_ns() - start)
+
+    tracemalloc.start()
+    fn()
     _, peak_bytes = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 

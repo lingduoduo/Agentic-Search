@@ -22,7 +22,13 @@ from ..ppo.core_algos import (
     masked_mean,
     masked_whiten,
 )
-from ..reward import BatchJudgeFn, JudgeFn, SearchRewardFunction, _score_answers
+from ..reward import (
+    BatchJudgeFn,
+    JudgeFn,
+    SearchRewardFunction,
+    _score_answers,
+    compute_group_relative_advantages,
+)
 
 
 def _compute_grpo_outcome_advantage_tensor(
@@ -777,13 +783,14 @@ def _compute_grpo_outcome_advantage_list(rewards: list[float]) -> list[float]:
 
     For a single trajectory there is no relative comparison, so the returned
     advantage is `0.0`.
+
+    Every rollout here belongs to the same prompt group, so this is the shared
+    kernel over one group.
     """
-    if not rewards:
-        return []
-    if len(rewards) == 1:
-        return [0.0]
-    mean = sum(rewards) / len(rewards)
-    return [reward - mean for reward in rewards]
+    rewards = [float(reward) for reward in rewards]
+    return compute_group_relative_advantages(
+        rewards, ["_"] * len(rewards), normalize=False
+    )
 
 
 _NOT_GIVEN = object()
