@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from .cohort import EvalRecord
+from .cohort import CohortConfig, EvalRecord, generate_cohort
 from .instruction_following import CONSTRAINT_NAMES, check_constraints
 from .stats import (
     benjamini_hochberg,
@@ -296,3 +296,38 @@ def format_report(report: UnseenUserReport) -> str:
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def achieved_power(
+    config: CohortConfig,
+    *,
+    replications: int = 200,
+    alpha: float = 0.05,
+    resamples: int = 200,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Fraction of freshly generated cohorts on which each measurement fires.
+
+    This is what turns "statistically significant" into a statement about the
+    pipeline rather than about one lucky draw. Each replication regenerates the
+    cohort from a new seed; reusing one cohort would report the same result N
+    times and call it power.
+
+    Only meaningful for a generator whose ground truth is known -- which is why
+    it takes a config rather than records.
+    """
+    if replications < 1:
+        raise ValueError("replications must be at least 1.")
+
+    counts: dict[str, int] = {"alignment": 0}
+    for name in (*BEHAVIOR_COMPONENTS, *CONSTRAINT_NAMES):
+        counts[name] = 0
+
+    for index in range(replications):
+        records = generate_cohort(replace(config, seed=seed + index))
+        report = evaluate_unseen_users(records, seed=seed + index, resamples=resamples)
+        counts["alignment"] += int(report.alignment.ci_low > 0.5)
+        for result in (*report.behavior, *report.instruction):
+            counts[result.name] += int(result.p_adjusted < alpha)
+
+    return {name: value / replications for name, value in counts.items()}
