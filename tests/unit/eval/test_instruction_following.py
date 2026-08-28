@@ -98,6 +98,17 @@ def test_valid_json_naming_an_unregistered_tool_fails():
     assert result["tool_calls_parseable"] is False
 
 
+def test_valid_json_array_instead_of_object_fails():
+    """Valid JSON that is a list, not an object, must fail."""
+    result = check_constraints(
+        _record(tool_calls=('["search", {}]',)),
+        allowed_tools=TOOLS,
+        max_search_rounds=5,
+    )
+
+    assert result["tool_calls_parseable"] is False
+
+
 def test_a_record_with_no_tool_calls_vacuously_satisfies_the_constraint():
     result = check_constraints(
         _record(tool_calls=()), allowed_tools=TOOLS, max_search_rounds=5
