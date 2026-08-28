@@ -271,6 +271,8 @@ with the shared building blocks at the top level:
 - `eval/` — Bamboogle and action-policy benchmark harnesses, plus the
   unseen-user harness (`cohort.py`, `stats.py`, `instruction_following.py`,
   `unseen_users.py`): held-out-user conversion alignment, behavioral separation
-  and instruction following, every statistic clustered by user. Torch-free.
-  Its cohort is simulated — the report is evidence about the pipeline, not
-  about real users
+  and instruction following, every statistic clustered by user. The four
+  modules import no torch themselves, and the harness runs with torch
+  unavailable — importing the package still pulls torch in when installed,
+  via unrelated `src/model` package inits. Its cohort is simulated — the
+  report is evidence about the pipeline, not about real users

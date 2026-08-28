@@ -1,6 +1,6 @@
 """Run the unseen-user evaluation against a simulated cohort.
 
-    python -m examples.run_unseen_user_eval --output docs/benchmarks/unseen-users.md
+    python -m examples.run_unseen_user_eval --output docs/benchmarks/unseen-user-evaluation.md
 
 The cohort is generated, not observed. This repository holds two users and zero
 feedback rows, so the report below is evidence about the *pipeline* -- that it
