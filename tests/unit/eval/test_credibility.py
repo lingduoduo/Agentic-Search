@@ -8,6 +8,8 @@ clustering buys nothing.
 
 from __future__ import annotations
 
+import pytest
+
 from src.model.post_training.eval.cohort import (
     CohortConfig,
     generate_cohort,
@@ -139,7 +141,9 @@ def test_each_replication_uses_a_fresh_cohort():
     by_hand = []
     for index in range(2):
         records = generate_cohort(replace(config, seed=105 + index))
-        report = evaluate_unseen_users(records, seed=105 + index, resamples=100)
+        report = evaluate_unseen_users(
+            records, seed=105 + index, resamples=100, provenance="test cohort"
+        )
         rounds = next(r for r in report.behavior if r.name == "search_rounds")
         by_hand.append(int(rounds.p_adjusted < 0.05))
 
@@ -150,3 +154,36 @@ def test_each_replication_uses_a_fresh_cohort():
     assert generate_cohort(replace(config, seed=105)) != generate_cohort(
         replace(config, seed=106)
     )
+
+
+def test_power_skips_replications_whose_split_leaves_no_holdout():
+    """A small cohort can hash every user into the training half. That used
+    to raise ValueError("records produced an empty holdout frame") out of
+    achieved_power and kill the run; it must be skipped and counted instead.
+    """
+    config = CohortConfig(num_users=6, sessions_per_user=6, seed=200)
+
+    power = achieved_power(config, replications=40, resamples=50, seed=200)
+
+    assert power["skipped_replication_rate"] > 0.0
+    assert all(0.0 <= rate <= 1.0 for rate in power.values())
+
+
+def test_power_raises_only_when_no_replication_survives():
+    config = CohortConfig(num_users=1, sessions_per_user=4, seed=201)
+
+    with pytest.raises(ValueError, match="empty holdout"):
+        achieved_power(
+            config, replications=5, resamples=20, seed=201, holdout_fraction=0.01
+        )
+
+
+def test_power_makes_no_alignment_claim_below_the_minimum_user_count():
+    """Strong alignment, too few held-out users to support the interval: the
+    harness must report no rejections rather than a claim it cannot back.
+    """
+    config = CohortConfig(num_users=15, sessions_per_user=10, alignment=4.0, seed=202)
+
+    power = achieved_power(config, replications=20, resamples=50, seed=202)
+
+    assert power["alignment"] == 0.0
