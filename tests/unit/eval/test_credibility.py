@@ -13,8 +13,10 @@ from src.model.post_training.eval.cohort import (
     generate_cohort,
     null_cohort_config,
 )
+from src.model.post_training.eval.instruction_following import CONSTRAINT_NAMES
 from src.model.post_training.eval.stats import paired_permutation_p
 from src.model.post_training.eval.unseen_users import (
+    BEHAVIOR_COMPONENTS,
     achieved_power,
     evaluate_unseen_users,
 )
@@ -43,6 +45,26 @@ def test_a_planted_effect_is_detected_far_more_often_than_the_null():
     baseline = achieved_power(null, replications=40, resamples=100, seed=101)
 
     assert detected["search_rounds"] > baseline["search_rounds"] + 0.4
+
+
+def test_every_measurement_achieves_nonzero_power_under_a_planted_effect():
+    """Guard against a component that can never reject.
+
+    A measurement stuck at 0.0 power under both the null *and* a planted
+    effect is indistinguishable from a metric no knob actually drives -- the
+    null test alone cannot tell "genuinely quiet" from "structurally
+    incapable of ever rejecting". This is the direct check: with every knob
+    on, every behavioral component and every instruction constraint must
+    reject at least sometimes.
+    """
+    planted = CohortConfig(
+        num_users=60, sessions_per_user=10, behavior_shift=2.5, seed=101
+    )
+
+    power = achieved_power(planted, replications=40, resamples=100, seed=101)
+
+    for name in (*BEHAVIOR_COMPONENTS, *CONSTRAINT_NAMES):
+        assert power[name] > 0.0, f"{name} never rejected under a planted effect"
 
 
 def test_ignoring_clustering_inflates_significance():

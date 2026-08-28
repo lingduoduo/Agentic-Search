@@ -120,6 +120,40 @@ def generate_cohort(config: CohortConfig) -> list[EvalRecord]:
                     float(rng.poisson(base_rate))
                     - (config.behavior_shift if is_trained else 0.0),
                 )
+                # A policy that searches less also issues fewer web/vdb
+                # searches, invokes fewer reranks, and repeats fewer queries.
+                # Reuse behavior_shift rather than inventing a new knob: scale
+                # its fractional pull on search_rounds' base rate (4.0) onto
+                # each metric's own mean, so at behavior_shift=0 the
+                # reduction is exactly zero for both arms, and each arm still
+                # draws one Poisson sample per metric regardless of policy --
+                # only the post-draw subtraction differs, keeping the two
+                # arms' draw sequences aligned.
+                shift_fraction = config.behavior_shift / 4.0
+                web_lambda = 1.0
+                web_searches = max(
+                    0.0,
+                    float(rng.poisson(web_lambda))
+                    - (web_lambda * shift_fraction if is_trained else 0.0),
+                )
+                vdb_lambda = 2.0
+                vdb_searches = max(
+                    0.0,
+                    float(rng.poisson(vdb_lambda))
+                    - (vdb_lambda * shift_fraction if is_trained else 0.0),
+                )
+                rerank_lambda = 0.5
+                rerank_calls = max(
+                    0.0,
+                    float(rng.poisson(rerank_lambda))
+                    - (rerank_lambda * shift_fraction if is_trained else 0.0),
+                )
+                repeated_lambda = 0.5
+                repeated_search_queries = max(
+                    0.0,
+                    float(rng.poisson(repeated_lambda))
+                    - (repeated_lambda * shift_fraction if is_trained else 0.0),
+                )
                 compliance_p = (
                     config.base_compliance
                     + compliance_offset
@@ -147,10 +181,10 @@ def generate_cohort(config: CohortConfig) -> list[EvalRecord]:
                         response=response,
                         metrics={
                             "search_rounds": rounds,
-                            "web_searches": float(rng.poisson(1.0)),
-                            "vdb_searches": float(rng.poisson(2.0)),
-                            "rerank_calls": float(rng.poisson(0.5)),
-                            "repeated_search_queries": float(rng.poisson(0.5)),
+                            "web_searches": web_searches,
+                            "vdb_searches": vdb_searches,
+                            "rerank_calls": rerank_calls,
+                            "repeated_search_queries": repeated_search_queries,
                             "rounds_used": rounds,
                         },
                         cited_ids=cited,
