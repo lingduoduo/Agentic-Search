@@ -7,6 +7,7 @@ about detected power is a claim about this generator being honest.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from src.model.post_training.eval.cohort import (
@@ -15,6 +16,44 @@ from src.model.post_training.eval.cohort import (
     generate_cohort,
     null_cohort_config,
 )
+
+
+def _auc(scores: list[float], labels: list[bool]) -> float:
+    """Rank-based AUC of ``scores`` predicting ``labels`` (ties count half).
+
+    Scale-free, unlike a raw difference-of-means in reward units: an AUC of
+    0.5 always means "no discrimination" regardless of how reward is scaled,
+    which is what makes it a fair statistic to threshold on both when an
+    effect should be present and when it should be exactly absent.
+    """
+    scores_arr = np.asarray(scores, dtype=float)
+    labels_arr = np.asarray(labels, dtype=bool)
+    positive = scores_arr[labels_arr]
+    negative = scores_arr[~labels_arr]
+    if len(positive) == 0 or len(negative) == 0:
+        return 0.5
+    greater = (positive[:, None] > negative[None, :]).sum()
+    ties = (positive[:, None] == negative[None, :]).sum()
+    return float((greater + 0.5 * ties) / (len(positive) * len(negative)))
+
+
+def _variance_ratio(values_by_user: list[list[float]]) -> float:
+    """Observed between-user variance divided by what i.i.d. sampling predicts.
+
+    Near 1.0 means a user's sessions are exchangeable with anyone else's on
+    this field (no per-user structure). Materially above 1.0 means a user's
+    sessions correlate -- the assumption a per-user cluster bootstrap over
+    that field is actually testing against.
+    """
+    arr = np.asarray(values_by_user, dtype=float)
+    user_means = arr.mean(axis=1)
+    between = user_means.var(ddof=1)
+    within = arr.var(axis=1, ddof=1).mean()
+    sessions = arr.shape[1]
+    predicted_between_under_iid = within / sessions
+    if predicted_between_under_iid <= 0:
+        return float("inf")
+    return float(between / predicted_between_under_iid)
 
 
 def test_cohort_is_deterministic_for_a_fixed_seed():
@@ -49,26 +88,35 @@ def test_records_are_frozen():
 
 
 def test_alignment_makes_reward_track_conversion():
-    records = generate_cohort(
-        CohortConfig(num_users=30, sessions_per_user=10, alignment=3.0, seed=3)
-    )
+    """Decisive across a seed sweep, not a coin flip at one pinned seed.
 
-    converted = [r.reward for r in records if r.converted]
-    unconverted = [r.reward for r in records if not r.converted]
-    assert sum(converted) / len(converted) > sum(unconverted) / len(unconverted)
+    A prior version of this test (mean-reward-of-converted > mean-reward-of-
+    unconverted, at a single pinned seed) kept passing under two mutations
+    that should have broken it: dropping reward's dependence on quality, and
+    severing conversion's dependence on quality. Both left reward and
+    converted genuinely uncorrelated, so the pinned seed's pass/fail was
+    close to a 50/50 draw. AUC on a seed sweep does not have that problem --
+    see the module's mutation-check notes in the task report.
+    """
+    for seed in (3, 13, 23, 33, 43):
+        records = generate_cohort(
+            CohortConfig(num_users=30, sessions_per_user=10, alignment=3.0, seed=seed)
+        )
+        auc = _auc([r.reward for r in records], [r.converted for r in records])
+        assert auc > 0.7, f"seed={seed} auc={auc}"
 
 
 def test_zero_alignment_decouples_reward_from_conversion():
+    """Normalised on AUC so the tolerance isn't a fragile reward-unit magic
+    number. A raw difference-of-means version of this assertion, tuned to
+    the same population, exceeded its tolerance in about 1 seed in 20; AUC
+    against 0.5 does not carry that same finite-sample scale sensitivity.
+    """
     records = generate_cohort(
         CohortConfig(num_users=40, sessions_per_user=10, alignment=0.0, seed=4)
     )
-
-    converted = [r.reward for r in records if r.converted]
-    unconverted = [r.reward for r in records if not r.converted]
-    difference = abs(
-        sum(converted) / len(converted) - sum(unconverted) / len(unconverted)
-    )
-    assert difference < 0.15
+    auc = _auc([r.reward for r in records], [r.converted for r in records])
+    assert abs(auc - 0.5) < 0.1
 
 
 def test_behavior_shift_makes_the_trained_policy_search_less():
@@ -93,6 +141,43 @@ def test_instruction_gap_makes_trained_responses_more_compliant():
         return sum("<answer>" in r.response for r in rows) / len(rows)
 
     assert tagged("trained") > tagged("baseline")
+
+
+def test_sessions_are_correlated_within_a_user_on_the_clustered_axes():
+    """Task 4 runs a per-user cluster bootstrap over search_rounds and
+    compliance (and per-user AUC relies on the same structure for
+    conversion). That machinery is only exercised for real if a user's
+    sessions actually correlate on those axes -- otherwise clustering never-
+    clustered data makes achieved power look better than it is.
+    """
+    records = generate_cohort(CohortConfig(num_users=60, sessions_per_user=20, seed=11))
+
+    by_user_converted: dict[str, list[float]] = {}
+    by_user_rounds: dict[str, list[float]] = {}
+    by_user_complies: dict[str, list[float]] = {}
+    seen_sessions: set[tuple[str, str]] = set()
+    for record in records:
+        session_key = (record.user_id, record.prompt_id)
+        if session_key not in seen_sessions:
+            seen_sessions.add(session_key)
+            by_user_converted.setdefault(record.user_id, []).append(
+                float(record.converted)
+            )
+        by_user_rounds.setdefault(record.user_id, []).append(
+            record.metrics["search_rounds"]
+        )
+        by_user_complies.setdefault(record.user_id, []).append(
+            float("<answer>" in record.response)
+        )
+
+    users = sorted(by_user_converted)
+    converted_ratio = _variance_ratio([by_user_converted[u] for u in users])
+    rounds_ratio = _variance_ratio([by_user_rounds[u] for u in users])
+    complies_ratio = _variance_ratio([by_user_complies[u] for u in users])
+
+    assert converted_ratio > 1.5, converted_ratio
+    assert rounds_ratio > 1.5, rounds_ratio
+    assert complies_ratio > 1.5, complies_ratio
 
 
 def test_most_users_have_both_outcomes_so_auc_is_defined():

@@ -16,6 +16,20 @@ Zeroing all three gives the null cohort, on which the harness must fail to find
 significance. That test is what stops this from being a machine for producing
 p-values.
 
+``converted`` is drawn once per (user, prompt) session and shared identically by
+both policy arms: conversion is a property of the session being evaluated, not
+of which policy answered it. A consequence follows directly from that choice --
+comparing raw ``converted`` rates between the trained and baseline arms shows
+exactly zero lift, by construction. Any trained-vs-baseline effect on
+conversion has to be read off ``reward`` (via ``alignment``), never off
+``converted`` directly.
+
+``search_rounds`` and instruction compliance also carry a per-user latent
+offset, drawn once per user and applied identically to both arms (the same
+"shared, not knob-gated" pattern as conversion above). This is what makes a
+user's sessions on those two axes correlated rather than i.i.d., which is what
+a per-user cluster bootstrap over those fields is actually testing against.
+
 This module is the seam. A reader over ``chat_sessions`` + ``retrieval_feedback``
 producing the same ``EvalRecord`` changes what the numbers mean without changing
 a line of the analysis.
@@ -77,33 +91,41 @@ def generate_cohort(config: CohortConfig) -> list[EvalRecord]:
 
     for user_index in range(config.num_users):
         user_id = f"u{user_index:03d}"
-        # Per-user latent propensity: this is what makes sessions from one user
-        # correlated, and therefore what makes clustering necessary.
+        # Per-user latents: this is what makes sessions from one user
+        # correlated, and therefore what makes clustering necessary. Each
+        # applies identically to both arms -- only the effect knobs below are
+        # allowed to create a trained-vs-baseline gap.
         affinity = float(rng.normal(0.0, 1.0))
+        rounds_offset = float(rng.normal(0.0, 1.2))
+        compliance_offset = float(rng.normal(0.0, 0.15))
 
         for session_index in range(config.sessions_per_user):
             prompt_id = f"p{session_index:03d}"
+            # quality is the sole variable shared by reward and conversion.
+            # alignment scales both of them; at alignment=0 neither carries
+            # any information about the other, by construction.
             quality = float(rng.normal(0.0, 1.0))
             convert_p = _sigmoid(config.alignment * quality + affinity)
             converted = bool(rng.random() < convert_p)
 
             for policy in _POLICIES:
                 is_trained = policy == "trained"
-                # Reward tracks latent quality; the trained policy reads it
-                # slightly better, which is the signal alignment measures.
-                reward = quality + float(rng.normal(0.0, 0.5))
-                if is_trained:
-                    reward += 0.25 * config.alignment * quality
+                # Reward's only link to conversion is through quality, scaled
+                # by alignment -- this is the one signal alignment measures.
+                reward = config.alignment * quality + float(rng.normal(0.0, 1.0))
 
+                base_rate = max(0.5, 4.0 + rounds_offset)
                 rounds = max(
                     0.0,
-                    float(rng.poisson(4.0))
+                    float(rng.poisson(base_rate))
                     - (config.behavior_shift if is_trained else 0.0),
                 )
-                compliance_p = config.base_compliance + (
-                    config.instruction_gap if is_trained else 0.0
+                compliance_p = (
+                    config.base_compliance
+                    + compliance_offset
+                    + (config.instruction_gap if is_trained else 0.0)
                 )
-                complies = bool(rng.random() < min(1.0, compliance_p))
+                complies = bool(rng.random() < min(1.0, max(0.0, compliance_p)))
 
                 citation = "R1Q1D1"
                 body = f"Retrieved evidence for {prompt_id}. [{citation}]"
