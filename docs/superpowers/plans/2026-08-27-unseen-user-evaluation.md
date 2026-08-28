@@ -543,20 +543,26 @@ def test_every_cited_id_appears_as_a_label_in_its_response():
     assert cited_anywhere > 0
 
 
-def test_eval_record_is_hashable_so_records_can_be_deduplicated():
-    record = EvalRecord(
-        user_id="u",
-        prompt_id="p",
-        policy="trained",
-        reward=0.5,
-        converted=True,
-        response="<answer>x</answer>",
-        metrics={"search_rounds": 1.0},
-        cited_ids=frozenset({"R1Q1D1"}),
-        tool_calls=(),
-    )
+def test_records_compare_by_value():
+    """What the determinism tests above actually rely on.
 
-    assert record.user_id == "u"
+    Not hashability: a frozen dataclass carrying a `dict` field is unhashable,
+    and `metrics` is a dict.
+    """
+    fields = {
+        "user_id": "u",
+        "prompt_id": "p",
+        "policy": "trained",
+        "reward": 0.5,
+        "converted": True,
+        "response": "<answer>x</answer>",
+        "metrics": {"search_rounds": 1.0},
+        "cited_ids": frozenset({"R1Q1D1"}),
+        "tool_calls": (),
+    }
+
+    assert EvalRecord(**fields) == EvalRecord(**fields)
+    assert EvalRecord(**{**fields, "reward": 0.6}) != EvalRecord(**fields)
 ```
 
 - [ ] **Step 2: Run the tests and verify RED**
@@ -1231,9 +1237,9 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
-from .cohort import CohortConfig, EvalRecord, generate_cohort
+from .cohort import EvalRecord
 from .instruction_following import CONSTRAINT_NAMES, check_constraints
 from .stats import (
     benjamini_hochberg,
@@ -1763,9 +1769,15 @@ def achieved_power(
     return {name: value / replications for name, value in counts.items()}
 ```
 
-The module-level import line already reads
-`from .cohort import CohortConfig, EvalRecord, generate_cohort`, and
-`dataclasses.replace` is imported at the top, so nothing further is needed.
+Widen the module's two import lines so the new function's names resolve —
+Task 4 deliberately imported only what it used, so `ruff` would have failed on
+unused imports there:
+
+```python
+from dataclasses import dataclass, replace
+
+from .cohort import CohortConfig, EvalRecord, generate_cohort
+```
 
 - [ ] **Step 4: Run the tests and verify GREEN**
 
