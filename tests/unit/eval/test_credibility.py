@@ -25,12 +25,20 @@ from src.model.post_training.eval.unseen_users import (
 
 
 def test_a_null_cohort_does_not_produce_significance():
-    """No planted effect: rejections must stay near the nominal rate."""
+    """No planted effect: rejections must stay near the nominal rate.
+
+    ``resamples`` is 200, not 100, and that is load-bearing: a permutation
+    p-value bottoms out at ``1 / (1 + resamples)``, so at 100 resamples the
+    smallest attainable p is 0.0099 and its BH adjustment over a family of
+    nine is 0.089. No single measurement could clear 0.05 however extreme the
+    data, which would make this test pass on a harness that manufactures
+    p-values. At 200 the floor adjusts to 0.045 and rejection is possible.
+    """
     config = null_cohort_config(
         CohortConfig(num_users=60, sessions_per_user=10, seed=100)
     )
 
-    power = achieved_power(config, replications=60, resamples=100, seed=100)
+    power = achieved_power(config, replications=60, resamples=200, seed=100)
 
     assert power["alignment"] <= 0.20
     for name, rate in power.items():
@@ -43,8 +51,8 @@ def test_a_planted_effect_is_detected_far_more_often_than_the_null():
     )
     null = null_cohort_config(planted)
 
-    detected = achieved_power(planted, replications=40, resamples=100, seed=101)
-    baseline = achieved_power(null, replications=40, resamples=100, seed=101)
+    detected = achieved_power(planted, replications=40, resamples=200, seed=101)
+    baseline = achieved_power(null, replications=40, resamples=200, seed=101)
 
     assert detected["search_rounds"] > baseline["search_rounds"] + 0.4
 
@@ -63,7 +71,7 @@ def test_every_measurement_achieves_nonzero_power_under_a_planted_effect():
         num_users=60, sessions_per_user=10, behavior_shift=2.5, seed=101
     )
 
-    power = achieved_power(planted, replications=40, resamples=100, seed=101)
+    power = achieved_power(planted, replications=40, resamples=200, seed=101)
 
     for name in (*BEHAVIOR_COMPONENTS, *CONSTRAINT_NAMES):
         assert power[name] > 0.0, f"{name} never rejected under a planted effect"
