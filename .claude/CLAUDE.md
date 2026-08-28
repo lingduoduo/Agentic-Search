@@ -268,4 +268,9 @@ with the shared building blocks at the top level:
   Neutral on purpose: DPO must not import a GRPO trainer for token alignment
 - `qlearning/` — the standalone tabular Q-learning demo (`agent.py` + `environment.py`),
   the classical-RL foil to the LLM stack. Pure Python + numpy, no torch
-- `eval/` — Bamboogle and action-policy benchmark harnesses
+- `eval/` — Bamboogle and action-policy benchmark harnesses, plus the
+  unseen-user harness (`cohort.py`, `stats.py`, `instruction_following.py`,
+  `unseen_users.py`): held-out-user conversion alignment, behavioral separation
+  and instruction following, every statistic clustered by user. Torch-free.
+  Its cohort is simulated — the report is evidence about the pipeline, not
+  about real users

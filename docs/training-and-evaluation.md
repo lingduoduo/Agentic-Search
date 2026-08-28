@@ -593,6 +593,8 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | Training data (shell) | `bin/generate_training_data.sh` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
+| Unseen-user evaluation | `python3 -m examples.run_unseen_user_eval` |
+| Unseen-user eval report | `docs/benchmarks/unseen-user-evaluation.md` |
 | DPO trainer | `src/model/post_training/dpo/trainer.py` |
 | DPO preference pairs | `src/model/post_training/dpo/data.py` |
 | Reward function | `src/model/post_training/reward.py` |
