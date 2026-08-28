@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.model.post_training.eval.cohort import CohortConfig, generate_cohort
+from src.model.post_training.eval.cohort import (
+    CohortConfig,
+    EvalRecord,
+    generate_cohort,
+)
 from src.model.post_training.eval.unseen_users import (
     BEHAVIOR_COMPONENTS,
     evaluate_unseen_users,
@@ -13,6 +17,7 @@ from src.model.post_training.eval.unseen_users import (
 )
 
 from src.model.post_training.eval.instruction_following import CONSTRAINT_NAMES
+from src.model.post_training.eval.stats import benjamini_hochberg
 
 
 def test_split_is_deterministic_for_a_fixed_seed():
@@ -64,6 +69,49 @@ def test_report_measures_only_held_out_users():
     report = evaluate_unseen_users(records, seed=3, resamples=200)
 
     assert report.n_holdout_users == len(holdout)
+
+
+def test_a_train_only_users_metric_never_reaches_the_report():
+    """Unlike the count check above, this depends on the frame actually being
+    filtered: a train-only user with a wildly different metric value must not
+    move a held-out user's reported mean at all."""
+    seed = 7
+    candidates = [f"fu{i}" for i in range(60)]
+    train, holdout = split_users(candidates, seed=seed)
+    held_user = sorted(holdout)[0]
+    train_user = sorted(train)[0]
+
+    records = []
+    for index in range(5):
+        for policy in ("trained", "baseline"):
+            records.append(
+                EvalRecord(
+                    user_id=held_user,
+                    prompt_id=f"p{index}",
+                    policy=policy,
+                    reward=0.0,
+                    converted=True,
+                    response="",
+                    metrics={"search_rounds": 1.0},
+                )
+            )
+            records.append(
+                EvalRecord(
+                    user_id=train_user,
+                    prompt_id=f"p{index}",
+                    policy=policy,
+                    reward=0.0,
+                    converted=True,
+                    response="",
+                    metrics={"search_rounds": 999.0},
+                )
+            )
+
+    report = evaluate_unseen_users(records, seed=seed, resamples=50)
+    rounds = next(r for r in report.behavior if r.name == "search_rounds")
+
+    assert rounds.trained_mean == pytest.approx(1.0)
+    assert rounds.baseline_mean == pytest.approx(1.0)
 
 
 def test_alignment_is_detected_on_an_aligned_cohort():
@@ -166,3 +214,103 @@ def test_formatted_report_shows_effect_size_beside_every_p_value():
     for name in (*BEHAVIOR_COMPONENTS, *CONSTRAINT_NAMES):
         assert name in text
     assert "effect" in text.lower()
+
+
+def test_a_high_session_user_cannot_outweigh_low_session_users():
+    """Pins the property the plan calls the single most important one in the
+    branch: metrics collapse to one value per user before any test runs, so a
+    user's session count must not weight their influence on the reported
+    mean. One user contributes 100 sessions at trained=10/baseline=0; another
+    contributes 2 sessions with no trained/baseline difference at all. Session
+    pooling would drag the mean toward ~9.8 (100 heavy sessions swamping 2
+    light ones); per-user collapse must average the two users' own means to
+    exactly 5.0.
+    """
+    seed = 42
+    candidates = [f"cu{i}" for i in range(40)]
+    _, holdout = split_users(candidates, seed=seed)
+    holdout_ids = sorted(holdout)
+    assert len(holdout_ids) >= 2
+    heavy_user, light_user = holdout_ids[0], holdout_ids[1]
+
+    records = []
+    for index in range(100):
+        for policy, value in (("trained", 10.0), ("baseline", 0.0)):
+            records.append(
+                EvalRecord(
+                    user_id=heavy_user,
+                    prompt_id=f"p{index}",
+                    policy=policy,
+                    reward=0.0,
+                    converted=True,
+                    response="",
+                    metrics={"search_rounds": value},
+                )
+            )
+    for index in range(2):
+        for policy in ("trained", "baseline"):
+            records.append(
+                EvalRecord(
+                    user_id=light_user,
+                    prompt_id=f"p{index}",
+                    policy=policy,
+                    reward=0.0,
+                    converted=True,
+                    response="",
+                    metrics={"search_rounds": 0.0},
+                )
+            )
+
+    report = evaluate_unseen_users(records, seed=seed, resamples=50)
+    rounds = next(r for r in report.behavior if r.name == "search_rounds")
+
+    assert rounds.trained_mean == pytest.approx(5.0)
+    assert rounds.trained_mean < 9.0  # session-pooled would land near 9.8
+
+
+def test_bh_correction_is_applied_once_over_the_full_nine_member_family():
+    """Pins that the correction is BH over the combined 9-member family (5
+    behavior + 4 instruction), not skipped and not computed as two separate
+    5- and 4-member corrections. Recomputes ``benjamini_hochberg`` directly on
+    the extracted raw p-values, matched by name so a pairing/ordering bug is
+    also caught.
+    """
+    records = generate_cohort(
+        CohortConfig(
+            num_users=60,
+            sessions_per_user=12,
+            behavior_shift=2.5,
+            instruction_gap=0.35,
+            seed=99,
+        )
+    )
+    report = evaluate_unseen_users(records, seed=99, resamples=300)
+
+    family = [*report.behavior, *report.instruction]
+    expected_by_name = dict(
+        zip(
+            [result.name for result in family],
+            benjamini_hochberg([result.p_value for result in family]),
+        )
+    )
+    for result in family:
+        assert result.p_adjusted == pytest.approx(expected_by_name[result.name])
+
+    # A per-group (5-alone, 4-alone) correction is a different, wrong
+    # computation; at least one member must disagree with it.
+    per_group_by_name = dict(
+        zip(
+            [result.name for result in report.behavior],
+            benjamini_hochberg([result.p_value for result in report.behavior]),
+        )
+    )
+    per_group_by_name.update(
+        zip(
+            [result.name for result in report.instruction],
+            benjamini_hochberg([result.p_value for result in report.instruction]),
+        )
+    )
+    assert any(
+        result.p_adjusted != pytest.approx(per_group_by_name[result.name])
+        for result in family
+    )
