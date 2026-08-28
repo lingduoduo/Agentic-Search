@@ -143,18 +143,18 @@ def test_instruction_gap_makes_trained_responses_more_compliant():
     assert tagged("trained") > tagged("baseline")
 
 
-def test_sessions_are_correlated_within_a_user_on_the_clustered_axes():
-    """Task 4 runs a per-user cluster bootstrap over search_rounds and
-    compliance (and per-user AUC relies on the same structure for
-    conversion). That machinery is only exercised for real if a user's
-    sessions actually correlate on those axes -- otherwise clustering never-
-    clustered data makes achieved power look better than it is.
+def test_sessions_are_correlated_within_a_user_on_every_clustered_axis():
+    """The cluster bootstrap is run over *every* behavioral component, not
+    just search_rounds, so every component needs a per-user latent. A
+    component drawn i.i.d. across users is exchangeable between users, which
+    makes clustering it free -- and makes achieved power on that component
+    look better than clustered data would actually give.
     """
     records = generate_cohort(CohortConfig(num_users=60, sessions_per_user=20, seed=11))
 
     by_user_converted: dict[str, list[float]] = {}
-    by_user_rounds: dict[str, list[float]] = {}
     by_user_complies: dict[str, list[float]] = {}
+    by_user_metric: dict[str, dict[str, list[float]]] = {}
     seen_sessions: set[tuple[str, str]] = set()
     for record in records:
         session_key = (record.user_id, record.prompt_id)
@@ -163,21 +163,137 @@ def test_sessions_are_correlated_within_a_user_on_the_clustered_axes():
             by_user_converted.setdefault(record.user_id, []).append(
                 float(record.converted)
             )
-        by_user_rounds.setdefault(record.user_id, []).append(
-            record.metrics["search_rounds"]
-        )
+        for name, value in record.metrics.items():
+            by_user_metric.setdefault(name, {}).setdefault(record.user_id, []).append(
+                value
+            )
         by_user_complies.setdefault(record.user_id, []).append(
             float("<answer>" in record.response)
         )
 
     users = sorted(by_user_converted)
     converted_ratio = _variance_ratio([by_user_converted[u] for u in users])
-    rounds_ratio = _variance_ratio([by_user_rounds[u] for u in users])
     complies_ratio = _variance_ratio([by_user_complies[u] for u in users])
 
     assert converted_ratio > 1.5, converted_ratio
-    assert rounds_ratio > 1.5, rounds_ratio
     assert complies_ratio > 1.5, complies_ratio
+    for name in (
+        "search_rounds",
+        "web_searches",
+        "vdb_searches",
+        "rerank_calls",
+        "repeated_search_queries",
+        "rounds_used",
+    ):
+        ratio = _variance_ratio([by_user_metric[name][u] for u in users])
+        assert ratio > 1.5, f"{name} shows no within-user correlation: {ratio}"
+
+
+def test_the_three_response_constraints_are_not_one_shared_draw():
+    """One `complies` boolean driving the answer tag, the citations and the
+    tool call made three rows of the report identical on every record, and
+    put three exact duplicates inside a Benjamini-Hochberg family of nine.
+    They must be three draws -- correlated through the shared probability,
+    but able to disagree.
+    """
+    records = generate_cohort(CohortConfig(num_users=40, sessions_per_user=12, seed=21))
+
+    combinations = {
+        (
+            "<answer>" in record.response,
+            bool(record.cited_ids),
+            record.tool_calls[0].startswith('{"name"'),
+        )
+        for record in records
+    }
+    disagreements = sum(
+        len(
+            {
+                "<answer>" in record.response,
+                bool(record.cited_ids),
+                record.tool_calls[0].startswith('{"name"'),
+            }
+        )
+        > 1
+        for record in records
+    )
+
+    # A single shared draw can only ever produce (T,T,T) and (F,F,F).
+    assert len(combinations) > 2
+    assert disagreements / len(records) > 0.1, disagreements
+
+
+def test_rounds_used_is_not_a_copy_of_search_rounds():
+    """`metrics["rounds_used"] = rounds` made round_budget_respected a
+    threshold on the behavioral component, so the instruction constraint
+    answered to behavior_shift and not to instruction_gap.
+    """
+    records = generate_cohort(CohortConfig(num_users=20, sessions_per_user=10, seed=22))
+
+    differing = sum(
+        record.metrics["rounds_used"] != record.metrics["search_rounds"]
+        for record in records
+    )
+
+    assert differing > 0
+    assert all(
+        record.metrics["rounds_used"] >= record.metrics["search_rounds"]
+        for record in records
+    )
+
+
+def test_the_round_budget_responds_to_the_instruction_knob_alone():
+    """With the behavioral knob switched off entirely, the instruction knob
+    must still move budget compliance -- that is what makes
+    round_budget_respected an instruction-following measurement.
+    """
+
+    def respected(records, policy: str) -> float:
+        rows = [r for r in records if r.policy == policy]
+        return sum(r.metrics["rounds_used"] <= 5 for r in rows) / len(rows)
+
+    with_gap = generate_cohort(
+        CohortConfig(
+            num_users=40,
+            sessions_per_user=10,
+            behavior_shift=0.0,
+            instruction_gap=0.4,
+            seed=23,
+        )
+    )
+    # Averaged over seeds: one null cohort of this size carries a standard
+    # error near 0.035 on this difference, so a single draw cannot
+    # distinguish "no effect" from "small effect" at a useful tolerance.
+    null_gaps = [
+        respected(records, "trained") - respected(records, "baseline")
+        for seed in range(5)
+        for records in [
+            generate_cohort(
+                null_cohort_config(
+                    CohortConfig(num_users=40, sessions_per_user=10, seed=23 + seed)
+                )
+            )
+        ]
+    ]
+
+    assert respected(with_gap, "trained") > respected(with_gap, "baseline") + 0.05
+    assert abs(sum(null_gaps) / len(null_gaps)) < 0.03, null_gaps
+
+
+def test_both_default_tool_names_are_exercised():
+    """`allowed_tools` defaults to {"search", "fetch"}; a generator that only
+    ever emits searches leaves half that constant untested.
+    """
+    records = generate_cohort(CohortConfig(num_users=10, sessions_per_user=6, seed=24))
+
+    names = {
+        call.split('"name": "')[1].split('"')[0]
+        for record in records
+        for call in record.tool_calls
+        if '"name": "' in call
+    }
+
+    assert names == {"search", "fetch"}
 
 
 def test_most_users_have_both_outcomes_so_auc_is_defined():
