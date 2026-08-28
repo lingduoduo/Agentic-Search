@@ -106,7 +106,16 @@ Click **Console** in the top bar to open it. **Retrieval Lab** runs a query agai
 
 ## UI features
 
-**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `answer` / `done` events (full schema in the [SSE event table](architecture.md#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`, on the Assistant page) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
+**Streaming answers** (`AnswerPanel.tsx` → `ProgressLog`) — every query streams over SSE; `streamAgent` (`web/src/api.ts`) drives the UI from the `progress` / `claim` / `trace` / `approval_required` / `answer` / `done` events (full schema in the [SSE event table](architecture.md#intent-routing)). While the agent runs, a live **Agent reasoning** log renders one row per turn (`⟳ Turn N · writing answer…` active, `✓ Turn N · <tool> · N docs` completed) and answer tokens stream in as markdown; on `done` the log collapses to a one-line summary (`✓ 3 turns`) with a **show reasoning ▸** toggle that re-expands the full trace. Backend side, each turn fires the `on_turn` callback (`OnTurnCallback`) → a `progress` event, while token / tool-call / citation packets originate from `AgentQueueManager` → `Emitter`. The **New** button (`handleNewSession`, on the Assistant page) aborts any in-flight request and clears answer / citations / documents / messages / intent; an in-flight turn is cancellable via the stop-signal fence.
+
+**On the Assistant page the answer arrives claim by claim, not token by token**
+(`AssistPage.tsx`). The grounded path's answer *is* the join of the claims it has
+verified, so `streamAgent` accumulates each `claim` event onto the running answer
+separated by a space and renders it immediately. The terminal `answer` event then
+**overwrites** that accumulation rather than appending to it — it is the
+authoritative text, which is what makes a dropped `claim` event cosmetic instead of
+lossy. `trace` events feed the Dev Console control-flow panel and
+`approval_required` events populate the pending-approval list.
 
 **Markdown rendering** — Answers render via `react-markdown`: headings, bold/italic, inline code, code blocks, and ordered/unordered lists. Citation markers (`[D1]`, `[D2]`, …) become anchor links that scroll the page to the matching source card.
 

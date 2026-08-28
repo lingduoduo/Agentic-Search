@@ -246,9 +246,14 @@ Persisted assistant-message metadata also contains a normalized `pipeline_stages
 `POST /api/agent/stream` runs the same dispatcher and sends Server-Sent Events:
 
 1. zero or more `progress` events as agent turns complete;
-2. optional tool approval events for approval-gated actions;
-3. one `answer` event;
-4. one `done` event containing the final session, intent, citations, documents, route metadata, tool calls, and trace.
+2. zero or more `claim` events, one per claim as the grounded path verifies it;
+3. zero or more `trace` events when control-flow tracing is on;
+4. optional `approval_required` events for approval-gated actions;
+5. one `answer` event;
+6. one `done` event containing the final session, intent, citations, documents, route metadata, tool calls, and trace.
+
+`claim` and `trace` are best-effort — the bounded SSE queue drops them rather than
+blocking a slow consumer — while `answer` and `done` are guaranteed.
 
 Failures produce an `error` event instead of `done`. Streaming changes delivery, not routing behavior.
 
