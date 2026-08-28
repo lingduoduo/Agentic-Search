@@ -67,6 +67,16 @@ def test_benjamini_hochberg_never_exceeds_one():
     assert all(value <= 1.0 for value in benjamini_hochberg([0.9, 0.95, 0.99]))
 
 
+def test_benjamini_hochberg_pulls_a_non_monotone_scaled_value_down_to_its_neighbour():
+    # raw:    0.01,  0.5,   0.02,  0.6     n = 4, ranks by raw value: 1, 3, 2, 4
+    # p*n/i:  0.04,  0.667, 0.04,  0.6
+    # index 1's scaled value (0.667) exceeds index 3's (0.6) despite having a
+    # smaller rank, so enforcement must pull it down to 0.6.
+    assert benjamini_hochberg([0.01, 0.5, 0.02, 0.6]) == pytest.approx(
+        [0.04, 0.6, 0.04, 0.6]
+    )
+
+
 def test_bootstrap_ci_brackets_the_point_estimate():
     units = [float(x) for x in range(100)]
     point, low, high = cluster_bootstrap_ci(
@@ -97,6 +107,20 @@ def test_bootstrap_is_deterministic_for_a_fixed_seed():
     second = cluster_bootstrap_ci(units, lambda s: float(np.mean(s)), seed=3)
 
     assert first == second
+
+
+def test_bootstrap_resample_size_matches_the_unit_count():
+    # A statistic that reports its own sample size pins the resample draw
+    # size directly: every replicate must be built from as many units as the
+    # input has, not a fraction of it.
+    units = list(range(37))
+    point, low, high = cluster_bootstrap_ci(
+        units, lambda sample: float(len(sample)), resamples=50, seed=2
+    )
+
+    assert point == len(units)
+    assert low == pytest.approx(point)
+    assert high == pytest.approx(point)
 
 
 def test_permutation_p_is_small_for_a_consistent_positive_shift():
@@ -130,6 +154,32 @@ def test_permutation_alternative_less_mirrors_greater():
     less = paired_permutation_p([-1.0] * 15, seed=0, alternative="less")
 
     assert greater == pytest.approx(less)
+
+
+def test_permutation_two_sided_is_one_when_the_observed_difference_is_zero():
+    # A symmetric set of differences has observed mean 0.0 exactly, and
+    # |permuted| >= |0.0| holds for every possible permutation, so the
+    # two-sided p-value must sit at its ceiling of 1.0.
+    p = paired_permutation_p(
+        [1.0, -1.0] * 10, resamples=500, seed=0, alternative="two-sided"
+    )
+    assert p == 1.0
+
+
+def test_permutation_two_sided_is_at_least_the_matching_one_sided_p():
+    # {permuted >= observed} is a subset of {|permuted| >= |observed|} when
+    # observed > 0, so for the same data and seed two-sided can never be more
+    # significant (smaller) than the matching "greater" one-sided test.
+    differences = [3.0, 1.0]
+    greater = paired_permutation_p(
+        differences, resamples=500, seed=0, alternative="greater"
+    )
+    two_sided = paired_permutation_p(
+        differences, resamples=500, seed=0, alternative="two-sided"
+    )
+
+    assert two_sided > greater
+    assert two_sided < 1.0
 
 
 def test_permutation_rejects_an_unknown_alternative():
