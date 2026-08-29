@@ -9,18 +9,22 @@ This guide explains the repository layout, agent families, request routing, and 
 ```
 src/
 ├── agents/                      # Agent loops (SearchAgentLoop, ToolAgentLoop, AgenticRAGLoop, …)
-├── cli/                         # CLI query interface
 ├── context/                     # Retrieval-grounded context & prompt builders
-├── model/                       # LLM generation, intent classifier, tensor helpers
 ├── shared_configs/              # Shared configuration dataclasses
-├── training/
-│   ├── eval/                    # Benchmark evaluation (Bamboogle, …)
-│   ├── ppo/                     # PPO core, LLMGRPOTrainer, SearchAgentGRPOTrainer
-│   ├── data.py                  # Training dataset builders
-│   ├── grpo.py                  # GRPO advantage helpers
-│   ├── reward.py                # SearchRewardFunction + 4 reward dimensions
-│   ├── judge.py                 # SimulatedPreferenceJudge (RLAIF stand-in)
-│   └── sft.py                   # SFT data pipeline
+├── model/                       # Split by *when* the training happens
+│   ├── serving.py               # ServerManager backends — neither half; runs whatever model exists
+│   ├── pre_training/
+│   │   └── intents/             # Nearest-canonical-example intent router (built offline, read-only at serve time)
+│   └── post_training/           # Not part of the serving stack
+│       ├── data.py              # Prompt/dataset construction, shared by SFT and RL
+│       ├── reward.py            # Reward functions + the group-relative advantage primitive (torch-free)
+│       ├── log_probs.py         # Response-token log-probs, shared by DPO and GRPO
+│       ├── sft/                 # Supervised fine-tuning
+│       ├── dpo/                 # Direct Preference Optimization (frozen reference, no reward model)
+│       ├── ppo/                 # Clipped-surrogate *base algorithm layer* — no trainer, no critic, no GAE
+│       ├── grpo/                # The GRPO stack built on ppo/ (training → generation → algorithms/core_algos)
+│       ├── qlearning/           # Standalone tabular Q-learning demo (numpy, no torch)
+│       └── eval/                # Bamboogle + action-policy benchmark harnesses
 └── internal/
     ├── access/                  # Access control & ACL helpers
     ├── auth/                    # Authentication & authorization
@@ -28,14 +32,15 @@ src/
     ├── chat/                    # Chat pipeline (loop, steps, citations, compression)
     ├── configs/                 # Environment-based configuration (AppSettings)
     ├── connectors/              # Connector data models (connector classes removed)
-    ├── context/                 # Internal retrieval context helpers
     ├── db/                      # SQLite store (AgenticSearchStore)
     ├── document_index/          # Document index (FAISS / BM25)
     ├── feature_flags/           # Feature-flag providers (env, PostHog, composite)
+    ├── feedback/                # Retrieval feedback capture
     ├── file_store/              # In-memory chat file handling
     ├── hooks/                   # Outbound webhook execution
     ├── llm/                     # LLM provider integrations
     ├── mcp_server/              # MCP server (tools, resources, auth)
+    ├── memory/                  # Conversation-memory store & curation
     ├── observability/           # Admin surface summary & health score
     ├── prompts/                 # Prompt templates
     ├── retrieval/               # Retrieval core: service, fusion, query transforms, routers
@@ -44,25 +49,30 @@ src/
     ├── tools/                   # Internal tool registry
     ├── utils/                   # License, encryption, telemetry utilities
     └── servers/
+        ├── app.py               # Shared helpers for the standalone search servers
         ├── admin_surface/       # Admin summary endpoint
         ├── analytics/           # Usage analytics API
         ├── billing/             # Stripe billing proxy
-        ├── connectors/          # Connector management endpoints
+        ├── error_handling/      # Shared exception handlers
         ├── enterprise_settings/ # Enterprise configuration endpoints
         ├── evals/               # Evaluation endpoints
         ├── features/            # Feature-flag endpoints
         ├── license/             # License validation & seat management
         ├── limits/              # Usage limit enforcement
+        ├── manage/              # Administrative management endpoints
         ├── middleware/          # License enforcement, tier gate, tenant tracking
         ├── oauth/               # OAuth 2.0 connector authorization
         ├── query_and_chat/      # Search and chat endpoints
         ├── query_history/       # Query history & export
+        ├── redis/               # Redis connection helpers
         ├── reporting/           # Usage report ZIP generation
         ├── retrieval/           # Dense/sparse/rerank server entry points
         ├── scim/                # SCIM 2.0 user & group provisioning
+        ├── secondary_llm_flows/ # Auxiliary LLM flows (query expansion, …)
         ├── settings/            # Settings endpoints
         ├── tenants/             # Multi-tenant provisioning & management
         ├── token_rate_limits/   # Per-user token rate limiting
+        ├── tools/               # Tool-engine HTTP surface (/tool/*)
         ├── user_group/          # Group management
         ├── users/               # User management
         ├── web/                 # FastAPI app assembly
@@ -73,6 +83,13 @@ examples/                        # Runnable CLI examples
 ```
 
 The FastAPI app is assembled in `src/internal/servers/web/app.py`. Every feature area is a self-contained router factory. `AgenticSearchStore` (SQLite) is the single persistence layer — no Postgres, Redis, or Celery required locally.
+
+**Every public method of `AgenticSearchStore` is serialized on a re-entrant lock.**
+A SQLite connection shared across concurrent sessions corrupted state without this;
+the store is safe to call from several request handlers at once, but that safety
+comes from the lock, not from SQLite. Anything long-running must therefore stay out
+of a store call, and code that blocks (model generation, answer synthesis) belongs
+on a worker thread — see `asyncio.to_thread` in the agent paths.
 
 ## Agent framework and control flow
 
@@ -193,11 +210,27 @@ There are three independent routing layers: the web request strategy (`chat` / `
 | Event type | When emitted | Payload |
 |------------|-------------|---------|
 | `progress` | Each agent turn | `{type, turn, text}` |
+| `claim` | Each verified claim, as it is verified | `{type, text}` |
+| `trace` | Each control-flow event (Dev Console) | `{type, event}` |
+| `approval_required` | An approval-gated tool wants to run | `{type, approval}` |
 | `answer` | Answer token chunks | `{type, text}` |
 | `done` | Stream complete | `{type, session_id, citations, documents, intent, tool_calls}` |
 | `error` | Unhandled exception | `{type, detail}` |
 
 The `on_turn` callback (`OnTurnCallback` in `src/agents/core/base.py`) is the hook that feeds per-turn events into the SSE queue from inside the agent loop.
+
+**`claim` is what makes the grounded answer feel live.** The Assist path does not
+stream tokens as the model emits them — its answer *is* the join of the claims it
+has verified, so there is nothing to stream until a claim is verified. Each one is
+emitted as it passes verification. `on_claim` is called from the answer-generation
+worker thread (`generate_answer` runs under `asyncio.to_thread` so synthesis cannot
+block the event loop), so it hops back via `loop.call_soon_threadsafe` before
+touching the queue.
+
+**The queue is bounded (`maxsize=100`) and drops rather than blocks.** A slow
+consumer loses `claim` and `trace` events, never data: the terminal `answer` event
+still carries the full text, and the drop counts are logged. Treat `claim` and
+`trace` as best-effort progress, and `answer` / `done` as the contract.
 
 ## Agentic RAG
 

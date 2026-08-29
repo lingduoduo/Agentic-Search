@@ -7,10 +7,10 @@ Agentic Search is a retrieval-backed platform for building multi-turn search, RA
 - Agentic RAG with multi-turn search, query enhancement, citations, and grounded synthesis
 - Conversation and tool-using agents with routing, memory, and structured tool dispatch
 - Dense, sparse, and hybrid retrieval with fusion, reranking, and optimization workflows
-- Connectors, document ingestion, indexing, and background processing
+- Connector data models, document ingestion, and offline index building via the `index_builder` CLI
 - Web search through Google Custom Search, SerpAPI, and browser automation
 - A React UI with four surfaces — an auto-routing Assistant plus direct Search, Chat, and Tool pages — with streaming responses, a running conversation transcript, source inspection, and observability panels
-- Supervised, GRPO/PPO, and evaluation workflows for search agents
+- Post-training for search agents — supervised (SFT), preference (DPO), and reinforcement (GRPO) — plus evaluation workflows
 - Identity-aware access: signing in narrows results to what you may read and unlocks user-scoped tools and memory, without changing which engine runs
 - MCP in both directions — a server exposing search and retrieval to compatible clients, and a client that turns another server's tools into ordinary registry tools
 
@@ -183,7 +183,7 @@ See [Testing](docs/testing.md) for focused suites and integration-test prerequis
 - [Retrieval](docs/retrieval.md) — retrieval services, indexing, reranking, tuning, and query transformation
 - [Ingestion](docs/ingestion.md) — connector data models and the offline `index_builder` indexing tool
 - [HTTP API reference](docs/api-reference.md) — local retrieval, web, chat/session, and health endpoints
-- [Training and evaluation](docs/training-and-evaluation.md) — examples, datasets, SFT, GRPO/PPO, and benchmarks
+- [Training and evaluation](docs/training-and-evaluation.md) — examples, datasets, SFT, DPO, GRPO, and benchmarks
 - [Frontend development](docs/frontend.md) — React/Vite workflow, UI behavior, and observability surfaces
 - [Command-line tools](docs/cli.md) — the Go `query` + `memory` CLIs, build, usage, auth, and exit codes
 - [MCP server](docs/mcp.md) — installation, transport, client configuration, tools, and resources

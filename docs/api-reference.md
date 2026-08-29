@@ -94,7 +94,7 @@ curl -s -X POST http://localhost:7860/api/agent \
 # → search
 ```
 
-**Stream the same over SSE** (`POST /api/agent/stream`) — emits one `progress` event after each agent turn (via the `on_turn` callback), then `answer`, then `done` (which carries `intent`, `citations`, and `documents`; the frontend feeds `intent` to `setIntent`). The non-streaming `/api/agent` is unchanged:
+**Stream the same over SSE** (`POST /api/agent/stream`) — emits one `progress` event after each agent turn (via the `on_turn` callback), a `claim` event for each claim as it is verified, then `answer`, then `done` (which carries `intent`, `citations`, and `documents`; the frontend feeds `intent` to `setIntent`). The non-streaming `/api/agent` is unchanged:
 ```bash
 curl -sN -X POST http://localhost:7860/api/agent/stream \
   -H "Content-Type: application/json" \
@@ -102,10 +102,21 @@ curl -sN -X POST http://localhost:7860/api/agent/stream \
 # Server-Sent Events (one JSON object per `data:` line):
 # data: {"type": "progress", "turn": 1, "text": "search_routing_tool · 5 docs"}
 # data: {"type": "progress", "turn": 2, "text": "writing answer…"}
+# data: {"type": "claim",    "text": "Dense retrieval embeds the query into a vector space."}
 # data: {"type": "answer",   "text": "Dense retrieval embeds the query …"}
 # data: {"type": "done",     "session_id": "...", "intent": "chat", "citations": ["[D1]"], "documents": [...]}
 ```
 On failure the stream yields `data: {"type": "error", "detail": "..."}` instead of `done`, which `streamAgent` surfaces as the error banner.
+
+The grounded (Assist) path emits **`claim`** rather than streaming raw tokens,
+because its answer *is* the join of the claims it has verified — there is nothing
+to stream until a claim passes verification. A Dev Console client additionally
+receives `trace` events, and an approval-gated tool produces `approval_required`.
+
+**`claim` and `trace` are best-effort; `answer` and `done` are the contract.** The
+SSE queue is bounded and drops these two rather than blocking a slow consumer. No
+data is lost when it does — the terminal `answer` event still carries the full
+text — so a client must not assume it has seen every `claim`.
 
 **Sessions:**
 ```bash
@@ -113,6 +124,16 @@ curl -s -X POST http://localhost:7860/api/sessions \
   -H "Content-Type: application/json" -d '{"title": "Search session"}'
 curl -s http://localhost:7860/api/sessions/{session_id}
 ```
+
+**A session can only be read or continued by the caller who owns it.** Reading
+`/api/sessions/{id}`, continuing an existing session through `/api/agent`, and the
+`/chat/*` session endpoints all gate on `caller_may_use_session`
+(`src/internal/servers/_auth.py`).
+
+**A caller who does not own the session gets `404`, not `403`** — deliberately. A
+`403` would confirm the id exists, which is the one bit an id-guessing caller does
+not already have. Do not treat `404` from these routes as proof the session was
+deleted; it also means "not yours".
 
 **Submit retrieval feedback** (`POST /api/feedback` — drives the feedback-GRPO training signal):
 ```bash
