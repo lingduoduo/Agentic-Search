@@ -9,12 +9,15 @@ BEIR's loader hands back `corpus[doc_id] = {"title": ..., "text": ...}`, which
 maps 1:1 onto that shape. This script downloads a BEIR dataset (cached under
 --data_dir) and writes the converted corpus.
 
-Usage:
-    python3 examples/beir_to_corpus.py --dataset nfcorpus
-    python3 examples/beir_to_corpus.py --dataset scifact --out data/corpus_scifact.jsonl
+Usage (run as a module, like the other examples -- this imports `src`):
+    python3 -m examples.beir_to_corpus --dataset nfcorpus
+    python3 -m examples.beir_to_corpus --dataset scifact --out data/corpus_scifact.jsonl
 
-Then point the demo server at it:
-    python3 -m src.internal.servers.retrieval.demo --corpus_path data/corpus_nfcorpus.jsonl
+The converted corpus is registered in data/corpora.json, so the servers can
+load it by name:
+    python3 -m src.internal.servers.retrieval.demo --corpus nfcorpus
+
+--corpus_path still works, and is the fallback if registration fails.
 
 Install BEIR first:  pip install beir
 """
@@ -25,15 +28,42 @@ import argparse
 import json
 import os
 
+from src.internal.servers.retrieval.corpus_registry import (
+    DEFAULT_MANIFEST_PATH,
+    register_corpus,
+)
+
 # Datasets that ship a corpus.jsonl via the public BEIR mirror. Sizes are
 # approximate doc counts, smallest first — nfcorpus downloads in seconds.
+# `domain` and `source` are the manifest fields; `source` becomes the label on
+# the citation card, so it is the dataset's proper name rather than the CLI slug.
 SUPPORTED = {
-    "nfcorpus": "~3.6K docs (medical/nutrition)",
-    "scifact": "~5K docs (scientific claims)",
-    "scidocs": "~25K docs (citation prediction)",
-    "arguana": "~8.7K docs (argument retrieval)",
-    "fiqa": "~57K docs (financial QA)",
-    "trec-covid": "~171K docs (COVID-19 literature)",
+    "nfcorpus": {
+        "size": "~3.6K docs",
+        "domain": "medical/nutrition",
+        "source": "NFCorpus",
+    },
+    "scifact": {
+        "size": "~5K docs",
+        "domain": "scientific claims",
+        "source": "SciFact Corpus",
+    },
+    "scidocs": {
+        "size": "~25K docs",
+        "domain": "citation prediction",
+        "source": "SciDocs",
+    },
+    "arguana": {
+        "size": "~8.7K docs",
+        "domain": "argument retrieval",
+        "source": "ArguAna",
+    },
+    "fiqa": {"size": "~57K docs", "domain": "financial QA", "source": "FiQA"},
+    "trec-covid": {
+        "size": "~171K docs",
+        "domain": "COVID-19 literature",
+        "source": "TREC-COVID",
+    },
 }
 
 BEIR_URL = (
@@ -82,12 +112,15 @@ def convert(dataset: str, out_path: str, data_dir: str, limit: int | None) -> in
     return written
 
 
-def parse_args() -> argparse.Namespace:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Convert a BEIR dataset into demo corpus.jsonl format.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Supported datasets:\n"
-        + "\n".join(f"  {name:14} {desc}" for name, desc in SUPPORTED.items()),
+        + "\n".join(
+            f"  {name:14} {meta['size']} ({meta['domain']})"
+            for name, meta in SUPPORTED.items()
+        ),
     )
     parser.add_argument(
         "--dataset",
@@ -110,7 +143,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Cap the number of documents written (default: all)",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return _build_parser().parse_args()
 
 
 def main() -> None:
@@ -119,9 +156,32 @@ def main() -> None:
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     count = convert(args.dataset, out_path, args.data_dir, args.limit)
     print(f"Wrote {count} documents to {out_path}")
+
+    # Writing the .jsonl is only half of it: `--corpus <name>` resolves through
+    # the manifest, so an unregistered corpus is reachable only by full path.
+    meta = SUPPORTED.get(args.dataset, {})
+    try:
+        register_corpus(
+            args.dataset,
+            corpus_path=out_path,
+            doc_count=count,
+            domain=meta.get("domain"),
+            source=meta.get("source"),
+        )
+    except ValueError as exc:
+        # The corpus file is already on disk and usable; a manifest the user
+        # broke by hand must not make a successful conversion look failed.
+        print(f"Could not register the corpus: {exc}")
+        print(
+            "Run the demo server with:\n"
+            f"  python3 -m src.internal.servers.retrieval.demo --corpus_path {out_path}"
+        )
+        return
+
+    print(f"Registered corpus {args.dataset!r} in {DEFAULT_MANIFEST_PATH}")
     print(
         "Run the demo server with:\n"
-        f"  python3 -m src.internal.servers.retrieval.demo --corpus_path {out_path}"
+        f"  python3 -m src.internal.servers.retrieval.demo --corpus {args.dataset}"
     )
 
 

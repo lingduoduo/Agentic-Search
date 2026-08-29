@@ -4,6 +4,7 @@ import pytest
 
 from src.internal.servers.retrieval.corpus_registry import (
     load_manifest,
+    register_corpus,
     resolve_corpus_docs,
 )
 from src.internal.servers.retrieval.demo import TfidfRetriever
@@ -141,3 +142,99 @@ def test_no_source_when_manifest_lacks_one(manifest):
     # backend can fall back to its provider label.
     docs = resolve_corpus_docs("a", manifest)
     assert "source" not in (docs[0].get("metadata") or {})
+
+
+# --- register_corpus -------------------------------------------------------
+#
+# The converter writes data/corpus_<dataset>.jsonl but the manifest is what
+# makes `--corpus <name>` resolve. These pin the write half of that contract.
+
+
+def test_register_corpus_creates_a_manifest_that_does_not_exist_yet(tmp_path):
+    """A fresh checkout has no data/corpora.json; registering must not require one."""
+    path = tmp_path / "corpora.json"
+
+    register_corpus(
+        "nfcorpus",
+        corpus_path="data/corpus_nfcorpus.jsonl",
+        doc_count=3633,
+        manifest_path=str(path),
+    )
+
+    assert load_manifest(str(path)) == {
+        "nfcorpus": {
+            "path": "data/corpus_nfcorpus.jsonl",
+            "docs": 3633,
+            "domain": None,
+            "source": "nfcorpus",
+        }
+    }
+
+
+def test_register_corpus_keeps_the_entries_already_in_the_manifest(tmp_path):
+    """Registering nfcorpus must not cost the user their demo/scifact entries."""
+    path = tmp_path / "corpora.json"
+    path.write_text(json.dumps({"demo": {"path": "data/corpus.jsonl", "docs": 20}}))
+
+    register_corpus(
+        "scifact", corpus_path="s.jsonl", doc_count=5183, manifest_path=str(path)
+    )
+
+    manifest = load_manifest(str(path))
+    assert manifest["demo"] == {"path": "data/corpus.jsonl", "docs": 20}
+    assert manifest["scifact"]["docs"] == 5183
+
+
+def test_re_registering_updates_the_entry_rather_than_duplicating_it(tmp_path):
+    """Re-running the converter (e.g. without --limit) must correct the count."""
+    path = tmp_path / "corpora.json"
+
+    register_corpus(
+        "nfcorpus", corpus_path="c.jsonl", doc_count=100, manifest_path=str(path)
+    )
+    register_corpus(
+        "nfcorpus", corpus_path="c.jsonl", doc_count=3633, manifest_path=str(path)
+    )
+
+    manifest = load_manifest(str(path))
+    assert list(manifest) == ["nfcorpus"]
+    assert manifest["nfcorpus"]["docs"] == 3633
+
+
+def test_a_registered_corpus_resolves_by_name(tmp_path):
+    """The point of registering: `--corpus <name>` must then load the documents.
+
+    This is the round-trip the two halves exist for -- a manifest that writes
+    fields resolve_corpus_docs does not read would pass every test above.
+    """
+    corpus = tmp_path / "nf.jsonl"
+    _write_corpus(corpus, [{"id": "n1", "title": "N1", "contents": "nutrition"}])
+    path = tmp_path / "corpora.json"
+
+    register_corpus(
+        "nfcorpus",
+        corpus_path=str(corpus),
+        doc_count=1,
+        domain="medical/nutrition",
+        source="NFCorpus",
+        manifest_path=str(path),
+    )
+
+    docs = resolve_corpus_docs("nfcorpus", manifest=load_manifest(str(path)))
+    assert [d["id"] for d in docs] == ["n1"]
+    # The manifest's source label is what reaches the citation card.
+    assert docs[0]["metadata"]["source"] == "NFCorpus"
+
+
+def test_register_corpus_reports_a_manifest_it_cannot_parse(tmp_path):
+    """A hand-edited manifest with a syntax error must not be silently replaced."""
+    path = tmp_path / "corpora.json"
+    path.write_text("{not json")
+
+    with pytest.raises(ValueError, match="could not be parsed"):
+        register_corpus(
+            "nfcorpus", corpus_path="c.jsonl", doc_count=1, manifest_path=str(path)
+        )
+
+    # The user's file is left exactly as it was, for them to fix.
+    assert path.read_text() == "{not json"

@@ -8,6 +8,9 @@ A spec is one of:
     conflate distinct documents under one id.
   - a comma-separated list of names (e.g. "demo,scifact")
   - a filesystem path to a .jsonl corpus (back-compat with --corpus_path)
+
+``register_corpus`` is the write side: a tool that produces a corpus file
+calls it so the corpus is reachable by name, not just by path.
 """
 
 from __future__ import annotations
@@ -46,6 +49,63 @@ def load_manifest(path: str = DEFAULT_MANIFEST_PATH) -> dict[str, dict]:
         return {}
     with open(path) as f:
         return json.load(f)
+
+
+def register_corpus(
+    name: str,
+    *,
+    corpus_path: str,
+    doc_count: int,
+    domain: str | None = None,
+    source: str | None = None,
+    manifest_path: str = DEFAULT_MANIFEST_PATH,
+) -> dict:
+    """Add or update *name* in the manifest, and return the entry written.
+
+    Writing a corpus file is not enough to make ``--corpus <name>`` resolve; the
+    manifest is the half that maps a name to a path. This is the write side of
+    :func:`load_manifest`, kept here because the registry owns the entry format.
+
+    Re-registering an existing name replaces that entry -- re-running a
+    converter without ``--limit`` must correct the document count rather than
+    leave a stale one behind -- and leaves every other entry untouched.
+    """
+    entry = {
+        "path": corpus_path,
+        "docs": doc_count,
+        "domain": domain,
+        "source": source or name,
+    }
+
+    manifest: dict = {}
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+        except json.JSONDecodeError as exc:
+            # Overwriting would destroy hand-registered corpora that are only
+            # unreachable because of a typo. Report it and change nothing.
+            raise ValueError(
+                f"Corpus manifest {manifest_path!r} could not be parsed: {exc}. "
+                f"Fix the file (or move it aside) and re-run; it was left "
+                f"unchanged."
+            ) from exc
+
+    manifest[name] = entry
+    parent = os.path.dirname(manifest_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+        f.write("\n")
+    logger.info(
+        "Registered corpus %r -> %s (%d docs) in %s",
+        name,
+        corpus_path,
+        doc_count,
+        manifest_path,
+    )
+    return entry
 
 
 def resolve_corpus_docs(spec: str, manifest: dict | None = None) -> list[dict]:

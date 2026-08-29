@@ -121,6 +121,13 @@ python3 -m src.internal.servers.retrieval.demo --corpus all    # union of all re
 ```
 
 ```bash
+# Add a BEIR benchmark corpus. The converter registers what it writes, so the
+# dataset is loadable by name straight afterwards (pip install beir first):
+python3 -m examples.beir_to_corpus --dataset nfcorpus
+python3 -m src.internal.servers.retrieval.demo --corpus nfcorpus
+```
+
+```bash
 # Optional — cross-encoder reranker (Terminal 1b). Then set the env on the web
 # backend and restart it so retrieved docs are reranked before display:
 python3 -m src.internal.servers.retrieval.rerank --port 8002
