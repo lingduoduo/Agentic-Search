@@ -24,7 +24,7 @@ src/
 │       ├── ppo/                 # Clipped-surrogate *base algorithm layer* — no trainer, no critic, no GAE
 │       ├── grpo/                # The GRPO stack built on ppo/ (training → generation → algorithms/core_algos)
 │       ├── qlearning/           # Standalone tabular Q-learning demo (numpy, no torch)
-│       └── eval/                # Bamboogle + action-policy benchmark harnesses
+│       └── eval/                # Benchmarks (Bamboogle, action-policy) + the unseen-user harness
 └── internal/
     ├── access/                  # Access control & ACL helpers
     ├── auth/                    # Authentication & authorization
