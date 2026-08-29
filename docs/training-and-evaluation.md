@@ -593,6 +593,8 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | Training data (shell) | `bin/generate_training_data.sh` |
 | Reward/GRPO smoke test | `python3 -m examples.run_grpo_training_pipeline` |
 | Bamboogle benchmark eval | `python3 -m examples.run_bamboogle_eval` / `bin/run_bamboogle_eval.sh` |
+| Unseen-user evaluation (simulated cohort) | `python3 -m examples.run_unseen_user_eval` |
+| Unseen-user eval report (simulated cohort) | `docs/benchmarks/unseen-user-evaluation.md` |
 | DPO trainer | `src/model/post_training/dpo/trainer.py` |
 | DPO preference pairs | `src/model/post_training/dpo/data.py` |
 | Reward function | `src/model/post_training/reward.py` |
@@ -610,6 +612,13 @@ The training pipeline is modular: generate trajectories â†’ score with rewards â
 | Feedback-driven GRPO | `python3 -m examples.run_feedback_grpo` |
 | SFT warm-start + GRPO | `python3 -m examples.run_sft_grpo` |
 | Simulated-judge GRPO (policy update) | `python3 -m examples.run_bamboogle_grpo_train` |
+
+The unseen-user evaluation runs against a **simulated cohort**, not real
+users: this repository holds two users and zero feedback rows. Its report is
+evidence that the pipeline detects an effect of the planted size, on held-out
+users, at the reported power -- never that a model converts real users. The
+report states its own provenance, planted effect sizes and regeneration
+command; do not quote a number from it without them.
 
 ### Direct Preference Optimization (DPO)
 
