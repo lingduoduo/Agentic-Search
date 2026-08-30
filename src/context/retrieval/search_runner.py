@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from src.context.retrieval.client import SearchClient
 from src.context.retrieval.client import SearchClientConfig
 from src.context.search import SearchResult
@@ -13,6 +15,8 @@ from ..models import SearchContextBundle
 from ..models import SearchFilters
 from ..models import SearchRequest
 from ..utils import build_context_bundle
+
+logger = logging.getLogger(__name__)
 
 
 async def run_search(
@@ -133,6 +137,22 @@ async def build_search_contexts(
         )
     finally:
         await client.aclose()
+    if len(rows) != len(queries):
+        # A malformed or short response must never silently drop a query's
+        # evidence (e.g. SearchClient.retrieve's single-query response-shape
+        # collapse can hand back one row for many queries). Pad/trim to line
+        # up 1:1 with `queries` -- missing queries get an empty bundle, same
+        # as a query that legitimately found nothing -- and log the gap so
+        # it's visible instead of silent.
+        logger.warning(
+            "build_search_contexts: retrieval at %s returned %d rows for %d "
+            "queries; queries without a row get an empty bundle instead of "
+            "losing their evidence silently",
+            search_url,
+            len(rows),
+            len(queries),
+        )
+        rows = (rows + [[]] * len(queries))[: len(queries)]
     # Enforce, don't just forward: a third-party backend need not honour the
     # forwarded filter, and anything returned here reaches a model's context.
     return [

@@ -33,3 +33,44 @@ async def test_build_search_contexts_returns_empty_bundles_for_no_queries():
     from src.context.retrieval.search_runner import build_search_contexts
 
     assert await build_search_contexts([], search_url="http://x/retrieve") == []
+
+
+async def test_build_search_contexts_pads_a_short_response_and_logs(caplog):
+    """A response with fewer rows than queries must not silently lose queries.
+
+    Reproduces the shape SearchClient.retrieve's single-query response
+    collapse (client.py's `if rows and isinstance(rows[0], dict): rows =
+    [rows]`) can produce for a batched request: 2 rows for 3 queries. The
+    query without a row must still get a bundle (empty, not missing) and the
+    gap must be logged, not silently swallowed.
+    """
+    import logging
+    from unittest.mock import patch
+
+    from src.context.retrieval.search_runner import build_search_contexts
+    from src.context.search import SearchResult
+
+    async def _fake_retrieve(self, queries, topk=None, filters=None):
+        # Server returns only 2 rows for the 3 requested queries.
+        return [
+            [SearchResult(contents="about alpha", title="alpha", url="http://x/a")],
+            [SearchResult(contents="about beta", title="beta", url="http://x/b")],
+        ]
+
+    with (
+        caplog.at_level(logging.WARNING),
+        patch("src.context.retrieval.client.SearchClient.retrieve", _fake_retrieve),
+    ):
+        bundles = await build_search_contexts(
+            ["alpha", "beta", "gamma"], top_k=5, search_url="http://x/retrieve"
+        )
+
+    assert [b.query for b in bundles] == ["alpha", "beta", "gamma"]
+    assert bundles[0].documents and bundles[0].documents[0].content.endswith("alpha")
+    assert bundles[1].documents and bundles[1].documents[0].content.endswith("beta")
+    assert bundles[2].documents == [], (
+        "gamma's missing row must yield an empty bundle, not a dropped query"
+    )
+    assert any("2 rows for 3 queries" in record.message for record in caplog.records), (
+        "the row/query mismatch must be logged, not silent"
+    )
