@@ -218,3 +218,34 @@ async def test_dev_console_groups_mcp_tools_by_server(fake_session):
     catalog = catalog_from_registry(registry)
     assert [s.name for s in catalog] == ["memories"]
     assert {t.name for t in catalog[0].tools} == {"save_memory", "ask_agentic_search"}
+
+
+@pytest.mark.asyncio
+async def test_servers_are_discovered_concurrently(monkeypatch):
+    """Every server's discovery is in flight at once.
+
+    Guards the fan-out: sweeping servers one await at a time made each
+    unreachable server's connect timeout delay the next server's discovery.
+    """
+    import asyncio
+
+    in_flight = 0
+    peak = 0
+
+    @asynccontextmanager
+    async def _slow_connect(spec):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+        yield _FakeSession([_tool(f"{spec.name}_tool")])
+
+    monkeypatch.setattr(mcp_client, "_connect", _slow_connect)
+    registry = ToolRegistry()
+    specs = [McpServerSpec(name=f"s{i}", url=f"http://x{i}/") for i in range(3)]
+
+    count = await register_mcp_tools(registry, specs)
+
+    assert count == 3
+    assert peak > 1, f"server discovery was serialized (peak concurrency {peak})"

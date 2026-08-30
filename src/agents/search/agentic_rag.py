@@ -250,14 +250,27 @@ class AgenticRAGLoop:
                 break
 
             t_retr = time.perf_counter()
-            for q in novel_queries:
-                try:
-                    ctx = await retrieve_context(
+            # A round's queries are independent retrievals against the same
+            # server, so issue them concurrently: the round costs the slowest
+            # one instead of their sum. Results are merged below in
+            # novel_queries order, so accumulated/`D1..DN` ordering and the
+            # recorded stages are identical to issuing them one at a time.
+            contexts = await asyncio.gather(
+                *(
+                    retrieve_context(
                         q,
                         search_url=self.config.retrieval_url,
                         top_k=self.config.topk,
                         filters=self.config.filters,
                     )
+                    for q in novel_queries
+                ),
+                return_exceptions=True,
+            )
+            for q, ctx in zip(novel_queries, contexts):
+                try:
+                    if isinstance(ctx, Exception):
+                        raise ctx
                     for doc in ctx.documents:
                         key = _doc_key(doc)
                         if key not in accumulated:

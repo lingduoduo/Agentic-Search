@@ -388,3 +388,38 @@ async def test_oversized_result_does_not_prevent_other_tool_evidence():
     assert [item.tool_name for item in evidence] == ["small"]
     assert evidence[0].id == "T1"
     assert statuses == [("bulk", "failed"), ("small", "succeeded")]
+
+
+@pytest.mark.asyncio
+async def test_accepted_tool_calls_run_concurrently():
+    """Accepted calls are all in flight at once.
+
+    Guards the fan-out: invoking them one await at a time made the worst case
+    ``max_calls * timeout_seconds`` rather than ``timeout_seconds``.
+    """
+    in_flight = 0
+    peak = 0
+
+    class SlowRegistry:
+        def list_tools(self):
+            return [
+                ToolDescriptor(name=f"t{i}", safety=ToolSafety.READ_ONLY)
+                for i in range(3)
+            ]
+
+        async def invoke(self, request):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.02)
+            in_flight -= 1
+            return {"tool": request.tool_name}
+
+    class Selector:
+        def select(self, query, tools):
+            return [ToolRequest(tool_name=t.name) for t in tools]
+
+    evidence = await collect_tool_evidence("q", SlowRegistry(), Selector(), max_calls=3)
+
+    assert [e.tool_name for e in evidence] == ["t0", "t1", "t2"]
+    assert peak > 1, f"tool calls were serialized (peak concurrency {peak})"

@@ -510,3 +510,68 @@ async def test_agentic_rag_forwards_on_claim():
         await loop.run("q", on_claim=callback)
 
     assert seen["on_claim"] is callback
+
+
+# ---------------------------------------------------------------------------
+# A round's retrievals run concurrently, not one after another
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_round_retrievals_run_concurrently():
+    """All of a round's queries are in flight at once.
+
+    Guards the fan-out: issuing them one await at a time made a round cost the
+    sum of its retrievals instead of the slowest one.
+    """
+    import asyncio
+
+    in_flight = 0
+    peak = 0
+
+    async def _slow_retrieve(query, **kwargs):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+        return _make_bundle(["d1"], query=query)
+
+    llm = _llm_responses("sub-a\nsub-b", "hyde", "broader")
+    with (
+        patch("src.agents.search.agentic_rag.retrieve_context", _slow_retrieve),
+        patch(
+            "src.agents.search.agentic_rag.generate_answer",
+            lambda request, **kwargs: _stub_generation_result(),
+        ),
+    ):
+        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)
+        await loop.run("q")
+
+    assert peak > 1, f"round retrievals were serialized (peak concurrency {peak})"
+
+
+@pytest.mark.asyncio
+async def test_round_survives_one_failing_query():
+    """One query raising leaves the round's other results intact."""
+
+    async def _flaky_retrieve(query, **kwargs):
+        if "sub-a" in query:
+            raise RuntimeError("retrieval server down")
+        return _make_bundle(["d1"], query=query)
+
+    llm = _llm_responses("sub-a\nsub-b", "hyde", "broader")
+    seen: dict = {}
+
+    def _capture(request, **kwargs):
+        seen["documents"] = list(request.context.documents)
+        return _stub_generation_result()
+
+    with (
+        patch("src.agents.search.agentic_rag.retrieve_context", _flaky_retrieve),
+        patch("src.agents.search.agentic_rag.generate_answer", _capture),
+    ):
+        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)
+        await loop.run("q")
+
+    assert seen["documents"], "a single failing query emptied the whole round"
