@@ -201,3 +201,46 @@ def test_rewrite_returns_cleaned_query():
 
 def test_rewrite_falls_back_to_none_without_llm():
     assert QueryEnhancer(None).rewrite("anything") is None
+
+
+# ---------------------------------------------------------------------------
+# enhance_async
+# ---------------------------------------------------------------------------
+
+
+async def test_enhance_async_matches_enhance():
+    """The async path returns exactly what the sync path returns."""
+    from src.context.query_enhancer import QueryEnhancer
+
+    class _LLM:
+        def complete(self, messages, **kw):
+            return "sub one\nsub two"
+
+    enhancer = QueryEnhancer(_LLM())
+    assert await enhancer.enhance_async("q") == enhancer.enhance("q")
+
+
+async def test_enhance_async_runs_strategies_concurrently():
+    """decompose, hyde and step_back overlap instead of queueing.
+
+    Guards the parallelism: run one after another they cost three LLM round
+    trips of latency where they need only cost one.
+    """
+    import time
+
+    from src.context.query_enhancer import QueryEnhancer
+
+    in_flight = 0
+    peak = 0
+
+    class _SlowLLM:
+        def complete(self, messages, **kw):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            time.sleep(0.05)
+            in_flight -= 1
+            return "sub one"
+
+    await QueryEnhancer(_SlowLLM()).enhance_async("q")
+    assert peak > 1, f"enhancement strategies were serialized (peak {peak})"

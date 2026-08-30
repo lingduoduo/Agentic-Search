@@ -220,7 +220,7 @@ class AgenticRAGLoop:
         rounds_used = 0
 
         t0 = time.perf_counter()
-        bundle = self._enhancer.enhance(question)
+        bundle = await self._enhancer.enhance_async(question)
         current_queries = bundle.all_queries()
         # Key by content fingerprint so docs from different retrieve_context() calls
         # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.

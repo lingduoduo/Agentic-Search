@@ -35,6 +35,11 @@ BLOCKING_MODULE_CALLS = {
 # `answer_with_retrieval` is deliberately absent: it is itself a coroutine.
 BLOCKING_FUNCTIONS = {"generate_answer"}
 
+# Synchronous *methods* in this repo that perform blocking LLM/network IO.
+# Matched on the attribute name, because the call site is `obj.method(...)`
+# rather than a bare name. `enhance` runs three blocking LLM completions.
+BLOCKING_METHODS = {"enhance"}
+
 
 class BlockingCallFinder(ast.NodeVisitor):
     """Collect blocking calls whose nearest enclosing function is a coroutine.
@@ -71,6 +76,8 @@ class BlockingCallFinder(ast.NodeVisitor):
                 )
             elif name in BLOCKING_FUNCTIONS:
                 self.findings.append((node.lineno, enclosing, f"{name}()"))
+            elif attribute in BLOCKING_METHODS:
+                self.findings.append((node.lineno, enclosing, f"{attribute}()"))
         self.generic_visit(node)
 
 
@@ -131,5 +138,22 @@ async def fetch():
     def work():
         return requests.get("http://example.com")
     return await asyncio.to_thread(work)
+"""
+    assert find_blocking_calls(source) == []
+
+
+def test_the_finder_reports_a_blocking_method_inside_a_coroutine() -> None:
+    source = """
+async def prepare(self):
+    return self._enhancer.enhance("q")
+"""
+    assert find_blocking_calls(source) == [(3, "prepare", "enhance()")]
+
+
+def test_the_finder_ignores_a_blocking_method_offloaded_to_a_thread() -> None:
+    source = """
+import asyncio
+async def prepare(self):
+    return await asyncio.to_thread(self._enhancer.enhance, "q")
 """
     assert find_blocking_calls(source) == []

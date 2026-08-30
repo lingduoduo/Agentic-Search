@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -180,4 +181,26 @@ class QueryEnhancer:
             sub_queries=self.decompose(query),
             hyde_text=self.hyde(query),
             step_back_query=self.step_back(query),
+        )
+
+    async def enhance_async(self, query: str) -> QueryBundle:
+        """Async `enhance`: the three strategies run off-loop and concurrently.
+
+        `llm.complete` is a blocking `requests` call, so calling `enhance` from
+        a coroutine froze the event loop for all three round trips -- every
+        other in-flight session stalled behind one user's query preparation.
+        The strategies are independent and each already falls back on its own
+        exception, so nothing here can raise and the round costs one round trip
+        rather than three.
+        """
+        sub_queries, hyde_text, step_back_query = await asyncio.gather(
+            asyncio.to_thread(self.decompose, query),
+            asyncio.to_thread(self.hyde, query),
+            asyncio.to_thread(self.step_back, query),
+        )
+        return QueryBundle(
+            original=query,
+            sub_queries=sub_queries,
+            hyde_text=hyde_text,
+            step_back_query=step_back_query,
         )
