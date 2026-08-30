@@ -29,6 +29,7 @@ from .prompts import build_corrective_answer_prompt
 from .prompts import build_chat_prompt
 from .prompts import build_structured_answer_prompt
 from .retrieval.search_runner import build_search_context
+from .retrieval.search_runner import build_search_contexts
 from .streaming_draft import IncrementalDraftReader
 from .tool_evidence import ToolRegistry
 from .tool_evidence import ToolSelector
@@ -49,6 +50,19 @@ async def retrieve_context(
     return await build_search_context(
         SearchRequest(query=question, top_k=top_k, filters=filters),
         search_url=search_url,
+    )
+
+
+async def retrieve_contexts(
+    questions: list[str],
+    *,
+    search_url: str = "http://localhost:8000/retrieve",
+    top_k: int = 5,
+    filters: SearchFilters | None = None,
+) -> list[SearchContextBundle]:
+    """Batched `retrieve_context`: one bundle per question, in input order."""
+    return await build_search_contexts(
+        questions, top_k=top_k, filters=filters, search_url=search_url
     )
 
 

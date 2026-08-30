@@ -18,6 +18,15 @@ def _make_bundle(doc_ids: list[str], query: str = "q") -> SearchContextBundle:
     return SearchContextBundle(query=query, documents=docs)
 
 
+def _batched(per_query):
+    """Adapt a single-query fake into the batched retrieve_contexts shape."""
+
+    async def _call(queries, **kwargs):
+        return [await per_query(q, **kwargs) for q in queries]
+
+    return _call
+
+
 def _llm_responses(*responses: str) -> MagicMock:
     llm = MagicMock()
     llm.complete.side_effect = list(responses)
@@ -49,7 +58,8 @@ async def test_run_returns_result_on_single_round():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("what is FAISS?")
@@ -82,7 +92,8 @@ async def test_run_iterates_when_insufficient():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("what is FAISS?")
@@ -111,7 +122,8 @@ async def test_run_caps_at_max_rounds():
     config = AgenticRAGConfig(max_rounds=2, topk=5)
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("q?")
@@ -130,7 +142,8 @@ async def test_run_no_llm_returns_extractive_answer():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(config, llm=None)
         result = await loop.run("what is content about d1?")
@@ -164,7 +177,7 @@ async def test_accumulates_unique_docs_across_rounds():
         call_count += 1
         return b
 
-    with patch("src.agents.search.agentic_rag.retrieve_context", side_effect=_retrieve):
+    with patch("src.agents.search.agentic_rag.retrieve_contexts", _batched(_retrieve)):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("multi-hop question?")
 
@@ -182,8 +195,8 @@ async def test_run_handles_retrieval_error_gracefully():
     config = AgenticRAGConfig(max_rounds=2, topk=5)
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context",
-        AsyncMock(side_effect=RuntimeError("server down")),
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(side_effect=RuntimeError("server down"))),
     ):
         loop = AgenticRAGLoop(config, llm=None)
         result = await loop.run("what is FAISS?")
@@ -217,7 +230,7 @@ async def test_no_duplicate_retrieval_queries_across_rounds():
         return bundle
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", side_effect=_track_retrieve
+        "src.agents.search.agentic_rag.retrieve_contexts", _batched(_track_retrieve)
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("what is FAISS?")
@@ -249,7 +262,8 @@ async def test_follow_up_queries_do_not_duplicate_seen_queries():
     config = AgenticRAGConfig(max_rounds=3, topk=5)
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run(original_question)
@@ -277,7 +291,8 @@ async def test_run_emits_control_flow_events_to_recorder():
     recorder = ControlFlowRecorder("req-1", session_id="sess-1")
 
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=3, topk=5), llm=llm)
         await loop.run("what is FAISS?", recorder=recorder)
@@ -298,8 +313,8 @@ async def test_run_with_zero_max_rounds_returns_empty_context():
     llm = _llm_responses("sub", "hyde", "broader", "answer")
     config = AgenticRAGConfig(max_rounds=0, topk=5)
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context",
-        AsyncMock(return_value=_make_bundle(["d1"])),
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=_make_bundle(["d1"]))),
     ):
         loop = AgenticRAGLoop(config, llm=llm)
         result = await loop.run("q?")
@@ -326,7 +341,7 @@ async def test_case_and_whitespace_variants_retrieve_once():
         calls.append(query)
         return bundle
 
-    with patch("src.agents.search.agentic_rag.retrieve_context", side_effect=_track):
+    with patch("src.agents.search.agentic_rag.retrieve_contexts", _batched(_track)):
         loop = AgenticRAGLoop(config, llm=llm)
         await loop.run("gpt-4 cost?")
 
@@ -342,7 +357,8 @@ async def test_url_less_docs_dedup_by_full_content():
     bundle = SearchContextBundle(query="q", documents=[dup_a, near])
     config = AgenticRAGConfig(max_rounds=1, topk=5)
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(config, llm=None)
         result = await loop.run("q?")
@@ -369,7 +385,7 @@ async def test_follow_ups_capped_per_round():
         calls.append(query)
         return bundle
 
-    with patch("src.agents.search.agentic_rag.retrieve_context", side_effect=_track):
+    with patch("src.agents.search.agentic_rag.retrieve_contexts", _batched(_track)):
         loop = AgenticRAGLoop(config, llm=llm)
         await loop.run("q?")
 
@@ -429,7 +445,8 @@ async def test_run_without_recorder_is_unchanged():
     bundle = _make_bundle(["d1"])
     llm = _llm_responses("sub", "hyde", "broader", "yes", _GROUNDED_ANSWER)
     with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
+        "src.agents.search.agentic_rag.retrieve_contexts",
+        _batched(AsyncMock(return_value=bundle)),
     ):
         loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=3, topk=5), llm=llm)
         result = await loop.run("q")  # no recorder → no crash, same result
@@ -460,8 +477,8 @@ async def test_run_threads_user_memory_into_answer_request():
 
     with (
         patch(
-            "src.agents.search.agentic_rag.retrieve_context",
-            AsyncMock(return_value=bundle),
+            "src.agents.search.agentic_rag.retrieve_contexts",
+            _batched(AsyncMock(return_value=bundle)),
         ),
         patch("src.agents.search.agentic_rag.generate_answer", fake_generate_answer),
     ):
@@ -501,8 +518,8 @@ async def test_agentic_rag_forwards_on_claim():
 
     with (
         patch(
-            "src.agents.search.agentic_rag.retrieve_context",
-            AsyncMock(return_value=bundle),
+            "src.agents.search.agentic_rag.retrieve_contexts",
+            _batched(AsyncMock(return_value=bundle)),
         ),
         patch("src.agents.search.agentic_rag.generate_answer", _fake_generate_answer),
     ):
@@ -513,68 +530,17 @@ async def test_agentic_rag_forwards_on_claim():
 
 
 # ---------------------------------------------------------------------------
-# A round's retrievals run concurrently, not one after another
+# A round's retrievals are batched into one request
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_round_retrievals_run_concurrently():
-    """All of a round's queries are in flight at once.
-
-    Guards the fan-out: issuing them one await at a time made a round cost the
-    sum of its retrievals instead of the slowest one.
-    """
-    import asyncio
-
-    in_flight = 0
-    peak = 0
-
-    async def _slow_retrieve(query, **kwargs):
-        nonlocal in_flight, peak
-        in_flight += 1
-        peak = max(peak, in_flight)
-        await asyncio.sleep(0.02)
-        in_flight -= 1
-        return _make_bundle(["d1"], query=query)
-
-    llm = _llm_responses("sub-a\nsub-b", "hyde", "broader")
-    with (
-        patch("src.agents.search.agentic_rag.retrieve_context", _slow_retrieve),
-        patch(
-            "src.agents.search.agentic_rag.generate_answer",
-            lambda request, **kwargs: _stub_generation_result(),
-        ),
-    ):
-        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)
-        await loop.run("q")
-
-    assert peak > 1, f"round retrievals were serialized (peak concurrency {peak})"
-
-
-@pytest.mark.asyncio
-async def test_round_survives_one_failing_query():
-    """One query raising leaves the round's other results intact."""
-
-    async def _flaky_retrieve(query, **kwargs):
-        if "sub-a" in query:
-            raise RuntimeError("retrieval server down")
-        return _make_bundle(["d1"], query=query)
-
-    llm = _llm_responses("sub-a\nsub-b", "hyde", "broader")
-    seen: dict = {}
-
-    def _capture(request, **kwargs):
-        seen["documents"] = list(request.context.documents)
-        return _stub_generation_result()
-
-    with (
-        patch("src.agents.search.agentic_rag.retrieve_context", _flaky_retrieve),
-        patch("src.agents.search.agentic_rag.generate_answer", _capture),
-    ):
-        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)
-        await loop.run("q")
-
-    assert seen["documents"], "a single failing query emptied the whole round"
+#
+# test_round_retrievals_run_concurrently (guarded N-way asyncio.gather
+# fan-out) and test_round_survives_one_failing_query (guarded one query's
+# failure leaving the round's other results intact) are both removed: the
+# round is now one batched request on one session, so there is no longer any
+# per-query concurrency to overlap, and a transport failure now fails the
+# round's queries together by construction (see the try/except around
+# retrieve_contexts in AgenticRAGLoop.run). Whole-batch failure is covered by
+# test_run_handles_retrieval_error_gracefully above.
 
 
 @pytest.mark.asyncio
@@ -599,7 +565,7 @@ async def test_synthesis_trace_carries_first_response_timings():
     recorder = ControlFlowRecorder("req-timings")
     llm = _llm_responses("sub", "hyde", "broader")
     with (
-        patch("src.agents.search.agentic_rag.retrieve_context", _retrieve),
+        patch("src.agents.search.agentic_rag.retrieve_contexts", _batched(_retrieve)),
         patch("src.agents.search.agentic_rag.generate_answer", _timed_answer),
     ):
         loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)

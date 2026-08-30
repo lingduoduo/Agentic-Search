@@ -9,6 +9,8 @@ from src.internal.tools.search import google_custom_search
 from src.internal.tools.search import serpapi_search
 
 from ..enums import SearchType
+from ..models import SearchContextBundle
+from ..models import SearchFilters
 from ..models import SearchRequest
 from ..utils import build_context_bundle
 
@@ -91,6 +93,52 @@ async def build_search_context(
         _apply_filters(results, request.filters),
         max_documents=request.top_k,
     )
+
+
+async def build_search_contexts(
+    queries: list[str],
+    *,
+    top_k: int = 5,
+    filters: SearchFilters | None = None,
+    search_url: str = "http://localhost:8000/retrieve",
+    timeout_seconds: int = 15,
+    max_retries: int = 3,
+) -> list[SearchContextBundle]:
+    """Retrieve for several queries in one request; one bundle per query.
+
+    The retrieval API is natively multi-query ({"queries": [...]}), so N
+    independent queries cost one round trip on one session rather than N of
+    each. Bundles come back in input order and are built exactly as
+    `build_search_context` builds a single one, so this is a transport change
+    only.
+
+    Retrieval provider only: the multi-query request shape is specific to
+    /retrieve.
+    """
+    if not queries:
+        return []
+    client = SearchClient(
+        SearchClientConfig(
+            url=search_url,
+            topk=top_k,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+        )
+    )
+    try:
+        rows = await client.retrieve(
+            queries,
+            topk=top_k,
+            filters=filters.to_payload() if filters is not None else None,
+        )
+    finally:
+        await client.aclose()
+    # Enforce, don't just forward: a third-party backend need not honour the
+    # forwarded filter, and anything returned here reaches a model's context.
+    return [
+        build_context_bundle(query, _apply_filters(row, filters), max_documents=top_k)
+        for query, row in zip(queries, rows)
+    ]
 
 
 def combine_search_results(result_sets: list[list[SearchResult]]) -> list[SearchResult]:
