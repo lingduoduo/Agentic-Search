@@ -52,8 +52,15 @@ not the Assist path. `add_latency_logging_middleware` is written but has zero
 call sites. Time-to-first-token and time-to-first-claim are both unmeasured on
 the path users actually hit.
 
-**The first request per process pays ~1.4–1.6 s of lazy imports** (`.safety`,
-`request_capture`), attributed to whichever user arrives first.
+**~1.4–1.6 s of import cost exists, but not where this spec first claimed.**
+It was measured importing `AgenticRAGLoop` directly, without `app.py`, where the
+deferred `request_capture` import inside `_record_search_stage` genuinely is
+cold. That is not how the web server starts: `app.py:69` imports
+`request_capture` at module top level and pulls in `src.context.safety`
+transitively, so uvicorn pays the 1.47 s at process boot and no request ever
+pays it. **Item 3 below was implemented, proved inert by its own mutation
+check, and reverted** (8b9ef5f, reverted by 48e972f). It is retained here as the
+record of a measurement corrected, not as work to do.
 
 ## Scope
 
@@ -107,7 +114,7 @@ endpoint and no new transport.
 stack that is not the request path, and the field's only reader is an offline
 provider.
 
-### 3. Warm lazy imports at startup
+### 3. Warm lazy imports at startup — WITHDRAWN, see above
 
 A `_warm_imports()` call in the web app's `lifespan` that imports
 `src.context.safety` and `src.internal.servers.web.request_capture`. Both are
@@ -147,8 +154,9 @@ Each item gets a test that fails without it:
    strategy calls overlap.
 2. An assertion that the `answer_generator` trace event carries both
    `llm_first_token_ms` and `time_to_first_claim_ms`.
-3. An assertion that the warmed modules are in `sys.modules` after lifespan
-   startup.
+3. ~~An assertion that the warmed modules are in `sys.modules` after lifespan
+   startup.~~ Withdrawn with item 3: the assertion passed with the feature
+   deleted, which is what exposed the item as inert.
 4. An assertion that one AgenticRAG round issues exactly one retrieval request
    carrying all of the round's queries.
 

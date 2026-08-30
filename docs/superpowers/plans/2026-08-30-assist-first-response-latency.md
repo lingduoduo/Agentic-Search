@@ -545,7 +545,16 @@ git commit -m "feat(observability): report time-to-first-token and time-to-first
 
 ---
 
-### Task 3: Warm lazy imports at startup
+### Task 3: Warm lazy imports at startup — WITHDRAWN
+
+**Outcome:** implemented (8b9ef5f), proved inert by its own mutation check, and
+reverted (48e972f). `app.py:69` already imports `request_capture` at top level
+and pulls `src.context.safety` in transitively, so both modules are in
+`sys.modules` before `_warm_lazy_imports` could run. Gutting the function to a
+no-op left both of its tests passing — a false green. The steps below are kept
+as the record of what was tried.
+
+#### Original task text
 
 **Files:**
 - Modify: `src/internal/servers/web/app.py` (inside `lifespan`, which starts at line 1276)
