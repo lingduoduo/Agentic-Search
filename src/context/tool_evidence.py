@@ -121,6 +121,12 @@ async def collect_tool_evidence(
         )
     except Exception:
         return []
+
+    # Screen selections first, then invoke the accepted ones concurrently: the
+    # calls are independent and each carries its own timeout, so running them
+    # in sequence made the worst case max_calls * timeout_seconds instead of
+    # timeout_seconds. Callbacks and evidence stay in selection order below.
+    accepted: list[ToolRequest] = []
     for request in selected_requests:
         if not isinstance(request, ToolRequest):
             continue
@@ -131,12 +137,19 @@ async def collect_tool_evidence(
         if attempted >= max_calls:
             break
         attempted += 1
-        try:
-            result = await asyncio.wait_for(
-                registry.invoke(request), timeout=timeout_seconds
-            )
-            text = _encode_bounded(result, max_result_chars)
-        except Exception:
+        accepted.append(request)
+
+    async def _invoke(request: ToolRequest) -> str:
+        result = await asyncio.wait_for(
+            registry.invoke(request), timeout=timeout_seconds
+        )
+        return _encode_bounded(result, max_result_chars)
+
+    outcomes = await asyncio.gather(
+        *(_invoke(request) for request in accepted), return_exceptions=True
+    )
+    for request, outcome in zip(accepted, outcomes):
+        if isinstance(outcome, BaseException):
             if status_callback is not None:
                 status_callback(request.tool_name, "failed")
             continue
@@ -145,7 +158,7 @@ async def collect_tool_evidence(
         evidence.append(
             EvidenceSource(
                 id=f"T{len(evidence) + 1}",
-                text=text,
+                text=outcome,
                 title=f"Tool: {request.tool_name}",
                 provenance="tool",
                 tool_name=request.tool_name,

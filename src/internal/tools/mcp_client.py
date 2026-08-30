@@ -27,6 +27,7 @@ restarts.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -175,15 +176,28 @@ async def register_mcp_tools(registry: ToolRegistry, specs: list[McpServerSpec])
     A server that cannot be reached is logged and skipped — MCP is additive, so
     an unreachable one must not stop the web process from starting.
     """
+
+    async def _discover(spec: McpServerSpec) -> list[Any]:
+        async with _connect(spec) as session:
+            listing = await session.list_tools()
+            return list(getattr(listing, "tools", None) or [])
+
+    # Discover every server at once: servers are independent, and a sequential
+    # sweep made each unreachable one's connect timeout delay the next server's
+    # discovery. Registration below still walks specs in order.
+    listings = await asyncio.gather(
+        *(_discover(spec) for spec in specs), return_exceptions=True
+    )
+
     registered = 0
-    for spec in specs:
-        try:
-            async with _connect(spec) as session:
-                listing = await session.list_tools()
-                remote_tools = list(getattr(listing, "tools", None) or [])
-        except Exception as exc:  # noqa: BLE001 — any transport failure is non-fatal
+    for spec, remote_tools in zip(specs, listings):
+        if isinstance(remote_tools, BaseException):
+            # any transport failure is non-fatal
             logger.warning(
-                "MCP server %r unreachable at %s: %s", spec.name, spec.url, exc
+                "MCP server %r unreachable at %s: %s",
+                spec.name,
+                spec.url,
+                remote_tools,
             )
             continue
         for remote in remote_tools:
