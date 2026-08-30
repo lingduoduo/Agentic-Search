@@ -575,3 +575,37 @@ async def test_round_survives_one_failing_query():
         await loop.run("q")
 
     assert seen["documents"], "a single failing query emptied the whole round"
+
+
+@pytest.mark.asyncio
+async def test_synthesis_trace_carries_first_response_timings():
+    """The answer_generator trace event reports both first-response latencies."""
+    import dataclasses
+
+    from src.agents.core.control_flow_trace import ControlFlowRecorder
+    from src.context.models import GenerationTimings
+
+    def _timed_answer(request, **kwargs):
+        return dataclasses.replace(
+            _stub_generation_result(),
+            timings=GenerationTimings(
+                llm_first_token_ms=12.5, time_to_first_claim_ms=88.0
+            ),
+        )
+
+    async def _retrieve(query, **kwargs):
+        return _make_bundle(["d1"], query=query)
+
+    recorder = ControlFlowRecorder("req-timings")
+    llm = _llm_responses("sub", "hyde", "broader")
+    with (
+        patch("src.agents.search.agentic_rag.retrieve_context", _retrieve),
+        patch("src.agents.search.agentic_rag.generate_answer", _timed_answer),
+    ):
+        loop = AgenticRAGLoop(AgenticRAGConfig(max_rounds=1), llm=llm)
+        await loop.run("q", recorder=recorder)
+
+    synth = [e for e in recorder.snapshot() if e.component == "answer_generator"]
+    assert synth, "no answer_generator event recorded"
+    assert synth[-1].details["llm_first_token_ms"] == 12.5
+    assert synth[-1].details["time_to_first_claim_ms"] == 88.0

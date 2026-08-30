@@ -32,6 +32,8 @@ ALLOWED_DETAIL_KEYS = frozenset(
         "safe_message",
         "exit_reason",
         "decision",
+        "llm_first_token_ms",
+        "time_to_first_claim_ms",
     }
 )
 _MAX_DETAIL_STRING = 256

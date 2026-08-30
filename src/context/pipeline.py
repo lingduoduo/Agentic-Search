@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 
 from .models import AnswerGenerationRequest
 from .models import AnswerGenerationResult
+from .models import GenerationTimings
 from .models import AnswerClaim
 from .models import ChatMessage
 from .models import ContextDocument
@@ -78,6 +80,7 @@ def generate_answer(
     structured_output_applied = False
     structured_output_downgraded = False
     structured_output_category = None
+    generation_timings = None
 
     if llm is None:
         answer, verification = _generate_extractive_answer(
@@ -125,6 +128,7 @@ def generate_answer(
             structured_output_applied,
             structured_output_downgraded,
             structured_output_category,
+            generation_timings,
         ) = _generate_guarded_answer(request, llm, prompt, evidence, on_claim)
         abstained = verification_status is VerificationStatus.ABSTAINED
 
@@ -153,6 +157,7 @@ def generate_answer(
         structured_output_applied=structured_output_applied,
         structured_output_downgraded=structured_output_downgraded,
         structured_output_category=structured_output_category,
+        timings=generation_timings,
     )
 
 
@@ -162,7 +167,9 @@ def _generate_guarded_answer(
     prompt: PromptBundle,
     evidence: list[EvidenceSource],
     on_claim: Callable[[str], None] | None = None,
-) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
+) -> tuple[
+    str, float, VerificationStatus, int, bool, bool, bool, str | None, GenerationTimings
+]:
     from .safety import (
         TIMEOUT_DEGRADED_ANSWER,
         parse_answer_draft,
@@ -197,16 +204,35 @@ def _generate_guarded_answer(
 
     def _commit(claim: AnswerClaim) -> None:
         """Emit a supported claim once. Emitted claims are permanent."""
+        nonlocal first_claim_ms
         key = (claim.text, frozenset(claim.evidence_ids))
         if key in committed_keys:
             return
         committed_keys.add(key)
         committed.append(claim)
         on_claim(render_claim(claim))
+        if first_claim_ms is None:
+            first_claim_ms = (time.perf_counter() - t_gen) * 1000
+
+    def _timings() -> GenerationTimings:
+        return GenerationTimings(
+            llm_first_token_ms=first_token_ms,
+            time_to_first_claim_ms=first_claim_ms,
+        )
 
     def _committed_answer(
         category: str | None,
-    ) -> tuple[str, float, VerificationStatus, int, bool, bool, bool, str | None]:
+    ) -> tuple[
+        str,
+        float,
+        VerificationStatus,
+        int,
+        bool,
+        bool,
+        bool,
+        str | None,
+        GenerationTimings,
+    ]:
         """Build the return tuple from `committed`, not from `result`.
 
         The invariant: the answer is exactly what the user was shown. Every
@@ -229,7 +255,12 @@ def _generate_guarded_answer(
             applied,
             downgraded,
             category,
+            _timings(),
         )
+
+    first_token_ms: float | None = None
+    first_claim_ms: float | None = None
+    t_gen = time.perf_counter()
 
     for attempt in range(max_attempts):
         active_prompt = prompt
@@ -252,6 +283,8 @@ def _generate_guarded_answer(
                     active_prompt.messages,
                     **({"structured_output": schema_request} if schema_request else {}),
                 ):
+                    if first_token_ms is None:
+                        first_token_ms = (time.perf_counter() - t_gen) * 1000
                     parts.append(delta)
                     for claim in reader.feed(delta):
                         verdict = verify_claim(
@@ -279,6 +312,7 @@ def _generate_guarded_answer(
                 applied,
                 downgraded,
                 "timeout",
+                _timings(),
             )
         except SchemaUnsupportedError:
             if schema_request is None:
@@ -300,6 +334,7 @@ def _generate_guarded_answer(
                     applied,
                     downgraded,
                     "refused",
+                    _timings(),
                 )
             if raw.structured.incomplete_reason is not None:
                 category = "incomplete"
@@ -338,6 +373,7 @@ def _generate_guarded_answer(
             applied,
             downgraded,
             category,
+            _timings(),
         )
     return (
         render_verified_answer(result),
@@ -348,6 +384,7 @@ def _generate_guarded_answer(
         applied,
         downgraded,
         category,
+        _timings(),
     )
 
 

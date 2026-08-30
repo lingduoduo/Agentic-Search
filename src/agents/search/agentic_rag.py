@@ -355,6 +355,16 @@ class AgenticRAGLoop:
             duration_ms=round((time.perf_counter() - t_syn) * 1000),
             citation_count=len(gen_result.citations),
             document_count=len(merged.documents),
+            llm_first_token_ms=(
+                gen_result.timings.llm_first_token_ms
+                if gen_result.timings is not None
+                else None
+            ),
+            time_to_first_claim_ms=(
+                gen_result.timings.time_to_first_claim_ms
+                if gen_result.timings is not None
+                else None
+            ),
         )
         return AgenticRAGResult(
             answer=gen_result.answer,
