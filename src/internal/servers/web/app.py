@@ -9,6 +9,7 @@ import uuid as _uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
+from importlib import import_module
 from itertools import islice
 from pathlib import Path
 from typing import Literal
@@ -1232,6 +1233,25 @@ async def _run_auto_routed(
         )
 
 
+def _warm_lazy_imports() -> None:
+    """Import modules the request path imports lazily.
+
+    `src.context.safety` and `request_capture` are imported inside hot
+    functions -- the first for laziness, the second to break an import cycle
+    from the agent-loop modules. That cycle does not exist from the web app's
+    own startup, where the web package is already fully loaded. Left cold, the
+    first request of a process paid roughly 1.4s of import time, charged to
+    whichever user happened to arrive first.
+
+    Best-effort: a warm-up failure must never stop the process from starting.
+    """
+    for module in ("src.context.safety", "src.internal.servers.web.request_capture"):
+        try:
+            import_module(module)
+        except Exception:  # noqa: BLE001 -- warming is best-effort
+            logger.warning("Could not warm %s", module, exc_info=True)
+
+
 def create_web_app(
     settings: SearchExperienceSettings | None = None,
     *,
@@ -1275,6 +1295,7 @@ def create_web_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         seed_db(db)
+        _warm_lazy_imports()
         seed_tools(
             tool_registry,
             tools=tool_knowledge_base(
