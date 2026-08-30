@@ -355,13 +355,15 @@ class AgenticRAGLoop:
             citation_count=len(gen_result.citations),
             document_count=len(merged.documents),
             llm_first_token_ms=(
-                gen_result.timings.llm_first_token_ms
+                round(gen_result.timings.llm_first_token_ms, 1)
                 if gen_result.timings is not None
+                and gen_result.timings.llm_first_token_ms is not None
                 else None
             ),
             time_to_first_claim_ms=(
-                gen_result.timings.time_to_first_claim_ms
+                round(gen_result.timings.time_to_first_claim_ms, 1)
                 if gen_result.timings is not None
+                and gen_result.timings.time_to_first_claim_ms is not None
                 else None
             ),
         )

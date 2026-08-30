@@ -116,7 +116,7 @@ provider.
 
 ### 3. Warm lazy imports at startup — WITHDRAWN, see above
 
-A `_warm_imports()` call in the web app's `lifespan` that imports
+A `_warm_lazy_imports()` call in the web app's `lifespan` that imports
 `src.context.safety` and `src.internal.servers.web.request_capture`. Both are
 deferred purely for laziness — `request_capture`'s deferral in the agent loops is
 to break an import cycle *from those modules*, which importing from the web app's
@@ -130,9 +130,11 @@ Model loading stays out: it is already conditional on
 
 Add `retrieve_contexts(queries, ...)` to `src/context/pipeline.py`: one
 `SearchClient.retrieve(queries)` call over a single session, returning one
-`SearchContextBundle` per query in input order — identical to what N separate
-`retrieve_context` calls produce, because `build_context_bundle` is applied
-per query with the same `top_k`.
+`SearchContextBundle` per query in input order, built by `build_context_bundle`
+per query with the same `top_k` — matching what N separate `retrieve_context`
+calls produce for a well-formed response. It is not exactly identical: a
+short or malformed server response (fewer rows than queries) now pads the
+gap with empty bundles and logs a warning, rather than raising per query.
 
 Retrieval-provider only. AgenticRAG never uses another provider, and the
 multi-query request shape is specific to `/retrieve`.
@@ -140,6 +142,15 @@ multi-query request shape is specific to `/retrieve`.
 This supersedes the `asyncio.gather` of single-query calls added in #560 at that
 one call site. The gather is correct and stays correct; batching just replaces N
 round trips and N sessions with one. Measured 13.5 ms → ~6.3 ms.
+
+Per-query failure isolation is a deliberate casualty of batching: with the
+gather, one query's transport failure left the other queries' documents
+intact; with one shared request, a transport failure fails the whole round.
+This is accepted as the cost of one round trip instead of N.
+
+The timeout budget also changes shape: `timeout_seconds` previously bounded
+each query's own parallel request; it now bounds the single request covering
+all N queries' server-side work together.
 
 Access filters are enforced exactly as the single-query path enforces them:
 filters are forwarded in the payload and re-applied to each returned row, so the

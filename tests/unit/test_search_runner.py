@@ -74,3 +74,53 @@ async def test_build_search_contexts_pads_a_short_response_and_logs(caplog):
     assert any("2 rows for 3 queries" in record.message for record in caplog.records), (
         "the row/query mismatch must be logged, not silent"
     )
+
+
+async def test_build_search_contexts_enforces_filters_locally_on_every_query():
+    """The batched path must re-apply filters to returned rows, not just forward them.
+
+    Regression for PRs #487-#492's hard invariant: a third-party backend need
+    not honour a forwarded filter, and anything it returns reaches a model's
+    context, so filtering after the fact is the only safe enforcement point.
+    Guards against a future refactor that inlines build_context_bundle over
+    `rows` directly and drops the `_apply_filters` call -- every existing
+    batched-path test passes `filters=None`, so none of them would catch that.
+    """
+    from unittest.mock import patch
+
+    from src.context.models import SearchFilters
+    from src.context.retrieval.search_runner import build_search_contexts
+    from src.context.search import SearchResult
+
+    async def _fake_retrieve(self, queries, topk=None, filters=None):
+        return [
+            [
+                SearchResult(
+                    title=f"Visible {q}",
+                    contents=f'"Visible {q}"\nAllowed',
+                    metadata={"acl": ["public"]},
+                ),
+                SearchResult(
+                    title=f"Blocked {q}",
+                    contents=f'"Blocked {q}"\nHidden',
+                    metadata={"acl": ["user:alice"]},
+                ),
+            ]
+            for q in queries
+        ]
+
+    with patch("src.context.retrieval.client.SearchClient.retrieve", _fake_retrieve):
+        bundles = await build_search_contexts(
+            ["alpha", "beta"],
+            top_k=5,
+            filters=SearchFilters(access_acl=["public"]),
+            search_url="http://x/retrieve",
+        )
+
+    assert [b.query for b in bundles] == ["alpha", "beta"]
+    for bundle in bundles:
+        titles = [doc.title for doc in bundle.documents]
+        assert titles, "the allowed document must still be present"
+        assert all(not title.startswith("Blocked") for title in titles), (
+            f"a document outside the filter reached the bundle: {titles}"
+        )

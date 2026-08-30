@@ -209,12 +209,26 @@ def test_rewrite_falls_back_to_none_without_llm():
 
 
 async def test_enhance_async_matches_enhance():
-    """The async path returns exactly what the sync path returns."""
+    """The async path returns exactly what the sync path returns.
+
+    Each strategy's stubbed response must be distinct (branched on the
+    prompt text), or a swap of hyde_text/step_back_query in enhance_async's
+    gather unpacking would go undetected: with a single constant response,
+    hyde() and step_back() -- both plain `raw or None` -- would collapse to
+    the same value and the comparison would still pass.
+    """
     from src.context.query_enhancer import QueryEnhancer
 
     class _LLM:
         def complete(self, messages, **kw):
-            return "sub one\nsub two"
+            prompt = messages[0].content
+            if "sub-questions" in prompt:
+                return "sub one\nsub two"
+            if "ideal answer" in prompt:
+                return "hyde answer text"
+            if "broader background question" in prompt:
+                return "step back question text"
+            raise AssertionError(f"unrecognized prompt: {prompt!r}")
 
     enhancer = QueryEnhancer(_LLM())
     assert await enhancer.enhance_async("q") == enhancer.enhance("q")
