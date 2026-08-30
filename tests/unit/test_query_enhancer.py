@@ -201,3 +201,60 @@ def test_rewrite_returns_cleaned_query():
 
 def test_rewrite_falls_back_to_none_without_llm():
     assert QueryEnhancer(None).rewrite("anything") is None
+
+
+# ---------------------------------------------------------------------------
+# enhance_async
+# ---------------------------------------------------------------------------
+
+
+async def test_enhance_async_matches_enhance():
+    """The async path returns exactly what the sync path returns.
+
+    Each strategy's stubbed response must be distinct (branched on the
+    prompt text), or a swap of hyde_text/step_back_query in enhance_async's
+    gather unpacking would go undetected: with a single constant response,
+    hyde() and step_back() -- both plain `raw or None` -- would collapse to
+    the same value and the comparison would still pass.
+    """
+    from src.context.query_enhancer import QueryEnhancer
+
+    class _LLM:
+        def complete(self, messages, **kw):
+            prompt = messages[0].content
+            if "sub-questions" in prompt:
+                return "sub one\nsub two"
+            if "ideal answer" in prompt:
+                return "hyde answer text"
+            if "broader background question" in prompt:
+                return "step back question text"
+            raise AssertionError(f"unrecognized prompt: {prompt!r}")
+
+    enhancer = QueryEnhancer(_LLM())
+    assert await enhancer.enhance_async("q") == enhancer.enhance("q")
+
+
+async def test_enhance_async_runs_strategies_concurrently():
+    """decompose, hyde and step_back overlap instead of queueing.
+
+    Guards the parallelism: run one after another they cost three LLM round
+    trips of latency where they need only cost one.
+    """
+    import time
+
+    from src.context.query_enhancer import QueryEnhancer
+
+    in_flight = 0
+    peak = 0
+
+    class _SlowLLM:
+        def complete(self, messages, **kw):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            time.sleep(0.05)
+            in_flight -= 1
+            return "sub one"
+
+    await QueryEnhancer(_SlowLLM()).enhance_async("q")
+    assert peak > 1, f"enhancement strategies were serialized (peak {peak})"

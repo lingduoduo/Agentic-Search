@@ -302,6 +302,18 @@ class AnswerGenerationRequest:
 
 
 @dataclass(frozen=True)
+class GenerationTimings:
+    """First-response latencies for one grounded generation.
+
+    Both are None when they did not happen: no first token when the provider
+    does not stream, no first claim when none was ever committed.
+    """
+
+    llm_first_token_ms: float | None = None
+    time_to_first_claim_ms: float | None = None
+
+
+@dataclass(frozen=True)
 class AnswerGenerationResult:
     answer: str
     citations: list[str]
@@ -317,6 +329,7 @@ class AnswerGenerationResult:
     structured_output_applied: bool = False
     structured_output_downgraded: bool = False
     structured_output_category: str | None = None
+    timings: "GenerationTimings | None" = None
 
 
 def split_title_and_content(result: SearchResult) -> tuple[str, str]:

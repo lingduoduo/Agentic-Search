@@ -1306,7 +1306,7 @@ def test_direct_search_auto_excludes_browser_sidecar(monkeypatch):
 
 async def test_run_agentic_rag_populates_control_flow_trace():
     """chat_loop runs now emit a control-flow trace (F3) → renders in the F6 waterfall."""
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import MagicMock, patch
 
     from src.internal.servers.web.app import _run_agentic_rag
 
@@ -1328,9 +1328,10 @@ async def test_run_agentic_rag_populates_control_flow_trace():
         ),
     ]
 
-    with patch(
-        "src.agents.search.agentic_rag.retrieve_context", AsyncMock(return_value=bundle)
-    ):
+    async def _fake_retrieve(queries, **kwargs):
+        return [bundle for _ in queries]
+
+    with patch("src.agents.search.agentic_rag.retrieve_contexts", _fake_retrieve):
         _, _, _, intent, extra = await _run_agentic_rag(
             "what is faiss",
             llm=llm,
@@ -1353,11 +1354,13 @@ async def test_agentic_rag_retrieval_propagates_access_filters(monkeypatch):
     filters = SearchFilters(access_acl=["user:alice"])
     observed = []
 
-    async def fake_retrieve(question, **kwargs):
+    async def fake_retrieve(queries, **kwargs):
         observed.append(kwargs.get("filters"))
-        return SearchContextBundle(query=question, documents=[])
+        return [SearchContextBundle(query=q, documents=[]) for q in queries]
 
-    monkeypatch.setattr("src.agents.search.agentic_rag.retrieve_context", fake_retrieve)
+    monkeypatch.setattr(
+        "src.agents.search.agentic_rag.retrieve_contexts", fake_retrieve
+    )
     llm = __import__("unittest.mock").mock.MagicMock()
     llm.complete.side_effect = ["sub-q", "hyde", "broader", "yes", "answer"]
     loop = AgenticRAGLoop(

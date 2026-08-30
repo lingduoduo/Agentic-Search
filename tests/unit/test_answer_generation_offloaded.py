@@ -137,10 +137,10 @@ async def test_agentic_rag_offloads_generation(monkeypatch):
     loop_thread = threading.current_thread().name
     llm = _ThreadRecordingLLM()
 
-    async def _fake_retrieve(*args: Any, **kwargs: Any):
-        return _bundle()
+    async def _fake_retrieve(queries: Any, **kwargs: Any):
+        return [_bundle() for _ in queries]
 
-    monkeypatch.setattr(ar, "retrieve_context", _fake_retrieve)
+    monkeypatch.setattr(ar, "retrieve_contexts", _fake_retrieve)
 
     loop_obj = ar.AgenticRAGLoop(ar.AgenticRAGConfig(max_rounds=1, topk=1), llm=llm)
     await loop_obj.run(

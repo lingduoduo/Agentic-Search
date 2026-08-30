@@ -22,7 +22,7 @@ from src.context.models import (
     SearchContextBundle,
     SearchFilters,
 )
-from src.context.pipeline import generate_answer, retrieve_context
+from src.context.pipeline import generate_answer, retrieve_contexts
 from src.context.query_enhancer import QueryEnhancer
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,7 @@ class AgenticRAGLoop:
         rounds_used = 0
 
         t0 = time.perf_counter()
-        bundle = self._enhancer.enhance(question)
+        bundle = await self._enhancer.enhance_async(question)
         current_queries = bundle.all_queries()
         # Key by content fingerprint so docs from different retrieve_context() calls
         # (which all produce ephemeral D1-D5 IDs) are deduplicated correctly.
@@ -250,23 +250,22 @@ class AgenticRAGLoop:
                 break
 
             t_retr = time.perf_counter()
-            # A round's queries are independent retrievals against the same
-            # server, so issue them concurrently: the round costs the slowest
-            # one instead of their sum. Results are merged below in
-            # novel_queries order, so accumulated/`D1..DN` ordering and the
-            # recorded stages are identical to issuing them one at a time.
-            contexts = await asyncio.gather(
-                *(
-                    retrieve_context(
-                        q,
+            # One request for the whole round: the retrieval API is natively
+            # multi-query, so N queries cost one round trip on one session
+            # instead of N concurrent ones. A transport failure fails the
+            # round's queries together, which the per-query handler below
+            # reports exactly as it reported an individual failure.
+            try:
+                contexts: list[object] = list(
+                    await retrieve_contexts(
+                        novel_queries,
                         search_url=self.config.retrieval_url,
                         top_k=self.config.topk,
                         filters=self.config.filters,
                     )
-                    for q in novel_queries
-                ),
-                return_exceptions=True,
-            )
+                )
+            except Exception as exc:  # noqa: BLE001 -- degrade, as before
+                contexts = [exc] * len(novel_queries)
             for q, ctx in zip(novel_queries, contexts):
                 try:
                     if isinstance(ctx, Exception):
@@ -355,6 +354,18 @@ class AgenticRAGLoop:
             duration_ms=round((time.perf_counter() - t_syn) * 1000),
             citation_count=len(gen_result.citations),
             document_count=len(merged.documents),
+            llm_first_token_ms=(
+                round(gen_result.timings.llm_first_token_ms, 1)
+                if gen_result.timings is not None
+                and gen_result.timings.llm_first_token_ms is not None
+                else None
+            ),
+            time_to_first_claim_ms=(
+                round(gen_result.timings.time_to_first_claim_ms, 1)
+                if gen_result.timings is not None
+                and gen_result.timings.time_to_first_claim_ms is not None
+                else None
+            ),
         )
         return AgenticRAGResult(
             answer=gen_result.answer,
