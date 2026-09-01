@@ -453,3 +453,118 @@ def test_evaluate_reward_uses_gold_list(mock_load):
         verbose=False,
     )
     assert summary.avg_reward > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Shared construction with run_bamboogle_synthetic_grpo
+# ---------------------------------------------------------------------------
+
+
+class _Tokenizer:
+    pad_token_id = 0
+    eos_token_id = 0
+
+    def decode(self, ids, **kwargs):
+        return "x"
+
+    def encode(self, text, **kwargs):
+        return [1]
+
+
+def _eval_args(**overrides):
+    import argparse
+
+    defaults = dict(
+        model="unused/model",
+        local=False,
+        device="cpu",
+        allow_unsafe_mps=False,
+        allow_remote_model_downloads=False,
+        server_url="http://localhost:8080",
+        search_url="http://localhost:8000/retrieve",
+        topk=5,
+        max_turns=8,
+        generation_timeout_seconds=0.0,
+        generation_heartbeat_seconds=10.0,
+    )
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def test_server_manager_comes_from_the_serving_factory(monkeypatch):
+    """The backend choice belongs to src.model.serving, not to this script.
+
+    The script used to import the manager classes from another example module
+    and construct them by hand, so a change to the factory's selection rules
+    reached run_agentic_search and skipped this benchmark.
+    """
+    import src.model.serving as serving
+    from examples.run_bamboogle_eval import build_server_manager_from_args
+
+    calls: list[dict] = []
+
+    def _spy(tokenizer, **kwargs):
+        calls.append(kwargs)
+        return "manager"
+
+    monkeypatch.setattr(serving, "build_server_manager", _spy)
+
+    assert build_server_manager_from_args(_eval_args(), _Tokenizer()) == "manager"
+    assert calls[-1]["server_url"] == "http://localhost:8080"
+    assert "model" in calls[-1]
+
+    build_server_manager_from_args(_eval_args(local=True), _Tokenizer())
+    assert "server_url" not in calls[-1]
+    assert calls[-1]["model"] == "unused/model"
+    assert calls[-1]["device"] == "cpu"
+
+
+def test_server_manager_selection_matches_the_cli_flags():
+    from examples.run_bamboogle_eval import build_server_manager_from_args
+    from src.model.serving import LocalServerManager, OpenAIServerManager
+
+    remote = build_server_manager_from_args(_eval_args(), _Tokenizer())
+    assert isinstance(remote, OpenAIServerManager)
+
+    local = build_server_manager_from_args(_eval_args(local=True), _Tokenizer())
+    assert isinstance(local, LocalServerManager)
+    assert local.model_path == "unused/model"
+    # --local loads lazily, so nothing was fetched by constructing it.
+    assert local._model is None
+
+
+def test_search_loop_carries_the_cli_retrieval_settings():
+    from examples.run_bamboogle_eval import build_search_loop
+
+    loop = build_search_loop(
+        _eval_args(search_url="http://retrieval:9/retrieve", topk=3, max_turns=2),
+        _Tokenizer(),
+        server_manager=object(),
+    )
+    config = loop.search_config
+    assert config.search_url == "http://retrieval:9/retrieve"
+    assert config.topk == 3
+    assert config.max_turns == 2
+
+
+def test_synthetic_script_shares_the_eval_builders(monkeypatch):
+    """The synthetic-rollout script must score the agent the eval scores.
+
+    It used to reach for a private ``_build_server_manager`` and repeat the loop
+    construction, so a change to either could leave the judge rating a
+    different agent than the benchmark measures.
+    """
+    import examples.run_bamboogle_eval as eval_script
+    from examples.run_bamboogle_synthetic_grpo import _build_loop_factory
+
+    monkeypatch.setattr(
+        eval_script, "build_server_manager_from_args", lambda a, t: "manager"
+    )
+    monkeypatch.setattr(eval_script, "build_search_loop", lambda a, t, m: (a, t, m))
+
+    args = _eval_args()
+    tokenizer = _Tokenizer()
+    factory, server_manager = _build_loop_factory(args, tokenizer)
+
+    assert server_manager == "manager"
+    assert factory() == (args, tokenizer, "manager")
