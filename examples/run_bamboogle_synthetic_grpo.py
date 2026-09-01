@@ -57,27 +57,20 @@ def build_synthetic_record(
 
 
 def _build_loop_factory(args: argparse.Namespace, tokenizer: Any):
-    from examples.run_bamboogle_eval import _build_server_manager
-    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    from src.agents.components.result_evaluation import SearchEvaluationConfig
+    """Share the benchmark agent with run_bamboogle_eval.
 
-    server_manager = _build_server_manager(args, tokenizer)
+    Rollouts here must come from the same loop the eval scores, otherwise the
+    synthetic judge is rating a different agent than the one being measured.
+    """
+    from examples.run_bamboogle_eval import (
+        build_search_loop,
+        build_server_manager_from_args,
+    )
 
-    def factory() -> SearchAgentLoop:
-        return SearchAgentLoop(
-            tokenizer=tokenizer,
-            server_manager=server_manager,
-            search_config=SearchAgentLoopConfig(
-                search_url=args.search_url,
-                topk=args.topk,
-                max_turns=args.max_turns,
-                evaluation_config=SearchEvaluationConfig(
-                    min_results_per_query=1,
-                    min_total_results=2,
-                    min_content_length=10,
-                ),
-            ),
-        )
+    server_manager = build_server_manager_from_args(args, tokenizer)
+
+    def factory():
+        return build_search_loop(args, tokenizer, server_manager)
 
     return factory, server_manager
 

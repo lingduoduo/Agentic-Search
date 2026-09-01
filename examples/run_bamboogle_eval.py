@@ -37,44 +37,59 @@ def write_summary_json(output_path: str, summary) -> "Path":
     return path
 
 
-def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
-    from examples.run_agentic_search import LocalServerManager, OpenAIServerManager
+def build_server_manager_from_args(args: argparse.Namespace, tokenizer: Any) -> Any:
+    """Create the generation backend for the CLI's --local / --server_url choice.
+
+    Public because run_bamboogle_synthetic_grpo evaluates the same agent from
+    the same flags.
+    """
+    from src.model.serving import build_server_manager
 
     if args.local:
-        return LocalServerManager(
-            model_path=args.model,
+        return build_server_manager(
+            tokenizer,
+            model=args.model,
             device=args.device,
             allow_unsafe_mps=args.allow_unsafe_mps,
             local_files_only=not args.allow_remote_model_downloads,
             generation_timeout_seconds=args.generation_timeout_seconds,
             generation_heartbeat_seconds=args.generation_heartbeat_seconds,
         )
-    return OpenAIServerManager(
-        tokenizer=tokenizer, base_url=args.server_url, model=args.model
+    return build_server_manager(tokenizer, server_url=args.server_url, model=args.model)
+
+
+def build_search_loop(
+    args: argparse.Namespace, tokenizer: Any, server_manager: Any
+) -> Any:
+    """Build the SearchAgentLoop this benchmark evaluates.
+
+    The evaluation thresholds are deliberately low: Bamboogle scores the final
+    answer, so a round that returns one short snippet is still progress.
+    """
+    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
+    from src.agents.components.result_evaluation import SearchEvaluationConfig
+
+    return SearchAgentLoop(
+        tokenizer=tokenizer,
+        server_manager=server_manager,
+        search_config=SearchAgentLoopConfig(
+            search_url=args.search_url,
+            topk=args.topk,
+            max_turns=args.max_turns,
+            evaluation_config=SearchEvaluationConfig(
+                min_results_per_query=1,
+                min_total_results=2,
+                min_content_length=10,
+            ),
+        ),
     )
 
 
 def _build_agent(args: argparse.Namespace, tokenizer: Any, server_manager: Any) -> Any:
-    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
-    from src.agents.components.result_evaluation import SearchEvaluationConfig
-
     class _SyncAgent:
         def invoke(self, state: dict) -> SimpleNamespace:
             question = state["messages"][0]["content"]
-            loop = SearchAgentLoop(
-                tokenizer=tokenizer,
-                server_manager=server_manager,
-                search_config=SearchAgentLoopConfig(
-                    search_url=args.search_url,
-                    topk=args.topk,
-                    max_turns=args.max_turns,
-                    evaluation_config=SearchEvaluationConfig(
-                        min_results_per_query=1,
-                        min_total_results=2,
-                        min_content_length=10,
-                    ),
-                ),
-            )
+            loop = build_search_loop(args, tokenizer, server_manager)
 
             async def _run():
                 try:
@@ -217,7 +232,7 @@ def main() -> None:
 
     from src.model.post_training.eval.bamboogle import evaluate_bamboogle
 
-    server_manager = _build_server_manager(args, tokenizer)
+    server_manager = build_server_manager_from_args(args, tokenizer)
     agent = _build_agent(args, tokenizer, server_manager)
     reward_fn = _build_reward_fn(args.reward_preset)
 

@@ -51,9 +51,9 @@ Spec: `docs/superpowers/specs/2026-09-01-examples-serving-consolidation-design.m
 
 1. Rewrite the stale "until PR #326 merges" dependency note.
 2. `asyncio.get_event_loop().run_in_executor(None, fn, *a)` → `asyncio.to_thread(fn, *a)`.
-3. `_eval_side`: gather the independent per-question rollouts, preserving order.
-   → verify: a test drives `_eval_side` with a stub loop factory and asserts
-   results align with input order.
+3. `_eval_side` stays sequential — see the spec: the rollouts share one policy
+   on one device, so they are compute-bound, not I/O-bound.
+   → verify: no change; the script still imports and `--help` runs.
 
 ## Task 6 — verification
 

@@ -108,9 +108,16 @@ so folding it in would mean adding parameters that only one caller uses.
 
 Replace the stale dependency note with a statement of what the script needs at
 run time. Swap `asyncio.get_event_loop().run_in_executor(None, fn, *args)` for
-`asyncio.to_thread(fn, *args)`. Gather `_eval_side`'s per-question rollouts —
-they share no state, and results are collected positionally, so ordering is
-preserved.
+`asyncio.to_thread(fn, *args)`.
+
+`_eval_side`'s per-question rollouts stay sequential. Gathering them looked
+like the #560 fan-out case, but it is not: every rollout generates through one
+`PolicyServerManager` wrapping one live policy on one device, so the work is
+compute-bound on that device rather than waiting on independent endpoints.
+Running eight concurrently would contend for the same device and hold eight KV
+caches at once — on the documented `--device mps` path that trades a
+speculative speedup for a memory regression. #560's fan-out won because the
+awaited calls were independent network round-trips.
 
 ## Testing
 

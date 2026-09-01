@@ -7,14 +7,12 @@ Wires the agent-framework GRPO pieces into one command:
                           →  train_loop  (checkpoint/resume, step timeout+skip)
                           →  action_eval (baseline vs trained: fewer rounds @ = correctness)
 
-Dependency note
----------------
-This example requires the full stack merged into the working tree:
-  - web/vdb retriever action in SearchAgentLoop      (PR #325)
-  - train_loop + trainer save/load                    (PR #326)
-  - retriever_aware() reward + action_eval            (PR #327)
-`train_loop` lives in ``src.model.post_training.grpo.training`` (PR #326); until that
-merges, this script will not import.
+What it needs at run time
+-------------------------
+A generative model it can fine-tune (``--model``) and at least one retrieval
+backend on ``--search_url``.  Without ``--web_search_url`` the web action
+degrades to the vector-DB backend, so the reward still runs but the policy has
+nothing to choose between.
 
 Usage
 -----
@@ -99,9 +97,7 @@ class PolicyServerManager:
 
     async def generate(self, request_id, prompt_ids, sampling_params) -> list[int]:
         del request_id
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._generate_sync, prompt_ids, sampling_params
-        )
+        return await asyncio.to_thread(self._generate_sync, prompt_ids, sampling_params)
 
     def _generate_sync(self, prompt_ids, sampling_params) -> list[int]:
         import torch
