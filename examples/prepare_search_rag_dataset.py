@@ -8,6 +8,9 @@ Example:
       --train_retrieval_cache data/nq_train_retrieval_cache.json \
       --test_retrieval_cache data/nq_test_retrieval_cache.json \
       --local_dir data/nq_rag
+
+Pass ``--corpus <name>`` instead of ``--corpus_path`` to read a corpus
+registered in data/corpora.json.
 """
 
 from __future__ import annotations
@@ -31,7 +34,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data_source", default="nq")
     parser.add_argument("--ability", default="fact-reasoning")
     parser.add_argument("--topk", type=int, default=3)
-    parser.add_argument("--corpus_path", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--corpus_path", help="Path to a corpus .jsonl file")
+    source.add_argument(
+        "--corpus",
+        help="Registered corpus name, comma-list, or 'all' (see data/corpora.json)",
+    )
     parser.add_argument("--train_retrieval_cache", required=True)
     parser.add_argument("--test_retrieval_cache", required=True)
     parser.add_argument(
@@ -70,15 +78,15 @@ def load_json(path: str) -> Any:
         return json.load(file)
 
 
-def load_corpus_by_id(corpus_path: str) -> dict[str, dict[str, Any]]:
-    corpus: dict[str, dict[str, Any]] = {}
-    with open(corpus_path, encoding="utf-8") as file:
-        for line in file:
-            if not line.strip():
-                continue
-            doc = json.loads(line)
-            corpus[str(doc["id"])] = doc
-    return corpus
+def load_corpus_by_id(corpus: str) -> dict[str, dict[str, Any]]:
+    """Index a corpus by document id, for the retrieval cache to look up.
+
+    Accepts anything the retrieval servers accept: a name registered in
+    data/corpora.json, a comma-list of names, "all", or a .jsonl path.
+    """
+    from src.internal.servers.retrieval.corpus_registry import resolve_corpus_docs
+
+    return {str(doc["id"]): doc for doc in resolve_corpus_docs(corpus)}
 
 
 def convert_split(
@@ -147,7 +155,7 @@ def main() -> None:
 
     retrieval_cache = load_json(args.train_retrieval_cache)
     retrieval_cache.update(load_json(args.test_retrieval_cache))
-    corpus = load_corpus_by_id(args.corpus_path)
+    corpus = load_corpus_by_id(args.corpus or args.corpus_path)
 
     dataset = datasets.load_dataset(args.dataset_name, args.dataset_config)
     for split in args.splits:

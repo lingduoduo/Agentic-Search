@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,35 @@ def _validate_corpus_path(corpus_path: str | Path) -> Path:
     return path
 
 
+def _load_corpus_docs(corpus: str | Path) -> list[dict[str, Any]]:
+    """Resolve a corpus spec to documents.
+
+    Accepts anything the retrieval servers accept: a name registered in
+    data/corpora.json, a comma-list of names, "all", or a .jsonl path.  A spec
+    that is not a registered name is validated as a path first, so a mistyped
+    path still reports which file is missing or empty rather than listing the
+    registry.
+    """
+    from src.internal.servers.retrieval.corpus_registry import (
+        load_manifest,
+        resolve_corpus_docs,
+    )
+
+    spec = str(corpus)
+    manifest = load_manifest()
+    if spec != "all" and not all(
+        name.strip() in manifest for name in spec.split(",") if name.strip()
+    ):
+        if os.sep in spec or spec.endswith(".jsonl"):
+            _validate_corpus_path(spec)
+    try:
+        return resolve_corpus_docs(spec, manifest=manifest)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Malformed corpus JSONL at {spec}:{exc.lineno}: {exc.msg}"
+        ) from exc
+
+
 def _context_documents(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -50,22 +80,18 @@ def _context_documents(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_smoke_records(
-    corpus_path: str | Path,
+    corpus: str | Path,
     *,
     topk: int = 3,
 ) -> list[dict[str, object]]:
     if topk < 1:
         raise ValueError("topk must be at least 1.")
-    path = _validate_corpus_path(corpus_path)
+    docs = _load_corpus_docs(corpus)
     try:
-        retriever = TfidfRetriever(str(path))
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Malformed corpus JSONL at {path}:{exc.lineno}: {exc.msg}"
-        ) from exc
+        retriever = TfidfRetriever.from_docs(docs)
     except ValueError as exc:
         if "empty vocabulary" in str(exc).lower():
-            raise ValueError(f"Corpus has no searchable text: {path}") from exc
+            raise ValueError(f"Corpus has no searchable text: {corpus}") from exc
         raise
     questions = [str(example["question"]) for example in SMOKE_EXAMPLES]
     retrieval_rows = retriever.retrieve(questions, topk)
@@ -123,7 +149,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a small offline RAG parquet dataset from the demo corpus."
     )
-    parser.add_argument("--corpus_path", default="data/corpus.jsonl")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--corpus_path", default="data/corpus.jsonl")
+    source.add_argument(
+        "--corpus",
+        default=None,
+        help="Registered corpus name, comma-list, or 'all' (see data/corpora.json)",
+    )
     parser.add_argument("--output_path", default="data/local_rag_smoke.parquet")
     parser.add_argument("--topk", type=int, default=3)
     parser.add_argument(
@@ -136,7 +168,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    records = build_smoke_records(args.corpus_path, topk=args.topk)
+    records = build_smoke_records(args.corpus or args.corpus_path, topk=args.topk)
     if args.preview:
         preview_records(records)
         return
