@@ -568,3 +568,32 @@ def test_synthetic_script_shares_the_eval_builders(monkeypatch):
 
     assert server_manager == "manager"
     assert factory() == (args, tokenizer, "manager")
+
+
+def test_search_loop_resolves_through_the_agent_registry(monkeypatch):
+    """All three example entrypoints must pick the loop the same way.
+
+    run_agentic_search dispatches through the registry; the bamboogle scripts
+    named SearchAgentLoop directly, so a registry change (a new default, a
+    swapped implementation behind the ``search`` alias) reached the CLI and
+    skipped the benchmark.
+    """
+    import src.agents.core.base as agent_base
+    from examples.run_bamboogle_eval import build_search_loop
+
+    resolved: list[str] = []
+
+    class _Sentinel:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    def _spy(name: str):
+        resolved.append(name)
+        return _Sentinel
+
+    monkeypatch.setattr(agent_base, "get_registered_agent_loop", _spy)
+
+    loop = build_search_loop(_eval_args(), _Tokenizer(), server_manager=object())
+
+    assert isinstance(loop, _Sentinel)
+    assert resolved == [agent_base.resolve_agent_name("search")]
