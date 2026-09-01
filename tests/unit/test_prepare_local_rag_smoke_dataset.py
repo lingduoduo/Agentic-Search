@@ -133,3 +133,50 @@ def test_parse_args_defaults_to_demo_corpus_and_preview(monkeypatch):
     assert args.output_path == "data/local_rag_smoke.parquet"
     assert args.topk == 3
     assert args.preview is False
+
+
+# ---------------------------------------------------------------------------
+# Registered corpus names (data/corpora.json)
+# ---------------------------------------------------------------------------
+
+
+def test_build_smoke_records_accepts_a_registered_corpus_name(
+    smoke_corpus, monkeypatch
+):
+    """A corpus converted by beir_to_corpus.py is reachable by name, not path.
+
+    The registry is what makes ``--corpus scifact`` work for the retrieval
+    servers; the dataset builders should read the same manifest rather than
+    making the caller re-derive the file path.
+    """
+    import src.internal.servers.retrieval.corpus_registry as registry
+
+    monkeypatch.setattr(
+        registry,
+        "load_manifest",
+        lambda *a, **k: {"smoke": {"path": str(smoke_corpus)}},
+    )
+
+    records = build_smoke_records("smoke", topk=1)
+
+    assert len(records) == 4
+    assert "FAISS" in records[0]["prompt"][0]["content"]
+
+
+def test_build_smoke_records_reports_unknown_corpus_names(monkeypatch):
+    import src.internal.servers.retrieval.corpus_registry as registry
+
+    monkeypatch.setattr(registry, "load_manifest", lambda *a, **k: {"demo": {}})
+
+    with pytest.raises(ValueError, match="Unknown corpus spec"):
+        build_smoke_records("nope")
+
+
+def test_parse_args_accepts_a_corpus_name(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv", ["prepare_local_rag_smoke_dataset", "--corpus", "scifact"]
+    )
+
+    args = parse_args()
+
+    assert args.corpus == "scifact"

@@ -136,8 +136,30 @@ New tests pin both bugs before the fix:
 Existing `tests/unit/test_model_serving.py`, `test_bamboogle_eval.py` and
 `test_run_agentic_search.py` cover the refactors.
 
+## Follow-ups landed on the same branch
+
+### Registry dispatch in the bamboogle scripts
+
+`build_search_loop` resolves the class through
+`get_registered_agent_loop(resolve_agent_name("search"))`, the way
+`run_agentic_search` resolves all three of its modes. Naming `SearchAgentLoop`
+directly meant a change behind the `search` alias reached the CLI and skipped
+the benchmark.
+
+### Registry corpus names in the dataset builders
+
+`prepare_local_rag_smoke_dataset` and `prepare_search_rag_dataset` each read
+corpus JSONL by hand while `resolve_corpus_docs` (#558) already accepted a
+registered name, a comma-list, `all`, or a path. Both now take `--corpus` beside
+`--corpus_path`, mutually exclusive, resolved as `args.corpus or
+args.corpus_path` — the pattern `retrieval/demo.py` established.
+
+`prepare_local_rag_smoke_dataset` keeps its own path diagnostics ("Corpus file
+not found", "Corpus file is empty", "Malformed corpus JSONL at path:line"). A
+spec that looks like a path is validated as one before the registry sees it, so
+a mistyped path still names the file instead of listing the registry.
+
 ## Out of scope
 
-`run_search_pipeline.py`'s self-contained pipeline re-implementation, teaching
-the `prepare_*` scripts to accept registry corpus names via `resolve_corpus_docs`
-(#558), and routing the bamboogle scripts through the agent registry.
+`run_search_pipeline.py`'s self-contained pipeline re-implementation, handled
+separately.
