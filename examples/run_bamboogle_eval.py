@@ -61,15 +61,19 @@ def build_server_manager_from_args(args: argparse.Namespace, tokenizer: Any) -> 
 def build_search_loop(
     args: argparse.Namespace, tokenizer: Any, server_manager: Any
 ) -> Any:
-    """Build the SearchAgentLoop this benchmark evaluates.
+    """Build the search agent this benchmark evaluates.
 
     The evaluation thresholds are deliberately low: Bamboogle scores the final
     answer, so a round that returns one short snippet is still progress.
     """
-    from src.agents.search import SearchAgentLoop, SearchAgentLoopConfig
+    from src.agents.core.base import get_registered_agent_loop, resolve_agent_name
+    from src.agents.search import SearchAgentLoopConfig
     from src.agents.components.result_evaluation import SearchEvaluationConfig
 
-    return SearchAgentLoop(
+    # Resolve the class the way run_agentic_search does, so the benchmark scores
+    # whatever the "search" alias points at rather than a hardcoded class.
+    loop_cls = get_registered_agent_loop(resolve_agent_name("search"))
+    return loop_cls(
         tokenizer=tokenizer,
         server_manager=server_manager,
         search_config=SearchAgentLoopConfig(
