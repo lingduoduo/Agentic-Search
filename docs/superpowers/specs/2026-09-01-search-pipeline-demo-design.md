@@ -73,7 +73,7 @@ ACL lives in `metadata["acl"]`, the key `SearchFilters.matches` reads.
 - `demo_corpus() -> list[dict]`
 - `retrieve(query, *, topk) -> list[SearchResult]`
 - `enforce_access(results, filters) -> list[SearchResult]`
-- `assemble_sections(results) -> list[ContextSection]`
+- `assemble_sections(documents) -> list[ContextSection]`
 - `run_demo(*, user_id, email, group_ids, query, enforce) -> list[ContextSection]`
 - `main()` — prints each step's document ids so the effect of enforcement is
   visible in the output.
@@ -92,6 +92,10 @@ file; those tests are rewritten against the real types:
 - `--skip-enforcement` returns the restricted document to a caller who may not
   read it — the regression the demo exists to show.
 - Consecutive chunks of one source merge into a single section.
+- The demo's own default query exercises that merge. Merging only fires when
+  consecutive chunks rank consecutively and in order, so a corpus that ranked
+  chunk 1 above chunk 0 would leave step 4 inert with every other assertion
+  still green — which is what the first draft of the corpus did.
 
 The GRPO test in the same file is untouched.
 

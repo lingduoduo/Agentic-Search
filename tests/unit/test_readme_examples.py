@@ -5,14 +5,8 @@ from __future__ import annotations
 import pytest
 
 from examples.run_grpo_training_pipeline import run_demo as run_grpo_demo
-from examples.run_search_pipeline import AccessPolicy
-from examples.run_search_pipeline import InMemorySearchIndex
-from examples.run_search_pipeline import SearchDocument
-from examples.run_search_pipeline import SearchFilters
-from examples.run_search_pipeline import SearchRequest
-from examples.run_search_pipeline import SearchUser
+from examples.run_search_pipeline import assemble_sections
 from examples.run_search_pipeline import run_demo as run_pipeline_demo
-from examples.run_search_pipeline import search_pipeline
 
 
 def test_grpo_training_pipeline_example_runs_without_model_backends():
@@ -25,82 +19,88 @@ def test_grpo_training_pipeline_example_runs_without_model_backends():
     assert "policy_loss" in result
 
 
-def test_search_pipeline_example_applies_filters_and_permissions():
-    sections = run_pipeline_demo()
+ADMIN_GROUP = "search-admins"
+OWNER_EMAIL = "owner@example.test"
 
-    assert [section.document_id for section in sections] == ["public-guide"]
-    assert sections[0].title == "Dense Retrieval Guide"
 
-    index = InMemorySearchIndex(
-        [
-            SearchDocument(
-                id="public",
-                title="Public Doc",
-                contents="rerank deployment notes",
-                document_set="docs",
-            ),
-            SearchDocument(
-                id="private",
-                title="Private Doc",
-                contents="rerank deployment secret",
-                document_set="ops",
-                access=AccessPolicy(
-                    public=False,
-                    allowed_group_ids=frozenset({"search-admins"}),
-                ),
-            ),
-        ]
-    )
-    reader = SearchUser(id="reader", email="reader@example.test")
-    admin = SearchUser(id="admin", group_ids=frozenset({"search-admins"}))
+def _ids(sections):
+    """Document ids reaching answer context, in rank order."""
+    return [section.center.metadata.get("document_id") for section in sections]
 
-    reader_sections = search_pipeline(
-        request=SearchRequest(query="rerank deployment", limit=10),
-        index=index,
-        user=reader,
+
+def test_anonymous_caller_reads_only_unrestricted_documents():
+    sections = run_pipeline_demo(query="rerank deployment")
+
+    assert "restricted-runbook" not in _ids(sections)
+    assert "public-guide" in _ids(sections)
+
+
+def test_group_membership_grants_the_restricted_document():
+    anonymous = run_pipeline_demo(query="rerank deployment")
+    admin = run_pipeline_demo(query="rerank deployment", group_ids=[ADMIN_GROUP])
+
+    assert "restricted-runbook" not in _ids(anonymous)
+    assert "restricted-runbook" in _ids(admin)
+
+
+def test_email_grant_is_not_a_group_grant():
+    owner = run_pipeline_demo(query="quarterly retrieval budget", email=OWNER_EMAIL)
+    admin = run_pipeline_demo(
+        query="quarterly retrieval budget", group_ids=[ADMIN_GROUP]
     )
-    admin_sections = search_pipeline(
-        request=SearchRequest(query="rerank deployment", limit=10),
-        index=index,
-        user=admin,
-    )
-    filtered_sections = search_pipeline(
-        request=SearchRequest(
-            query="rerank deployment",
-            filters=SearchFilters(document_set=frozenset({"ops"})),
-            limit=10,
-            bypass_acl=True,
+
+    assert "owner-memo" in _ids(owner)
+    assert "owner-memo" not in _ids(admin)
+
+
+def test_skipping_enforcement_leaks_a_document_the_caller_may_not_read():
+    """The reason the example exists.
+
+    Sending filters to a retrieval backend is not enforcement: the backend is
+    free to ignore them.  Dropping the caller-side check hands a restricted
+    document to an anonymous reader.
+    """
+    enforced = run_pipeline_demo(query="rerank deployment")
+    unenforced = run_pipeline_demo(query="rerank deployment", enforce=False)
+
+    assert "restricted-runbook" not in _ids(enforced)
+    assert "restricted-runbook" in _ids(unenforced)
+
+
+def test_consecutive_chunks_of_one_source_merge_into_one_section():
+    from src.context.models import ContextDocument
+
+    documents = [
+        ContextDocument(
+            id="D1",
+            title="Guide",
+            content="first half",
+            metadata={"document_id": "guide", "chunk_id": 0},
         ),
-        index=index,
-        user=reader,
-    )
+        ContextDocument(
+            id="D2",
+            title="Guide",
+            content="second half",
+            metadata={"document_id": "guide", "chunk_id": 1},
+        ),
+    ]
 
-    assert [section.document_id for section in reader_sections] == ["public"]
-    assert {section.document_id for section in admin_sections} == {"public", "private"}
-    assert [section.document_id for section in filtered_sections] == ["private"]
+    sections = assemble_sections(documents)
+
+    assert len(sections) == 1
+    assert "first half" in sections[0].combined_content
+    assert "second half" in sections[0].combined_content
 
 
-def test_search_pipeline_permission_filter_entrypoint_can_be_replaced():
-    index = InMemorySearchIndex(
-        [
-            SearchDocument(
-                id="blocked",
-                title="Blocked",
-                contents="dense retrieval",
-                access=AccessPolicy(public=False),
-            )
-        ]
-    )
+def test_demo_actually_exercises_the_merge_step():
+    """Step 4 must fire in the demo, not just be available.
 
-    def allow_all(chunks, user, bypass_acl):
-        del user, bypass_acl
-        return list(chunks)
+    Merging needs consecutive chunks to come back consecutively and in order,
+    so a corpus that ranks chunk 1 above chunk 0 would leave the step inert
+    while every other assertion still passed.
+    """
+    sections = run_pipeline_demo(query="rerank deployment")
+    merged = [section for section in sections if len(section.documents) > 1]
 
-    sections = search_pipeline(
-        request=SearchRequest(query="dense retrieval"),
-        index=index,
-        user=SearchUser(id="reader"),
-        permission_filter=allow_all,
-    )
-
-    assert [section.document_id for section in sections] == ["blocked"]
+    assert len(merged) == 1
+    assert merged[0].center.metadata.get("document_id") == "public-guide"

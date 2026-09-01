@@ -541,11 +541,24 @@ python3 -m examples.run_bamboogle_grpo_train \
 
 ### Search pipeline with access filters
 
-No live model or retrieval server is required.
+Retrieve, enforce access, assemble answer context — four steps over the same
+code the web backend calls. No live model, retrieval server or database is
+required; the corpus is a literal in the script.
 
 ```bash
 python3 -m examples.run_search_pipeline
 ```
+
+Sending filters to a retrieval backend is not enforcement: the backend is free
+to ignore them, so the caller checks the documents it gets back. Drop that check
+to see what an unchecked backend would hand an anonymous reader:
+
+```bash
+python3 -m examples.run_search_pipeline --skip-enforcement
+```
+
+`--group search-admins` and `--email owner@example.test` show the two grants the
+demo corpus carries.
 
 ## Dataset preparation
 
