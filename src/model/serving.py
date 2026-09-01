@@ -254,20 +254,39 @@ class OpenAIServerManager:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
-        self._session: Any = None
+        # One session per event loop driving this manager -- see _get_session.
+        self._sessions: dict[Any, Any] = {}
 
     def _get_session(self) -> Any:
+        """Return this event loop's session, opening one on first use.
+
+        A single manager is driven from several loops whenever a caller
+        evaluates questions in a thread pool and each worker calls
+        ``asyncio.run`` (``examples/run_bamboogle_eval.py --concurrency N`` does
+        exactly that).  An ``aiohttp`` session is bound to the loop that created
+        it, so one cached session shared across loops fails every call but the
+        first, and a close from the worker that finishes first tears down the
+        session another worker is still reading from.  Keying by loop makes each
+        worker open and close its own.
+
+        Entries are removed by :meth:`aclose`; a loop that ends without closing
+        leaves one behind, which is why every caller closes the manager.
+        """
         import aiohttp
 
-        if self._session is None or self._session.closed:
+        loop = asyncio.get_running_loop()
+        session = self._sessions.get(loop)
+        if session is None or session.closed:
             timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
+            session = aiohttp.ClientSession(timeout=timeout)
+            self._sessions[loop] = session
+        return session
 
     async def aclose(self) -> None:
-        if self._session is not None and not self._session.closed:
-            await self._session.close()
-            self._session = None
+        """Close the session belonging to the running loop, if any."""
+        session = self._sessions.pop(asyncio.get_running_loop(), None)
+        if session is not None and not session.closed:
+            await session.close()
 
     async def generate(
         self,
@@ -398,6 +417,15 @@ class LocalServerManager:
         self.generation_heartbeat_seconds = generation_heartbeat_seconds
         self._model: Any = None
         self._tokenizer: Any = None
+
+    async def aclose(self) -> None:
+        """No-op close, so every manager the factory returns closes alike.
+
+        Generation happens in-process against a loaded model; there is no
+        session or connection to release.  The method exists so callers holding
+        a ``ServerManager`` can close it without asking which class they got.
+        """
+        return None
 
     def _build_model_load_kwargs(self, torch_dtype: Any) -> dict[str, Any]:
         """Assemble kwargs for AutoModelForCausalLM.from_pretrained()."""

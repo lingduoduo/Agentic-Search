@@ -43,7 +43,7 @@ used inside a task` or `got Future ... attached to a different loop`.
 - `run_bamboogle_eval._build_server_manager` imports `LocalServerManager` and
   `OpenAIServerManager` **from `examples.run_agentic_search`** (which merely
   re-exports them for back-compat) and constructs them by hand, bypassing
-  `build_server_manager` and silently dropping `--dtype`.
+  `build_server_manager`.
 - `run_bamboogle_synthetic_grpo._build_loop_factory` imports the *private*
   `_build_server_manager` from `run_bamboogle_eval` — three hops through
   example internals to reach `src.model.serving`.
@@ -70,26 +70,20 @@ minimum an agent loop calls, managers are structurally typed, and every
 existing test double would have to grow the method — the same reasoning that
 keeps `generate_stream` off it.
 
-### Loop-bound session in `OpenAIServerManager`
+### One session per event loop in `OpenAIServerManager`
 
-Record the loop that created the session and recreate when the running loop
-differs:
+Replace the single `_session` attribute with a `dict` keyed by the running
+loop. `_get_session` opens this loop's session on first use; `aclose` pops and
+closes only this loop's session.
 
-```python
-def _get_session(self):
-    import aiohttp
-    loop = asyncio.get_running_loop()
-    if self._session is None or self._session.closed or self._session_loop is not loop:
-        self._session = aiohttp.ClientSession(timeout=...)
-        self._session_loop = loop
-    return self._session
-```
+Rebinding a single cached session when the loop changes is not enough. The
+worker that finishes first calls `aclose`, and by then `_session` holds
+whichever session was created last — so a worker would close a session another
+worker is mid-request on. Keying by loop makes open and close symmetric within
+each worker.
 
-The stale session is dropped rather than closed: closing it requires awaiting
-inside its own loop, which the current thread cannot do. Under the intended
-usage — one loop per worker thread, each closed by `asyncio.run` at the end of
-its question — a dropped session is collected with its loop. This is the
-narrow fix for the observed failure, not a general connection-pool rework.
+An entry is removed by `aclose`. A loop that ends without closing leaves one
+behind, which is why the example callers close the manager on every path.
 
 ### Shared construction in the bamboogle scripts
 
@@ -125,8 +119,10 @@ New tests pin both bugs before the fix:
 - `LocalServerManager` exposes an awaitable `aclose` (fails today: no attribute).
 - Four threads, each running `asyncio.run` against one shared
   `OpenAIServerManager`, all complete (fails today: 3 of 4 raise).
+- Closing from one loop leaves another loop's session open, driven through the
+  interleaving the thread pool produces.
 - `build_server_manager_from_args` returns an `OpenAIServerManager` for
-  `--server_url` and forwards `--dtype` for `--local`.
+  `--server_url` and a `LocalServerManager` for `--local`.
 - `run_bamboogle_synthetic_grpo` does not import any private name from
   `run_bamboogle_eval`.
 

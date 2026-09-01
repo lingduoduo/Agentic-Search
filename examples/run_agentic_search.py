@@ -882,8 +882,7 @@ async def main() -> None:
             return
         raise
     finally:
-        if hasattr(server_manager, "aclose"):
-            await server_manager.aclose()
+        await server_manager.aclose()
 
 
 if __name__ == "__main__":
