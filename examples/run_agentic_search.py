@@ -45,8 +45,6 @@ import argparse
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from src.model.serving import (  # re-export for back-compat
@@ -59,6 +57,15 @@ from src.model.serving import (  # re-export for back-compat
     _validate_local_runtime_device as _validate_local_runtime_device,
     _validate_local_runtime_stack as _validate_local_runtime_stack,
     _validate_local_generation_config as _validate_local_generation_config,
+)
+
+from examples.agentic_search.parser import _build_parser
+from examples.agentic_search.routing import (  # re-exported: imported from here by tests
+    IntentPrediction as IntentPrediction,
+    ModelRouteDecision as ModelRouteDecision,
+    resolve_search_settings as resolve_search_settings,
+    _load_intent_prediction as _load_intent_prediction,
+    _resolve_model_route as _resolve_model_route,
 )
 
 logger = logging.getLogger(__name__)
@@ -156,182 +163,6 @@ def _build_sampling_params(args: argparse.Namespace) -> dict[str, Any]:
         "max_tokens": args.max_tokens,
         "top_p": args.top_p,
     }
-
-
-@dataclass(frozen=True)
-class IntentPrediction:
-    """One accepted route for the request, with its cosine similarity.
-
-    ``confidence`` is the top-3 mean cosine to the winning route's canonical
-    examples — not a softmax probability. Thresholds compared against it must
-    be tuned on that scale.
-    """
-
-    intent: str
-    confidence: float
-
-
-def _load_intent_prediction(index_dir: str, question: str) -> IntentPrediction | None:
-    """Route *question* against a canonical-example index, or return None.
-
-    None means the index abstained: either nothing canonical resembles the
-    request, or two routes fit it equally well. Neither is a signal worth
-    switching a generation model on.
-    """
-    from src.internal.configs import load_app_settings
-
-    # Imported from the defining submodule, not the package: the package
-    # __init__ re-exports bind their own reference at import time, so patching
-    # `intent.model.encode_texts` would not reach a package-level alias.
-    from src.model.pre_training.intents.model import (
-        DEFAULT_ENCODER,
-        INDEX_FILENAME,
-        IntentIndex,
-        encode_texts,
-    )
-
-    settings = load_app_settings()
-    index = IntentIndex.load(Path(index_dir) / INDEX_FILENAME)
-    if index.encoder != DEFAULT_ENCODER:
-        # Both all-MiniLM-L6-v2 and e5-small-v2 are 384-dimensional, so a
-        # mismatched encoder has no other symptom: no shape error, no
-        # exception, just a confident, meaningless number driving
-        # resolve_search_settings silently. Match the same guard
-        # run_index_evaluation and ml_intent.load_intent_index apply.
-        raise ValueError(
-            f"--intent_index at {index_dir} was built with encoder "
-            f"{index.encoder!r}, but this CLI encodes queries with "
-            f"{DEFAULT_ENCODER!r}. Rebuild the index with the current "
-            "encoder (`python -m src.model.pre_training.intents.cli build`) before "
-            "using --intent_index."
-        )
-    decision = index.decide(
-        encode_texts([question])[0],
-        min_margin=settings.intent_min_route_margin,
-        min_module_score=settings.intent_min_module_score,
-    )
-    if decision.abstained:
-        return None
-    return IntentPrediction(intent=decision.route, confidence=decision.confidence)
-
-
-def resolve_search_settings(
-    prediction: IntentPrediction,
-    *,
-    topk: int,
-    max_search_limit: int,
-    require_evidence: bool,
-    allow_internal_knowledge: bool,
-) -> tuple[int, int, bool, bool, dict[str, Any]]:
-    """Apply the per-intent search policy for one CLI request.
-
-    There is no confidence comparison here, and there is no longer one
-    anywhere: ``IntentIndex.decide`` returns an abstention on a low *margin*
-    only, and ``_load_intent_prediction`` turns that into ``None``. So any
-    prediction reaching this function was served rather than abstained.
-    """
-
-    meta: dict[str, Any] = {
-        "intent_routing_used": True,
-        "predicted_intent": prediction.intent,
-        "intent_confidence": prediction.confidence,
-        "intent_policy_applied": True,
-    }
-    policy: dict[str, tuple[int, int, bool, bool]] = {
-        "chat": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
-        "search": (max(topk, 8), max(max_search_limit, 3), True, False),
-        "tool": (topk, max_search_limit, require_evidence, allow_internal_knowledge),
-    }
-    t, s, r, a = policy.get(
-        prediction.intent,
-        (topk, max_search_limit, require_evidence, allow_internal_knowledge),
-    )
-    return t, s, r, a, meta
-
-
-@dataclass(frozen=True)
-class ModelRouteDecision:
-    """Selected generation model for one CLI request."""
-
-    model: str
-    route: str
-    reason: str
-    metadata: dict[str, Any]
-
-
-def _resolve_model_route(
-    args: argparse.Namespace,
-    intent_prediction: IntentPrediction | None = None,
-) -> ModelRouteDecision:
-    """Choose a request-level generation model without touching agent loops.
-
-    The selected model is still passed through the existing tokenizer and
-    server-manager path.  This is deliberately request-level routing; per-turn
-    model routing would require a multi-backend server manager.
-    """
-
-    metadata: dict[str, Any] = {
-        "model_routing": args.model_routing,
-        "base_model": args.model,
-    }
-    if args.model_routing == "off":
-        return ModelRouteDecision(
-            model=args.model,
-            route="base",
-            reason="model routing disabled",
-            metadata=metadata,
-        )
-
-    if intent_prediction is None:
-        metadata["model_routing_applied"] = False
-        return ModelRouteDecision(
-            model=args.model,
-            route="base",
-            reason="no intent prediction available",
-            metadata=metadata,
-        )
-
-    metadata.update(
-        {
-            "predicted_intent": intent_prediction.intent,
-            "intent_confidence": intent_prediction.confidence,
-        }
-    )
-    if intent_prediction.confidence < args.model_routing_min_confidence:
-        metadata["model_routing_applied"] = False
-        return ModelRouteDecision(
-            model=args.model,
-            route="base",
-            reason="intent confidence below routing threshold",
-            metadata=metadata,
-        )
-
-    route_by_intent = {
-        "search": "fast",
-        "chat": "balanced",
-        "tool": "reasoning",
-    }
-    route = route_by_intent.get(intent_prediction.intent, "base")
-    model_by_route = {
-        "base": args.model,
-        "fast": args.fast_model or args.model,
-        "balanced": args.balanced_model or args.model,
-        "reasoning": args.reasoning_model or args.balanced_model or args.model,
-    }
-    model = model_by_route[route]
-    metadata.update(
-        {
-            "model_routing_applied": model != args.model,
-            "selected_route": route,
-            "selected_model": model,
-        }
-    )
-    return ModelRouteDecision(
-        model=model,
-        route=route,
-        reason=f"intent={intent_prediction.intent}",
-        metadata=metadata,
-    )
 
 
 def _build_server_manager(args: argparse.Namespace, tokenizer: Any) -> Any:
@@ -645,143 +476,6 @@ def _print_result(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Run an agentic search flow.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    # Core
-    parser.add_argument("--question", type=str, required=True, help="Research question")
-    parser.add_argument(
-        "--mode",
-        choices=["single", "search", "tool"],
-        default="search",
-        help="Agent loop to use",
-    )
-
-    # Model
-    parser.add_argument(
-        "--model", type=str, required=True, help="HuggingFace model name or path"
-    )
-    parser.add_argument(
-        "--model_routing",
-        choices=["off", "intent"],
-        default="off",
-        help="Route the generation model before running the loop",
-    )
-    parser.add_argument(
-        "--fast_model",
-        type=str,
-        default=None,
-        help="Low-latency model for search / lookup intents when --model_routing intent is enabled",
-    )
-    parser.add_argument(
-        "--balanced_model",
-        type=str,
-        default=None,
-        help="Medium model for chat / synthesis intents when --model_routing intent is enabled",
-    )
-    parser.add_argument(
-        "--reasoning_model",
-        type=str,
-        default=None,
-        help="Larger model for tool / action intents when --model_routing intent is enabled",
-    )
-    parser.add_argument(
-        "--model_routing_min_confidence",
-        type=float,
-        default=0.7,
-        help="Minimum intent confidence required before switching models",
-    )
-    parser.add_argument(
-        "--local", action="store_true", help="Run model locally (no vLLM server)"
-    )
-    parser.add_argument(
-        "--server_url",
-        type=str,
-        default="http://localhost:8080",
-        help="OpenAI-compatible server URL (mlx-lm, vLLM, Ollama, …)",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="auto",
-        help="Device for local model: auto, cpu, cuda, or mps",
-    )
-    parser.add_argument(
-        "--allow_unsafe_mps",
-        action="store_true",
-        help="Allow local MPS generation on macOS even though it may segfault",
-    )
-    parser.add_argument(
-        "--allow_remote_model_downloads",
-        action="store_true",
-        help="Allow `--local` model loading to query/download from Hugging Face instead of cache-only loading",
-    )
-    parser.add_argument(
-        "--generation_timeout_seconds",
-        type=float,
-        default=120.0,
-        help="Best-effort local generation timeout in seconds; pass 0 to disable",
-    )
-    parser.add_argument(
-        "--generation_heartbeat_seconds",
-        type=float,
-        default=10.0,
-        help="How often local generation prints a still-running heartbeat",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        default=None,
-        help="Model dtype for local inference: float32, bfloat16, or float16. Default: auto (bfloat16 on Apple Silicon CPU, float16 on CUDA/MPS, float32 elsewhere)",
-    )
-
-    # Search
-    parser.add_argument(
-        "--search_url", type=str, default="http://localhost:8000/retrieve"
-    )
-    parser.add_argument("--topk", type=int, default=5)
-
-    # Loop tuning
-    parser.add_argument("--max_turns", type=int, default=8)
-    parser.add_argument(
-        "--max_search_limit", type=int, default=0, help="0 = same as max_turns"
-    )
-    parser.add_argument("--max_answer_rejections", type=int, default=3)
-    parser.add_argument(
-        "--no_evidence_gate",
-        action="store_true",
-        help="Allow answer without sufficient evidence",
-    )
-    parser.add_argument(
-        "--require_search",
-        action="store_true",
-        help="Disable internal-knowledge direct answers",
-    )
-    parser.add_argument(
-        "--intent_index",
-        type=str,
-        default=None,
-        help="Directory holding a canonical-example intent index (index.npz), "
-        "built with `python -m src.model.pre_training.intents.cli build`. Nothing is "
-        "trained; routing compares the question against curated examples.",
-    )
-    parser.add_argument(
-        "--tool_format", choices=["hermes", "llama3", "json"], default="json"
-    )
-
-    # Sampling
-    parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument("--max_tokens", type=int, default=512)
-    parser.add_argument("--top_p", type=float, default=1.0)
-
-    # Misc
-    parser.add_argument("--verbose", action="store_true")
-    return parser
 
 
 async def main() -> None:
