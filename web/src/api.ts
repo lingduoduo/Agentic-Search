@@ -11,6 +11,7 @@ import type {
   EvalResultFile,
   QueryTransformResult,
   RetrievalMode,
+  RouteLatencyRow,
   ServerHealth,
   DebugToolsResult,
   ToolDiscoverResult,
@@ -74,6 +75,11 @@ export function getServerHealth(): Promise<{ servers: ServerHealth[] }> {
 /** List evaluation result files from the configured results dir (dev console). */
 export function getEvalResults(): Promise<{ results: EvalResultFile[] }> {
   return requestJson<{ results: EvalResultFile[] }>("/api/debug/eval-results");
+}
+
+/** Per-route request latency from the dev-console middleware. */
+export function getRouteLatency(): Promise<{ routes: RouteLatencyRow[] }> {
+  return requestJson<{ routes: RouteLatencyRow[] }>("/api/debug/latency");
 }
 
 /** Registered tools + the discovery catalog grouped by server (dev console). */

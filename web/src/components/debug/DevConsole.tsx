@@ -1,5 +1,6 @@
 import type { ControlFlowEventView } from "../../types";
 import { EvalResultsPanel } from "./EvalResultsPanel";
+import { LatencyPanel } from "./LatencyPanel";
 import { QueryTransformInspector } from "./QueryTransformInspector";
 import { RequestInspector } from "./RequestInspector";
 import { RequestTracePanel } from "./RequestTracePanel";
@@ -26,6 +27,7 @@ export function DevConsole({ answer, citations, controlFlowTrace, selectedReques
     <section className="dev-console" aria-label="Dev console">
       <RequestInspector selectedRequestId={selectedRequestId} />
       <RequestTracePanel events={controlFlowTrace} />
+      <LatencyPanel />
       <ServerHealthGrid answer={answer} citations={citations} />
       <QueryTransformInspector />
       <RetrievalLab />

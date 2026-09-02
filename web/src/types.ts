@@ -365,6 +365,17 @@ export interface EvalResultFile {
   metrics: Record<string, number>;
 }
 
+/** One row of GET /api/debug/latency — a route's recent-request window. */
+export interface RouteLatencyRow {
+  method: string;
+  route: string;
+  count: number;
+  errors: number;
+  p50_ms: number;
+  p95_ms: number;
+  max_ms: number;
+}
+
 export interface QueryTransformResult {
   original: string;
   variants: string[];

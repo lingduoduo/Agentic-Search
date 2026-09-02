@@ -16,6 +16,7 @@ vi.mock("../../api", () => ({
   runDebugRetrieval: vi.fn(),
   getServerHealth: vi.fn().mockResolvedValue({ servers: [] }),
   getEvalResults: vi.fn().mockResolvedValue({ results: [] }),
+  getRouteLatency: vi.fn().mockResolvedValue({ routes: [] }),
   getDebugTools: vi.fn().mockResolvedValue({ registered: [], catalog: [] }),
   discoverTools: vi.fn(),
   runQueryTransform: vi.fn(),
