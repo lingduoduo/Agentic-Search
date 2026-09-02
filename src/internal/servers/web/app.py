@@ -77,6 +77,9 @@ from src.internal.servers.evals.api import create_evals_router
 from src.internal.servers.features.hooks.api import create_hooks_router
 from src.internal.servers.license.api import create_license_router
 from src.internal.servers.manage.standard_answer import create_manage_router
+from src.internal.servers.middleware.latency_logging import (
+    add_latency_logging_middleware,
+)
 from src.internal.servers.middleware.license_enforcement import (
     add_license_enforcement_middleware,
 )
@@ -1382,6 +1385,9 @@ def create_web_app(
     add_api_server_tenant_id_middleware(app, resolved)
     add_license_enforcement_middleware(app, resolved)
     add_tier_gate_middleware(app, resolved)
+    # Cheap enough to run everywhere: one monotonic pair and a bounded deque
+    # append per request. /api/debug/latency reads what it records.
+    add_latency_logging_middleware(app, logging.LoggerAdapter(logger, {}))
 
     _register_routers(
         app,

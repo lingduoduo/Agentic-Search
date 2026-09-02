@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from src.internal.retrieval.query_transform_factory import (
     build_query_transform_pipeline_from_env,
 )
+from src.internal.servers.middleware.latency_logging import ROUTE_LATENCY
 
 _MODES = {"sparse", "dense", "hybrid", "graph"}
 
@@ -112,6 +113,16 @@ def create_debug_router(
             )
         out.sort(key=lambda r: r["modified"], reverse=True)
         return {"results": out}
+
+    @router.get("/latency")
+    def latency() -> dict:
+        """Per-route request latency: count, errors, p50/p95/max, slowest first.
+
+        Reads the rolling window the latency middleware fills. Complements
+        /api/debug/requests, which shows one request's stages but cannot say
+        which route is slow or how often.
+        """
+        return {"routes": ROUTE_LATENCY.snapshot()}
 
     @router.get("/tools")
     def tools() -> dict:

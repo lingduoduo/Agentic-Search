@@ -1941,3 +1941,39 @@ option:disabled,
     max-width: 100%;
   }
 }
+
+/* --- Dev console: route latency --- */
+.latency-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.latency-panel__table th,
+.latency-panel__table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  text-align: right;
+}
+
+.latency-panel__table thead th,
+.latency-panel__table tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.latency-panel__table tbody th code {
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+}
+
+.latency-panel__errors {
+  color: var(--danger-fg, #b91c1c);
+  font-weight: 600;
+}
+
+.latency-panel__empty {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted, #6b7280);
+}
