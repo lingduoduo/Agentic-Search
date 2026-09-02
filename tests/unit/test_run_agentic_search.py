@@ -107,10 +107,20 @@ def test_run_single_turn_is_plain_model_generation(capsys):
 
 
 def test_run_agentic_search_has_no_minisweagent_dependency():
-    source = Path("examples/run_agentic_search.py").read_text()
+    """Scan the whole CLI, not just its entry file.
 
-    assert "minisweagent" not in source
-    assert "class DefaultAgent" not in source
+    The parser and routing modules were split out of run_agentic_search.py; a
+    check that reads only the entry file would stop covering them and let the
+    dependency return through a submodule.
+    """
+    sources = [Path("examples/run_agentic_search.py")]
+    sources += sorted(Path("examples/agentic_search").glob("*.py"))
+    assert len(sources) >= 4, sources
+
+    for path in sources:
+        source = path.read_text()
+        assert "minisweagent" not in source, path
+        assert "class DefaultAgent" not in source, path
 
 
 def test_validate_local_generation_config_rejects_encoder_only_model():
